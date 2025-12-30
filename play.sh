@@ -1,3 +1,7 @@
+#!/usr/bin/env bash
 set -e
+cd "$(dirname "$0")"
 source ".venv/bin/activate"
-python -u play.py $1 $2
+export PYTHONPATH="$(pwd)/gym_mod:${PYTHONPATH:-}"
+python -u play.py "${1:-None}" "${2:-False}"
+

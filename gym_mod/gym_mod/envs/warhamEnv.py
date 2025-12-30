@@ -3,8 +3,54 @@ from gym import spaces
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from gym_mod.engine.utils import *
+import random
+from ..engine.utils import *
 from gym_mod.engine.GUIinteract import *
+
+def player_dice(num=1, max=6):
+    """
+    Кубы игрока:
+    - если MANUAL_DICE=1, просим ввод в терминале
+    - иначе используем рандом (удобно, если хочешь быстро без кубов)
+    """
+    manual = os.getenv("MANUAL_DICE", "0") == "1"
+
+    if not manual:
+        if num == 1:
+            return random.randint(1, max)
+        return [random.randint(1, max) for _ in range(num)]
+
+    def ask_one():
+        while True:
+            s = input(f"Введи результат броска (1..{max}): ").strip()
+            try:
+                v = int(s)
+            except ValueError:
+                print("❌ Нужно число")
+                continue
+            if 1 <= v <= max:
+                return v
+            print(f"❌ Должно быть от 1 до {max}")
+
+    if num == 1:
+        return ask_one()
+
+    while True:
+        s = input(f"Введи {num} значений (1..{max}) через пробел: ").strip()
+        parts = s.split()
+        if len(parts) != num:
+            print("❌ Неверное количество значений")
+            continue
+        try:
+            vals = [int(x) for x in parts]
+        except ValueError:
+            print("❌ Нужны числа")
+            continue
+        if any(v < 1 or v > max for v in vals):
+            print(f"❌ Все значения должны быть 1..{max}")
+            continue
+        return vals
+
 
 class Warhammer40kEnv(gym.Env):
     def __init__(self, enemy, model, b_len, b_hei):
@@ -709,10 +755,10 @@ class Warhammer40kEnv(gym.Env):
                 if self.playType == False:
                     print("This unit is Battle-shocked, starting test...")
                     print("Rolling 2D6...")
-                    diceRoll = dice(num=2)
+                    diceRoll = player_dice(num=2)
                     print("You rolled", diceRoll[0], diceRoll[1])
                 else:
-                    diceRoll = dice(num=2)
+                    diceRoll = player_dice(num=2)
                     sendToGUI("This unit is Battle-shocked, starting test...\nRolling 2D6...\nYou rolled: {} and {}".format(diceRoll[0], diceRoll[1]))
                 if sum(diceRoll) >= self.enemy_data[i]["Ld"]:
                     if self.playType == False:
@@ -834,10 +880,10 @@ class Warhammer40kEnv(gym.Env):
                 if dire.lower() != "none":
                     if self.playType == False:
                         print("Rolling 1 D6...")
-                        roll = dice()
+                        roll = player_dice()
                         print("You rolled a", roll)
                     else:
-                        roll = dice()
+                        roll = player_dice()
                         sendToGUI("Rolling 1 D6...\nYou rolled a {}".format(dice))
                     movement = roll+self.unit_data[i]["Movement"]
                     if self.playType == False:
@@ -1032,11 +1078,11 @@ class Warhammer40kEnv(gym.Env):
                             j = int(attk)-21
                             if self.playType == False:
                                 print("Rolling 2 D6...")
-                                roll = dice(num=2)
+                                roll = player_dice(num=2)
                                 print("You rolled a", roll[0], "and", roll[1])
                             else:
                                 sendToGUI("Rolling 2 D6...")
-                                roll = dice(num=2)
+                                roll = player_dice(num=2)
                                 sendToGUI("You rolled a {} and {}".format(roll[0], roll[1]))
                                 
                             if distance(self.enemy_coords[i], self.unit_coords[j]) - sum(roll) <= 5:

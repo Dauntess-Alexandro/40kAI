@@ -1,0 +1,12 @@
+Metadata-Version: 2.4
+Name: Warhammer40kAI
+Version: 0.0.1
+Requires-Dist: gymnasium==0.29.1
+Requires-Dist: matplotlib==3.8.4
+Requires-Dist: numpy==1.26.4
+Requires-Dist: imageio==2.34.1
+Requires-Dist: tqdm==4.66.4
+Requires-Dist: pandas==2.2.2
+Requires-Dist: torch==2.3.0
+Requires-Dist: scipy==1.14.0
+Dynamic: requires-dist

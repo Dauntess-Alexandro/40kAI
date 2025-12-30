@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+models/
+display/
+gui/build/
+gym_mod/build/
+board.txt
+*.png
+*.log
+core
+*.core
