@@ -669,22 +669,37 @@ void Form :: runPlayAgainstModelInBackground() {
   
 void Form :: playAgainstModel() {
   path = setModelFile.get_text();
-  std::string command = "cd .. ; ./play.sh ";
-  if (strlen(path.data()) < 2) {
-    command.append("None");
-  } else {
-    command.append(path);
-  }
+
+  std::string command;
+
   if (playInGUI == "True") {
-	command.append(" True");
+    command = "cd .. ; ./play.sh ";
+    if (strlen(path.data()) < 2) {
+      command.append("None");
+    } else {
+      command.append("\"");
+      command.append(path);
+      command.append("\"");
+    }
+    command.append(" True");
   } else {
-	command.append(" False");
+    // ВАЖНО: "Play in Terminal" теперь откроет новое окно терминала
+    command = "cd .. ; ./launch_terminal_manual.sh ";
+    if (strlen(path.data()) < 2) {
+      command.append("None");
+    } else {
+      command.append("\"");
+      command.append(path);
+      command.append("\"");
+    }
   }
+
   playing = true;
   system("clear");
   system(command.data());
   playing = false;
 }
+
 
 inline bool Form :: exists_test (const std::string& name) {
   struct stat buffer;   
