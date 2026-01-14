@@ -1,10 +1,13 @@
+from collections import Counter
 import sys
 import os
+import csv
 import numpy as np
 import gymnasium as gym
 import pickle
 import datetime
 import json
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 from gym_mod.envs.warhamEnv import *
 from gym_mod.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
@@ -24,6 +27,88 @@ warnings.filterwarnings("ignore")
 
 with open(os.path.abspath("hyperparams.json")) as j:
     data = json.loads(j.read())
+
+MISSION_NAME = {
+    1: "slay_and_secure",
+    2: "ancient_relic",
+    3: "domination",
+}
+
+def moving_avg(values, window=50):
+    if len(values) == 0:
+        return []
+    w = max(1, int(window))
+    out = []
+    for i in range(len(values)):
+        j0 = max(0, i - w + 1)
+        chunk = values[j0:i+1]
+        out.append(sum(chunk) / len(chunk))
+    return out
+
+def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
+    os.makedirs(metrics_dir, exist_ok=True)
+    os.makedirs("gui/img", exist_ok=True)
+
+    # --- CSV ---
+    csv_path = os.path.join(metrics_dir, f"stats_{run_id}.csv")
+    cols = ["episode", "ep_reward", "ep_len", "turn", "model_vp", "player_vp", "vp_diff", "result", "end_reason", "end_code"]
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=cols)
+        w.writeheader()
+        for r in ep_rows:
+            w.writerow({k: r.get(k, "") for k in cols})
+
+    wins01 = [1 if r["result"] == "win" else 0 for r in ep_rows]
+    vp_diff = [r["vp_diff"] for r in ep_rows]
+    ep_idx = list(range(1, len(ep_rows) + 1))
+
+    # --- Winrate plot ---
+    winrate_ma = moving_avg(wins01, window=50)
+    plt.figure()
+    plt.plot(ep_idx, winrate_ma)
+    plt.xlabel("Episodes")
+    plt.ylabel("Winrate (MA 50)")
+    plt.title("Winrate (moving average)")
+    plt.ylim(-0.05, 1.05)
+
+    plt.savefig(os.path.join(metrics_dir, f"winrate_{run_id}.png"))
+    plt.savefig(os.path.join("gui/img", f"winrate_{run_id}.png"))
+    plt.savefig(os.path.join("gui/img", "winrate.png"))
+    plt.close()
+
+    # --- VP diff plot ---
+    vp_ma = moving_avg(vp_diff, window=50)
+    plt.figure()
+    plt.plot(ep_idx, vp_diff)
+    plt.plot(ep_idx, vp_ma)
+    plt.xlabel("Episodes")
+    plt.ylabel("VP diff (model - player)")
+    plt.title("VP diff (per episode + MA 50)")
+
+    plt.savefig(os.path.join(metrics_dir, f"vpdiff_{run_id}.png"))
+    plt.savefig(os.path.join("gui/img", f"vpdiff_{run_id}.png"))
+    plt.savefig(os.path.join("gui/img", "vpdiff.png"))
+    plt.close()
+
+    # --- End reasons bar ---
+    reasons = [r["end_reason"] for r in ep_rows]
+    c = Counter(reasons)
+    keys = sorted(c.keys())
+    vals = [c[k] for k in keys]
+
+    plt.figure()
+    plt.bar(keys, vals)
+    plt.xticks(rotation=30, ha="right")
+    plt.ylabel("Count")
+    plt.title("End reasons")
+    plt.tight_layout()
+
+    plt.savefig(os.path.join(metrics_dir, f"endreasons_{run_id}.png"))
+    plt.savefig(os.path.join("gui/img", f"endreasons_{run_id}.png"))
+    plt.savefig(os.path.join("gui/img", "endreasons.png"))
+    plt.close()
+
+    print(f"[metrics] saved: {csv_path}")
 
 TAU = data["tau"]
 LR = data["lr"]
@@ -114,6 +199,7 @@ randNum = np.random.randint(0, 10000000)
 metrics = metrics(fold, randNum, date)
 
 rewArr = []
+ep_rows = [] 
 
 epLen = 0
 
@@ -159,6 +245,73 @@ while end == False:
         pbar.update(1)
         metrics.updateRew(sum(rewArr)/len(rewArr))
         metrics.updateEpLen(epLen)
+        # ===== extra metrics (winrate / VP diff / end reason) =====
+        ep_reward = float(sum(rewArr) / len(rewArr)) if len(rewArr) > 0 else 0.0
+        model_vp = int(info.get("model VP", 0))
+        player_vp = int(info.get("player VP", 0))
+        vp_diff = model_vp - player_vp
+
+        mh_list = info.get("model health", [])
+        ph_list = info.get("player health", [])
+
+        def _sum_health(x):
+            try:
+                if isinstance(x, (list, tuple, np.ndarray)):
+                    return int(sum(x))
+                return int(x)
+            except Exception:
+                return 0
+
+        mh = _sum_health(mh_list)
+        ph = _sum_health(ph_list)
+
+        end_code = res  # то, что возвращает env (1..3 миссия или 4)
+        turn = int(info.get("turn", epLen))  # если turn не добавляли в env — будет epLen
+
+        if ph <= 0 and mh > 0:
+            result = "win"
+            end_reason = "wipe_enemy"
+        elif mh <= 0 and ph > 0:
+            result = "loss"
+            end_reason = "wipe_model"
+        else:
+            vc = info.get("victory condition", end_code)
+            end_reason = f"turn_limit_{MISSION_NAME.get(vc, str(vc))}"
+            if vp_diff > 0:
+                result = "win"
+            elif vp_diff < 0:
+                result = "loss"
+            else:
+                result = "draw"
+
+        if result == "win":
+            inText.append("model won!")
+            if trunc == False:
+                print("model won!")
+        elif result == "loss":
+            inText.append("enemy won!")
+            if trunc == False:
+                print("enemy won!")
+        else:
+            inText.append("draw!")
+            if trunc == False:
+                print("draw!")
+
+
+        ep_rows.append({
+            "episode": numLifeT + 1,   # lifetimes считаются у тебя через numLifeT
+            "ep_reward": ep_reward,
+            "ep_len": epLen,
+            "turn": turn,
+            "model_vp": model_vp,
+            "player_vp": player_vp,
+            "vp_diff": vp_diff,
+            "result": result,
+            "end_reason": end_reason,
+            "end_code": end_code,
+        })
+        # ==========================================================
+
         epLen = 0
         rewArr = []
 
@@ -211,6 +364,8 @@ else:
 metrics.lossCurve()
 metrics.showRew()
 metrics.showEpLen()
+
+save_extra_metrics(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
 metrics.createJson()
 print("Generated metrics")
 

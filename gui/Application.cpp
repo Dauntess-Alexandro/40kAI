@@ -28,6 +28,9 @@ std::string gifpth = "img/model_train.gif";
 std::string rewpth = "img/reward.png";
 std::string losspth = "img/loss.png";
 std::string eplenpth = "img/epLen.png";
+std::string winratepth = "img/winrate.png";
+std::string vpdiffpth = "img/vpdiff.png";
+std::string endreasonpth = "img/endreasons.png";
 std::string imgpth = "img/icon.png";
 
 Form :: Form() {
@@ -373,7 +376,7 @@ Form :: Form() {
   fixedTabPage2.add(tauModel);
   fixedTabPage2.move(tauModel, 220, 100);
   fixedTabPage2.add(necModel);
-  fixedTabPage2.move(necModel, 340, 100);
+  fixedTabPage2.move(necModel, 270, 100);
   fixedTabPage2.add(orksEnemy);
   fixedTabPage2.move(orksEnemy, 100, 120);
   fixedTabPage2.add(spmEnemy);
@@ -387,9 +390,9 @@ Form :: Form() {
   fixedTabPage2.add(milEnemy);
   fixedTabPage2.move(milEnemy, 100, 140);
   fixedTabPage2.add(tauEnemy);
-  fixedTabPage2.move(tauEnemy, 340, 140);
+  fixedTabPage2.move(tauEnemy, 220, 140);
   fixedTabPage2.add(necEnemy);
-  fixedTabPage2.move(necEnemy, 340, 140);
+  fixedTabPage2.move(necEnemy, 270, 140);
   fixedTabPage2.add(modelUnitLabel);
   fixedTabPage2.move(modelUnitLabel, 10, 163);
   fixedTabPage2.add(enterModelUnit);
@@ -460,11 +463,20 @@ Form :: Form() {
 
   fixedTabPage5.add(metricBox);
   fixedTabPage5.add(metricBox2);
+  fixedTabPage5.add(metricBox4);
+  fixedTabPage5.add(metricBox5);
   fixedTabPage5.add(metricBox3);
+  fixedTabPage5.add(metricBox6);
   fixedTabPage5.add(chooseMetrics);
-  fixedTabPage5.move(metricBox2, 640/2, 0);
-  fixedTabPage5.move(metricBox3, 640/4, 480/2+10);
-  fixedTabPage5.move(chooseMetrics, 620/2, 500);
+
+  // layout: 2 columns x 3 rows
+  fixedTabPage5.move(metricBox,   0,   0);
+  fixedTabPage5.move(metricBox2,  350, 0);
+  fixedTabPage5.move(metricBox4,  0,   175);
+  fixedTabPage5.move(metricBox5,  350, 175);
+  fixedTabPage5.move(metricBox3,  0,   350);
+  fixedTabPage5.move(metricBox6,  350, 350);
+  fixedTabPage5.move(chooseMetrics, 300, 525);
   update_metrics();
 
      // Play tab
@@ -549,18 +561,23 @@ Form :: Form() {
 
 void Form :: changeMetrics(std::string path) {
     std::string jsonID = path.substr(path.length()-16,9);
-	
+
 	if (jsonID[0] == '-') {
 		jsonID = path.substr(path.length()-15,8);
 	} 
-	
+
 	std::ifstream infile("../models/data_"+jsonID+".json");
 	json j;
 	infile >> j;
 
-	losspth = j.at("loss");
-	rewpth = j.at("reward");
-	eplenpth = j.at("epLen");
+	losspth = j.value("loss", losspth);
+	rewpth = j.value("reward", rewpth);
+	eplenpth = j.value("epLen", eplenpth);
+
+	// optional extra metrics (backwards compatible with older models)
+	winratepth = j.value("winrate", winratepth);
+	vpdiffpth = j.value("vpdiff", vpdiffpth);
+	endreasonpth = j.value("endreasons", endreasonpth);
 
 	update_metrics();
 }
@@ -642,17 +659,26 @@ void Form :: update_picture() {
 }
 
 void Form :: update_metrics() {
-  // scale down images
-  Glib::RefPtr<Gdk::Pixbuf> m_Pixbuf = Gdk::Pixbuf::create_from_file(rewpth);
-  Glib::RefPtr<Gdk::Pixbuf> m_Pixbuf2 = Gdk::Pixbuf::create_from_file(losspth);
-  Glib::RefPtr<Gdk::Pixbuf> m_Pixbuf3 = Gdk::Pixbuf::create_from_file(eplenpth);
-  
-  Glib::RefPtr<Gdk::Pixbuf> scaled_pixbuf = m_Pixbuf->scale_simple(350, 250, Gdk::INTERP_BILINEAR);
-  metricBox.set(scaled_pixbuf);
-  Glib::RefPtr<Gdk::Pixbuf> scaled_pixbuf2 = m_Pixbuf2->scale_simple(350, 250, Gdk::INTERP_BILINEAR);
-  metricBox2.set(scaled_pixbuf2);
-  Glib::RefPtr<Gdk::Pixbuf> scaled_pixbuf3 = m_Pixbuf3->scale_simple(350, 230, Gdk::INTERP_BILINEAR);
-  metricBox3.set(scaled_pixbuf3);
+
+  const int IMG_W = 330;
+  const int IMG_H = 160;
+
+  auto load_scaled = [&](const std::string& rel) -> Glib::RefPtr<Gdk::Pixbuf> {
+    std::string path = "../gui/" + rel;
+    if (!fs::exists(path)) {
+      return Glib::RefPtr<Gdk::Pixbuf>();
+    }
+    auto pix = Gdk::Pixbuf::create_from_file(path);
+    return pix->scale_simple(IMG_W, IMG_H, Gdk::INTERP_BILINEAR);
+  };
+
+  if (auto p = load_scaled(rewpth)) metricBox.set(p);
+  if (auto p = load_scaled(losspth)) metricBox2.set(p);
+  if (auto p = load_scaled(winratepth)) metricBox4.set(p);
+  if (auto p = load_scaled(vpdiffpth)) metricBox5.set(p);
+  if (auto p = load_scaled(eplenpth)) metricBox3.set(p);
+  if (auto p = load_scaled(endreasonpth)) metricBox6.set(p);
+
 }
 
 void Form :: updateInits(std::string model, std::string enemy) {

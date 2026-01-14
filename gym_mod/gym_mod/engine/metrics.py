@@ -62,6 +62,12 @@ class metrics(object):
         plt.close()
 
     def createJson(self):
-        data = {"loss":"img/loss_{}.png".format(self.randNum), "reward":"img/reward_{}.png".format(self.randNum), "epLen":"img/epLen_{}.png".format(self.randNum)}
+        data = {"loss":"img/loss_{}.png".format(self.randNum), 
+        "reward":"img/reward_{}.png".format(self.randNum), 
+        "epLen":"img/epLen_{}.png".format(self.randNum), 
+        "winrate": "img/winrate_{}.png".format(self.randNum),
+        "vpdiff": "img/vpdiff_{}.png".format(self.randNum),
+        "endreasons": "img/endreasons_{}.png".format(self.randNum),}
+
         with open("models/data_{}.json".format(self.modelName), "w") as f:
             json.dump(data, f)

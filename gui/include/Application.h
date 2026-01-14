@@ -48,6 +48,9 @@ private:
   Image metricBox;
   Image metricBox2;
   Image metricBox3;
+Image metricBox4;
+Image metricBox5;
+Image metricBox6;
   Fixed fixed;
   ScrolledWindow scrolledWindow;
   Notebook tabControl1;

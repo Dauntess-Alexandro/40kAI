@@ -482,6 +482,7 @@ class Warhammer40kEnv(gym.Env):
             "model VP": self.modelVP,
             "player VP": self.enemyVP,
             "victory condition": self.vicCond,
+            "turn": self.numTurns,
         }
 
     def reset(self, m, e, playType=False, Type="small", trunc=False):
@@ -1138,7 +1139,7 @@ class Warhammer40kEnv(gym.Env):
             res = 4
 
         # Other victory conditions
-        if self.numTurns == 5 and self.game_over is not True:
+        if self.numTurns == 10 and self.game_over is not True:
             self.game_over = True
             res = self.vicCond
             if res == 1:

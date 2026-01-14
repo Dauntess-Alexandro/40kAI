@@ -1,4 +1,6 @@
 Player Units
-Necron Warriors
+Apothecary
+Eliminator Squad
 Model Units
-Necron Warriors
+Apothecary
+Eliminator Squad
