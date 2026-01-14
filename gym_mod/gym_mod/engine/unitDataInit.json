@@ -1,5 +1,18 @@
 {
-    "UnitData": [
+    "UnitData": [ 
+        {
+            "Army": "Necrons",
+            "Name": "Necron Warriors",
+            "Movement": 5,
+            "#OfModels": 10,
+            "T": 4,
+            "Sv": 4,
+            "W": 1,
+            "Ld": 7,
+            "OC": 2,
+            "IVSave": 0,
+            "Weapons": ["Gauss flayer", "Necron close combat weapon"]
+        },
         {
             "Army": "Space_Marine",
             "Name": "Eliminator Squad",
@@ -81,6 +94,28 @@
     ],
 
     "WeaponData": [
+{
+  "Army": "Necrons",
+  "Name": "Gauss flayer [LETHAL HITS] [RAPID FIRE 1]",
+  "Type": "Ranged",
+  "BS": 4,
+  "S": 4,
+  "AP": 0,
+  "Range": 24,
+  "Damage": 1
+},
+
+{
+  "Army": "Necrons",
+  "Name": "Necron close combat weapon",
+  "Type": "Melee",
+  "WS": 4,
+  "S": 4,
+  "AP": 0,
+  "Range": 2,
+  "Damage": 1
+},
+
         {
             "Army": "Orks",
             "Name": "Big Choppa",

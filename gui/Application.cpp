@@ -32,8 +32,8 @@ std::string imgpth = "img/icon.png";
 
 Form :: Form() {
 
-  modelClass = " Space_Marine";
-  enemyClass = " Space_Marine";
+  modelClass = " Necrons";
+  enemyClass = " Necrons";
   path = " ";
   open = false;
   x = 60;
@@ -182,6 +182,7 @@ Form :: Form() {
     modelClass = " Space_Marine";
   });
 
+
   orksModel.set_label("Orks");
   orksModel.set_group(factionModel);
   orksModel.signal_toggled().connect([this]() {
@@ -224,12 +225,20 @@ Form :: Form() {
     modelClass = " Tau";
   });
 
+  necModel.set_label("Necrons");
+  necModel.set_group(factionModel);
+  necModel.signal_toggled().connect([this]() {
+    modelUnits.clear();
+    modelClass = " Necrons";
+  });
+
   spmEnemy.set_label("Space Marine");
   spmEnemy.set_group(factionEnemy);
   spmEnemy.signal_toggled().connect([this]() {
     enemyUnits.clear();
     enemyClass = " Space_Marine";
   });
+
 
   orksEnemy.set_label("Orks");
   orksEnemy.set_group(factionEnemy);
@@ -264,6 +273,13 @@ Form :: Form() {
   tauEnemy.signal_toggled().connect([this]() {
     enemyUnits.clear();
     enemyClass = " Tau";
+  });
+
+  necEnemy.set_label("Necrons");
+  necEnemy.set_group(factionEnemy);
+  necEnemy.signal_toggled().connect([this]() {
+    enemyUnits.clear();
+    enemyClass = " Necrons";
   });
 
   milEnemy.set_label("Astra Militarum");
@@ -356,6 +372,8 @@ Form :: Form() {
   fixedTabPage2.move(milModel, 100, 100);
   fixedTabPage2.add(tauModel);
   fixedTabPage2.move(tauModel, 220, 100);
+  fixedTabPage2.add(necModel);
+  fixedTabPage2.move(necModel, 340, 100);
   fixedTabPage2.add(orksEnemy);
   fixedTabPage2.move(orksEnemy, 100, 120);
   fixedTabPage2.add(spmEnemy);
@@ -369,7 +387,9 @@ Form :: Form() {
   fixedTabPage2.add(milEnemy);
   fixedTabPage2.move(milEnemy, 100, 140);
   fixedTabPage2.add(tauEnemy);
-  fixedTabPage2.move(tauEnemy, 220, 140);
+  fixedTabPage2.move(tauEnemy, 340, 140);
+  fixedTabPage2.add(necEnemy);
+  fixedTabPage2.move(necEnemy, 340, 140);
   fixedTabPage2.add(modelUnitLabel);
   fixedTabPage2.move(modelUnitLabel, 10, 163);
   fixedTabPage2.add(enterModelUnit);

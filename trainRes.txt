@@ -1,706 +1,706 @@
 Model units:
-Name: Eliminator Squad, Army Type: Space_Marine
+Name: Necron Warriors, Army Type: Necrons
 Enemy units:
-Name: Eliminator Squad, Army Type: Space_Marine
+Name: Necron Warriors, Army Type: Necrons
 Number of Lifetimes ran: 100
 
-Iteration 0 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 0, victory condition 2
-Iteration 1 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 0, victory condition 2
-Iteration 2 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 0, victory condition 2
-Iteration 3 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 0, victory condition 2
-Iteration 4 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 0, victory condition 2
+Iteration 0 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 1 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 2 ended with reward tensor([0.2000]), enemy health [9.0], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 3 ended with reward tensor([0.5000]), enemy health [9.0], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 4 ended with reward tensor([-2.5000]), enemy health [9.0], model health [10.0], model VP 0, enemy VP 3, victory condition 2
 Ancient Relic Victory Condition
 enemy won!
-Iteration 5 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 0, victory condition 1
-Iteration 6 ended with reward tensor([0.2000]), enemy health [7.0], model health [8], model VP 0, enemy VP 0, victory condition 1
-Iteration 7 ended with reward tensor([-0.5000]), enemy health [7.0], model health [8.0], model VP 0, enemy VP 0, victory condition 1
-Iteration 8 ended with reward tensor([-0.5000]), enemy health [7.0], model health [8.0], model VP 0, enemy VP 0, victory condition 1
-Iteration 9 ended with reward tensor([-1.3000]), enemy health [7.0], model health [8.0], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 10 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 11 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 12 ended with reward tensor([0.7000]), enemy health [7.0], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 13 ended with reward tensor([-0.5000]), enemy health [7.0], model health [8.0], model VP 0, enemy VP 4, victory condition 3
-Iteration 14 ended with reward tensor([-2.5000]), enemy health [7.0], model health [8.0], model VP 0, enemy VP 5, victory condition 3
+Iteration 5 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 6 ended with reward tensor([0.7000]), enemy health [9.0], model health [6.0], model VP 0, enemy VP 2, victory condition 3
+Iteration 7 ended with reward tensor([0.7000]), enemy health [7.0], model health [6.0], model VP 0, enemy VP 3, victory condition 3
+Iteration 8 ended with reward tensor([-0.5000]), enemy health [7.0], model health [5.0], model VP 0, enemy VP 4, victory condition 3
+Iteration 9 ended with reward tensor([-1.3000]), enemy health [4.0], model health [3.0], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 15 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 16 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 1, enemy VP 2, victory condition 1
-Iteration 17 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 2, enemy VP 3, victory condition 1
-Iteration 18 ended with reward tensor([0.7000]), enemy health [8.0], model health [7.0], model VP 3, enemy VP 4, victory condition 1
-Iteration 19 ended with reward tensor([-1.3000]), enemy health [8.0], model health [7.0], model VP 1, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 20 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 1, enemy VP 1, victory condition 3
-Iteration 21 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 2, enemy VP 2, victory condition 3
-Iteration 22 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 3, enemy VP 3, victory condition 3
-Iteration 23 ended with reward tensor([0.7000]), enemy health [7.0], model health [7.0], model VP 4, enemy VP 4, victory condition 3
-Iteration 24 ended with reward tensor([-2.5000]), enemy health [7.0], model health [7.0], model VP 5, enemy VP 5, victory condition 3
+Iteration 10 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 11 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 12 ended with reward tensor([-2.]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 3
+Iteration 13 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 3
+Iteration 14 ended with reward tensor([-3.8000]), enemy health [7.0], model health [10], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 25 ended with reward tensor([-2.]), enemy health [8], model health [8], model VP 1, enemy VP 1, victory condition 2
-Iteration 26 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 2, enemy VP 2, victory condition 2
-Iteration 27 ended with reward tensor([0]), enemy health [8], model health [8], model VP 3, enemy VP 3, victory condition 2
-Iteration 28 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 4, enemy VP 4, victory condition 2
-Iteration 29 ended with reward tensor([-3.5000]), enemy health [8], model health [8], model VP 5, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 30 ended with reward tensor([0]), enemy health [8], model health [8], model VP 1, enemy VP 1, victory condition 3
-Iteration 31 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 2, enemy VP 2, victory condition 3
-Iteration 32 ended with reward tensor([0]), enemy health [8], model health [8], model VP 3, enemy VP 3, victory condition 3
-Iteration 33 ended with reward tensor([0]), enemy health [8], model health [8], model VP 4, enemy VP 4, victory condition 3
-Iteration 34 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 5, enemy VP 5, victory condition 3
+Iteration 15 ended with reward tensor([1.]), enemy health [10], model health [10], model VP 1, enemy VP 1, victory condition 3
+Iteration 16 ended with reward tensor([0.7000]), enemy health [9.0], model health [10], model VP 2, enemy VP 2, victory condition 3
+Iteration 17 ended with reward tensor([0.2000]), enemy health [6.0], model health [10], model VP 3, enemy VP 3, victory condition 3
+Iteration 18 ended with reward tensor([-1.8000]), enemy health [5.0], model health [10.0], model VP 4, enemy VP 4, victory condition 3
+Iteration 19 ended with reward tensor([-2.5000]), enemy health [5.0], model health [9.0], model VP 5, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 35 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 1, enemy VP 1, victory condition 3
-Iteration 36 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 2, enemy VP 2, victory condition 3
-Iteration 37 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 3, enemy VP 3, victory condition 3
-Iteration 38 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 4, enemy VP 4, victory condition 3
-Iteration 39 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 5, enemy VP 5, victory condition 3
+Iteration 20 ended with reward tensor([-1.]), enemy health [10], model health [10], model VP 1, enemy VP 2, victory condition 2
+Iteration 21 ended with reward tensor([0.5000]), enemy health [10.0], model health [10], model VP 2, enemy VP 4, victory condition 2
+Iteration 22 ended with reward tensor([0.2000]), enemy health [9.0], model health [10], model VP 3, enemy VP 6, victory condition 2
+Iteration 23 ended with reward tensor([0.7000]), enemy health [6.0], model health [10], model VP 4, enemy VP 8, victory condition 2
+Iteration 24 ended with reward tensor([-1.5000]), enemy health [4.0], model health [10], model VP 5, enemy VP 10, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 25 ended with reward tensor([0]), enemy health [10], model health [10], model VP 1, enemy VP 2, victory condition 1
+Iteration 26 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 2, enemy VP 4, victory condition 1
+Iteration 27 ended with reward tensor([-1.3000]), enemy health [10.0], model health [10], model VP 2, enemy VP 6, victory condition 1
+Iteration 28 ended with reward tensor([0.7000]), enemy health [10.0], model health [5.0], model VP 2, enemy VP 8, victory condition 1
+Iteration 29 ended with reward tensor([-2]), enemy health [10.0], model health [3.0], model VP 0, enemy VP 2, victory condition 1
+Slay and Secure Victory Condition
+enemy won!
+Iteration 30 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 31 ended with reward tensor([0.5000]), enemy health [7.0], model health [10], model VP 0, enemy VP 4, victory condition 3
+Iteration 32 ended with reward tensor([1.]), enemy health [7.0], model health [10], model VP 0, enemy VP 6, victory condition 3
+Iteration 33 ended with reward tensor([0.7000]), enemy health [4.0], model health [10.0], model VP 0, enemy VP 8, victory condition 3
+Iteration 34 ended with reward tensor([-1.3000]), enemy health [3.0], model health [6.0], model VP 0, enemy VP 10, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 40 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 1, enemy VP 1, victory condition 2
-Iteration 41 ended with reward tensor([0.5000]), enemy health [8.0], model health [8], model VP 1, enemy VP 2, victory condition 2
-Iteration 42 ended with reward tensor([-0.5000]), enemy health [8.0], model health [8.0], model VP 1, enemy VP 3, victory condition 2
-Iteration 43 ended with reward tensor([-0.5000]), enemy health [8.0], model health [8.0], model VP 1, enemy VP 4, victory condition 2
-Iteration 44 ended with reward tensor([-1.3000]), enemy health [8.0], model health [8.0], model VP 1, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 45 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 46 ended with reward tensor([-2.]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 47 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 48 ended with reward tensor([-1.3000]), enemy health [7.0], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 49 ended with reward tensor([-1.3000]), enemy health [5.0], model health [6.0], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 50 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 51 ended with reward tensor([-2.]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 52 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 53 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 54 ended with reward tensor([-3.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 55 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 56 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 57 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 58 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 1
-Iteration 59 ended with reward tensor([-2]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 60 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 61 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 62 ended with reward tensor([0.5000]), enemy health [8], model health [7.0], model VP 0, enemy VP 6, victory condition 1
-Iteration 63 ended with reward tensor([-0.5000]), enemy health [8.0], model health [7.0], model VP 0, enemy VP 8, victory condition 1
-Iteration 64 ended with reward tensor([-2.5000]), enemy health [8.0], model health [7.0], model VP 0, enemy VP 2, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 65 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 66 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 67 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 6, victory condition 2
-Iteration 68 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 8, victory condition 2
-Iteration 69 ended with reward tensor([-3.8000]), enemy health [8.0], model health [8], model VP 0, enemy VP 10, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 70 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 71 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 72 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 6, victory condition 2
-Iteration 73 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 8, victory condition 2
-Iteration 74 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 10, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 75 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 76 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 77 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 6, victory condition 1
-Iteration 78 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 8, victory condition 1
-Iteration 79 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 80 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 81 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 82 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 6, victory condition 3
-Iteration 83 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 8, victory condition 3
-Iteration 84 ended with reward tensor([-3.5000]), enemy health [8], model health [8], model VP 0, enemy VP 10, victory condition 3
+Iteration 35 ended with reward tensor([-1.8000]), enemy health [9.0], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 36 ended with reward tensor([-1.8000]), enemy health [9.0], model health [7.0], model VP 0, enemy VP 4, victory condition 3
+Iteration 37 ended with reward tensor([0.7000]), enemy health [9.0], model health [6.0], model VP 0, enemy VP 6, victory condition 3
+Iteration 38 ended with reward tensor([0.7000]), enemy health [7.0], model health [5.0], model VP 0, enemy VP 8, victory condition 3
+Iteration 39 ended with reward tensor([-1.3000]), enemy health [5.0], model health [1.0], model VP 0, enemy VP 10, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 85 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 86 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 87 ended with reward tensor([0.7000]), enemy health [7.0], model health [8], model VP 0, enemy VP 6, victory condition 2
-Iteration 88 ended with reward tensor([-0.5000]), enemy health [7.0], model health [8], model VP 0, enemy VP 8, victory condition 2
-Iteration 89 ended with reward tensor([-2.5000]), enemy health [7.0], model health [8.0], model VP 0, enemy VP 10, victory condition 2
-Ancient Relic Victory Condition
+Iteration 40 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 41 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 1
+Iteration 42 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 6, victory condition 1
+Iteration 43 ended with reward tensor([0.2000]), enemy health [8.0], model health [10], model VP 0, enemy VP 8, victory condition 1
+Iteration 44 ended with reward tensor([-1.3000]), enemy health [7.0], model health [10], model VP 0, enemy VP 2, victory condition 1
+Slay and Secure Victory Condition
 enemy won!
-Iteration 90 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 91 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 92 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 6, victory condition 3
-Iteration 93 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 9, victory condition 3
-Iteration 94 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 12, victory condition 3
+Iteration 45 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 46 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 3
+Iteration 47 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 6, victory condition 3
+Iteration 48 ended with reward tensor([-1.3000]), enemy health [7.0], model health [10], model VP 0, enemy VP 8, victory condition 3
+Iteration 49 ended with reward tensor([-1.5000]), enemy health [7.0], model health [10], model VP 0, enemy VP 10, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 95 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 96 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 6, victory condition 1
-Iteration 97 ended with reward tensor([-2.]), enemy health [8], model health [8], model VP 0, enemy VP 9, victory condition 1
-Iteration 98 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 12, victory condition 1
-Iteration 99 ended with reward tensor([-1.3000]), enemy health [8.0], model health [7.0], model VP 0, enemy VP 3, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 100 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 101 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 6, victory condition 3
-Iteration 102 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 9, victory condition 3
-Iteration 103 ended with reward tensor([0.7000]), enemy health [7.0], model health [8], model VP 0, enemy VP 12, victory condition 3
-Iteration 104 ended with reward tensor([-2.5000]), enemy health [7.0], model health [8.0], model VP 0, enemy VP 15, victory condition 3
+Iteration 50 ended with reward tensor([0.7000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 51 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 3
+Iteration 52 ended with reward tensor([1.2000]), enemy health [9.0], model health [10], model VP 0, enemy VP 6, victory condition 3
+Iteration 53 ended with reward tensor([1.2000]), enemy health [6.0], model health [10], model VP 0, enemy VP 7, victory condition 3
+Iteration 54 ended with reward tensor([-1.3000]), enemy health [4.0], model health [9.0], model VP 0, enemy VP 8, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 105 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 106 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 6, victory condition 3
-Iteration 107 ended with reward tensor([0.5000]), enemy health [7.0], model health [8], model VP 0, enemy VP 9, victory condition 3
-Iteration 108 ended with reward tensor([0.7000]), enemy health [7.0], model health [8], model VP 0, enemy VP 12, victory condition 3
-Iteration 109 ended with reward tensor([-1.3000]), enemy health [6.0], model health [7.0], model VP 0, enemy VP 15, victory condition 3
+Iteration 55 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 56 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 57 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 58 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 1
+Iteration 59 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Slay and Secure Victory Condition
+enemy won!
+Iteration 60 ended with reward tensor([-2.]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 61 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 62 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 63 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 64 ended with reward tensor([-2]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 65 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 66 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 67 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 68 ended with reward tensor([0.5000]), enemy health [10], model health [10.0], model VP 0, enemy VP 4, victory condition 2
+Iteration 69 ended with reward tensor([-2]), enemy health [8.0], model health [10.0], model VP 0, enemy VP 5, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 70 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 71 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 72 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 73 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 74 ended with reward tensor([-3.3000]), enemy health [10.0], model health [10], model VP 0, enemy VP 5, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 75 ended with reward tensor([-2.]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 76 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 77 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 78 ended with reward tensor([0.7000]), enemy health [8.0], model health [10], model VP 0, enemy VP 4, victory condition 1
+Iteration 79 ended with reward tensor([-1.3000]), enemy health [4.0], model health [9.0], model VP 0, enemy VP 1, victory condition 1
+Slay and Secure Victory Condition
+enemy won!
+Iteration 80 ended with reward tensor([0.7000]), enemy health [9.0], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 81 ended with reward tensor([0.5000]), enemy health [9.0], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 82 ended with reward tensor([0.2000]), enemy health [8.0], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 83 ended with reward tensor([0.7000]), enemy health [5.0], model health [5.0], model VP 0, enemy VP 4, victory condition 1
+Iteration 84 ended with reward tensor([-1.3000]), enemy health [3.0], model health [4.0], model VP 0, enemy VP 1, victory condition 1
+Slay and Secure Victory Condition
+enemy won!
+Iteration 85 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 86 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 87 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 88 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 89 ended with reward tensor([-3.5000]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 90 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 91 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 92 ended with reward tensor([0.5000]), enemy health [8.0], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 93 ended with reward tensor([0.5000]), enemy health [5.0], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 94 ended with reward tensor([-2]), enemy health [4.0], model health [10], model VP 0, enemy VP 5, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 95 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 96 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 97 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 98 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 99 ended with reward tensor([-1.5000]), enemy health [8.0], model health [10], model VP 0, enemy VP 5, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 100 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 101 ended with reward tensor([1.]), enemy health [10], model health [10], model VP 1, enemy VP 2, victory condition 1
+Iteration 102 ended with reward tensor([0]), enemy health [10], model health [10], model VP 2, enemy VP 3, victory condition 1
+Iteration 103 ended with reward tensor([1.]), enemy health [10], model health [10], model VP 3, enemy VP 4, victory condition 1
+Iteration 104 ended with reward tensor([-1.]), enemy health [10], model health [10], model VP 1, enemy VP 1, victory condition 1
+Slay and Secure Victory Condition
+enemy won!
+Iteration 105 ended with reward tensor([-2.]), enemy health [10], model health [10], model VP 1, enemy VP 1, victory condition 1
+Iteration 106 ended with reward tensor([0.2000]), enemy health [10.0], model health [8.0], model VP 2, enemy VP 2, victory condition 1
+Iteration 107 ended with reward tensor([0.7000]), enemy health [10.0], model health [8.0], model VP 3, enemy VP 3, victory condition 1
+Iteration 108 ended with reward tensor([0.5000]), enemy health [8.0], model health [8.0], model VP 4, enemy VP 4, victory condition 1
+Iteration 109 ended with reward tensor([-1.3000]), enemy health [7.0], model health [6.0], model VP 1, enemy VP 1, victory condition 1
+Slay and Secure Victory Condition
+enemy won!
+Iteration 110 ended with reward tensor([0]), enemy health [10], model health [10.0], model VP 1, enemy VP 1, victory condition 2
+Iteration 111 ended with reward tensor([-1.3000]), enemy health [6.0], model health [8.0], model VP 2, enemy VP 2, victory condition 2
+Iteration 112 ended with reward tensor([-0.5000]), enemy health [6.0], model health [8.0], model VP 3, enemy VP 3, victory condition 2
+Iteration 113 ended with reward tensor([0.7000]), enemy health [5.0], model health [5.0], model VP 4, enemy VP 4, victory condition 2
+Iteration 114 ended with reward tensor([-1.3000]), enemy health [3.0], model health [5.0], model VP 5, enemy VP 5, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 115 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 1, enemy VP 1, victory condition 3
+Iteration 116 ended with reward tensor([0.5000]), enemy health [8.0], model health [10], model VP 2, enemy VP 2, victory condition 3
+Iteration 117 ended with reward tensor([1.]), enemy health [8.0], model health [10], model VP 3, enemy VP 3, victory condition 3
+Iteration 118 ended with reward tensor([-0.5000]), enemy health [6.0], model health [10.0], model VP 4, enemy VP 4, victory condition 3
+Iteration 119 ended with reward tensor([-1.3000]), enemy health [5.0], model health [7.0], model VP 5, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 110 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 111 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 6, victory condition 2
-Iteration 112 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 9, victory condition 2
-Iteration 113 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 12, victory condition 2
-Iteration 114 ended with reward tensor([-1.3000]), enemy health [8.0], model health [8], model VP 0, enemy VP 15, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 115 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 116 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 6, victory condition 3
-Iteration 117 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 9, victory condition 3
-Iteration 118 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 12, victory condition 3
-Iteration 119 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 15, victory condition 3
+Iteration 120 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 1, enemy VP 1, victory condition 3
+Iteration 121 ended with reward tensor([0]), enemy health [10], model health [10], model VP 2, enemy VP 2, victory condition 3
+Iteration 122 ended with reward tensor([0.7000]), enemy health [9.0], model health [10], model VP 3, enemy VP 3, victory condition 3
+Iteration 123 ended with reward tensor([-1.3000]), enemy health [9.0], model health [10], model VP 3, enemy VP 4, victory condition 3
+Iteration 124 ended with reward tensor([-2]), enemy health [9.0], model health [10], model VP 3, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 120 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 121 ended with reward tensor([-2.]), enemy health [8], model health [8], model VP 0, enemy VP 6, victory condition 3
-Iteration 122 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 9, victory condition 3
-Iteration 123 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 12, victory condition 3
-Iteration 124 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 15, victory condition 3
+Iteration 125 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 126 ended with reward tensor([0.7000]), enemy health [9.0], model health [10.0], model VP 0, enemy VP 2, victory condition 2
+Iteration 127 ended with reward tensor([0.7000]), enemy health [7.0], model health [10.0], model VP 0, enemy VP 3, victory condition 2
+Iteration 128 ended with reward tensor([-1.8000]), enemy health [3.0], model health [9.0], model VP 0, enemy VP 4, victory condition 2
+Iteration 129 ended with reward tensor([3.]), enemy health [0.0], model health [4.0], model VP 0, enemy VP 5, victory condition 2
+Major Victory
+model won!
+Iteration 130 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 131 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 132 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 133 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 1
+Iteration 134 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Slay and Secure Victory Condition
+enemy won!
+Iteration 135 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 136 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 137 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 3
+Iteration 138 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 3
+Iteration 139 ended with reward tensor([-2]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 125 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 126 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 6, victory condition 1
-Iteration 127 ended with reward tensor([-2.]), enemy health [8], model health [8], model VP 0, enemy VP 9, victory condition 1
-Iteration 128 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 12, victory condition 1
-Iteration 129 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
+Iteration 140 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 141 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 142 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 143 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 1
+Iteration 144 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
 Slay and Secure Victory Condition
 enemy won!
-Iteration 130 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 131 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 1
-Iteration 132 ended with reward tensor([0.7000]), enemy health [8.0], model health [8.0], model VP 0, enemy VP 7, victory condition 1
-Iteration 133 ended with reward tensor([0.7000]), enemy health [8.0], model health [8.0], model VP 0, enemy VP 9, victory condition 1
-Iteration 134 ended with reward tensor([-2.5000]), enemy health [8.0], model health [8.0], model VP 0, enemy VP 2, victory condition 1
+Iteration 145 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 146 ended with reward tensor([1.]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 147 ended with reward tensor([-0.8000]), enemy health [7.0], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 148 ended with reward tensor([0.5000]), enemy health [7.0], model health [10], model VP 0, enemy VP 4, victory condition 1
+Iteration 149 ended with reward tensor([-1.]), enemy health [7.0], model health [10], model VP 0, enemy VP 1, victory condition 1
 Slay and Secure Victory Condition
 enemy won!
-Iteration 135 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 136 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 137 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 6, victory condition 3
-Iteration 138 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 8, victory condition 3
-Iteration 139 ended with reward tensor([-2.5000]), enemy health [7.0], model health [8.0], model VP 0, enemy VP 10, victory condition 3
+Iteration 150 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 151 ended with reward tensor([0.7000]), enemy health [10.0], model health [8.0], model VP 0, enemy VP 2, victory condition 3
+Iteration 152 ended with reward tensor([0.5000]), enemy health [10.0], model health [8.0], model VP 0, enemy VP 3, victory condition 3
+Iteration 153 ended with reward tensor([-0.5000]), enemy health [8.0], model health [5.0], model VP 0, enemy VP 4, victory condition 3
+Iteration 154 ended with reward tensor([-1.3000]), enemy health [5.0], model health [2.0], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 140 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 141 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 142 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 1
-Iteration 143 ended with reward tensor([0.7000]), enemy health [8], model health [8], model VP 0, enemy VP 6, victory condition 1
-Iteration 144 ended with reward tensor([-2.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 145 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 146 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 147 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 148 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 149 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 150 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 151 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 152 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 153 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 154 ended with reward tensor([-2.5000]), enemy health [6.0], model health [8], model VP 0, enemy VP 5, victory condition 3
+Iteration 155 ended with reward tensor([1.2000]), enemy health [10.0], model health [10.0], model VP 0, enemy VP 1, victory condition 3
+Iteration 156 ended with reward tensor([1.2000]), enemy health [10.0], model health [8.0], model VP 0, enemy VP 2, victory condition 3
+Iteration 157 ended with reward tensor([0.5000]), enemy health [8.0], model health [8.0], model VP 0, enemy VP 3, victory condition 3
+Iteration 158 ended with reward tensor([1.]), enemy health [7.0], model health [7.0], model VP 0, enemy VP 4, victory condition 3
+Iteration 159 ended with reward tensor([-2]), enemy health [4.0], model health [7.0], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 155 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 156 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 157 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 158 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 159 ended with reward tensor([-2]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 160 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 161 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 162 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 163 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 164 ended with reward tensor([-1.]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 165 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 166 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 167 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 168 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 169 ended with reward tensor([-2.5000]), enemy health [7.0], model health [8.0], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 170 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 171 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 172 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 173 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 174 ended with reward tensor([-1.3000]), enemy health [7.0], model health [6.0], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 175 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 176 ended with reward tensor([-2.]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 177 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 178 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 179 ended with reward tensor([-2.5000]), enemy health [8.0], model health [7.0], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 180 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 181 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 182 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 183 ended with reward tensor([-0.5000]), enemy health [7.0], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 184 ended with reward tensor([-1.3000]), enemy health [7.0], model health [7.0], model VP 0, enemy VP 5, victory condition 3
+Iteration 160 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 161 ended with reward tensor([0]), enemy health [9.0], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 162 ended with reward tensor([0.2000]), enemy health [9.0], model health [8.0], model VP 0, enemy VP 3, victory condition 3
+Iteration 163 ended with reward tensor([0]), enemy health [9.0], model health [8.0], model VP 0, enemy VP 4, victory condition 3
+Iteration 164 ended with reward tensor([-1.3000]), enemy health [8.0], model health [6.0], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 185 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 186 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 187 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 188 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 189 ended with reward tensor([-1.3000]), enemy health [8.0], model health [8.0], model VP 0, enemy VP 5, victory condition 3
+Iteration 165 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 166 ended with reward tensor([-2.]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 167 ended with reward tensor([-2.]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 168 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 169 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 170 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 171 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 172 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 3
+Iteration 173 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 3
+Iteration 174 ended with reward tensor([-1.3000]), enemy health [9.0], model health [8.0], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 190 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 191 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 192 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 193 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 194 ended with reward tensor([-1.3000]), enemy health [8], model health [8.0], model VP 0, enemy VP 1, victory condition 1
+Iteration 175 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 176 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 177 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 178 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 1
+Iteration 179 ended with reward tensor([-1.5000]), enemy health [9.0], model health [10], model VP 0, enemy VP 1, victory condition 1
 Slay and Secure Victory Condition
 enemy won!
-Iteration 195 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 196 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 197 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 198 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 199 ended with reward tensor([-1.8000]), enemy health [7.0], model health [8.0], model VP 0, enemy VP 5, victory condition 3
+Iteration 180 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 181 ended with reward tensor([-2.]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 182 ended with reward tensor([0.7000]), enemy health [10.0], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 183 ended with reward tensor([0.7000]), enemy health [10.0], model health [7.0], model VP 0, enemy VP 4, victory condition 2
+Iteration 184 ended with reward tensor([-3.8000]), enemy health [9.0], model health [7.0], model VP 0, enemy VP 5, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 185 ended with reward tensor([-2.]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 186 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 187 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 188 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 189 ended with reward tensor([-4.]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 190 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 191 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 192 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 3
+Iteration 193 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 3
+Iteration 194 ended with reward tensor([-4.]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 200 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 201 ended with reward tensor([-0.5000]), enemy health [8], model health [7.0], model VP 0, enemy VP 2, victory condition 2
-Iteration 202 ended with reward tensor([-0.5000]), enemy health [8], model health [7.0], model VP 0, enemy VP 3, victory condition 2
-Iteration 203 ended with reward tensor([-0.5000]), enemy health [8], model health [7.0], model VP 0, enemy VP 4, victory condition 2
-Iteration 204 ended with reward tensor([-2.5000]), enemy health [8], model health [6.0], model VP 0, enemy VP 5, victory condition 2
+Iteration 195 ended with reward tensor([1.]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 196 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 197 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 198 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 199 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 2
 Ancient Relic Victory Condition
 enemy won!
-Iteration 205 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 206 ended with reward tensor([1.]), enemy health [8], model health [7.0], model VP 0, enemy VP 2, victory condition 3
-Iteration 207 ended with reward tensor([-0.5000]), enemy health [8], model health [7.0], model VP 0, enemy VP 3, victory condition 3
-Iteration 208 ended with reward tensor([0.7000]), enemy health [8], model health [7.0], model VP 0, enemy VP 4, victory condition 3
-Iteration 209 ended with reward tensor([-2.5000]), enemy health [8], model health [7.0], model VP 0, enemy VP 5, victory condition 3
+Iteration 200 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 201 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 202 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 203 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 204 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 205 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 206 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 207 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 3
+Iteration 208 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 3
+Iteration 209 ended with reward tensor([-0.8000]), enemy health [5.0], model health [10], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 210 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 211 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 212 ended with reward tensor([1.7000]), enemy health [8.0], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 213 ended with reward tensor([0.7000]), enemy health [8.0], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 214 ended with reward tensor([-2.5000]), enemy health [8.0], model health [8], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 215 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 216 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 217 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 218 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 219 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
+Iteration 210 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 211 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 212 ended with reward tensor([1.]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 213 ended with reward tensor([0.5000]), enemy health [9.0], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 214 ended with reward tensor([-1.3000]), enemy health [7.0], model health [7.0], model VP 0, enemy VP 5, victory condition 2
 Ancient Relic Victory Condition
 enemy won!
-Iteration 220 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 221 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 222 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 223 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 224 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 3
+Iteration 215 ended with reward tensor([1.]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 216 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 217 ended with reward tensor([-1.]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 3
+Iteration 218 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 3
+Iteration 219 ended with reward tensor([-1.8000]), enemy health [5.0], model health [10], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 225 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 226 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 227 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 228 ended with reward tensor([1.2000]), enemy health [7.0], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 229 ended with reward tensor([-2.5000]), enemy health [7.0], model health [8], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
+Iteration 220 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 221 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 222 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 223 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 1
+Iteration 224 ended with reward tensor([-2]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Slay and Secure Victory Condition
 enemy won!
-Iteration 230 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 231 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 232 ended with reward tensor([-2.]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 233 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 234 ended with reward tensor([-2]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 235 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 236 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 237 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 238 ended with reward tensor([-0.5000]), enemy health [8], model health [7.0], model VP 0, enemy VP 4, victory condition 2
-Iteration 239 ended with reward tensor([-1.3000]), enemy health [8], model health [7.0], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 240 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 241 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 242 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 243 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 244 ended with reward tensor([-1.8000]), enemy health [7.0], model health [8], model VP 0, enemy VP 5, victory condition 3
+Iteration 225 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 226 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 227 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 3
+Iteration 228 ended with reward tensor([0]), enemy health [7.0], model health [10], model VP 0, enemy VP 4, victory condition 3
+Iteration 229 ended with reward tensor([-1.3000]), enemy health [7.0], model health [10], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 245 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 246 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 247 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 248 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 249 ended with reward tensor([-3.3000]), enemy health [6.0], model health [8.0], model VP 0, enemy VP 5, victory condition 3
+Iteration 230 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 231 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 232 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 233 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 1
+Iteration 234 ended with reward tensor([-3.3000]), enemy health [9.0], model health [10], model VP 0, enemy VP 1, victory condition 1
+Slay and Secure Victory Condition
+enemy won!
+Iteration 235 ended with reward tensor([0.5000]), enemy health [8.0], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 236 ended with reward tensor([0.2000]), enemy health [8.0], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 237 ended with reward tensor([0.5000]), enemy health [8.0], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 238 ended with reward tensor([-0.5000]), enemy health [8.0], model health [8.0], model VP 0, enemy VP 4, victory condition 1
+Iteration 239 ended with reward tensor([-1.3000]), enemy health [6.0], model health [6.0], model VP 0, enemy VP 1, victory condition 1
+Slay and Secure Victory Condition
+enemy won!
+Iteration 240 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 241 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 242 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 3
+Iteration 243 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 3
+Iteration 244 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 250 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 251 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 252 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 253 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 254 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 255 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 256 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 257 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 258 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 259 ended with reward tensor([-2]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 260 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 261 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 262 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 263 ended with reward tensor([-2.]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 264 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 265 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 266 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 267 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 268 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 269 ended with reward tensor([-2]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
+Iteration 245 ended with reward tensor([-2.]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 246 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 247 ended with reward tensor([1.2000]), enemy health [7.0], model health [9.0], model VP 0, enemy VP 3, victory condition 1
+Iteration 248 ended with reward tensor([1.2000]), enemy health [5.0], model health [9.0], model VP 0, enemy VP 4, victory condition 1
+Iteration 249 ended with reward tensor([-1.3000]), enemy health [4.0], model health [7.0], model VP 0, enemy VP 1, victory condition 1
 Slay and Secure Victory Condition
 enemy won!
-Iteration 270 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 271 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 272 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 273 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 274 ended with reward tensor([-3.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
+Iteration 250 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 251 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 252 ended with reward tensor([1.]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 253 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 254 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 2
 Ancient Relic Victory Condition
 enemy won!
-Iteration 275 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 276 ended with reward tensor([1.]), enemy health [7.0], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 277 ended with reward tensor([-0.5000]), enemy health [6.0], model health [8.0], model VP 0, enemy VP 3, victory condition 3
-Iteration 278 ended with reward tensor([0.7000]), enemy health [6.0], model health [6.0], model VP 0, enemy VP 4, victory condition 3
-Iteration 279 ended with reward tensor([-2.5000]), enemy health [6.0], model health [6.0], model VP 0, enemy VP 5, victory condition 3
+Iteration 255 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 256 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 257 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 258 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 1
+Iteration 259 ended with reward tensor([-3.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Slay and Secure Victory Condition
+enemy won!
+Iteration 260 ended with reward tensor([-2.]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 261 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 262 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 263 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 1
+Iteration 264 ended with reward tensor([-3.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Slay and Secure Victory Condition
+enemy won!
+Iteration 265 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 266 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 267 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 3
+Iteration 268 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 3
+Iteration 269 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 280 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 281 ended with reward tensor([-2.]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 282 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 283 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 284 ended with reward tensor([-2.5000]), enemy health [8], model health [6.0], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 285 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 286 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 287 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 288 ended with reward tensor([-1.3000]), enemy health [8.0], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 289 ended with reward tensor([-1.3000]), enemy health [8.0], model health [8.0], model VP 0, enemy VP 5, victory condition 2
+Iteration 270 ended with reward tensor([1.]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 271 ended with reward tensor([1.2000]), enemy health [8.0], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 272 ended with reward tensor([-0.8000]), enemy health [8.0], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 273 ended with reward tensor([0.2000]), enemy health [7.0], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 274 ended with reward tensor([-1.3000]), enemy health [4.0], model health [9.0], model VP 0, enemy VP 5, victory condition 2
 Ancient Relic Victory Condition
 enemy won!
-Iteration 290 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 291 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 292 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 293 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 294 ended with reward tensor([-1.5000]), enemy health [8.0], model health [8], model VP 0, enemy VP 5, victory condition 3
+Iteration 275 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 276 ended with reward tensor([0.5000]), enemy health [9.0], model health [10.0], model VP 0, enemy VP 2, victory condition 3
+Iteration 277 ended with reward tensor([-0.5000]), enemy health [7.0], model health [9.0], model VP 0, enemy VP 3, victory condition 3
+Iteration 278 ended with reward tensor([0.7000]), enemy health [4.0], model health [6.0], model VP 0, enemy VP 4, victory condition 3
+Iteration 279 ended with reward tensor([-2.5000]), enemy health [4.0], model health [6.0], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 295 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 296 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 297 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 298 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 299 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
+Iteration 280 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 281 ended with reward tensor([-2.]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 282 ended with reward tensor([-2.]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 283 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 1
+Iteration 284 ended with reward tensor([-1.8000]), enemy health [9.0], model health [7.0], model VP 0, enemy VP 1, victory condition 1
+Slay and Secure Victory Condition
+enemy won!
+Iteration 285 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 286 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 287 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 288 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 289 ended with reward tensor([-1.]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 2
 Ancient Relic Victory Condition
 enemy won!
-Iteration 300 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 301 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 302 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 303 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 304 ended with reward tensor([-2.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
+Iteration 290 ended with reward tensor([1.]), enemy health [8.0], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 291 ended with reward tensor([0.5000]), enemy health [7.0], model health [10.0], model VP 0, enemy VP 2, victory condition 2
+Iteration 292 ended with reward tensor([0.7000]), enemy health [6.0], model health [9.0], model VP 0, enemy VP 3, victory condition 2
+Iteration 293 ended with reward tensor([0.5000]), enemy health [6.0], model health [9.0], model VP 0, enemy VP 4, victory condition 2
+Iteration 294 ended with reward tensor([-2.5000]), enemy health [2.0], model health [6.0], model VP 0, enemy VP 5, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 295 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 296 ended with reward tensor([0]), enemy health [10], model health [8.0], model VP 0, enemy VP 2, victory condition 1
+Iteration 297 ended with reward tensor([0.2000]), enemy health [8.0], model health [8.0], model VP 0, enemy VP 3, victory condition 1
+Iteration 298 ended with reward tensor([0.7000]), enemy health [6.0], model health [7.0], model VP 0, enemy VP 4, victory condition 1
+Iteration 299 ended with reward tensor([-2.5000]), enemy health [6.0], model health [6.0], model VP 0, enemy VP 1, victory condition 1
 Slay and Secure Victory Condition
 enemy won!
-Iteration 305 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 306 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 307 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 308 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 309 ended with reward tensor([-1.5000]), enemy health [6.0], model health [8], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
+Iteration 300 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 301 ended with reward tensor([0.5000]), enemy health [9.0], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 302 ended with reward tensor([0.5000]), enemy health [9.0], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 303 ended with reward tensor([0.5000]), enemy health [9.0], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 304 ended with reward tensor([-1.5000]), enemy health [9.0], model health [10], model VP 0, enemy VP 5, victory condition 2
+Ancient Relic Victory Condition
 enemy won!
-Iteration 310 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 311 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 312 ended with reward tensor([0.7000]), enemy health [7.0], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 313 ended with reward tensor([-0.5000]), enemy health [7.0], model health [8.0], model VP 0, enemy VP 4, victory condition 3
-Iteration 314 ended with reward tensor([-2.5000]), enemy health [7.0], model health [8.0], model VP 0, enemy VP 5, victory condition 3
+Iteration 305 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 306 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 307 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 308 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 309 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 310 ended with reward tensor([0.5000]), enemy health [8.0], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 311 ended with reward tensor([0.5000]), enemy health [8.0], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 312 ended with reward tensor([0.5000]), enemy health [8.0], model health [10], model VP 0, enemy VP 3, victory condition 3
+Iteration 313 ended with reward tensor([0.7000]), enemy health [7.0], model health [8.0], model VP 0, enemy VP 4, victory condition 3
+Iteration 314 ended with reward tensor([-2.5000]), enemy health [7.0], model health [5.0], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 315 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 316 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 317 ended with reward tensor([0.5000]), enemy health [8.0], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 318 ended with reward tensor([0.5000]), enemy health [8.0], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 319 ended with reward tensor([-2.5000]), enemy health [6.0], model health [6.0], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 320 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 321 ended with reward tensor([0.5000]), enemy health [5.0], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 322 ended with reward tensor([0.7000]), enemy health [5.0], model health [8.0], model VP 0, enemy VP 3, victory condition 2
-Iteration 323 ended with reward tensor([-0.5000]), enemy health [5.0], model health [8.0], model VP 0, enemy VP 4, victory condition 2
-Iteration 324 ended with reward tensor([-2.5000]), enemy health [5.0], model health [7.0], model VP 0, enemy VP 5, victory condition 2
+Iteration 315 ended with reward tensor([-1.]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 316 ended with reward tensor([1.]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 317 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 318 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 319 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 2
 Ancient Relic Victory Condition
 enemy won!
-Iteration 325 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 326 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 327 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 328 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 329 ended with reward tensor([-1.8000]), enemy health [8.0], model health [8], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 330 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 331 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 332 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 333 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 334 ended with reward tensor([-3.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 335 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 336 ended with reward tensor([-2.]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 337 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 338 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 339 ended with reward tensor([-3.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 340 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 341 ended with reward tensor([-2.]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 342 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 343 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 344 ended with reward tensor([-2]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
+Iteration 320 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 321 ended with reward tensor([0.5000]), enemy health [9.0], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 322 ended with reward tensor([1.7000]), enemy health [5.0], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 323 ended with reward tensor([0.7000]), enemy health [5.0], model health [10.0], model VP 0, enemy VP 4, victory condition 2
+Iteration 324 ended with reward tensor([-2.5000]), enemy health [5.0], model health [8.0], model VP 0, enemy VP 5, victory condition 2
 Ancient Relic Victory Condition
 enemy won!
-Iteration 345 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 346 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 347 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 348 ended with reward tensor([0.2000]), enemy health [8.0], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 349 ended with reward tensor([-2.5000]), enemy health [8.0], model health [8.0], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 350 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 351 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 352 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 353 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 354 ended with reward tensor([-1.5000]), enemy health [8.0], model health [8], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 355 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 356 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 357 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 358 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 359 ended with reward tensor([-2.8000]), enemy health [8.0], model health [8.0], model VP 0, enemy VP 5, victory condition 2
+Iteration 325 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 326 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 327 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 328 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 329 ended with reward tensor([-2]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 2
 Ancient Relic Victory Condition
 enemy won!
-Iteration 360 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 361 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 362 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 363 ended with reward tensor([-0.8000]), enemy health [8.0], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 364 ended with reward tensor([-1.3000]), enemy health [7.0], model health [8], model VP 0, enemy VP 5, victory condition 3
+Iteration 330 ended with reward tensor([0.5000]), enemy health [10], model health [9.0], model VP 0, enemy VP 1, victory condition 2
+Iteration 331 ended with reward tensor([-1.3000]), enemy health [8.0], model health [9.0], model VP 0, enemy VP 2, victory condition 2
+Iteration 332 ended with reward tensor([0.7000]), enemy health [6.0], model health [9.0], model VP 0, enemy VP 3, victory condition 2
+Iteration 333 ended with reward tensor([0.7000]), enemy health [6.0], model health [8.0], model VP 0, enemy VP 4, victory condition 2
+Iteration 334 ended with reward tensor([-1.3000]), enemy health [5.0], model health [8.0], model VP 0, enemy VP 5, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 335 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 336 ended with reward tensor([0.7000]), enemy health [7.0], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 337 ended with reward tensor([0.5000]), enemy health [6.0], model health [10], model VP 0, enemy VP 3, victory condition 3
+Iteration 338 ended with reward tensor([0]), enemy health [6.0], model health [10], model VP 0, enemy VP 4, victory condition 3
+Iteration 339 ended with reward tensor([-1.3000]), enemy health [4.0], model health [8.0], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 365 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 366 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 367 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 368 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 369 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 370 ended with reward tensor([-0.8000]), enemy health [8.0], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 371 ended with reward tensor([-0.5000]), enemy health [8.0], model health [8.0], model VP 0, enemy VP 2, victory condition 3
-Iteration 372 ended with reward tensor([-0.5000]), enemy health [8.0], model health [8.0], model VP 0, enemy VP 3, victory condition 3
-Iteration 373 ended with reward tensor([-0.5000]), enemy health [8.0], model health [8.0], model VP 0, enemy VP 4, victory condition 3
-Iteration 374 ended with reward tensor([-2.5000]), enemy health [8.0], model health [7.0], model VP 0, enemy VP 5, victory condition 3
+Iteration 340 ended with reward tensor([1.]), enemy health [10], model health [8.0], model VP 0, enemy VP 1, victory condition 3
+Iteration 341 ended with reward tensor([0.5000]), enemy health [8.0], model health [8.0], model VP 0, enemy VP 2, victory condition 3
+Iteration 342 ended with reward tensor([1.]), enemy health [8.0], model health [8.0], model VP 0, enemy VP 3, victory condition 3
+Iteration 343 ended with reward tensor([-0.5000]), enemy health [8.0], model health [6.0], model VP 0, enemy VP 4, victory condition 3
+Iteration 344 ended with reward tensor([-2]), enemy health [8.0], model health [3.0], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 375 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 376 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 377 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 378 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 379 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
+Iteration 345 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 346 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 347 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 348 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 349 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 350 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 351 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 352 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 353 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 354 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 355 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 356 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 357 ended with reward tensor([0.5000]), enemy health [9.0], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 358 ended with reward tensor([0.7000]), enemy health [6.0], model health [10], model VP 0, enemy VP 4, victory condition 1
+Iteration 359 ended with reward tensor([-2.5000]), enemy health [6.0], model health [9.0], model VP 0, enemy VP 1, victory condition 1
 Slay and Secure Victory Condition
 enemy won!
-Iteration 380 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 381 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 382 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 383 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 384 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 385 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 386 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 387 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 388 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 389 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 390 ended with reward tensor([-2.]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 391 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 392 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 393 ended with reward tensor([0.5000]), enemy health [8.0], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 394 ended with reward tensor([-3.8000]), enemy health [5.0], model health [8], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 395 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 396 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 397 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 398 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 399 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 3
-Domination Victory Condition
-enemy won!
-Iteration 400 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 401 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 402 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 403 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 404 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 405 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 406 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 407 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 408 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 409 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 410 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 411 ended with reward tensor([0.5000]), enemy health [7.0], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 412 ended with reward tensor([1.]), enemy health [7.0], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 413 ended with reward tensor([0.5000]), enemy health [6.0], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 414 ended with reward tensor([-3.3000]), enemy health [5.0], model health [8], model VP 0, enemy VP 5, victory condition 3
-Domination Victory Condition
-enemy won!
-Iteration 415 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 416 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 417 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 418 ended with reward tensor([-2.]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 419 ended with reward tensor([-3.3000]), enemy health [7.0], model health [8], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 420 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 421 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 422 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 423 ended with reward tensor([1.]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 424 ended with reward tensor([-1.3000]), enemy health [8.0], model health [7.0], model VP 0, enemy VP 1, victory condition 1
+Iteration 360 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 361 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 362 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 363 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 1
+Iteration 364 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
 Slay and Secure Victory Condition
 enemy won!
-Iteration 425 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 426 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 427 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 428 ended with reward tensor([-0.8000]), enemy health [8.0], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 429 ended with reward tensor([-1.3000]), enemy health [8.0], model health [8], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 430 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 431 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 432 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 433 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 434 ended with reward tensor([-4.]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 3
-Domination Victory Condition
-enemy won!
-Iteration 435 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 436 ended with reward tensor([-1.3000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 437 ended with reward tensor([-0.5000]), enemy health [7.0], model health [8.0], model VP 0, enemy VP 3, victory condition 1
-Iteration 438 ended with reward tensor([-0.5000]), enemy health [7.0], model health [8.0], model VP 0, enemy VP 4, victory condition 1
-Iteration 439 ended with reward tensor([-2.5000]), enemy health [7.0], model health [7.0], model VP 0, enemy VP 1, victory condition 1
+Iteration 365 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 366 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 367 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 368 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 1
+Iteration 369 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
 Slay and Secure Victory Condition
 enemy won!
-Iteration 440 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 441 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 442 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 443 ended with reward tensor([-2.]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 444 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 3
-Domination Victory Condition
-enemy won!
-Iteration 445 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 446 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 447 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 448 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 449 ended with reward tensor([-2]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 3
-Domination Victory Condition
-enemy won!
-Iteration 450 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 451 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 452 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 453 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 454 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 455 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 456 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 457 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 458 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 459 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
+Iteration 370 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 371 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 372 ended with reward tensor([-2.]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 2
+Iteration 373 ended with reward tensor([1.]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 2
+Iteration 374 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 2
 Ancient Relic Victory Condition
 enemy won!
-Iteration 460 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 461 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 462 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 463 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 464 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 465 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 466 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 467 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 468 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 469 ended with reward tensor([-2]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 470 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 471 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 472 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 473 ended with reward tensor([-2.]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 474 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 475 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 476 ended with reward tensor([-2.]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 477 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 478 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 479 ended with reward tensor([-2]), enemy health [8], model health [8.0], model VP 0, enemy VP 1, victory condition 1
-Slay and Secure Victory Condition
-enemy won!
-Iteration 480 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 2
-Iteration 481 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 2
-Iteration 482 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 2
-Iteration 483 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 2
-Iteration 484 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 2
-Ancient Relic Victory Condition
-enemy won!
-Iteration 485 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 486 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 487 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 488 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 489 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 3
+Iteration 375 ended with reward tensor([0.7000]), enemy health [8.0], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 376 ended with reward tensor([0.5000]), enemy health [8.0], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 377 ended with reward tensor([-1.3000]), enemy health [6.0], model health [10], model VP 0, enemy VP 3, victory condition 3
+Iteration 378 ended with reward tensor([0.7000]), enemy health [3.0], model health [10], model VP 0, enemy VP 4, victory condition 3
+Iteration 379 ended with reward tensor([-1.3000]), enemy health [1.0], model health [9.0], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
 enemy won!
-Iteration 490 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
-Iteration 491 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 1
-Iteration 492 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 1
-Iteration 493 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 1
-Iteration 494 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 1
+Iteration 380 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 381 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 382 ended with reward tensor([-1.3000]), enemy health [10.0], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 383 ended with reward tensor([0.5000]), enemy health [10.0], model health [10], model VP 0, enemy VP 4, victory condition 1
+Iteration 384 ended with reward tensor([-1.3000]), enemy health [9.0], model health [9.0], model VP 0, enemy VP 1, victory condition 1
 Slay and Secure Victory Condition
 enemy won!
-Iteration 495 ended with reward tensor([0]), enemy health [8], model health [8], model VP 0, enemy VP 1, victory condition 3
-Iteration 496 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 2, victory condition 3
-Iteration 497 ended with reward tensor([-2.]), enemy health [8], model health [8], model VP 0, enemy VP 3, victory condition 3
-Iteration 498 ended with reward tensor([0.5000]), enemy health [8], model health [8], model VP 0, enemy VP 4, victory condition 3
-Iteration 499 ended with reward tensor([-1.5000]), enemy health [8], model health [8], model VP 0, enemy VP 5, victory condition 3
+Iteration 385 ended with reward tensor([-2.]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 386 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 387 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 3
+Iteration 388 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 3
+Iteration 389 ended with reward tensor([-2]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 3
 Domination Victory Condition
+enemy won!
+Iteration 390 ended with reward tensor([-1.]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 391 ended with reward tensor([1.]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 392 ended with reward tensor([0.5000]), enemy health [8.0], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 393 ended with reward tensor([0.7000]), enemy health [5.0], model health [9.0], model VP 0, enemy VP 4, victory condition 1
+Iteration 394 ended with reward tensor([-1.3000]), enemy health [4.0], model health [8.0], model VP 0, enemy VP 1, victory condition 1
+Slay and Secure Victory Condition
+enemy won!
+Iteration 395 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 396 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 397 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 3
+Iteration 398 ended with reward tensor([-2.]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 3
+Iteration 399 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 5, victory condition 3
+Domination Victory Condition
+enemy won!
+Iteration 400 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 2
+Iteration 401 ended with reward tensor([1.2000]), enemy health [6.0], model health [10], model VP 0, enemy VP 2, victory condition 2
+Iteration 402 ended with reward tensor([0.7000]), enemy health [4.0], model health [10.0], model VP 0, enemy VP 3, victory condition 2
+Iteration 403 ended with reward tensor([-0.5000]), enemy health [4.0], model health [10.0], model VP 0, enemy VP 4, victory condition 2
+Iteration 404 ended with reward tensor([-1.3000]), enemy health [3.0], model health [9.0], model VP 0, enemy VP 5, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 405 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 406 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 407 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 408 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 4, victory condition 1
+Iteration 409 ended with reward tensor([-3.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Slay and Secure Victory Condition
+enemy won!
+Iteration 410 ended with reward tensor([0]), enemy health [10], model health [9.0], model VP 0, enemy VP 1, victory condition 3
+Iteration 411 ended with reward tensor([0.5000]), enemy health [10], model health [7.0], model VP 0, enemy VP 2, victory condition 3
+Iteration 412 ended with reward tensor([0.7000]), enemy health [10.0], model health [3.0], model VP 0, enemy VP 3, victory condition 3
+Iteration 413 ended with reward tensor([0]), enemy health [10.0], model health [3.0], model VP 0, enemy VP 4, victory condition 3
+Iteration 414 ended with reward tensor([-1.3000]), enemy health [8.0], model health [1.0], model VP 0, enemy VP 5, victory condition 3
+Domination Victory Condition
+enemy won!
+Iteration 415 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 3
+Iteration 416 ended with reward tensor([1.]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 3
+Iteration 417 ended with reward tensor([-1.3000]), enemy health [7.0], model health [10], model VP 0, enemy VP 3, victory condition 3
+Iteration 418 ended with reward tensor([0.5000]), enemy health [7.0], model health [10], model VP 0, enemy VP 4, victory condition 3
+Iteration 419 ended with reward tensor([-1.5000]), enemy health [7.0], model health [8.0], model VP 0, enemy VP 5, victory condition 3
+Domination Victory Condition
+enemy won!
+Iteration 420 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 1, victory condition 1
+Iteration 421 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 2, victory condition 1
+Iteration 422 ended with reward tensor([0.5000]), enemy health [9.0], model health [10], model VP 0, enemy VP 3, victory condition 1
+Iteration 423 ended with reward tensor([1.]), enemy health [6.0], model health [10], model VP 0, enemy VP 4, victory condition 1
+Iteration 424 ended with reward tensor([-1.]), enemy health [5.0], model health [10], model VP 0, enemy VP 0, victory condition 1
+Slay and Secure Victory Condition
+enemy won!
+Iteration 425 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 426 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 427 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 428 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 429 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 430 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 3
+Iteration 431 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 3
+Iteration 432 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 3
+Iteration 433 ended with reward tensor([0.5000]), enemy health [8.0], model health [10], model VP 0, enemy VP 0, victory condition 3
+Iteration 434 ended with reward tensor([-1.5000]), enemy health [7.0], model health [6.0], model VP 0, enemy VP 0, victory condition 3
+Domination Victory Condition
+enemy won!
+Iteration 435 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 1
+Iteration 436 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 1
+Iteration 437 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 1
+Iteration 438 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 1
+Iteration 439 ended with reward tensor([-2]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 1
+Slay and Secure Victory Condition
+enemy won!
+Iteration 440 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 441 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 442 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 443 ended with reward tensor([-2.]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 444 ended with reward tensor([-2]), enemy health [10], model health [8.0], model VP 0, enemy VP 0, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 445 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 3
+Iteration 446 ended with reward tensor([0]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 3
+Iteration 447 ended with reward tensor([0.5000]), enemy health [10], model health [9.0], model VP 0, enemy VP 0, victory condition 3
+Iteration 448 ended with reward tensor([-1.8000]), enemy health [8.0], model health [9.0], model VP 0, enemy VP 0, victory condition 3
+Iteration 449 ended with reward tensor([-1.3000]), enemy health [7.0], model health [9.0], model VP 0, enemy VP 0, victory condition 3
+Domination Victory Condition
+enemy won!
+Iteration 450 ended with reward tensor([0.5000]), enemy health [10], model health [8.0], model VP 0, enemy VP 0, victory condition 1
+Iteration 451 ended with reward tensor([0.7000]), enemy health [8.0], model health [4.0], model VP 0, enemy VP 0, victory condition 1
+Iteration 452 ended with reward tensor([0]), enemy health [8.0], model health [3.0], model VP 0, enemy VP 0, victory condition 1
+Iteration 453 ended with reward tensor([0.7000]), enemy health [8.0], model health [2.0], model VP 0, enemy VP 0, victory condition 1
+Iteration 454 ended with reward tensor([-3]), enemy health [8.0], model health [0.0], model VP 0, enemy VP 0, victory condition 1
+Major Victory
+enemy won!
+Iteration 455 ended with reward tensor([1.]), enemy health [10], model health [7.0], model VP 0, enemy VP 0, victory condition 2
+Iteration 456 ended with reward tensor([0.2000]), enemy health [8.0], model health [7.0], model VP 0, enemy VP 0, victory condition 2
+Iteration 457 ended with reward tensor([0.5000]), enemy health [8.0], model health [7.0], model VP 0, enemy VP 0, victory condition 2
+Iteration 458 ended with reward tensor([0.7000]), enemy health [7.0], model health [6.0], model VP 0, enemy VP 0, victory condition 2
+Iteration 459 ended with reward tensor([-1.3000]), enemy health [6.0], model health [4.0], model VP 0, enemy VP 0, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 460 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 461 ended with reward tensor([0]), enemy health [9.0], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 462 ended with reward tensor([0.7000]), enemy health [9.0], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 463 ended with reward tensor([-0.8000]), enemy health [6.0], model health [9.0], model VP 0, enemy VP 0, victory condition 2
+Iteration 464 ended with reward tensor([-2.5000]), enemy health [6.0], model health [7.0], model VP 0, enemy VP 0, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 465 ended with reward tensor([1.]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 1
+Iteration 466 ended with reward tensor([-0.8000]), enemy health [7.0], model health [10], model VP 0, enemy VP 0, victory condition 1
+Iteration 467 ended with reward tensor([0.7000]), enemy health [6.0], model health [7.0], model VP 0, enemy VP 0, victory condition 1
+Iteration 468 ended with reward tensor([0.7000]), enemy health [4.0], model health [6.0], model VP 0, enemy VP 0, victory condition 1
+Iteration 469 ended with reward tensor([-2.5000]), enemy health [4.0], model health [5.0], model VP 0, enemy VP 0, victory condition 1
+Slay and Secure Victory Condition
+enemy won!
+Iteration 470 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 3
+Iteration 471 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 3
+Iteration 472 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 3
+Iteration 473 ended with reward tensor([0]), enemy health [9.0], model health [10], model VP 0, enemy VP 0, victory condition 3
+Iteration 474 ended with reward tensor([-2]), enemy health [9.0], model health [10], model VP 0, enemy VP 0, victory condition 3
+Domination Victory Condition
+enemy won!
+Iteration 475 ended with reward tensor([1.]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 3
+Iteration 476 ended with reward tensor([0.5000]), enemy health [10.0], model health [10], model VP 0, enemy VP 0, victory condition 3
+Iteration 477 ended with reward tensor([0]), enemy health [8.0], model health [9.0], model VP 0, enemy VP 0, victory condition 3
+Iteration 478 ended with reward tensor([0.7000]), enemy health [8.0], model health [9.0], model VP 0, enemy VP 0, victory condition 3
+Iteration 479 ended with reward tensor([-1.3000]), enemy health [4.0], model health [8.0], model VP 0, enemy VP 0, victory condition 3
+Domination Victory Condition
+enemy won!
+Iteration 480 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 3
+Iteration 481 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 3
+Iteration 482 ended with reward tensor([-1.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 3
+Iteration 483 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 3
+Iteration 484 ended with reward tensor([-2]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 3
+Domination Victory Condition
+enemy won!
+Iteration 485 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 486 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 487 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 488 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 489 ended with reward tensor([-4.]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 490 ended with reward tensor([-2.]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 491 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 492 ended with reward tensor([0.5000]), enemy health [8.0], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 493 ended with reward tensor([0.2000]), enemy health [7.0], model health [10], model VP 0, enemy VP 0, victory condition 2
+Iteration 494 ended with reward tensor([-1.8000]), enemy health [7.0], model health [10], model VP 0, enemy VP 0, victory condition 2
+Ancient Relic Victory Condition
+enemy won!
+Iteration 495 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 1
+Iteration 496 ended with reward tensor([0.5000]), enemy health [10], model health [10], model VP 0, enemy VP 0, victory condition 1
+Iteration 497 ended with reward tensor([0.5000]), enemy health [10], model health [9.0], model VP 0, enemy VP 0, victory condition 1
+Iteration 498 ended with reward tensor([0.7000]), enemy health [9.0], model health [9.0], model VP 0, enemy VP 0, victory condition 1
+Iteration 499 ended with reward tensor([-1.3000]), enemy health [6.0], model health [6.0], model VP 0, enemy VP 0, victory condition 1
+Slay and Secure Victory Condition
 enemy won!

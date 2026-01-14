@@ -43,6 +43,7 @@ void Units :: getAvailUnits() {
   std::vector<std::string> mec;
   std::vector<std::string> mil;
   std::vector<std::string> tau;
+  std::vector<std::string> nec;
 
   lines = 0;
 
@@ -66,6 +67,8 @@ void Units :: getAvailUnits() {
             mil.push_back(name);
         } else if (army == "Tau") {
             tau.push_back(name);
+        } else if (army == "Necrons") {
+            nec.push_back(name);
         }
     }
 
@@ -92,6 +95,9 @@ void Units :: getAvailUnits() {
 
     output += "\nTau:\n";
     addFact(tau);
+
+    output += "\nNecrons:\n";
+    addFact(nec);
 
     possible.set_text(output);
 
