@@ -89,18 +89,128 @@ def _wound_target(strength: int, toughness: int) -> int:
     return 5
 
 
-def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attackeeData,
-           rangeOfComb="Ranged", effects=None, roller=None):
+
+
+def _weapon_abilities_blob(weapon) -> str:
+    """Best-effort собрать все строки с правилами/абилками оружия в один blob."""
+    if not isinstance(weapon, dict):
+        return str(weapon)
+
+    parts = []
+    for k in (
+        "Abilities", "Ability", "Rules", "SpecialRules", "Special", "Keywords", "KeyWords", "Tags", "Type"
+    ):
+        v = weapon.get(k)
+        if v is None:
+            continue
+        if isinstance(v, (list, tuple)):
+            parts.extend([str(x) for x in v])
+        else:
+            parts.append(str(v))
+
+    return " ".join(parts)
+
+
+def _weapon_has_lethal_hits(weapon) -> bool:
+    # 1) Нормальный формат данных: Abilities как dict
+    if isinstance(weapon, dict):
+        ab = weapon.get("Abilities")
+        if isinstance(ab, dict):
+            for k, v in ab.items():
+                key = str(k).lower().replace(" ", "")
+                if key == "lethalhits" and bool(v):
+                    return True
+
+    # 2) Фоллбек: строковые/списковые ключевые слова
+    blob = _weapon_abilities_blob(weapon).lower()
+    return ("lethal hits" in blob) or ("lethal_hit" in blob) or ("lethalhits" in blob)
+
+
+def _weapon_rapid_fire_x(weapon) -> int:
+    """Возвращает X из [RAPID FIRE X] / 'Rapid Fire X' или Abilities:{RapidFire:X}. Если нет — 0."""
+    # 1) Нормальный формат данных: Abilities как dict
+    if isinstance(weapon, dict):
+        ab = weapon.get("Abilities")
+        if isinstance(ab, dict):
+            for k, v in ab.items():
+                key = str(k).lower().replace(" ", "")
+                if key == "rapidfire":
+                    try:
+                        return int(v)
+                    except Exception:
+                        vv = _to_int(v, default=0)
+                        return int(vv or 0)
+
+    # 2) Фоллбек: строковые/списковые ключевые слова
+    blob = _weapon_abilities_blob(weapon).lower()
+
+    import re
+    m = re.search(r"rapid\s*fire[^0-9]*(\d+)", blob)
+    if not m:
+        # иногда пишут RAPIDFIRE 1 или это приходит как строка dict: "'RapidFire': 1"
+        m = re.search(r"rapidfire[^0-9]*(\d+)", blob)
+    if not m:
+        return 0
+
+    try:
+        return int(m.group(1))
+    except Exception:
+        return 0
+
+
+
+def _weapon_attacks_expr(weapon, default=1):
+    if not isinstance(weapon, dict):
+        return default
+    for k in ("Attacks", "A", "#Attacks", "Shots"):
+        if k in weapon:
+            v = weapon.get(k)
+            if v is not None:
+                return v
+    return default
+
+
+def _roll_attacks_expr(expr, _roll_fn):
+    """Поддержка Attacks:
+      - int / numeric string
+      - "D3", "D6"
+
+    Возвращает tuple: (value:int, rolled:bool)
     """
-    Attack resolution (приведено к "10e-стилю" бросков):
-      - попадание/ранение/сейв: успех если roll >= target (например 4+)
-      - natural 1 всегда провал
-      - сейв невозможен, если целевое значение > 6 (т.е. 7+)
+    if isinstance(expr, (int, np.integer)):
+        return int(expr), False
+
+    if isinstance(expr, str):
+        e = expr.strip().upper()
+        if e == "D3":
+            return int(_roll_fn(min=1, max=3, num=1)), True
+        if e == "D6":
+            return int(_roll_fn(min=1, max=6, num=1)), True
+
+        # numeric-like string: "1", "2", "3+"...
+        v = _to_int(e, default=None)
+        if v is not None:
+            return int(v), False
+
+    # неизвестно что — считаем 1
+    return 1, False
+
+
+def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attackeeData,
+           rangeOfComb="Ranged", effects=None, roller=None, distance_to_target=None):
+    """Attack resolution (приведено к "10e-стилю" бросков).
+
+    Поддержано (упрощённо):
+      - RAPID FIRE X: +X к Attacks, если цель в половине дальности
+      - LETHAL HITS: крит-хит (натуральная 6) авто-ранит (без wound roll)
 
     roller:
       - None => используем RNG dice()
       - иначе => функция броска, сигнатура: roller(num=1, max=6) -> int или list[int]
                  (min в проекте везде = 1)
+
+    distance_to_target:
+      - float/int (дюймы) — дистанция между атакующим и целью (для Rapid Fire)
     """
 
     def _roll(min=1, max=6, num=1):
@@ -115,6 +225,7 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
     # --- Targets / profile parsing ---
     sv_base = _to_int(attackeeData.get("Sv"), default=7)
     inv = _to_int(attackeeData.get("IVSave"), default=0)  # 0 = нет инвула
+
     bs = _to_int(attackerWeapon.get("BS") if rangeOfComb == "Ranged" else attackerWeapon.get("WS"), default=7)
 
     s = _to_int(attackerWeapon.get("S"), default=0)
@@ -138,8 +249,25 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
         save_target = min(save_target, inv)
 
     # --- How many attacks? ---
-    # В исходном проекте используется "#OfModels" (очень грубо), оставляем так.
-    attacks = int(attackerData.get("#OfModels", 1))
+    n_models = int(attackerData.get("#OfModels", 1))
+    if n_models < 1:
+        n_models = 1
+
+    attacks_expr = _weapon_attacks_expr(attackerWeapon, default=1)
+    attacks_per_model, attacks_was_rolled = _roll_attacks_expr(attacks_expr, _roll)
+
+    # Rapid Fire X
+    if rangeOfComb == "Ranged":
+        rf = _weapon_rapid_fire_x(attackerWeapon)
+        if rf and distance_to_target is not None:
+            w_range = _to_int(attackerWeapon.get("Range"), default=None)
+            if w_range is not None and distance_to_target <= (w_range / 2):
+                attacks_per_model += int(rf)
+
+    if attacks_per_model < 1:
+        attacks_per_model = 1
+
+    attacks = int(n_models * attacks_per_model)
     if attacks < 1:
         attacks = 1
 
@@ -150,28 +278,48 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
     else:
         rolls = np.array(list(rolls), dtype=int)
 
+    lethal = _weapon_has_lethal_hits(attackerWeapon)
+
     hits = 0
+    crit_hits = 0
     for r in rolls:
+        r = int(r)
         if r == 1:
+            continue
+        if r == 6:
+            # крит-хит (и считаем, что это всегда попадание)
+            hits += 1
+            crit_hits += 1
             continue
         if r >= bs:
             hits += 1
 
     # --- WOUND ROLLS ---
     dmg_instances = []
-    if hits > 0:
-        wound_rolls = _roll(num=hits)
-        if isinstance(wound_rolls, int):
-            wound_rolls = np.array([wound_rolls], dtype=int)
-        else:
-            wound_rolls = np.array(list(wound_rolls), dtype=int)
 
+    if hits > 0:
         wt = _wound_target(s, t) if (s and t) else 7
-        for w in wound_rolls:
-            if w == 1:
-                continue
-            if w >= wt:
-                dmg_instances.append(_roll_damage_expr(attackerWeapon.get("Damage"), _roll))
+
+        auto_wounds = crit_hits if lethal else 0
+        # авто-раны сразу добавляем как успешные ранения
+        for _ in range(auto_wounds):
+            dmg_instances.append(_roll_damage_expr(attackerWeapon.get("Damage"), _roll))
+
+        wound_roll_count = hits - crit_hits if lethal else hits
+
+        if wound_roll_count > 0:
+            wound_rolls = _roll(num=wound_roll_count)
+            if isinstance(wound_rolls, int):
+                wound_rolls = np.array([wound_rolls], dtype=int)
+            else:
+                wound_rolls = np.array(list(wound_rolls), dtype=int)
+
+            for w in wound_rolls:
+                w = int(w)
+                if w == 1:
+                    continue
+                if w >= wt:
+                    dmg_instances.append(_roll_damage_expr(attackerWeapon.get("Damage"), _roll))
 
     # --- SAVES ---
     if dmg_instances:

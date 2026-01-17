@@ -65,6 +65,7 @@ def _build_weapon_index():
     return idx
 
 def attack(attackerHealth, attackerWeapon, attacker_data, defenderHealth, defender_data, *args, **kwargs):
+    dist = kwargs.pop("distance_to_target", None)
     """
     Wrapper over engine.utils.attack:
     - if attackerWeapon is a string, try to resolve it into a dict from WeaponData
@@ -75,6 +76,9 @@ def attack(attackerHealth, attackerWeapon, attacker_data, defenderHealth, defend
         if _WEAPON_INDEX is None:
             _WEAPON_INDEX = _build_weapon_index()
         attackerWeapon = _WEAPON_INDEX.get(_norm_weapon_name(attackerWeapon))
+    if dist is not None:
+        attackerWeapon = _apply_rapid_fire(attackerWeapon, dist)
+
 
     if attackerWeapon is None or not isinstance(attackerWeapon, dict):
         # can't resolve weapon => skip attack safely
@@ -162,6 +166,52 @@ def auto_dice(num=1, max=6):
     return [random.randint(1, max) for _ in range(num)]
 
 
+def _get_abilities(weapon: dict) -> dict:
+    if isinstance(weapon, dict):
+        ab = weapon.get("Abilities")
+        if isinstance(ab, dict):
+            return ab
+    return {}
+
+def _apply_rapid_fire(weapon: dict, dist: float):
+    """
+    [RAPID FIRE X]: +X атак, если цель в половине дальности.
+    dist — дистанция до цели (в тех же "дюймах", что и distance()).
+    """
+    if weapon is None or weapon == "None" or not isinstance(weapon, dict):
+        return weapon
+
+    ab = _get_abilities(weapon)
+    rf = _parse_int_like(ab.get("RapidFire"))
+    if rf is None or rf <= 0:
+        return weapon
+
+    w_range = _get_int(weapon, ["Range"], default=None)
+    if w_range is None or w_range <= 0:
+        return weapon
+
+    if dist <= (w_range / 2):
+        # не мутируем общий dict оружия (он может переиспользоваться)
+        w2 = dict(weapon)
+
+        # найдём ключ атак, который реально используется в профиле
+        attack_key = None
+        for k in ("Attacks", "A", "#Attacks", "Shots"):
+            if k in weapon:
+                attack_key = k
+                break
+
+        base_att = _get_int(weapon, [attack_key] if attack_key else ["Attacks","A","#Attacks","Shots"], default=0)
+        new_att = base_att + rf
+
+        if attack_key:
+            w2[attack_key] = new_att
+        # на всякий случай продублируем в "Attacks"
+        w2["Attacks"] = new_att
+
+        return w2
+
+    return weapon
 
 
 
@@ -271,7 +321,14 @@ class RollLogger:
     def print_shoot_report(self, weapon: dict, attacker_data: dict, defender_data: dict, dmg_list, effect=None):
         print("\n📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---")
 
-        bs = _get_int(attacker_data, ["BS", "Bs", "BallisticSkill", "BS+"], default=None)
+        # В движке BS/WS берём из профиля оружия (как в 10e)
+        bs = _get_int(weapon, ["BS", "Bs", "BallisticSkill", "BS+"], default=None)
+        ws = _get_int(weapon, ["WS", "Ws", "WeaponSkill", "WS+"], default=None)
+
+        # Если почему-то BS/WS отсутствуют в оружии — откатимся к данным юнита (как было раньше)
+        if bs is None:
+            bs = _get_int(attacker_data, ["BS", "Bs", "BallisticSkill", "BS+"], default=None)
+
         s = _get_int(weapon, ["S", "Strength"], default=None)
 
         ap_val = 0
@@ -282,22 +339,45 @@ class RollLogger:
 
         t = _get_int(defender_data, ["T", "Toughness"], default=None)
         sv = _get_int(defender_data, ["Sv", "SV", "Save", "Sv+"], default=None)
-        inv = _get_int(defender_data, ["Invul", "Invulnerable", "Inv", "Invul+"], default=None)
+        inv = _get_int(defender_data, ["IVSave", "Invul", "Invulnerable", "Inv", "Invul+"], default=None)
 
         wname = weapon
         if isinstance(weapon, dict):
             wname = weapon.get("Name", weapon)
 
+        # Абилки оружия (берём из engine.utils, там же, где расчёт)
+        lethal = False
+        rf = 0
+        try:
+            lethal = bool(engine_utils._weapon_has_lethal_hits(weapon))
+            rf = int(engine_utils._weapon_rapid_fire_x(weapon) or 0)
+        except Exception:
+            pass
+
         print(f"Оружие: {wname}")
         if bs is not None:
-            print(f"BS стрелка: {bs}+")
+            print(f"BS оружия: {bs}+")
         if s is not None and t is not None:
             print(f"S vs T: {s} vs {t}  -> базово ранение на {_wound_target(s, t)}+")
         if sv is not None:
-            inv_txt = f"{inv}+" if inv is not None else "нет"
+            # В данных проекта часто invul=0 означает "нет инвула".
+            inv_txt = "нет"
+            if inv is not None:
+                try:
+                    inv_i = int(inv)
+                    if inv_i > 0:
+                        inv_txt = f"{inv_i}+"
+                except Exception:
+                    pass
             print(f"Save цели: {sv}+ (invul: {inv_txt})")
+
         if ap_val != 0:
             print(f"AP: {ap_val}")
+
+        if rf:
+            print(f"Правило: Rapid Fire {rf} (в половине дальности +{rf} атак)")
+        if lethal:
+            print("Правило: Lethal Hits (крит-хиты авто-ранят)")
         if effect:
             print(f"Эффект: {effect}")
 
@@ -308,16 +388,39 @@ class RollLogger:
         wound_rolls = self.calls[1 + off]["vals"] if len(self.calls) > (1 + off) else []
         save_rolls = self.calls[2 + off]["vals"] if len(self.calls) > (2 + off) else []
 
+        # --- hits ---
         hits = None
+        crit_hits = None
         if bs is not None and hit_rolls:
-            hits = sum(1 for r in hit_rolls if r >= bs)
+            crit_hits = sum(1 for r in hit_rolls if int(r) == 6)
+            hits = 0
+            for r in hit_rolls:
+                r = int(r)
+                if r == 1:
+                    continue
+                if r == 6:
+                    hits += 1
+                    continue
+                if r >= bs:
+                    hits += 1
 
+        # --- wounds ---
         wt = None
-        wounds = None
+        rolled_wounds = None
+        auto_wounds = 0
+        total_wounds = None
+
         if s is not None and t is not None and wound_rolls:
             wt = _wound_target(s, t)
-            wounds = sum(1 for r in wound_rolls if r >= wt)
+            rolled_wounds = sum(1 for r in wound_rolls if int(r) != 1 and int(r) >= wt)
 
+        if lethal and crit_hits is not None:
+            auto_wounds = int(crit_hits)
+
+        if rolled_wounds is not None:
+            total_wounds = rolled_wounds + (auto_wounds if lethal else 0)
+
+        # --- saves ---
         failed_saves = None
         save_target = None
         if (sv is not None or inv is not None) and save_rolls:
@@ -325,7 +428,6 @@ class RollLogger:
             if sv is not None:
                 base_sv = sv
                 if effect == "benefit of cover":
-                    # Benefit of Cover: +1 to saves => target improves by 1 (min 2+)
                     base_sv = max(2, sv - 1)
                 mod_sv = base_sv - ap_val
                 if mod_sv < 2:
@@ -334,27 +436,54 @@ class RollLogger:
                     mod_sv = 7
 
             save_target = mod_sv
+            # invul=0 в данных означает "нет инвула" — не должен улучшать сейв.
             if inv is not None:
-                save_target = inv if save_target is None else min(save_target, inv)
+                try:
+                    inv_i = int(inv)
+                except Exception:
+                    inv_i = None
+                if inv_i is not None and inv_i > 0:
+                    save_target = inv_i if save_target is None else min(save_target, inv_i)
 
-        if save_target is not None and wounds is not None:
-            saved = sum(1 for r in save_rolls if r >= save_target)
-            failed_saves = max(0, wounds - saved)
+
+        if save_target is not None and total_wounds is not None:
+            saved = 0
+            for r in save_rolls:
+                r = int(r)
+                if r == 1:
+                    continue
+                if save_target <= 6 and r >= save_target:
+                    saved += 1
+            failed_saves = max(0, total_wounds - saved)
 
         try:
-            total_damage = sum(dmg_list) if isinstance(dmg_list, (list, tuple)) else int(dmg_list)
+            # dmg_list обычно numpy array; sum() работает, но isinstance не ловит ndarray.
+            if isinstance(dmg_list, (list, tuple, np.ndarray)):
+                total_damage = float(np.sum(dmg_list))
+            else:
+                total_damage = float(dmg_list)
         except Exception:
-            total_damage = 0
+           total_damage = 0
 
         if atk_rolls:
             print(f"\nAttacks roll: {atk_rolls}")
         if hit_rolls:
-            print(f"Hit rolls:    {hit_rolls}" + (f"  -> hits: {hits}" if hits is not None else ""))
+            extra = ""
+            if hits is not None:
+                extra = f"  -> hits: {hits}"
+                if crit_hits is not None and crit_hits > 0:
+                    extra += f" (crits: {crit_hits})"
+            print(f"Hit rolls:    {hit_rolls}{extra}")
+
         if wound_rolls:
-            if wt is not None:
-                print(f"Wound rolls:  {wound_rolls}  (цель {wt}+) -> wounds: {wounds}")
+            if wt is not None and rolled_wounds is not None:
+                if lethal and auto_wounds:
+                    print(f"Wound rolls:  {wound_rolls}  (цель {wt}+) -> rolled wounds: {rolled_wounds} + auto(w/LETHAL): {auto_wounds} = {total_wounds}")
+                else:
+                    print(f"Wound rolls:  {wound_rolls}  (цель {wt}+) -> wounds: {rolled_wounds}")
             else:
                 print(f"Wound rolls:  {wound_rolls}")
+
         if save_rolls:
             if save_target is not None:
                 fs = failed_saves if failed_saves is not None else "??"
@@ -363,7 +492,6 @@ class RollLogger:
                 print(f"Save rolls:   {save_rolls}")
 
         print(f"\n✅ Итог по движку: прошло урона = {total_damage}")
-        print("⚠️ Примечание: отчёт считает базово (без всех модификаторов/абилок). Итоговый урон — прямо из attack().")
         print("📌 -------------------------\n")
 
 class Warhammer40kEnv(gym.Env):
@@ -644,6 +772,7 @@ class Warhammer40kEnv(gym.Env):
                                     self.unit_data[self.modelStrat["overwatch"]],
                                     self.enemy_health[i],
                                     self.enemy_data[i],
+                                    distance_to_target=distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]),
                                     roller=_logger.roll,
                                 )
                             else:
@@ -653,6 +782,7 @@ class Warhammer40kEnv(gym.Env):
                                     self.unit_data[self.modelStrat["overwatch"]],
                                     self.enemy_health[i],
                                     self.enemy_data[i],
+                                    distance_to_target=distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]),
                                 )
                             self.enemy_health[i] = modHealth
                             if trunc is False and _logger is not None:
@@ -697,6 +827,7 @@ class Warhammer40kEnv(gym.Env):
                                 self.unit_health[idOfM],
                                 self.unit_data[idOfM],
                                 effects=effect,
+                                distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfM]),
                             )
                             self.unit_health[idOfM] = modHealth
                             if trunc is False:
@@ -912,6 +1043,7 @@ class Warhammer40kEnv(gym.Env):
                             self.enemy_data[self.enemyStrat["overwatch"]],
                             self.unit_health[i],
                             self.unit_data[i],
+                            distance_to_target=distance(self.unit_coords[i], self.enemy_coords[self.enemyStrat["overwatch"]]),
                         )
                         self.unit_health[i] = modHealth
                         if self.trunc is False:
@@ -964,6 +1096,7 @@ class Warhammer40kEnv(gym.Env):
                                         self.enemy_health[idOfE],
                                         self.enemy_data[idOfE],
                                         effects=effect,
+                                        distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
                                         roller=_logger.roll,
                                     )
                                 else:
@@ -974,6 +1107,7 @@ class Warhammer40kEnv(gym.Env):
                                         self.enemy_health[idOfE],
                                         self.enemy_data[idOfE],
                                         effects=effect,
+                                        distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
                                     )
                                 self.enemy_health[idOfE] = modHealth
                                 reward += 0.2
@@ -1583,6 +1717,7 @@ class Warhammer40kEnv(gym.Env):
                                         self.unit_health[idOfE],
                                         self.unit_data[idOfE],
                                         effects=effect,
+                                        distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfE]),
                                         roller=logger.roll,
                                     )
 
