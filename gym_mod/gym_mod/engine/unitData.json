@@ -17,6 +17,37 @@
       ]
     },
     {
+      "Army": "Necrons",
+      "Name": "Royal Warden",
+      "Movement": 5,
+      "T": 5,
+      "Sv": 3,
+      "W": 4,
+      "Ld": 6,
+      "OC": 1,
+      "#OfModels": 1,
+      "IVSave": 0,
+      "Weapons": [
+        "Relic gauss blaster",
+        "Royal warden close combat weapon"
+      ]
+    },
+    {
+      "Army": "Necrons",
+      "Name": "Canoptek Scarab Swarms",
+      "Movement": 10,
+      "T": 2,
+      "Sv": 6,
+      "W": 4,
+      "Ld": 8,
+      "OC": 0,
+      "#OfModels": 3,
+      "IVSave": 0,
+      "Weapons": [
+        "Feeder mandibles"
+      ]
+    },
+    {
       "Army": "Space_Marine",
       "Name": "Eliminator Squad",
       "Movement": 6,
@@ -7402,6 +7433,44 @@
       "Abilities": {
         "LethalHits": true,
         "RapidFire": 1 }
+    },
+    {
+      "Army": "Necrons",
+      "Name": "Relic gauss blaster",
+      "Type": "Ranged",
+      "BS": 3,
+      "S": 5,
+      "AP": -1,
+      "Range": 24,
+      "Damage": 2,
+      "A": 2,
+      "Abilities": {
+        "LethalHits": true,
+        "RapidFire": 2 }
+    },
+    {
+      "Army": "Necrons",
+      "Name": "Feeder mandibles",
+      "Type": "Melee",
+      "WS": 5,
+      "S": 2,
+      "AP": 0,
+      "Range": 2,
+      "Damage": 1,
+      "A": 6,
+      "Abilities": {
+        "LethalHits": true }
+    },
+    {
+      "Army": "Necrons",
+      "Name": "Royal warden close combat weapon",
+      "Type": "Melee",
+      "WS": 3,
+      "S": 5,
+      "AP": 0,
+      "Range": 2,
+      "Damage": 1,
+      "A": 4
     },
     {
       "Army": "Necrons",

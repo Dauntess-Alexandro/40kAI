@@ -375,7 +375,7 @@ class RollLogger:
             print(f"AP: {ap_val}")
 
         if rf:
-            print(f"Правило: Rapid Fire {rf} (в половине дальности +{rf} атак)")
+            print(f"Правило: Rapid Fire {rf} (если цель в половине дальности: +{rf} атак)")
         if lethal:
             print("Правило: Lethal Hits (крит-хиты авто-ранят)")
         if effect:
