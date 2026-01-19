@@ -164,7 +164,7 @@ env = gym.make("40kAI-v0", disable_env_checker=True, enemy = enemy, model = mode
 n_actions = [5,2,len(enemy), len(enemy), 5, len(model)]
 for i in range(len(model)):
     n_actions.append(12)
-state, info = env.reset(m=model, e=enemy)
+state, info = env.reset(m=model, e=enemy, trunc=True)
 n_observations = len(state)
 
 policy_net = DQN(n_observations, n_actions).to(device)
@@ -188,7 +188,7 @@ i = 0
 
 pbar = tqdm(total=totLifeT)
 
-state, info = env.reset(m = model, e = enemy, Type="big")
+state, info = env.reset(m=model, e=enemy, Type="big", trunc=True)
 
 current_time = datetime.datetime.now()
 date = str(current_time.second)+"-"+str(current_time.microsecond)
@@ -342,7 +342,7 @@ while end == False:
         for e in enemy:
             e.deployUnit(deployChang, "player")
 
-        state, info = env.reset(m=model, e=enemy, Type="small")
+        state, info = env.reset(m=model, e=enemy, Type="small", trunc=True)
 
     if numLifeT == totLifeT:
         end = True
