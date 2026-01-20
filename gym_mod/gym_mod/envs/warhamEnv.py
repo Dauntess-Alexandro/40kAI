@@ -707,7 +707,7 @@ class Warhammer40kEnv(gym.Env):
         self.modelOC = []
         self.enemyOC = []
         self.relic = 3
-        self.vicCond = dice(max=3)   # Slay and Secure, Ancient Relic, Domination
+        self.vicCond = self._select_victory_condition()
         self.modelUpdates = ""
 
         if self.trunc is True:
@@ -738,6 +738,98 @@ class Warhammer40kEnv(gym.Env):
 
         obsSpace = (len(model) * 3) + (len(enemy) * 3) + len(self.coordsOfOM * 2) + 2
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obsSpace,), dtype=np.float32)
+
+    def _select_victory_condition(self):
+        """
+        Victory Condition:
+        1 = Slay and Secure
+        2 = Ancient Relic
+        3 = Domination
+
+        Set FORCE_VICCOND to 1/2/3 or FORCE_ANCIENT_RELIC=1 to lock to a single mission.
+        """
+        forced = os.getenv("FORCE_VICCOND")
+        if forced is not None:
+            try:
+                forced_int = int(forced)
+            except ValueError:
+                forced_int = None
+            if forced_int in (1, 2, 3):
+                return forced_int
+
+        if os.getenv("FORCE_ANCIENT_RELIC", "0") == "1":
+            return 2
+
+        return dice(max=3)
+
+    def _update_objective_control(self):
+        """
+        Recompute which single unit controls each objective marker for both sides.
+        For now we keep one unit per objective (highest OC among units within 5").
+        """
+        self.modelOnOM = np.array([-1, -1, -1, -1])
+        self.enemyOnOM = np.array([-1, -1, -1, -1])
+
+        for j in range(len(self.coordsOfOM)):
+            # model side
+            best_model = -1
+            best_model_oc = -1
+            for i in range(len(self.unit_health)):
+                if self.unit_health[i] <= 0:
+                    continue
+                if distance(self.coordsOfOM[j], self.unit_coords[i]) <= 5:
+                    if self.modelOC[i] > best_model_oc:
+                        best_model_oc = self.modelOC[i]
+                        best_model = i
+
+            # enemy side
+            best_enemy = -1
+            best_enemy_oc = -1
+            for i in range(len(self.enemy_health)):
+                if self.enemy_health[i] <= 0:
+                    continue
+                if distance(self.coordsOfOM[j], self.enemy_coords[i]) <= 5:
+                    if self.enemyOC[i] > best_enemy_oc:
+                        best_enemy_oc = self.enemyOC[i]
+                        best_enemy = i
+
+            self.modelOnOM[j] = best_model
+            self.enemyOnOM[j] = best_enemy
+
+    def _controls_objective(self, side: str, obj_idx: int) -> bool:
+        """
+        True if side controls objective after OC comparison.
+        side: "model" or "enemy".
+        """
+        model_idx = self.modelOnOM[obj_idx]
+        enemy_idx = self.enemyOnOM[obj_idx]
+
+        if model_idx == -1 and enemy_idx == -1:
+            return False
+
+        if side == "model":
+            if model_idx == -1:
+                return False
+            if enemy_idx == -1:
+                return True
+            return self.modelOC[model_idx] > self.enemyOC[enemy_idx]
+
+        if enemy_idx == -1:
+            return False
+        if model_idx == -1:
+            return True
+        return self.enemyOC[enemy_idx] > self.modelOC[model_idx]
+
+    def _score_ancient_relic(self, side: str):
+        """
+        Ancient Relic scoring (10e-ish):
+        At the end of your turn, if you control the relic objective, score 5 VP.
+        """
+        if self._controls_objective(side, self.relic):
+            if side == "model":
+                self.modelVP += 5
+            else:
+                self.enemyVP += 5
 
     def get_info(self):
         return {
@@ -790,7 +882,7 @@ class Warhammer40kEnv(gym.Env):
         self.enemyVP = 0
         self.numTurns = 0
 
-        self.vicCond = dice(max=3)
+        self.vicCond = self._select_victory_condition()
         self.modelUpdates = ""
 
         for i in range(len(self.enemy_data)):
@@ -1082,12 +1174,16 @@ class Warhammer40kEnv(gym.Env):
         if self.modelStrat["smokescreen"] != -1:
             self.modelStrat["smokescreen"] = -1
 
-        for i in range(len(self.enemyOnOM)):
-            if self.enemyOnOM[i] != -1 and self.modelOnOM[i] != -1:
-                if self.enemyOC[self.enemyOnOM[i]] > self.modelOC[self.modelOnOM[i]]:
+        self._update_objective_control()
+        if self.vicCond == 2:
+            self._score_ancient_relic("enemy")
+        else:
+            for i in range(len(self.enemyOnOM)):
+                if self.enemyOnOM[i] != -1 and self.modelOnOM[i] != -1:
+                    if self.enemyOC[self.enemyOnOM[i]] > self.modelOC[self.modelOnOM[i]]:
+                        self.enemyVP += 1
+                elif self.enemyOnOM[i] != -1:
                     self.enemyVP += 1
-            elif self.enemyOnOM[i] != -1:
-                self.enemyVP += 1
 
     def resolve_fight_phase(self, active_side: str, trunc=None):
         """
@@ -1615,12 +1711,16 @@ class Warhammer40kEnv(gym.Env):
         self.enemyStrat["overwatch"] = -1
         self.enemyStrat["smokescreen"] = -1
 
-        for i in range(len(self.modelOnOM)):
-            if self.enemyOnOM[i] != -1 and self.modelOnOM[i] != -1:
-                if self.enemyOC[self.enemyOnOM[i]] < self.modelOC[self.modelOnOM[i]]:
+        self._update_objective_control()
+        if self.vicCond == 2:
+            self._score_ancient_relic("model")
+        else:
+            for i in range(len(self.modelOnOM)):
+                if self.enemyOnOM[i] != -1 and self.modelOnOM[i] != -1:
+                    if self.enemyOC[self.enemyOnOM[i]] < self.modelOC[self.modelOnOM[i]]:
+                        self.modelVP += 1
+                elif self.modelOnOM[i] != -1:
                     self.modelVP += 1
-            elif self.modelOnOM[i] != -1:
-                self.modelVP += 1
 
         for i in range(len(self.unit_health)):
             if self.unit_health[i] < 0:
@@ -1662,11 +1762,6 @@ class Warhammer40kEnv(gym.Env):
                 else:
                     reward -= 2
             elif res == 2:
-                if self.enemyOnOM[self.relic] != -1 and self.modelOnOM[self.relic] != -1:
-                    if self.enemyOC[self.enemyOnOM[self.relic]] > self.modelOC[self.modelOnOM[self.relic]]:
-                        self.enemyVP += 6
-                    elif self.enemyOC[self.enemyOnOM[self.relic]] < self.modelOC[self.modelOnOM[self.relic]]:
-                        self.modelVP += 6
                 if self.modelVP > self.enemyVP:
                     reward += 2
                 else:
@@ -2305,12 +2400,16 @@ class Warhammer40kEnv(gym.Env):
         if self.modelStrat["smokescreen"] != -1:
             self.modelStrat["smokescreen"] = -1
 
-        for i in range(len(self.enemyOnOM)):
-            if self.enemyOnOM[i] != -1 and self.modelOnOM[i] != -1:
-                if self.enemyOC[self.enemyOnOM[i]] > self.modelOC[self.modelOnOM[i]]:
+        self._update_objective_control()
+        if self.vicCond == 2:
+            self._score_ancient_relic("enemy")
+        else:
+            for i in range(len(self.enemyOnOM)):
+                if self.enemyOnOM[i] != -1 and self.modelOnOM[i] != -1:
+                    if self.enemyOC[self.enemyOnOM[i]] > self.modelOC[self.modelOnOM[i]]:
+                        self.enemyVP += 1
+                elif self.enemyOnOM[i] != -1:
                     self.enemyVP += 1
-            elif self.enemyOnOM[i] != -1:
-                self.enemyVP += 1
 
         for k in range(len(self.enemy_health)):
             if self.enemy_health[k] < 0:
