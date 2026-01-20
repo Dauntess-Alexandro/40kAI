@@ -249,9 +249,20 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
         save_target = min(save_target, inv)
 
     # --- How many attacks? ---
-    n_models = int(attackerData.get("#OfModels", 1))
-    if n_models < 1:
+    n_models_raw = attackerData.get("#OfModels")
+    n_models = int(n_models_raw) if n_models_raw is not None else None
+    if n_models is not None and n_models < 1:
         n_models = 1
+
+    model_w = _to_int(attackerData.get("W"), default=0)
+    remaining_models = None
+    if model_w and model_w > 0 and attackerHealth and attackerHealth > 0:
+        remaining_models = int(np.ceil(attackerHealth / model_w))
+
+    if n_models is None:
+        n_models = remaining_models if remaining_models is not None else 1
+    elif remaining_models is not None:
+        n_models = max(1, min(n_models, remaining_models))
 
     attacks_expr = _weapon_attacks_expr(attackerWeapon, default=1)
     attacks_per_model, attacks_was_rolled = _roll_attacks_expr(attacks_expr, _roll)

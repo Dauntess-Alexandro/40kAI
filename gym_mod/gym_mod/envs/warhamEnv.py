@@ -10,6 +10,32 @@ from ..engine.utils import *
 from ..engine import utils as engine_utils
 from gym_mod.engine.GUIinteract import *
 
+# Victory condition overrides (mission selection)
+_VICTORY_CONDITION_MAP = {
+    "slay": 1,
+    "slay_and_secure": 1,
+    "slay and secure": 1,
+    "ancient_relic": 2,
+    "ancient relic": 2,
+    "relic": 2,
+    "domination": 3,
+}
+
+def _coerce_victory_condition(value):
+    if value is None:
+        return None
+    value = value.strip().lower()
+    if not value:
+        return None
+    if value.isdigit():
+        vc = int(value)
+        return vc if vc in (1, 2, 3) else None
+    return _VICTORY_CONDITION_MAP.get(value)
+
+def _get_forced_victory_condition():
+    value = os.getenv("FORCE_VICTORY_CONDITION") or os.getenv("FORCE_MISSION")
+    return _coerce_victory_condition(value)
+
 # ============================================================
 # 🔧 FIX: resolve string weapons like "Bolt pistol [PISTOL]"
 # so engine.utils.attack() always receives a dict (or we safely
@@ -707,7 +733,8 @@ class Warhammer40kEnv(gym.Env):
         self.modelOC = []
         self.enemyOC = []
         self.relic = 3
-        self.vicCond = dice(max=3)   # Slay and Secure, Ancient Relic, Domination
+        forced_vic_cond = _get_forced_victory_condition()
+        self.vicCond = forced_vic_cond if forced_vic_cond else dice(max=3)   # Slay and Secure, Ancient Relic, Domination
         self.modelUpdates = ""
 
         if self.trunc is True:
@@ -752,6 +779,24 @@ class Warhammer40kEnv(gym.Env):
             "turn": self.numTurns,
         }
 
+    def refresh_objective_control(self):
+        self.modelOnOM = np.array([-1] * len(self.coordsOfOM))
+        self.enemyOnOM = np.array([-1] * len(self.coordsOfOM))
+
+        for i in range(len(self.unit_health)):
+            if self.unit_health[i] <= 0:
+                continue
+            for j in range(len(self.coordsOfOM)):
+                if distance(self.coordsOfOM[j], self.unit_coords[i]) <= 5:
+                    self.modelOnOM[j] = i
+
+        for i in range(len(self.enemy_health)):
+            if self.enemy_health[i] <= 0:
+                continue
+            for j in range(len(self.coordsOfOM)):
+                if distance(self.coordsOfOM[j], self.enemy_coords[i]) <= 5:
+                    self.enemyOnOM[j] = i
+
     def reset(self, m, e, playType=False, Type="small", trunc=False):
         # keep original references too
         self.model = m
@@ -790,7 +835,8 @@ class Warhammer40kEnv(gym.Env):
         self.enemyVP = 0
         self.numTurns = 0
 
-        self.vicCond = dice(max=3)
+        forced_vic_cond = _get_forced_victory_condition()
+        self.vicCond = forced_vic_cond if forced_vic_cond else dice(max=3)
         self.modelUpdates = ""
 
         for i in range(len(self.enemy_data)):
@@ -1615,6 +1661,7 @@ class Warhammer40kEnv(gym.Env):
         self.enemyStrat["overwatch"] = -1
         self.enemyStrat["smokescreen"] = -1
 
+        self.refresh_objective_control()
         for i in range(len(self.modelOnOM)):
             if self.enemyOnOM[i] != -1 and self.modelOnOM[i] != -1:
                 if self.enemyOC[self.enemyOnOM[i]] < self.modelOC[self.modelOnOM[i]]:
@@ -2305,6 +2352,7 @@ class Warhammer40kEnv(gym.Env):
         if self.modelStrat["smokescreen"] != -1:
             self.modelStrat["smokescreen"] = -1
 
+        self.refresh_objective_control()
         for i in range(len(self.enemyOnOM)):
             if self.enemyOnOM[i] != -1 and self.modelOnOM[i] != -1:
                 if self.enemyOC[self.enemyOnOM[i]] > self.modelOC[self.modelOnOM[i]]:
