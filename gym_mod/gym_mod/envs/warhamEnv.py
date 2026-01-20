@@ -10,6 +10,32 @@ from ..engine.utils import *
 from ..engine import utils as engine_utils
 from gym_mod.engine.GUIinteract import *
 
+# Victory condition overrides (mission selection)
+_VICTORY_CONDITION_MAP = {
+    "slay": 1,
+    "slay_and_secure": 1,
+    "slay and secure": 1,
+    "ancient_relic": 2,
+    "ancient relic": 2,
+    "relic": 2,
+    "domination": 3,
+}
+
+def _coerce_victory_condition(value):
+    if value is None:
+        return None
+    value = value.strip().lower()
+    if not value:
+        return None
+    if value.isdigit():
+        vc = int(value)
+        return vc if vc in (1, 2, 3) else None
+    return _VICTORY_CONDITION_MAP.get(value)
+
+def _get_forced_victory_condition():
+    value = os.getenv("FORCE_VICTORY_CONDITION") or os.getenv("FORCE_MISSION")
+    return _coerce_victory_condition(value)
+
 # ============================================================
 # 🔧 FIX: resolve string weapons like "Bolt pistol [PISTOL]"
 # so engine.utils.attack() always receives a dict (or we safely
@@ -707,7 +733,8 @@ class Warhammer40kEnv(gym.Env):
         self.modelOC = []
         self.enemyOC = []
         self.relic = 3
-        self.vicCond = dice(max=3)   # Slay and Secure, Ancient Relic, Domination
+        forced_vic_cond = _get_forced_victory_condition()
+        self.vicCond = forced_vic_cond if forced_vic_cond else dice(max=3)   # Slay and Secure, Ancient Relic, Domination
         self.modelUpdates = ""
 
         if self.trunc is True:
@@ -790,7 +817,8 @@ class Warhammer40kEnv(gym.Env):
         self.enemyVP = 0
         self.numTurns = 0
 
-        self.vicCond = dice(max=3)
+        forced_vic_cond = _get_forced_victory_condition()
+        self.vicCond = forced_vic_cond if forced_vic_cond else dice(max=3)
         self.modelUpdates = ""
 
         for i in range(len(self.enemy_data)):
