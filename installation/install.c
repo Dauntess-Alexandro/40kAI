@@ -35,7 +35,7 @@ int parseInput(char *comm) {
     char buffer[50];
     int running = 0;
     if (strcmp(comm, "install") == 0) {
-		system("cd .. ; cd gui/build ; cmake --build . --config Debug");
+		system("cd .. ; cd ../gui/build ; cmake --build . --config Debug");
         char buffer2[50];
         printf("\nStarting installation...\n");
         printf("Installing Application...\n");
@@ -166,7 +166,7 @@ int parseInput(char *comm) {
 				ans = true;
 				printf("Sad to see you go\n");
         		printf("Starting uninstallation...");
-        		system("cd .. ; cd gui/build ; rm Application");
+        		system("cd .. ; cd ../gui/build ; rm Application");
         		char actualpath[PATH_MAX];
         		char user[50];
         		if (realpath("../../40kAI/", actualpath) != NULL) {
@@ -218,7 +218,7 @@ int parseInput(char *comm) {
     } else if (strcmp(comm, "update") == 0) {
 		system("cd .. ; git fetch origin ; git pull");   // most recent from main
 		printf("Reinstallation starting...\n");
-		system("cd .. ; cd gui/build ; cmake --build . --config Debug");
+		system("cd .. ; cd ../gui/build ; cmake --build . --config Debug");
 		printf("GUI Updated\n");
 		system("cd .. ; source .venv/bin/activate ; cd gym_mod ; pip install .");
         printf("Packages Installed!\n");

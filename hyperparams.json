@@ -4,6 +4,8 @@
     "eps_start": 0.9,
     "eps_end": 0.05,
     "eps_decay": 1000,
-    "batch_size": 128,
-    "gamma": 0.99
+    "batch_size": 2048,
+    "gamma": 0.99,
+    "updates_per_step": 8,
+    "warmup_steps": 2000
 }

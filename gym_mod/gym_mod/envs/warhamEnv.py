@@ -1,5 +1,5 @@
 import gymnasium as gym
-from gym import spaces
+from gymnasium import spaces
 import numpy as np
 import matplotlib.pyplot as plt
 import os
@@ -642,18 +642,23 @@ class Warhammer40kEnv(gym.Env):
                 except Exception:
                     pass
 
-        self.action_space = spaces.Dict({
-            'move': spaces.Discrete(5),  # 0 down, 1 up, 2 left, 3 right, 4 none
-            'attack': spaces.Discrete(2),  # 1 = charge/attack intent, 0 = fallback/leave attack
-            'shoot': spaces.Discrete(len(enemy)),   # choose which enemy to shoot
-            'charge': spaces.Discrete(len(enemy)),  # choose which enemy to charge
-            'use_cp': spaces.Discrete(5),  # 0 none, 1 insane bravery, 2 overwatch, 3 smokescreen, 4 heroic intervention
-            'cp_on': spaces.Discrete(len(model))
-        })
+        # ✅ 1) Собираем Обычный Python dict со всеми ключами
+        action_spaces = {
+            'move':   spaces.Discrete(5),          # 0 down, 1 up, 2 left, 3 right, 4 none
+            'attack': spaces.Discrete(2),          # 0 = fallback/leave fight, 1 = try charge/engage
+            'shoot':  spaces.Discrete(len(enemy)), # индекс цели для стрельбы
+            'charge': spaces.Discrete(len(enemy)), # индекс цели для чарджа
+            'use_cp': spaces.Discrete(5),          # 0 none, 1 bravery, 2 overwatch, 3 smokescreen, 4 heroic
+            'cp_on':  spaces.Discrete(len(model))  # на какого своего юнита тратить CP
+        }
 
+        # ✅ 2) Добавляем индивидуальные "move_num_i" для каждого модельного юнита
         for i in range(len(model)):
-            label = "move_num_" + str(i)
-            self.action_space[label] = spaces.Discrete(12)
+            action_spaces[f"move_num_{i}"] = spaces.Discrete(12)
+
+        # ✅ 3) Теперь только ОДИН раз создаём spaces.Dict
+        self.action_space = spaces.Dict(action_spaces)
+        print("Action keys:", self.action_space.spaces.keys())
 
         # Initialize game state + board
         self.iter = 0
@@ -1369,7 +1374,7 @@ class Warhammer40kEnv(gym.Env):
                     self.unit_coords[i][1] += movement
                 elif action["move"] == 4:  # no move
                     for j in range(len(self.coordsOfOM)):
-                        if distance(self.unit_coords[i], self.coordsOfOM[i]) <= 5:
+                        if distance(self.unit_coords[i], self.coordsOfOM[j]) <= 5:
                             reward += 0.5
                         else:
                             reward -= 0.5
@@ -1470,7 +1475,8 @@ class Warhammer40kEnv(gym.Env):
                                 self.enemy_health[idOfE] = modHealth
                                 reward += 0.2
                                 if self.trunc is False:
-                                    print("Model Unit", enemyName, "shoots Enemy Unit", idOfM + 11, float(np.sum(dmg)), "damage")
+                                    
+                                    print("Model Unit", modelName, "shoots Enemy Unit", idOfE + 11, float(np.sum(dmg)), "damage")
                                 else:
                                     self.modelUpdates += "Model Unit {} shoots Enemy Unit {} {} times\n".format(modelName, idOfE + 11, sum(dmg))
                                 if self.trunc is False and _logger is not None:

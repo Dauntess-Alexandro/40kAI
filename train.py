@@ -6,11 +6,13 @@ import numpy as np
 import gymnasium as gym
 import pickle
 import datetime
+import collections
 import json
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from gym_mod.envs.warhamEnv import *
 from gym_mod.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
+from gymnasium import spaces
 
 from model.DQN import *
 from model.memory import *
@@ -28,11 +30,22 @@ warnings.filterwarnings("ignore")
 with open(os.path.abspath("hyperparams.json")) as j:
     data = json.loads(j.read())
 
+# ===== perf knobs =====
+RENDER_EVERY = int(os.getenv("RENDER_EVERY", "20"))  # 0 = выключить рендер полностью
+UPDATES_PER_STEP = int(os.getenv("UPDATES_PER_STEP", "4"))  
+# ======================
+
+
 MISSION_NAME = {
     1: "slay_and_secure",
     2: "ancient_relic",
     3: "domination",
 }
+
+def to_np_state(s):
+    if isinstance(s, (dict, collections.OrderedDict)):
+        return np.array(list(s.values()), dtype=np.float32)
+    return np.array(s, dtype=np.float32)
 
 def moving_avg(values, window=50):
     if len(values) == 0:
@@ -113,6 +126,12 @@ def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
 TAU = data["tau"]
 LR = data["lr"]
 
+# ============================================================
+# (C) Несколько обучающих апдейтов на один шаг среды
+# ============================================================
+UPDATES_PER_STEP = int(data.get("updates_per_step", 1))  # 1 = как было раньше
+WARMUP_STEPS     = int(data.get("warmup_steps", 0))      # 0 = без прогрева
+
 b_len = 60
 b_hei = 40
 
@@ -161,15 +180,40 @@ for e in enemy:
 
 env = gym.make("40kAI-v0", disable_env_checker=True, enemy = enemy, model = model, b_len = b_len, b_hei = b_hei)
 
-n_actions = [5,2,len(enemy), len(enemy), 5, len(model)]
-for i in range(len(model)):
-    n_actions.append(12)
+ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
+for i_u in range(len(model)):
+    ordered_keys.append(f"move_num_{i_u}")
+
+n_actions = []
+for k in ordered_keys:
+    sp = env.action_space.spaces[k]
+
+    # Discrete (и gym, и gymnasium)
+    if hasattr(sp, "n"):
+        n_actions.append(int(sp.n))
+
+    # MultiDiscrete (на всякий)
+    elif hasattr(sp, "nvec"):
+        n_actions.extend([int(x) for x in sp.nvec])
+
+    else:
+        raise TypeError(f"Unsupported action space for {k}: {type(sp)}")
+
+
 state, info = env.reset(m=model, e=enemy, trunc=True)
-n_observations = len(state)
+
+# state может быть np.array или OrderedDict
+if isinstance(state, dict) or "OrderedDict" in str(type(state)):
+    n_observations = len(list(state.values()))
+else:
+    n_observations = int(np.array(state).shape[0])
+
 
 policy_net = DQN(n_observations, n_actions).to(device)
 target_net = DQN(n_observations, n_actions).to(device)
 target_net.load_state_dict(policy_net.state_dict())
+target_net.eval()
+
 
 optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
 memory = ReplayMemory(10000)
@@ -205,8 +249,6 @@ epLen = 0
 
 while end == False:
     epLen += 1
-    state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-    
     action = select_action(env, state, i, policy_net, len(model))
     action_dict = convertToDict(action)
     if trunc == False:
@@ -214,8 +256,9 @@ while end == False:
 
     env.enemyTurn(trunc=trunc)
     next_observation, reward, done, res, info = env.step(action_dict)
-    rewArr.append(reward)
-    reward = torch.tensor([reward], device=device)
+    rewArr.append(float(reward))  
+    reward_t = torch.tensor([reward], device=device, dtype=torch.float32)  # тензор для replay
+
 
     unit_health = info["model health"]
     enemy_health = info["player health"]
@@ -225,21 +268,47 @@ while end == False:
         if trunc == False:
             print("The units are fighting")
 
-    board = env.render()
+    if RENDER_EVERY > 0 and (i % RENDER_EVERY == 0 or done):
+        env.render()
     message = "Iteration {} ended with reward {}, enemy health {}, model health {}, model VP {}, enemy VP {}, victory condition {}".format(i, reward, enemy_health, unit_health, info["model VP"], info["player VP"], info["victory condition"])
     if trunc == False:
         print(message)
     inText.append(message)
 
-    next_state = torch.tensor(next_observation, dtype=torch.float32, device=device).unsqueeze(0)
-    memory.push(state, action, next_state, reward)
-    state = next_state
-    loss = optimize_model(policy_net, target_net, optimizer, memory, n_observations)
-    metrics.updateLoss(loss)
+    dev = next(policy_net.parameters()).device
+    state_t = torch.tensor(to_np_state(state), device=dev).unsqueeze(0)
+    next_state_t = torch.tensor(to_np_state(next_observation), device=dev).unsqueeze(0)
+
     
-    for key in policy_net.state_dict():
-        target_net.state_dict()[key] = policy_net.state_dict()[key]*TAU + target_net.state_dict()[key]*(1-TAU)
-    target_net.load_state_dict(target_net.state_dict())
+    memory.push(state_t, action, next_state_t, reward_t)
+    state = next_observation
+
+    # =========================
+    # ✅ Несколько обучающих апдейтов на 1 шаг среды
+    losses = []
+
+    if i >= WARMUP_STEPS:
+        for _ in range(UPDATES_PER_STEP):
+            loss = optimize_model(policy_net, target_net, optimizer, memory, n_observations)
+
+            # optimize_model возвращает 0 если replay ещё маленький — такие пропускаем
+            if loss and loss != 0:
+                losses.append(loss)
+
+            # ✅ Быстрый soft-update target_net (намного быстрее, чем state_dict)
+            with torch.no_grad():
+                for p_tgt, p in zip(target_net.parameters(), policy_net.parameters()):
+                    p_tgt.data.mul_(1.0 - TAU)
+                    p_tgt.data.add_(p.data, alpha=TAU)
+
+    # чтобы график loss не раздувался в 100 раз — пишем среднее за env-step
+    if len(losses) > 0:
+        metrics.updateLoss(sum(losses) / len(losses))
+    else:
+        metrics.updateLoss(0)
+    # =========================
+
+
 
     if done == True:
         pbar.update(1)
@@ -324,7 +393,7 @@ while end == False:
         elif res == 4:
             inText.append("Major Victory")
 
-        if reward > 0:
+        if float(reward) > 0:
             inText.append("model won!")
             if trunc == False:
                 print("model won!")
@@ -356,10 +425,15 @@ with open('trainRes.txt', 'w') as f:
         f.write(inText[i])
         f.write('\n')
 
-if totLifeT > 30:
-    genDisplay.makeGif(numOfLife=totLifeT, trunc = True)
+# Делать gif только если мы реально сохраняли кадры
+if RENDER_EVERY > 0:
+    if totLifeT > 30:
+        genDisplay.makeGif(numOfLife=totLifeT, trunc=True)
+    else:
+        genDisplay.makeGif(numOfLife=totLifeT)
 else:
-    genDisplay.makeGif(numOfLife=totLifeT)
+    print("[render] RENDER_EVERY=0 -> gif skipped")
+
 
 metrics.lossCurve()
 metrics.showRew()

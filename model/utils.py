@@ -33,24 +33,36 @@ def select_action(env, state, steps_done, policy_net, len_model):
     eps_threshold = EPS_END + (EPS_START - EPS_END) * \
         math.exp(-1. * steps_done / EPS_DECAY)
     steps_done += 1
+    dev = next(policy_net.parameters()).device
+
     
     if isinstance(state, collections.OrderedDict):
-        state = torch.tensor([list(state.values())], device=device, dtype=torch.float).unsqueeze(0)
+        state = np.array(list(state.values()), dtype=np.float32)
     elif isinstance(state, np.ndarray):
-        state = torch.tensor(state, device=device, dtype=torch.float).unsqueeze(0)
+        state = state.astype(np.float32, copy=False)
+
+    if not torch.is_tensor(state):
+        state = torch.tensor(state, dtype=torch.float32, device=dev)
+    else:
+        state = state.to(dev)
+
+    # делаем батч-измерение (batch dimension)
+    if state.dim() == 1:
+        state = state.unsqueeze(0)
+
 
     if sample > eps_threshold:
         with torch.no_grad():
             decision = policy_net(state)
             action = []
             for i in decision:
-                larg = i.numpy().tolist()
+                larg = i.detach().cpu().numpy().tolist()
                 if len(list(itertools.chain(*larg))) > 1:
                     larg = list(itertools.chain(*larg))
                 else: 
                     larg = list(itertools.chain(*larg))[0]
                 action.append(pd.Series(larg).idxmax())
-            return torch.tensor([action])
+            return torch.tensor([action], device="cpu")
     else:
         sampled_action = env.action_space.sample()
         action_list = [
@@ -64,7 +76,7 @@ def select_action(env, state, steps_done, policy_net, len_model):
         for i in range(len_model):
             label = "move_num_"+str(i)
             action_list.append(sampled_action[label])
-        action = torch.tensor([action_list])
+        action = torch.tensor([action_list], device="cpu")
         return action
 
 def convertToDict(action):
@@ -85,54 +97,71 @@ def convertToDict(action):
 def optimize_model(policy_net, target_net, optimizer, memory, n_obs):
     if len(memory) < BATCH_SIZE:
         return 0
+
+    # ВАЖНО: берем device прямо от сети (cuda или cpu)
+    dev = next(policy_net.parameters()).device
+
     transitions = memory.sample(BATCH_SIZE)
     batch = Transition(*zip(*transitions))
 
-    non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
-                                          batch.next_state)), device=device, dtype=torch.bool)
-    non_final_next_states = torch.cat([s for s in batch.next_state
-                                                if s is not None])
     desired_shape = (1, n_obs)
 
-    state_batch = torch.cat([s.view(desired_shape) if s is not None else torch.zeros(desired_shape) for s in batch.state], dim=0)
-    action_batch = torch.cat(batch.action)
-    reward_batch = torch.cat(batch.reward)
+    # ---- state_batch ----
+    state_tensors = []
+    for s in batch.state:
+        if s is None:
+            state_tensors.append(torch.zeros(desired_shape, device=dev, dtype=torch.float32))
+        else:
+            state_tensors.append(s.to(dev).view(desired_shape))
+    state_batch = torch.cat(state_tensors, dim=0)  # [B, n_obs]
 
+    # ---- action_batch / reward_batch (на тот же dev!) ----
+    action_batch = torch.cat(batch.action).to(dev).long()  # индексы ОБЯЗАТЕЛЬНО long и на dev
+    reward_batch = torch.cat(batch.reward).to(dev).float().view(-1)  # [B]
+
+    # ---- next states ----
+    non_final_mask = torch.tensor([s is not None for s in batch.next_state], device=dev, dtype=torch.bool)
+
+    non_final_next_states = None
+    if non_final_mask.any():
+        non_final_next_states = torch.cat([s.to(dev) for s in batch.next_state if s is not None], dim=0)
+
+    # ---- Q(s,a) ----
     state_action_values = policy_net(state_batch)
     move_action, attack_action, shoot_action, charge_action, use_cp_action, cp_on_action, *move_actions = state_action_values
+
     arr = [
         move_action.gather(1, action_batch[:, 0].unsqueeze(1)),
         attack_action.gather(1, action_batch[:, 1].unsqueeze(1)),
         shoot_action.gather(1, action_batch[:, 2].unsqueeze(1)),
         charge_action.gather(1, action_batch[:, 3].unsqueeze(1)),
         use_cp_action.gather(1, action_batch[:, 4].unsqueeze(1)),
-        cp_on_action.gather(1, action_batch[:, 5].unsqueeze(1))
-    ] 
-    
-
+        cp_on_action.gather(1, action_batch[:, 5].unsqueeze(1)),
+    ]
     for i in range(len(move_actions)):
-        arr.append(move_actions[i].gather(1, action_batch[:, i+6].unsqueeze(1)))
-    selected_action_values = torch.cat(arr, dim=1)
+        arr.append(move_actions[i].gather(1, action_batch[:, i + 6].unsqueeze(1)))
 
-    next_state_values = torch.zeros((BATCH_SIZE,6+len(move_actions)), device=device)
+    selected_action_values = torch.cat(arr, dim=1)  # [B, num_heads]
+
+    # ---- max_a' Q_target(s', a') per head ----
+    next_state_values = torch.zeros((BATCH_SIZE, selected_action_values.shape[1]), device=dev, dtype=torch.float32)
+
     with torch.no_grad():
-        decision = target_net(non_final_next_states)
-        action = []
-        for i in decision:
-            larg = i.numpy().tolist()
-            if len(list(itertools.chain(*larg))) > 1:
-                larg = list(itertools.chain(*larg))
-            else: 
-                larg = list(itertools.chain(*larg))[0]
-            action.append(pd.Series(larg).idxmax())
-        next_state_values[non_final_mask] = torch.tensor([action], dtype=torch.float)
-    expected_state_action_values = (torch.transpose(next_state_values, 0,1) * GAMMA) + reward_batch
+        if non_final_next_states is not None:
+            next_decision = target_net(non_final_next_states)  # list of [N, n_i]
+            max_per_head = [h.max(1).values for h in next_decision]  # list of [N]
+            max_per_head = torch.stack(max_per_head, dim=1)  # [N, num_heads]
+            next_state_values[non_final_mask] = max_per_head
+
+    expected_state_action_values = reward_batch.unsqueeze(1) + (GAMMA * next_state_values)  # [B, num_heads]
 
     criterion = nn.SmoothL1Loss()
-    loss = criterion(torch.transpose(selected_action_values, 0,1), expected_state_action_values.unsqueeze(1))
+    loss = criterion(selected_action_values, expected_state_action_values)
+
     optimizer.zero_grad()
-    loss.retain_grad()
     loss.backward()
     torch.nn.utils.clip_grad_value_(policy_net.parameters(), 100)
     optimizer.step()
+
     return loss.item()
+
