@@ -1,8 +1,6 @@
 Player Units
-Royal Warden
-Royal Warden
-Royal Warden
+Necron Warriors
+Necron Warriors
 Model Units
-Royal Warden
-Royal Warden
-Royal Warden
+Necron Warriors
+Necron Warriors

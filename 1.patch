@@ -1,9 +1,63 @@
 diff --git a/gym_mod/gym_mod/envs/warhamEnv.py b/gym_mod/gym_mod/envs/warhamEnv.py
-index d3a07dcd4d13d7a2dc3f524d21b12bc9d4117f21..ec6ff7fd0e581cf355ac326cb1a3f26cd2d22c73 100644
+index ec6ff7fd0e581cf355ac326cb1a3f26cd2d22c73..62c2ecff8fa45493b70a57f7db974db0de243e14 100644
 --- a/gym_mod/gym_mod/envs/warhamEnv.py
 +++ b/gym_mod/gym_mod/envs/warhamEnv.py
-@@ -757,50 +757,68 @@ class Warhammer40kEnv(gym.Env):
-         for i in range(len(model)):
+@@ -705,52 +705,52 @@ class Warhammer40kEnv(gym.Env):
+         self.unit_health = []
+         self.enemy_health = []
+ 
+         self.game_over = False
+         self.unitInAttack = []
+         self.enemyInAttack = []
+         self.trunc = False
+ 
+         self.enemyCP = 0
+         self.modelCP = 0
+ 
+         self.enemyOverwatch = -1
+         self.modelStrat = {"overwatch": -1, "smokescreen": -1}
+         self.enemyStrat = {"overwatch": -1, "smokescreen": -1}
+ 
+         self.modelVP = 0
+         self.enemyVP = 0
+         self.numTurns = 0
+ 
+         self.coordsOfOM = np.array([
+             [self.b_len/2 + 8, self.b_hei/2 + 12],
+             [self.b_len/2 - 8, self.b_hei/2 + 12],
+             [self.b_len/2 + 8, self.b_hei/2 - 12],
+             [self.b_len/2 - 8, self.b_hei/2 - 12],
+         ])
+-        self.modelOnOM = np.array([-1, -1, -1, -1])
+-        self.enemyOnOM = np.array([-1, -1, -1, -1])
++        self.modelOnOM = np.array([0, 0, 0, 0])
++        self.enemyOnOM = np.array([0, 0, 0, 0])
+ 
+         self.modelOC = []
+         self.enemyOC = []
+         self.relic = 3
+         forced_vic_cond = _get_forced_victory_condition()
+         self.vicCond = forced_vic_cond if forced_vic_cond else dice(max=3)   # Slay and Secure, Ancient Relic, Domination
+         self.modelUpdates = ""
+ 
+         if self.trunc is True:
+             if self.vicCond == 1:
+                 print("Victory Condition rolled: Slay and Secure")
+             elif self.vicCond == 2:
+                 print("Victory Condition rolled: Ancient Relic")
+             elif self.vicCond == 3:
+                 print("Victory Condition rolled: Domination")
+ 
+         for i in range(len(enemy)):
+             self.enemy_weapon.append(enemy[i].showWeapon())
+             self.enemy_melee.append(enemy[i].showMelee())
+             self.enemy_data.append(enemy[i].showUnitData())
+             self.enemy_coords.append([enemy[i].showCoords()[0], enemy[i].showCoords()[1]])
+             self.enemy_health.append(enemy[i].showUnitData()["W"] * enemy[i].showUnitData()["#OfModels"])
+             self.enemyInAttack.append([0, 0])
+             self.enemyOC.append(enemy[i].showUnitData()["OC"])
+ 
+@@ -758,66 +758,76 @@ class Warhammer40kEnv(gym.Env):
              self.unit_weapon.append(model[i].showWeapon())
              self.unit_melee.append(model[i].showMelee())
              self.unit_data.append(model[i].showUnitData())
@@ -28,24 +82,38 @@ index d3a07dcd4d13d7a2dc3f524d21b12bc9d4117f21..ec6ff7fd0e581cf355ac326cb1a3f26c
              "turn": self.numTurns,
          }
  
-+    def refresh_objective_control(self):
-+        self.modelOnOM = np.array([-1] * len(self.coordsOfOM))
-+        self.enemyOnOM = np.array([-1] * len(self.coordsOfOM))
-+
-+        for i in range(len(self.unit_health)):
-+            if self.unit_health[i] <= 0:
+     def refresh_objective_control(self):
+-        self.modelOnOM = np.array([-1] * len(self.coordsOfOM))
+-        self.enemyOnOM = np.array([-1] * len(self.coordsOfOM))
++        self.modelOnOM = np.zeros(len(self.coordsOfOM), dtype=int)
++        self.enemyOnOM = np.zeros(len(self.coordsOfOM), dtype=int)
+ 
+         for i in range(len(self.unit_health)):
+             if self.unit_health[i] <= 0:
+                 continue
++            wounds = self.unit_data[i]["W"]
++            remaining_models = (self.unit_health[i] + wounds - 1) // wounds
++            effective_oc = self.modelOC[i] * remaining_models
++            if effective_oc <= 0:
 +                continue
-+            for j in range(len(self.coordsOfOM)):
-+                if distance(self.coordsOfOM[j], self.unit_coords[i]) <= 5:
-+                    self.modelOnOM[j] = i
-+
-+        for i in range(len(self.enemy_health)):
-+            if self.enemy_health[i] <= 0:
+             for j in range(len(self.coordsOfOM)):
+                 if distance(self.coordsOfOM[j], self.unit_coords[i]) <= 5:
+-                    self.modelOnOM[j] = i
++                    self.modelOnOM[j] += effective_oc
+ 
+         for i in range(len(self.enemy_health)):
+             if self.enemy_health[i] <= 0:
+                 continue
++            wounds = self.enemy_data[i]["W"]
++            remaining_models = (self.enemy_health[i] + wounds - 1) // wounds
++            effective_oc = self.enemyOC[i] * remaining_models
++            if effective_oc <= 0:
 +                continue
-+            for j in range(len(self.coordsOfOM)):
-+                if distance(self.coordsOfOM[j], self.enemy_coords[i]) <= 5:
-+                    self.enemyOnOM[j] = i
-+
+             for j in range(len(self.coordsOfOM)):
+                 if distance(self.coordsOfOM[j], self.enemy_coords[i]) <= 5:
+-                    self.enemyOnOM[j] = i
++                    self.enemyOnOM[j] += effective_oc
+ 
      def reset(self, m, e, playType=False, Type="small", trunc=False):
          # keep original references too
          self.model = m
@@ -70,10 +138,164 @@ index d3a07dcd4d13d7a2dc3f524d21b12bc9d4117f21..ec6ff7fd0e581cf355ac326cb1a3f26c
          self.board = np.zeros((self.b_len, self.b_hei))
          self.enemy_coords = []
          self.unit_coords = []
-         self.enemy_health = []
-@@ -1621,50 +1639,51 @@ class Warhammer40kEnv(gym.Env):
+@@ -1060,101 +1070,97 @@ class Warhammer40kEnv(gym.Env):
+                             self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
  
-                         # Снимаем статусы боя
+                             # Помечаем, что они в бою (Engagement)
+                             self.enemyInAttack[i][0] = 1
+                             self.enemyInAttack[i][1] = idOfM
+ 
+                             self.unitInAttack[idOfM][0] = 1
+                             self.unitInAttack[idOfM][1] = i
+                             self.enemyCharged[i] = 1
+ 
+ 
+                             # ВАЖНО: урон НЕ наносим сейчас. Урон будет в Fight Phase.
+                             # Нужно также пометить "charged this turn" для приоритета.
+                             # Если у тебя нет массива, добавь:
+                             # self.enemyCharged[i] = 1
+                         else:
+                             if trunc is False:
+                                 print("Enemy unit", enemyName, "failed charge vs Model unit", idOfM + 11,
+                                       f"(roll {diceRoll} vs need {required:.1f})")
+ 
+ 
+                 if use_cp == 3 and cp_on == i and self.enemyCP - 1 >= 0 and battleSh is False:
+                     self.enemyCP -= 1
+                     self.enemyStrat["smokescreen"] = i
+ 
+-                for j in range(len(self.coordsOfOM)):
+-                    if distance(self.coordsOfOM[j], self.enemy_coords[i]) <= 5:
+-                        self.enemyOnOM[j] = i
++                # Objective control is recalculated in refresh_objective_control.
+ 
+             elif self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
+                 decide = np.random.randint(0, 10)
+                 idOfM = self.enemyInAttack[i][1]
+                 if decide == 5:
+                     if trunc is False:
+                         print("Enemy unit", enemyName, "pulled out of fight with Model unit", idOfM + 11)
+ 
+                     if battleSh is True:
+                         diceRoll = dice()
+                         if diceRoll < 3:
+                             self.enemy_health[i] -= self.enemy_data[i]["W"]
+ 
+                     self.enemy_coords[i][0] -= self.enemy_data[i]["Movement"]
+                     self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                     self.unitInAttack[idOfM][0] = 0
+                     self.unitInAttack[idOfM][1] = 0
+ 
+                     self.enemyInAttack[i][0] = 0
+                     self.enemyInAttack[i][1] = 0
+                 else:
+                     if self.unit_health[idOfM] > 0:
+                         dmg, modHealth = attack(
+                             self.enemy_health[i],
+                             self.enemy_melee[i],
+                             self.enemy_data[i],
+                             self.unit_health[idOfM],
+                             self.unit_data[idOfM],
+                             rangeOfComb="Melee",
+                         )
+                         self.unit_health[idOfM] = modHealth
+                     else:
+                         self.unitInAttack[idOfM][0] = 0
+                         self.unitInAttack[idOfM][1] = 0
+ 
+                         self.enemyInAttack[i][0] = 0
+                         self.enemyInAttack[i][1] = 0
+ 
+         if self.modelStrat["overwatch"] != -1:
+             self.modelStrat["overwatch"] = -1
+         if self.modelStrat["smokescreen"] != -1:
+             self.modelStrat["smokescreen"] = -1
+ 
++        self.refresh_objective_control()
+         for i in range(len(self.enemyOnOM)):
+-            if self.enemyOnOM[i] != -1 and self.modelOnOM[i] != -1:
+-                if self.enemyOC[self.enemyOnOM[i]] > self.modelOC[self.modelOnOM[i]]:
+-                    self.enemyVP += 1
+-            elif self.enemyOnOM[i] != -1:
++            if self.enemyOnOM[i] > self.modelOnOM[i]:
+                 self.enemyVP += 1
+ 
+     def resolve_fight_phase(self, active_side: str, trunc=None):
+         """
+         10e simplified Fight Phase:
+         1) Chargers (charged this turn) fight first (active side only in this simplified model)
+         2) Then alternate fights starting with the NON-active side
+         Only units within Engagement (unitInAttack/enemyInAttack) can fight.
+         No pile-in/consolidate here (упрощение).
+         """
+         quiet = self.trunc if trunc is None else trunc
+ 
+         # кто кидает кубы (если MANUAL_DICE=1 — спрашиваем руками)
+         dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" else auto_dice
+ 
+         def _log(msg: str):
+             if quiet is False:
+                 print(msg)
+ 
+         def _do_melee(att_side: str, att_idx: int):
+             """
+             att_side: "model" (self.unit_*) or "enemy" (self.enemy_*)
+             att_idx: index in corresponding arrays
+             """
+             # проверка жив/в бою
+@@ -1574,51 +1580,50 @@ class Warhammer40kEnv(gym.Env):
+ 
+                             reward += 0.5
+                         else:
+                             if self.trunc is False:
+                                 print("Model unit", modelName, "failed to attack Enemy")
+                             reward -= 0.5
+ 
+ 
+ 
+ 
+                 # smokescreen
+                 if action["use_cp"] == 3 and action["cp_on"] == i:
+                     if self.modelCP - 1 >= 0:
+                         self.modelCP -= 1
+                         self.modelStrat["smokescreen"] = i
+                         reward += 0.5
+                     elif battleSh is not False:
+                         if self.trunc is False:
+                             print("This unit is Battle shocked, stratagems can not be used")
+                     else:
+                         reward -= 0.5
+ 
+                 for j in range(len(self.coordsOfOM)):
+                     if distance(self.coordsOfOM[j], self.unit_coords[i]) <= 5:
+                         reward += 0.5
+-                        self.modelOnOM[j] = i
+ 
+             elif self.unitInAttack[i][0] == 1 and self.unit_health[i] > 0:
+                 idOfE = self.unitInAttack[i][1]
+ 
+                 # Если враг уже мёртв — автоматически выходим из боя
+                 if self.enemy_health[idOfE] <= 0:
+                     reward += 0.3
+ 
+                     self.unitInAttack[i][0] = 0
+                     self.unitInAttack[i][1] = 0
+ 
+                     self.enemyInAttack[idOfE][0] = 0
+                     self.enemyInAttack[idOfE][1] = 0
+ 
+                 else:
+                     # ВАЖНО:
+                     # В 10e здесь НЕ наносим урон. Урон будет в Fight Phase.
+                     #
+                     # action["attack"] используем как:
+                     # 0 = Fall Back (выйти из боя)
+                     # 1 = остаться в Engagement (удар потом в Fight Phase)
+                     if action["attack"] == 0:
+                         # Fall Back
+                         if self.unit_health[i] * 2 >= self.enemy_health[idOfE]:
+                             reward -= 0.5
+@@ -1641,101 +1646,92 @@ class Warhammer40kEnv(gym.Env):
                          self.unitInAttack[i][0] = 0
                          self.unitInAttack[i][1] = 0
  
@@ -97,12 +319,13 @@ index d3a07dcd4d13d7a2dc3f524d21b12bc9d4117f21..ec6ff7fd0e581cf355ac326cb1a3f26c
          self.enemyStrat["overwatch"] = -1
          self.enemyStrat["smokescreen"] = -1
  
-+        self.refresh_objective_control()
+         self.refresh_objective_control()
          for i in range(len(self.modelOnOM)):
-             if self.enemyOnOM[i] != -1 and self.modelOnOM[i] != -1:
-                 if self.enemyOC[self.enemyOnOM[i]] < self.modelOC[self.modelOnOM[i]]:
-                     self.modelVP += 1
-             elif self.modelOnOM[i] != -1:
+-            if self.enemyOnOM[i] != -1 and self.modelOnOM[i] != -1:
+-                if self.enemyOC[self.enemyOnOM[i]] < self.modelOC[self.modelOnOM[i]]:
+-                    self.modelVP += 1
+-            elif self.modelOnOM[i] != -1:
++            if self.modelOnOM[i] > self.enemyOnOM[i]:
                  self.modelVP += 1
  
          for i in range(len(self.unit_health)):
@@ -123,9 +346,120 @@ index d3a07dcd4d13d7a2dc3f524d21b12bc9d4117f21..ec6ff7fd0e581cf355ac326cb1a3f26c
              reward += 2
              res = 4
  
-@@ -2311,50 +2330,51 @@ class Warhammer40kEnv(gym.Env):
-                         self.unitInAttack[idOfE][0] = 0
-                         self.unitInAttack[idOfE][1] = 0
+         # Other victory conditions
+         if self.numTurns == 10 and self.game_over is not True:
+             self.game_over = True
+             res = self.vicCond
+             if res == 1:
+                 self.modelVP = 0
+                 self.enemyVP = 0
+                 for i in range(len(self.enemyOnOM)):
+-                    if self.enemyOnOM[i] != -1 and self.modelOnOM[i] != -1:
+-                        if self.enemyOC[self.enemyOnOM[i]] > self.modelOC[self.modelOnOM[i]]:
+-                            self.enemyVP += 1
+-                        elif self.enemyOC[self.enemyOnOM[i]] < self.modelOC[self.modelOnOM[i]]:
+-                            self.modelVP += 1
+-                    elif self.enemyOnOM[i] != -1:
++                    if self.enemyOnOM[i] > self.modelOnOM[i]:
+                         self.enemyVP += 1
+-                    elif self.modelOnOM[i] != -1:
++                    elif self.modelOnOM[i] > self.enemyOnOM[i]:
+                         self.modelVP += 1
+                 if self.modelVP > self.enemyVP:
+                     reward += 2
+                 else:
+                     reward -= 2
+             elif res == 2:
+-                if self.enemyOnOM[self.relic] != -1 and self.modelOnOM[self.relic] != -1:
+-                    if self.enemyOC[self.enemyOnOM[self.relic]] > self.modelOC[self.modelOnOM[self.relic]]:
+-                        self.enemyVP += 6
+-                    elif self.enemyOC[self.enemyOnOM[self.relic]] < self.modelOC[self.modelOnOM[self.relic]]:
+-                        self.modelVP += 6
++                if self.enemyOnOM[self.relic] > self.modelOnOM[self.relic]:
++                    self.enemyVP += 6
++                elif self.modelOnOM[self.relic] > self.enemyOnOM[self.relic]:
++                    self.modelVP += 6
+                 if self.modelVP > self.enemyVP:
+                     reward += 2
+                 else:
+                     reward -= 2
+             elif res == 3:
+                 if self.modelVP > self.enemyVP:
+                     reward += 2
+                 else:
+                     reward -= 2
+ 
+         self.iter += 1
+         info = self.get_info()
+         return self._get_observation(), reward, self.game_over, res, info
+ 
+     # for a real person playing
+     def player(self):
+         self.enemyCP += 1
+         self.modelCP += 1
+ 
+         if self.numTurns == 0:
+             if self.playType is False:
+                 if self.vicCond == 1:
+                     print("Victory Condition rolled: Slay and Secure")
+                 elif self.vicCond == 2:
+                     print("Victory Condition rolled: Ancient Relic")
+@@ -2250,53 +2246,51 @@ class Warhammer40kEnv(gym.Env):
+                         strat = input("Would you like to use the Smokescreen Stratagem for this unit? (y/n): ")
+                     else:
+                         sendToGUI("Would you like to use the Smokescreen Stratagem for this unit? (y/n): ")
+                         strat = recieveGUI()
+ 
+                     while response is False:
+                         if strat.lower() in ("y", "yes"):
+                             self.enemyStrat["smokescreen"] = i
+                             response = True
+                         elif strat.lower() in ("n", "no"):
+                             response = True
+                         elif strat.lower() in ("?", "help"):
+                             if self.playType is False:
+                                 print("Smokescreen costs 1 CP and gives benefit of cover / stealth (simplified here).")
+                                 strat = input("Would you like to use the Smokescreen Stratagem? (y/n): ")
+                             else:
+                                 sendToGUI("Smokescreen costs 1 CP and gives benefit of cover / stealth (simplified here).\nWould you like to use the Smokescreen Stratagem? (y/n): ")
+                                 strat = recieveGUI()
+                         else:
+                             if self.playType is False:
+                                 strat = input("It's a yes or no question dude: ")
+                             else:
+                                 sendToGUI("It's a yes or no question dude: ")
+                                 strat = recieveGUI()
+ 
+-                for j in range(len(self.coordsOfOM)):
+-                    if distance(self.coordsOfOM[j], self.enemy_coords[i]) <= 5:
+-                        self.enemyOnOM[j] = i
++                    # Objective control is recalculated in refresh_objective_control.
+ 
+             elif self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
+                 idOfE = self.enemyInAttack[i][1]
+                 response = False
+                 while response is False:
+                     if self.playType is False:
+                         fallB = input("Would you like Unit {} to fallback? (y/n): ".format(playerName))
+                     else:
+                         sendToGUI("Would you like Unit {} to fallback? (y/n): ".format(playerName))
+                         fallB = recieveGUI()
+ 
+                     if fallB.lower() in ("n", "no"):
+                         response = True
+ 
+                         # 10e: здесь НЕ атакуем. Атаки происходят в Fight Phase.
+                         if self.playType is False:
+                             print("Player Unit", playerName, "stays in combat with Model Unit", idOfE + 21, "(will fight in Fight Phase)")
+                         else:
+                             sendToGUI("Player Unit {} stays in combat with Model Unit {} (will fight in Fight Phase)".format(playerName, idOfE + 21))
+ 
+                         # Ничего не меняем: они остаются в бою
+                         # self.enemyInAttack / self.unitInAttack остаются как есть
+                         continue
+ 
+                         if self.unit_health[idOfE] <= 0:
+@@ -2332,54 +2326,51 @@ class Warhammer40kEnv(gym.Env):
  
                      elif fallB.lower() == "quit":
                          self.game_over = True
@@ -149,12 +483,13 @@ index d3a07dcd4d13d7a2dc3f524d21b12bc9d4117f21..ec6ff7fd0e581cf355ac326cb1a3f26c
          if self.modelStrat["smokescreen"] != -1:
              self.modelStrat["smokescreen"] = -1
  
-+        self.refresh_objective_control()
+         self.refresh_objective_control()
          for i in range(len(self.enemyOnOM)):
-             if self.enemyOnOM[i] != -1 and self.modelOnOM[i] != -1:
-                 if self.enemyOC[self.enemyOnOM[i]] > self.modelOC[self.modelOnOM[i]]:
-                     self.enemyVP += 1
-             elif self.enemyOnOM[i] != -1:
+-            if self.enemyOnOM[i] != -1 and self.modelOnOM[i] != -1:
+-                if self.enemyOC[self.enemyOnOM[i]] > self.modelOC[self.modelOnOM[i]]:
+-                    self.enemyVP += 1
+-            elif self.enemyOnOM[i] != -1:
++            if self.enemyOnOM[i] > self.modelOnOM[i]:
                  self.enemyVP += 1
  
          for k in range(len(self.enemy_health)):
@@ -175,4 +510,9 @@ index d3a07dcd4d13d7a2dc3f524d21b12bc9d4117f21..ec6ff7fd0e581cf355ac326cb1a3f26c
  
          for i in range(len(self.enemy_health)):
              self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+             self.board[self.enemy_coords[i][0]][self.enemy_coords[i][1]] = 10 + i + 1
+ 
+         for i in range(len(self.coordsOfOM)):
+             self.board[int(self.coordsOfOM[i][0])][int(self.coordsOfOM[i][1])] = 3
+ 
 

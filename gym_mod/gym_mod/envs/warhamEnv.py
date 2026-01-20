@@ -727,8 +727,8 @@ class Warhammer40kEnv(gym.Env):
             [self.b_len/2 + 8, self.b_hei/2 - 12],
             [self.b_len/2 - 8, self.b_hei/2 - 12],
         ])
-        self.modelOnOM = np.array([-1, -1, -1, -1])
-        self.enemyOnOM = np.array([-1, -1, -1, -1])
+        self.modelOnOM = np.array([0, 0, 0, 0])
+        self.enemyOnOM = np.array([0, 0, 0, 0])
 
         self.modelOC = []
         self.enemyOC = []
@@ -780,22 +780,32 @@ class Warhammer40kEnv(gym.Env):
         }
 
     def refresh_objective_control(self):
-        self.modelOnOM = np.array([-1] * len(self.coordsOfOM))
-        self.enemyOnOM = np.array([-1] * len(self.coordsOfOM))
+        self.modelOnOM = np.zeros(len(self.coordsOfOM), dtype=int)
+        self.enemyOnOM = np.zeros(len(self.coordsOfOM), dtype=int)
 
         for i in range(len(self.unit_health)):
             if self.unit_health[i] <= 0:
                 continue
+            wounds = self.unit_data[i]["W"]
+            remaining_models = (self.unit_health[i] + wounds - 1) // wounds
+            effective_oc = self.modelOC[i] * remaining_models
+            if effective_oc <= 0:
+                continue
             for j in range(len(self.coordsOfOM)):
                 if distance(self.coordsOfOM[j], self.unit_coords[i]) <= 5:
-                    self.modelOnOM[j] = i
+                    self.modelOnOM[j] += effective_oc
 
         for i in range(len(self.enemy_health)):
             if self.enemy_health[i] <= 0:
                 continue
+            wounds = self.enemy_data[i]["W"]
+            remaining_models = (self.enemy_health[i] + wounds - 1) // wounds
+            effective_oc = self.enemyOC[i] * remaining_models
+            if effective_oc <= 0:
+                continue
             for j in range(len(self.coordsOfOM)):
                 if distance(self.coordsOfOM[j], self.enemy_coords[i]) <= 5:
-                    self.enemyOnOM[j] = i
+                    self.enemyOnOM[j] += effective_oc
 
     def reset(self, m, e, playType=False, Type="small", trunc=False):
         # keep original references too
@@ -1082,9 +1092,7 @@ class Warhammer40kEnv(gym.Env):
                     self.enemyCP -= 1
                     self.enemyStrat["smokescreen"] = i
 
-                for j in range(len(self.coordsOfOM)):
-                    if distance(self.coordsOfOM[j], self.enemy_coords[i]) <= 5:
-                        self.enemyOnOM[j] = i
+                # Objective control is recalculated in refresh_objective_control.
 
             elif self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
                 decide = np.random.randint(0, 10)
@@ -1128,11 +1136,9 @@ class Warhammer40kEnv(gym.Env):
         if self.modelStrat["smokescreen"] != -1:
             self.modelStrat["smokescreen"] = -1
 
+        self.refresh_objective_control()
         for i in range(len(self.enemyOnOM)):
-            if self.enemyOnOM[i] != -1 and self.modelOnOM[i] != -1:
-                if self.enemyOC[self.enemyOnOM[i]] > self.modelOC[self.modelOnOM[i]]:
-                    self.enemyVP += 1
-            elif self.enemyOnOM[i] != -1:
+            if self.enemyOnOM[i] > self.modelOnOM[i]:
                 self.enemyVP += 1
 
     def resolve_fight_phase(self, active_side: str, trunc=None):
@@ -1596,7 +1602,6 @@ class Warhammer40kEnv(gym.Env):
                 for j in range(len(self.coordsOfOM)):
                     if distance(self.coordsOfOM[j], self.unit_coords[i]) <= 5:
                         reward += 0.5
-                        self.modelOnOM[j] = i
 
             elif self.unitInAttack[i][0] == 1 and self.unit_health[i] > 0:
                 idOfE = self.unitInAttack[i][1]
@@ -1663,10 +1668,7 @@ class Warhammer40kEnv(gym.Env):
 
         self.refresh_objective_control()
         for i in range(len(self.modelOnOM)):
-            if self.enemyOnOM[i] != -1 and self.modelOnOM[i] != -1:
-                if self.enemyOC[self.enemyOnOM[i]] < self.modelOC[self.modelOnOM[i]]:
-                    self.modelVP += 1
-            elif self.modelOnOM[i] != -1:
+            if self.modelOnOM[i] > self.enemyOnOM[i]:
                 self.modelVP += 1
 
         for i in range(len(self.unit_health)):
@@ -1695,25 +1697,19 @@ class Warhammer40kEnv(gym.Env):
                 self.modelVP = 0
                 self.enemyVP = 0
                 for i in range(len(self.enemyOnOM)):
-                    if self.enemyOnOM[i] != -1 and self.modelOnOM[i] != -1:
-                        if self.enemyOC[self.enemyOnOM[i]] > self.modelOC[self.modelOnOM[i]]:
-                            self.enemyVP += 1
-                        elif self.enemyOC[self.enemyOnOM[i]] < self.modelOC[self.modelOnOM[i]]:
-                            self.modelVP += 1
-                    elif self.enemyOnOM[i] != -1:
+                    if self.enemyOnOM[i] > self.modelOnOM[i]:
                         self.enemyVP += 1
-                    elif self.modelOnOM[i] != -1:
+                    elif self.modelOnOM[i] > self.enemyOnOM[i]:
                         self.modelVP += 1
                 if self.modelVP > self.enemyVP:
                     reward += 2
                 else:
                     reward -= 2
             elif res == 2:
-                if self.enemyOnOM[self.relic] != -1 and self.modelOnOM[self.relic] != -1:
-                    if self.enemyOC[self.enemyOnOM[self.relic]] > self.modelOC[self.modelOnOM[self.relic]]:
-                        self.enemyVP += 6
-                    elif self.enemyOC[self.enemyOnOM[self.relic]] < self.modelOC[self.modelOnOM[self.relic]]:
-                        self.modelVP += 6
+                if self.enemyOnOM[self.relic] > self.modelOnOM[self.relic]:
+                    self.enemyVP += 6
+                elif self.modelOnOM[self.relic] > self.enemyOnOM[self.relic]:
+                    self.modelVP += 6
                 if self.modelVP > self.enemyVP:
                     reward += 2
                 else:
@@ -2272,9 +2268,7 @@ class Warhammer40kEnv(gym.Env):
                                 sendToGUI("It's a yes or no question dude: ")
                                 strat = recieveGUI()
 
-                for j in range(len(self.coordsOfOM)):
-                    if distance(self.coordsOfOM[j], self.enemy_coords[i]) <= 5:
-                        self.enemyOnOM[j] = i
+                    # Objective control is recalculated in refresh_objective_control.
 
             elif self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
                 idOfE = self.enemyInAttack[i][1]
@@ -2354,10 +2348,7 @@ class Warhammer40kEnv(gym.Env):
 
         self.refresh_objective_control()
         for i in range(len(self.enemyOnOM)):
-            if self.enemyOnOM[i] != -1 and self.modelOnOM[i] != -1:
-                if self.enemyOC[self.enemyOnOM[i]] > self.modelOC[self.modelOnOM[i]]:
-                    self.enemyVP += 1
-            elif self.enemyOnOM[i] != -1:
+            if self.enemyOnOM[i] > self.modelOnOM[i]:
                 self.enemyVP += 1
 
         for k in range(len(self.enemy_health)):
