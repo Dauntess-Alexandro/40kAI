@@ -719,7 +719,13 @@ class Warhammer40kEnv(gym.Env):
 
         self.modelVP = 0
         self.enemyVP = 0
-        self.numTurns = 0
+        self.battle_round = 1
+        self.active_side = "enemy"
+        self.phase = "command"
+        self.numTurns = self.battle_round
+        self.turn_order = ["enemy", "model"]
+        self._round_banner_shown = False
+        self._victory_condition_announced = False
 
         self.coordsOfOM = np.array([
             [self.b_len/2 + 8, self.b_hei/2 + 12],
@@ -777,7 +783,944 @@ class Warhammer40kEnv(gym.Env):
             "player VP": self.enemyVP,
             "victory condition": self.vicCond,
             "turn": self.numTurns,
+            "battle round": self.battle_round,
+            "active side": self.active_side,
+            "phase": self.phase,
         }
+
+    def _log(self, msg: str):
+        if self.trunc is True and not _verbose_logs_enabled():
+            return
+        if self.playType is True:
+            sendToGUI(msg)
+        else:
+            print(msg)
+
+    def _get_input(self, prompt: str) -> str:
+        if self.playType is True:
+            sendToGUI(prompt)
+            return recieveGUI()
+        return input(prompt)
+
+    def _prompt_choice(self, prompt: str, allowed: dict, normalize: dict, allow_quit: bool = True):
+        allowed_labels = ", ".join(allowed.values())
+        while True:
+            response = self._get_input(prompt).strip().lower()
+            if allow_quit and response in ("quit", "q"):
+                return None
+            if response in normalize:
+                response = normalize[response]
+            if response in allowed:
+                return response
+            self._log(f"Not a valid response ({allowed_labels}): {response}")
+
+    def _prompt_yes_no(self, prompt: str, allow_quit: bool = True):
+        normalize = {"y": "yes", "n": "no", "yes": "yes", "no": "no"}
+        allowed = {"yes": "yes", "no": "no"}
+        response = self._prompt_choice(prompt, allowed, normalize, allow_quit=allow_quit)
+        if response is None:
+            return None
+        return response == "yes"
+
+    def _prompt_int(self, prompt: str, min_val: int, max_val: int, allow_quit: bool = True):
+        while True:
+            response = self._get_input(prompt).strip().lower()
+            if allow_quit and response in ("quit", "q"):
+                return None
+            if response.isdigit():
+                value = int(response)
+                if min_val <= value <= max_val:
+                    return value
+                self._log(f"Not in range ({min_val}..{max_val}): {value}")
+            else:
+                self._log("Not a number, try again.")
+
+    def begin_phase(self, side: str, phase: str):
+        self.active_side = side
+        self.phase = phase
+        if not self._round_banner_shown:
+            self._log(f"=== BATTLE ROUND {self.battle_round} ===")
+            self._round_banner_shown = True
+        if phase == "command":
+            self._log(f"--- {side.upper()} TURN ---")
+        phase_title = {
+            "command": "Command phase!",
+            "movement": "Movement phase!",
+            "shooting": "Shooting phase!",
+            "charge": "Charge phase!",
+            "fight": "Fight phase!",
+        }.get(phase, f"{phase.title()} phase!")
+        self._log(phase_title)
+
+    def _end_battle_round(self):
+        self._log(f"=== END OF BATTLE ROUND {self.battle_round} ===")
+        self.battle_round += 1
+        self.numTurns = self.battle_round
+        self._round_banner_shown = False
+
+    def _advance_turn_order(self):
+        if self.active_side == self.turn_order[-1]:
+            self._end_battle_round()
+            self.active_side = self.turn_order[0]
+        else:
+            current_index = self.turn_order.index(self.active_side)
+            self.active_side = self.turn_order[current_index + 1]
+        self.phase = "command"
+
+    def _apply_turn_limit_endgame(self, reward=None):
+        res = 0
+        if self.battle_round <= 10 or self.game_over:
+            return reward, res
+        self.game_over = True
+        res = self.vicCond
+        if res == 1:
+            self.modelVP = 0
+            self.enemyVP = 0
+            for i in range(len(self.enemyOnOM)):
+                if self.enemyOnOM[i] > self.modelOnOM[i]:
+                    self.enemyVP += 1
+                elif self.modelOnOM[i] > self.enemyOnOM[i]:
+                    self.modelVP += 1
+            if reward is not None:
+                if self.modelVP > self.enemyVP:
+                    reward += 2
+                else:
+                    reward -= 2
+        elif res == 2:
+            model_vp_before = self.modelVP
+            enemy_vp_before = self.enemyVP
+            self._apply_ancient_relic_endgame_bonus()
+            if self.modelVP != model_vp_before:
+                self._log_vp_scoring("model (endgame)", model_vp_before, self.modelVP)
+            if self.enemyVP != enemy_vp_before:
+                self._log_vp_scoring("enemy (endgame)", enemy_vp_before, self.enemyVP)
+            if reward is not None:
+                if self.modelVP > self.enemyVP:
+                    reward += 2
+                else:
+                    reward -= 2
+        elif res == 3:
+            if reward is not None:
+                if self.modelVP > self.enemyVP:
+                    reward += 2
+                else:
+                    reward -= 2
+        return reward, res
+
+    def _score_end_of_turn(self, side: str):
+        vp_before = self.enemyVP if side == "enemy" else self.modelVP
+        self.refresh_objective_control()
+        if side == "enemy":
+            for i in range(len(self.enemyOnOM)):
+                if self.enemyOnOM[i] > self.modelOnOM[i]:
+                    self.enemyVP += 1
+            self._log_vp_scoring("enemy", vp_before, self.enemyVP)
+        else:
+            for i in range(len(self.modelOnOM)):
+                if self.modelOnOM[i] > self.enemyOnOM[i]:
+                    self.modelVP += 1
+            self._log_vp_scoring("model", vp_before, self.modelVP)
+
+    def command_phase(self, side: str, action=None, manual: bool = False):
+        self.begin_phase(side, "command")
+        if side == "model":
+            self.modelCP += 1
+            self.enemyCP += 1
+            reward_delta = 0
+            battle_shock = [False] * len(self.unit_health)
+            for i in range(len(self.unit_health)):
+                if isBelowHalfStr(self.unit_data[i], self.unit_health[i]) is True and self.unit_health[i] > 0:
+                    if self.trunc is False:
+                        self._log("This unit is Battle-shocked, starting test...")
+                        self._log("Rolling 2D6...")
+                    diceRoll = dice(num=2)
+                    if self.trunc is False:
+                        self._log(f"Model rolled {diceRoll[0]} {diceRoll[1]}")
+                    if sum(diceRoll) >= self.unit_data[i]["Ld"]:
+                        self.modelOC[i] = self.unit_data[i]["OC"]
+                        if self.trunc is False:
+                            self._log("Battle-shock test passed!")
+                    else:
+                        battle_shock[i] = True
+                        self.modelOC[i] = 0
+                        if self.trunc is False:
+                            self._log("Battle-shock test failed")
+                        if action and action.get("use_cp") == 1 and action.get("cp_on") == i:
+                            if self.modelCP - 1 >= 0:
+                                battle_shock[i] = False
+                                reward_delta += 0.5
+                                self.modelCP -= 1
+                                if self.trunc is False:
+                                    self._log("Used Insane Bravery Stratagem to pass Battle Shock test")
+                            else:
+                                reward_delta -= 0.5
+                if action and action.get("use_cp") == 4 and action.get("cp_on") == i:
+                    if self.modelCP - 2 >= 0 and self.unitInAttack[i][0] == 0:
+                        for j in range(len(self.enemyInAttack)):
+                            if self.enemyInAttack[j][0] == 1 and distance(self.unit_coords[i], self.enemy_coords[j]) >= 6:
+                                self.unitInAttack[i][0] = 1
+                                self.unitInAttack[i][1] = j
+                                self.unitInAttack[self.enemyInAttack[j][1]][0] = 0
+                                self.unitInAttack[self.enemyInAttack[j][1]][1] = 0
+                                self.unit_coords[i][0] = self.enemy_coords[j][0] + 1
+                                self.unit_coords[i][1] = self.enemy_coords[j][1] + 1
+                                self.unit_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
+                                self.enemyInAttack[j][1] = i
+                                self.modelCP -= 2
+                                reward_delta += 0.5
+                                break
+                        reward_delta += 0.5
+                    else:
+                        reward_delta -= 0.5
+            return battle_shock, reward_delta
+
+        if side == "enemy" and manual:
+            self.enemyCP += 1
+            self.modelCP += 1
+            battle_shock = [False] * len(self.enemy_health)
+            for i in range(len(self.enemy_health)):
+                playerName = i + 11
+                battleSh = False
+                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.unit_health[i] > 0:
+                    self._log("This unit is Battle-shocked, starting test...")
+                    self._log("Rolling 2D6...")
+                    diceRoll = player_dice(num=2)
+                    self._log(f"You rolled {diceRoll[0]} {diceRoll[1]}")
+                    if sum(diceRoll) >= self.enemy_data[i]["Ld"]:
+                        self._log("Battle-shock test passed!")
+                        self.enemyOC[i] = self.enemy_data[i]["OC"]
+                    else:
+                        battleSh = True
+                        self._log("Battle-shock test failed")
+                        self.enemyOC[i] = 0
+                        if self.enemyCP - 1 >= 0:
+                            strat = self._prompt_yes_no(
+                                f"Would you like to use the Insane Bravery Strategem for Unit {playerName}? (y/n): "
+                            )
+                            if strat is None:
+                                self.game_over = True
+                                return None
+                            if strat:
+                                battleSh = False
+                                self.enemyCP -= 1
+                                self.enemyOC[i] = self.enemy_data[i]["OC"]
+                battle_shock[i] = battleSh
+                if self.enemyCP - 2 >= 0 and self.enemyInAttack[i][0] == 0:
+                    strat = self._prompt_yes_no(
+                        f"Would you like to use the Heroic Intervention Stratagem for Unit {playerName}? (y/n): "
+                    )
+                    if strat is None:
+                        self.game_over = True
+                        return None
+                    if strat:
+                        for j in range(len(self.unitInAttack)):
+                            if self.unitInAttack[j][0] == 1 and distance(self.enemy_coords[i], self.unit_coords[j]) >= 6:
+                                self.enemyInAttack[i][0] = 1
+                                self.enemyInAttack[i][1] = j
+                                self.enemyInAttack[self.enemyInAttack[j][1]][0] = 0
+                                self.enemyInAttack[self.enemyInAttack[j][1]][1] = 0
+                                self.enemy_coords[i][0] = self.enemy_coords[j][0] + 1
+                                self.enemy_coords[i][1] = self.enemy_coords[j][1] + 1
+                                self.enemy_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
+                                self.unitInAttack[j][1] = i
+                                self.enemyCP -= 2
+                                self._log("Heroic Intervention Successfully used!")
+                                break
+                if battleSh:
+                    continue
+            self._manual_enemy_battle_shock = battle_shock
+            return battle_shock
+
+        if side == "enemy":
+            self.enemyCP += 1
+            self.modelCP += 1
+            battle_shock = [False] * len(self.enemy_health)
+            cp_on = np.random.randint(0, len(self.enemy_health))
+            use_cp = np.random.randint(0, 5)
+            self._enemy_cp_on = cp_on
+            self._enemy_use_cp = use_cp
+            for i in range(len(self.enemy_health)):
+                battleSh = False
+                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.unit_health[i] > 0:
+                    if self.trunc is False:
+                        self._log("This unit is Below Half Strength, starting test...")
+                        self._log("Rolling 2D6...")
+                    diceRoll = dice(num=2)
+                    if self.trunc is False:
+                        self._log(f"Player rolled {diceRoll[0]} {diceRoll[1]}")
+                    if sum(diceRoll) >= self.enemy_data[i]["Ld"]:
+                        if self.trunc is False:
+                            self._log("Battle-shock test passed!")
+                        self.enemyOC[i] = self.enemy_data[i]["OC"]
+                    else:
+                        battleSh = True
+                        self.enemyOC[i] = 0
+                        if self.trunc is False:
+                            self._log("Battle-shock test failed")
+                        if use_cp == 1 and cp_on == i and self.enemyCP - 1 >= 0:
+                            battleSh = False
+                            self.enemyCP -= 1
+                            self.enemyOC[i] = self.enemy_data[i]["OC"]
+
+                if use_cp == 4 and cp_on == i:
+                    if self.enemyCP - 2 >= 0 and self.enemyInAttack[i][0] == 0:
+                        for j in range(len(self.unitInAttack)):
+                            if self.unitInAttack[j][0] == 1 and distance(self.enemy_coords[i], self.unit_coords[j]) >= 6:
+                                self.enemyInAttack[i][0] = 1
+                                self.enemyInAttack[i][1] = j
+                                self.enemyInAttack[self.enemyInAttack[j][1]][0] = 0
+                                self.enemyInAttack[self.enemyInAttack[j][1]][1] = 0
+                                self.enemy_coords[i][0] = self.enemy_coords[j][0] + 1
+                                self.enemy_coords[i][1] = self.enemy_coords[j][1] + 1
+                                self.enemy_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
+                                self.unitInAttack[j][1] = i
+                                self.enemyCP -= 2
+                                break
+                battle_shock[i] = battleSh
+            return battle_shock
+
+        return None
+
+    def movement_phase(self, side: str, action=None, manual: bool = False, battle_shock=None):
+        self.begin_phase(side, "movement")
+        if side == "model":
+            advanced_flags = [False] * len(self.unit_health)
+            reward_delta = 0
+            for i in range(len(self.unit_health)):
+                modelName = i + 21
+                battleSh = battle_shock[i] if battle_shock else False
+                if self.unitInAttack[i][0] == 0 and self.unit_health[i] > 0:
+                    base_m = self.unit_data[i]["Movement"]
+                    label = "move_num_" + str(i)
+                    want = int(action[label])
+                    advanced = (action["move"] != 4) and (want > base_m)
+                    if advanced:
+                        max_move = base_m + dice()
+                    else:
+                        max_move = base_m
+                    movement = min(want, max_move)
+
+                    if action["move"] == 0:
+                        self.unit_coords[i][0] += movement
+                    elif action["move"] == 1:
+                        self.unit_coords[i][0] -= movement
+                    elif action["move"] == 2:
+                        self.unit_coords[i][1] -= movement
+                    elif action["move"] == 3:
+                        self.unit_coords[i][1] += movement
+                    elif action["move"] == 4:
+                        for j in range(len(self.coordsOfOM)):
+                            if distance(self.unit_coords[i], self.coordsOfOM[j]) <= 5:
+                                reward_delta += 0.5
+                            else:
+                                reward_delta -= 0.5
+
+                    advanced_flags[i] = advanced
+                    if self.trunc is False:
+                        if action["move"] == 0:
+                            self._log(f"Model unit {modelName} moved {movement} inches downward")
+                        elif action["move"] == 1:
+                            self._log(f"Model unit {modelName} moved {movement} inches upward")
+                        elif action["move"] == 2:
+                            self._log(f"Model unit {modelName} moved {movement} inches left")
+                        elif action["move"] == 3:
+                            self._log(f"Model unit {modelName} moved {movement} inches right")
+                        elif action["move"] == 4:
+                            self._log(f"Model unit {modelName} did not move")
+
+                    self.unit_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
+                    for j in range(len(self.enemy_health)):
+                        if self.unit_coords[i] == self.enemy_coords[j]:
+                            self.unit_coords[i][0] -= 1
+
+                    if self.enemyStrat["overwatch"] != -1 and self.enemy_weapon[self.enemyStrat["overwatch"]] != "None":
+                        if distance(self.unit_coords[i], self.enemy_coords[self.enemyStrat["overwatch"]]) <= self.enemy_weapon[self.enemyStrat["overwatch"]]["Range"]:
+                            dmg, modHealth = attack(
+                                self.enemy_health[self.enemyStrat["overwatch"]],
+                                self.enemy_weapon[self.enemyStrat["overwatch"]],
+                                self.enemy_data[self.enemyStrat["overwatch"]],
+                                self.unit_health[i],
+                                self.unit_data[i],
+                                distance_to_target=distance(self.unit_coords[i], self.enemy_coords[self.enemyStrat["overwatch"]]),
+                            )
+                            self.unit_health[i] = modHealth
+                            if self.trunc is False:
+                                self._log(
+                                    "Player unit {} successfully hit model unit {} for {} damage using the overwatch strategem".format(
+                                        self.enemyStrat["overwatch"] + 11, i + 11, sum(dmg)
+                                    )
+                                )
+                            self.enemyStrat["overwatch"] = -1
+
+                    if action["use_cp"] == 2 and action["cp_on"] == i:
+                        if self.modelCP - 1 >= 0 and self.enemy_weapon[i] != "None":
+                            self.modelCP -= 1
+                            self.modelStrat["overwatch"] = i
+                            reward_delta += 0.5
+                        elif battleSh is not False:
+                            if self.trunc is False:
+                                self._log("This unit is BattleShocked, no stratagems can be used on it")
+                            reward_delta -= 0.5
+
+                    if action["use_cp"] == 3 and action["cp_on"] == i:
+                        if self.modelCP - 1 >= 0:
+                            self.modelCP -= 1
+                            self.modelStrat["smokescreen"] = i
+                            reward_delta += 0.5
+                        elif battleSh is not False:
+                            if self.trunc is False:
+                                self._log("This unit is Battle shocked, stratagems can not be used")
+                            reward_delta -= 0.5
+
+                    for j in range(len(self.coordsOfOM)):
+                        if distance(self.coordsOfOM[j], self.unit_coords[i]) <= 5:
+                            reward_delta += 0.5
+
+                elif self.unitInAttack[i][0] == 1 and self.unit_health[i] > 0:
+                    idOfE = self.unitInAttack[i][1]
+                    if self.enemy_health[idOfE] <= 0:
+                        reward_delta += 0.3
+                        self.unitInAttack[i][0] = 0
+                        self.unitInAttack[i][1] = 0
+                        self.enemyInAttack[idOfE][0] = 0
+                        self.enemyInAttack[idOfE][1] = 0
+                    else:
+                        if action["attack"] == 0:
+                            if self.unit_health[i] * 2 >= self.enemy_health[idOfE]:
+                                reward_delta -= 0.5
+                            if self.trunc is False:
+                                self._log(f"Model unit {modelName} pulled out of fight with Enemy unit {idOfE + 11}")
+                            else:
+                                self.modelUpdates += "Model Unit {} pulled out of fight with Enemy unit {}\n".format(modelName, idOfE + 11)
+                            if battleSh is True:
+                                diceRoll = dice()
+                                if diceRoll < 3:
+                                    self.unit_health[i] -= self.unit_data[i]["W"]
+                            self.unit_coords[i][0] += self.unit_data[i]["Movement"]
+                            self.unitInAttack[i][0] = 0
+                            self.unitInAttack[i][1] = 0
+                            self.enemyInAttack[idOfE][0] = 0
+                            self.enemyInAttack[idOfE][1] = 0
+                        else:
+                            reward_delta += 0.2
+            return advanced_flags, reward_delta
+
+        if side == "enemy" and manual:
+            direction_map = {"up": "up", "down": "down", "left": "left", "right": "right", "none": "none"}
+            normalize = {"u": "up", "d": "down", "l": "left", "r": "right", "n": "none"}
+            advanced_flags = [False] * len(self.enemy_health)
+            for i in range(len(self.enemy_health)):
+                playerName = i + 11
+                battleSh = battle_shock[i] if battle_shock else False
+                if self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
+                    fall_back = self._prompt_yes_no(f"Would you like Unit {playerName} to fallback? (y/n): ")
+                    if fall_back is None:
+                        self.game_over = True
+                        return None
+                    if fall_back:
+                        idOfE = self.enemyInAttack[i][1]
+                        self._log(f"Player Unit {playerName} fell back from Enemy unit {idOfE + 21}")
+                        if battleSh is True:
+                            diceRoll = dice()
+                            if diceRoll < 3:
+                                self.enemy_health[i] -= self.enemy_data[i]["W"]
+                        self.enemy_coords[i][0] += self.enemy_data[i]["Movement"]
+                        self.enemyInAttack[i] = [0, 0]
+                        self.unitInAttack[idOfE][0] = 0
+                        self.unitInAttack[idOfE][1] = 0
+                    else:
+                        idOfE = self.enemyInAttack[i][1]
+                        self._log(
+                            f"Player Unit {playerName} stays in combat with Model Unit {idOfE + 21} (will fight in Fight Phase)"
+                        )
+                    continue
+
+                if self.enemyInAttack[i][0] == 0 and self.enemy_health[i] > 0:
+                    self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                    for j in range(len(self.enemy_health)):
+                        if self.enemy_coords[i] == self.unit_coords[j]:
+                            self.enemy_coords[i][0] -= 1
+
+                    self.updateBoard()
+                    self.showBoard()
+
+                    self._log("Take a look at board.txt or click the Show Board button in the GUI to view the current board")
+                    self._log("If you would like to end the game type 'quit' into the prompt")
+                    dire = self._prompt_choice(
+                        f"Enter the direction of movement for Unit {playerName} (up, down, left, right, none): ",
+                        direction_map,
+                        normalize,
+                    )
+                    if dire is None:
+                        self.game_over = True
+                        return None
+
+                    advanced = False
+                    move_num = 0
+                    if dire != "none":
+                        adv = self._prompt_yes_no("Advance? (y/n): ")
+                        if adv is None:
+                            self.game_over = True
+                            return None
+                        if adv:
+                            advanced = True
+                            self._log("Rolling 1 D6 for Advance...")
+                            roll = player_dice()
+                            self._log(f"You rolled a {roll}")
+                            movement_cap = self.enemy_data[i]["Movement"] + roll
+                        else:
+                            movement_cap = self.enemy_data[i]["Movement"]
+                        move_num = self._prompt_int(
+                            f"How many inches would you like to move (0..{movement_cap}): ",
+                            0,
+                            movement_cap,
+                        )
+                        if move_num is None:
+                            self.game_over = True
+                            return None
+
+                    advanced_flags[i] = advanced
+                    if dire == "down":
+                        self.enemy_coords[i][0] += move_num
+                    elif dire == "up":
+                        self.enemy_coords[i][0] -= move_num
+                    elif dire == "left":
+                        self.enemy_coords[i][1] -= move_num
+                    elif dire == "right":
+                        self.enemy_coords[i][1] += move_num
+
+                    self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                    for j in range(len(self.enemy_health)):
+                        if self.enemy_coords[i] == self.unit_coords[j]:
+                            self.enemy_coords[i][0] -= 1
+
+                    self.updateBoard()
+                    self.showBoard()
+
+                    if self.enemyCP - 1 >= 0 and battleSh is False:
+                        strat = self._prompt_yes_no("Would you like to use the Fire Overwatch Stratagem? (y/n): ")
+                        if strat is None:
+                            self.game_over = True
+                            return None
+                        if strat:
+                            self.enemyStrat["overwatch"] = i
+                            self.enemyCP -= 1
+
+                    if self.modelStrat["overwatch"] != -1 and self.unit_weapon[self.modelStrat["overwatch"]] != "None":
+                        if distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]) <= self.unit_weapon[self.modelStrat["overwatch"]]["Range"]:
+                            _logger = None
+                            if self.playType is False and _verbose_logs_enabled():
+                                _logger = RollLogger(auto_dice)
+                                dmg, modHealth = attack(
+                                    self.unit_health[self.modelStrat["overwatch"]],
+                                    self.unit_weapon[self.modelStrat["overwatch"]],
+                                    self.unit_data[self.modelStrat["overwatch"]],
+                                    self.enemy_health[i],
+                                    self.enemy_data[i],
+                                    roller=_logger.roll,
+                                )
+                            else:
+                                dmg, modHealth = attack(
+                                    self.unit_health[self.modelStrat["overwatch"]],
+                                    self.unit_weapon[self.modelStrat["overwatch"]],
+                                    self.unit_data[self.modelStrat["overwatch"]],
+                                    self.enemy_health[i],
+                                    self.enemy_data[i],
+                                )
+                            self.enemy_health[i] = modHealth
+                            self._log(
+                                f"Model unit {self.modelStrat['overwatch'] + 21} successfully hit player unit {i + 11} for {sum(dmg)} damage using the overwatch strategem"
+                            )
+                            if _logger is not None:
+                                _logger.print_shoot_report(
+                                    weapon=self.unit_weapon[self.modelStrat["overwatch"]],
+                                    attacker_data=self.unit_data[self.modelStrat["overwatch"]],
+                                    defender_data=self.enemy_data[i],
+                                    dmg_list=dmg,
+                                    effect=None,
+                                )
+                            self.modelStrat["overwatch"] = -1
+
+                    self.updateBoard()
+                    self.showBoard()
+            return advanced_flags
+
+        if side == "enemy":
+            advanced_flags = [False] * len(self.enemy_health)
+            cp_on = getattr(self, "_enemy_cp_on", None)
+            use_cp = getattr(self, "_enemy_use_cp", None)
+            for i in range(len(self.enemy_health)):
+                if self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
+                    decide = np.random.randint(0, 10)
+                    if decide == 5:
+                        idOfM = self.enemyInAttack[i][1]
+                        if self.trunc is False:
+                            self._log(f"Enemy unit {i + 21} pulled out of fight with Model unit {idOfM + 11}")
+                        if battle_shock and battle_shock[i]:
+                            diceRoll = dice()
+                            if diceRoll < 3:
+                                self.enemy_health[i] -= self.enemy_data[i]["W"]
+                        self.enemy_coords[i][0] -= self.enemy_data[i]["Movement"]
+                        self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                        self.unitInAttack[idOfM][0] = 0
+                        self.unitInAttack[idOfM][1] = 0
+                        self.enemyInAttack[i] = [0, 0]
+                    continue
+
+                if self.enemyInAttack[i][0] == 0 and self.enemy_health[i] > 0:
+                    aliveUnits = [j for j in range(len(self.unit_health)) if self.unit_health[j] > 0]
+                    if len(aliveUnits) == 0:
+                        break
+                    idOfM = np.random.choice(aliveUnits)
+                    base_m = self.enemy_data[i]["Movement"]
+                    dist_to_target = distance(self.unit_coords[idOfM], self.enemy_coords[i])
+                    advanced = dist_to_target > (base_m + 6)
+                    movement = base_m + dice() if advanced else base_m
+
+                    if distance(self.unit_coords[idOfM], [self.enemy_coords[i][0], self.enemy_coords[i][1] - movement]) < distance(self.unit_coords[idOfM], self.enemy_coords[i]):
+                        self.enemy_coords[i][1] -= movement
+                    elif distance(self.unit_coords[idOfM], [self.enemy_coords[i][0], self.enemy_coords[i][1] + movement]) < distance(self.unit_coords[idOfM], self.enemy_coords[i]):
+                        self.enemy_coords[i][1] += movement
+                    elif distance(self.unit_coords[idOfM], [self.enemy_coords[i][0] - movement, self.enemy_coords[i][1]]) < distance(self.unit_coords[idOfM], self.enemy_coords[i]):
+                        self.enemy_coords[i][0] -= movement
+                    elif distance(self.unit_coords[idOfM], [self.enemy_coords[i][0] + movement, self.enemy_coords[i][1]]) < distance(self.unit_coords[idOfM], self.enemy_coords[i]):
+                        self.enemy_coords[i][0] += movement
+
+                    self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                    for j in range(len(self.unit_health)):
+                        if self.enemy_coords[i] == self.unit_coords[j]:
+                            self.enemy_coords[i][0] -= 1
+                    advanced_flags[i] = advanced
+
+                    if self.modelStrat["overwatch"] != -1 and self.unit_weapon[self.modelStrat["overwatch"]] != "None":
+                        if distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]) <= self.unit_weapon[self.modelStrat["overwatch"]]["Range"]:
+                            _logger = None
+                            if self.trunc is False and _verbose_logs_enabled():
+                                _logger = RollLogger(auto_dice)
+                                dmg, modHealth = attack(
+                                    self.unit_health[self.modelStrat["overwatch"]],
+                                    self.unit_weapon[self.modelStrat["overwatch"]],
+                                    self.unit_data[self.modelStrat["overwatch"]],
+                                    self.enemy_health[i],
+                                    self.enemy_data[i],
+                                    distance_to_target=distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]),
+                                    roller=_logger.roll,
+                                )
+                            else:
+                                dmg, modHealth = attack(
+                                    self.unit_health[self.modelStrat["overwatch"]],
+                                    self.unit_weapon[self.modelStrat["overwatch"]],
+                                    self.unit_data[self.modelStrat["overwatch"]],
+                                    self.enemy_health[i],
+                                    self.enemy_data[i],
+                                    distance_to_target=distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]),
+                                )
+                            self.enemy_health[i] = modHealth
+                            if self.trunc is False and _logger is not None:
+                                self._log("\n🟦 Model Overwatch (подробно):")
+                                _logger.print_shoot_report(
+                                    weapon=self.unit_weapon[self.modelStrat["overwatch"]],
+                                    attacker_data=self.unit_data[self.modelStrat["overwatch"]],
+                                    defender_data=self.enemy_data[i],
+                                    dmg_list=dmg,
+                                    effect=None,
+                                )
+                            self.modelStrat["overwatch"] = -1
+
+                    if use_cp == 2 and cp_on == i and self.enemyCP - 1 >= 0 and not (battle_shock and battle_shock[i]):
+                        self.enemyCP -= 1
+                        self.enemyStrat["overwatch"] = i
+
+                    if use_cp == 3 and cp_on == i and self.enemyCP - 1 >= 0 and not (battle_shock and battle_shock[i]):
+                        self.enemyCP -= 1
+                        self.enemyStrat["smokescreen"] = i
+            return advanced_flags
+
+        return None
+
+    def shooting_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False):
+        self.begin_phase(side, "shooting")
+        if side == "model":
+            reward_delta = 0
+            for i in range(len(self.unit_health)):
+                modelName = i + 21
+                advanced = advanced_flags[i] if advanced_flags else False
+                if self.unitInAttack[i][0] == 0 and self.unit_weapon[i] != "None":
+                    if advanced and not weapon_is_assault(self.unit_weapon[i]):
+                        if self.trunc is False:
+                            self._log("Model advanced — non-Assault weapon, skipping shooting")
+                    else:
+                        shootAbleUnits = []
+                        for j in range(len(self.enemy_health)):
+                            if distance(self.unit_coords[i], self.enemy_coords[j]) <= self.unit_weapon[i]["Range"] and self.enemy_health[j] > 0 and self.enemyInAttack[j][0] == 0:
+                                shootAbleUnits.append(j)
+                        if len(shootAbleUnits) > 0:
+                            idOfE = action["shoot"]
+                            if idOfE in shootAbleUnits:
+                                effect = None
+                                if idOfE == self.enemyStrat["smokescreen"]:
+                                    effect = "benefit of cover"
+                                _logger = None
+                                if self.trunc is False and _verbose_logs_enabled():
+                                    _logger = RollLogger(auto_dice)
+                                    dmg, modHealth = attack(
+                                        self.unit_health[i],
+                                        self.unit_weapon[i],
+                                        self.unit_data[i],
+                                        self.enemy_health[idOfE],
+                                        self.enemy_data[idOfE],
+                                        effects=effect,
+                                        distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
+                                        roller=_logger.roll,
+                                    )
+                                else:
+                                    dmg, modHealth = attack(
+                                        self.unit_health[i],
+                                        self.unit_weapon[i],
+                                        self.unit_data[i],
+                                        self.enemy_health[idOfE],
+                                        self.enemy_data[idOfE],
+                                        effects=effect,
+                                        distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
+                                    )
+                                self.enemy_health[idOfE] = modHealth
+                                reward_delta += 0.2
+                                if self.trunc is False:
+                                    self._log(f"Model Unit {modelName} shoots Enemy Unit {idOfE + 11} {float(np.sum(dmg))} damage")
+                                else:
+                                    self.modelUpdates += "Model Unit {} shoots Enemy Unit {} {} times\n".format(modelName, idOfE + 11, sum(dmg))
+                                if self.trunc is False and _logger is not None:
+                                    _logger.print_shoot_report(
+                                        weapon=self.unit_weapon[i],
+                                        attacker_data=self.unit_data[i],
+                                        defender_data=self.enemy_data[idOfE],
+                                        dmg_list=dmg,
+                                        effect=effect,
+                                    )
+                            else:
+                                reward_delta -= 0.5
+                                if self.trunc is False:
+                                    self._log(f"Model Unit {modelName} fails to shoot an Enemy Unit")
+            return reward_delta
+        elif side == "enemy" and manual:
+            for i in range(len(self.enemy_health)):
+                playerName = i + 11
+                advanced = advanced_flags[i] if advanced_flags else False
+                if self.enemy_weapon[i] != "None":
+                    if advanced and not weapon_is_assault(self.enemy_weapon[i]):
+                        self._log("You advanced — non-Assault weapon, skipping shooting")
+                    else:
+                        shootAble = np.array([])
+                        for j in range(len(self.unit_health)):
+                            if distance(self.enemy_coords[i], self.unit_coords[j]) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
+                                shootAble = np.append(shootAble, j)
+                        if len(shootAble) > 0:
+                            response = False
+                            while response is False:
+                                shoot = self._get_input(
+                                    "Select which enemy unit you would like to shoot ({}) with Unit {}: ".format(shootAble + 21, playerName)
+                                ).strip()
+                                if shoot.lower() in ("quit", "q"):
+                                    self.game_over = True
+                                    return None
+                                if is_num(shoot) is True and int(shoot) - 21 in shootAble:
+                                    idOfE = int(shoot) - 21
+                                    if self.modelStrat["smokescreen"] != -1 and self.modelStrat["smokescreen"] == idOfE:
+                                        self._log(f"Model unit {self.modelStrat['smokescreen'] + 21} used the Smokescreen Strategem")
+                                        self.modelStrat["smokescreen"] = -1
+                                        effect = "benefit of cover"
+                                    else:
+                                        effect = None
+                                    logger = RollLogger(player_dice)
+                                    dmg, modHealth = attack(
+                                        self.enemy_health[i],
+                                        self.enemy_weapon[i],
+                                        self.enemy_data[i],
+                                        self.unit_health[idOfE],
+                                        self.unit_data[idOfE],
+                                        effects=effect,
+                                        distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfE]),
+                                        roller=logger.roll,
+                                    )
+                                    self.unit_health[idOfE] = modHealth
+                                    self._log(f"Player Unit {playerName} нанёс {sum(dmg)} урона по Model Unit {idOfE + 21}")
+                                    logger.print_shoot_report(
+                                        weapon=self.enemy_weapon[i],
+                                        attacker_data=self.enemy_data[i],
+                                        defender_data=self.unit_data[idOfE],
+                                        dmg_list=dmg,
+                                        effect=effect,
+                                    )
+                                    response = True
+                                else:
+                                    self._log("Not an available unit")
+                else:
+                    self._log("No available weapons to shoot")
+        elif side == "enemy":
+            for i in range(len(self.enemy_health)):
+                advanced = advanced_flags[i] if advanced_flags else False
+                if self.enemy_weapon[i] != "None":
+                    if advanced and not weapon_is_assault(self.enemy_weapon[i]):
+                        if self.trunc is False:
+                            self._log("Enemy advanced — non-Assault weapon, skipping shooting")
+                    else:
+                        shootAbleUnits = []
+                        for j in range(len(self.unit_health)):
+                            if distance(self.enemy_coords[i], self.unit_coords[j]) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
+                                shootAbleUnits.append(j)
+                        if len(shootAbleUnits) > 0:
+                            idOfM = np.random.choice(shootAbleUnits)
+                            if self.modelStrat["smokescreen"] != -1 and self.modelStrat["smokescreen"] == idOfM:
+                                self.modelStrat["smokescreen"] = -1
+                                effect = "benefit of cover"
+                            else:
+                                effect = None
+                            dmg, modHealth = attack(
+                                self.enemy_health[i],
+                                self.enemy_weapon[i],
+                                self.enemy_data[i],
+                                self.unit_health[idOfM],
+                                self.unit_data[idOfM],
+                                effects=effect,
+                                distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfM]),
+                            )
+                            self.unit_health[idOfM] = modHealth
+                            if self.trunc is False:
+                                self._log(f"Enemy Unit {i + 21} shoots Model Unit {idOfM + 11} {float(np.sum(dmg))} damage")
+        return None
+
+    def charge_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False):
+        self.begin_phase(side, "charge")
+        if side == "model":
+            reward_delta = 0
+            for i in range(len(self.unit_health)):
+                modelName = i + 21
+                advanced = advanced_flags[i] if advanced_flags else False
+                if self.unitInAttack[i][0] == 1:
+                    continue
+                if advanced:
+                    if self.trunc is False:
+                        self._log("Model advanced — cannot charge, skipping charge")
+                else:
+                    chargeAble = []
+                    diceRoll = sum(dice(num=2))
+                    if action["attack"] == 1:
+                        for j in range(len(self.enemy_health)):
+                            if distance(self.enemy_coords[j], self.unit_coords[i]) <= 12 and self.enemyInAttack[j][0] == 0 and self.enemy_health[j] > 0:
+                                if distance(self.enemy_coords[j], self.unit_coords[i]) - diceRoll <= 5:
+                                    chargeAble.append(j)
+                    if len(chargeAble) > 0:
+                        idOfE = action["charge"]
+                        if idOfE in chargeAble:
+                            if self.trunc is False:
+                                self._log(f"Model unit {modelName} started attack with Enemy unit {idOfE + 11}")
+                            else:
+                                self.modelUpdates += "Model unit {} started attack with Enemy Unit {}\n".format(modelName, idOfE + 11)
+                            self.unitInAttack[i][0] = 1
+                            self.unitInAttack[i][1] = idOfE
+                            self.unit_coords[i][0] = self.enemy_coords[idOfE][0] + 1
+                            self.unit_coords[i][1] = self.enemy_coords[idOfE][1] + 1
+                            self.unit_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
+                            self.enemyInAttack[idOfE][0] = 1
+                            self.enemyInAttack[idOfE][1] = i
+                            self.unitCharged[i] = 1
+                            reward_delta += 0.5
+                        elif self.trunc is False:
+                            self._log(f"Model unit {modelName} failed to attack Enemy")
+                            reward_delta -= 0.5
+            return reward_delta
+        elif side == "enemy" and manual:
+            any_chargeable = False
+            battle_shock = getattr(self, "_manual_enemy_battle_shock", None)
+            for i in range(len(self.enemy_health)):
+                playerName = i + 11
+                advanced = advanced_flags[i] if advanced_flags else False
+                if advanced:
+                    self._log("You advanced — cannot charge, skipping charge")
+                    continue
+                charg = np.array([])
+                for j in range(len(self.unit_health)):
+                    if distance(self.unit_coords[j], self.enemy_coords[i]) <= 12 and self.unitInAttack[j][0] == 0 and self.unit_health[j] > 0:
+                        charg = np.append(charg, j)
+                if len(charg) > 0:
+                    any_chargeable = True
+                    response = False
+                    while response is False:
+                        attk = self._get_input(
+                            "Select which enemy you would like to charge ({}) with Unit {}: ".format(charg + 21, playerName)
+                        ).strip()
+                        if attk.lower() in ("quit", "q"):
+                            self.game_over = True
+                            return None
+                        if is_num(attk) is True and int(attk) - 21 in charg:
+                            response = True
+                            j = int(attk) - 21
+                            self._log("Rolling 2 D6...")
+                            roll = player_dice(num=2)
+                            self._log(f"You rolled a {roll[0]} and {roll[1]}")
+                            if distance(self.enemy_coords[i], self.unit_coords[j]) - sum(roll) <= 5:
+                                self._log(f"Player Unit {playerName} Successfully charged Model Unit {j + 21}")
+                                self.enemyInAttack[i][0] = 1
+                                self.enemyInAttack[i][1] = j
+                                self.enemy_coords[i][0] = self.unit_coords[j][0] + 1
+                                self.enemy_coords[i][1] = self.unit_coords[j][1] + 1
+                                self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                                self.enemyCharged[i] = 1
+                                self.updateBoard()
+                                self.unitInAttack[j][0] = 1
+                                self.unitInAttack[j][1] = i
+                            else:
+                                self._log(f"Player Unit {playerName} Failed to charge Model Unit {j + 21}")
+                        else:
+                            self._log("Not an available unit")
+                if self.enemyCP - 1 >= 0 and not (battle_shock and battle_shock[i]):
+                    strat = self._prompt_yes_no("Would you like to use the Smokescreen Stratagem for this unit? (y/n): ")
+                    if strat is None:
+                        self.game_over = True
+                        return None
+                    if strat:
+                        self.enemyStrat["smokescreen"] = i
+            if not any_chargeable:
+                self._log("No available units to charge")
+        elif side == "enemy":
+            for i in range(len(self.enemy_health)):
+                advanced = advanced_flags[i] if advanced_flags else False
+                if advanced:
+                    if self.trunc is False:
+                        self._log("Enemy advanced — cannot charge, skipping charge")
+                else:
+                    chargeAble = []
+                    diceRoll = sum(dice(num=2))
+                    for j in range(len(self.unit_health)):
+                        if distance(self.enemy_coords[i], self.unit_coords[j]) <= 12 and self.unitInAttack[j][0] == 0:
+                            if distance(self.enemy_coords[i], self.unit_coords[j]) - diceRoll <= 5:
+                                chargeAble.append(j)
+                    if len(chargeAble) > 0:
+                        idOfM = int(np.random.choice(chargeAble))
+                        dist = distance(self.enemy_coords[i], self.unit_coords[idOfM])
+                        required = max(0, dist - 1)
+                        if diceRoll >= required:
+                            if self.trunc is False:
+                                self._log(
+                                    f"Enemy unit {i + 21} successfully charged Model unit {idOfM + 11} (roll {diceRoll} vs need {required:.1f})"
+                                )
+                            self.enemy_coords[i][0] = self.unit_coords[idOfM][0] + 1
+                            self.enemy_coords[i][1] = self.unit_coords[idOfM][1]
+                            self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                            self.enemyInAttack[i][0] = 1
+                            self.enemyInAttack[i][1] = idOfM
+                            self.unitInAttack[idOfM][0] = 1
+                            self.unitInAttack[idOfM][1] = i
+                            self.enemyCharged[i] = 1
+                        elif self.trunc is False:
+                            self._log(
+                                f"Enemy unit {i + 21} failed charge vs Model unit {idOfM + 11} (roll {diceRoll} vs need {required:.1f})"
+                            )
+        return None
+
+    def fight_phase(self, side: str):
+        self.begin_phase(side, "fight")
+        self.resolve_fight_phase(active_side=side, trunc=self.trunc)
 
     def refresh_objective_control(self):
         self.modelOnOM = np.zeros(len(self.coordsOfOM), dtype=int)
@@ -927,7 +1870,12 @@ class Warhammer40kEnv(gym.Env):
         self.enemyCP = 0
         self.modelVP = 0
         self.enemyVP = 0
-        self.numTurns = 0
+        self.battle_round = 1
+        self.active_side = self.turn_order[0]
+        self.phase = "command"
+        self.numTurns = self.battle_round
+        self._round_banner_shown = False
+        self._victory_condition_announced = False
 
         forced_vic_cond = _get_forced_victory_condition()
         self.vicCond = forced_vic_cond if forced_vic_cond else dice(max=3)
@@ -953,279 +1901,26 @@ class Warhammer40kEnv(gym.Env):
         return self._get_observation(), info
 
     def enemyTurn(self, trunc=False):
-        # новый ход врага -> сброс “charged this turn”
         self.unitCharged = [0] * len(self.unit_health)
         self.enemyCharged = [0] * len(self.enemy_health)
         if trunc is True:
             self.trunc = True
 
-        self.enemyCP += 1
-        self.modelCP += 1
-        self.numTurns += 1
-
-        cp_on = np.random.randint(0, len(self.enemy_health))
-        use_cp = np.random.randint(0, 5)
-
-        for i in range(len(self.enemy_health)):
-            enemyName = i + 21
-            battleSh = False
-
-            if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.unit_health[i] > 0:
-                if trunc is False:
-                    print("This unit is Below Half Strength, starting test...")
-                    print("Rolling 2D6...")
-                diceRoll = dice(num=2)
-                if trunc is False:
-                    print("Player rolled", diceRoll[0], diceRoll[1])
-                if sum(diceRoll) >= self.enemy_data[i]["Ld"]:
-                    if trunc is False:
-                        print("Battle-shock test passed!")
-                        self.enemyOC[i] = self.enemy_data[i]["OC"]
-                else:
-                    battleSh = True
-                    self.enemyOC[i] = 0
-                    if trunc is False:
-                        print("Battle-shock test failed")
-                    if use_cp == 1 and cp_on == i and self.enemyCP - 1 >= 0:
-                        battleSh = False
-                        self.enemyCP -= 1
-                        self.enemyOC[i] = self.enemy_data[i]["OC"]
-
-            # Heroic Intervention (enemy)
-            if use_cp == 4 and cp_on == i:
-                if self.enemyCP - 2 >= 0 and self.enemyInAttack[i][0] == 0:
-                    for j in range(len(self.unitInAttack)):
-                        if self.unitInAttack[j][0] == 1 and distance(self.enemy_coords[i], self.unit_coords[j]) >= 6:
-                            self.enemyInAttack[i][0] = 1
-                            self.enemyInAttack[i][1] = j
-
-                            self.enemyInAttack[self.enemyInAttack[j][1]][0] = 0
-                            self.enemyInAttack[self.enemyInAttack[j][1]][1] = 0
-
-                            self.enemy_coords[i][0] = self.enemy_coords[j][0] + 1
-                            self.enemy_coords[i][1] = self.enemy_coords[j][1] + 1
-                            self.enemy_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
-
-                            self.unitInAttack[j][1] = i
-                            self.enemyCP -= 2
-                            break
-
-            if self.enemyInAttack[i][0] == 0 and self.enemy_health[i] > 0:
-                # follow random alive model unit
-                aliveUnits = []
-                for j in range(len(self.unit_health)):
-                    if self.unit_health[j] > 0:
-                        aliveUnits.append(j)
-                if len(aliveUnits) == 0:
-                    break
-                idOfM = np.random.choice(aliveUnits)
-
-                base_m = self.enemy_data[i]["Movement"]
-                dist_to_target = distance(self.unit_coords[idOfM], self.enemy_coords[i])
-                advanced = dist_to_target > (base_m + 6)
-
-                if advanced:
-                    movement = base_m + dice()
-                else:
-                    movement = base_m
-
-                if distance(self.unit_coords[idOfM], [self.enemy_coords[i][0], self.enemy_coords[i][1] - movement]) < distance(self.unit_coords[idOfM], self.enemy_coords[i]):
-                    self.enemy_coords[i][1] -= movement
-                elif distance(self.unit_coords[idOfM], [self.enemy_coords[i][0], self.enemy_coords[i][1] + movement]) < distance(self.unit_coords[idOfM], self.enemy_coords[i]):
-                    self.enemy_coords[i][1] += movement
-                elif distance(self.unit_coords[idOfM], [self.enemy_coords[i][0] - movement, self.enemy_coords[i][1]]) < distance(self.unit_coords[idOfM], self.enemy_coords[i]):
-                    self.enemy_coords[i][0] -= movement
-                elif distance(self.unit_coords[idOfM], [self.enemy_coords[i][0] + movement, self.enemy_coords[i][1]]) < distance(self.unit_coords[idOfM], self.enemy_coords[i]):
-                    self.enemy_coords[i][0] += movement
-
-                # bounds + collision
-                self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
-                for j in range(len(self.unit_health)):
-                    if self.enemy_coords[i] == self.unit_coords[j]:
-                        self.enemy_coords[i][0] -= 1
-
-                # Fight Phase (10e simplified)
-                self.resolve_fight_phase(active_side="enemy", trunc=trunc)
-
-                # model overwatch reaction
-                if self.modelStrat["overwatch"] != -1:
-                    if self.unit_weapon[self.modelStrat["overwatch"]] != "None":
-                        if distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]) <= self.unit_weapon[self.modelStrat["overwatch"]]["Range"]:
-                            _logger = None
-                            if trunc is False and _verbose_logs_enabled():
-                                _logger = RollLogger(auto_dice)
-                                dmg, modHealth = attack(
-                                    self.unit_health[self.modelStrat["overwatch"]],
-                                    self.unit_weapon[self.modelStrat["overwatch"]],
-                                    self.unit_data[self.modelStrat["overwatch"]],
-                                    self.enemy_health[i],
-                                    self.enemy_data[i],
-                                    distance_to_target=distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]),
-                                    roller=_logger.roll,
-                                )
-                            else:
-                                dmg, modHealth = attack(
-                                    self.unit_health[self.modelStrat["overwatch"]],
-                                    self.unit_weapon[self.modelStrat["overwatch"]],
-                                    self.unit_data[self.modelStrat["overwatch"]],
-                                    self.enemy_health[i],
-                                    self.enemy_data[i],
-                                    distance_to_target=distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]),
-                                )
-                            self.enemy_health[i] = modHealth
-                            if trunc is False and _logger is not None:
-                                print("\n🟦 Model Overwatch (подробно):")
-                                _logger.print_shoot_report(
-                                    weapon=self.unit_weapon[self.modelStrat["overwatch"]],
-                                    attacker_data=self.unit_data[self.modelStrat["overwatch"]],
-                                    defender_data=self.enemy_data[i],
-                                    dmg_list=dmg,
-                                    effect=None,
-                                )
-                            self.modelStrat["overwatch"] = -1
-
-                # set overwatch
-                if use_cp == 2 and cp_on == i and self.enemyCP - 1 >= 0 and battleSh is False:
-                    self.enemyCP -= 1
-                    self.enemyStrat["overwatch"] = i
-
-                # Shooting phase (if applicable)
-                if self.enemy_weapon[i] != "None":
-                    if advanced and not weapon_is_assault(self.enemy_weapon[i]):
-                        if trunc is False:
-                            print("Enemy advanced — non-Assault weapon, skipping shooting")
-                    else:
-                        shootAbleUnits = []
-                        for j in range(len(self.unit_health)):
-                            if distance(self.enemy_coords[i], self.unit_coords[j]) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
-                                shootAbleUnits.append(j)
-
-                        if len(shootAbleUnits) > 0:
-                            idOfM = np.random.choice(shootAbleUnits)
-                            if self.modelStrat["smokescreen"] != -1 and self.modelStrat["smokescreen"] == idOfM:
-                                self.modelStrat["smokescreen"] = -1
-                                effect = "benefit of cover"
-                            else:
-                                effect = None
-
-                            dmg, modHealth = attack(
-                                self.enemy_health[i],
-                                self.enemy_weapon[i],
-                                self.enemy_data[i],
-                                self.unit_health[idOfM],
-                                self.unit_data[idOfM],
-                                effects=effect,
-                                distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfM]),
-                            )
-                            self.unit_health[idOfM] = modHealth
-                            if trunc is False:
-                                print("Enemy Unit", enemyName, "shoots Model Unit", idOfM + 11, float(np.sum(dmg)), "damage")
-
-                # Charging (if applicable)
-                if advanced:
-                    if trunc is False:
-                        print("Enemy advanced — cannot charge, skipping charge")
-                else:
-                    chargeAble = []
-                    diceRoll = sum(dice(num=2))
-                    for j in range(len(self.unit_health)):
-                        if distance(self.enemy_coords[i], self.unit_coords[j]) <= 12 and self.unitInAttack[j][0] == 0:
-                            if distance(self.enemy_coords[i], self.unit_coords[j]) - diceRoll <= 5:
-                                chargeAble.append(j)
-
-                    if len(chargeAble) > 0:
-                        # Выбираем цель для чарджа
-                        idOfM = int(np.random.choice(chargeAble))
-
-                        # 10e: успех, если 2D6 >= (distance - 1")
-                        dist = distance(self.enemy_coords[i], self.unit_coords[idOfM])
-                        required = max(0, dist - 1)
-
-                        # diceRoll ты уже кинул выше, поэтому используем его
-                        if diceRoll >= required:
-                            if trunc is False:
-                                print("Enemy unit", enemyName, "successfully charged Model unit", idOfM + 11,
-                                      f"(roll {diceRoll} vs need {required:.1f})")
-
-                            # Ставим врага в пределах 1" (упрощённо: рядом по оси X)
-                            # Делаем так, чтобы distance <= 1
-                            self.enemy_coords[i][0] = self.unit_coords[idOfM][0] + 1
-                            self.enemy_coords[i][1] = self.unit_coords[idOfM][1]
-                            self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
-
-                            # Помечаем, что они в бою (Engagement)
-                            self.enemyInAttack[i][0] = 1
-                            self.enemyInAttack[i][1] = idOfM
-
-                            self.unitInAttack[idOfM][0] = 1
-                            self.unitInAttack[idOfM][1] = i
-                            self.enemyCharged[i] = 1
-
-
-                            # ВАЖНО: урон НЕ наносим сейчас. Урон будет в Fight Phase.
-                            # Нужно также пометить "charged this turn" для приоритета.
-                            # Если у тебя нет массива, добавь:
-                            # self.enemyCharged[i] = 1
-                        else:
-                            if trunc is False:
-                                print("Enemy unit", enemyName, "failed charge vs Model unit", idOfM + 11,
-                                      f"(roll {diceRoll} vs need {required:.1f})")
-
-
-                if use_cp == 3 and cp_on == i and self.enemyCP - 1 >= 0 and battleSh is False:
-                    self.enemyCP -= 1
-                    self.enemyStrat["smokescreen"] = i
-
-                # Objective control is recalculated in refresh_objective_control.
-
-            elif self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
-                decide = np.random.randint(0, 10)
-                idOfM = self.enemyInAttack[i][1]
-                if decide == 5:
-                    if trunc is False:
-                        print("Enemy unit", enemyName, "pulled out of fight with Model unit", idOfM + 11)
-
-                    if battleSh is True:
-                        diceRoll = dice()
-                        if diceRoll < 3:
-                            self.enemy_health[i] -= self.enemy_data[i]["W"]
-
-                    self.enemy_coords[i][0] -= self.enemy_data[i]["Movement"]
-                    self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
-                    self.unitInAttack[idOfM][0] = 0
-                    self.unitInAttack[idOfM][1] = 0
-
-                    self.enemyInAttack[i][0] = 0
-                    self.enemyInAttack[i][1] = 0
-                else:
-                    if self.unit_health[idOfM] > 0:
-                        dmg, modHealth = attack(
-                            self.enemy_health[i],
-                            self.enemy_melee[i],
-                            self.enemy_data[i],
-                            self.unit_health[idOfM],
-                            self.unit_data[idOfM],
-                            rangeOfComb="Melee",
-                        )
-                        self.unit_health[idOfM] = modHealth
-                    else:
-                        self.unitInAttack[idOfM][0] = 0
-                        self.unitInAttack[idOfM][1] = 0
-
-                        self.enemyInAttack[i][0] = 0
-                        self.enemyInAttack[i][1] = 0
+        self.active_side = "enemy"
+        battle_shock = self.command_phase("enemy")
+        advanced_flags = self.movement_phase("enemy", battle_shock=battle_shock)
+        self.shooting_phase("enemy", advanced_flags=advanced_flags)
+        self.charge_phase("enemy", advanced_flags=advanced_flags)
+        self.fight_phase("enemy")
 
         if self.modelStrat["overwatch"] != -1:
             self.modelStrat["overwatch"] = -1
         if self.modelStrat["smokescreen"] != -1:
             self.modelStrat["smokescreen"] = -1
 
-        vp_before = self.enemyVP
-        self.refresh_objective_control()
-        for i in range(len(self.enemyOnOM)):
-            if self.enemyOnOM[i] > self.modelOnOM[i]:
-                self.enemyVP += 1
-        self._log_vp_scoring("enemy", vp_before, self.enemyVP)
+        self._score_end_of_turn("enemy")
+        self._log("End of ENEMY turn scoring...")
+        self._advance_turn_order()
 
     def resolve_fight_phase(self, active_side: str, trunc=None):
         """
@@ -1242,7 +1937,7 @@ class Warhammer40kEnv(gym.Env):
 
         def _log(msg: str):
             if quiet is False:
-                print(msg)
+                self._log(msg)
 
         def _do_melee(att_side: str, att_idx: int):
             """
@@ -1370,9 +2065,6 @@ class Warhammer40kEnv(gym.Env):
         if not any_fight:
             return
 
-        if quiet is False:
-            print("\n⚔️ ===== FIGHT PHASE =====")
-
         fought_model = set()
         fought_enemy = set()
 
@@ -1422,352 +2114,36 @@ class Warhammer40kEnv(gym.Env):
         self.enemyCharged = [0] * len(self.enemy_health)
 
         if quiet is False:
-            print("⚔️ ===== END FIGHT PHASE =====\n")
+            self._log("⚔️ Combat resolution complete.\n")
 
 
 
     def step(self, action):
         reward = 0
+        res = 0
         self.unitCharged = [0] * len(self.unit_health)
         self.enemyCharged = [0] * len(self.enemy_health)
-        self.enemyCP += 1
-        self.modelCP += 1
-        effect = None
-        res = 0
-
-        for i in range(len(self.unit_health)):
-            modelName = i + 21
-            battleSh = False
-
-            if isBelowHalfStr(self.unit_data[i], self.unit_health[i]) is True and self.unit_health[i] > 0:
-                if self.trunc is False:
-                    print("This unit is Battle-shocked, starting test...")
-                    print("Rolling 2D6...")
-                diceRoll = dice(num=2)
-                if self.trunc is False:
-                    print("Model rolled", diceRoll[0], diceRoll[1])
-                if sum(diceRoll) >= self.unit_data[i]["Ld"]:
-                    self.modelOC[i] = self.unit_data[i]["OC"]
-                    if self.trunc is False:
-                        print("Battle-shock test passed!")
-                else:
-                    battleSh = True
-                    if self.trunc is False:
-                        print("Battle-shock test failed")
-                    self.modelOC[i] = 0
-                    if action["use_cp"] == 1 and action["cp_on"] == i:
-                        if self.modelCP - 1 >= 0:
-                            battleSh = False
-                            reward += 0.5
-                            self.modelCP -= 1
-                            if self.trunc is False:
-                                print("Used Insane Bravery Stratagem to pass Battle Shock test")
-                        else:
-                            reward -= 0.5
-
-            # Heroic Intervention
-            if action["use_cp"] == 4 and action["cp_on"] == i:
-                if self.modelCP - 2 >= 0 and self.unitInAttack[i][0] == 0:
-                    for j in range(len(self.enemyInAttack)):
-                        if self.enemyInAttack[j][0] == 1 and distance(self.unit_coords[i], self.enemy_coords[j]) >= 6:
-                            self.unitInAttack[i][0] = 1
-                            self.unitInAttack[i][1] = j
-
-                            self.unitInAttack[self.enemyInAttack[j][1]][0] = 0
-                            self.unitInAttack[self.enemyInAttack[j][1]][1] = 0
-
-                            self.unit_coords[i][0] = self.enemy_coords[j][0] + 1
-                            self.unit_coords[i][1] = self.enemy_coords[j][1] + 1
-                            self.unit_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
-
-                            self.enemyInAttack[j][1] = i
-                            self.modelCP -= 2
-                            reward += 0.5
-                            break
-                    reward += 0.5
-                else:
-                    reward -= 0.5
-
-            if self.unitInAttack[i][0] == 0 and self.unit_health[i] > 0:
-                base_m = self.unit_data[i]["Movement"]
-                label = "move_num_" + str(i)
-                want = int(action[label])
-
-                advanced = (action["move"] != 4) and (want > base_m)
-
-                if advanced:
-                    max_move = base_m + dice()
-                else:
-                    max_move = base_m
-
-                movement = min(want, max_move)
-
-                if action["move"] == 0:  # down
-                    self.unit_coords[i][0] += movement
-                elif action["move"] == 1:  # up
-                    self.unit_coords[i][0] -= movement
-                elif action["move"] == 2:  # left
-                    self.unit_coords[i][1] -= movement
-                elif action["move"] == 3:  # right
-                    self.unit_coords[i][1] += movement
-                elif action["move"] == 4:  # no move
-                    for j in range(len(self.coordsOfOM)):
-                        if distance(self.unit_coords[i], self.coordsOfOM[j]) <= 5:
-                            reward += 0.5
-                        else:
-                            reward -= 0.5
-
-                if self.trunc is False:
-                    if action["move"] == 0:
-                        print("Model unit", modelName, "moved", movement, "inches downward")
-                    elif action["move"] == 1:
-                        print("Model unit", modelName, "moved", movement, "inches upward")
-                    elif action["move"] == 2:
-                        print("Model unit", modelName, "moved", movement, "inches left")
-                    elif action["move"] == 3:
-                        print("Model unit", modelName, "moved", movement, "inches right")
-                    elif action["move"] == 4:
-                        print("Model unit", modelName, "did not move")
-
-                # bounds + collision
-                self.unit_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
-                for j in range(len(self.enemy_health)):
-                    if self.unit_coords[i] == self.enemy_coords[j]:
-                        self.unit_coords[i][0] -= 1
-
-                # enemy overwatch reaction
-                if self.enemyStrat["overwatch"] != -1 and self.enemy_weapon[self.enemyStrat["overwatch"]] != "None":
-                    if distance(self.unit_coords[i], self.enemy_coords[self.enemyStrat["overwatch"]]) <= self.enemy_weapon[self.enemyStrat["overwatch"]]["Range"]:
-                        dmg, modHealth = attack(
-                            self.enemy_health[self.enemyStrat["overwatch"]],
-                            self.enemy_weapon[self.enemyStrat["overwatch"]],
-                            self.enemy_data[self.enemyStrat["overwatch"]],
-                            self.unit_health[i],
-                            self.unit_data[i],
-                            distance_to_target=distance(self.unit_coords[i], self.enemy_coords[self.enemyStrat["overwatch"]]),
-                        )
-                        self.unit_health[i] = modHealth
-                        if self.trunc is False:
-                            print(
-                                "Player unit",
-                                self.enemyStrat["overwatch"] + 11,
-                                "successfully hit model unit",
-                                i + 11,
-                                "for",
-                                sum(dmg),
-                                "damage using the overwatch strategem",
-                            )
-                        self.enemyStrat["overwatch"] = -1
-
-                if action["use_cp"] == 2 and action["cp_on"] == i:
-                    if self.modelCP - 1 >= 0 and self.enemy_weapon[i] != "None":
-                        self.modelCP -= 1
-                        self.modelStrat["overwatch"] = i
-                        reward += 0.5
-                    elif battleSh is not False:
-                        if self.trunc is False:
-                            print("This unit is BattleShocked, no stratagems can be used on it")
-                    else:
-                        reward -= 1
-
-                # shooting phase (if eligible)
-                if self.unit_weapon[i] != "None":
-                    if advanced and not weapon_is_assault(self.unit_weapon[i]):
-                        if self.trunc is False:
-                            print("Model advanced — non-Assault weapon, skipping shooting")
-                    else:
-                        shootAbleUnits = []
-                        for j in range(len(self.enemy_health)):
-                            if distance(self.unit_coords[i], self.enemy_coords[j]) <= self.unit_weapon[i]["Range"] and self.enemy_health[j] > 0 and self.enemyInAttack[j][0] == 0:
-                                shootAbleUnits.append(j)
-
-                        if len(shootAbleUnits) > 0:
-                            idOfE = action["shoot"]
-                            if idOfE in shootAbleUnits:
-                                if idOfE == self.enemyStrat["smokescreen"]:
-                                    effect = "benefit of cover"
-
-                                _logger = None
-                                if self.trunc is False and _verbose_logs_enabled():
-                                    _logger = RollLogger(auto_dice)
-                                    dmg, modHealth = attack(
-                                        self.unit_health[i],
-                                        self.unit_weapon[i],
-                                        self.unit_data[i],
-                                        self.enemy_health[idOfE],
-                                        self.enemy_data[idOfE],
-                                        effects=effect,
-                                        distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
-                                        roller=_logger.roll,
-                                    )
-                                else:
-                                    dmg, modHealth = attack(
-                                        self.unit_health[i],
-                                        self.unit_weapon[i],
-                                        self.unit_data[i],
-                                        self.enemy_health[idOfE],
-                                        self.enemy_data[idOfE],
-                                        effects=effect,
-                                        distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
-                                    )
-                                self.enemy_health[idOfE] = modHealth
-                                reward += 0.2
-                                if self.trunc is False:
-                                    
-                                    print("Model Unit", modelName, "shoots Enemy Unit", idOfE + 11, float(np.sum(dmg)), "damage")
-                                else:
-                                    self.modelUpdates += "Model Unit {} shoots Enemy Unit {} {} times\n".format(modelName, idOfE + 11, sum(dmg))
-                                if self.trunc is False and _logger is not None:
-                                    _logger.print_shoot_report(
-                                        weapon=self.unit_weapon[i],
-                                        attacker_data=self.unit_data[i],
-                                        defender_data=self.enemy_data[idOfE],
-                                        dmg_list=dmg,
-                                        effect=effect,
-                                    )
-                            else:
-                                reward -= 0.5
-                                if self.trunc is False:
-                                    print("Model Unit", modelName, "fails to shoot an Enemy Unit")
-
-                # Charge (if applicable)
-                if advanced:
-                    if self.trunc is False:
-                        print("Model advanced — cannot charge, skipping charge")
-                else:
-                    chargeAble = []
-                    diceRoll = sum(dice(num=2))
-
-                    if action["attack"] == 1:
-                        for j in range(len(self.enemy_health)):
-                            if distance(self.enemy_coords[j], self.unit_coords[i]) <= 12 and self.enemyInAttack[j][0] == 0 and self.enemy_health[j] > 0:
-                                if distance(self.enemy_coords[j], self.unit_coords[i]) - diceRoll <= 5:
-                                    chargeAble.append(j)
-
-                    if len(chargeAble) > 0:
-                        idOfE = action["charge"]
-                        if idOfE in chargeAble:
-                            if self.trunc is False:
-                                print("Model unit", modelName, "started attack with Enemy unit", idOfE + 11)
-                            else:
-                                self.modelUpdates += "Model unit {} started attack with Enemy Unit {}\n".format(modelName, idOfE + 11)
-
-                            self.unitInAttack[i][0] = 1
-                            self.unitInAttack[i][1] = idOfE
-
-                            self.unit_coords[i][0] = self.enemy_coords[idOfE][0] + 1
-                            self.unit_coords[i][1] = self.enemy_coords[idOfE][1] + 1
-                            self.unit_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
-
-                            self.enemyInAttack[idOfE][0] = 1
-                            self.enemyInAttack[idOfE][1] = i
-                            self.unitCharged[i] = 1
-
-
-                            reward += 0.5
-                        else:
-                            if self.trunc is False:
-                                print("Model unit", modelName, "failed to attack Enemy")
-                            reward -= 0.5
-
-
-
-
-                # smokescreen
-                if action["use_cp"] == 3 and action["cp_on"] == i:
-                    if self.modelCP - 1 >= 0:
-                        self.modelCP -= 1
-                        self.modelStrat["smokescreen"] = i
-                        reward += 0.5
-                    elif battleSh is not False:
-                        if self.trunc is False:
-                            print("This unit is Battle shocked, stratagems can not be used")
-                    else:
-                        reward -= 0.5
-
-                for j in range(len(self.coordsOfOM)):
-                    if distance(self.coordsOfOM[j], self.unit_coords[i]) <= 5:
-                        reward += 0.5
-
-            elif self.unitInAttack[i][0] == 1 and self.unit_health[i] > 0:
-                idOfE = self.unitInAttack[i][1]
-
-                # Если враг уже мёртв — автоматически выходим из боя
-                if self.enemy_health[idOfE] <= 0:
-                    reward += 0.3
-
-                    self.unitInAttack[i][0] = 0
-                    self.unitInAttack[i][1] = 0
-
-                    self.enemyInAttack[idOfE][0] = 0
-                    self.enemyInAttack[idOfE][1] = 0
-
-                else:
-                    # ВАЖНО:
-                    # В 10e здесь НЕ наносим урон. Урон будет в Fight Phase.
-                    #
-                    # action["attack"] используем как:
-                    # 0 = Fall Back (выйти из боя)
-                    # 1 = остаться в Engagement (удар потом в Fight Phase)
-                    if action["attack"] == 0:
-                        # Fall Back
-                        if self.unit_health[i] * 2 >= self.enemy_health[idOfE]:
-                            reward -= 0.5
-
-                        if self.trunc is False:
-                            print("Model unit", modelName, "pulled out of fight with Enemy unit", idOfE + 11)
-                        else:
-                            self.modelUpdates += "Model Unit {} pulled out of fight with Enemy unit {}\n".format(modelName, idOfE + 11)
-
-                        # Если battleshock — риск потерь при отступлении (как у тебя было)
-                        if battleSh is True:
-                            diceRoll = dice()
-                            if diceRoll < 3:
-                                self.unit_health[i] -= self.unit_data[i]["W"]
-
-                        # Отходим (как у тебя было)
-                        self.unit_coords[i][0] += self.unit_data[i]["Movement"]
-
-                        # Снимаем статусы боя
-                        self.unitInAttack[i][0] = 0
-                        self.unitInAttack[i][1] = 0
-
-                        self.enemyInAttack[idOfE][0] = 0
-                        self.enemyInAttack[idOfE][1] = 0
-
-                    else:
-                        # Остаёмся в бою — урон будет в Fight Phase (позже)
-                        reward += 0.2
-                        # (можно вообще без print, чтобы не засорять; оставляем тишину)
-                        pass
-
-
-            elif self.unit_health[i] == 0:
-                reward -= 1
-                if self.trunc is False:
-                    print("Model unit", modelName, "is destroyed")
-
-        # Fight Phase (10e simplified)
-        self.resolve_fight_phase(active_side="model")
+        self.active_side = "model"
+        battle_shock, delta = self.command_phase("model", action=action)
+        reward += delta
+        advanced_flags, delta = self.movement_phase("model", action=action, battle_shock=battle_shock)
+        reward += delta
+        reward += self.shooting_phase("model", advanced_flags=advanced_flags, action=action) or 0
+        reward += self.charge_phase("model", advanced_flags=advanced_flags, action=action) or 0
+        self.fight_phase("model")
         self.enemyStrat["overwatch"] = -1
         self.enemyStrat["smokescreen"] = -1
 
-        vp_before = self.modelVP
-        self.refresh_objective_control()
-        for i in range(len(self.modelOnOM)):
-            if self.modelOnOM[i] > self.enemyOnOM[i]:
-                self.modelVP += 1
-        self._log_vp_scoring("model", vp_before, self.modelVP)
+        self._score_end_of_turn("model")
+        self._log("End of MODEL turn scoring...")
 
         for i in range(len(self.unit_health)):
             if self.unit_health[i] < 0:
                 self.unit_health[i] = 0
-
         for i in range(len(self.enemy_health)):
             if self.enemy_health[i] < 0:
                 self.enemy_health[i] = 0
 
-        # Determine winning team
         if sum(self.unit_health) <= 0:
             self.game_over = True
             reward -= 2
@@ -1777,39 +2153,8 @@ class Warhammer40kEnv(gym.Env):
             reward += 2
             res = 4
 
-        # Other victory conditions
-        if self.numTurns == 10 and self.game_over is not True:
-            self.game_over = True
-            res = self.vicCond
-            if res == 1:
-                self.modelVP = 0
-                self.enemyVP = 0
-                for i in range(len(self.enemyOnOM)):
-                    if self.enemyOnOM[i] > self.modelOnOM[i]:
-                        self.enemyVP += 1
-                    elif self.modelOnOM[i] > self.enemyOnOM[i]:
-                        self.modelVP += 1
-                if self.modelVP > self.enemyVP:
-                    reward += 2
-                else:
-                    reward -= 2
-            elif res == 2:
-                model_vp_before = self.modelVP
-                enemy_vp_before = self.enemyVP
-                self._apply_ancient_relic_endgame_bonus()
-                if self.modelVP != model_vp_before:
-                    self._log_vp_scoring("model (endgame)", model_vp_before, self.modelVP)
-                if self.enemyVP != enemy_vp_before:
-                    self._log_vp_scoring("enemy (endgame)", enemy_vp_before, self.enemyVP)
-                if self.modelVP > self.enemyVP:
-                    reward += 2
-                else:
-                    reward -= 2
-            elif res == 3:
-                if self.modelVP > self.enemyVP:
-                    reward += 2
-                else:
-                    reward -= 2
+        self._advance_turn_order()
+        reward, res = self._apply_turn_limit_endgame(reward=reward)
 
         self.iter += 1
         info = self.get_info()
@@ -2443,6 +2788,78 @@ class Warhammer40kEnv(gym.Env):
             if self.enemyOnOM[i] > self.modelOnOM[i]:
                 self.enemyVP += 1
         self._log_vp_scoring("enemy", vp_before, self.enemyVP)
+
+        for k in range(len(self.enemy_health)):
+            if self.enemy_health[k] < 0:
+                self.enemy_health[k] = 0
+
+        self.iter += 1
+        info = self.get_info()
+        return self.game_over, info
+
+    def player(self):
+        self.active_side = "enemy"
+
+        if not self._victory_condition_announced:
+            self._log(f"Victory Condition rolled: {self._mission_name()}")
+            self._victory_condition_announced = True
+
+        info = self.get_info()
+        if self.playType is False:
+            self._log(str(info))
+        else:
+            moreInfo = "Model Unit Health: {}, Player Unit Health: {}\nModel CP: {}, Player CP: {}\nModel VP: {}, Player VP: {}\n".format(
+                info["model health"], info["player health"], info["modelCP"], info["playerCP"], info["model VP"], info["player VP"]
+            )
+            if self.modelUpdates != "":
+                sendToGUI(moreInfo + self.modelUpdates + "\nWould you like to continue: ")
+            else:
+                sendToGUI(moreInfo + "\nWould you like to continue: ")
+            ans = recieveGUI()
+            response = False
+            while response is False:
+                if ans.lower() in ("y", "yes"):
+                    response = True
+                    self.modelUpdates = ""
+                elif ans.lower() in ("n", "no"):
+                    self.game_over = True
+                    info = self.get_info()
+                    return self.game_over, info
+                else:
+                    sendToGUI("Its a yes or no question dude...: ")
+                    ans = recieveGUI()
+
+        battle_shock = self.command_phase("enemy", manual=True)
+        if self.game_over:
+            info = self.get_info()
+            return self.game_over, info
+
+        advanced_flags = self.movement_phase("enemy", manual=True, battle_shock=battle_shock)
+        if self.game_over:
+            info = self.get_info()
+            return self.game_over, info
+
+        self.shooting_phase("enemy", advanced_flags=advanced_flags, manual=True)
+        if self.game_over:
+            info = self.get_info()
+            return self.game_over, info
+
+        self.charge_phase("enemy", advanced_flags=advanced_flags, manual=True)
+        if self.game_over:
+            info = self.get_info()
+            return self.game_over, info
+
+        self.fight_phase("enemy")
+
+        if self.modelStrat["overwatch"] != -1:
+            self.modelStrat["overwatch"] = -1
+        if self.modelStrat["smokescreen"] != -1:
+            self.modelStrat["smokescreen"] = -1
+
+        self._score_end_of_turn("enemy")
+        self._log("End of ENEMY turn scoring...")
+        self._advance_turn_order()
+        _, _ = self._apply_turn_limit_endgame()
 
         for k in range(len(self.enemy_health)):
             if self.enemy_health[k] < 0:
