@@ -155,9 +155,6 @@ Image metricBox6;
   Button help;
   Button chooseMetrics;
   Button playGUI;
-  Label victoryConditionLabel;
-  ComboBoxText victoryConditionSelect;
-  std::string forcedVictoryCondition;
   std::string playInGUI;
 };
 

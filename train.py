@@ -36,11 +36,7 @@ UPDATES_PER_STEP = int(os.getenv("UPDATES_PER_STEP", "4"))
 # ======================
 
 
-MISSION_NAME = {
-    1: "slay_and_secure",
-    2: "ancient_relic",
-    3: "domination",
-}
+DEFAULT_MISSION_NAME = "only_war"
 
 def to_np_state(s):
     if isinstance(s, (dict, collections.OrderedDict)):
@@ -270,7 +266,16 @@ while end == False:
 
     if RENDER_EVERY > 0 and (i % RENDER_EVERY == 0 or done):
         env.render()
-    message = "Iteration {} ended with reward {}, enemy health {}, model health {}, model VP {}, enemy VP {}, victory condition {}".format(i, reward, enemy_health, unit_health, info["model VP"], info["player VP"], info["victory condition"])
+    mission_name = info.get("mission", DEFAULT_MISSION_NAME)
+    message = "Iteration {} ended with reward {}, enemy health {}, model health {}, model VP {}, enemy VP {}, mission {}".format(
+        i,
+        reward,
+        enemy_health,
+        unit_health,
+        info["model VP"],
+        info["player VP"],
+        mission_name,
+    )
     if trunc == False:
         print(message)
     inText.append(message)
@@ -344,8 +349,8 @@ while end == False:
             result = "loss"
             end_reason = "wipe_model"
         else:
-            vc = info.get("victory condition", end_code)
-            end_reason = f"turn_limit_{MISSION_NAME.get(vc, str(vc))}"
+            mission_name = info.get("mission", DEFAULT_MISSION_NAME)
+            end_reason = f"turn_limit_{mission_name}"
             if vp_diff > 0:
                 result = "win"
             elif vp_diff < 0:
@@ -384,13 +389,7 @@ while end == False:
         epLen = 0
         rewArr = []
 
-        if res == 1:
-            inText.append("Slay and Secure Victory Condition")
-        elif res == 2:
-            inText.append("Ancient Relic Victory Condition")
-        elif res == 3:
-            inText.append("Domination Victory Condition")
-        elif res == 4:
+        if res == 4:
             inText.append("Major Victory")
 
         if float(reward) > 0:

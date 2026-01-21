@@ -46,7 +46,6 @@ Form :: Form() {
   y = 40;
   training = false;
   playing = false;
-  forcedVictoryCondition = "";
 
   bar.set_show_close_button(true);
   help.set_image_from_icon_name("help-about");
@@ -109,30 +108,6 @@ Form :: Form() {
   radioBottom.set_group(radioButtonGroup);
   radioBottom.signal_toggled().connect([this]() {
     tabControl1.set_tab_pos(PositionType::POS_BOTTOM);
-  });
-
-  victoryConditionLabel.set_text("Victory Condition (Mission):");
-  fixedTabPage1.add(victoryConditionLabel);
-  fixedTabPage1.move(victoryConditionLabel, 10, 170);
-
-  victoryConditionSelect.append("Random");
-  victoryConditionSelect.append("Slay and Secure");
-  victoryConditionSelect.append("Ancient Relic");
-  victoryConditionSelect.append("Domination");
-  victoryConditionSelect.set_active_text("Random");
-  fixedTabPage1.add(victoryConditionSelect);
-  fixedTabPage1.move(victoryConditionSelect, 10, 200);
-  victoryConditionSelect.signal_changed().connect([this]() {
-    auto text = victoryConditionSelect.get_active_text();
-    if (text == "Slay and Secure") {
-      forcedVictoryCondition = "slay_and_secure";
-    } else if (text == "Ancient Relic") {
-      forcedVictoryCondition = "ancient_relic";
-    } else if (text == "Domination") {
-      forcedVictoryCondition = "domination";
-    } else {
-      forcedVictoryCondition.clear();
-    }
   });
 
     // train tab
@@ -970,11 +945,6 @@ void Form :: startTrain() {
   training = true;
   system("clear");
   std::string command = "cd .. ; ";
-  if (!forcedVictoryCondition.empty()) {
-    command.append("FORCE_VICTORY_CONDITION=\"");
-    command.append(forcedVictoryCondition);
-    command.append("\" ");
-  }
   command.append("./train.sh");
   system(command.data());
   status.set_text("Completed!");
@@ -992,11 +962,6 @@ void Form :: playAgainstModel() {
   path = setModelFile.get_text();
 
   std::string envPrefix;
-  if (!forcedVictoryCondition.empty()) {
-    envPrefix.append("FORCE_VICTORY_CONDITION=\"");
-    envPrefix.append(forcedVictoryCondition);
-    envPrefix.append("\" ");
-  }
 
   std::string command;
 
