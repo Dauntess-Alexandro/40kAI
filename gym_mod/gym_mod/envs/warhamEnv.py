@@ -717,6 +717,8 @@ class Warhammer40kEnv(gym.Env):
         self.enemyOverwatch = -1
         self.modelStrat = {"overwatch": -1, "smokescreen": -1}
         self.enemyStrat = {"overwatch": -1, "smokescreen": -1}
+        self.unitFellBack = []
+        self.enemyFellBack = []
 
         self.modelVP = 0
         self.enemyVP = 0
@@ -760,6 +762,7 @@ class Warhammer40kEnv(gym.Env):
             self.enemy_health.append(enemy[i].showUnitData()["W"] * enemy[i].showUnitData()["#OfModels"])
             self.enemyInAttack.append([0, 0])
             self.enemyOC.append(enemy[i].showUnitData()["OC"])
+        self.enemyFellBack = [False] * len(self.enemy_health)
 
         for i in range(len(model)):
             self.unit_weapon.append(model[i].showWeapon())
@@ -769,6 +772,7 @@ class Warhammer40kEnv(gym.Env):
             self.unit_health.append(model[i].showUnitData()["W"] * model[i].showUnitData()["#OfModels"])
             self.unitInAttack.append([0, 0])
             self.modelOC.append(model[i].showUnitData()["OC"])
+        self.unitFellBack = [False] * len(self.unit_health)
 
         obsSpace = (len(model) * 3) + (len(enemy) * 3) + len(self.coordsOfOM * 2) + 2
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obsSpace,), dtype=np.float32)
@@ -867,6 +871,10 @@ class Warhammer40kEnv(gym.Env):
             self._round_banner_shown = True
         if phase == "command":
             self._log(f"--- {side.upper()} TURN ---")
+            if side == "model":
+                self.unitFellBack = [False] * len(self.unit_health)
+            elif side == "enemy":
+                self.enemyFellBack = [False] * len(self.enemy_health)
         phase_title = {
             "command": "Command phase!",
             "movement": "Movement phase!",
@@ -1260,6 +1268,7 @@ class Warhammer40kEnv(gym.Env):
                                 i,
                                 f"Отступление из боя с Enemy Unit {idOfE + 11}. Позиция до: {pos_before}",
                             )
+                            self.unitFellBack[i] = True
                             if battleSh is True:
                                 diceRoll = dice()
                                 if diceRoll < 3:
@@ -1296,6 +1305,7 @@ class Warhammer40kEnv(gym.Env):
                     if fall_back:
                         idOfE = self.enemyInAttack[i][1]
                         self._log(f"Player Unit {playerName} fell back from Enemy unit {idOfE + 21}")
+                        self.enemyFellBack[i] = True
                         if battleSh is True:
                             diceRoll = dice()
                             if diceRoll < 3:
@@ -1432,6 +1442,7 @@ class Warhammer40kEnv(gym.Env):
                         idOfM = self.enemyInAttack[i][1]
                         if self.trunc is False:
                             self._log(f"Enemy unit {i + 21} pulled out of fight with Model unit {idOfM + 11}")
+                        self.enemyFellBack[i] = True
                         if battle_shock and battle_shock[i]:
                             diceRoll = dice()
                             if diceRoll < 3:
@@ -1524,6 +1535,9 @@ class Warhammer40kEnv(gym.Env):
                 advanced = advanced_flags[i] if advanced_flags else False
                 if self.unit_health[i] <= 0:
                     self._log_unit("MODEL", modelName, i, "Юнит мертв, стрельба пропущена.")
+                    continue
+                if self.unitFellBack[i]:
+                    self._log_unit("MODEL", modelName, i, "Fall Back в этом ходу — стрельба недоступна.")
                     continue
                 if self.unitInAttack[i][0] == 1:
                     self._log_unit("MODEL", modelName, i, "Юнит в ближнем бою, стрельба недоступна.")
@@ -1626,6 +1640,9 @@ class Warhammer40kEnv(gym.Env):
             for i in range(len(self.enemy_health)):
                 playerName = i + 11
                 advanced = advanced_flags[i] if advanced_flags else False
+                if self.enemyFellBack[i]:
+                    self._log(f"Unit {playerName} Fell Back this turn — skipping shooting")
+                    continue
                 if self.enemy_weapon[i] != "None":
                     if advanced and not weapon_is_assault(self.enemy_weapon[i]):
                         self._log("You advanced — non-Assault weapon, skipping shooting")
@@ -1679,6 +1696,10 @@ class Warhammer40kEnv(gym.Env):
         elif side == "enemy":
             for i in range(len(self.enemy_health)):
                 advanced = advanced_flags[i] if advanced_flags else False
+                if self.enemyFellBack[i]:
+                    if self.trunc is False:
+                        self._log(f"Enemy Unit {i + 21} Fell Back — skipping shooting")
+                    continue
                 if self.enemy_weapon[i] != "None":
                     if advanced and not weapon_is_assault(self.enemy_weapon[i]):
                         if self.trunc is False:
@@ -1720,6 +1741,9 @@ class Warhammer40kEnv(gym.Env):
                 advanced = advanced_flags[i] if advanced_flags else False
                 if self.unit_health[i] <= 0:
                     self._log_unit("MODEL", modelName, i, "Юнит мертв, чардж пропущен.")
+                    continue
+                if self.unitFellBack[i]:
+                    self._log_unit("MODEL", modelName, i, "Fall Back в этом ходу — чардж невозможен.")
                     continue
                 if self.unitInAttack[i][0] == 1:
                     self._log_unit("MODEL", modelName, i, "Уже в ближнем бою, чардж невозможен.")
@@ -1810,6 +1834,9 @@ class Warhammer40kEnv(gym.Env):
             for i in range(len(self.enemy_health)):
                 playerName = i + 11
                 advanced = advanced_flags[i] if advanced_flags else False
+                if self.enemyFellBack[i]:
+                    self._log(f"Unit {playerName} Fell Back this turn — skipping charge")
+                    continue
                 if advanced:
                     self._log("You advanced — cannot charge, skipping charge")
                     continue
@@ -1867,6 +1894,10 @@ class Warhammer40kEnv(gym.Env):
         elif side == "enemy":
             for i in range(len(self.enemy_health)):
                 advanced = advanced_flags[i] if advanced_flags else False
+                if self.enemyFellBack[i]:
+                    if self.trunc is False:
+                        self._log("Enemy Fell Back — cannot charge, skipping charge")
+                    continue
                 if advanced:
                     if self.trunc is False:
                         self._log("Enemy advanced — cannot charge, skipping charge")
@@ -2063,6 +2094,8 @@ class Warhammer40kEnv(gym.Env):
         self.unit_health = []
         self.enemyInAttack = []
         self.unitInAttack = []
+        self.unitFellBack = []
+        self.enemyFellBack = []
         self.unitCharged = [0] * len(self.unit_health)
         self.enemyCharged = [0] * len(self.enemy_health)
 
@@ -2086,11 +2119,13 @@ class Warhammer40kEnv(gym.Env):
             self.enemy_coords.append([e[i].showCoords()[0], e[i].showCoords()[1]])
             self.enemy_health.append(self.enemy_data[i]["W"] * self.enemy_data[i]["#OfModels"])
             self.enemyInAttack.append([0, 0])
+        self.enemyFellBack = [False] * len(self.enemy_health)
 
         for i in range(len(self.unit_data)):
             self.unit_coords.append([m[i].showCoords()[0], m[i].showCoords()[1]])
             self.unit_health.append(self.unit_data[i]["W"] * self.unit_data[i]["#OfModels"])
             self.unitInAttack.append([0, 0])
+        self.unitFellBack = [False] * len(self.unit_health)
 
         self.game_over = False
         self.current_action_index = 0
