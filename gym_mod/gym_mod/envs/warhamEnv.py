@@ -807,6 +807,90 @@ class Warhammer40kEnv(gym.Env):
                 if distance(self.coordsOfOM[j], self.enemy_coords[i]) <= 5:
                     self.enemyOnOM[j] += effective_oc
 
+    def _vp_log(self, msg: str):
+        if os.getenv("VERBOSE_LOGS", "0") != "1":
+            return
+        if self.trunc is True:
+            return
+        if self.playType is True:
+            sendToGUI(msg)
+        else:
+            print(msg)
+
+    def _mission_name(self) -> str:
+        if self.vicCond == 1:
+            return "Slay and Secure"
+        if self.vicCond == 2:
+            return "Ancient Relic"
+        if self.vicCond == 3:
+            return "Domination"
+        return f"Unknown ({self.vicCond})"
+
+    def _objective_control_status(self, model_oc: int, enemy_oc: int) -> str:
+        if model_oc > enemy_oc:
+            return "model"
+        if enemy_oc > model_oc:
+            return "enemy"
+        if model_oc == 0 and enemy_oc == 0:
+            return "empty"
+        return "contested"
+
+    def _log_objective_state(self):
+        for i in range(len(self.coordsOfOM)):
+            model_oc = max(int(self.modelOnOM[i]), 0)
+            enemy_oc = max(int(self.enemyOnOM[i]), 0)
+            control = self._objective_control_status(model_oc, enemy_oc)
+            self._vp_log(
+                "Objective {} @ {} | modelOC={} enemyOC={} control={}".format(
+                    i,
+                    self.coordsOfOM[i],
+                    model_oc,
+                    enemy_oc,
+                    control,
+                )
+            )
+
+    def _log_vp_scoring(self, side: str, vp_before: int, vp_after: int, relic_note: str = None):
+        delta = vp_after - vp_before
+        self._vp_log(
+            "VP scoring ({}) for {}: {} -> {} (delta {})".format(
+                self._mission_name(),
+                side,
+                vp_before,
+                vp_after,
+                delta,
+            )
+        )
+        self._log_objective_state()
+        if relic_note:
+            self._vp_log(relic_note)
+
+    def _apply_ancient_relic_endgame_bonus(self):
+        self.refresh_objective_control()
+        model_oc = int(self.modelOnOM[self.relic])
+        enemy_oc = int(self.enemyOnOM[self.relic])
+        bonus_note = "Ancient Relic endgame bonus (relic idx {}): ".format(self.relic)
+
+        if model_oc > 0 and enemy_oc <= 0:
+            self.modelVP += 6
+            bonus_note += "model +6 (only model on relic)"
+        elif enemy_oc > 0 and model_oc <= 0:
+            self.enemyVP += 6
+            bonus_note += "enemy +6 (only enemy on relic)"
+        elif model_oc > 0 and enemy_oc > 0:
+            if model_oc > enemy_oc:
+                self.modelVP += 6
+                bonus_note += "model +6 (OC {} > {})".format(model_oc, enemy_oc)
+            elif enemy_oc > model_oc:
+                self.enemyVP += 6
+                bonus_note += "enemy +6 (OC {} > {})".format(enemy_oc, model_oc)
+            else:
+                bonus_note += "no bonus (OC tie {})".format(model_oc)
+        else:
+            bonus_note += "no bonus (relic empty)"
+
+        self._vp_log(bonus_note)
+
     def reset(self, m, e, playType=False, Type="small", trunc=False):
         # keep original references too
         self.model = m
@@ -1136,10 +1220,12 @@ class Warhammer40kEnv(gym.Env):
         if self.modelStrat["smokescreen"] != -1:
             self.modelStrat["smokescreen"] = -1
 
+        vp_before = self.enemyVP
         self.refresh_objective_control()
         for i in range(len(self.enemyOnOM)):
             if self.enemyOnOM[i] > self.modelOnOM[i]:
                 self.enemyVP += 1
+        self._log_vp_scoring("enemy", vp_before, self.enemyVP)
 
     def resolve_fight_phase(self, active_side: str, trunc=None):
         """
@@ -1666,10 +1752,12 @@ class Warhammer40kEnv(gym.Env):
         self.enemyStrat["overwatch"] = -1
         self.enemyStrat["smokescreen"] = -1
 
+        vp_before = self.modelVP
         self.refresh_objective_control()
         for i in range(len(self.modelOnOM)):
             if self.modelOnOM[i] > self.enemyOnOM[i]:
                 self.modelVP += 1
+        self._log_vp_scoring("model", vp_before, self.modelVP)
 
         for i in range(len(self.unit_health)):
             if self.unit_health[i] < 0:
@@ -1706,10 +1794,13 @@ class Warhammer40kEnv(gym.Env):
                 else:
                     reward -= 2
             elif res == 2:
-                if self.enemyOnOM[self.relic] > self.modelOnOM[self.relic]:
-                    self.enemyVP += 6
-                elif self.modelOnOM[self.relic] > self.enemyOnOM[self.relic]:
-                    self.modelVP += 6
+                model_vp_before = self.modelVP
+                enemy_vp_before = self.enemyVP
+                self._apply_ancient_relic_endgame_bonus()
+                if self.modelVP != model_vp_before:
+                    self._log_vp_scoring("model (endgame)", model_vp_before, self.modelVP)
+                if self.enemyVP != enemy_vp_before:
+                    self._log_vp_scoring("enemy (endgame)", enemy_vp_before, self.enemyVP)
                 if self.modelVP > self.enemyVP:
                     reward += 2
                 else:
@@ -2346,10 +2437,12 @@ class Warhammer40kEnv(gym.Env):
         if self.modelStrat["smokescreen"] != -1:
             self.modelStrat["smokescreen"] = -1
 
+        vp_before = self.enemyVP
         self.refresh_objective_control()
         for i in range(len(self.enemyOnOM)):
             if self.enemyOnOM[i] > self.modelOnOM[i]:
                 self.enemyVP += 1
+        self._log_vp_scoring("enemy", vp_before, self.enemyVP)
 
         for k in range(len(self.enemy_health)):
             if self.enemy_health[k] < 0:
