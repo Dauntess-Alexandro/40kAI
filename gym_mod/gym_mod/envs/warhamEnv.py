@@ -9,6 +9,7 @@ import re
 from ..engine.utils import *
 from ..engine import utils as engine_utils
 from gym_mod.engine.GUIinteract import *
+from gym_mod.engine.skills import apply_end_of_command_phase
 
 # Victory condition overrides (mission selection)
 _VICTORY_CONDITION_MAP = {
@@ -1011,6 +1012,8 @@ class Warhammer40kEnv(gym.Env):
                         reward_delta += 0.5
                     else:
                         reward_delta -= 0.5
+            dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
+            apply_end_of_command_phase(self, side="model", dice_fn=dice_fn, log_fn=self._log)
             return battle_shock, reward_delta
 
         if side == "enemy" and manual:
@@ -1068,6 +1071,8 @@ class Warhammer40kEnv(gym.Env):
                 if battleSh:
                     continue
             self._manual_enemy_battle_shock = battle_shock
+            dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
+            apply_end_of_command_phase(self, side="enemy", dice_fn=dice_fn, log_fn=self._log)
             return battle_shock
 
         if side == "enemy":
@@ -1116,6 +1121,8 @@ class Warhammer40kEnv(gym.Env):
                                 self.enemyCP -= 2
                                 break
                 battle_shock[i] = battleSh
+            dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
+            apply_end_of_command_phase(self, side="enemy", dice_fn=dice_fn, log_fn=self._log)
             return battle_shock
 
         return None

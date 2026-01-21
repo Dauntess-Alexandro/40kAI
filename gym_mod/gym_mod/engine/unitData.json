@@ -2,6 +2,7 @@
   "UnitData": [
     {
       "Army": "Necrons",
+      "Faction": "NECRONS",
       "Name": "Necron Warriors",
       "Movement": 5,
       "T": 4,
@@ -11,6 +12,9 @@
       "OC": 2,
       "#OfModels": 10,
       "IVSave": 0,
+      "Abilities": [
+        "Reanimation Protocols"
+      ],
       "Weapons": [
         "Gauss flayer",
         "Necron close combat weapon"
@@ -18,6 +22,7 @@
     },
     {
       "Army": "Necrons",
+      "Faction": "NECRONS",
       "Name": "Royal Warden",
       "Movement": 5,
       "T": 5,
@@ -27,6 +32,9 @@
       "OC": 1,
       "#OfModels": 1,
       "IVSave": 0,
+      "Abilities": [
+        "Reanimation Protocols"
+      ],
       "Weapons": [
         "Relic gauss blaster",
         "Royal warden close combat weapon"
@@ -34,6 +42,7 @@
     },
     {
       "Army": "Necrons",
+      "Faction": "NECRONS",
       "Name": "Canoptek Scarab Swarms",
       "Movement": 10,
       "T": 2,
@@ -43,6 +52,9 @@
       "OC": 0,
       "#OfModels": 3,
       "IVSave": 0,
+      "Abilities": [
+        "Reanimation Protocols"
+      ],
       "Weapons": [
         "Feeder mandibles"
       ]
