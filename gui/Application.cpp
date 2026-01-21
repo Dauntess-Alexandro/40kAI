@@ -10,6 +10,9 @@
 #include <filesystem>
 #include <vector>
 #include <algorithm>
+#include <sstream>
+#include <iomanip>
+#include <ctime>
 #include <nlohmann/json.hpp>
 #include "include/Application.h"
 #include "include/popup.h"
@@ -145,6 +148,7 @@ Form :: Form() {
     
   button1.set_label("Train");
   button1.signal_button_release_event().connect([&](GdkEventButton*) {
+    saveLastRoster();
     updateInits(modelClass, enemyClass);
     if (exists_test("data.json") && training == false) {
       status.set_text("Training...");
@@ -345,6 +349,11 @@ Form :: Form() {
     }
     return true;
   });
+  mirrorRosterButton.set_label("Mirror roster");
+  mirrorRosterButton.signal_button_release_event().connect([&](GdkEventButton*) {
+    mirrorRoster();
+    return true;
+  });
 
   // add initial armies (Space Marines) 
 
@@ -434,6 +443,8 @@ Form :: Form() {
   fixedTabPage2.move(clearAllModel, 340, 160);
   fixedTabPage2.add(clearAllEnemy);
   fixedTabPage2.move(clearAllEnemy, 340, 200);
+  fixedTabPage2.add(mirrorRosterButton);
+  fixedTabPage2.move(mirrorRosterButton, 400, 140);
   fixedTabPage2.add(openArmyPopup);
   fixedTabPage2.move(openArmyPopup, 400, (160+200)/2);
   fixedTabPage2.add(textbox1);
@@ -512,6 +523,7 @@ Form :: Form() {
   textbox2.set_text("Play Against Model:");
   button2.signal_button_release_event().connect([&](GdkEventButton*) {
     if (playing == false) {
+      saveLastRoster();
       playInGUI = "False";
       runPlayAgainstModelInBackground();
     }
@@ -557,6 +569,7 @@ Form :: Form() {
   playGUI.set_label("Play in GUI");
   playGUI.signal_button_release_event().connect([&](GdkEventButton* event) {
 	if (playing == false) {
+		saveLastRoster();
 		openPlayGUI();
 		playInGUI = "True";
 		runPlayAgainstModelInBackground();
@@ -581,6 +594,10 @@ Form :: Form() {
 
   bar.set_title("40kAI GUI");
   resize(700, 600);
+  loadLastRoster();
+  signal_hide().connect([this]() {
+    saveLastRoster();
+  });
   show_all();
 }
 
@@ -640,6 +657,232 @@ int Form :: openHelpMenu() {
 std::string Form :: toLower(std::string data) {
   std::transform(data.begin(), data.end(), data.begin(),[](unsigned char c){ return std::tolower(c); });
   return data;
+}
+
+void Form :: mirrorRoster() {
+  auto playerEntry = enterEnemyUnit.get_text();
+  if (enemyUnits.empty() && playerEntry.empty()) {
+    status.set_text("Player roster is empty, nothing to mirror.");
+    return;
+  }
+
+  if (!playerEntry.empty()) {
+    enterModelUnit.set_text(playerEntry);
+  }
+
+  if (!enemyClass.empty()) {
+    applyFactionToModel(enemyClass.substr(1));
+  }
+
+  modelUnits = enemyUnits;
+  savetoTxt(enemyUnits, modelUnits);
+  status.set_text("Mirrored Player roster to Model.");
+}
+
+std::filesystem::path Form :: lastRosterPath() const {
+  const char* xdgConfig = std::getenv("XDG_CONFIG_HOME");
+  std::filesystem::path basePath;
+  if (xdgConfig && *xdgConfig) {
+    basePath = xdgConfig;
+  } else {
+    const char* home = std::getenv("HOME");
+    if (home && *home) {
+      basePath = std::filesystem::path(home) / ".config";
+    } else {
+      basePath = std::filesystem::current_path();
+    }
+  }
+  return basePath / "40kAI" / "last_roster.json";
+}
+
+std::string Form :: currentTimestamp() const {
+  auto now = std::time(nullptr);
+  std::tm localTime{};
+  localTime = *std::localtime(&now);
+  std::ostringstream oss;
+  oss << std::put_time(&localTime, "%Y-%m-%dT%H:%M:%S");
+  return oss.str();
+}
+
+std::string Form :: joinUnits(const std::vector<std::string>& units) const {
+  std::ostringstream oss;
+  for (size_t i = 0; i < units.size(); ++i) {
+    oss << units[i];
+    if (i + 1 < units.size()) {
+      oss << "; ";
+    }
+  }
+  return oss.str();
+}
+
+std::vector<std::string> Form :: splitUnits(const std::string& text) const {
+  std::string normalized = text;
+  for (auto& ch : normalized) {
+    if (ch == ',' || ch == '\n') {
+      ch = ';';
+    }
+  }
+
+  auto trim = [](const std::string& input) {
+    size_t start = input.find_first_not_of(" \t");
+    if (start == std::string::npos) {
+      return std::string();
+    }
+    size_t end = input.find_last_not_of(" \t");
+    return input.substr(start, end - start + 1);
+  };
+
+  std::vector<std::string> units;
+  std::stringstream ss(normalized);
+  std::string item;
+  while (std::getline(ss, item, ';')) {
+    auto cleaned = trim(item);
+    if (!cleaned.empty()) {
+      units.push_back(cleaned);
+    }
+  }
+  return units;
+}
+
+void Form :: applyFactionToModel(const std::string& faction) {
+  if (faction.empty()) {
+    return;
+  }
+
+  std::string normalized = toLower(faction);
+  std::replace(normalized.begin(), normalized.end(), ' ', '_');
+  if (normalized == "orks") {
+    orksModel.set_active(true);
+  } else if (normalized == "space_marine") {
+    spmModel.set_active(true);
+  } else if (normalized == "sisters_of_battle") {
+    sobModel.set_active(true);
+  } else if (normalized == "custodes") {
+    adcModel.set_active(true);
+  } else if (normalized == "tyrannids") {
+    tyrModel.set_active(true);
+  } else if (normalized == "militarum") {
+    milModel.set_active(true);
+  } else if (normalized == "tau") {
+    tauModel.set_active(true);
+  } else if (normalized == "necrons") {
+    necModel.set_active(true);
+  }
+}
+
+void Form :: applyFactionToEnemy(const std::string& faction) {
+  if (faction.empty()) {
+    return;
+  }
+
+  std::string normalized = toLower(faction);
+  std::replace(normalized.begin(), normalized.end(), ' ', '_');
+  if (normalized == "orks") {
+    orksEnemy.set_active(true);
+  } else if (normalized == "space_marine") {
+    spmEnemy.set_active(true);
+  } else if (normalized == "sisters_of_battle") {
+    sobEnemy.set_active(true);
+  } else if (normalized == "custodes") {
+    adcEnemy.set_active(true);
+  } else if (normalized == "tyrannids") {
+    tyrEnemy.set_active(true);
+  } else if (normalized == "militarum") {
+    milEnemy.set_active(true);
+  } else if (normalized == "tau") {
+    tauEnemy.set_active(true);
+  } else if (normalized == "necrons") {
+    necEnemy.set_active(true);
+  }
+}
+
+void Form :: saveLastRoster() {
+  json j;
+  j["version"] = 1;
+  j["timestamp"] = currentTimestamp();
+
+  std::string modelFaction = modelClass.size() > 1 ? modelClass.substr(1) : modelClass;
+  std::string playerFaction = enemyClass.size() > 1 ? enemyClass.substr(1) : enemyClass;
+  j["faction"] = playerFaction;
+  j["model_faction"] = modelFaction;
+  j["player_faction"] = playerFaction;
+  j["model_units"] = joinUnits(modelUnits);
+  j["player_units"] = joinUnits(enemyUnits);
+  j["model_units_entry"] = enterModelUnit.get_text();
+  j["player_units_entry"] = enterEnemyUnit.get_text();
+  j["model_units_list"] = modelUnits;
+  j["player_units_list"] = enemyUnits;
+
+  auto path = lastRosterPath();
+  std::error_code error;
+  std::filesystem::create_directories(path.parent_path(), error);
+  std::ofstream outfile(path);
+  if (!outfile) {
+    return;
+  }
+  outfile << j.dump(2);
+}
+
+void Form :: loadLastRoster() {
+  auto path = lastRosterPath();
+  if (!std::filesystem::exists(path)) {
+    return;
+  }
+
+  std::ifstream infile(path);
+  if (!infile) {
+    return;
+  }
+
+  json j;
+  try {
+    infile >> j;
+  } catch (const std::exception&) {
+    return;
+  }
+
+  std::string modelFaction;
+  std::string playerFaction;
+  if (j.contains("model_faction")) {
+    modelFaction = j.at("model_faction").get<std::string>();
+  } else if (j.contains("faction")) {
+    modelFaction = j.at("faction").get<std::string>();
+  }
+  if (j.contains("player_faction")) {
+    playerFaction = j.at("player_faction").get<std::string>();
+  } else if (j.contains("faction")) {
+    playerFaction = j.at("faction").get<std::string>();
+  }
+
+  applyFactionToModel(modelFaction);
+  applyFactionToEnemy(playerFaction);
+
+  std::vector<std::string> loadedModelUnits;
+  std::vector<std::string> loadedEnemyUnits;
+  if (j.contains("model_units_list") && j.at("model_units_list").is_array()) {
+    loadedModelUnits = j.at("model_units_list").get<std::vector<std::string>>();
+  } else if (j.contains("model_units")) {
+    loadedModelUnits = splitUnits(j.at("model_units").get<std::string>());
+  }
+
+  if (j.contains("player_units_list") && j.at("player_units_list").is_array()) {
+    loadedEnemyUnits = j.at("player_units_list").get<std::vector<std::string>>();
+  } else if (j.contains("player_units")) {
+    loadedEnemyUnits = splitUnits(j.at("player_units").get<std::string>());
+  }
+
+  modelUnits = loadedModelUnits;
+  enemyUnits = loadedEnemyUnits;
+
+  if (j.contains("model_units_entry")) {
+    enterModelUnit.set_text(j.at("model_units_entry").get<std::string>());
+  }
+  if (j.contains("player_units_entry")) {
+    enterEnemyUnit.set_text(j.at("player_units_entry").get<std::string>());
+  }
+
+  savetoTxt(enemyUnits, modelUnits);
+  status.set_text("Loaded last roster.");
 }
 
 // model: id = 0

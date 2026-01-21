@@ -9,6 +9,7 @@
 #include <fstream>
 #include <thread>
 #include <chrono>
+#include <filesystem>
 #include "popup.h"
 #include "units.h"
 #include "warn.h"
@@ -37,8 +38,17 @@ public :
   void changeMetrics(std::string path);
   void recentMetrics();
   std::string toLower(std::string data);
+  void mirrorRoster();
+  void saveLastRoster();
+  void loadLastRoster();
 
 private:
+  std::filesystem::path lastRosterPath() const;
+  std::string currentTimestamp() const;
+  std::string joinUnits(const std::vector<std::string>& units) const;
+  std::vector<std::string> splitUnits(const std::string& text) const;
+  void applyFactionToModel(const std::string& faction);
+  void applyFactionToEnemy(const std::string& faction);
   Window* boardShow;
   Window* armyView;
   Window* warn;
@@ -125,6 +135,7 @@ Image metricBox6;
   Button downY;
   Button modelEnter;
   Button enemyEnter;
+  Button mirrorRosterButton;
   Button openArmyPopup;
   Entry enterModelUnit;
   Entry enterEnemyUnit;
