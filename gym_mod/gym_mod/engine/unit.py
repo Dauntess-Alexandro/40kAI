@@ -4,6 +4,8 @@ import numpy as np
 from gym_mod.engine.GUIinteract import *
 import time
 
+from gym_mod.engine.deployment import get_random_free_deploy_coord
+
 
 class Unit:
     def __init__(self, data, weapon, melee=None, GUI=False, b_len=0, b_hei=0):
@@ -115,9 +117,7 @@ class Unit:
                         )
                         coords = recieveGUI()
 
-    def deployUnit(self, deployment, unitType, GUI=False, choose=False):
-        self.playInGUI = GUI
-
+    def deployUnit(self, unitType, occupied=None):
         # --- FIX: убедимся, что размеры поля не нулевые ---
         self._ensure_board_dims()
         if self.b_hei <= 0 or self.b_len <= 0:
@@ -126,125 +126,12 @@ class Unit:
                 f"Не удалось прочитать board.txt или размеры не выставляются."
             )
 
-        if choose is True:
-            run = True
-            if self.playInGUI is False:
-                contChoose = input("Would you like to choose where to deploy this unit? (y/n): ")
-            else:
-                sendToGUI("Would you like to choose where to deploy this unit? (y/n): ")
-                contChoose = recieveGUI()
-            while run:
-                if contChoose.lower() in ("y", "yes"):
-                    choose = True
-                    run = False
-                elif contChoose.lower() in ("n", "no"):
-                    choose = False
-                    run = False
-                else:
-                    if self.playInGUI is False:
-                        contChoose = input("Valid answers are: y, yes, n, and no: ")
-                    else:
-                        sendToGUI("Valid answers are: y, yes, n, and no: ")
-                        contChoose = recieveGUI()
-
-        # Везде используем целочисленные границы и защиту от high<=low
-        half_h = max(1, self.b_hei // 2)
-        half_w = max(1, self.b_len // 2)
-        quarter_h = max(1, self.b_hei // 4)
-        quarter_w = max(1, self.b_len // 4)
-        three_quarter_w = max(0, (self.b_len * 3) // 4)
-        three_quarter_h = max(0, (self.b_hei * 3) // 4)
-
-        if deployment == "Search and Destroy":
-            if choose is False:
-                if unitType == "model":
-                    self.unit_coords[0] = np.random.randint(0, half_h)
-                    self.unit_coords[1] = np.random.randint(0, half_w)
-                elif unitType == "player":
-                    x_low = self.b_hei // 2
-                    x_high = max(x_low + 1, self.b_hei)
-                    y_low = self.b_len // 2
-                    y_high = max(y_low + 1, self.b_len)
-                    self.unit_coords[0] = np.random.randint(x_low, x_high)
-                    self.unit_coords[1] = np.random.randint(y_low, y_high)
-
-            elif choose is True:
-                if unitType == "player":
-                    x_low = self.b_hei // 2
-                    x_high = self.b_hei
-                    y_low = self.b_len // 2
-                    y_high = self.b_len
-                    if self.playInGUI is False:
-                        print(
-                            "The bounds for x axis: {} to {}\nThe bounds for y axis: {} to {}".format(
-                                x_low, x_high, y_low, y_high
-                            )
-                        )
-                    else:
-                        sendToGUI(
-                            "The bounds for x axis: {} to {}\nThe bounds for y axis: {} to {}".format(
-                                x_low, x_high, y_low, y_high
-                            )
-                        )
-                    self.selectUnitPos(x_low, x_high, y_low, y_high)
-
-        elif deployment == "Hammer and Anvil":
-            if choose is False:
-                if unitType == "model":
-                    self.unit_coords[0] = np.random.randint(0, max(1, self.b_hei))
-                    self.unit_coords[1] = np.random.randint(0, quarter_w)
-                elif unitType == "player":
-                    y_low = three_quarter_w
-                    y_high = max(y_low + 1, self.b_len)
-                    self.unit_coords[0] = np.random.randint(0, max(1, self.b_hei))
-                    self.unit_coords[1] = np.random.randint(y_low, y_high)
-
-            elif choose is True:
-                if unitType == "player":
-                    y_low = three_quarter_w
-                    y_high = self.b_len
-                    if self.playInGUI is False:
-                        print(
-                            "The bounds for x axis: {} to {}\nThe bounds for y axis: {} to {}".format(
-                                0, self.b_hei, y_low, y_high
-                            )
-                        )
-                    else:
-                        sendToGUI(
-                            "The bounds for x axis: {} to {}\nThe bounds for y axis: {} to {}".format(
-                                0, self.b_hei, y_low, y_high
-                            )
-                        )
-                    self.selectUnitPos(0, self.b_hei, y_low, y_high)
-
-        elif deployment == "Dawn of War":
-            if choose is False:
-                if unitType == "model":
-                    self.unit_coords[0] = np.random.randint(0, quarter_h)
-                    self.unit_coords[1] = np.random.randint(0, max(1, self.b_len))
-                elif unitType == "player":
-                    x_low = three_quarter_h
-                    x_high = max(x_low + 1, self.b_hei)
-                    self.unit_coords[0] = np.random.randint(x_low, x_high)
-                    self.unit_coords[1] = np.random.randint(0, max(1, self.b_len))
-
-            elif choose is True:
-                if unitType == "player":
-                    x_low = three_quarter_h
-                    x_high = self.b_hei
-                    if self.playInGUI is False:
-                        print(
-                            "The bounds for x axis: {} to {}\nThe bounds for y axis: {} to {}".format(
-                                x_low, x_high, 0, self.b_len
-                            )
-                        )
-                    else:
-                        sendToGUI(
-                            "The bounds for x axis: {} to {}\nThe bounds for y axis: {} to {}".format(
-                                x_low, x_high, 0, self.b_len
-                            )
-                        )
-                    self.selectUnitPos(x_low, x_high, 0, self.b_len)
+        if occupied is None:
+            occupied = set()
+        coord = get_random_free_deploy_coord(unitType, self.b_len, self.b_hei, occupied)
+        self.unit_coords = np.array([coord[0], coord[1]])
+        occupied.add((coord[0], coord[1]))
+        return coord
 
     def showUnitData(self):
         return self.unit_data
@@ -257,4 +144,3 @@ class Unit:
 
     def showCoords(self):
         return self.unit_coords
-

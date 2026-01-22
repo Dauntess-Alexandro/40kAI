@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from gym_mod.envs.warhamEnv import *
 from gym_mod.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
+from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
 from gymnasium import spaces
 
 from model.DQN import *
@@ -23,6 +24,11 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+import torch
+print("[DEVICE CHECK] cuda:", torch.cuda.is_available())
+if torch.cuda.is_available():
+    print("[DEVICE CHECK] name:", torch.cuda.get_device_name(0))
+
 
 import warnings
 warnings.filterwarnings("ignore") 
@@ -167,14 +173,28 @@ if os.path.isfile("gui/data.json"):
 
 numLifeT = 0
 
-deployType = ["Search and Destroy", "Hammer and Anvil", "Dawn of War"]
-deployChang = np.random.choice(deployType)
-for m in model:
-    m.deployUnit(deployChang, "model")
-for e in enemy:
-    e.deployUnit(deployChang, "player")
+verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
+log_fn = print if verbose else None
+attacker_side, defender_side = roll_off_attacker_defender(
+    manual_roll_allowed=False,
+    log_fn=print,
+)
+if verbose:
+    print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
+
+deploy_only_war(
+    model_units=model,
+    enemy_units=enemy,
+    b_len=b_len,
+    b_hei=b_hei,
+    attacker_side=attacker_side,
+    log_fn=log_fn,
+)
+post_deploy_setup(log_fn=log_fn)
 
 env = gym.make("40kAI-v0", disable_env_checker=True, enemy = enemy, model = model, b_len = b_len, b_hei = b_hei)
+env.attacker_side = attacker_side
+env.defender_side = defender_side
 
 ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
 for i_u in range(len(model)):
@@ -404,11 +424,24 @@ while end == False:
             print("Restarting...")
         numLifeT+=1
 
-        deployChang = np.random.choice(deployType)
-        for m in model:
-            m.deployUnit(deployChang, "model")
-        for e in enemy:
-            e.deployUnit(deployChang, "player")
+        attacker_side, defender_side = roll_off_attacker_defender(
+            manual_roll_allowed=False,
+            log_fn=print,
+        )
+        if verbose:
+            print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
+
+        deploy_only_war(
+            model_units=model,
+            enemy_units=enemy,
+            b_len=b_len,
+            b_hei=b_hei,
+            attacker_side=attacker_side,
+            log_fn=log_fn,
+        )
+        post_deploy_setup(log_fn=log_fn)
+        env.attacker_side = attacker_side
+        env.defender_side = defender_side
 
         state, info = env.reset(m=model, e=enemy, Type="small", trunc=True)
 
