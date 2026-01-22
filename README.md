@@ -166,3 +166,53 @@
   - сохраняются в CSV
   - копируются в GUI
 
+
+---
+
+# 🚀 Быстрый GPU Training (RTX 16GB и выше)
+
+## ✅ Рекомендованный запуск (CUDA + AMP + больше апдейтов)
+
+```bash
+source .venv/bin/activate
+export PYTHONPATH="$(pwd)/gym_mod:${PYTHONPATH:-}"
+python -u train.py \
+  --batch-size 2048 \
+  --max-batch-size 4096 \
+  --updates-per-step 8 \
+  --warmup-steps 2000 \
+  --replay-size 50000 \
+  --amp \
+  --double-dqn \
+  --dueling \
+  --per \
+  --profile
+```
+
+## 📈 Полезные флаги
+
+- `--profile` — печать throughput (fps, updates/s, samples/s) и GPU памяти.
+- `--amp/--no-amp` — mixed precision (по умолчанию включён на CUDA).
+- `--compile/--no-compile` — `torch.compile` (если torch>=2.x).
+- `--updates-per-step` — больше обновлений на один шаг среды.
+- `--batch-size`, `--max-batch-size` — безопасный контроль VRAM.
+- `--per` — prioritized replay.
+- `--dueling` — dueling DQN.
+- `--double-dqn/--no-double-dqn` — Double DQN.
+- `--eval-interval`, `--eval-episodes` — периодическая оценка без exploration.
+
+## 🔎 Как проверить, что обучение реально на GPU
+
+- В логах старта будет:
+  - `DEVICE CHECK: cuda: True`
+  - `DEVICE CHECK: name: <GPU>`
+  - `DEVICE CHECK: device: cuda`
+- В профайле (`--profile`) печатаются:
+  - `fps`, `updates/s`, `samples/s`
+  - `cuda mem alloc/reserved`
+
+Пример строки:
+```
+[profile] fps=45.2 updates/s=160.5 samples/s=328704.0 avg_batch_time=0.0062s env%=21.5 upd%=78.5
+[profile] cuda mem alloc=2048MB reserved=3072MB
+```
