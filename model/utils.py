@@ -91,6 +91,7 @@ def optimize_model(
     memory,
     n_obs,
     batch_size=BATCH_SIZE,
+    min_batch_size=64,
     gamma=GAMMA,
     per=False,
     per_beta=0.4,
@@ -98,9 +99,12 @@ def optimize_model(
     scaler=None,
     grad_clip=10.0,
     double_dqn=True,
+    debug=False,
 ):
-    if len(memory) < batch_size:
+    if len(memory) < min_batch_size:
         return None
+    if len(memory) < batch_size:
+        batch_size = len(memory)
 
     dev = next(policy_net.parameters()).device
 
@@ -181,18 +185,22 @@ def optimize_model(
             criterion = nn.SmoothL1Loss()
             loss = criterion(selected_action_values, expected_state_action_values)
 
+    if debug:
+        assert torch.isfinite(loss).all(), "Loss is not finite"
+
     optimizer.zero_grad(set_to_none=True)
+    grad_norm = None
     if use_amp and scaler is not None:
         scaler.scale(loss).backward()
         if grad_clip is not None:
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(policy_net.parameters(), grad_clip)
+            grad_norm = torch.nn.utils.clip_grad_norm_(policy_net.parameters(), grad_clip)
         scaler.step(optimizer)
         scaler.update()
     else:
         loss.backward()
         if grad_clip is not None:
-            torch.nn.utils.clip_grad_norm_(policy_net.parameters(), grad_clip)
+            grad_norm = torch.nn.utils.clip_grad_norm_(policy_net.parameters(), grad_clip)
         optimizer.step()
 
     if per and indices is not None:
@@ -201,4 +209,17 @@ def optimize_model(
         memory.update_priorities(indices, td_errors.detach().cpu().numpy() + 1e-6)
 
     q_mean = selected_action_values.detach().mean()
-    return loss.detach(), q_mean
+    q_target_mean = expected_state_action_values.detach().mean()
+    td_error_mean = (selected_action_values.detach() - expected_state_action_values.detach()).abs().mean()
+    with torch.no_grad():
+        param_norm = torch.norm(torch.stack([p.data.norm() for p in policy_net.parameters() if p is not None]))
+
+    return {
+        "loss": loss.detach(),
+        "q_mean": q_mean,
+        "q_target_mean": q_target_mean,
+        "td_error_mean": td_error_mean,
+        "grad_norm": grad_norm.detach() if grad_norm is not None else None,
+        "param_norm": param_norm.detach(),
+        "batch_size": batch_size,
+    }

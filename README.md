@@ -193,11 +193,40 @@ python -u train.py \
 
 - `--profile` — печать throughput (fps, updates/s, samples/s) и GPU памяти.
 - `--amp/--no-amp` — mixed precision (по умолчанию включён на CUDA).
+- `--use-tf32/--no-use-tf32` — TF32 для ускорения matmul/conv на NVIDIA.
+- `--cudnn-benchmark/--no-cudnn-benchmark` — autotune cudnn для стабильных размеров.
 - `--compile/--no-compile` — `torch.compile` (если torch>=2.x).
 - `--updates-per-step` — больше обновлений на один шаг среды.
-- `--batch-size`, `--max-batch-size` — безопасный контроль VRAM.
+- `--train-every` — обновлять сеть раз в N env-steps.
+- `--batch-size`, `--max-batch-size`, `--min-batch-size` — контроль VRAM и раннего старта обучения.
+- `--warmup-steps` — задержка старта обучения до заполнения буфера.
 - `--per` — prioritized replay.
 - `--dueling` — dueling DQN.
+
+## 🧪 Smoke-test (проверка что обучение реально идёт)
+
+```bash
+export PYTHONPATH="$(pwd)/gym_mod:${PYTHONPATH:-}"
+python -u train.py --smoke-test --batch-size 256 --min-batch-size 64 --updates-per-step 2 --render-every 0
+```
+
+Проверки, которые должны быть видны в логах:
+
+- `updates` растёт
+- `loss` периодически > 0 и меняется
+- `q` не всегда 0
+- `param_norm` меняется со временем
+- на CUDA печатается `cuda_mem` в debug/profiler
+
+## ⚙️ Env overrides (альтернатива CLI)
+
+Можно задавать ключевые параметры через env-переменные:
+
+```
+USE_AMP=1 USE_TF32=1 USE_COMPILE=0 \
+BATCH_SIZE=512 MIN_BATCH_SIZE=64 UPDATES_PER_STEP=4 TRAIN_EVERY=1 \
+WARMUP_STEPS=500 REPLAY_SIZE=50000
+```
 - `--double-dqn/--no-double-dqn` — Double DQN.
 - `--eval-interval`, `--eval-episodes` — периодическая оценка без exploration.
 

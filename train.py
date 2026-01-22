@@ -35,24 +35,42 @@ warnings.filterwarnings("ignore")
 with open(os.path.abspath("hyperparams.json")) as j:
     data = json.loads(j.read())
 
+
+def _env_bool(name, default=None):
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.lower() in ("1", "true", "yes", "y", "on")
+
+
+def _env_int(name, default):
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return int(raw)
+
 parser = argparse.ArgumentParser(description="40kAI DQN training")
-parser.add_argument("--batch-size", type=int, default=int(data.get("batch_size", 2048)))
-parser.add_argument("--max-batch-size", type=int, default=int(data.get("max_batch_size", data.get("batch_size", 2048))))
-parser.add_argument("--updates-per-step", type=int, default=int(data.get("updates_per_step", 1)))
-parser.add_argument("--warmup-steps", type=int, default=int(data.get("warmup_steps", 0)))
-parser.add_argument("--replay-size", type=int, default=int(data.get("replay_size", 10000)))
-parser.add_argument("--lr", type=float, default=float(data.get("lr", 1e-4)))
-parser.add_argument("--gamma", type=float, default=float(data.get("gamma", 0.99)))
-parser.add_argument("--tau", type=float, default=float(data.get("tau", 0.005)))
-parser.add_argument("--eps-start", type=float, default=float(data.get("eps_start", 0.9)))
-parser.add_argument("--eps-end", type=float, default=float(data.get("eps_end", 0.05)))
-parser.add_argument("--eps-decay", type=float, default=float(data.get("eps_decay", 1000)))
-parser.add_argument("--eps-schedule", type=str, choices=["exp", "linear"], default=str(data.get("eps_schedule", "exp")))
-parser.add_argument("--seed", type=int, default=int(data.get("seed", 42)))
-parser.add_argument("--target-update-interval", type=int, default=int(data.get("target_update_interval", 1)))
-parser.add_argument("--grad-clip", type=float, default=float(data.get("grad_clip", 10.0)))
-parser.add_argument("--amp", action=argparse.BooleanOptionalAction, default=None)
-parser.add_argument("--compile", dest="compile", action=argparse.BooleanOptionalAction, default=False)
+parser.add_argument("--batch-size", type=int, default=_env_int("BATCH_SIZE", int(data.get("batch_size", 2048))))
+parser.add_argument("--max-batch-size", type=int, default=_env_int("MAX_BATCH_SIZE", int(data.get("max_batch_size", data.get("batch_size", 2048)))))
+parser.add_argument("--min-batch-size", type=int, default=_env_int("MIN_BATCH_SIZE", int(data.get("min_batch_size", 64))))
+parser.add_argument("--updates-per-step", type=int, default=_env_int("UPDATES_PER_STEP", int(data.get("updates_per_step", 1))))
+parser.add_argument("--train-every", type=int, default=_env_int("TRAIN_EVERY", int(data.get("train_every", 1))))
+parser.add_argument("--warmup-steps", type=int, default=_env_int("WARMUP_STEPS", int(data.get("warmup_steps", 0))))
+parser.add_argument("--replay-size", type=int, default=_env_int("REPLAY_SIZE", int(data.get("replay_size", 10000))))
+parser.add_argument("--lr", type=float, default=float(os.getenv("LR", data.get("lr", 1e-4))))
+parser.add_argument("--gamma", type=float, default=float(os.getenv("GAMMA", data.get("gamma", 0.99))))
+parser.add_argument("--tau", type=float, default=float(os.getenv("TAU", data.get("tau", 0.005))))
+parser.add_argument("--eps-start", type=float, default=float(os.getenv("EPS_START", data.get("eps_start", 0.9))))
+parser.add_argument("--eps-end", type=float, default=float(os.getenv("EPS_END", data.get("eps_end", 0.05))))
+parser.add_argument("--eps-decay", type=float, default=float(os.getenv("EPS_DECAY", data.get("eps_decay", 1000))))
+parser.add_argument("--eps-schedule", type=str, choices=["exp", "linear"], default=str(os.getenv("EPS_SCHEDULE", data.get("eps_schedule", "exp"))))
+parser.add_argument("--seed", type=int, default=_env_int("SEED", int(data.get("seed", 42))))
+parser.add_argument("--target-update-interval", type=int, default=_env_int("TARGET_UPDATE_INTERVAL", int(data.get("target_update_interval", 1))))
+parser.add_argument("--grad-clip", type=float, default=float(os.getenv("GRAD_CLIP", data.get("grad_clip", 10.0))))
+parser.add_argument("--amp", action=argparse.BooleanOptionalAction, default=_env_bool("USE_AMP", None))
+parser.add_argument("--use-tf32", action=argparse.BooleanOptionalAction, default=_env_bool("USE_TF32", True))
+parser.add_argument("--cudnn-benchmark", action=argparse.BooleanOptionalAction, default=_env_bool("CUDNN_BENCHMARK", True))
+parser.add_argument("--compile", dest="compile", action=argparse.BooleanOptionalAction, default=_env_bool("USE_COMPILE", False))
 parser.add_argument("--double-dqn", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--dueling", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--per", action=argparse.BooleanOptionalAction, default=False)
@@ -66,14 +84,20 @@ parser.add_argument("--eval-episodes", type=int, default=int(data.get("eval_epis
 parser.add_argument("--eval-epsilon", type=float, default=float(data.get("eval_epsilon", 0.05)))
 parser.add_argument("--auto-batch", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--render-every", type=int, default=int(os.getenv("RENDER_EVERY", "20")))
+parser.add_argument("--debug-train", action=argparse.BooleanOptionalAction, default=_env_bool("DEBUG_TRAIN", False))
+parser.add_argument("--debug-interval", type=int, default=_env_int("DEBUG_INTERVAL", 200))
+parser.add_argument("--episodes", type=int, default=None)
+parser.add_argument("--smoke-test", action=argparse.BooleanOptionalAction, default=_env_bool("SMOKE_TEST", False))
 args = parser.parse_args()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 use_amp = args.amp if args.amp is not None else device.type == "cuda"
 
 if device.type == "cuda":
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.set_float32_matmul_precision("high")
+    torch.backends.cuda.matmul.allow_tf32 = args.use_tf32
+    torch.backends.cudnn.allow_tf32 = args.use_tf32
+    torch.backends.cudnn.benchmark = args.cudnn_benchmark
+    torch.set_float32_matmul_precision("high" if args.use_tf32 else "highest")
 
 print("[DEVICE CHECK] cuda:", torch.cuda.is_available())
 print("[DEVICE CHECK] torch:", torch.__version__)
@@ -83,10 +107,13 @@ if torch.cuda.is_available():
     print("[DEVICE CHECK] vram:", round(props.total_memory / (1024 ** 3), 2), "GB")
 print("[DEVICE CHECK] device:", device)
 print("[DEVICE CHECK] amp:", use_amp)
+print("[DEVICE CHECK] tf32:", args.use_tf32)
+print("[DEVICE CHECK] cudnn_benchmark:", args.cudnn_benchmark)
 
 # ===== perf knobs =====
 RENDER_EVERY = args.render_every  # 0 = выключить рендер полностью
-UPDATES_PER_STEP = args.updates_per_step
+UPDATES_PER_STEP = max(1, int(args.updates_per_step))
+TRAIN_EVERY = max(1, int(args.train_every))
 # ======================
 
 
@@ -342,7 +369,6 @@ LR = args.lr
 # ============================================================
 # (C) Несколько обучающих апдейтов на один шаг среды
 # ============================================================
-UPDATES_PER_STEP = int(args.updates_per_step)  # 1 = как было раньше
 WARMUP_STEPS     = int(args.warmup_steps)      # 0 = без прогрева
 
 b_len = 60
@@ -407,6 +433,13 @@ env = gym.make("40kAI-v0", disable_env_checker=True, enemy = enemy, model = mode
 env.attacker_side = attacker_side
 env.defender_side = defender_side
 
+if args.smoke_test:
+    RENDER_EVERY = 0
+    args.eval_interval = 0
+    totLifeT = args.episodes or 50
+elif args.episodes is not None:
+    totLifeT = args.episodes
+
 ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
 for i_u in range(len(model)):
     ordered_keys.append(f"move_num_{i_u}")
@@ -461,6 +494,7 @@ else:
     memory = ReplayMemory(args.replay_size)
 
 batch_size = auto_tune_batch_size(args.batch_size, args.max_batch_size)
+min_batch_size = min(args.min_batch_size, batch_size)
 scaler = torch.cuda.amp.GradScaler(enabled=use_amp and device.type == "cuda")
 
 inText = []
@@ -500,6 +534,8 @@ last_loss_mean = 0.0
 last_q_mean = 0.0
 
 total_updates = 0
+last_param_norm = 0.0
+episode_updates = 0
 while end == False:
     epLen += 1
     epsilon = epsilon_by_step(steps_done, args.eps_start, args.eps_end, args.eps_decay, args.eps_schedule)
@@ -550,7 +586,7 @@ while end == False:
     losses = []
     qs = []
 
-    if i >= WARMUP_STEPS:
+    if steps_done >= WARMUP_STEPS and steps_done % TRAIN_EVERY == 0:
         for _ in range(UPDATES_PER_STEP):
             per_beta = min(1.0, args.per_beta_start + (1.0 - args.per_beta_start) * (steps_done / max(args.per_beta_frames, 1)))
             update_start = time.perf_counter()
@@ -562,6 +598,7 @@ while end == False:
                     memory,
                     n_observations,
                     batch_size=batch_size,
+                    min_batch_size=min_batch_size,
                     gamma=args.gamma,
                     per=args.per,
                     per_beta=per_beta,
@@ -569,6 +606,7 @@ while end == False:
                     scaler=scaler,
                     grad_clip=args.grad_clip,
                     double_dqn=args.double_dqn,
+                    debug=args.debug_train,
                 )
             except RuntimeError as exc:
                 if "out of memory" in str(exc).lower():
@@ -578,21 +616,36 @@ while end == False:
                         if new_batch != batch_size:
                             print(f"[oom] reducing batch_size {batch_size} -> {new_batch}")
                             batch_size = new_batch
+                            min_batch_size = min(min_batch_size, batch_size)
                             continue
                 raise
-            profiler.record_update(time.perf_counter() - update_start, batch_size)
-
             if loss_q is not None:
-                loss, q_mean = loss_q
+                profiler.record_update(time.perf_counter() - update_start, batch_size)
+                loss = loss_q["loss"]
+                q_mean = loss_q["q_mean"]
                 losses.append(loss)
                 qs.append(q_mean)
+                last_param_norm = loss_q["param_norm"].item()
+                if args.debug_train and total_updates % max(args.debug_interval, 1) == 0:
+                    print(
+                        "[debug] "
+                        f"replay={len(memory)} batch={loss_q['batch_size']} updates={total_updates} "
+                        f"loss={loss.item():.6f} q_pred={loss_q['q_mean'].item():.4f} "
+                        f"q_tgt={loss_q['q_target_mean'].item():.4f} "
+                        f"td_err={loss_q['td_error_mean'].item():.4f} "
+                        f"grad_norm={loss_q['grad_norm'].item() if loss_q['grad_norm'] is not None else 'None'} "
+                        f"param_norm={loss_q['param_norm'].item():.4f}"
+                    )
+                    if device.type == "cuda":
+                        alloc = torch.cuda.memory_allocated() / (1024 ** 2)
+                        print(f"[debug] cuda_mem={alloc:.0f}MB device={device}")
 
-            total_updates += 1
-            if total_updates % max(args.target_update_interval, 1) == 0:
-                with torch.no_grad():
-                    for p_tgt, p in zip(target_net.parameters(), policy_net.parameters()):
-                        p_tgt.data.mul_(1.0 - TAU)
-                        p_tgt.data.add_(p.data, alpha=TAU)
+                total_updates += 1
+                if total_updates % max(args.target_update_interval, 1) == 0:
+                    with torch.no_grad():
+                        for p_tgt, p in zip(target_net.parameters(), policy_net.parameters()):
+                            p_tgt.data.mul_(1.0 - TAU)
+                            p_tgt.data.add_(p.data, alpha=TAU)
 
     # чтобы график loss не раздувался в 100 раз — пишем среднее за env-step
     if len(losses) > 0:
@@ -601,8 +654,9 @@ while end == False:
         last_loss_mean = loss_mean
         if len(qs) > 0:
             last_q_mean = torch.stack(qs).mean().item()
+        episode_updates += len(losses)
     else:
-        metrics.updateLoss(0)
+        metrics.updateLoss(np.nan)
     # =========================
 
 
@@ -697,8 +751,20 @@ while end == False:
         numLifeT+=1
         verbose_log.append(
             f"[episode] {numLifeT}/{totLifeT} reward={ep_reward:.3f} vp_diff={vp_diff} "
-            f"eps={epsilon:.4f} loss={last_loss_mean:.6f} q={last_q_mean:.3f}"
+            f"eps={epsilon:.4f} loss={(f'{last_loss_mean:.6f}' if episode_updates > 0 else 'None')} "
+            f"q={(f'{last_q_mean:.3f}' if episode_updates > 0 else 'None')} "
+            f"updates={total_updates} param_norm={last_param_norm:.4f}"
         )
+        if args.smoke_test and numLifeT % 10 == 0:
+            print(
+                "[smoke] "
+                f"ep={numLifeT}/{totLifeT} reward={ep_reward:.2f} vp_diff={vp_diff} "
+                f"eps={epsilon:.3f} replay={len(memory)} updates={total_updates} "
+                f"loss={(f'{last_loss_mean:.6f}' if episode_updates > 0 else 'None')} "
+                f"q={(f'{last_q_mean:.3f}' if episode_updates > 0 else 'None')} "
+                f"param_norm={last_param_norm:.4f}"
+            )
+        episode_updates = 0
 
         if args.eval_interval > 0 and numLifeT % args.eval_interval == 0:
             winrate, avg_eval_rew, avg_vp = run_eval(policy_net, args.eval_episodes, args.eval_epsilon)
