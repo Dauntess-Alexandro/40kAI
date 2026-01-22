@@ -10,9 +10,10 @@ gym_mod/engine/__init__.py
 gym_mod/engine/genDisplay.py
 gym_mod/engine/initFile.py
 gym_mod/engine/metrics.py
+gym_mod/engine/mission.py
+gym_mod/engine/skills.py
 gym_mod/engine/unit.py
 gym_mod/engine/unitData.py
 gym_mod/engine/utils.py
 gym_mod/envs/__init__.py
-gym_mod/envs/warhamEnv (1-я копия).py
 gym_mod/envs/warhamEnv.py

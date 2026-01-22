@@ -173,6 +173,28 @@ def auto_dice(num=1, max=6):
     return [random.randint(1, max) for _ in range(num)]
 
 
+def roll_off_attacker_defender(manual_roll_allowed: bool = False, log_fn=None):
+    """
+    Roll-off D6 vs D6 to determine Attacker/Defender.
+    Enemy uses player_dice only when MANUAL_DICE=1 and manual_roll_allowed is True.
+    Model always uses auto_dice.
+    """
+    manual = os.getenv("MANUAL_DICE", "0") == "1" and manual_roll_allowed
+    verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
+    while True:
+        enemy_roll = player_dice() if manual else auto_dice()
+        model_roll = auto_dice()
+        if enemy_roll == model_roll:
+            continue
+        attacker = "enemy" if enemy_roll > model_roll else "model"
+        defender = "model" if attacker == "enemy" else "enemy"
+        if verbose and log_fn is not None:
+            log_fn(
+                f"Roll-off Attacker/Defender: enemy={enemy_roll} model={model_roll} -> attacker={attacker}"
+            )
+        return attacker, defender
+
+
 def _get_abilities(weapon: dict) -> dict:
     if isinstance(weapon, dict):
         ab = weapon.get("Abilities")

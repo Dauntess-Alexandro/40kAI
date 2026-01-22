@@ -10,6 +10,8 @@ warnings.filterwarnings("ignore")
 from model.DQN import *
 from model.utils import *
 from gym_mod.engine.GUIinteract import *
+from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
+from gym_mod.envs.warhamEnv import roll_off_attacker_defender
 
 import torch
 import torch.nn as nn
@@ -55,21 +57,36 @@ playInGUI = False
 if sys.argv[2] == "True":
     playInGUI = True
 
-deployType = ["Search and Destroy", "Hammer and Anvil", "Dawn of War"]
-deployChang = np.random.choice(deployType)
 
-if playInGUI == False:
-    print("Deployment Type: ", deployChang)
-else:
-    sendToGUI("Deployment Type: {}".format(deployChang))
+def _log(msg: str):
+    if playInGUI:
+        sendToGUI(msg)
+    else:
+        print(msg)
 
-for m in model:
-    m.deployUnit(deployChang, "model")
-i = 0
-for e in enemy:
-    sendToGUI("Deploying Unit {} or {}".format(i, e.showUnitData()["Name"]))
-    e.deployUnit(deployChang, "player", GUI=playInGUI, choose = True)
-    i += 1
+
+verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
+log_fn = _log if verbose else None
+
+attacker_side, defender_side = roll_off_attacker_defender(
+    manual_roll_allowed=(playInGUI is False),
+    log_fn=_log,
+)
+if verbose:
+    _log(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
+
+deploy_only_war(
+    model_units=model,
+    enemy_units=enemy,
+    b_len=env.b_len,
+    b_hei=env.b_hei,
+    attacker_side=attacker_side,
+    log_fn=log_fn,
+)
+post_deploy_setup(log_fn=log_fn)
+
+env.attacker_side = attacker_side
+env.defender_side = defender_side
 
 state, info = env.reset(m=model, e=enemy)
 n_actions = [5,2,len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
