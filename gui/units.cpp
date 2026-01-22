@@ -4,8 +4,6 @@
 #include <stdlib.h>
 #include <string>
 #include <fstream>
-#include <thread>
-#include <chrono>
 #include <nlohmann/json.hpp>
 #include "include/units.h"
 
@@ -13,149 +11,177 @@ using namespace Glib;
 using namespace Gtk;
 using json = nlohmann::json;
 
-void Units :: addFact(std::vector<std::string> facts) {
-  int skipLine = 0;
-  for (const auto& fact : facts) {
-    output += fact + ", ";
-    skipLine++;
-    if (skipLine == 4) {
-      output += "\n";
-      lines++;
-      skipLine = 0;
-    }
-  }
-
-  if (!facts.empty()) {
-    output = output.substr(0, output.size() - 2);
-  }
-}
-
-void Units :: getAvailUnits() {
+void Units::loadAvailableUnits() {
+  availableStore->clear();
   std::ifstream infile("../gym_mod/gym_mod/engine/unitData.json");
+  if (!infile) {
+    return;
+  }
   json j;
   infile >> j;
 
-  std::vector<std::string> orks;
-  std::vector<std::string> spm;
-  std::vector<std::string> sob;
-  std::vector<std::string> adc;
-  std::vector<std::string> tyr;
-  std::vector<std::string> mec;
-  std::vector<std::string> mil;
-  std::vector<std::string> tau;
-  std::vector<std::string> nec;
-
-  lines = 0;
-
-    const auto& unitData = j.at("UnitData");
-    for (const auto& unit : unitData) {
-        std::string army = unit.at("Army").get<std::string>();
-        std::string name = unit.at("Name").get<std::string>();
-        if (army == "Orks") {
-            orks.push_back(name);
-        } else if (army == "Space_Marine") {
-            spm.push_back(name);
-        } else if (army == "Sisters_of_Battle") {
-            sob.push_back(name);
-        } else if (army == "Custodes") {
-            adc.push_back(name);
-        } else if (army == "Tyranids") {
-            tyr.push_back(name);
-        } else if (army == "Mechanicus") {
-            mec.push_back(name);
-        } else if (army == "Militarum") {
-            mil.push_back(name);
-        } else if (army == "Tau") {
-            tau.push_back(name);
-        } else if (army == "Necrons") {
-            nec.push_back(name);
-        }
-    }
-
-    output = "Available Units:\nOrks:\n";
-    addFact(orks);
-
-    output += "\nSpace Marines:\n";
-    addFact(spm);
-
-    output += "\nSisters of Battle:\n";
-    addFact(sob);
-
-    output += "\nAdeptus Custodes:\n";
-    addFact(adc);
-
-    output += "\nTyranids:\n";
-    addFact(tyr);
-
-    output += "\nAdeptus Mechanicus:\n";
-    addFact(mec);
-
-    output += "\nAstra Militarum:\n";
-    addFact(mil);
-
-    output += "\nTau:\n";
-    addFact(tau);
-
-    output += "\nNecrons:\n";
-    addFact(nec);
-
-    possible.set_text(output);
-
-}
-
-std::string Units :: openFile(std::string army) {
-  std::ifstream file(army);
-  std::string fullFile;
-  std::string line;
-
-  while(getline(file, line)) {
-    for (int i = 0; line.length() > i; i++) {
-        fullFile += line[i];
-    }
-    fullFile += "\n";
+  if (!j.contains("UnitData") || !j.at("UnitData").is_array()) {
+    return;
   }
 
-  file.close();
-  return fullFile;
-}
-
-void Units :: update() {
-  std::string armypth = "units.txt";
-  std::string army;
-  army = openFile(armypth);
-  contents.set_text(army);
-}
-
-void Units :: keepUpdating() {
-  while (true) {
-    update();
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+  for (const auto& unit : j.at("UnitData")) {
+    if (!unit.contains("Army") || !unit.contains("Name")) {
+      continue;
+    }
+    std::string army = unit.at("Army").get<std::string>();
+    std::string name = unit.at("Name").get<std::string>();
+    int defaultCount = 1;
+    if (unit.contains("#OfModels") && unit.at("#OfModels").is_number_integer()) {
+      defaultCount = unit.at("#OfModels").get<int>();
+    }
+    auto row = *(availableStore->append());
+    row[availableColumns.name] = name;
+    row[availableColumns.faction] = army;
+    row[availableColumns.defaultCount] = defaultCount;
   }
 }
 
-void Units :: backgroudUpdate() {
-  std::thread t(&Units::keepUpdating, this);
-  t.detach();
+std::string Units::formatRosterDisplay(const std::string& name, int count) const {
+  return name + " (" + std::to_string(count) + ")";
 }
 
-Units :: Units() {
+void Units::persistRoster() {
+  if (!rosterModel) {
+    return;
+  }
+  rosterModel->saveToFile(RosterModel::defaultRosterPath());
+}
 
-    bar.set_show_close_button(true);
-    set_titlebar(bar);
+void Units::refreshRosterView() {
+  if (!rosterStore || !rosterModel) {
+    return;
+  }
+  rosterStore->clear();
+  for (const auto& entry : rosterModel->units()) {
+    auto row = *(rosterStore->append());
+    row[rosterColumns.name] = entry.name;
+    row[rosterColumns.count] = entry.count;
+    row[rosterColumns.display] = formatRosterDisplay(entry.name, entry.count);
+  }
+}
 
-    add(scrolledWindow);
-    scrolledWindow.add(fixed);
+void Units::addSelectedUnit() {
+  if (!rosterModel) {
+    return;
+  }
+  auto selection = availableView.get_selection();
+  if (!selection) {
+    return;
+  }
+  auto iter = selection->get_selected();
+  if (!iter) {
+    return;
+  }
+  auto row = *iter;
+  Glib::ustring nameValue = row[availableColumns.name];
+  Glib::ustring factionValue = row[availableColumns.faction];
+  std::string name = nameValue.raw();
+  std::string faction = factionValue.raw();
+  int defaultCount = row[availableColumns.defaultCount];
+  rosterModel->addUnit(name, defaultCount, faction);
+  refreshRosterView();
+  persistRoster();
+}
 
-    bar.set_title("Army Viewer");
-    backgroudUpdate();
+void Units::removeSelectedUnit() {
+  if (!rosterModel) {
+    return;
+  }
+  auto selection = rosterView.get_selection();
+  if (!selection) {
+    return;
+  }
+  auto iter = selection->get_selected();
+  if (!iter) {
+    return;
+  }
+  auto path = rosterStore->get_path(iter);
+  if (path.empty()) {
+    return;
+  }
+  rosterModel->removeUnit(static_cast<size_t>(path.front()));
+  refreshRosterView();
+  persistRoster();
+}
 
-    getAvailUnits();
+void Units::clearRoster() {
+  if (!rosterModel) {
+    return;
+  }
+  rosterModel->clear();
+  refreshRosterView();
+  persistRoster();
+}
 
-    fixed.add(contents);
-    fixed.move(contents, 10, (lines+9)*20);
-    fixed.add(possible);
-    fixed.move(possible, 10, 10);
+Units::Units(RosterModel* rosterModel) : rosterModel(rosterModel) {
+  bar.set_show_close_button(true);
+  set_titlebar(bar);
+  bar.set_title("Army Viewer");
 
-    resize(600,500);
-    show_all();
+  add(mainBox);
+
+  availableLabel.set_text("Available Units");
+  rosterLabel.set_text("Roster");
+
+  availableStore = Gtk::ListStore::create(availableColumns);
+  rosterStore = Gtk::ListStore::create(rosterColumns);
+  availableView.set_model(availableStore);
+  rosterView.set_model(rosterStore);
+  availableView.append_column("Faction", availableColumns.faction);
+  availableView.append_column("Unit", availableColumns.name);
+  rosterView.append_column("Selected", rosterColumns.display);
+  availableView.set_headers_visible(true);
+  rosterView.set_headers_visible(false);
+
+  availableScroll.add(availableView);
+  availableScroll.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+  availableScroll.set_min_content_width(260);
+  rosterScroll.add(rosterView);
+  rosterScroll.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+  rosterScroll.set_min_content_width(220);
+
+  addButton.set_label("Add →");
+  removeButton.set_label("Remove");
+  clearButton.set_label("Clear");
+
+  addButton.signal_button_release_event().connect([&](GdkEventButton*) {
+    addSelectedUnit();
+    return true;
+  });
+  removeButton.signal_button_release_event().connect([&](GdkEventButton*) {
+    removeSelectedUnit();
+    return true;
+  });
+  clearButton.signal_button_release_event().connect([&](GdkEventButton*) {
+    clearRoster();
+    return true;
+  });
+
+  availableView.signal_row_activated().connect([&](const Gtk::TreeModel::Path&, Gtk::TreeViewColumn*) {
+    addSelectedUnit();
+  });
+
+  availableBox.pack_start(availableLabel, Gtk::PACK_SHRINK);
+  availableBox.pack_start(availableScroll, Gtk::PACK_EXPAND_WIDGET);
+  rosterBox.pack_start(rosterLabel, Gtk::PACK_SHRINK);
+  rosterBox.pack_start(rosterScroll, Gtk::PACK_EXPAND_WIDGET);
+
+  buttonBox.pack_start(addButton, Gtk::PACK_SHRINK);
+  buttonBox.pack_start(removeButton, Gtk::PACK_SHRINK);
+  buttonBox.pack_start(clearButton, Gtk::PACK_SHRINK);
+
+  mainBox.pack_start(availableBox, Gtk::PACK_EXPAND_WIDGET);
+  mainBox.pack_start(buttonBox, Gtk::PACK_SHRINK);
+  mainBox.pack_start(rosterBox, Gtk::PACK_EXPAND_WIDGET);
+
+  loadAvailableUnits();
+  refreshRosterView();
+
+  resize(700, 500);
+  show_all();
 }

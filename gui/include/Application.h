@@ -10,6 +10,7 @@
 #include <thread>
 #include <chrono>
 #include <filesystem>
+#include "RosterModel.h"
 #include "popup.h"
 #include "units.h"
 #include "warn.h"
@@ -41,12 +42,10 @@ public :
   void mirrorRoster();
   void saveLastRoster();
   void loadLastRoster();
+  void syncEnemyUnitsFromRoster();
+  bool addEnemyUnitFromEntry(const std::string& entryText);
 
 private:
-  std::filesystem::path lastRosterPath() const;
-  std::string currentTimestamp() const;
-  std::string joinUnits(const std::vector<std::string>& units) const;
-  std::vector<std::string> splitUnits(const std::string& text) const;
   void applyFactionToModel(const std::string& faction);
   void applyFactionToEnemy(const std::string& faction);
   Window* boardShow;
@@ -146,11 +145,13 @@ Image metricBox6;
   bool open;
   bool training;
   bool playing;
+  bool loadingRoster;
   Label error;
   Label modelUnitLabel;
   Label enemyUnitLabel;
   std::vector<std::string> modelUnits;
   std::vector<std::string> enemyUnits;
+  RosterModel rosterModel;
   HeaderBar bar;
   Button help;
   Button chooseMetrics;

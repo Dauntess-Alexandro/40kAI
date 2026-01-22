@@ -10,9 +10,6 @@
 #include <filesystem>
 #include <vector>
 #include <algorithm>
-#include <sstream>
-#include <iomanip>
-#include <ctime>
 #include <nlohmann/json.hpp>
 #include "include/Application.h"
 #include "include/popup.h"
@@ -24,7 +21,6 @@
 using namespace Glib;
 using namespace Gtk;
 namespace fs = std::filesystem;
-
 using json = nlohmann::json;
 
 std::string gifpth = "img/model_train.gif";
@@ -46,6 +42,7 @@ Form :: Form() {
   y = 40;
   training = false;
   playing = false;
+  loadingRoster = false;
 
   bar.set_show_close_button(true);
   help.set_image_from_icon_name("help-about");
@@ -124,6 +121,7 @@ Form :: Form() {
   button1.set_label("Train");
   button1.signal_button_release_event().connect([&](GdkEventButton*) {
     saveLastRoster();
+    syncEnemyUnitsFromRoster();
     updateInits(modelClass, enemyClass);
     if (exists_test("data.json") && training == false) {
       status.set_text("Training...");
@@ -242,58 +240,114 @@ Form :: Form() {
   spmEnemy.set_label("Space Marine");
   spmEnemy.set_group(factionEnemy);
   spmEnemy.signal_toggled().connect([this]() {
-    enemyUnits.clear();
     enemyClass = " Space_Marine";
+    if (!loadingRoster) {
+      enemyUnits.clear();
+      rosterModel.clear();
+    }
+    rosterModel.setFaction("Space_Marine");
+    if (!loadingRoster) {
+      syncEnemyUnitsFromRoster();
+    }
   });
 
 
   orksEnemy.set_label("Orks");
   orksEnemy.set_group(factionEnemy);
   orksEnemy.signal_toggled().connect([this]() {
-    enemyUnits.clear();
     enemyClass = " Orks";
+    if (!loadingRoster) {
+      enemyUnits.clear();
+      rosterModel.clear();
+    }
+    rosterModel.setFaction("Orks");
+    if (!loadingRoster) {
+      syncEnemyUnitsFromRoster();
+    }
   });
 
   sobEnemy.set_label("Sisters of Battle");
   sobEnemy.set_group(factionEnemy);
   sobEnemy.signal_toggled().connect([this]() {
-    enemyUnits.clear();
     enemyClass = " Sisters_of_Battle";
+    if (!loadingRoster) {
+      enemyUnits.clear();
+      rosterModel.clear();
+    }
+    rosterModel.setFaction("Sisters_of_Battle");
+    if (!loadingRoster) {
+      syncEnemyUnitsFromRoster();
+    }
   });
 
   adcEnemy.set_label("Adeptus Custodes");
   adcEnemy.set_group(factionEnemy);
   adcEnemy.signal_toggled().connect([this]() {
-    enemyUnits.clear();
     enemyClass = " Custodes";
+    if (!loadingRoster) {
+      enemyUnits.clear();
+      rosterModel.clear();
+    }
+    rosterModel.setFaction("Custodes");
+    if (!loadingRoster) {
+      syncEnemyUnitsFromRoster();
+    }
   });
 
   tyrEnemy.set_label("Tyrannids");
   tyrEnemy.set_group(factionEnemy);
   tyrEnemy.signal_toggled().connect([this]() {
-    enemyUnits.clear();
     enemyClass = " Tyrannids";
+    if (!loadingRoster) {
+      enemyUnits.clear();
+      rosterModel.clear();
+    }
+    rosterModel.setFaction("Tyrannids");
+    if (!loadingRoster) {
+      syncEnemyUnitsFromRoster();
+    }
   });
 
   tauEnemy.set_label("Tau");
   tauEnemy.set_group(factionEnemy);
   tauEnemy.signal_toggled().connect([this]() {
-    enemyUnits.clear();
     enemyClass = " Tau";
+    if (!loadingRoster) {
+      enemyUnits.clear();
+      rosterModel.clear();
+    }
+    rosterModel.setFaction("Tau");
+    if (!loadingRoster) {
+      syncEnemyUnitsFromRoster();
+    }
   });
 
   necEnemy.set_label("Necrons");
   necEnemy.set_group(factionEnemy);
   necEnemy.signal_toggled().connect([this]() {
-    enemyUnits.clear();
     enemyClass = " Necrons";
+    if (!loadingRoster) {
+      enemyUnits.clear();
+      rosterModel.clear();
+    }
+    rosterModel.setFaction("Necrons");
+    if (!loadingRoster) {
+      syncEnemyUnitsFromRoster();
+    }
   });
 
   milEnemy.set_label("Astra Militarum");
   milEnemy.set_group(factionEnemy);
   milEnemy.signal_toggled().connect([this]() {
-    enemyUnits.clear();
     enemyClass = " Militarum";
+    if (!loadingRoster) {
+      enemyUnits.clear();
+      rosterModel.clear();
+    }
+    rosterModel.setFaction("Militarum");
+    if (!loadingRoster) {
+      syncEnemyUnitsFromRoster();
+    }
   });
 
   enemyFact.set_text("Player Faction: ");
@@ -306,14 +360,16 @@ Form :: Form() {
   });
   clearAllEnemy.set_label("Clear");
   clearAllEnemy.signal_button_release_event().connect([&](GdkEventButton*) {
-    enemyUnits.clear();
-    savetoTxt(enemyUnits, modelUnits);
+    rosterModel.clear();
+    syncEnemyUnitsFromRoster();
+    saveLastRoster();
     return true;
   });
   enemyEnter.set_label("Add");
   enemyEnter.signal_button_release_event().connect([&](GdkEventButton*) {
-    if (isValidUnit(1, enterEnemyUnit.get_text()) == true) {
-      savetoTxt(enemyUnits, modelUnits);
+    if (addEnemyUnitFromEntry(enterEnemyUnit.get_text())) {
+      syncEnemyUnitsFromRoster();
+      saveLastRoster();
     }
     return true;
   });
@@ -329,20 +385,6 @@ Form :: Form() {
     mirrorRoster();
     return true;
   });
-
-  // add initial armies (Space Marines) 
-
-  std::string unit = "Apothecary";
-  modelUnits.push_back(unit);
-  unit = "Eliminator Squad";
-  modelUnits.push_back(unit); 
-
-  unit = "Apothecary";
-  enemyUnits.push_back(unit);
-  unit = "Eliminator Squad";
-  enemyUnits.push_back(unit);  
-
-  savetoTxt(modelUnits, enemyUnits);
 
   fixedTabPage2.add(dimX);
   fixedTabPage2.move(dimX, 10, 265);
@@ -499,6 +541,7 @@ Form :: Form() {
   button2.signal_button_release_event().connect([&](GdkEventButton*) {
     if (playing == false) {
       saveLastRoster();
+      syncEnemyUnitsFromRoster();
       playInGUI = "False";
       runPlayAgainstModelInBackground();
     }
@@ -545,6 +588,7 @@ Form :: Form() {
   playGUI.signal_button_release_event().connect([&](GdkEventButton* event) {
 	if (playing == false) {
 		saveLastRoster();
+		syncEnemyUnitsFromRoster();
 		openPlayGUI();
 		playInGUI = "True";
 		runPlayAgainstModelInBackground();
@@ -570,6 +614,16 @@ Form :: Form() {
   bar.set_title("40kAI GUI");
   resize(700, 600);
   loadLastRoster();
+  if (modelUnits.empty()) {
+    modelUnits.push_back("Apothecary");
+    modelUnits.push_back("Eliminator Squad");
+  }
+  if (enemyUnits.empty()) {
+    rosterModel.addUnit("Apothecary", 1, enemyClass.substr(1));
+    rosterModel.addUnit("Eliminator Squad", 1, enemyClass.substr(1));
+    syncEnemyUnitsFromRoster();
+    saveLastRoster();
+  }
   signal_hide().connect([this]() {
     saveLastRoster();
   });
@@ -612,7 +666,7 @@ int Form :: openPlayGUI() {
 }
 
 int Form :: openArmyView() {
-  armyView = new Units;
+  armyView = new Units(&rosterModel);
   armyView->show();
   return 0;
 }
@@ -636,7 +690,8 @@ std::string Form :: toLower(std::string data) {
 
 void Form :: mirrorRoster() {
   auto playerEntry = enterEnemyUnit.get_text();
-  if (enemyUnits.empty() && playerEntry.empty()) {
+  syncEnemyUnitsFromRoster();
+  if (rosterModel.empty() && playerEntry.empty()) {
     status.set_text("Player roster is empty, nothing to mirror.");
     return;
   }
@@ -649,74 +704,9 @@ void Form :: mirrorRoster() {
     applyFactionToModel(enemyClass.substr(1));
   }
 
-  modelUnits = enemyUnits;
+  modelUnits = rosterModel.expandedUnits();
   savetoTxt(enemyUnits, modelUnits);
   status.set_text("Mirrored Player roster to Model.");
-}
-
-std::filesystem::path Form :: lastRosterPath() const {
-  const char* xdgConfig = std::getenv("XDG_CONFIG_HOME");
-  std::filesystem::path basePath;
-  if (xdgConfig && *xdgConfig) {
-    basePath = xdgConfig;
-  } else {
-    const char* home = std::getenv("HOME");
-    if (home && *home) {
-      basePath = std::filesystem::path(home) / ".config";
-    } else {
-      basePath = std::filesystem::current_path();
-    }
-  }
-  return basePath / "40kAI" / "last_roster.json";
-}
-
-std::string Form :: currentTimestamp() const {
-  auto now = std::time(nullptr);
-  std::tm localTime{};
-  localTime = *std::localtime(&now);
-  std::ostringstream oss;
-  oss << std::put_time(&localTime, "%Y-%m-%dT%H:%M:%S");
-  return oss.str();
-}
-
-std::string Form :: joinUnits(const std::vector<std::string>& units) const {
-  std::ostringstream oss;
-  for (size_t i = 0; i < units.size(); ++i) {
-    oss << units[i];
-    if (i + 1 < units.size()) {
-      oss << "; ";
-    }
-  }
-  return oss.str();
-}
-
-std::vector<std::string> Form :: splitUnits(const std::string& text) const {
-  std::string normalized = text;
-  for (auto& ch : normalized) {
-    if (ch == ',' || ch == '\n') {
-      ch = ';';
-    }
-  }
-
-  auto trim = [](const std::string& input) {
-    size_t start = input.find_first_not_of(" \t");
-    if (start == std::string::npos) {
-      return std::string();
-    }
-    size_t end = input.find_last_not_of(" \t");
-    return input.substr(start, end - start + 1);
-  };
-
-  std::vector<std::string> units;
-  std::stringstream ss(normalized);
-  std::string item;
-  while (std::getline(ss, item, ';')) {
-    auto cleaned = trim(item);
-    if (!cleaned.empty()) {
-      units.push_back(cleaned);
-    }
-  }
-  return units;
 }
 
 void Form :: applyFactionToModel(const std::string& faction) {
@@ -772,92 +762,61 @@ void Form :: applyFactionToEnemy(const std::string& faction) {
 }
 
 void Form :: saveLastRoster() {
-  json j;
-  j["version"] = 1;
-  j["timestamp"] = currentTimestamp();
-
-  std::string modelFaction = modelClass.size() > 1 ? modelClass.substr(1) : modelClass;
-  std::string playerFaction = enemyClass.size() > 1 ? enemyClass.substr(1) : enemyClass;
-  j["faction"] = playerFaction;
-  j["model_faction"] = modelFaction;
-  j["player_faction"] = playerFaction;
-  j["model_units"] = joinUnits(modelUnits);
-  j["player_units"] = joinUnits(enemyUnits);
-  j["model_units_entry"] = enterModelUnit.get_text();
-  j["player_units_entry"] = enterEnemyUnit.get_text();
-  j["model_units_list"] = modelUnits;
-  j["player_units_list"] = enemyUnits;
-
-  auto path = lastRosterPath();
-  std::error_code error;
-  std::filesystem::create_directories(path.parent_path(), error);
-  std::ofstream outfile(path);
-  if (!outfile) {
-    return;
-  }
-  outfile << j.dump(2);
+  rosterModel.saveToFile(RosterModel::defaultRosterPath());
 }
 
 void Form :: loadLastRoster() {
-  auto path = lastRosterPath();
-  if (!std::filesystem::exists(path)) {
+  if (!rosterModel.loadFromFile(RosterModel::defaultRosterPath())) {
     return;
   }
 
-  std::ifstream infile(path);
-  if (!infile) {
-    return;
+  if (!rosterModel.faction().empty()) {
+    loadingRoster = true;
+    applyFactionToEnemy(rosterModel.faction());
+    loadingRoster = false;
   }
 
-  json j;
-  try {
-    infile >> j;
-  } catch (const std::exception&) {
-    return;
-  }
-
-  std::string modelFaction;
-  std::string playerFaction;
-  if (j.contains("model_faction")) {
-    modelFaction = j.at("model_faction").get<std::string>();
-  } else if (j.contains("faction")) {
-    modelFaction = j.at("faction").get<std::string>();
-  }
-  if (j.contains("player_faction")) {
-    playerFaction = j.at("player_faction").get<std::string>();
-  } else if (j.contains("faction")) {
-    playerFaction = j.at("faction").get<std::string>();
-  }
-
-  applyFactionToModel(modelFaction);
-  applyFactionToEnemy(playerFaction);
-
-  std::vector<std::string> loadedModelUnits;
-  std::vector<std::string> loadedEnemyUnits;
-  if (j.contains("model_units_list") && j.at("model_units_list").is_array()) {
-    loadedModelUnits = j.at("model_units_list").get<std::vector<std::string>>();
-  } else if (j.contains("model_units")) {
-    loadedModelUnits = splitUnits(j.at("model_units").get<std::string>());
-  }
-
-  if (j.contains("player_units_list") && j.at("player_units_list").is_array()) {
-    loadedEnemyUnits = j.at("player_units_list").get<std::vector<std::string>>();
-  } else if (j.contains("player_units")) {
-    loadedEnemyUnits = splitUnits(j.at("player_units").get<std::string>());
-  }
-
-  modelUnits = loadedModelUnits;
-  enemyUnits = loadedEnemyUnits;
-
-  if (j.contains("model_units_entry")) {
-    enterModelUnit.set_text(j.at("model_units_entry").get<std::string>());
-  }
-  if (j.contains("player_units_entry")) {
-    enterEnemyUnit.set_text(j.at("player_units_entry").get<std::string>());
-  }
-
-  savetoTxt(enemyUnits, modelUnits);
+  syncEnemyUnitsFromRoster();
   status.set_text("Loaded last roster.");
+}
+
+void Form :: syncEnemyUnitsFromRoster() {
+  enemyUnits = rosterModel.expandedUnits();
+  savetoTxt(enemyUnits, modelUnits);
+}
+
+bool Form :: addEnemyUnitFromEntry(const std::string& entryText) {
+  if (entryText.empty()) {
+    return false;
+  }
+  std::ifstream infile("../gym_mod/gym_mod/engine/unitData.json");
+  json j;
+  infile >> j;
+
+  if (!j.contains("UnitData") || !j.at("UnitData").is_array()) {
+    return false;
+  }
+
+  for (const auto& unit : j.at("UnitData")) {
+    if (!unit.contains("Name") || !unit.contains("Army")) {
+      continue;
+    }
+    std::string name = unit.at("Name").get<std::string>();
+    if (strcmp(toLower(name).data(), toLower(entryText).data()) != 0) {
+      continue;
+    }
+    std::string army = unit.at("Army").get<std::string>();
+    if (strcmp(toLower(army).data(), toLower(enemyClass.substr(1)).data()) != 0) {
+      continue;
+    }
+    int defaultCount = 1;
+    if (unit.contains("#OfModels") && unit.at("#OfModels").is_number_integer()) {
+      defaultCount = unit.at("#OfModels").get<int>();
+    }
+    rosterModel.addUnit(name, defaultCount, army);
+    return true;
+  }
+  return false;
 }
 
 // model: id = 0
