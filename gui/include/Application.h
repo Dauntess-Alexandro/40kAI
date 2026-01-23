@@ -44,10 +44,14 @@ public :
   void loadLastRoster();
   void syncEnemyUnitsFromRoster();
   bool addEnemyUnitFromEntry(const std::string& entryText);
+  void resetLayout();
 
 private:
   void applyFactionToModel(const std::string& faction);
   void applyFactionToEnemy(const std::string& faction);
+  bool loadWindowGeometry();
+  void saveWindowGeometry();
+  void ensureMinimumSize();
   Window* boardShow;
   Window* armyView;
   Window* warn;
@@ -154,6 +158,7 @@ Image metricBox6;
   RosterModel rosterModel;
   HeaderBar bar;
   Button help;
+  Button resetLayoutButton;
   Button chooseMetrics;
   Button playGUI;
   std::string playInGUI;

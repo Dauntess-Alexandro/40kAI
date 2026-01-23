@@ -19,10 +19,18 @@ class Play : public Gtk::Window {
         void backgroundUpdate();
         void update_text_view();
         bool file_exists(char * fileName);
+        std::string openBoardFile(const std::string& board);
     private:
-        Fixed fixed;
-        ScrolledWindow scrolledWindow;
-        ScrolledWindow innerWindow;
+        Box rootBox;
+        Paned mainSplit;
+        Paned rightSplit;
+        Box leftControls;
+        ScrolledWindow boardScroll;
+        ScrolledWindow logScroll;
+        TextView boardView;
+        TextView logView;
+        CheckButton autoScrollToggle;
+        Button clearLogButton;
         HeaderBar bar;
 		Button enter;
         Button plus;
@@ -31,9 +39,10 @@ class Play : public Gtk::Window {
   		RadioButton radioYes;
   		RadioButton radioNo;
   		Entry numBox;
-  		Label text;
+        Label responseLabel;
   		bool takeInput;
   		std::string response;
+        std::string boardText;
   		Dispatcher dispatcher;
 };
 

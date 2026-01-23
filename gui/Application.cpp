@@ -24,6 +24,17 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 namespace {
+constexpr int kDefaultWidth = 1400;
+constexpr int kDefaultHeight = 900;
+constexpr int kMinimumWidth = 1100;
+constexpr int kMinimumHeight = 700;
+
+std::string geometryPath() {
+  const char* home = std::getenv("HOME");
+  std::string base = home ? home : ".";
+  return base + "/.config/40kAI/gui_layout.conf";
+}
+
 std::string toLowerCopy(std::string data) {
   std::transform(data.begin(), data.end(), data.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -88,11 +99,17 @@ Form :: Form() {
     openHelpMenu();
     return true;
   });
+  resetLayoutButton.set_label("Reset Layout");
+  resetLayoutButton.signal_button_release_event().connect([&](GdkEventButton*) {
+    resetLayout();
+    return true;
+  });
   bar.pack_end(help);
+  bar.pack_start(resetLayoutButton);
   set_titlebar(bar);
 
-  set_default_size(1200, 900);
-  set_size_request(1000, 700);
+  set_default_size(kDefaultWidth, kDefaultHeight);
+  set_size_request(kMinimumWidth, kMinimumHeight);
   scrolledWindow.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
 
   add(scrolledWindow);
@@ -654,7 +671,10 @@ Form :: Form() {
   fixedTabPage4.move(setModelFile, 80, 40);
 
   bar.set_title("40kAI GUI");
-  resize(700, 600);
+  if (!loadWindowGeometry()) {
+    resize(kDefaultWidth, kDefaultHeight);
+  }
+  ensureMinimumSize();
   loadLastRoster();
   if (modelUnits.empty()) {
     modelUnits.push_back({"Apothecary", "Space_Marine", findDefaultModelsCount("Space_Marine", "Apothecary"),
@@ -671,8 +691,52 @@ Form :: Form() {
   }
   signal_hide().connect([this]() {
     saveLastRoster();
+    saveWindowGeometry();
   });
   show_all();
+}
+
+bool Form :: loadWindowGeometry() {
+  std::ifstream infile(geometryPath());
+  if (!infile) {
+    return false;
+  }
+  int width = 0;
+  int height = 0;
+  if (!(infile >> width >> height)) {
+    return false;
+  }
+  resize(width, height);
+  return true;
+}
+
+void Form :: saveWindowGeometry() {
+  std::string path = geometryPath();
+  fs::create_directories(fs::path(path).parent_path());
+  int width = 0;
+  int height = 0;
+  get_size(width, height);
+  std::ofstream outfile(path);
+  if (!outfile) {
+    return;
+  }
+  outfile << width << " " << height;
+}
+
+void Form :: ensureMinimumSize() {
+  int width = 0;
+  int height = 0;
+  get_size(width, height);
+  if (width < kMinimumWidth || height < kMinimumHeight) {
+    resize(std::max(width, kMinimumWidth), std::max(height, kMinimumHeight));
+  }
+}
+
+void Form :: resetLayout() {
+  std::error_code ec;
+  fs::remove(geometryPath(), ec);
+  resize(kDefaultWidth, kDefaultHeight);
+  ensureMinimumSize();
 }
 
 void Form :: changeMetrics(std::string path) {

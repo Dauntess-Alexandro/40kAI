@@ -1,8 +1,74 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
 diff --git a/gui/Application.cpp b/gui/Application.cpp
-index 7fa529be1d5aa504819c07f953af87abdd9c8766..ecbaed27d908db74a28526b293afcb223ba3e887 100644
+index ecbaed27d908db74a28526b293afcb223ba3e887..638917de3d7ecfb094b6fa2cf31e820748f72216 100644
 --- a/gui/Application.cpp
 +++ b/gui/Application.cpp
-@@ -69,50 +69,54 @@ std::string winratepth = "img/winrate.png";
+@@ -2,50 +2,61 @@
+ #include <gtkmm.h>
+ #include <cstdlib>
+ #include <stdlib.h>
+ #include <string>
+ #include <fstream>
+ #include <thread>
+ #include <chrono>
+ #include <fstream>
+ #include <filesystem>
+ #include <vector>
+ #include <algorithm>
+ #include <nlohmann/json.hpp>
+ #include "include/Application.h"
+ #include "include/popup.h"
+ #include "include/units.h"
+ #include "include/warn.h"
+ #include "include/help.h"
+ #include "include/play.h"
+ 
+ using namespace Glib;
+ using namespace Gtk;
+ namespace fs = std::filesystem;
+ using json = nlohmann::json;
+ 
+ namespace {
++constexpr int kDefaultWidth = 1400;
++constexpr int kDefaultHeight = 900;
++constexpr int kMinimumWidth = 1100;
++constexpr int kMinimumHeight = 700;
++
++std::string geometryPath() {
++  const char* home = std::getenv("HOME");
++  std::string base = home ? home : ".";
++  return base + "/.config/40kAI/gui_layout.conf";
++}
++
+ std::string toLowerCopy(std::string data) {
+   std::transform(data.begin(), data.end(), data.begin(),
+                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+   return data;
+ }
+ 
+ int findDefaultModelsCount(const std::string& faction, const std::string& name) {
+   std::ifstream infile("../gym_mod/gym_mod/engine/unitData.json");
+   if (!infile) {
+     return 1;
+   }
+   json j;
+   infile >> j;
+   if (!j.contains("UnitData") || !j.at("UnitData").is_array()) {
+     return 1;
+   }
+   std::string factionLower = toLowerCopy(faction);
+   std::string nameLower = toLowerCopy(name);
+   for (const auto& unit : j.at("UnitData")) {
+     if (!unit.contains("Name") || !unit.contains("Army")) {
+       continue;
+     }
+     if (toLowerCopy(unit.at("Name").get<std::string>()) != nameLower) {
+       continue;
+     }
+@@ -66,55 +77,61 @@ std::string rewpth = "img/reward.png";
+ std::string losspth = "img/loss.png";
+ std::string eplenpth = "img/epLen.png";
+ std::string winratepth = "img/winrate.png";
  std::string vpdiffpth = "img/vpdiff.png";
  std::string endreasonpth = "img/endreasons.png";
  std::string imgpth = "img/icon.png";
@@ -25,13 +91,21 @@ index 7fa529be1d5aa504819c07f953af87abdd9c8766..ecbaed27d908db74a28526b293afcb22
      openHelpMenu();
      return true;
    });
++  resetLayoutButton.set_label("Reset Layout");
++  resetLayoutButton.signal_button_release_event().connect([&](GdkEventButton*) {
++    resetLayout();
++    return true;
++  });
    bar.pack_end(help);
++  bar.pack_start(resetLayoutButton);
    set_titlebar(bar);
  
-+  set_default_size(1200, 900);
-+  set_size_request(1000, 700);
-+  scrolledWindow.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
-+
+-  set_default_size(1200, 900);
+-  set_size_request(1000, 700);
++  set_default_size(kDefaultWidth, kDefaultHeight);
++  set_size_request(kMinimumWidth, kMinimumHeight);
+   scrolledWindow.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
+ 
    add(scrolledWindow);
    scrolledWindow.add(fixed);
  
@@ -55,20 +129,361 @@ index 7fa529be1d5aa504819c07f953af87abdd9c8766..ecbaed27d908db74a28526b293afcb22
    fixedTabPage1.move(textbox, 10, 10);
  
    fixedTabPage1.add(radioTop);
-   fixedTabPage1.move(radioTop, 10, 40);
-   radioTop.set_label("Top");
+@@ -632,71 +649,118 @@ Form :: Form() {
+ 		saveLastRoster();
+ 		syncEnemyUnitsFromRoster();
+ 		openPlayGUI();
+ 		playInGUI = "True";
+ 		runPlayAgainstModelInBackground();
+ 	}
+ 	return true;
+   });
+ 
+   fixedTabPage4.add(textbox2);
+   fixedTabPage4.add(button2);
+   fixedTabPage4.add(showBoard);
+   fixedTabPage4.add(showBoardImg);
+   fixedTabPage4.add(playGUI);
+   fixedTabPage4.add(button5);
+   fixedTabPage4.add(setModelFile);
+   fixedTabPage4.move(textbox2, 10, 10);
+   fixedTabPage4.move(playGUI, 130, 80);
+   fixedTabPage4.move(showBoard, 220, 80);
+   fixedTabPage4.move(showBoardImg, 395, 80);  
+   fixedTabPage4.move(button2, 10, 80);
+   fixedTabPage4.move(button5, 10, 40);
+   fixedTabPage4.move(setModelFile, 80, 40);
+ 
+   bar.set_title("40kAI GUI");
+-  resize(700, 600);
++  if (!loadWindowGeometry()) {
++    resize(kDefaultWidth, kDefaultHeight);
++  }
++  ensureMinimumSize();
+   loadLastRoster();
+   if (modelUnits.empty()) {
+     modelUnits.push_back({"Apothecary", "Space_Marine", findDefaultModelsCount("Space_Marine", "Apothecary"),
+                           RosterModel::generateInstanceId()});
+     modelUnits.push_back({"Eliminator Squad", "Space_Marine",
+                           findDefaultModelsCount("Space_Marine", "Eliminator Squad"),
+                           RosterModel::generateInstanceId()});
+   }
+   if (enemyUnits.empty()) {
+     rosterModel.addUnit("Apothecary", 1, enemyClass.substr(1));
+     rosterModel.addUnit("Eliminator Squad", 1, enemyClass.substr(1));
+     syncEnemyUnitsFromRoster();
+     saveLastRoster();
+   }
+   signal_hide().connect([this]() {
+     saveLastRoster();
++    saveWindowGeometry();
+   });
+   show_all();
+ }
+ 
++bool Form :: loadWindowGeometry() {
++  std::ifstream infile(geometryPath());
++  if (!infile) {
++    return false;
++  }
++  int width = 0;
++  int height = 0;
++  if (!(infile >> width >> height)) {
++    return false;
++  }
++  resize(width, height);
++  return true;
++}
++
++void Form :: saveWindowGeometry() {
++  std::string path = geometryPath();
++  fs::create_directories(fs::path(path).parent_path());
++  int width = 0;
++  int height = 0;
++  get_size(width, height);
++  std::ofstream outfile(path);
++  if (!outfile) {
++    return;
++  }
++  outfile << width << " " << height;
++}
++
++void Form :: ensureMinimumSize() {
++  int width = 0;
++  int height = 0;
++  get_size(width, height);
++  if (width < kMinimumWidth || height < kMinimumHeight) {
++    resize(std::max(width, kMinimumWidth), std::max(height, kMinimumHeight));
++  }
++}
++
++void Form :: resetLayout() {
++  std::error_code ec;
++  fs::remove(geometryPath(), ec);
++  resize(kDefaultWidth, kDefaultHeight);
++  ensureMinimumSize();
++}
++
+ void Form :: changeMetrics(std::string path) {
+     std::string jsonID = path.substr(path.length()-16,9);
+ 
+ 	if (jsonID[0] == '-') {
+ 		jsonID = path.substr(path.length()-15,8);
+ 	} 
+ 
+ 	std::ifstream infile("../models/data_"+jsonID+".json");
+ 	json j;
+ 	infile >> j;
+ 
+ 	losspth = j.value("loss", losspth);
+ 	rewpth = j.value("reward", rewpth);
+ 	eplenpth = j.value("epLen", eplenpth);
+ 
+ 	// optional extra metrics (backwards compatible with older models)
+ 	winratepth = j.value("winrate", winratepth);
+ 	vpdiffpth = j.value("vpdiff", vpdiffpth);
+ 	endreasonpth = j.value("endreasons", endreasonpth);
+ 
+ 	update_metrics();
+ }
+ 
+ int Form :: openPopUp(bool textMode) {
+   boardShow = new PopUp(textMode);
+diff --git a/gui/include/Application.h b/gui/include/Application.h
+index 3b90c0f0aac55b7c604c81d991581812014efba8..24854b2fb1b005374b81d4450390ddf146213a37 100644
+--- a/gui/include/Application.h
++++ b/gui/include/Application.h
+@@ -22,54 +22,58 @@ public :
+   Form();
+   int openPopUp(bool textMode);
+   void update_picture();
+   void update_metrics();
+   void updateInits(std::string model, std::string enemy);
+   void startTrainInBackground();
+   void startTrain();
+   void runPlayAgainstModelInBackground();
+   void playAgainstModel();
+   inline bool exists_test (const std::string& name);
+   void on_dropdown_changed();
+   void savetoTxt(const std::vector<RosterEntry>& enemyUnits, const std::vector<RosterEntry>& modelUnits);
+   bool isValidUnit(int id, std::string name);
+   int openArmyView();
+   int openWarnMenu(std::string mess, int comm);
+   int openHelpMenu();
+   int openPlayGUI();
+   void changeMetrics(std::string path);
+   void recentMetrics();
+   std::string toLower(std::string data);
+   void mirrorRoster();
+   void saveLastRoster();
+   void loadLastRoster();
+   void syncEnemyUnitsFromRoster();
+   bool addEnemyUnitFromEntry(const std::string& entryText);
++  void resetLayout();
+ 
+ private:
+   void applyFactionToModel(const std::string& faction);
+   void applyFactionToEnemy(const std::string& faction);
++  bool loadWindowGeometry();
++  void saveWindowGeometry();
++  void ensureMinimumSize();
+   Window* boardShow;
+   Window* armyView;
+   Window* warn;
+   Window* play;
+   Window* helpMenu;
+   Image pictureBox1;
+   Image metricBox;
+   Image metricBox2;
+   Image metricBox3;
+ Image metricBox4;
+ Image metricBox5;
+ Image metricBox6;
+   Fixed fixed;
+   ScrolledWindow scrolledWindow;
+   Notebook tabControl1;
+   Label labelPage1;
+   Label labelPage2;
+   Label labelPage3;
+   Label labelPage4;
+   Label labelPage5;
+   Label label1;
+   Frame tabPage1;
+   Frame tabPage2;
+   Frame tabPage3;
+   Frame tabPage4;
+@@ -132,31 +136,32 @@ Image metricBox6;
+   Button downX;
+   Button upY;
+   Button downY;
+   Button modelEnter;
+   Button enemyEnter;
+   Button mirrorRosterButton;
+   Button openArmyPopup;
+   Entry enterModelUnit;
+   Entry enterEnemyUnit;
+   Button clearAllModel;
+   Button clearAllEnemy;
+   int x;
+   int y;
+   bool open;
+   bool training;
+   bool playing;
+   bool loadingRoster;
+   Label error;
+   Label modelUnitLabel;
+   Label enemyUnitLabel;
+   std::vector<RosterEntry> modelUnits;
+   std::vector<RosterEntry> enemyUnits;
+   RosterModel rosterModel;
+   HeaderBar bar;
+   Button help;
++  Button resetLayoutButton;
+   Button chooseMetrics;
+   Button playGUI;
+   std::string playInGUI;
+ };
+ 
+ #endif
+diff --git a/gui/include/play.h b/gui/include/play.h
+index a1b3c7ea1b92c1b1b715b04350a8b30e8137d90e..f1a95e4a35231eccd77daa99bd0db2264f056cd8 100644
+--- a/gui/include/play.h
++++ b/gui/include/play.h
+@@ -1,40 +1,49 @@
+ #ifndef PLAY_H
+ #define PLAY_H
+ 
+ #include <iostream>
+ #include <gtkmm.h>
+ #include <cstdlib>
+ #include <stdlib.h>
+ #include <string>
+ 
+ using namespace Glib;
+ using namespace Gtk;
+ using namespace std;
+ 
+ class Play : public Gtk::Window {
+     public:
+         Play();
+         void update();
+         void keepUpdating();
+         void backgroundUpdate();
+         void update_text_view();
+         bool file_exists(char * fileName);
++        std::string openBoardFile(const std::string& board);
+     private:
+-        Fixed fixed;
+-        ScrolledWindow scrolledWindow;
+-        ScrolledWindow innerWindow;
++        Box rootBox;
++        Paned mainSplit;
++        Paned rightSplit;
++        Box leftControls;
++        ScrolledWindow boardScroll;
++        ScrolledWindow logScroll;
++        TextView boardView;
++        TextView logView;
++        CheckButton autoScrollToggle;
++        Button clearLogButton;
+         HeaderBar bar;
+ 		Button enter;
+         Button plus;
+         Button minus;
+ 		RadioButtonGroup yesOrNoRadio;
+   		RadioButton radioYes;
+   		RadioButton radioNo;
+   		Entry numBox;
+-  		Label text;
++        Label responseLabel;
+   		bool takeInput;
+   		std::string response;
++        std::string boardText;
+   		Dispatcher dispatcher;
+ };
+ 
+ #endif
 diff --git a/gui/play.cpp b/gui/play.cpp
-index 9fbbae133e04c67dfda1e3a0be5724c1238f1364..ab5832603ffbb1b652ed9af04d310a4f693c350a 100644
+index ab5832603ffbb1b652ed9af04d310a4f693c350a..c0a6fb9efdeb5ce78d722a917bd60cb4e50b8e10 100644
 --- a/gui/play.cpp
 +++ b/gui/play.cpp
-@@ -30,58 +30,64 @@ void Play :: update() {
+@@ -1,93 +1,196 @@
+ #include <iostream>
+ #include <gtkmm.h>
+ #include <cstdlib>
+ #include <stdlib.h>
+ #include <string>
+ #include <fstream>
+ #include <thread>
+ #include "include/play.h"
+ 
+ using namespace Glib;
+ using namespace Gtk;
+ using namespace std;
+ 
++namespace {
++bool is_board_num(char num) {
++	string nums= "0123456789";
++	for (char n : nums) {
++		if (n == num) {
++			return true;
++		}
++	}
++	return false;
++}
++}
++
+ bool Play :: file_exists(char * fileName) {
+ 	ifstream infile(fileName);
+ 	return infile.good();
+ }
+ 
+ void Play :: update() {
++	bool updated = false;
+ 	if (file_exists("response.txt")) {
+ 		ifstream file("response.txt");
+ 		string line;
+ 		while(getline(file, line)) {
+ 			for (int i = 0; line.length() > i; i++) {
+ 				response += line[i];
+ 			}
+ 			response += "\n";
+ 		}
+ 		file.close();
++		updated = true;
++	}
++
++	string nextBoard = openBoardFile("../board.txt");
++	if (!nextBoard.empty() && nextBoard != boardText) {
++		boardText = nextBoard;
++		updated = true;
++	}
++
++	if (updated) {
  		dispatcher.emit();
  	}
  }
  
  void Play :: update_text_view() {
- 	text.set_text(response);
- 	system("rm response.txt");
+-	text.set_text(response);
+-	system("rm response.txt");
++	auto logBuffer = logView.get_buffer();
++	if (logBuffer) {
++		logBuffer->set_text(response);
++		if (autoScrollToggle.get_active()) {
++			auto endIter = logBuffer->end();
++			logBuffer->place_cursor(endIter);
++			logView.scroll_to(endIter);
++		}
++	}
++	auto boardBuffer = boardView.get_buffer();
++	if (boardBuffer) {
++		boardBuffer->set_text(boardText);
++	}
++	char responseFile[] = "response.txt";
++	if (file_exists(responseFile)) {
++		system("rm response.txt");
++	}
  }
  
  void Play :: keepUpdating() {
@@ -87,16 +502,36 @@ index 9fbbae133e04c67dfda1e3a0be5724c1238f1364..ab5832603ffbb1b652ed9af04d310a4f
  	bar.set_show_close_button(true);
  	set_titlebar(bar);
  
-+	set_default_size(600, 500);
-+	set_size_request(500, 400);
-+
- 	add(scrolledWindow);
- 	scrolledWindow.add(fixed);
-+	scrolledWindow.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
+-	set_default_size(600, 500);
+-	set_size_request(500, 400);
+-
+-	add(scrolledWindow);
+-	scrolledWindow.add(fixed);
+-	scrolledWindow.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
++	set_default_size(1000, 700);
++	set_size_request(800, 600);
  
  	bar.set_title("Playing Against the Model");
  
- 	numBox.set_text("Enter Response Here");
+-	numBox.set_text("Enter Response Here");
++	rootBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
++	mainSplit.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
++	rightSplit.set_orientation(Gtk::ORIENTATION_VERTICAL);
++	leftControls.set_orientation(Gtk::ORIENTATION_VERTICAL);
++
++	add(rootBox);
++	rootBox.pack_start(mainSplit, Gtk::PACK_EXPAND_WIDGET);
++
++	mainSplit.add1(leftControls);
++	mainSplit.add2(rightSplit);
++	mainSplit.set_position(260);
++
++	rightSplit.add1(boardScroll);
++	rightSplit.add2(logScroll);
++	rightSplit.set_position(350);
++
++	responseLabel.set_text("Enter Response Here");
++	numBox.set_text("");
  
  	enter.set_label("Enter");
  	enter.signal_button_release_event().connect([&](GdkEventButton*) {	
@@ -107,514 +542,92 @@ index 9fbbae133e04c67dfda1e3a0be5724c1238f1364..ab5832603ffbb1b652ed9af04d310a4f
  		return true;
  	});
  
- 	text.set_text("When the game starts, text will appear here");
-+	text.set_line_wrap(true);
+-	text.set_text("When the game starts, text will appear here");
+-	text.set_line_wrap(true);
++	clearLogButton.set_label("Clear Logs");
++	clearLogButton.signal_clicked().connect([this]() {
++		response.clear();
++		auto logBuffer = logView.get_buffer();
++		if (logBuffer) {
++			logBuffer->set_text("");
++		}
++	});
++	autoScrollToggle.set_label("Auto-scroll logs");
++	autoScrollToggle.set_active(true);
++
++	auto logBuffer = Gtk::TextBuffer::create();
++	logView.set_buffer(logBuffer);
++	logView.set_editable(false);
++	logView.set_wrap_mode(Gtk::WRAP_WORD_CHAR);
++
++	auto boardBuffer = Gtk::TextBuffer::create();
++	boardView.set_buffer(boardBuffer);
++	boardView.set_editable(false);
++	boardView.set_monospace(true);
++	boardView.set_wrap_mode(Gtk::WRAP_NONE);
++
  	dispatcher.connect(sigc::mem_fun(*this, &Play::update_text_view));
  	backgroundUpdate();
- 	innerWindow.add(text);
--	innerWindow.set_size_request(350,100);
-+	innerWindow.set_size_request(520,260);
-+	innerWindow.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
- 	
- 	
- 	fixed.add(numBox);
- 	fixed.add(enter);
- 	fixed.add(innerWindow);
- 	fixed.move(innerWindow, 10, 10);
- 	fixed.move(numBox, 10, 120);
- 	fixed.move(enter, 10, 170);
- 
--    resize(400,400);
-+    resize(600,500);
+-	innerWindow.add(text);
+-	innerWindow.set_size_request(520,260);
+-	innerWindow.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
+-	
+-	
+-	fixed.add(numBox);
+-	fixed.add(enter);
+-	fixed.add(innerWindow);
+-	fixed.move(innerWindow, 10, 10);
+-	fixed.move(numBox, 10, 120);
+-	fixed.move(enter, 10, 170);
+-
+-    resize(600,500);
++
++	boardScroll.add(boardView);
++	boardScroll.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
++	logScroll.add(logView);
++	logScroll.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
++
++	leftControls.pack_start(responseLabel, Gtk::PACK_SHRINK);
++	leftControls.pack_start(numBox, Gtk::PACK_SHRINK);
++	leftControls.pack_start(enter, Gtk::PACK_SHRINK);
++	leftControls.pack_start(clearLogButton, Gtk::PACK_SHRINK);
++	leftControls.pack_start(autoScrollToggle, Gtk::PACK_SHRINK);
++
      show_all();
  }
-diff --git a/gym_mod/gym_mod/engine/skills.py b/gym_mod/gym_mod/engine/skills.py
-index 281261fae0935e535577ed7cf97ffaf34c1715a1..919aa7f5ecdc97f2ddd0eb567afcc0e47d1ed4e1 100644
---- a/gym_mod/gym_mod/engine/skills.py
-+++ b/gym_mod/gym_mod/engine/skills.py
-@@ -101,56 +101,56 @@ def reanimation_protocols_one_unit(
-         if wounded_indices:
-             idx = min(wounded_indices, key=lambda i: wounds[i])
-             wounds[idx] += 1
-             _log_reanimation(log_fn, f"{unit_label}Лечение раненой модели idx={idx}")
-             continue
- 
-         if len(wounds) < starting_models:
-             wounds.append(1)
-             _log_reanimation(log_fn, f"{unit_label}Возвращена уничтоженная модель с 1 раной")
-             continue
- 
-         break
- 
-     new_total = min(sum(wounds), starting_models * max_wounds)
-     _log_reanimation(
-         log_fn,
-         f"{unit_label}После:  моделей={len(wounds)}, раны={wounds} всего={new_total}",
-     )
-     return float(new_total)
- 
- 
- def apply_end_of_command_phase(env, side: str, dice_fn: DiceFn, log_fn: LogFn) -> None:
-     if side == "model":
-         health = env.unit_health
-         data = env.unit_data
--        side_label = "MODEL"
-+        side_label = env._display_side(side) if hasattr(env, "_display_side") else "MODEL"
-         unit_id_offset = 21
-     else:
-         health = env.enemy_health
-         data = env.enemy_data
--        side_label = "ENEMY"
-+        side_label = env._display_side(side) if hasattr(env, "_display_side") else "ENEMY"
-         unit_id_offset = 11
- 
-     for i in range(len(health)):
-         if health[i] <= 0:
-             continue
-         unit_data = data[i]
-         if not is_necrons(unit_data):
-             continue
-         if not has_ability(unit_data, ABILITY_REANIMATION):
-             continue
-         unit_id = unit_id_offset + i
-         unit_label = f"[{side_label}] {format_unit(unit_id, unit_data)} "
-         health[i] = reanimation_protocols_one_unit(
-             health[i],
-             unit_data,
-             dice_fn,
-             log_fn,
-             unit_label,
-         )
- 
- 
- def _self_check_fixed_roll(roll: int) -> DiceFn:
-     def _dice(max: int = 6, num: int = 1) -> int:
-         _ = max
-         _ = num
-diff --git a/gym_mod/gym_mod/envs/warhamEnv.py b/gym_mod/gym_mod/envs/warhamEnv.py
-index 5718088ef1d03c830d3aee61aa06e650dab24afd..a56ce69db91411b3ad5f86eb9df800257af54568 100644
---- a/gym_mod/gym_mod/envs/warhamEnv.py
-+++ b/gym_mod/gym_mod/envs/warhamEnv.py
-@@ -800,57 +800,61 @@ class Warhammer40kEnv(gym.Env):
-             return
-         if self.playType is True:
-             sendToGUI(msg)
-         else:
-             print(msg)
- 
-     def _log_phase(self, side: str, phase: str):
-         if not self._should_log():
-             return
-         phase_title = {
-             "command": "ФАЗА КОМАНДОВАНИЯ",
-             "movement": "ФАЗА ДВИЖЕНИЯ",
-             "shooting": "ФАЗА СТРЕЛЬБЫ",
-             "charge": "ФАЗА ЧАРДЖА",
-             "fight": "ФАЗА БОЯ",
-         }.get(phase, f"ФАЗА {phase.upper()}")
-         self._log(f"--- {phase_title} ---")
- 
-     def _log_unit(self, side: str, unit_id: int, unit_idx: int, msg: str):
-         if not self._should_log():
-             return
-         side_label = self._side_label(side)
-         unit_label = self._format_unit_label(side, unit_idx, unit_id=unit_id)
-         self._log(f"[{side_label}] {unit_label}: {msg}")
- 
--    def _side_label(self, side: str, manual: bool = False) -> str:
-+    def _display_side(self, side: str) -> str:
-+        if side == "enemy":
-+            return "PLAYER"
-         if side == "model":
-             return "MODEL"
--        if side == "enemy":
--            return "PLAYER" if manual else "ENEMY"
-         return side.upper()
- 
-+    def _side_label(self, side: str, manual: bool = False) -> str:
-+        _ = manual
-+        return self._display_side(side)
 +
-     def _log_phase_msg(self, side_label: str, phase: str, msg: str):
-         if not self._should_log():
-             return
-         self._log(f"[{side_label}][{phase.upper()}] {msg}")
++std::string Play :: openBoardFile(const std::string& board) {
++	std::fstream file;
++	file.open(board, std::ios::in);
++	std::string fullFile;
++	char last = '\0';
++	if (!file) {
++		return "";
++	}
++	char ch;
++	while (1) {
++		file >> ch;
++		if (file.eof()) {
++			break;
++		}
++		if (last == '0' && ch != ',') {
++			fullFile += '\n';
++		} else if (ch == '0' && is_board_num(last)) {
++			fullFile += '\n';
++		} else if (is_board_num(ch) && ch != '0' && ch != '3') {
++			fullFile += ch;
++		} else if (is_board_num(ch) && ch == '3') {
++			fullFile += '0';
++			fullFile += '\x20';
++		} else {
++			fullFile += '_';
++			fullFile += '\x20';
++		}
++		last = ch;
++	}
++	file.close();
++	return fullFile;
++}
  
-     def _log_unit_phase(self, side_label: str, phase: str, unit_id: int, unit_idx: int, msg: str):
-         if not self._should_log():
-             return
-         unit_label = self._format_unit_label(
-             "model" if side_label == "MODEL" else "enemy",
-             unit_idx,
-             unit_id=unit_id,
-         )
-         self._log(f"[{side_label}][{phase.upper()}] {unit_label}: {msg}")
- 
-     def _log_action(self, side: str, unit_idx: int, msg: str, phase: str = None, verbose_only: bool = False):
-         side_label = self._side_label(side)
-         unit_label = self._format_unit_label(side, unit_idx)
-         phase_prefix = f"[{phase.upper()}] " if phase else ""
-         self._log(f"[{side_label}] {phase_prefix}{unit_label}: {msg}", verbose_only=verbose_only)
- 
-     def _log_rule(
-         self,
-         side: str,
-         unit_idx: int,
-@@ -1519,52 +1523,50 @@ class Warhammer40kEnv(gym.Env):
-                         self.enemyFellBack[i] = True
-                         if battleSh is True:
-                             diceRoll = dice()
-                             if diceRoll < 3:
-                                 self.enemy_health[i] -= self.enemy_data[i]["W"]
-                         self.enemy_coords[i][0] += self.enemy_data[i]["Movement"]
-                         self.enemyInAttack[i] = [0, 0]
-                         self.unitInAttack[idOfE][0] = 0
-                         self.unitInAttack[idOfE][1] = 0
-                     else:
-                         idOfE = self.enemyInAttack[i][1]
-                         self._log(
-                             f"{unit_label} остаётся в бою с {self._format_unit_label('model', idOfE)} (будет драться в фазе боя)."
-                         )
-                     continue
- 
-                 if self.enemyInAttack[i][0] == 0 and self.enemy_health[i] > 0:
-                     self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
-                     for j in range(len(self.enemy_health)):
-                         if self.enemy_coords[i] == self.unit_coords[j]:
-                             self.enemy_coords[i][0] -= 1
- 
-                     self.updateBoard()
-                     self.showBoard()
- 
--                    self._log("Посмотрите board.txt или нажмите Show Board в GUI, чтобы увидеть поле.")
--                    self._log("Чтобы завершить игру, введите 'quit' в любом вопросе.")
-                     dire = self._prompt_choice(
-                         f"Ход юнита: {unit_label}. Выберите направление (up/down/left/right/none): ",
-                         direction_map,
-                         normalize,
-                     )
-                     if dire is None:
-                         self.game_over = True
-                         return None
- 
-                     advanced = False
-                     move_num = 0
-                     if dire != "none":
-                         adv = self._prompt_yes_no("Сделать Advance? (y/n): ")
-                         if adv is None:
-                             self.game_over = True
-                             return None
-                         if adv:
-                             advanced = True
-                             self._log("Бросок 1D6 на Advance...", verbose_only=True)
-                             roll = player_dice()
-                             self._log(f"Бросок: {roll}", verbose_only=True)
-                             movement_cap = self.enemy_data[i]["Movement"] + roll
-                         else:
-                             movement_cap = self.enemy_data[i]["Movement"]
-                         move_num = self._prompt_int(
-@@ -2108,72 +2110,72 @@ class Warhammer40kEnv(gym.Env):
-             if not any_chargeable:
-                 self._log("Нет доступных целей для чарджа.")
-         elif side == "enemy":
-             for i in range(len(self.enemy_health)):
-                 advanced = advanced_flags[i] if advanced_flags else False
-                 pos_before = tuple(self.enemy_coords[i])
-                 if self.enemyFellBack[i]:
-                     if self.trunc is False:
-                         self._log(f"{self._format_unit_label('enemy', i)}: отступил — чардж невозможен.")
-                     continue
-                 if advanced:
-                     if self.trunc is False:
-                         self._log(f"{self._format_unit_label('enemy', i)}: был Advance — чардж невозможен.")
-                 else:
-                     chargeAble = []
-                     diceRoll = sum(dice(num=2))
-                     for j in range(len(self.unit_health)):
-                         if distance(self.enemy_coords[i], self.unit_coords[j]) <= 12 and self.unitInAttack[j][0] == 0:
-                             if distance(self.enemy_coords[i], self.unit_coords[j]) - diceRoll <= 5:
-                                 chargeAble.append(j)
-                     if len(chargeAble) > 0:
-                         idOfM = int(np.random.choice(chargeAble))
-                         dist = distance(self.enemy_coords[i], self.unit_coords[idOfM])
-                         required = max(0, dist - 1)
-                         self._log_unit_phase(
--                            "ENEMY",
-+                            self._display_side("enemy"),
-                             "charge",
-                             i + 21,
-                             i,
-                             f"Charge объявлен по цели {self._format_unit_label('model', idOfM)}. Дистанция: {dist:.1f}. Бросок 2D6: {diceRoll}.",
-                         )
-                         if diceRoll >= required:
-                             if self.trunc is False:
-                                 self._log(
-                                     f"{self._format_unit_label('enemy', i)} успешно зачарджил {self._format_unit_label('model', idOfM)} (бросок {diceRoll} vs нужно {required:.1f})"
-                                 )
-                             self.enemy_coords[i][0] = self.unit_coords[idOfM][0] + 1
-                             self.enemy_coords[i][1] = self.unit_coords[idOfM][1]
-                             self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
-                             self.enemyInAttack[i][0] = 1
-                             self.enemyInAttack[i][1] = idOfM
-                             self.unitInAttack[idOfM][0] = 1
-                             self.unitInAttack[idOfM][1] = i
-                             self.enemyCharged[i] = 1
-                             pos_after = tuple(self.enemy_coords[i])
-                             self._log_unit_phase(
--                                "ENEMY",
-+                                self._display_side("enemy"),
-                                 "charge",
-                                 i + 21,
-                                 i,
-                                 f"Charge move: from {pos_before} -> {pos_after}, ended_in_engagement={self.enemyInAttack[i][0] == 1}.",
-                             )
-                             # 10e: Heroic Intervention доступен защитнику после успешного charge move.
-                             self._resolve_heroic_intervention(
-                                 defender_side="model",
-                                 charging_side="enemy",
-                                 charging_idx=i,
-                                 phase="charge",
-                                 manual=False,
-                             )
-                         elif self.trunc is False:
-                             self._log(
-                                 f"{self._format_unit_label('enemy', i)} не смог зачарджить {self._format_unit_label('model', idOfM)} (бросок {diceRoll} vs нужно {required:.1f})"
-                             )
-         return None
- 
-     def fight_phase(self, side: str):
-         self.begin_phase(side, "fight")
-         if side == "model":
-             self._log_phase("MODEL", "fight")
-             engaged_model = [i for i in range(len(self.unit_health)) if self.unit_health[i] > 0 and self.unitInAttack[i][0] == 1]
-             engaged_enemy = [i for i in range(len(self.enemy_health)) if self.enemy_health[i] > 0 and self.enemyInAttack[i][0] == 1]
-@@ -2474,51 +2476,51 @@ class Warhammer40kEnv(gym.Env):
-                         attacker_data=attacker_data,
-                         defender_data=defender_data,
-                         dmg_list=dmg,
-                         effect=None,
-                     )
- 
-                 if self.unit_health[def_idx] <= 0:
-                     self.unitInAttack[def_idx] = [0, 0]
-                     self.enemyInAttack[att_idx] = [0, 0]
- 
-                 return True
- 
-         # есть ли вообще кому драться?
-         any_fight = any(x[0] == 1 for x in self.unitInAttack) or any(x[0] == 1 for x in self.enemyInAttack)
-         if not any_fight:
-             return
- 
-         model_eligible = [i for i in range(len(self.unit_health)) if self.unit_health[i] > 0 and self.unitInAttack[i][0] == 1]
-         enemy_eligible = [i for i in range(len(self.enemy_health)) if self.enemy_health[i] > 0 and self.enemyInAttack[i][0] == 1]
-         active_label = self._side_label(active_side, manual=os.getenv("MANUAL_DICE", "0") == "1" and active_side == "enemy")
-         self._log_phase_msg(
-             active_label,
-             "fight",
-             "Начало Fight phase. Первым выбирает активный игрок. "
-             f"Eligible MODEL: {[i + 21 for i in model_eligible]}, "
--            f"Eligible ENEMY: {[i + 11 for i in enemy_eligible]}.",
-+            f"Eligible {self._display_side('enemy')}: {[i + 11 for i in enemy_eligible]}.",
-         )
- 
-         fought_model = set()
-         fought_enemy = set()
- 
-         # 1) chargers fight first (упрощение: только активная сторона)
-         if active_side == "model":
-             chargers = [i for i in range(len(self.unit_health))
-                         if self.unitCharged[i] == 1 and self.unitInAttack[i][0] == 1 and self.unit_health[i] > 0]
-             for i in chargers:
-                 if i not in fought_model:
-                     if _do_melee("model", i):
-                         fought_model.add(i)
-         else:
-             chargers = [i for i in range(len(self.enemy_health))
-                         if self.enemyCharged[i] == 1 and self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0]
-             for i in chargers:
-                 if i not in fought_enemy:
-                     if _do_melee("enemy", i):
-                         fought_enemy.add(i)
- 
-         # 2) then alternate, starting with NON-active side
-         next_side = "enemy" if active_side == "model" else "model"
- 
-         while True:
-@@ -2690,57 +2692,53 @@ class Warhammer40kEnv(gym.Env):
-                                         "Insane Bravery стоит 1 CP и применяется, когда юнит провалил тест Battle-shock. При использовании тест считается пройденным."
-                                     )
-                                     strat = input("Использовать стратагему Insane Bravery? (y/n): ")
-                                 else:
-                                     sendToGUI(
-                                         "Insane Bravery стоит 1 CP и применяется, когда юнит провалил тест Battle-shock. При использовании тест считается пройденным.\nИспользовать стратагему Insane Bravery? (y/n): "
-                                     )
-                                     strat = recieveGUI()
-                             else:
-                                 if self.playType is False:
-                                     strat = input("Допустимые ответы: y/yes/n/no: ")
-                                 else:
-                                     sendToGUI("Допустимые ответы: y/yes/n/no: ")
-                                     strat = recieveGUI()
- 
-             if self.enemyInAttack[i][0] == 0 and self.enemy_health[i] > 0:
-                 self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
-                 for j in range(len(self.enemy_health)):
-                     if self.enemy_coords[i] == self.unit_coords[j]:
-                         self.enemy_coords[i][0] -= 1
- 
-                 self.updateBoard()
-                 self.showBoard()
- 
-                 if self.playType is False:
--                    print("Посмотрите board.txt или нажмите Show Board в GUI, чтобы увидеть поле.")
--                    print("Чтобы завершить игру, введите 'quit' в любом вопросе.")
-                     dire = input(f"Ход юнита: {unit_label}. Выберите направление (up/down/left/right/none): ")
-                 else:
-                     sendToGUI(
--                        "Посмотрите board.txt или нажмите Show Board в GUI, чтобы увидеть поле.\n"
--                        "Чтобы завершить игру, введите 'quit' в любом вопросе.\n"
-                         f"Ход юнита: {unit_label}. Выберите направление (up/down/left/right/none): "
-                     )
-                     dire = recieveGUI()
- 
-                 if dire.lower() == "quit":
-                     self.game_over = True
-                     info = self.get_info()
-                     return self.game_over, info
- 
-                 # ======= FIX: Advance is optional, move distance is exactly what you choose =======
-                 advanced = False
-                 move_num = 0
- 
-                 if dire.lower() != "none":
-                     if self.playType is False:
-                         adv = input("Сделать Advance? (y/n): ").strip().lower()
-                         if adv in ("y", "yes"):
-                             advanced = True
-                             print("Бросок 1D6 на Advance...")
-                             roll = player_dice()
-                             print("Бросок:", roll)
-                             movement_cap = self.enemy_data[i]["Movement"] + roll
-                         else:
-                             movement_cap = self.enemy_data[i]["Movement"]
- 
-@@ -3192,53 +3190,54 @@ class Warhammer40kEnv(gym.Env):
-             self.unit_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
-             self.board[self.unit_coords[i][0]][self.unit_coords[i][1]] = 20 + i + 1
- 
-         for i in range(len(self.enemy_health)):
-             self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
-             self.board[self.enemy_coords[i][0]][self.enemy_coords[i][1]] = 10 + i + 1
- 
-         for i in range(len(self.coordsOfOM)):
-             self.board[int(self.coordsOfOM[i][0])][int(self.coordsOfOM[i][1])] = 3
- 
-     def returnBoard(self):
-         return self.board
- 
-     def render(self, mode='train'):
-         fig = plt.figure()
-         ax = fig.add_subplot()
-         fig.subplots_adjust(top=0.85)
- 
-         if mode == 'train':
-             title = "Turn " + str(self.iter) + " Lifetime " + str(self.restarts)
-         else:
-             title = "Turn " + str(self.iter)
- 
-         fig.suptitle(title)
- 
--        health = "Здоровье MODEL: {}, CP: {}; здоровье ENEMY: {}, CP {}\nVP {}".format(
-+        health = "Здоровье MODEL: {}, CP: {}; здоровье {}: {}, CP {}\nVP {}".format(
-             self.unit_health,
-             self.modelCP,
-+            self._display_side("enemy"),
-             self.enemy_health,
-             self.enemyCP,
-             [self.modelVP, self.enemyVP],
-         )
-         ax.set_title(health)
- 
-         x1 = np.linspace(0, self.b_len, 10)
-         y1 = np.zeros(10)
-         x2 = np.zeros(10)
-         y2 = np.linspace(0, self.b_hei, 10)
- 
-         ax.set_ylim(-5, self.b_len + 5)
-         ax.set_xlim(-3, self.b_hei * 1.65)
-         ax.plot(y1, x1, color="black")
-         ax.plot(y2, x2, color="black")
-         ax.plot(y1 + self.b_hei, x1, color="black")
-         ax.plot(y2, x2 + self.b_len, color="black")
- 
-         for i in range(len(self.unit_health)):
-             if i == 0:
-                 ax.plot(self.unit_coords[i][1], self.unit_coords[i][0], 'bo', label="Model Unit")
-             else:
-                 ax.plot(self.unit_coords[i][1], self.unit_coords[i][0], 'bo')
- 
-         for i in range(len(self.enemy_coords)):
-diff --git a/play.py b/play.py
-index 2180fe8a76b2f5314f222a351638dcfac96c0b7c..c482db2cefe292884f79ae0a670c7c04495f2f81 100644
---- a/play.py
-+++ b/play.py
-@@ -133,56 +133,54 @@ for i in range(len(model)):
-     n_actions.append(12)
- n_observations = len(state)
- 
- policy_net = DQN(n_observations, n_actions).to(device)
- target_net = DQN(n_observations, n_actions).to(device)
- optimizer = torch.optim.Adam(policy_net.parameters())
- 
- policy_net.load_state_dict(checkpoint['policy_net'])
- target_net.load_state_dict(checkpoint['target_net'])
- optimizer.load_state_dict(checkpoint['optimizer'])
- 
- policy_net.eval()
- target_net.eval()
- 
- isdone = False
- i = 0
- 
- if playInGUI == True:
-     env.reset(m=model, e=enemy, playType = playInGUI, Type="big", trunc=True)
- else:
-     env.reset(m=model, e=enemy, playType = playInGUI, Type="big", trunc=False)
- 
- reward = 0
- if playInGUI == False:
-     print("\nInstructions:\n")
--    print("Observe board at board.txt or click the 'Show Board' button")
--    print("The popup from the button automatically updates, so you won't need to keep pressing it")
-     print("The player (you) controls units starting with 1 (i.e. 11, 12, etc)")
-     print("The model controls units starting with 2 (i.e. 21, 22, etc)\n")
- else:
--    sendToGUI("\nInstructions:\nObserve board at board.txt or click the 'Show Board' button\nThe popup from the button automatically updates, so you won't need to keep pressing it\nThe player (you) controls units starting with 1 (i.e. 11, 12, etc)\nThe model controls units starting with 2 (i.e. 21, 22, etc)\n")
-+    sendToGUI("\nInstructions:\nThe player (you) controls units starting with 1 (i.e. 11, 12, etc)\nThe model controls units starting with 2 (i.e. 21, 22, etc)\n")
- 
- while isdone == False:
-     done, info = env.player()
-     state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-     action = select_action(env, state, i, policy_net, len(model))
-     action_dict = convertToDict(action)
-     if done != True:
-         next_observation, reward, done, _, info = env.step(action_dict)
-         reward = torch.tensor([reward], device=device)
-         unit_health = info["model health"]
-         enemy_health = info["player health"]
-         inAttack = info["in attack"]
- 
-         board = env.render()
-         message = "Iteration {} ended with reward {}, Player health {}, Model health {}".format(i, reward, enemy_health, unit_health)
-         if playInGUI == False:
-             print(message)
-         else:
-             sendToGUI(message)
-         next_state = torch.tensor(next_observation, dtype=torch.float32, device=device).unsqueeze(0)
-         state = next_state
-     if done == True:
-         if reward > 0:
-             if playInGUI == False:
-                 print("model won!")
-
+EOF
+)
