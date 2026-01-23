@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Iterable, List, Optional, Tuple
+import os
+import sys
 
 from rich import box
 from rich.align import Align
@@ -11,8 +13,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from tui.board_parser import BoardState, slice_grid
-from tui.state_parser import GameState
+from tui.board_parser import BoardState, CellItem, slice_grid
+from tui.state_parser import GameState, UnitStatus
 
 
 @dataclass
@@ -52,6 +54,7 @@ class RichRenderer:
         layout["map"].update(
             self._render_map(
                 board,
+                state,
                 viewport,
                 show_units,
                 show_objectives,
@@ -59,13 +62,14 @@ class RichRenderer:
                 highlight_coord,
             )
         )
-        layout["sidebar"].update(self._render_sidebar(state, show_legend=show_legend))
+        layout["sidebar"].update(self._render_sidebar(state, board=board, show_legend=show_legend))
         layout["journal"].update(self._render_journal(journal_lines))
         return layout
 
     def _render_map(
         self,
         board: Optional[BoardState],
+        state: Optional[GameState],
         viewport: Optional[Viewport],
         show_units: bool,
         show_objectives: bool,
@@ -86,6 +90,15 @@ class RichRenderer:
             view_h = viewport.height
             grid = slice_grid(board.grid, (start_x, start_y), (view_w, view_h))
 
+        drawn_units = _collect_drawn_units(grid)
+        if _debug_enabled():
+            _emit_parsed_units(board, state)
+            _emit_drawn_units(
+                board,
+                drawn_units,
+                viewport=viewport,
+            )
+
         grid_text = self._render_grid(
             grid,
             offset=(start_x, start_y),
@@ -99,7 +112,7 @@ class RichRenderer:
 
     def _render_grid(
         self,
-        grid: List[List[int]],
+        grid: List[List[List[CellItem]]],
         *,
         offset: Tuple[int, int],
         show_units: bool,
@@ -122,7 +135,7 @@ class RichRenderer:
         for row_idx, row in enumerate(grid):
             line = Text("│", style="grey50")
             for col_idx in range(cols):
-                value = row[col_idx] if col_idx < len(row) else 0
+                value = row[col_idx] if col_idx < len(row) else []
                 coord = (offset[0] + row_idx, offset[1] + col_idx)
                 line.append(
                     self._cell_text(value, show_units, show_objectives, highlight_coord, coord)
@@ -143,7 +156,7 @@ class RichRenderer:
 
     def _cell_text(
         self,
-        value: int,
+        value: List[CellItem],
         show_units: bool,
         show_objectives: bool,
         highlight_coord: Optional[Tuple[int, int]],
@@ -151,21 +164,27 @@ class RichRenderer:
     ) -> Text:
         cell_width = 2
         highlight = highlight_coord is not None and coord == highlight_coord
-        if value == 3 and show_objectives:
+        units = [item for item in value if item.kind == "unit"]
+        objectives = [item for item in value if item.kind == "objective"]
+        unit_count = len(units)
+
+        if show_units and unit_count:
+            if unit_count == 1:
+                unit_side = units[0].side
+                style = "bold green" if unit_side == "enemy" else "bold blue"
+                if highlight:
+                    style = f"reverse {style}"
+                return Text("● ", style=style)
+            marker = "*" if unit_count > 9 else str(unit_count)
+            style = "bold white"
+            if highlight:
+                style = f"reverse {style}"
+            return Text(f"{marker} ", style=style)
+        if objectives and show_objectives:
             style = "yellow"
             if highlight:
                 style = "reverse yellow"
             return Text("◆ ", style=style)
-        if value >= 20 and show_units:
-            style = "bold blue"
-            if highlight:
-                style = "reverse bold blue"
-            return Text("● ", style=style)
-        if 10 < value < 20 and show_units:
-            style = "bold green"
-            if highlight:
-                style = "reverse bold green"
-            return Text("● ", style=style)
         style = "grey70"
         if highlight:
             style = "reverse grey70"
@@ -177,7 +196,13 @@ class RichRenderer:
         segment = "─" * cell_width
         return left + mid.join([segment] * cols) + right
 
-    def _render_sidebar(self, state: GameState, show_legend: bool = True) -> Panel:
+    def _render_sidebar(
+        self,
+        state: GameState,
+        *,
+        board: Optional[BoardState] = None,
+        show_legend: bool = True,
+    ) -> Panel:
         status_table = Table.grid(padding=(0, 1))
         status_table.add_column(justify="right")
         status_table.add_column()
@@ -205,11 +230,16 @@ class RichRenderer:
         legend.add_row(Text("●", style="bold blue"), "Модель")
         legend.add_row(Text("◆", style="yellow"), "Цели")
         legend.add_row(Text("·", style="grey70"), "Пусто")
+        legend.add_row(Text("2-9", style="bold white"), "Стек")
+        legend.add_row(Text("*", style="bold white"), "Стек > 9")
 
         panels = [
             Panel(status_table, title="СТАТУС", border_style="grey50"),
             Panel(units_table, title="ОТРЯДЫ", border_style="grey50"),
         ]
+        stacks_panel = _render_stacks_panel(board)
+        if stacks_panel is not None:
+            panels.append(stacks_panel)
         if show_legend:
             panels.append(Panel(legend, title="ЛЕГЕНДА", border_style="grey50"))
         group = Group(*panels)
@@ -226,3 +256,131 @@ class RichRenderer:
 
 def _format_hp(value: Optional[int]) -> str:
     return str(value) if value is not None else "—"
+
+
+def _debug_enabled() -> bool:
+    value = os.getenv("TUI_DEBUG", "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _emit_parsed_units(board: BoardState, state: Optional[GameState]) -> None:
+    roster = _unit_roster_map(state)
+    lines = [f"parsed_units: count={len(board.units)}"]
+    for unit in board.units:
+        roster_entry = roster.get(unit.unit_id)
+        name = roster_entry.name if roster_entry else None
+        instance_id = roster_entry.instance_id if roster_entry else None
+        in_bounds = 0 <= unit.coord[0] < board.height and 0 <= unit.coord[1] < board.width
+        lines.append(
+            " ".join(
+                [
+                    f"side={unit.side}",
+                    f"unit_id={unit.unit_id}",
+                    f"instance_id={instance_id or '—'}",
+                    f"name={name or '—'}",
+                    f"x={unit.coord[0]}",
+                    f"y={unit.coord[1]}",
+                    f"in_bounds={in_bounds}",
+                ]
+            )
+        )
+        if not in_bounds:
+            lines.append(
+                f"Юнит {unit.unit_id} вне поля: x={unit.coord[0]} y={unit.coord[1]}"
+            )
+    _emit_debug_lines(lines)
+
+
+def _emit_drawn_units(
+    board: BoardState,
+    drawn_units: List[int],
+    *,
+    viewport: Optional[Viewport],
+) -> None:
+    drawn_set = set(drawn_units)
+    lines = [f"drawn_units: count={len(drawn_units)}", f"ids={sorted(drawn_set)}"]
+    missing = _find_missing_units(board, drawn_set, viewport=viewport)
+    if missing:
+        missing_str = ", ".join(f"{unit_id}:{reason}" for unit_id, reason in missing)
+        lines.append(f"MISSING: [{missing_str}]")
+    _emit_debug_lines(lines)
+
+
+def _emit_debug_lines(lines: Iterable[str]) -> None:
+    for line in lines:
+        print(line, file=sys.stderr)
+
+
+def _unit_roster_map(state: Optional[GameState]) -> dict[int, UnitStatus]:
+    roster: dict[int, UnitStatus] = {}
+    if state is None:
+        return roster
+    for unit in state.player_units + state.model_units:
+        roster[unit.unit_id] = unit
+    return roster
+
+
+def _collect_drawn_units(grid: List[List[List[CellItem]]]) -> List[int]:
+    drawn: List[int] = []
+    for row in grid:
+        for cell_items in row:
+            for item in cell_items:
+                if item.kind == "unit" and item.unit_id is not None:
+                    drawn.append(item.unit_id)
+    return drawn
+
+
+def _find_missing_units(
+    board: BoardState,
+    drawn_set: set[int],
+    *,
+    viewport: Optional[Viewport],
+) -> List[Tuple[int, str]]:
+    start_x, start_y = 0, 0
+    view_w, view_h = board.width, board.height
+    if viewport is not None:
+        start_x = viewport.start_x
+        start_y = viewport.start_y
+        view_w = viewport.width
+        view_h = viewport.height
+
+    coord_index: dict[Tuple[int, int], List[int]] = {}
+    for unit in board.units:
+        coord_index.setdefault(unit.coord, []).append(unit.unit_id)
+
+    missing: List[Tuple[int, str]] = []
+    for unit in board.units:
+        x, y = unit.coord
+        in_bounds = 0 <= x < board.height and 0 <= y < board.width
+        in_view = start_x <= x < start_x + view_h and start_y <= y < start_y + view_w
+        if not in_view:
+            continue
+        if unit.unit_id in drawn_set:
+            continue
+        if not in_bounds:
+            reason = "out_of_bounds"
+        elif len(coord_index.get(unit.coord, [])) > 1:
+            reason = "collision"
+        else:
+            reason = "overwritten_by_key"
+        missing.append((unit.unit_id, reason))
+    return missing
+
+
+def _render_stacks_panel(board: Optional[BoardState]) -> Optional[Panel]:
+    if board is None:
+        return None
+    stacks = []
+    for row_idx, row in enumerate(board.grid):
+        for col_idx, cell_items in enumerate(row):
+            units = [item.unit_id for item in cell_items if item.kind == "unit" and item.unit_id]
+            if len(units) > 1:
+                stacks.append(((row_idx, col_idx), sorted(units)))
+    if not stacks:
+        return None
+    stacks_table = Table(box=box.SIMPLE_HEAVY)
+    stacks_table.add_column("Клетка")
+    stacks_table.add_column("Юниты")
+    for coord, units in stacks:
+        stacks_table.add_row(f"({coord[0]},{coord[1]})", ", ".join(str(unit) for unit in units))
+    return Panel(stacks_table, title="СТЕКИ", border_style="grey50")

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 import csv
+import re
 
 
 @dataclass(frozen=True)
@@ -14,13 +15,20 @@ class UnitInfo:
 
 
 @dataclass(frozen=True)
+class CellItem:
+    kind: str
+    unit_id: Optional[int] = None
+    side: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class ObjectiveInfo:
     coord: Tuple[int, int]
 
 
 @dataclass(frozen=True)
 class BoardState:
-    grid: List[List[int]]
+    grid: List[List[List[CellItem]]]
     width: int
     height: int
     units: List[UnitInfo]
@@ -34,24 +42,58 @@ def _safe_int(value: str) -> Optional[int]:
         return None
 
 
+def _safe_number(value: str) -> Optional[int]:
+    value = value.strip()
+    if not value:
+        return None
+    int_value = _safe_int(value)
+    if int_value is not None:
+        return int_value
+    try:
+        float_value = float(value)
+    except (TypeError, ValueError):
+        return None
+    return int(float_value)
+
+
+def _parse_cell_values(cell: str) -> List[int]:
+    cell = cell.strip()
+    if not cell:
+        return []
+    if "|" in cell or ";" in cell:
+        values: List[int] = []
+        for part in re.split(r"[|;]+", cell):
+            number = _safe_number(part)
+            if number:
+                values.append(number)
+        return values
+    number = _safe_number(cell)
+    return [number] if number else []
+
+
 def parse_board(path: str | Path = "board.txt") -> Optional[BoardState]:
     board_path = Path(path)
     if not board_path.exists():
         return None
 
-    grid: List[List[int]] = []
+    grid: List[List[List[CellItem]]] = []
     try:
         with board_path.open(newline="") as handle:
             reader = csv.reader(handle)
             for row in reader:
                 if not row:
                     continue
-                values: List[int] = []
+                values: List[List[CellItem]] = []
                 for cell in row:
-                    value = _safe_int(cell.strip())
-                    if value is None:
-                        continue
-                    values.append(value)
+                    cell_items: List[CellItem] = []
+                    for value in _parse_cell_values(cell):
+                        if value == 3:
+                            cell_items.append(CellItem(kind="objective"))
+                        elif value >= 20:
+                            cell_items.append(CellItem(kind="unit", unit_id=value, side="model"))
+                        elif 10 < value < 20:
+                            cell_items.append(CellItem(kind="unit", unit_id=value, side="enemy"))
+                    values.append(cell_items)
                 if values:
                     grid.append(values)
     except OSError:
@@ -67,13 +109,12 @@ def parse_board(path: str | Path = "board.txt") -> Optional[BoardState]:
     objectives: List[ObjectiveInfo] = []
 
     for row_idx, row in enumerate(grid):
-        for col_idx, value in enumerate(row):
-            if value == 3:
-                objectives.append(ObjectiveInfo(coord=(row_idx, col_idx)))
-            elif value >= 20:
-                units.append(UnitInfo(unit_id=value, side="model", coord=(row_idx, col_idx)))
-            elif 10 < value < 20:
-                units.append(UnitInfo(unit_id=value, side="enemy", coord=(row_idx, col_idx)))
+        for col_idx, cell_items in enumerate(row):
+            for item in cell_items:
+                if item.kind == "objective":
+                    objectives.append(ObjectiveInfo(coord=(row_idx, col_idx)))
+                elif item.kind == "unit" and item.unit_id is not None and item.side is not None:
+                    units.append(UnitInfo(unit_id=item.unit_id, side=item.side, coord=(row_idx, col_idx)))
 
     return BoardState(
         grid=grid,
@@ -102,13 +143,13 @@ def clamp_viewport(
 
 
 def slice_grid(
-    grid: Sequence[Sequence[int]],
+    grid: Sequence[Sequence[List[CellItem]]],
     start: Tuple[int, int],
     size: Tuple[int, int],
-) -> List[List[int]]:
+) -> List[List[List[CellItem]]]:
     start_x, start_y = start
     view_w, view_h = size
-    sliced: List[List[int]] = []
+    sliced: List[List[List[CellItem]]] = []
     for x in range(start_x, min(start_x + view_h, len(grid))):
         row = grid[x]
         sliced.append(list(row[start_y:start_y + view_w]))

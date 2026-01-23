@@ -29,6 +29,7 @@ class UnitStatus:
     side: str
     hp: Optional[int]
     name: Optional[str]
+    instance_id: Optional[str]
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,12 @@ class GameState:
     model_cp: Optional[str]
     player_units: List[UnitStatus]
     model_units: List[UnitStatus]
+
+
+@dataclass(frozen=True)
+class UnitRosterEntry:
+    name: str
+    instance_id: Optional[str]
 
 
 def _parse_value(value: str):
@@ -67,12 +74,12 @@ def _load_status(path: Path) -> Dict[str, object]:
     return data
 
 
-def _parse_units_file(path: Path) -> Tuple[List[str], List[str]]:
+def _parse_units_file(path: Path) -> Tuple[List[UnitRosterEntry], List[UnitRosterEntry]]:
     if not path.exists():
         return [], []
-    player: List[str] = []
-    model: List[str] = []
-    current: Optional[List[str]] = None
+    player: List[UnitRosterEntry] = []
+    model: List[UnitRosterEntry] = []
+    current: Optional[List[UnitRosterEntry]] = None
     try:
         for raw in path.read_text(encoding="utf-8").splitlines():
             line = raw.strip()
@@ -85,9 +92,9 @@ def _parse_units_file(path: Path) -> Tuple[List[str], List[str]]:
                 current = model
                 continue
             if current is not None:
-                name, _, _ = _parse_unit_entry(line)
+                name, _, instance_id = _parse_unit_entry(line)
                 if name:
-                    current.append(name)
+                    current.append(UnitRosterEntry(name=name, instance_id=instance_id or None))
     except OSError:
         return [], []
     return player, model
@@ -114,7 +121,7 @@ def _parse_unit_entry(value: str) -> Tuple[str, int, str]:
     return name, count, instance_id
 
 
-def _parse_roster_from_journal(lines: Iterable[str]) -> Tuple[List[str], List[str]]:
+def _parse_roster_from_journal(lines: Iterable[str]) -> Tuple[List[UnitRosterEntry], List[UnitRosterEntry]]:
     player_names: Dict[int, str] = {}
     model_names: Dict[int, str] = {}
     pattern = re.compile(
@@ -135,11 +142,11 @@ def _parse_roster_from_journal(lines: Iterable[str]) -> Tuple[List[str], List[st
         else:
             model_names[index] = name.strip()
 
-    def _as_list(names: Dict[int, str]) -> List[str]:
+    def _as_list(names: Dict[int, str]) -> List[UnitRosterEntry]:
         if not names:
             return []
         max_index = max(names)
-        return [names.get(i, "") for i in range(max_index + 1)]
+        return [UnitRosterEntry(name=names.get(i, ""), instance_id=None) for i in range(max_index + 1)]
 
     return _as_list(player_names), _as_list(model_names)
 
@@ -150,13 +157,13 @@ def parse_state(
     journal_lines: Optional[Iterable[str]] = None,
 ) -> GameState:
     status = _load_status(Path(status_path))
-    player_names, model_names = _parse_units_file(Path(units_path))
+    player_roster, model_roster = _parse_units_file(Path(units_path))
     if journal_lines is not None:
         journal_player, journal_model = _parse_roster_from_journal(journal_lines)
         if journal_player:
-            player_names = journal_player
+            player_roster = journal_player
         if journal_model:
-            model_names = journal_model
+            model_roster = journal_model
 
     def _list(value) -> List:
         if isinstance(value, list):
@@ -169,14 +176,34 @@ def parse_state(
     player_units: List[UnitStatus] = []
     for idx, hp in enumerate(player_health):
         unit_id = 11 + idx
-        name = player_names[idx] if idx < len(player_names) else None
-        player_units.append(UnitStatus(unit_id=unit_id, side="enemy", hp=_safe_int(hp), name=name))
+        roster_entry = player_roster[idx] if idx < len(player_roster) else None
+        name = roster_entry.name if roster_entry else None
+        instance_id = roster_entry.instance_id if roster_entry else None
+        player_units.append(
+            UnitStatus(
+                unit_id=unit_id,
+                side="enemy",
+                hp=_safe_int(hp),
+                name=name,
+                instance_id=instance_id,
+            )
+        )
 
     model_units: List[UnitStatus] = []
     for idx, hp in enumerate(model_health):
         unit_id = 21 + idx
-        name = model_names[idx] if idx < len(model_names) else None
-        model_units.append(UnitStatus(unit_id=unit_id, side="model", hp=_safe_int(hp), name=name))
+        roster_entry = model_roster[idx] if idx < len(model_roster) else None
+        name = roster_entry.name if roster_entry else None
+        instance_id = roster_entry.instance_id if roster_entry else None
+        model_units.append(
+            UnitStatus(
+                unit_id=unit_id,
+                side="model",
+                hp=_safe_int(hp),
+                name=name,
+                instance_id=instance_id,
+            )
+        )
 
     return GameState(
         turn=_stringify(status.get("turn")),

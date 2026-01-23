@@ -35,6 +35,7 @@ class MapPanel(Static):
         renderer = RichRenderer()
         return renderer._render_map(
             self.board,
+            self.state,
             self.viewport,
             self.show_units,
             self.show_objectives,
@@ -45,13 +46,14 @@ class MapPanel(Static):
 
 class SidebarPanel(Static):
     state: reactive[GameState | None] = reactive(None)
+    board: reactive[BoardState | None] = reactive(None)
     show_legend: reactive[bool] = reactive(True)
 
     def render(self):
         renderer = RichRenderer()
         if self.state is None:
-            return renderer._render_sidebar(parse_state(), show_legend=self.show_legend)
-        return renderer._render_sidebar(self.state, show_legend=self.show_legend)
+            return renderer._render_sidebar(parse_state(), board=self.board, show_legend=self.show_legend)
+        return renderer._render_sidebar(self.state, board=self.board, show_legend=self.show_legend)
 
 
 class JournalPanel(Static):
@@ -138,11 +140,13 @@ class BattlefieldApp(App):
 
         map_panel = self.query_one("#map", MapPanel)
         map_panel.board = board
+        map_panel.state = state
         map_panel.viewport = viewport
         map_panel.highlight_coord = highlight
 
         sidebar_panel = self.query_one("#sidebar", SidebarPanel)
         sidebar_panel.state = state
+        sidebar_panel.board = board
 
         journal_panel = self.query_one("#journal", JournalPanel)
         journal_panel.lines = lines
