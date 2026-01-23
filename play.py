@@ -89,6 +89,22 @@ env.attacker_side = attacker_side
 env.defender_side = defender_side
 
 state, info = env.reset(m=model, e=enemy)
+if verbose:
+    squads_for_actions_count = len(model)
+    _log(f"[action_space] squads_for_actions_count={squads_for_actions_count}")
+    for idx, unit in enumerate(model):
+        unit_data = unit.showUnitData()
+        unit_name = unit_data.get("Name", "Unknown")
+        _log(f"[action_space] squad[{idx}] name={unit_name}")
+    total_models_count = 0
+    for unit in model:
+        unit_data = unit.showUnitData()
+        total_models_count += int(unit_data.get("#OfModels", 1))
+    _log(f"[action_space] total_models_count={total_models_count}")
+    move_num_keys = [
+        key for key in env.action_space.spaces.keys() if key.startswith("move_num_")
+    ]
+    _log(f"[action_space] move_num_keys_count={len(move_num_keys)}")
 n_actions = [5,2,len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
 for i in range(len(model)):
     n_actions.append(12)

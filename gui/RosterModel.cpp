@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <iostream>
 
 void RosterModel::setFaction(const std::string& faction) {
   rosterFaction = faction;
@@ -49,9 +50,14 @@ void RosterModel::clear() {
 std::vector<std::string> RosterModel::expandedUnits() const {
   std::vector<std::string> expanded;
   for (const auto& entry : rosterUnits) {
-    for (int i = 0; i < entry.count; ++i) {
-      expanded.push_back(entry.name);
+    constexpr int kMaxUnitsPerEntry = 10;
+    if (entry.count > kMaxUnitsPerEntry) {
+      std::cerr << "[RosterModel] Warning: entry '" << entry.name
+                << "' count=" << entry.count
+                << " looks like a model count; limiting to a single unit."
+                << std::endl;
     }
+    expanded.push_back(entry.name);
   }
   return expanded;
 }

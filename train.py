@@ -217,6 +217,22 @@ for k in ordered_keys:
 
 
 state, info = env.reset(m=model, e=enemy, trunc=True)
+if verbose:
+    squads_for_actions_count = len(model)
+    print(f"[action_space] squads_for_actions_count={squads_for_actions_count}")
+    for idx, unit in enumerate(model):
+        unit_data = unit.showUnitData()
+        unit_name = unit_data.get("Name", "Unknown")
+        print(f"[action_space] squad[{idx}] name={unit_name}")
+    total_models_count = 0
+    for unit in model:
+        unit_data = unit.showUnitData()
+        total_models_count += int(unit_data.get("#OfModels", 1))
+    print(f"[action_space] total_models_count={total_models_count}")
+    move_num_keys = [
+        key for key in env.action_space.spaces.keys() if key.startswith("move_num_")
+    ]
+    print(f"[action_space] move_num_keys_count={len(move_num_keys)}")
 
 # state может быть np.array или OrderedDict
 if isinstance(state, dict) or "OrderedDict" in str(type(state)):
