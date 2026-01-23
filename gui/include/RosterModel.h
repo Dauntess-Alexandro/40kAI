@@ -8,7 +8,7 @@
 
 struct RosterEntry {
   std::string name;
-  int count;
+  int modelsCount;
 };
 
 class RosterModel {
@@ -20,7 +20,7 @@ class RosterModel {
     void addUnit(const std::string& name, int countDefault, const std::string& faction = "");
     void removeUnit(size_t index);
     void clear();
-    std::vector<std::string> expandedUnits() const;
+    std::vector<RosterEntry> expandedUnits() const;
     nlohmann::json toJson() const;
     bool fromJson(const nlohmann::json& data);
     bool loadFromFile(const std::filesystem::path& path);

@@ -1,6 +1,6 @@
 Player Units
-Necron Warriors
-Canoptek Scarab Swarms
+Necron Warriors|20
+Canoptek Scarab Swarms|3
 Model Units
-Necron Warriors
-Canoptek Scarab Swarms
+Necron Warriors|20
+Canoptek Scarab Swarms|3

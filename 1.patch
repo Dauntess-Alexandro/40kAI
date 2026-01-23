@@ -1,13 +1,245 @@
+diff --git a/gui/Application.cpp b/gui/Application.cpp
+index 832b8f565f50412131fe2206d1ef7b35a6d66bd4..ed3c7afe3ff53e9b079208742e58b37dee3ff1e7 100644
+--- a/gui/Application.cpp
++++ b/gui/Application.cpp
+@@ -1,50 +1,88 @@
+ #include <iostream>
+ #include <gtkmm.h>
+ #include <cstdlib>
+ #include <stdlib.h>
+ #include <string>
+ #include <fstream>
+ #include <thread>
+ #include <chrono>
+ #include <fstream>
+ #include <filesystem>
+ #include <vector>
+ #include <algorithm>
+ #include <nlohmann/json.hpp>
+ #include "include/Application.h"
+ #include "include/popup.h"
+ #include "include/units.h"
+ #include "include/warn.h"
+ #include "include/help.h"
+ #include "include/play.h"
+ 
+ using namespace Glib;
+ using namespace Gtk;
+ namespace fs = std::filesystem;
+ using json = nlohmann::json;
+ 
++namespace {
++std::string toLowerCopy(std::string data) {
++  std::transform(data.begin(), data.end(), data.begin(),
++                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
++  return data;
++}
++
++int findDefaultModelsCount(const std::string& faction, const std::string& name) {
++  std::ifstream infile("../gym_mod/gym_mod/engine/unitData.json");
++  if (!infile) {
++    return 1;
++  }
++  json j;
++  infile >> j;
++  if (!j.contains("UnitData") || !j.at("UnitData").is_array()) {
++    return 1;
++  }
++  std::string factionLower = toLowerCopy(faction);
++  std::string nameLower = toLowerCopy(name);
++  for (const auto& unit : j.at("UnitData")) {
++    if (!unit.contains("Name") || !unit.contains("Army")) {
++      continue;
++    }
++    if (toLowerCopy(unit.at("Name").get<std::string>()) != nameLower) {
++      continue;
++    }
++    if (toLowerCopy(unit.at("Army").get<std::string>()) != factionLower) {
++      continue;
++    }
++    if (unit.contains("#OfModels") && unit.at("#OfModels").is_number_integer()) {
++      return unit.at("#OfModels").get<int>();
++    }
++    return 1;
++  }
++  return 1;
++}
++}  // namespace
++
+ std::string gifpth = "img/model_train.gif";
+ std::string rewpth = "img/reward.png";
+ std::string losspth = "img/loss.png";
+ std::string eplenpth = "img/epLen.png";
+ std::string winratepth = "img/winrate.png";
+ std::string vpdiffpth = "img/vpdiff.png";
+ std::string endreasonpth = "img/endreasons.png";
+ std::string imgpth = "img/icon.png";
+ 
+ Form :: Form() {
+ 
+   modelClass = " Necrons";
+   enemyClass = " Necrons";
+   path = " ";
+   open = false;
+   x = 60;
+   y = 40;
+   training = false;
+   playing = false;
+   loadingRoster = false;
+ 
+   bar.set_show_close_button(true);
+   help.set_image_from_icon_name("help-about");
+   help.signal_button_release_event().connect([&](GdkEventButton*){
+     openHelpMenu();
+@@ -593,52 +631,52 @@ Form :: Form() {
+ 		playInGUI = "True";
+ 		runPlayAgainstModelInBackground();
+ 	}
+ 	return true;
+   });
+ 
+   fixedTabPage4.add(textbox2);
+   fixedTabPage4.add(button2);
+   fixedTabPage4.add(showBoard);
+   fixedTabPage4.add(showBoardImg);
+   fixedTabPage4.add(playGUI);
+   fixedTabPage4.add(button5);
+   fixedTabPage4.add(setModelFile);
+   fixedTabPage4.move(textbox2, 10, 10);
+   fixedTabPage4.move(playGUI, 130, 80);
+   fixedTabPage4.move(showBoard, 220, 80);
+   fixedTabPage4.move(showBoardImg, 395, 80);  
+   fixedTabPage4.move(button2, 10, 80);
+   fixedTabPage4.move(button5, 10, 40);
+   fixedTabPage4.move(setModelFile, 80, 40);
+ 
+   bar.set_title("40kAI GUI");
+   resize(700, 600);
+   loadLastRoster();
+   if (modelUnits.empty()) {
+-    modelUnits.push_back("Apothecary");
+-    modelUnits.push_back("Eliminator Squad");
++    modelUnits.push_back({"Apothecary", findDefaultModelsCount("Space_Marine", "Apothecary")});
++    modelUnits.push_back({"Eliminator Squad", findDefaultModelsCount("Space_Marine", "Eliminator Squad")});
+   }
+   if (enemyUnits.empty()) {
+     rosterModel.addUnit("Apothecary", 1, enemyClass.substr(1));
+     rosterModel.addUnit("Eliminator Squad", 1, enemyClass.substr(1));
+     syncEnemyUnitsFromRoster();
+     saveLastRoster();
+   }
+   signal_hide().connect([this]() {
+     saveLastRoster();
+   });
+   show_all();
+ }
+ 
+ void Form :: changeMetrics(std::string path) {
+     std::string jsonID = path.substr(path.length()-16,9);
+ 
+ 	if (jsonID[0] == '-') {
+ 		jsonID = path.substr(path.length()-15,8);
+ 	} 
+ 
+ 	std::ifstream infile("../models/data_"+jsonID+".json");
+ 	json j;
+ 	infile >> j;
+ 
+ 	losspth = j.value("loss", losspth);
+@@ -808,72 +846,76 @@ bool Form :: addEnemyUnitFromEntry(const std::string& entryText) {
+     std::string army = unit.at("Army").get<std::string>();
+     if (strcmp(toLower(army).data(), toLower(enemyClass.substr(1)).data()) != 0) {
+       continue;
+     }
+     int defaultCount = 1;
+     if (unit.contains("#OfModels") && unit.at("#OfModels").is_number_integer()) {
+       defaultCount = unit.at("#OfModels").get<int>();
+     }
+     rosterModel.addUnit(name, defaultCount, army);
+     return true;
+   }
+   return false;
+ }
+ 
+ // model: id = 0
+ // enemy: id = 1
+ 
+ bool Form :: isValidUnit(int id, std::string name) {
+   std::ifstream infile("../gym_mod/gym_mod/engine/unitData.json");
+   json j;
+   infile >> j;
+ 
+   const auto& unitData = j.at("UnitData");
+   for (const auto& unit : unitData) {
+     if (strcmp(toLower(unit.at("Name").get<std::string>()).data(), toLower(name).data()) == 0) {
++      int modelsCount = 1;
++      if (unit.contains("#OfModels") && unit.at("#OfModels").is_number_integer()) {
++        modelsCount = unit.at("#OfModels").get<int>();
++      }
+       if (id == 0 && strcmp(toLower(unit.at("Army").get<std::string>()).data(), toLower(modelClass.substr(1, modelClass.length())).data()) == 0) {
+-        modelUnits.push_back(unit.at("Name").get<std::string>());
++        modelUnits.push_back({unit.at("Name").get<std::string>(), modelsCount});
+         return true;
+       } else if (id == 1 && strcmp(toLower(unit.at("Army").get<std::string>()).data(), toLower(enemyClass.substr(1, enemyClass.length())).data()) == 0) {
+-        enemyUnits.push_back(unit.at("Name").get<std::string>());
++        enemyUnits.push_back({unit.at("Name").get<std::string>(), modelsCount});
+         return true;
+       }
+     }
+   }
+   return false;
+ }
+ 
+-void Form :: savetoTxt(std::vector<std::string> enemyUnits, std::vector<std::string> modelUnits) {
++void Form :: savetoTxt(const std::vector<RosterEntry>& enemyUnits, const std::vector<RosterEntry>& modelUnits) {
+ 
+   std::ofstream outfile("units.txt");
+   outfile << "Player Units\n";
+-  for (const auto& str : enemyUnits) {
+-    outfile << str << std::endl;
++  for (const auto& entry : enemyUnits) {
++    outfile << entry.name << "|" << entry.modelsCount << std::endl;
+   }
+   outfile << "Model Units\n";
+-  for (const auto& str : modelUnits) {
+-    outfile << str << std::endl;
++  for (const auto& entry : modelUnits) {
++    outfile << entry.name << "|" << entry.modelsCount << std::endl;
+   }
+   outfile.close();
+ }
+ 
+ void Form :: update_picture() {
+   pictureBox1.set(gifpth);
+ }
+ 
+ void Form :: update_metrics() {
+ 
+   const int IMG_W = 330;
+   const int IMG_H = 160;
+ 
+   auto load_scaled = [&](const std::string& rel) -> Glib::RefPtr<Gdk::Pixbuf> {
+     std::string path = "../gui/" + rel;
+     if (!fs::exists(path)) {
+       return Glib::RefPtr<Gdk::Pixbuf>();
+     }
+     auto pix = Gdk::Pixbuf::create_from_file(path);
+     return pix->scale_simple(IMG_W, IMG_H, Gdk::INTERP_BILINEAR);
+   };
+ 
+   if (auto p = load_scaled(rewpth)) metricBox.set(p);
+   if (auto p = load_scaled(losspth)) metricBox2.set(p);
+   if (auto p = load_scaled(winratepth)) metricBox4.set(p);
 diff --git a/gui/RosterModel.cpp b/gui/RosterModel.cpp
-index d6cc78caf2a6acc4445e766830a25e3872171b9f..78b886ae624ded3340e21f66083e3af943fc8b79 100644
+index 78b886ae624ded3340e21f66083e3af943fc8b79..ca23f97959779cce08e204da1100f2d623c5417a 100644
 --- a/gui/RosterModel.cpp
 +++ b/gui/RosterModel.cpp
-@@ -1,79 +1,85 @@
+@@ -1,128 +1,128 @@
  #include "include/RosterModel.h"
  
  #include <algorithm>
  #include <fstream>
-+#include <iostream>
+-#include <iostream>
  
  void RosterModel::setFaction(const std::string& faction) {
    rosterFaction = faction;
@@ -34,7 +266,8 @@ index d6cc78caf2a6acc4445e766830a25e3872171b9f..78b886ae624ded3340e21f66083e3af9
    auto it = std::find_if(rosterUnits.begin(), rosterUnits.end(),
                           [&](const RosterEntry& entry) { return entry.name == name; });
    if (it != rosterUnits.end()) {
-     it->count += countToAdd;
+-    it->count += countToAdd;
++    it->modelsCount += countToAdd;
      return;
    }
  
@@ -52,21 +285,21 @@ index d6cc78caf2a6acc4445e766830a25e3872171b9f..78b886ae624ded3340e21f66083e3af9
    rosterUnits.clear();
  }
  
- std::vector<std::string> RosterModel::expandedUnits() const {
-   std::vector<std::string> expanded;
-   for (const auto& entry : rosterUnits) {
--    for (int i = 0; i < entry.count; ++i) {
--      expanded.push_back(entry.name);
-+    constexpr int kMaxUnitsPerEntry = 10;
-+    if (entry.count > kMaxUnitsPerEntry) {
-+      std::cerr << "[RosterModel] Warning: entry '" << entry.name
-+                << "' count=" << entry.count
-+                << " looks like a model count; limiting to a single unit."
-+                << std::endl;
-     }
-+    expanded.push_back(entry.name);
-   }
-   return expanded;
+-std::vector<std::string> RosterModel::expandedUnits() const {
+-  std::vector<std::string> expanded;
+-  for (const auto& entry : rosterUnits) {
+-    constexpr int kMaxUnitsPerEntry = 10;
+-    if (entry.count > kMaxUnitsPerEntry) {
+-      std::cerr << "[RosterModel] Warning: entry '" << entry.name
+-                << "' count=" << entry.count
+-                << " looks like a model count; limiting to a single unit."
+-                << std::endl;
+-    }
+-    expanded.push_back(entry.name);
+-  }
+-  return expanded;
++std::vector<RosterEntry> RosterModel::expandedUnits() const {
++  return rosterUnits;
  }
  
  nlohmann::json RosterModel::toJson() const {
@@ -74,7 +307,8 @@ index d6cc78caf2a6acc4445e766830a25e3872171b9f..78b886ae624ded3340e21f66083e3af9
    j["faction"] = rosterFaction;
    j["units"] = nlohmann::json::array();
    for (const auto& entry : rosterUnits) {
-     j["units"].push_back({{"name", entry.name}, {"count", entry.count}});
+-    j["units"].push_back({{"name", entry.name}, {"count", entry.count}});
++    j["units"].push_back({{"name", entry.name}, {"models_count", entry.modelsCount}});
    }
    return j;
  }
@@ -90,11 +324,532 @@ index d6cc78caf2a6acc4445e766830a25e3872171b9f..78b886ae624ded3340e21f66083e3af9
  
    std::vector<RosterEntry> loadedUnits;
    if (data.contains("units") && data.at("units").is_array()) {
+     for (const auto& item : data.at("units")) {
+       if (!item.is_object()) {
+         continue;
+       }
+-      if (!item.contains("name") || !item.contains("count")) {
++      if (!item.contains("name")) {
+         continue;
+       }
+       if (!item.at("name").is_string()) {
+         continue;
+       }
+       int count = 0;
+-      if (item.at("count").is_number_integer()) {
+-        count = item.at("count").get<int>();
+-      } else if (item.at("count").is_string()) {
+-        try {
+-          count = std::stoi(item.at("count").get<std::string>());
+-        } catch (...) {
+-          count = 0;
++      if (item.contains("models_count")) {
++        if (item.at("models_count").is_number_integer()) {
++          count = item.at("models_count").get<int>();
++        } else if (item.at("models_count").is_string()) {
++          try {
++            count = std::stoi(item.at("models_count").get<std::string>());
++          } catch (...) {
++            count = 0;
++          }
++        }
++      } else if (item.contains("count")) {
++        if (item.at("count").is_number_integer()) {
++          count = item.at("count").get<int>();
++        } else if (item.at("count").is_string()) {
++          try {
++            count = std::stoi(item.at("count").get<std::string>());
++          } catch (...) {
++            count = 0;
++          }
+         }
+       }
+       if (count <= 0) {
+         continue;
+       }
+       loadedUnits.push_back({item.at("name").get<std::string>(), count});
+     }
+   }
+ 
+   rosterFaction = loadedFaction;
+   rosterUnits = std::move(loadedUnits);
+   return true;
+ }
+ 
+ bool RosterModel::loadFromFile(const std::filesystem::path& path) {
+   if (!std::filesystem::exists(path)) {
+     return false;
+   }
+   std::ifstream infile(path);
+   if (!infile) {
+     return false;
+   }
+   nlohmann::json j;
+   try {
+     infile >> j;
+diff --git a/gui/include/Application.h b/gui/include/Application.h
+index 968f4f3d18e5931bd2fd4f8694c087270f4df093..3b90c0f0aac55b7c604c81d991581812014efba8 100644
+--- a/gui/include/Application.h
++++ b/gui/include/Application.h
+@@ -8,51 +8,51 @@
+ #include <string>
+ #include <fstream>
+ #include <thread>
+ #include <chrono>
+ #include <filesystem>
+ #include "RosterModel.h"
+ #include "popup.h"
+ #include "units.h"
+ #include "warn.h"
+ #include "help.h"
+ 
+ class Form : public Window {
+ 
+ public : 
+   Form();
+   int openPopUp(bool textMode);
+   void update_picture();
+   void update_metrics();
+   void updateInits(std::string model, std::string enemy);
+   void startTrainInBackground();
+   void startTrain();
+   void runPlayAgainstModelInBackground();
+   void playAgainstModel();
+   inline bool exists_test (const std::string& name);
+   void on_dropdown_changed();
+-  void savetoTxt(std::vector<std::string> enemyUnits, std::vector<std::string> modelUnits);
++  void savetoTxt(const std::vector<RosterEntry>& enemyUnits, const std::vector<RosterEntry>& modelUnits);
+   bool isValidUnit(int id, std::string name);
+   int openArmyView();
+   int openWarnMenu(std::string mess, int comm);
+   int openHelpMenu();
+   int openPlayGUI();
+   void changeMetrics(std::string path);
+   void recentMetrics();
+   std::string toLower(std::string data);
+   void mirrorRoster();
+   void saveLastRoster();
+   void loadLastRoster();
+   void syncEnemyUnitsFromRoster();
+   bool addEnemyUnitFromEntry(const std::string& entryText);
+ 
+ private:
+   void applyFactionToModel(const std::string& faction);
+   void applyFactionToEnemy(const std::string& faction);
+   Window* boardShow;
+   Window* armyView;
+   Window* warn;
+   Window* play;
+   Window* helpMenu;
+   Image pictureBox1;
+   Image metricBox;
+   Image metricBox2;
+@@ -127,36 +127,36 @@ Image metricBox6;
+   Label dimX;
+   Label dimY;
+   Entry enterDimensX;
+   Entry enterDimensY;
+   Button upX;
+   Button downX;
+   Button upY;
+   Button downY;
+   Button modelEnter;
+   Button enemyEnter;
+   Button mirrorRosterButton;
+   Button openArmyPopup;
+   Entry enterModelUnit;
+   Entry enterEnemyUnit;
+   Button clearAllModel;
+   Button clearAllEnemy;
+   int x;
+   int y;
+   bool open;
+   bool training;
+   bool playing;
+   bool loadingRoster;
+   Label error;
+   Label modelUnitLabel;
+   Label enemyUnitLabel;
+-  std::vector<std::string> modelUnits;
+-  std::vector<std::string> enemyUnits;
++  std::vector<RosterEntry> modelUnits;
++  std::vector<RosterEntry> enemyUnits;
+   RosterModel rosterModel;
+   HeaderBar bar;
+   Button help;
+   Button chooseMetrics;
+   Button playGUI;
+   std::string playInGUI;
+ };
+ 
+ #endif
+diff --git a/gui/include/RosterModel.h b/gui/include/RosterModel.h
+index ea646c0feaa02770794d3148e3e003110c8b62bb..07ff9d086a2447c0e80e257ddf38190fc5440943 100644
+--- a/gui/include/RosterModel.h
++++ b/gui/include/RosterModel.h
+@@ -1,35 +1,35 @@
+ #ifndef ROSTER_MODEL_H
+ #define ROSTER_MODEL_H
+ 
+ #include <filesystem>
+ #include <string>
+ #include <vector>
+ #include <nlohmann/json.hpp>
+ 
+ struct RosterEntry {
+   std::string name;
+-  int count;
++  int modelsCount;
+ };
+ 
+ class RosterModel {
+   public:
+     void setFaction(const std::string& faction);
+     const std::string& faction() const;
+     const std::vector<RosterEntry>& units() const;
+     bool empty() const;
+     void addUnit(const std::string& name, int countDefault, const std::string& faction = "");
+     void removeUnit(size_t index);
+     void clear();
+-    std::vector<std::string> expandedUnits() const;
++    std::vector<RosterEntry> expandedUnits() const;
+     nlohmann::json toJson() const;
+     bool fromJson(const nlohmann::json& data);
+     bool loadFromFile(const std::filesystem::path& path);
+     bool saveToFile(const std::filesystem::path& path) const;
+     static std::filesystem::path defaultRosterPath();
+ 
+   private:
+     std::string rosterFaction;
+     std::vector<RosterEntry> rosterUnits;
+ };
+ 
+ #endif
+diff --git a/gui/include/units.h b/gui/include/units.h
+index dab23f9730f7bbe7f2af7dd4b3acb4a861277c36..c97ad963cc74ce044b48b63dfca973a8edf02a98 100644
+--- a/gui/include/units.h
++++ b/gui/include/units.h
+@@ -12,56 +12,56 @@
+ #include <filesystem>
+ #include "RosterModel.h"
+ 
+ using namespace Glib;
+ using namespace Gtk;
+ 
+ class Units : public Gtk::Window {
+   public : 
+     explicit Units(RosterModel* rosterModel);
+     void loadAvailableUnits();
+     void refreshRosterView();
+     void addSelectedUnit();
+     void removeSelectedUnit();
+     void clearRoster();
+   private:
+     class AvailableColumns : public Gtk::TreeModel::ColumnRecord {
+       public:
+         AvailableColumns() { add(name); add(faction); add(defaultCount); }
+         Gtk::TreeModelColumn<Glib::ustring> name;
+         Gtk::TreeModelColumn<Glib::ustring> faction;
+         Gtk::TreeModelColumn<int> defaultCount;
+     };
+ 
+     class RosterColumns : public Gtk::TreeModel::ColumnRecord {
+       public:
+-        RosterColumns() { add(display); add(name); add(count); }
++        RosterColumns() { add(display); add(name); add(modelsCount); }
+         Gtk::TreeModelColumn<Glib::ustring> display;
+         Gtk::TreeModelColumn<Glib::ustring> name;
+-        Gtk::TreeModelColumn<int> count;
++        Gtk::TreeModelColumn<int> modelsCount;
+     };
+ 
+-    std::string formatRosterDisplay(const std::string& name, int count) const;
++    std::string formatRosterDisplay(const std::string& name, int modelsCount) const;
+     void persistRoster();
+ 
+     RosterModel* rosterModel;
+     AvailableColumns availableColumns;
+     RosterColumns rosterColumns;
+     Glib::RefPtr<Gtk::ListStore> availableStore;
+     Glib::RefPtr<Gtk::ListStore> rosterStore;
+     Gtk::TreeView availableView;
+     Gtk::TreeView rosterView;
+     Gtk::ScrolledWindow availableScroll;
+     Gtk::ScrolledWindow rosterScroll;
+     Gtk::Box mainBox{Gtk::ORIENTATION_HORIZONTAL, 12};
+     Gtk::Box availableBox{Gtk::ORIENTATION_VERTICAL, 6};
+     Gtk::Box rosterBox{Gtk::ORIENTATION_VERTICAL, 6};
+     Gtk::Box buttonBox{Gtk::ORIENTATION_VERTICAL, 6};
+     Gtk::Label availableLabel;
+     Gtk::Label rosterLabel;
+     Gtk::Button addButton;
+     Gtk::Button removeButton;
+     Gtk::Button clearButton;
+     HeaderBar bar;
+ };
+ 
+ #endif
+diff --git a/gui/units.cpp b/gui/units.cpp
+index 053bdde76c091a16d8f78f0ebe239c903e7a6632..6a13074fdbb41585421cf7ef70cf5fb925f2a473 100644
+--- a/gui/units.cpp
++++ b/gui/units.cpp
+@@ -19,71 +19,71 @@ void Units::loadAvailableUnits() {
+   }
+   json j;
+   infile >> j;
+ 
+   if (!j.contains("UnitData") || !j.at("UnitData").is_array()) {
+     return;
+   }
+ 
+   for (const auto& unit : j.at("UnitData")) {
+     if (!unit.contains("Army") || !unit.contains("Name")) {
+       continue;
+     }
+     std::string army = unit.at("Army").get<std::string>();
+     std::string name = unit.at("Name").get<std::string>();
+     int defaultCount = 1;
+     if (unit.contains("#OfModels") && unit.at("#OfModels").is_number_integer()) {
+       defaultCount = unit.at("#OfModels").get<int>();
+     }
+     auto row = *(availableStore->append());
+     row[availableColumns.name] = name;
+     row[availableColumns.faction] = army;
+     row[availableColumns.defaultCount] = defaultCount;
+   }
+ }
+ 
+-std::string Units::formatRosterDisplay(const std::string& name, int count) const {
+-  return name + " (" + std::to_string(count) + ")";
++std::string Units::formatRosterDisplay(const std::string& name, int modelsCount) const {
++  return "(Unit) " + name + " (x" + std::to_string(modelsCount) + " Models)";
+ }
+ 
+ void Units::persistRoster() {
+   if (!rosterModel) {
+     return;
+   }
+   rosterModel->saveToFile(RosterModel::defaultRosterPath());
+ }
+ 
+ void Units::refreshRosterView() {
+   if (!rosterStore || !rosterModel) {
+     return;
+   }
+   rosterStore->clear();
+   for (const auto& entry : rosterModel->units()) {
+     auto row = *(rosterStore->append());
+     row[rosterColumns.name] = entry.name;
+-    row[rosterColumns.count] = entry.count;
+-    row[rosterColumns.display] = formatRosterDisplay(entry.name, entry.count);
++    row[rosterColumns.modelsCount] = entry.modelsCount;
++    row[rosterColumns.display] = formatRosterDisplay(entry.name, entry.modelsCount);
+   }
+ }
+ 
+ void Units::addSelectedUnit() {
+   if (!rosterModel) {
+     return;
+   }
+   auto selection = availableView.get_selection();
+   if (!selection) {
+     return;
+   }
+   auto iter = selection->get_selected();
+   if (!iter) {
+     return;
+   }
+   auto row = *iter;
+   Glib::ustring nameValue = row[availableColumns.name];
+   Glib::ustring factionValue = row[availableColumns.faction];
+   std::string name = nameValue.raw();
+   std::string faction = factionValue.raw();
+   int defaultCount = row[availableColumns.defaultCount];
+   rosterModel->addUnit(name, defaultCount, faction);
+   refreshRosterView();
+   persistRoster();
+ }
+diff --git a/gym_mod/gym_mod/engine/initFile.py b/gym_mod/gym_mod/engine/initFile.py
+index 98a812e85068484e7521b326186121e4cdcbeb88..060464b9c81eda8fb498d814ea4e730703124c4f 100644
+--- a/gym_mod/gym_mod/engine/initFile.py
++++ b/gym_mod/gym_mod/engine/initFile.py
+@@ -1,62 +1,91 @@
+ import json
+ import os
+ import sys
+ 
+-def makeFile(numIters, modelFaction, enemyFaction, modelUnits, enemyUnits, modelW, enemyW, boardx = 60, boardy = 44):
++def makeFile(numIters, modelFaction, enemyFaction, modelUnits, enemyUnits, modelW, enemyW,
++             modelCounts=None, enemyCounts=None, boardx = 60, boardy = 44):
++    if modelCounts is None:
++        modelCounts = []
++    if enemyCounts is None:
++        enemyCounts = []
+ 
+     data = {
+         "Army1":modelFaction,
+         "Army2":enemyFaction,
+         "modelUnits":modelUnits,
+         "enemyUnits":enemyUnits,
++        "modelUnitCounts":modelCounts,
++        "enemyUnitCounts":enemyCounts,
+         "modelWeapons":modelW,
+         "enemyWeapons":enemyW,
+         "numLife": int(numIters),
+         "x": int(boardx),
+         "y": int(boardy)
+     }
+ 
+     with open('gui/data.json', 'w') as f:
+         json.dump(data, f)
+     
+ def addingUnits():
+     model = []
+     enemy = []
++    model_counts = []
++    enemy_counts = []
+     file = open("gui/units.txt", "r")
+     content = file.readlines()
+     flip = 0
+     for i in content[1:len(content)]:
+         name = i[0:len(i)-1]
+         if name == "Model Units":
+             flip = 1
+         elif flip == 0:
+-            enemy.append(name)
++            unit_name, count = _parse_unit_entry(name)
++            if unit_name:
++                enemy.append(unit_name)
++                enemy_counts.append(count)
+         elif flip == 1:
+-            model.append(name)
+-
+-    return model, enemy
++            unit_name, count = _parse_unit_entry(name)
++            if unit_name:
++                model.append(unit_name)
++                model_counts.append(count)
++
++    return model, enemy, model_counts, enemy_counts
++
++def _parse_unit_entry(value):
++    if not value:
++        return "", 0
++    if "|" not in value:
++        return value, 0
++    name_part, count_part = value.rsplit("|", 1)
++    name = name_part.strip()
++    count = 0
++    try:
++        count = int(count_part.strip())
++    except ValueError:
++        count = 0
++    return name, count
+ 
+ def addingWeapons(m, e):
+ 
+     with open(os.path.abspath("gym_mod/gym_mod/engine/unitData.json")) as j:
+         data = json.loads(j.read())
+ 
+     model = []
+     enemy = []
+ 
+     for i in data["UnitData"]:
+         for j in m:
+             weaps = ["None", "None"]
+             if i["Name"] == j:
+                 for k in i["Weapons"]:
+                     for l in data["WeaponData"]:
+                         if l["Name"][0:len(k)].lower() == k.lower():
+                             if l["Type"] == "Ranged":
+                                 weaps[0] = l["Name"]
+                             elif l["Type"] == "Melee":
+                                 weaps[1] = l["Name"]
+                 model.append(weaps)
+ 
+         for j in e:
+             weaps = ["None", "None"]
+             if i["Name"] == j:
+@@ -97,44 +126,56 @@ def getEnemyFaction():
+ 
+ def getBoardX():
+     with open(os.path.abspath("gui/data.json")) as j:
+         data = json.loads(j.read())
+ 
+     return data["x"]
+ 
+ def getBoardY():
+     with open(os.path.abspath("gui/data.json")) as j:
+         data = json.loads(j.read())
+ 
+     return data["y"]
+ 
+ def getModelUnits():
+     with open(os.path.abspath("gui/data.json")) as j:
+         data = json.loads(j.read())
+ 
+     return data["modelUnits"]
+ 
+ def getEnemyUnits():
+     with open(os.path.abspath("gui/data.json")) as j:
+         data = json.loads(j.read())
+ 
+     return data["enemyUnits"]
+ 
++def getModelUnitCounts():
++    with open(os.path.abspath("gui/data.json")) as j:
++        data = json.loads(j.read())
++
++    return data.get("modelUnitCounts", [])
++
++def getEnemyUnitCounts():
++    with open(os.path.abspath("gui/data.json")) as j:
++        data = json.loads(j.read())
++
++    return data.get("enemyUnitCounts", [])
++
+ def getModelW():
+     with open(os.path.abspath("gui/data.json")) as j:
+         data = json.loads(j.read())
+ 
+     return data["modelWeapons"]
+ 
+ def getEnemyW():
+     with open(os.path.abspath("gui/data.json")) as j:
+         data = json.loads(j.read())
+ 
+     return data["enemyWeapons"]
+ 
+ def delFile():
+     os.system("rm gui/data.json")
+ 
+ if __name__ == "__main__":
+-    model, enemy = addingUnits()
++    model, enemy, model_counts, enemy_counts = addingUnits()
+     modelw, enemyw = addingWeapons(model, enemy)
+-    makeFile(sys.argv[1], sys.argv[2], sys.argv[3],model, enemy, modelw, enemyw, sys.argv[4], sys.argv[5])
+\ No newline at end of file
++    makeFile(sys.argv[1], sys.argv[2], sys.argv[3],model, enemy, modelw, enemyw, model_counts, enemy_counts, sys.argv[4], sys.argv[5])
 diff --git a/play.py b/play.py
-index f9e51ef51e25262ed3edb7094315341c08b1f1fe..3c214f97f287b467db2c3bd6abb4114b406c3799 100644
+index 3c214f97f287b467db2c3bd6abb4114b406c3799..47d23ea7ed67da6051cd6142db228fbe559f2e86 100644
 --- a/play.py
 +++ b/play.py
-@@ -67,50 +67,66 @@ def _log(msg: str):
+@@ -52,81 +52,93 @@ else:
+     f = str(sys.argv[1])
+     modelpth = f[:-len("pickle")]+"pth"
+     checkpoint = torch.load(modelpth)
+ 
+ playInGUI = False
+ if sys.argv[2] == "True":
+     playInGUI = True
+ 
+ 
+ def _log(msg: str):
+     if playInGUI:
+         sendToGUI(msg)
+     else:
+         print(msg)
+ 
  
  verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
  log_fn = _log if verbose else None
@@ -105,6 +860,17 @@ index f9e51ef51e25262ed3edb7094315341c08b1f1fe..3c214f97f287b467db2c3bd6abb4114b
  )
  if verbose:
      _log(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
++    _log(f"[roster] model_units={len(model)} enemy_units={len(enemy)}")
++    for idx, unit in enumerate(model):
++        unit_data = unit.showUnitData()
++        unit_name = unit_data.get("Name", "Unknown")
++        unit_models = unit_data.get("#OfModels", 1)
++        _log(f"[roster] model[{idx}] name={unit_name} models={unit_models}")
++    for idx, unit in enumerate(enemy):
++        unit_data = unit.showUnitData()
++        unit_name = unit_data.get("Name", "Unknown")
++        unit_models = unit_data.get("#OfModels", 1)
++        _log(f"[roster] enemy[{idx}] name={unit_name} models={unit_models}")
  
  deploy_only_war(
      model_units=model,
@@ -120,22 +886,23 @@ index f9e51ef51e25262ed3edb7094315341c08b1f1fe..3c214f97f287b467db2c3bd6abb4114b
  env.defender_side = defender_side
  
  state, info = env.reset(m=model, e=enemy)
-+if verbose:
-+    squads_for_actions_count = len(model)
-+    _log(f"[action_space] squads_for_actions_count={squads_for_actions_count}")
-+    for idx, unit in enumerate(model):
-+        unit_data = unit.showUnitData()
-+        unit_name = unit_data.get("Name", "Unknown")
-+        _log(f"[action_space] squad[{idx}] name={unit_name}")
-+    total_models_count = 0
-+    for unit in model:
-+        unit_data = unit.showUnitData()
-+        total_models_count += int(unit_data.get("#OfModels", 1))
-+    _log(f"[action_space] total_models_count={total_models_count}")
-+    move_num_keys = [
-+        key for key in env.action_space.spaces.keys() if key.startswith("move_num_")
-+    ]
-+    _log(f"[action_space] move_num_keys_count={len(move_num_keys)}")
+ if verbose:
+     squads_for_actions_count = len(model)
+     _log(f"[action_space] squads_for_actions_count={squads_for_actions_count}")
+     for idx, unit in enumerate(model):
+         unit_data = unit.showUnitData()
+         unit_name = unit_data.get("Name", "Unknown")
+         _log(f"[action_space] squad[{idx}] name={unit_name}")
+     total_models_count = 0
+     for unit in model:
+         unit_data = unit.showUnitData()
+         total_models_count += int(unit_data.get("#OfModels", 1))
+     _log(f"[action_space] total_models_count={total_models_count}")
+     move_num_keys = [
+         key for key in env.action_space.spaces.keys() if key.startswith("move_num_")
+     ]
+     _log(f"[action_space] move_num_keys_count={len(move_num_keys)}")
++    _log(f"[action_space] move_num_keys={sorted(move_num_keys)}")
  n_actions = [5,2,len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
  for i in range(len(model)):
      n_actions.append(12)
@@ -162,10 +929,90 @@ index f9e51ef51e25262ed3edb7094315341c08b1f1fe..3c214f97f287b467db2c3bd6abb4114b
  
  reward = 0
 diff --git a/train.py b/train.py
-index 20f02de3ea4c327afff102fb0c9f719f039bc904..b661ece0279cc9aa0afac7ef91d0be92ed8bdb44 100644
+index b661ece0279cc9aa0afac7ef91d0be92ed8bdb44..537a2f0e57d8eb7a6950c767c03c821f2ee179ba 100644
 --- a/train.py
 +++ b/train.py
-@@ -195,50 +195,66 @@ post_deploy_setup(log_fn=log_fn)
+@@ -136,72 +136,91 @@ WARMUP_STEPS     = int(data.get("warmup_steps", 0))      # 0 = без прогр
+ 
+ b_len = 60
+ b_hei = 40
+ 
+ print("\nTraining...\n")
+ 
+ enemy1 = Unit(unitData("Space_Marine", "Eliminator Squad"), weaponData("Bolt Pistol"), weaponData("Close combat weapon"), b_len, b_hei)
+ model1 = Unit(unitData("Space_Marine", "Eliminator Squad"), weaponData("Bolt Pistol"), weaponData("Close combat weapon"), b_len, b_hei)
+ 
+ enemy2 = Unit(unitData("Space_Marine", "Apothecary"), weaponData("Absolver Bolt Pistol"), weaponData("Close combat weapon"), b_len, b_hei)
+ model2 = Unit(unitData("Space_Marine", "Apothecary"), weaponData("Absolver Bolt Pistol"), weaponData("Close combat weapon"), b_len, b_hei)
+ 
+ enemy = [enemy1, enemy2]
+ model = [model1, model2]
+ 
+ end = False
+ trunc = True
+ totLifeT = 10
+ steps_done = 0
+ 
+ if os.path.isfile("gui/data.json"):
+ 
+     totLifeT = initFile.getNumLife()
+     b_len = initFile.getBoardX()
+     b_hei = initFile.getBoardY()
++    enemy_counts = initFile.getEnemyUnitCounts()
++    model_counts = initFile.getModelUnitCounts()
+     print("Model Units:\n")
+     if len(initFile.getEnemyUnits()) > 0:
+         enemy = []
+         for i in range(len(initFile.getEnemyUnits())):
+-            enemy.append(Unit(unitData(initFile.getEnemyFaction(), initFile.getEnemyUnits()[i]), weaponData(initFile.getEnemyW()[i][0]), weaponData(initFile.getEnemyW()[i][1]), b_len, b_hei))
++            unit_data = unitData(initFile.getEnemyFaction(), initFile.getEnemyUnits()[i])
++            if i < len(enemy_counts) and enemy_counts[i] > 0:
++                unit_data["#OfModels"] = enemy_counts[i]
++            enemy.append(Unit(unit_data, weaponData(initFile.getEnemyW()[i][0]), weaponData(initFile.getEnemyW()[i][1]), b_len, b_hei))
+             print("Name:", initFile.getEnemyUnits()[i], "Weapons: ", initFile.getEnemyW()[i][0], initFile.getEnemyW()[i][1])
+     print("Enemy Units:\n")
+     if len(initFile.getModelUnits()) > 0:
+         model = []
+         for i in range(len(initFile.getModelUnits())):
+-            model.append(Unit(unitData(initFile.getModelFaction(), initFile.getModelUnits()[i]), weaponData(initFile.getModelW()[i][0]), weaponData(initFile.getModelW()[i][1]), b_len, b_hei))
++            unit_data = unitData(initFile.getModelFaction(), initFile.getModelUnits()[i])
++            if i < len(model_counts) and model_counts[i] > 0:
++                unit_data["#OfModels"] = model_counts[i]
++            model.append(Unit(unit_data, weaponData(initFile.getModelW()[i][0]), weaponData(initFile.getModelW()[i][1]), b_len, b_hei))
+             print("Name:", initFile.getModelUnits()[i], "Weapons: ", initFile.getModelW()[i][0], initFile.getModelW()[i][1])
+ 
+ numLifeT = 0
+ 
+ verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
+ log_fn = print if verbose else None
+ attacker_side, defender_side = roll_off_attacker_defender(
+     manual_roll_allowed=False,
+     log_fn=print,
+ )
+ if verbose:
++    print(f"[roster] model_units={len(model)} enemy_units={len(enemy)}")
++    for idx, unit in enumerate(model):
++        unit_data = unit.showUnitData()
++        unit_name = unit_data.get("Name", "Unknown")
++        unit_models = unit_data.get("#OfModels", 1)
++        print(f"[roster] model[{idx}] name={unit_name} models={unit_models}")
++    for idx, unit in enumerate(enemy):
++        unit_data = unit.showUnitData()
++        unit_name = unit_data.get("Name", "Unknown")
++        unit_models = unit_data.get("#OfModels", 1)
++        print(f"[roster] enemy[{idx}] name={unit_name} models={unit_models}")
+     print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
+ 
+ deploy_only_war(
+     model_units=model,
+     enemy_units=enemy,
+     b_len=b_len,
+     b_hei=b_hei,
+     attacker_side=attacker_side,
+     log_fn=log_fn,
+ )
+ post_deploy_setup(log_fn=log_fn)
+ 
  env = gym.make("40kAI-v0", disable_env_checker=True, enemy = enemy, model = model, b_len = b_len, b_hei = b_hei)
  env.attacker_side = attacker_side
  env.defender_side = defender_side
@@ -179,57 +1026,4 @@ index 20f02de3ea4c327afff102fb0c9f719f039bc904..b661ece0279cc9aa0afac7ef91d0be92
      sp = env.action_space.spaces[k]
  
      # Discrete (и gym, и gymnasium)
-     if hasattr(sp, "n"):
-         n_actions.append(int(sp.n))
- 
-     # MultiDiscrete (на всякий)
-     elif hasattr(sp, "nvec"):
-         n_actions.extend([int(x) for x in sp.nvec])
- 
-     else:
-         raise TypeError(f"Unsupported action space for {k}: {type(sp)}")
- 
- 
- state, info = env.reset(m=model, e=enemy, trunc=True)
-+if verbose:
-+    squads_for_actions_count = len(model)
-+    print(f"[action_space] squads_for_actions_count={squads_for_actions_count}")
-+    for idx, unit in enumerate(model):
-+        unit_data = unit.showUnitData()
-+        unit_name = unit_data.get("Name", "Unknown")
-+        print(f"[action_space] squad[{idx}] name={unit_name}")
-+    total_models_count = 0
-+    for unit in model:
-+        unit_data = unit.showUnitData()
-+        total_models_count += int(unit_data.get("#OfModels", 1))
-+    print(f"[action_space] total_models_count={total_models_count}")
-+    move_num_keys = [
-+        key for key in env.action_space.spaces.keys() if key.startswith("move_num_")
-+    ]
-+    print(f"[action_space] move_num_keys_count={len(move_num_keys)}")
- 
- # state может быть np.array или OrderedDict
- if isinstance(state, dict) or "OrderedDict" in str(type(state)):
-     n_observations = len(list(state.values()))
- else:
-     n_observations = int(np.array(state).shape[0])
- 
- 
- policy_net = DQN(n_observations, n_actions).to(device)
- target_net = DQN(n_observations, n_actions).to(device)
- target_net.load_state_dict(policy_net.state_dict())
- target_net.eval()
- 
- 
- optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
- memory = ReplayMemory(10000)
- 
- inText = []
- 
- inText.append("Model units:")
- for i in model:
-     inText.append("Name: {}, Army Type: {}".format(i.showUnitData()["Name"], i.showUnitData()["Army"]))
- inText.append("Enemy units:")
- for i in enemy:
-     inText.append("Name: {}, Army Type: {}".format(i.showUnitData()["Name"], i.showUnitData()["Army"]))
 

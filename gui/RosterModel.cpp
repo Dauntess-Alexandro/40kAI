@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <fstream>
-#include <iostream>
 
 void RosterModel::setFaction(const std::string& faction) {
   rosterFaction = faction;
@@ -29,7 +28,7 @@ void RosterModel::addUnit(const std::string& name, int countDefault, const std::
   auto it = std::find_if(rosterUnits.begin(), rosterUnits.end(),
                          [&](const RosterEntry& entry) { return entry.name == name; });
   if (it != rosterUnits.end()) {
-    it->count += countToAdd;
+    it->modelsCount += countToAdd;
     return;
   }
 
@@ -47,19 +46,8 @@ void RosterModel::clear() {
   rosterUnits.clear();
 }
 
-std::vector<std::string> RosterModel::expandedUnits() const {
-  std::vector<std::string> expanded;
-  for (const auto& entry : rosterUnits) {
-    constexpr int kMaxUnitsPerEntry = 10;
-    if (entry.count > kMaxUnitsPerEntry) {
-      std::cerr << "[RosterModel] Warning: entry '" << entry.name
-                << "' count=" << entry.count
-                << " looks like a model count; limiting to a single unit."
-                << std::endl;
-    }
-    expanded.push_back(entry.name);
-  }
-  return expanded;
+std::vector<RosterEntry> RosterModel::expandedUnits() const {
+  return rosterUnits;
 }
 
 nlohmann::json RosterModel::toJson() const {
@@ -67,7 +55,7 @@ nlohmann::json RosterModel::toJson() const {
   j["faction"] = rosterFaction;
   j["units"] = nlohmann::json::array();
   for (const auto& entry : rosterUnits) {
-    j["units"].push_back({{"name", entry.name}, {"count", entry.count}});
+    j["units"].push_back({{"name", entry.name}, {"models_count", entry.modelsCount}});
   }
   return j;
 }
@@ -87,20 +75,32 @@ bool RosterModel::fromJson(const nlohmann::json& data) {
       if (!item.is_object()) {
         continue;
       }
-      if (!item.contains("name") || !item.contains("count")) {
+      if (!item.contains("name")) {
         continue;
       }
       if (!item.at("name").is_string()) {
         continue;
       }
       int count = 0;
-      if (item.at("count").is_number_integer()) {
-        count = item.at("count").get<int>();
-      } else if (item.at("count").is_string()) {
-        try {
-          count = std::stoi(item.at("count").get<std::string>());
-        } catch (...) {
-          count = 0;
+      if (item.contains("models_count")) {
+        if (item.at("models_count").is_number_integer()) {
+          count = item.at("models_count").get<int>();
+        } else if (item.at("models_count").is_string()) {
+          try {
+            count = std::stoi(item.at("models_count").get<std::string>());
+          } catch (...) {
+            count = 0;
+          }
+        }
+      } else if (item.contains("count")) {
+        if (item.at("count").is_number_integer()) {
+          count = item.at("count").get<int>();
+        } else if (item.at("count").is_string()) {
+          try {
+            count = std::stoi(item.at("count").get<std::string>());
+          } catch (...) {
+            count = 0;
+          }
         }
       }
       if (count <= 0) {

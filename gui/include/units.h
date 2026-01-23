@@ -34,13 +34,13 @@ class Units : public Gtk::Window {
 
     class RosterColumns : public Gtk::TreeModel::ColumnRecord {
       public:
-        RosterColumns() { add(display); add(name); add(count); }
+        RosterColumns() { add(display); add(name); add(modelsCount); }
         Gtk::TreeModelColumn<Glib::ustring> display;
         Gtk::TreeModelColumn<Glib::ustring> name;
-        Gtk::TreeModelColumn<int> count;
+        Gtk::TreeModelColumn<int> modelsCount;
     };
 
-    std::string formatRosterDisplay(const std::string& name, int count) const;
+    std::string formatRosterDisplay(const std::string& name, int modelsCount) const;
     void persistRoster();
 
     RosterModel* rosterModel;

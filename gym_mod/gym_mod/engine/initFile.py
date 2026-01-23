@@ -2,13 +2,20 @@ import json
 import os
 import sys
 
-def makeFile(numIters, modelFaction, enemyFaction, modelUnits, enemyUnits, modelW, enemyW, boardx = 60, boardy = 44):
+def makeFile(numIters, modelFaction, enemyFaction, modelUnits, enemyUnits, modelW, enemyW,
+             modelCounts=None, enemyCounts=None, boardx = 60, boardy = 44):
+    if modelCounts is None:
+        modelCounts = []
+    if enemyCounts is None:
+        enemyCounts = []
 
     data = {
         "Army1":modelFaction,
         "Army2":enemyFaction,
         "modelUnits":modelUnits,
         "enemyUnits":enemyUnits,
+        "modelUnitCounts":modelCounts,
+        "enemyUnitCounts":enemyCounts,
         "modelWeapons":modelW,
         "enemyWeapons":enemyW,
         "numLife": int(numIters),
@@ -22,6 +29,8 @@ def makeFile(numIters, modelFaction, enemyFaction, modelUnits, enemyUnits, model
 def addingUnits():
     model = []
     enemy = []
+    model_counts = []
+    enemy_counts = []
     file = open("gui/units.txt", "r")
     content = file.readlines()
     flip = 0
@@ -30,11 +39,31 @@ def addingUnits():
         if name == "Model Units":
             flip = 1
         elif flip == 0:
-            enemy.append(name)
+            unit_name, count = _parse_unit_entry(name)
+            if unit_name:
+                enemy.append(unit_name)
+                enemy_counts.append(count)
         elif flip == 1:
-            model.append(name)
+            unit_name, count = _parse_unit_entry(name)
+            if unit_name:
+                model.append(unit_name)
+                model_counts.append(count)
 
-    return model, enemy
+    return model, enemy, model_counts, enemy_counts
+
+def _parse_unit_entry(value):
+    if not value:
+        return "", 0
+    if "|" not in value:
+        return value, 0
+    name_part, count_part = value.rsplit("|", 1)
+    name = name_part.strip()
+    count = 0
+    try:
+        count = int(count_part.strip())
+    except ValueError:
+        count = 0
+    return name, count
 
 def addingWeapons(m, e):
 
@@ -119,6 +148,18 @@ def getEnemyUnits():
 
     return data["enemyUnits"]
 
+def getModelUnitCounts():
+    with open(os.path.abspath("gui/data.json")) as j:
+        data = json.loads(j.read())
+
+    return data.get("modelUnitCounts", [])
+
+def getEnemyUnitCounts():
+    with open(os.path.abspath("gui/data.json")) as j:
+        data = json.loads(j.read())
+
+    return data.get("enemyUnitCounts", [])
+
 def getModelW():
     with open(os.path.abspath("gui/data.json")) as j:
         data = json.loads(j.read())
@@ -135,6 +176,6 @@ def delFile():
     os.system("rm gui/data.json")
 
 if __name__ == "__main__":
-    model, enemy = addingUnits()
+    model, enemy, model_counts, enemy_counts = addingUnits()
     modelw, enemyw = addingWeapons(model, enemy)
-    makeFile(sys.argv[1], sys.argv[2], sys.argv[3],model, enemy, modelw, enemyw, sys.argv[4], sys.argv[5])
+    makeFile(sys.argv[1], sys.argv[2], sys.argv[3],model, enemy, modelw, enemyw, model_counts, enemy_counts, sys.argv[4], sys.argv[5])

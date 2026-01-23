@@ -74,6 +74,17 @@ attacker_side, defender_side = roll_off_attacker_defender(
 )
 if verbose:
     _log(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
+    _log(f"[roster] model_units={len(model)} enemy_units={len(enemy)}")
+    for idx, unit in enumerate(model):
+        unit_data = unit.showUnitData()
+        unit_name = unit_data.get("Name", "Unknown")
+        unit_models = unit_data.get("#OfModels", 1)
+        _log(f"[roster] model[{idx}] name={unit_name} models={unit_models}")
+    for idx, unit in enumerate(enemy):
+        unit_data = unit.showUnitData()
+        unit_name = unit_data.get("Name", "Unknown")
+        unit_models = unit_data.get("#OfModels", 1)
+        _log(f"[roster] enemy[{idx}] name={unit_name} models={unit_models}")
 
 deploy_only_war(
     model_units=model,
@@ -105,6 +116,7 @@ if verbose:
         key for key in env.action_space.spaces.keys() if key.startswith("move_num_")
     ]
     _log(f"[action_space] move_num_keys_count={len(move_num_keys)}")
+    _log(f"[action_space] move_num_keys={sorted(move_num_keys)}")
 n_actions = [5,2,len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
 for i in range(len(model)):
     n_actions.append(12)

@@ -41,8 +41,8 @@ void Units::loadAvailableUnits() {
   }
 }
 
-std::string Units::formatRosterDisplay(const std::string& name, int count) const {
-  return name + " (" + std::to_string(count) + ")";
+std::string Units::formatRosterDisplay(const std::string& name, int modelsCount) const {
+  return "(Unit) " + name + " (x" + std::to_string(modelsCount) + " Models)";
 }
 
 void Units::persistRoster() {
@@ -60,8 +60,8 @@ void Units::refreshRosterView() {
   for (const auto& entry : rosterModel->units()) {
     auto row = *(rosterStore->append());
     row[rosterColumns.name] = entry.name;
-    row[rosterColumns.count] = entry.count;
-    row[rosterColumns.display] = formatRosterDisplay(entry.name, entry.count);
+    row[rosterColumns.modelsCount] = entry.modelsCount;
+    row[rosterColumns.display] = formatRosterDisplay(entry.name, entry.modelsCount);
   }
 }
 

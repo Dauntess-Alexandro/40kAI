@@ -23,6 +23,44 @@ using namespace Gtk;
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
+namespace {
+std::string toLowerCopy(std::string data) {
+  std::transform(data.begin(), data.end(), data.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return data;
+}
+
+int findDefaultModelsCount(const std::string& faction, const std::string& name) {
+  std::ifstream infile("../gym_mod/gym_mod/engine/unitData.json");
+  if (!infile) {
+    return 1;
+  }
+  json j;
+  infile >> j;
+  if (!j.contains("UnitData") || !j.at("UnitData").is_array()) {
+    return 1;
+  }
+  std::string factionLower = toLowerCopy(faction);
+  std::string nameLower = toLowerCopy(name);
+  for (const auto& unit : j.at("UnitData")) {
+    if (!unit.contains("Name") || !unit.contains("Army")) {
+      continue;
+    }
+    if (toLowerCopy(unit.at("Name").get<std::string>()) != nameLower) {
+      continue;
+    }
+    if (toLowerCopy(unit.at("Army").get<std::string>()) != factionLower) {
+      continue;
+    }
+    if (unit.contains("#OfModels") && unit.at("#OfModels").is_number_integer()) {
+      return unit.at("#OfModels").get<int>();
+    }
+    return 1;
+  }
+  return 1;
+}
+}  // namespace
+
 std::string gifpth = "img/model_train.gif";
 std::string rewpth = "img/reward.png";
 std::string losspth = "img/loss.png";
@@ -615,8 +653,8 @@ Form :: Form() {
   resize(700, 600);
   loadLastRoster();
   if (modelUnits.empty()) {
-    modelUnits.push_back("Apothecary");
-    modelUnits.push_back("Eliminator Squad");
+    modelUnits.push_back({"Apothecary", findDefaultModelsCount("Space_Marine", "Apothecary")});
+    modelUnits.push_back({"Eliminator Squad", findDefaultModelsCount("Space_Marine", "Eliminator Squad")});
   }
   if (enemyUnits.empty()) {
     rosterModel.addUnit("Apothecary", 1, enemyClass.substr(1));
@@ -830,11 +868,15 @@ bool Form :: isValidUnit(int id, std::string name) {
   const auto& unitData = j.at("UnitData");
   for (const auto& unit : unitData) {
     if (strcmp(toLower(unit.at("Name").get<std::string>()).data(), toLower(name).data()) == 0) {
+      int modelsCount = 1;
+      if (unit.contains("#OfModels") && unit.at("#OfModels").is_number_integer()) {
+        modelsCount = unit.at("#OfModels").get<int>();
+      }
       if (id == 0 && strcmp(toLower(unit.at("Army").get<std::string>()).data(), toLower(modelClass.substr(1, modelClass.length())).data()) == 0) {
-        modelUnits.push_back(unit.at("Name").get<std::string>());
+        modelUnits.push_back({unit.at("Name").get<std::string>(), modelsCount});
         return true;
       } else if (id == 1 && strcmp(toLower(unit.at("Army").get<std::string>()).data(), toLower(enemyClass.substr(1, enemyClass.length())).data()) == 0) {
-        enemyUnits.push_back(unit.at("Name").get<std::string>());
+        enemyUnits.push_back({unit.at("Name").get<std::string>(), modelsCount});
         return true;
       }
     }
@@ -842,16 +884,16 @@ bool Form :: isValidUnit(int id, std::string name) {
   return false;
 }
 
-void Form :: savetoTxt(std::vector<std::string> enemyUnits, std::vector<std::string> modelUnits) {
+void Form :: savetoTxt(const std::vector<RosterEntry>& enemyUnits, const std::vector<RosterEntry>& modelUnits) {
 
   std::ofstream outfile("units.txt");
   outfile << "Player Units\n";
-  for (const auto& str : enemyUnits) {
-    outfile << str << std::endl;
+  for (const auto& entry : enemyUnits) {
+    outfile << entry.name << "|" << entry.modelsCount << std::endl;
   }
   outfile << "Model Units\n";
-  for (const auto& str : modelUnits) {
-    outfile << str << std::endl;
+  for (const auto& entry : modelUnits) {
+    outfile << entry.name << "|" << entry.modelsCount << std::endl;
   }
   outfile.close();
 }
