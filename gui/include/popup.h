@@ -41,6 +41,7 @@ class PopUp : public Gtk::Window {
     TextView logView;
     RefPtr<TextBuffer> logBuffer;
     Label contents;
+    std::string lastLogMessage;
     HeaderBar bar;
     Button changeMode;
     Image pictureBox;

@@ -6,11 +6,42 @@
 #include <fstream>
 #include <thread>
 #include <chrono>
+#include <sstream>
 
 #include "include/popup.h"
 
 using namespace Glib;
 using namespace Gtk;
+
+namespace {
+std::string replace_all(std::string value, const std::string& from, const std::string& to) {
+  size_t pos = 0;
+  while ((pos = value.find(from, pos)) != std::string::npos) {
+    value.replace(pos, from.length(), to);
+    pos += to.length();
+  }
+  return value;
+}
+
+std::string normalize_side_label(const std::string& side) {
+  if (side == "enemy" || side == "ENEMY" || side == "PLAYER") {
+    return "Игрок";
+  }
+  if (side == "model" || side == "MODEL") {
+    return "Модель";
+  }
+  return side;
+}
+
+std::string normalize_log_text(std::string text) {
+  text = replace_all(text, "ENEMY", "Игрок");
+  text = replace_all(text, "enemy", "Игрок");
+  text = replace_all(text, "PLAYER", "Игрок");
+  text = replace_all(text, "MODEL", "Модель");
+  text = replace_all(text, "model", "Модель");
+  return text;
+}
+}
 
 bool PopUp :: isNum(char num) {
   std::string nums= "0123456789";
@@ -62,6 +93,92 @@ void PopUp :: update() {
   std::string board;
   board = openFile(boardpth);
   contents.set_text(board);
+
+  std::ifstream statusFile("../status.txt");
+  if (!statusFile) {
+    statusFile.open("status.txt");
+  }
+  if (statusFile) {
+    std::string line;
+    std::string turn;
+    std::string round;
+    std::string phase;
+    std::string activeSide;
+    std::string modelVP;
+    std::string playerVP;
+    std::string modelCP;
+    std::string playerCP;
+    std::string modelHealth;
+    std::string playerHealth;
+
+    while (std::getline(statusFile, line)) {
+      auto sep = line.find('=');
+      if (sep == std::string::npos) {
+        continue;
+      }
+      std::string key = line.substr(0, sep);
+      std::string value = line.substr(sep + 1);
+      if (key == "turn") {
+        turn = value;
+      } else if (key == "battle_round") {
+        round = value;
+      } else if (key == "phase") {
+        phase = value;
+      } else if (key == "active_side") {
+        activeSide = value;
+      } else if (key == "model_vp") {
+        modelVP = value;
+      } else if (key == "player_vp") {
+        playerVP = value;
+      } else if (key == "model_cp") {
+        modelCP = value;
+      } else if (key == "player_cp") {
+        playerCP = value;
+      } else if (key == "model_health") {
+        modelHealth = value;
+      } else if (key == "player_health") {
+        playerHealth = value;
+      }
+    }
+
+    std::string activeSideLabelText = "Активная сторона: " + normalize_side_label(activeSide);
+    std::string vpText = "VP: " + modelVP + " – " + playerVP;
+    std::string cpText = "CP: Игрок " + playerCP + " – " + modelCP + " Модель";
+    std::string turnRoundText = "Ход: " + turn + "   Раунд: " + round;
+    std::string phaseText = "Фаза: " + phase;
+    std::string healthText = "HP Модель: " + modelHealth + " | HP Игрок: " + playerHealth;
+
+    turnRoundLabel.set_text(turnRoundText);
+    phaseLabel.set_text(phaseText);
+    activeSideLabel.set_text(activeSideLabelText);
+    vpLabel.set_text(vpText);
+    cpLabel.set_text(cpText);
+
+    turnRoundLabel.set_tooltip_text(turnRoundText + "\n" + healthText);
+    phaseLabel.set_tooltip_text(phaseText + "\n" + healthText);
+    activeSideLabel.set_tooltip_text(activeSideLabelText + "\n" + healthText);
+    vpLabel.set_tooltip_text(vpText + "\n" + healthText);
+    cpLabel.set_tooltip_text(cpText + "\n" + healthText);
+  }
+
+  std::ifstream logFile("../response.txt");
+  if (!logFile) {
+    logFile.open("response.txt");
+  }
+  if (logFile && logBuffer) {
+    std::stringstream buffer;
+    buffer << logFile.rdbuf();
+    std::string message = buffer.str();
+    if (!message.empty()) {
+      message = normalize_log_text(message);
+      if (message != lastLogMessage) {
+        logBuffer->insert(logBuffer->end(), message + "\n");
+        auto endIter = logBuffer->end();
+        logView.scroll_to(endIter);
+        lastLogMessage = message;
+      }
+    }
+  }
 }
 
 void PopUp :: keepUpdating() {
