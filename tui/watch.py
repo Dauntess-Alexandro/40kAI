@@ -66,15 +66,16 @@ def watch(
 ) -> None:
     console = Console()
     renderer = RichRenderer(console)
+    refresh_rate = max(1, int(1 / refresh))
 
-    with Live(console=console, refresh_per_second=4, screen=False) as live:
+    with Live(console=console, refresh_per_second=refresh_rate, screen=True, auto_refresh=False) as live:
         while True:
             board = parse_board(board_path)
             state = _load_state(status_path, units_path)
             journal = _read_journal(journal_path, journal_lines)
             viewport = _compute_viewport(board, console)
             layout = renderer.build_layout(board, state, journal, viewport)
-            live.update(layout)
+            live.update(layout, refresh=True)
             time.sleep(refresh)
 
 
