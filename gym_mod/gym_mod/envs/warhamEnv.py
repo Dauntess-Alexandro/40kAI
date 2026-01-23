@@ -3203,24 +3203,27 @@ class Warhammer40kEnv(gym.Env):
     def render(self, mode='train'):
         fig = plt.figure()
         ax = fig.add_subplot()
-        fig.subplots_adjust(top=0.85)
+        fig.subplots_adjust(top=0.9)
 
         if mode == 'train':
-            title = "Turn " + str(self.iter) + " Lifetime " + str(self.restarts)
+            title = f"Turn {self.iter} • Lifetime {self.restarts}"
         else:
-            title = "Turn " + str(self.iter)
+            title = f"Turn {self.iter}"
 
         fig.suptitle(title)
 
-        health = "Здоровье MODEL: {}, CP: {}; здоровье {}: {}, CP {}\nVP {}".format(
-            self.unit_health,
-            self.modelCP,
-            self._display_side("enemy"),
-            self.enemy_health,
-            self.enemyCP,
-            [self.modelVP, self.enemyVP],
-        )
-        ax.set_title(health)
+        status_lines = [
+            f"Turn: {self.iter}",
+            f"Model HP: {self.unit_health}",
+            f"{self._display_side('enemy')} HP: {self.enemy_health}",
+            f"CP (Model/Player): {self.modelCP}/{self.enemyCP}",
+            f"VP (Model/Player): {self.modelVP}/{self.enemyVP}",
+        ]
+        status_text = "\n".join(status_lines)
+        with open("board_status.txt", "w", encoding="utf-8") as status_file:
+            status_file.write(status_text)
+
+        ax.set_title(f"CP {self.modelCP}/{self.enemyCP} • VP {self.modelVP}/{self.enemyVP}")
 
         x1 = np.linspace(0, self.b_len, 10)
         y1 = np.zeros(10)

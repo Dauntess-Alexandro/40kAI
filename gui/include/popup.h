@@ -15,6 +15,7 @@ class PopUp : public Gtk::Window {
     PopUp(bool textMode);
     ~PopUp();
     std::string openFile(std::string board);
+    std::string openStatusFile(const std::string& statusFile);
     bool isNum(char num);
     void update();
     void backgroundUpdate(bool textMode);
@@ -22,9 +23,18 @@ class PopUp : public Gtk::Window {
     void keepUpdatingElecBoogaloo();
     void updateImage();
   private:
-    Label contents;
-    Fixed fixed;
-    ScrolledWindow scrolledWindow;
+    Box rootBox;
+    Paned mainSplit;
+    Box sideBox;
+    Frame boardFrame;
+    Frame statusFrame;
+    Frame legendFrame;
+    ScrolledWindow boardScroll;
+    TextView boardView;
+    Stack boardStack;
+    Label statusLabel;
+    Label legendLabel;
+    bool textModeEnabled;
     HeaderBar bar;
     Button changeMode;
     Image pictureBox;
