@@ -3,6 +3,7 @@ from gymnasium import spaces
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import json
 import random
 import re
 
@@ -3268,7 +3269,73 @@ class Warhammer40kEnv(gym.Env):
     def showBoard(self):
         board = self.returnBoard()
         np.savetxt("board.txt", board.astype(int), fmt="%i", delimiter=",")
+        self._write_state_json()
         self.render(mode="play")
+
+    def _write_state_json(self, max_log_lines: int = 20):
+        state_path = os.path.abspath(os.path.join("gui", "state.json"))
+        os.makedirs(os.path.dirname(state_path), exist_ok=True)
+
+        def side_label(side: str) -> str:
+            return "player" if side == "enemy" else side
+
+        def load_log_tail():
+            log_path = os.path.abspath(os.path.join("gui", "response.txt"))
+            if not os.path.exists(log_path):
+                return []
+            try:
+                with open(log_path, "r", encoding="utf-8") as log_file:
+                    lines = [line.rstrip("\n") for line in log_file.readlines()]
+                return lines[-max_log_lines:]
+            except OSError:
+                return []
+
+        units = []
+        for idx, data in enumerate(self.unit_data):
+            units.append({
+                "side": "model",
+                "id": 21 + idx,
+                "name": data.get("Name", "Unknown"),
+                "hp": self.unit_health[idx] if idx < len(self.unit_health) else 0,
+                "models": int(data.get("#OfModels", 1)),
+                "x": int(self.unit_coords[idx][0]),
+                "y": int(self.unit_coords[idx][1]),
+            })
+        for idx, data in enumerate(self.enemy_data):
+            units.append({
+                "side": "player",
+                "id": 11 + idx,
+                "name": data.get("Name", "Unknown"),
+                "hp": self.enemy_health[idx] if idx < len(self.enemy_health) else 0,
+                "models": int(data.get("#OfModels", 1)),
+                "x": int(self.enemy_coords[idx][0]),
+                "y": int(self.enemy_coords[idx][1]),
+            })
+
+        objectives = []
+        for coord in self.coordsOfOM:
+            try:
+                objectives.append({"x": int(coord[0]), "y": int(coord[1])})
+            except (TypeError, ValueError):
+                continue
+
+        payload = {
+            "board": {"width": int(self.b_len), "height": int(self.b_hei)},
+            "turn": int(self.numTurns),
+            "round": int(self.battle_round),
+            "phase": self.phase,
+            "active": side_label(self.active_side),
+            "vp": {"model": int(self.modelVP), "player": int(self.enemyVP)},
+            "cp": {"model": int(self.modelCP), "player": int(self.enemyCP)},
+            "units": units,
+            "objectives": objectives,
+            "log_tail": load_log_tail(),
+        }
+        try:
+            with open(state_path, "w", encoding="utf-8") as state_file:
+                json.dump(payload, state_file, ensure_ascii=False, indent=2)
+        except OSError:
+            return
 
     def close(self):
         pass

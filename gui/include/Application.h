@@ -104,6 +104,7 @@ Image metricBox6;
   Button button6;
   Button showBoard;
   Button showBoardImg;
+  Button play2d;
   Label textbox;
   Label textbox2;
   Label textbox1;

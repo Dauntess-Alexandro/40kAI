@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <vector>
 #include <algorithm>
+#include <glibmm/spawn.h>
 #include <nlohmann/json.hpp>
 #include "include/Application.h"
 #include "include/popup.h"
@@ -690,6 +691,22 @@ Form :: Form() {
 	return true;
   });
 
+  play2d.set_label("Play in 2D");
+  play2d.signal_button_release_event().connect([&](GdkEventButton* event) {
+    std::string statePath = "gui/state.json";
+    std::string boardPath = "board.txt";
+    if (!fs::exists(statePath) && !fs::exists(boardPath)) {
+      openWarnMenu("state.json не найден, запусти игру/обнови.", 1);
+      return true;
+    }
+    try {
+      Glib::spawn_command_line_async(".venv/bin/python -m viewer2d");
+    } catch (const Glib::Error& err) {
+      openWarnMenu("Не удалось запустить viewer2d: " + err.what(), 1);
+    }
+    return true;
+  });
+
   playGUI.set_label("Play in GUI");
   playGUI.signal_button_release_event().connect([&](GdkEventButton* event) {
 	if (playing == false) {
@@ -706,6 +723,7 @@ Form :: Form() {
   fixedTabPage4.add(button2);
   fixedTabPage4.add(showBoard);
   fixedTabPage4.add(showBoardImg);
+  fixedTabPage4.add(play2d);
   fixedTabPage4.add(playGUI);
   fixedTabPage4.add(button5);
   fixedTabPage4.add(setModelFile);
@@ -713,6 +731,7 @@ Form :: Form() {
   fixedTabPage4.move(playGUI, 130, 80);
   fixedTabPage4.move(showBoard, 220, 80);
   fixedTabPage4.move(showBoardImg, 395, 80);  
+  fixedTabPage4.move(play2d, 590, 80);
   fixedTabPage4.move(button2, 10, 80);
   fixedTabPage4.move(button5, 10, 40);
   fixedTabPage4.move(setModelFile, 80, 40);
