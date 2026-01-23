@@ -244,7 +244,11 @@ PopUp :: PopUp(bool textMode) {
   boardView.set_wrap_mode(Gtk::WRAP_NONE);
   boardStack.add(boardView, "text");
   boardStack.add(pictureBox, "image");
-  boardStack.set_visible_child(textMode ? boardView : pictureBox);
+  if (textMode) {
+    boardStack.set_visible_child(boardView);
+  } else {
+    boardStack.set_visible_child(pictureBox);
+  }
 
   topRow.pack_start(boardScroll, Gtk::PACK_EXPAND_WIDGET);
 
@@ -322,12 +326,9 @@ PopUp :: PopUp(bool textMode) {
   copyLogButton.signal_clicked().connect([this]() {
     auto buffer = logView.get_buffer();
     if (buffer) {
-      auto display = Gdk::Display::get_default();
-      if (display) {
-        auto clipboard = Gtk::Clipboard::get_default(display);
-        if (clipboard && buffer) {
-          clipboard->set_text(buffer->get_text());
-        }
+      auto clipboard = Gtk::Clipboard::get_default();
+      if (clipboard && buffer) {
+        clipboard->set_text(buffer->get_text());
       }
     }
   });
