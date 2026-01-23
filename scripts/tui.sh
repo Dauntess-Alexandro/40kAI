@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PYTHON_BIN="${PYTHON_BIN:-python}"
+if [[ -z "${PYTHON_BIN:-}" ]]; then
+  if [[ -x "./.venv/bin/python" ]]; then
+    PYTHON_BIN="./.venv/bin/python"
+  elif [[ -x "./venv/bin/python" ]]; then
+    PYTHON_BIN="./venv/bin/python"
+  elif [[ -x "./env/bin/python" ]]; then
+    PYTHON_BIN="./env/bin/python"
+  else
+    PYTHON_BIN="python"
+  fi
+fi
 LOG_FILE="${TUI_LOG_FILE:-tui_launch.log}"
 
 check_deps() {
