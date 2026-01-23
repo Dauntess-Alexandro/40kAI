@@ -6,4 +6,8 @@ if [ -f ".venv/bin/activate" ]; then
   source .venv/bin/activate
 fi
 
+if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+  export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
+fi
+
 python -m viewer "$@"

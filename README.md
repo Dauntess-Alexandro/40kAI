@@ -71,6 +71,13 @@ python -m viewer
 scripts/viewer.sh
 ```
 
+Если запуск в headless окружении (без DISPLAY/WAYLAND), viewer автоматически переключится на
+`QT_QPA_PLATFORM=offscreen`. Для принудительного режима можно запустить так:
+
+```bash
+QT_QPA_PLATFORM=offscreen python -m viewer
+```
+
 ---
 
 # 📅 19.01.26
