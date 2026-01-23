@@ -4,8 +4,6 @@
 #include <stdlib.h>
 #include <string>
 #include <fstream>
-#include <thread>
-#include <chrono>
 #include <sstream>
 #include <algorithm>
 #include <cctype>
@@ -218,33 +216,26 @@ void PopUp :: update() {
   }
 }
 
-void PopUp :: keepUpdating() {
-  while (true) {
-    update();
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-  }
-}
-
 void PopUp :: updateImage() {
 	pictureBox.set("img/board.png");
   update();
 }
 
-void PopUp :: keepUpdatingElecBoogaloo() {
-	while (true) {
-		updateImage();
-		std::this_thread::sleep_for(std::chrono::seconds(1));
-	}
+void PopUp :: backgroundUpdate(bool textMode) {
+  textModeEnabled = textMode;
+  if (updateConnection.connected()) {
+    updateConnection.disconnect();
+  }
+  updateConnection = Glib::signal_timeout().connect(
+      sigc::mem_fun(*this, &PopUp::onTimeout), 1000);
 }
 
-void PopUp :: backgroundUpdate(bool textMode) {
-  if (textMode == true) {
-	std::thread t(&PopUp::keepUpdating, this);
-	t.detach();
-  } else {
-	std::thread t(&PopUp::keepUpdatingElecBoogaloo, this);
-	t.detach();
-  }  
+bool PopUp :: onTimeout() {
+  if (!textModeEnabled) {
+    pictureBox.set("img/board.png");
+  }
+  update();
+  return true;
 }
 
 PopUp :: PopUp(bool textMode)

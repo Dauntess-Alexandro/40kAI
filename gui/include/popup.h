@@ -20,8 +20,7 @@ class PopUp : public Gtk::Window {
     bool isNum(char num);
     void update();
     void backgroundUpdate(bool textMode);
-    void keepUpdating();
-    void keepUpdatingElecBoogaloo();
+    bool onTimeout();
     void updateImage();
     void applyStyles();
   private:
@@ -58,6 +57,7 @@ class PopUp : public Gtk::Window {
     bool textModeEnabled;
     std::string lastLogLine;
     std::string logText;
+    sigc::connection updateConnection;
     HeaderBar bar;
     Button changeMode;
     Image pictureBox;
