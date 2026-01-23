@@ -19,15 +19,52 @@ class PopUp : public Gtk::Window {
     void update();
     void backgroundUpdate(bool textMode);
     void keepUpdating();
-    void keepUpdatingElecBoogaloo();
-    void updateImage();
+    void update_text_view();
   private:
-    Label contents;
-    Fixed fixed;
-    ScrolledWindow scrolledWindow;
+    std::string response;
+    std::string boardText;
+    bool textModeActive;
+
     HeaderBar bar;
-    Button changeMode;
-    Image pictureBox;
+
+    Gtk::Box rootBox;
+    Gtk::Box topRow;
+    Gtk::Box rightSidebar;
+    Gtk::Box statusBox;
+    Gtk::Box legendBox;
+    Gtk::Box statusBarBox;
+    Gtk::Box logBox;
+    Gtk::Box logButtonsRow;
+    Gtk::Box logButtonsLeft;
+    Gtk::Box logButtonsRight;
+
+    Gtk::Frame statusFrame;
+    Gtk::Frame legendFrame;
+    Gtk::Frame statusBarFrame;
+    Gtk::Frame logFrame;
+
+    Gtk::ScrolledWindow boardScroll;
+    Gtk::Stack boardStack;
+    Gtk::TextView boardView;
+    Gtk::Image pictureBox;
+
+    Gtk::Label statusSummaryLabel;
+    Gtk::Label statusVpCpLabel;
+
+    Gtk::Label legendModelLabel;
+    Gtk::Label legendPlayerLabel;
+    Gtk::Label legendObjectiveLabel;
+
+    Gtk::Label statusLinePrimary;
+    Gtk::Label statusLineSecondary;
+
+    Gtk::ScrolledWindow logScroll;
+    Gtk::TextView logView;
+    Gtk::Button clearLogButton;
+    Gtk::Button copyLogButton;
+    Gtk::CheckButton autoScrollToggle;
+
+    Glib::Dispatcher dispatcher;
 };
 
 #endif
