@@ -155,12 +155,10 @@ else:
 reward = 0
 if playInGUI == False:
     print("\nInstructions:\n")
-    print("Observe board at board.txt or click the 'Show Board' button")
-    print("The popup from the button automatically updates, so you won't need to keep pressing it")
     print("The player (you) controls units starting with 1 (i.e. 11, 12, etc)")
     print("The model controls units starting with 2 (i.e. 21, 22, etc)\n")
 else:
-    sendToGUI("\nInstructions:\nObserve board at board.txt or click the 'Show Board' button\nThe popup from the button automatically updates, so you won't need to keep pressing it\nThe player (you) controls units starting with 1 (i.e. 11, 12, etc)\nThe model controls units starting with 2 (i.e. 21, 22, etc)\n")
+    sendToGUI("\nInstructions:\nThe player (you) controls units starting with 1 (i.e. 11, 12, etc)\nThe model controls units starting with 2 (i.e. 21, 22, etc)\n")
 
 while isdone == False:
     done, info = env.player()

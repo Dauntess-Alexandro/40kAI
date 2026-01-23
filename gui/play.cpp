@@ -52,8 +52,12 @@ Play :: Play() {
 	bar.set_show_close_button(true);
 	set_titlebar(bar);
 
+	set_default_size(600, 500);
+	set_size_request(500, 400);
+
 	add(scrolledWindow);
 	scrolledWindow.add(fixed);
+	scrolledWindow.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
 
 	bar.set_title("Playing Against the Model");
 
@@ -69,10 +73,12 @@ Play :: Play() {
 	});
 
 	text.set_text("When the game starts, text will appear here");
+	text.set_line_wrap(true);
 	dispatcher.connect(sigc::mem_fun(*this, &Play::update_text_view));
 	backgroundUpdate();
 	innerWindow.add(text);
-	innerWindow.set_size_request(350,100);
+	innerWindow.set_size_request(520,260);
+	innerWindow.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
 	
 	
 	fixed.add(numBox);
@@ -82,6 +88,6 @@ Play :: Play() {
 	fixed.move(numBox, 10, 120);
 	fixed.move(enter, 10, 170);
 
-    resize(400,400);
+    resize(600,500);
     show_all();
 }

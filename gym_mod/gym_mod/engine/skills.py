@@ -123,12 +123,12 @@ def apply_end_of_command_phase(env, side: str, dice_fn: DiceFn, log_fn: LogFn) -
     if side == "model":
         health = env.unit_health
         data = env.unit_data
-        side_label = "MODEL"
+        side_label = env._display_side(side) if hasattr(env, "_display_side") else "MODEL"
         unit_id_offset = 21
     else:
         health = env.enemy_health
         data = env.enemy_data
-        side_label = "ENEMY"
+        side_label = env._display_side(side) if hasattr(env, "_display_side") else "ENEMY"
         unit_id_offset = 11
 
     for i in range(len(health)):

@@ -822,12 +822,16 @@ class Warhammer40kEnv(gym.Env):
         unit_label = self._format_unit_label(side, unit_idx, unit_id=unit_id)
         self._log(f"[{side_label}] {unit_label}: {msg}")
 
-    def _side_label(self, side: str, manual: bool = False) -> str:
+    def _display_side(self, side: str) -> str:
+        if side == "enemy":
+            return "PLAYER"
         if side == "model":
             return "MODEL"
-        if side == "enemy":
-            return "PLAYER" if manual else "ENEMY"
         return side.upper()
+
+    def _side_label(self, side: str, manual: bool = False) -> str:
+        _ = manual
+        return self._display_side(side)
 
     def _log_phase_msg(self, side_label: str, phase: str, msg: str):
         if not self._should_log():
@@ -1541,8 +1545,6 @@ class Warhammer40kEnv(gym.Env):
                     self.updateBoard()
                     self.showBoard()
 
-                    self._log("Посмотрите board.txt или нажмите Show Board в GUI, чтобы увидеть поле.")
-                    self._log("Чтобы завершить игру, введите 'quit' в любом вопросе.")
                     dire = self._prompt_choice(
                         f"Ход юнита: {unit_label}. Выберите направление (up/down/left/right/none): ",
                         direction_map,
@@ -2130,7 +2132,7 @@ class Warhammer40kEnv(gym.Env):
                         dist = distance(self.enemy_coords[i], self.unit_coords[idOfM])
                         required = max(0, dist - 1)
                         self._log_unit_phase(
-                            "ENEMY",
+                            self._display_side("enemy"),
                             "charge",
                             i + 21,
                             i,
@@ -2151,7 +2153,7 @@ class Warhammer40kEnv(gym.Env):
                             self.enemyCharged[i] = 1
                             pos_after = tuple(self.enemy_coords[i])
                             self._log_unit_phase(
-                                "ENEMY",
+                                self._display_side("enemy"),
                                 "charge",
                                 i + 21,
                                 i,
@@ -2496,7 +2498,7 @@ class Warhammer40kEnv(gym.Env):
             "fight",
             "Начало Fight phase. Первым выбирает активный игрок. "
             f"Eligible MODEL: {[i + 21 for i in model_eligible]}, "
-            f"Eligible ENEMY: {[i + 11 for i in enemy_eligible]}.",
+            f"Eligible {self._display_side('enemy')}: {[i + 11 for i in enemy_eligible]}.",
         )
 
         fought_model = set()
@@ -2712,13 +2714,9 @@ class Warhammer40kEnv(gym.Env):
                 self.showBoard()
 
                 if self.playType is False:
-                    print("Посмотрите board.txt или нажмите Show Board в GUI, чтобы увидеть поле.")
-                    print("Чтобы завершить игру, введите 'quit' в любом вопросе.")
                     dire = input(f"Ход юнита: {unit_label}. Выберите направление (up/down/left/right/none): ")
                 else:
                     sendToGUI(
-                        "Посмотрите board.txt или нажмите Show Board в GUI, чтобы увидеть поле.\n"
-                        "Чтобы завершить игру, введите 'quit' в любом вопросе.\n"
                         f"Ход юнита: {unit_label}. Выберите направление (up/down/left/right/none): "
                     )
                     dire = recieveGUI()
@@ -3214,9 +3212,10 @@ class Warhammer40kEnv(gym.Env):
 
         fig.suptitle(title)
 
-        health = "Здоровье MODEL: {}, CP: {}; здоровье ENEMY: {}, CP {}\nVP {}".format(
+        health = "Здоровье MODEL: {}, CP: {}; здоровье {}: {}, CP {}\nVP {}".format(
             self.unit_health,
             self.modelCP,
+            self._display_side("enemy"),
             self.enemy_health,
             self.enemyCP,
             [self.modelVP, self.enemyVP],

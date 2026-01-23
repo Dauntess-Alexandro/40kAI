@@ -91,6 +91,10 @@ Form :: Form() {
   bar.pack_end(help);
   set_titlebar(bar);
 
+  set_default_size(1200, 900);
+  set_size_request(1000, 700);
+  scrolledWindow.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
+
   add(scrolledWindow);
   scrolledWindow.add(fixed);
 
