@@ -16,6 +16,7 @@ from gym_mod.engine.mission import (
     apply_end_of_battle,
 )
 from gym_mod.engine.skills import apply_end_of_command_phase
+from gym_mod.engine.logging_utils import format_unit
 
 # ============================================================
 # 🔧 FIX: resolve string weapons like "Bolt pistol [PISTOL]"
@@ -785,12 +786,16 @@ class Warhammer40kEnv(gym.Env):
         }
 
     def _should_log(self) -> bool:
-        verbose = os.getenv("VERBOSE_LOGS", "0") == "1" or os.getenv("MANUAL_DICE", "0") == "1"
-        if verbose:
+        if self._is_verbose():
             return True
         return self.trunc is False
 
-    def _log(self, msg: str):
+    def _is_verbose(self) -> bool:
+        return os.getenv("VERBOSE_LOGS", "0") == "1" or os.getenv("MANUAL_DICE", "0") == "1"
+
+    def _log(self, msg: str, verbose_only: bool = False):
+        if verbose_only and not self._is_verbose():
+            return
         if not self._should_log():
             return
         if self.playType is True:
@@ -802,18 +807,20 @@ class Warhammer40kEnv(gym.Env):
         if not self._should_log():
             return
         phase_title = {
-            "command": "Фаза командования!",
-            "movement": "Фаза движения!",
-            "shooting": "Фаза стрельбы!",
-            "charge": "Фаза чарджа!",
-            "fight": "Фаза битвы!",
-        }.get(phase, f"Фаза {phase}!")
-        self._log(f"[{side.upper()}] {phase_title}")
+            "command": "ФАЗА КОМАНДОВАНИЯ",
+            "movement": "ФАЗА ДВИЖЕНИЯ",
+            "shooting": "ФАЗА СТРЕЛЬБЫ",
+            "charge": "ФАЗА ЧАРДЖА",
+            "fight": "ФАЗА БОЯ",
+        }.get(phase, f"ФАЗА {phase.upper()}")
+        self._log(f"--- {phase_title} ---")
 
     def _log_unit(self, side: str, unit_id: int, unit_idx: int, msg: str):
         if not self._should_log():
             return
-        self._log(f"[{side.upper()}][Unit {unit_id}|idx={unit_idx}] {msg}")
+        side_label = self._side_label(side)
+        unit_label = self._format_unit_label(side, unit_idx, unit_id=unit_id)
+        self._log(f"[{side_label}] {unit_label}: {msg}")
 
     def _side_label(self, side: str, manual: bool = False) -> str:
         if side == "model":
@@ -830,7 +837,62 @@ class Warhammer40kEnv(gym.Env):
     def _log_unit_phase(self, side_label: str, phase: str, unit_id: int, unit_idx: int, msg: str):
         if not self._should_log():
             return
-        self._log(f"[{side_label}][{phase.upper()}][Unit {unit_id}|idx={unit_idx}] {msg}")
+        unit_label = self._format_unit_label(
+            "model" if side_label == "MODEL" else "enemy",
+            unit_idx,
+            unit_id=unit_id,
+        )
+        self._log(f"[{side_label}][{phase.upper()}] {unit_label}: {msg}")
+
+    def _log_action(self, side: str, unit_idx: int, msg: str, phase: str = None, verbose_only: bool = False):
+        side_label = self._side_label(side)
+        unit_label = self._format_unit_label(side, unit_idx)
+        phase_prefix = f"[{phase.upper()}] " if phase else ""
+        self._log(f"[{side_label}] {phase_prefix}{unit_label}: {msg}", verbose_only=verbose_only)
+
+    def _log_rule(
+        self,
+        side: str,
+        unit_idx: int,
+        rule_name: str,
+        details: str,
+        phase: str = None,
+        verbose_only: bool = False,
+    ):
+        rule_msg = f"Правило/стратагема «{rule_name}»: {details}"
+        self._log_action(side, unit_idx, rule_msg, phase=phase, verbose_only=verbose_only)
+
+    def _log_range(self, weapon: dict, dist: float, weapon_range: float, half_range: float, rapid_fire_on: bool):
+        weapon_name = weapon.get("Name", "оружие") if isinstance(weapon, dict) else "оружие"
+        rapid_text = "да" if rapid_fire_on else "нет"
+        self._log(
+            f"[Дальность] {weapon_name}: дистанция={dist:.1f}, range={weapon_range}, half={half_range}, rapid_fire={rapid_text}",
+            verbose_only=True,
+        )
+
+    def _unit_id(self, side: str, unit_idx: int) -> int:
+        side = side.lower()
+        return (21 + unit_idx) if side == "model" else (11 + unit_idx)
+
+    def _get_unit_data(self, side: str, unit_idx: int):
+        side = side.lower()
+        data_list = self.unit_data if side == "model" else self.enemy_data
+        if 0 <= unit_idx < len(data_list):
+            return data_list[unit_idx]
+        return None
+
+    def _format_unit_label(self, side: str, unit_idx: int, unit_id: int = None) -> str:
+        side = side.lower()
+        unit_id = unit_id if unit_id is not None else self._unit_id(side, unit_idx)
+        unit_data = self._get_unit_data(side, unit_idx)
+        return format_unit(
+            unit_id,
+            unit_data,
+            include_instance_id=self._is_verbose(),
+        )
+
+    def _format_unit_choices(self, side: str, indices: list[int]) -> str:
+        return ", ".join(self._format_unit_label(side, idx) for idx in indices)
 
     def _get_input(self, prompt: str) -> str:
         if self.playType is True:
@@ -848,7 +910,7 @@ class Warhammer40kEnv(gym.Env):
                 response = normalize[response]
             if response in allowed:
                 return response
-            self._log(f"Not a valid response ({allowed_labels}): {response}")
+            self._log(f"Неверный ввод (доступно: {allowed_labels}): {response}")
 
     def _prompt_yes_no(self, prompt: str, allow_quit: bool = True):
         normalize = {"y": "yes", "n": "no", "yes": "yes", "no": "no"}
@@ -901,12 +963,12 @@ class Warhammer40kEnv(gym.Env):
         if not self._unit_has_smoke(unit_data):
             return None
         if cp < 1:
-            self._log_unit_phase(
-                side_label,
-                phase,
-                defender_idx + (21 if defender_side == "model" else 11),
+            self._log_rule(
+                defender_side,
                 defender_idx,
-                "Smokescreen недоступен: недостаточно CP.",
+                "Smokescreen",
+                "Условие: есть SMOKE и 1 CP. Результат: недостаточно CP.",
+                phase=phase,
             )
             return None
 
@@ -926,12 +988,12 @@ class Warhammer40kEnv(gym.Env):
         else:
             self.enemyCP -= 1
 
-        self._log_unit_phase(
-            side_label,
-            phase,
-            defender_idx + (21 if defender_side == "model" else 11),
+        self._log_rule(
+            defender_side,
             defender_idx,
-            "Использован Smokescreen: -1 CP, эффект = benefit of cover до конца атаки.",
+            "Smokescreen",
+            "Триггер: выбран в качестве цели. Стоимость: -1 CP. Эффект: benefit of cover до конца атаки.",
+            phase=phase,
         )
         return "benefit of cover"
 
@@ -968,7 +1030,6 @@ class Warhammer40kEnv(gym.Env):
         Упрощение: проверяем дальность, не учитываем LOS.
         """
         side_label = self._side_label(defender_side, manual=manual)
-        target_label = self._side_label(moving_unit_side, manual=False)
         candidates = self._collect_overwatch_candidates(defender_side, moving_unit_side, moving_idx)
         if not candidates:
             self._log_phase_msg(side_label, phase, "Overwatch невозможен: нет доступных стреляющих юнитов.")
@@ -979,17 +1040,21 @@ class Warhammer40kEnv(gym.Env):
             self._log_phase_msg(side_label, phase, "Overwatch невозможен: недостаточно CP.")
             return
 
+        target_label = self._format_unit_label(moving_unit_side, moving_idx)
         self._log_phase_msg(
             side_label,
             phase,
-            f"Сработал триггер Overwatch против {target_label} Unit {moving_idx + (21 if moving_unit_side == 'model' else 11)}.",
+            f"Триггер Overwatch: цель переместилась. Цель: {target_label}.",
         )
 
         use_it = True
         chosen = candidates[0]
         if manual:
             ids = [c + (21 if defender_side == "model" else 11) for c in candidates]
-            strat = self._prompt_yes_no(f"Использовать Overwatch (1 CP)? Доступные юниты: {ids} (y/n): ")
+            candidates_label = self._format_unit_choices(defender_side, candidates)
+            strat = self._prompt_yes_no(
+                f"Использовать Overwatch (1 CP)? Доступные юниты: {candidates_label}. (y/n): "
+            )
             if strat is None:
                 self.game_over = True
                 return
@@ -1047,14 +1112,12 @@ class Warhammer40kEnv(gym.Env):
             )
 
         target_health[moving_idx] = modHealth
-        attacker_unit_id = chosen + (21 if defender_side == "model" else 11)
-        target_unit_id = moving_idx + (21 if moving_unit_side == "model" else 11)
-        self._log_unit_phase(
-            side_label,
-            phase,
-            attacker_unit_id,
+        self._log_rule(
+            defender_side,
             chosen,
-            f"Overwatch по {target_label} Unit {target_unit_id}: -1 CP, урон {float(np.sum(dmg))}.",
+            "Overwatch",
+            f"Цель: {target_label}. Стоимость: -1 CP. Итоговый урон: {float(np.sum(dmg))}.",
+            phase=phase,
         )
         if _logger is not None:
             _logger.print_shoot_report(
@@ -1094,19 +1157,15 @@ class Warhammer40kEnv(gym.Env):
                 eligible.append(i)
 
         if not eligible:
-            self._log_phase_msg(side_label, phase, "Heroic Intervention недоступен: нет eligible юнитов в 6\".")
+            self._log_phase_msg(side_label, phase, "Heroic Intervention недоступен: нет подходящих юнитов в 6\".")
             return
 
         if defender_cp < 2:
             self._log_phase_msg(side_label, phase, "Heroic Intervention недоступен: недостаточно CP.")
             return
 
-        unit_ids = [i + (21 if defender_side == "model" else 11) for i in eligible]
-        self._log_phase_msg(
-            side_label,
-            phase,
-            f"Доступные юниты для Heroic Intervention: {unit_ids}.",
-        )
+        unit_choices = self._format_unit_choices(defender_side, eligible)
+        self._log_phase_msg(side_label, phase, f"Доступные юниты для Heroic Intervention: {unit_choices}.")
 
         use_it = True
         chosen = eligible[0]
@@ -1153,33 +1212,26 @@ class Warhammer40kEnv(gym.Env):
                 value = int(response)
                 if min_val <= value <= max_val:
                     return value
-                self._log(f"Not in range ({min_val}..{max_val}): {value}")
+                self._log(f"Значение вне диапазона ({min_val}..{max_val}): {value}")
             else:
-                self._log("Not a number, try again.")
+                self._log("Это не число, попробуйте снова.")
 
     def begin_phase(self, side: str, phase: str):
         self.active_side = side
         self.phase = phase
         if not self._round_banner_shown:
-            self._log(f"=== BATTLE ROUND {self.battle_round} ===")
+            self._log(f"=== БОЕВОЙ РАУНД {self.battle_round} ===")
             self._round_banner_shown = True
         if phase == "command":
-            self._log(f"--- {side.upper()} TURN ---")
+            self._log(f"--- ХОД {self._side_label(side)} ---")
             if side == "model":
                 self.unitFellBack = [False] * len(self.unit_health)
             elif side == "enemy":
                 self.enemyFellBack = [False] * len(self.enemy_health)
-        phase_title = {
-            "command": "Command phase!",
-            "movement": "Movement phase!",
-            "shooting": "Shooting phase!",
-            "charge": "Charge phase!",
-            "fight": "Fight phase!",
-        }.get(phase, f"{phase.title()} phase!")
-        self._log(phase_title)
+        self._log_phase(self._side_label(side), phase)
 
     def _end_battle_round(self):
-        self._log(f"=== END OF BATTLE ROUND {self.battle_round} ===")
+        self._log(f"=== КОНЕЦ БОЕВОГО РАУНДА {self.battle_round} ===")
         self.battle_round += 1
         self.numTurns = self.battle_round
         self._round_banner_shown = False
@@ -1203,29 +1255,30 @@ class Warhammer40kEnv(gym.Env):
             reward_delta = 0
             battle_shock = [False] * len(self.unit_health)
             for i in range(len(self.unit_health)):
+                unit_label = self._format_unit_label("model", i)
                 if isBelowHalfStr(self.unit_data[i], self.unit_health[i]) is True and self.unit_health[i] > 0:
                     if self.trunc is False:
-                        self._log("This unit is Battle-shocked, starting test...")
-                        self._log("Rolling 2D6...")
+                        self._log(f"{unit_label}: ниже половины состава, тест Battle-shock.")
+                        self._log("Бросок 2D6...", verbose_only=True)
                     diceRoll = dice(num=2)
                     if self.trunc is False:
-                        self._log(f"Model rolled {diceRoll[0]} {diceRoll[1]}")
+                        self._log(f"Бросок: {diceRoll[0]} {diceRoll[1]}", verbose_only=True)
                     if sum(diceRoll) >= self.unit_data[i]["Ld"]:
                         self.modelOC[i] = self.unit_data[i]["OC"]
                         if self.trunc is False:
-                            self._log("Battle-shock test passed!")
+                            self._log(f"{unit_label}: тест Battle-shock пройден.")
                     else:
                         battle_shock[i] = True
                         self.modelOC[i] = 0
                         if self.trunc is False:
-                            self._log("Battle-shock test failed")
+                            self._log(f"{unit_label}: тест Battle-shock провален.")
                         if action and action.get("use_cp") == 1 and action.get("cp_on") == i:
                             if self.modelCP - 1 >= 0:
                                 battle_shock[i] = False
                                 reward_delta += 0.5
                                 self.modelCP -= 1
                                 if self.trunc is False:
-                                    self._log("Used Insane Bravery Stratagem to pass Battle Shock test")
+                                    self._log(f"{unit_label}: применена Insane Bravery (-1 CP), тест пройден.")
                             else:
                                 reward_delta -= 0.5
             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
@@ -1240,21 +1293,22 @@ class Warhammer40kEnv(gym.Env):
             for i in range(len(self.enemy_health)):
                 playerName = i + 11
                 battleSh = False
+                unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
                 if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.unit_health[i] > 0:
-                    self._log("This unit is Battle-shocked, starting test...")
-                    self._log("Rolling 2D6...")
+                    self._log(f"{unit_label}: ниже половины состава, тест Battle-shock.")
+                    self._log("Бросок 2D6...", verbose_only=True)
                     diceRoll = player_dice(num=2)
-                    self._log(f"You rolled {diceRoll[0]} {diceRoll[1]}")
+                    self._log(f"Бросок: {diceRoll[0]} {diceRoll[1]}", verbose_only=True)
                     if sum(diceRoll) >= self.enemy_data[i]["Ld"]:
-                        self._log("Battle-shock test passed!")
+                        self._log(f"{unit_label}: тест Battle-shock пройден.")
                         self.enemyOC[i] = self.enemy_data[i]["OC"]
                     else:
                         battleSh = True
-                        self._log("Battle-shock test failed")
+                        self._log(f"{unit_label}: тест Battle-shock провален.")
                         self.enemyOC[i] = 0
                         if self.enemyCP - 1 >= 0:
                             strat = self._prompt_yes_no(
-                                f"Would you like to use the Insane Bravery Strategem for Unit {playerName}? (y/n): "
+                                f"{unit_label}. Использовать стратагему Insane Bravery (1 CP)? (y/n): "
                             )
                             if strat is None:
                                 self.game_over = True
@@ -1282,22 +1336,23 @@ class Warhammer40kEnv(gym.Env):
             self._enemy_use_cp = use_cp
             for i in range(len(self.enemy_health)):
                 battleSh = False
+                unit_label = self._format_unit_label("enemy", i)
                 if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.unit_health[i] > 0:
                     if self.trunc is False:
-                        self._log("This unit is Below Half Strength, starting test...")
-                        self._log("Rolling 2D6...")
+                        self._log(f"{unit_label}: ниже половины состава, тест Battle-shock.")
+                        self._log("Бросок 2D6...", verbose_only=True)
                     diceRoll = dice(num=2)
                     if self.trunc is False:
-                        self._log(f"Player rolled {diceRoll[0]} {diceRoll[1]}")
+                        self._log(f"Бросок: {diceRoll[0]} {diceRoll[1]}", verbose_only=True)
                     if sum(diceRoll) >= self.enemy_data[i]["Ld"]:
                         if self.trunc is False:
-                            self._log("Battle-shock test passed!")
+                            self._log(f"{unit_label}: тест Battle-shock пройден.")
                         self.enemyOC[i] = self.enemy_data[i]["OC"]
                     else:
                         battleSh = True
                         self.enemyOC[i] = 0
                         if self.trunc is False:
-                            self._log("Battle-shock test failed")
+                            self._log(f"{unit_label}: тест Battle-shock провален.")
                         if use_cp == 1 and cp_on == i and self.enemyCP - 1 >= 0:
                             battleSh = False
                             self.enemyCP -= 1
@@ -1402,7 +1457,7 @@ class Warhammer40kEnv(gym.Env):
                             "MODEL",
                             modelName,
                             i,
-                            f"Цель в ближнем бою мертва (Enemy Unit {idOfE + 11}), юнит выходит из боя. Позиция: {pos_before}",
+                            f"Цель в ближнем бою мертва ({self._format_unit_label('enemy', idOfE)}), юнит выходит из боя. Позиция: {pos_before}",
                         )
                     else:
                         if action["attack"] == 0:
@@ -1412,7 +1467,7 @@ class Warhammer40kEnv(gym.Env):
                                 "MODEL",
                                 modelName,
                                 i,
-                                f"Отступление из боя с Enemy Unit {idOfE + 11}. Позиция до: {pos_before}",
+                                f"Отступление из боя с {self._format_unit_label('enemy', idOfE)}. Позиция до: {pos_before}",
                             )
                             self.unitFellBack[i] = True
                             if battleSh is True:
@@ -1440,7 +1495,7 @@ class Warhammer40kEnv(gym.Env):
                                 "MODEL",
                                 modelName,
                                 i,
-                                f"Остаётся в ближнем бою с Enemy Unit {idOfE + 11}, движение пропущено.",
+                                f"Остаётся в ближнем бою с {self._format_unit_label('enemy', idOfE)}, движение пропущено.",
                             )
             return advanced_flags, reward_delta
 
@@ -1451,15 +1506,16 @@ class Warhammer40kEnv(gym.Env):
             for i in range(len(self.enemy_health)):
                 playerName = i + 11
                 battleSh = battle_shock[i] if battle_shock else False
+                unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
                 pos_before = tuple(self.enemy_coords[i])
                 if self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
-                    fall_back = self._prompt_yes_no(f"Would you like Unit {playerName} to fallback? (y/n): ")
+                    fall_back = self._prompt_yes_no(f"{unit_label}. Отступить (fallback)? (y/n): ")
                     if fall_back is None:
                         self.game_over = True
                         return None
                     if fall_back:
                         idOfE = self.enemyInAttack[i][1]
-                        self._log(f"Player Unit {playerName} fell back from Enemy unit {idOfE + 21}")
+                        self._log(f"{unit_label} отступил из боя с {self._format_unit_label('model', idOfE)}")
                         self.enemyFellBack[i] = True
                         if battleSh is True:
                             diceRoll = dice()
@@ -1472,7 +1528,7 @@ class Warhammer40kEnv(gym.Env):
                     else:
                         idOfE = self.enemyInAttack[i][1]
                         self._log(
-                            f"Player Unit {playerName} stays in combat with Model Unit {idOfE + 21} (will fight in Fight Phase)"
+                            f"{unit_label} остаётся в бою с {self._format_unit_label('model', idOfE)} (будет драться в фазе боя)."
                         )
                     continue
 
@@ -1485,10 +1541,10 @@ class Warhammer40kEnv(gym.Env):
                     self.updateBoard()
                     self.showBoard()
 
-                    self._log("Take a look at board.txt or click the Show Board button in the GUI to view the current board")
-                    self._log("If you would like to end the game type 'quit' into the prompt")
+                    self._log("Посмотрите board.txt или нажмите Show Board в GUI, чтобы увидеть поле.")
+                    self._log("Чтобы завершить игру, введите 'quit' в любом вопросе.")
                     dire = self._prompt_choice(
-                        f"Enter the direction of movement for Unit {playerName} (up, down, left, right, none): ",
+                        f"Ход юнита: {unit_label}. Выберите направление (up/down/left/right/none): ",
                         direction_map,
                         normalize,
                     )
@@ -1499,20 +1555,20 @@ class Warhammer40kEnv(gym.Env):
                     advanced = False
                     move_num = 0
                     if dire != "none":
-                        adv = self._prompt_yes_no("Advance? (y/n): ")
+                        adv = self._prompt_yes_no("Сделать Advance? (y/n): ")
                         if adv is None:
                             self.game_over = True
                             return None
                         if adv:
                             advanced = True
-                            self._log("Rolling 1 D6 for Advance...")
+                            self._log("Бросок 1D6 на Advance...", verbose_only=True)
                             roll = player_dice()
-                            self._log(f"You rolled a {roll}")
+                            self._log(f"Бросок: {roll}", verbose_only=True)
                             movement_cap = self.enemy_data[i]["Movement"] + roll
                         else:
                             movement_cap = self.enemy_data[i]["Movement"]
                         move_num = self._prompt_int(
-                            f"How many inches would you like to move (0..{movement_cap}): ",
+                            f"На сколько дюймов двигаться (0..{movement_cap}): ",
                             0,
                             movement_cap,
                         )
@@ -1659,11 +1715,12 @@ class Warhammer40kEnv(gym.Env):
                             reason = "цель с меньшим HP"
                         else:
                             reason = "выбор политики"
+                        target_list = self._format_unit_choices("enemy", shootAbleUnits)
                         self._log_unit(
                             "MODEL",
                             modelName,
                             i,
-                            f"Цели в дальности: {target_ids}, выбрана: {idOfE + 11} (причина: {reason})",
+                            f"Цели в дальности: {target_list}, выбрана: {self._format_unit_label('enemy', idOfE)} (причина: {reason})",
                         )
                         effect = self._maybe_use_smokescreen(
                             defender_side="enemy",
@@ -1700,12 +1757,18 @@ class Warhammer40kEnv(gym.Env):
                             "MODEL",
                             modelName,
                             i,
-                            f"Итог урона по Enemy Unit {idOfE + 11}: {float(np.sum(dmg))}",
+                            f"Итог урона по {self._format_unit_label('enemy', idOfE)}: {float(np.sum(dmg))}",
                         )
                         if self.trunc is False:
-                            self._log(f"Model Unit {modelName} shoots Enemy Unit {idOfE + 11} {float(np.sum(dmg))} damage")
+                            self._log(
+                                f"{self._format_unit_label('model', i)} стреляет по {self._format_unit_label('enemy', idOfE)}: урон {float(np.sum(dmg))}."
+                            )
                         else:
-                            self.modelUpdates += "Model Unit {} shoots Enemy Unit {} {} times\n".format(modelName, idOfE + 11, sum(dmg))
+                            self.modelUpdates += "{} стреляет по {} {} раз(а)\n".format(
+                                self._format_unit_label("model", i),
+                                self._format_unit_label("enemy", idOfE),
+                                sum(dmg),
+                            )
                         if self.trunc is False and _logger is not None:
                             _logger.print_shoot_report(
                                 weapon=self.unit_weapon[i],
@@ -1716,28 +1779,29 @@ class Warhammer40kEnv(gym.Env):
                             )
                     else:
                         reward_delta -= 0.5
-                        target_ids = [j + 11 for j in shootAbleUnits]
+                        target_list = self._format_unit_choices("enemy", shootAbleUnits)
                         self._log_unit(
                             "MODEL",
                             modelName,
                             i,
-                            f"Цели в дальности: {target_ids}, выбрана недоступная {idOfE + 11}. Стрельба пропущена.",
+                            f"Цели в дальности: {target_list}, выбрана недоступная цель {idOfE + 11}. Стрельба пропущена.",
                         )
                         if self.trunc is False:
-                            self._log(f"Model Unit {modelName} fails to shoot an Enemy Unit")
+                            self._log(f"{self._format_unit_label('model', i)} не смог стрелять: выбранная цель недоступна.")
                 else:
                     self._log_unit("MODEL", modelName, i, "Нет целей в дальности, стрельба пропущена.")
             return reward_delta
         elif side == "enemy" and manual:
             for i in range(len(self.enemy_health)):
                 playerName = i + 11
+                unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
                 advanced = advanced_flags[i] if advanced_flags else False
                 if self.enemyFellBack[i]:
-                    self._log(f"Unit {playerName} Fell Back this turn — skipping shooting")
+                    self._log(f"{unit_label}: отступил в этом ходу — стрельба пропущена.")
                     continue
                 if self.enemy_weapon[i] != "None":
                     if advanced and not weapon_is_assault(self.enemy_weapon[i]):
-                        self._log("You advanced — non-Assault weapon, skipping shooting")
+                        self._log(f"{unit_label}: был Advance без Assault — стрельба пропущена.")
                     else:
                         shootAble = np.array([])
                         for j in range(len(self.unit_health)):
@@ -1746,8 +1810,9 @@ class Warhammer40kEnv(gym.Env):
                         if len(shootAble) > 0:
                             response = False
                             while response is False:
+                                targets_label = self._format_unit_choices("model", shootAble.astype(int).tolist())
                                 shoot = self._get_input(
-                                    "Select which enemy unit you would like to shoot ({}) with Unit {}: ".format(shootAble + 21, playerName)
+                                    f"Выберите цель для стрельбы. Стреляет: {unit_label}. Доступные цели: {targets_label}. Введите ID цели: "
                                 ).strip()
                                 if shoot.lower() in ("quit", "q"):
                                     self.game_over = True
@@ -1772,7 +1837,9 @@ class Warhammer40kEnv(gym.Env):
                                         roller=logger.roll,
                                     )
                                     self.unit_health[idOfE] = modHealth
-                                    self._log(f"Player Unit {playerName} нанёс {sum(dmg)} урона по Model Unit {idOfE + 21}")
+                                    self._log(
+                                        f"{unit_label} нанёс {sum(dmg)} урона по {self._format_unit_label('model', idOfE)}"
+                                    )
                                     logger.print_shoot_report(
                                         weapon=self.enemy_weapon[i],
                                         attacker_data=self.enemy_data[i],
@@ -1782,20 +1849,20 @@ class Warhammer40kEnv(gym.Env):
                                     )
                                     response = True
                                 else:
-                                    self._log("Not an available unit")
+                                    self._log("Недоступная цель, попробуйте снова.")
                 else:
-                    self._log("No available weapons to shoot")
+                    self._log("Нет доступного оружия для стрельбы.")
         elif side == "enemy":
             for i in range(len(self.enemy_health)):
                 advanced = advanced_flags[i] if advanced_flags else False
                 if self.enemyFellBack[i]:
                     if self.trunc is False:
-                        self._log(f"Enemy Unit {i + 21} Fell Back — skipping shooting")
+                        self._log(f"{self._format_unit_label('enemy', i)}: отступил — стрельба пропущена.")
                     continue
                 if self.enemy_weapon[i] != "None":
                     if advanced and not weapon_is_assault(self.enemy_weapon[i]):
                         if self.trunc is False:
-                            self._log("Enemy advanced — non-Assault weapon, skipping shooting")
+                            self._log(f"{self._format_unit_label('enemy', i)}: Advance без Assault — стрельба пропущена.")
                     else:
                         shootAbleUnits = []
                         for j in range(len(self.unit_health)):
@@ -1820,7 +1887,9 @@ class Warhammer40kEnv(gym.Env):
                             )
                             self.unit_health[idOfM] = modHealth
                             if self.trunc is False:
-                                self._log(f"Enemy Unit {i + 21} shoots Model Unit {idOfM + 11} {float(np.sum(dmg))} damage")
+                                self._log(
+                                    f"{self._format_unit_label('enemy', i)} стреляет по {self._format_unit_label('model', idOfM)}: урон {float(np.sum(dmg))}."
+                                )
         return None
 
     def charge_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False):
@@ -1853,12 +1922,12 @@ class Warhammer40kEnv(gym.Env):
                         any_charge_targets = True
                     if action["attack"] != 1:
                         if potential_targets:
-                            target_ids = [j + 11 for j in potential_targets]
+                            target_list = self._format_unit_choices("enemy", potential_targets)
                             self._log_unit(
                                 "MODEL",
                                 modelName,
                                 i,
-                                f"Доступные цели для чарджа: {target_ids}. Решение: пропуск чарджа.",
+                                f"Доступные цели для чарджа: {target_list}. Решение: пропуск чарджа.",
                             )
                         else:
                             self._log_unit("MODEL", modelName, i, "Нет целей в 12\", чардж пропущен.")
@@ -1873,7 +1942,7 @@ class Warhammer40kEnv(gym.Env):
                                     chargeAble.append(j)
                     if len(chargeAble) > 0:
                         idOfE = action["charge"]
-                        target_ids = [j + 11 for j in chargeAble]
+                        target_list = self._format_unit_choices("enemy", chargeAble)
                         dist_to_target = distance(self.enemy_coords[idOfE], self.unit_coords[i]) if idOfE in chargeAble else None
                         if _verbose_logs_enabled():
                             roll_text = f"бросок: {dice_vals[0]} + {dice_vals[1]} = {diceRoll}"
@@ -1885,13 +1954,13 @@ class Warhammer40kEnv(gym.Env):
                                 "charge",
                                 modelName,
                                 i,
-                                f"Charge объявлен по цели Enemy Unit {idOfE + 11}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {dice_vals[0]} + {dice_vals[1]} = {diceRoll}.",
+                                f"Charge объявлен по цели {self._format_unit_label('enemy', idOfE)}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {dice_vals[0]} + {dice_vals[1]} = {diceRoll}.",
                             )
                             self._log_unit(
                                 "MODEL",
                                 modelName,
                                 i,
-                                f"Чардж цели: {target_ids}, выбрана {idOfE + 11} (dist={dist_to_target:.1f}). {roll_text}. Результат: успех.",
+                                f"Чардж цели: {target_list}, выбрана {self._format_unit_label('enemy', idOfE)} (dist={dist_to_target:.1f}). {roll_text}. Результат: успех.",
                             )
                             self.unitInAttack[i][0] = 1
                             self.unitInAttack[i][1] = idOfE
@@ -1907,7 +1976,7 @@ class Warhammer40kEnv(gym.Env):
                                 "charge",
                                 modelName,
                                 i,
-                                f"Charge move: from {pos_before} -> {pos_after}, ended_in_engagement={self.unitInAttack[i][0] == 1}.",
+                                f"Движение чарджа: {pos_before} -> {pos_after}, в контакте={self.unitInAttack[i][0] == 1}.",
                             )
                             # 10e: Heroic Intervention доступен защитнику после успешного charge move.
                             self._resolve_heroic_intervention(
@@ -1927,18 +1996,19 @@ class Warhammer40kEnv(gym.Env):
                                     "charge",
                                     modelName,
                                     i,
-                                    f"Charge объявлен по цели Enemy Unit {idOfE + 11}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {dice_vals[0]} + {dice_vals[1]} = {diceRoll}.",
+                                    f"Charge объявлен по цели {self._format_unit_label('enemy', idOfE)}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {dice_vals[0]} + {dice_vals[1]} = {diceRoll}.",
                                 )
+                            target_list = self._format_unit_choices("enemy", potential_targets)
                             self._log_unit(
                                 "MODEL",
                                 modelName,
                                 i,
-                                f"Чардж цели: {target_ids}, выбрана {idOfE + 11}. {roll_text}. Результат: провал ({reason}).",
+                                f"Чардж цели: {target_list}, выбрана {self._format_unit_label('enemy', idOfE)}. {roll_text}. Результат: провал ({reason}).",
                             )
                             reward_delta -= 0.5
                     else:
                         if potential_targets:
-                            target_ids = [j + 11 for j in potential_targets]
+                            target_list = self._format_unit_choices("enemy", potential_targets)
                             if _verbose_logs_enabled():
                                 roll_text = f"бросок: {dice_vals[0]} + {dice_vals[1]} = {diceRoll}"
                             else:
@@ -1947,7 +2017,7 @@ class Warhammer40kEnv(gym.Env):
                                 "MODEL",
                                 modelName,
                                 i,
-                                f"Цели в 12\": {target_ids}. {roll_text}. Нет достижимых целей.",
+                                f"Цели в 12\": {target_list}. {roll_text}. Нет достижимых целей.",
                             )
                         else:
                             self._log_unit("MODEL", modelName, i, "Нет целей в 12\", чардж пропущен.")
@@ -1959,13 +2029,14 @@ class Warhammer40kEnv(gym.Env):
             battle_shock = getattr(self, "_manual_enemy_battle_shock", None)
             for i in range(len(self.enemy_health)):
                 playerName = i + 11
+                unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
                 advanced = advanced_flags[i] if advanced_flags else False
                 pos_before = tuple(self.enemy_coords[i])
                 if self.enemyFellBack[i]:
-                    self._log(f"Unit {playerName} Fell Back this turn — skipping charge")
+                    self._log(f"{unit_label}: отступил в этом ходу — чардж пропущен.")
                     continue
                 if advanced:
-                    self._log("You advanced — cannot charge, skipping charge")
+                    self._log(f"{unit_label}: был Advance — чардж невозможен.")
                     continue
                 charg = np.array([])
                 for j in range(len(self.unit_health)):
@@ -1973,17 +2044,18 @@ class Warhammer40kEnv(gym.Env):
                         charg = np.append(charg, j)
                 if len(charg) > 0:
                     any_chargeable = True
-                    want_charge = self._prompt_yes_no(f"Would you like Unit {playerName} to charge? (y/n): ")
+                    want_charge = self._prompt_yes_no(f"{unit_label}. Объявить чардж? (y/n): ")
                     if want_charge is None:
                         self.game_over = True
                         return None
                     if not want_charge:
-                        self._log(f"Player Unit {playerName} decided to skip charge")
+                        self._log(f"{unit_label} решил пропустить чардж.")
                         continue
                     response = False
                     while response is False:
+                        targets_label = self._format_unit_choices("model", charg.astype(int).tolist())
                         attk = self._get_input(
-                            "Select which enemy you would like to charge ({}) with Unit {}: ".format(charg + 21, playerName)
+                            f"Выберите цель для чарджа. Доступные цели: {targets_label}. Введите ID цели: "
                         ).strip()
                         if attk.lower() in ("quit", "q"):
                             self.game_over = True
@@ -1991,19 +2063,19 @@ class Warhammer40kEnv(gym.Env):
                         if is_num(attk) is True and int(attk) - 21 in charg:
                             response = True
                             j = int(attk) - 21
-                            self._log("Rolling 2 D6...")
+                            self._log("Бросок 2D6...", verbose_only=True)
                             roll = player_dice(num=2)
-                            self._log(f"You rolled a {roll[0]} and {roll[1]}")
+                            self._log(f"Бросок: {roll[0]} и {roll[1]}", verbose_only=True)
                             dist_to_target = distance(self.enemy_coords[i], self.unit_coords[j])
                             self._log_unit_phase(
                                 self._side_label("enemy", manual=True),
                                 "charge",
                                 playerName,
                                 i,
-                                f"Charge объявлен по цели Model Unit {j + 21}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {roll[0]} + {roll[1]} = {sum(roll)}.",
+                                f"Charge объявлен по цели {self._format_unit_label('model', j)}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {roll[0]} + {roll[1]} = {sum(roll)}.",
                             )
                             if distance(self.enemy_coords[i], self.unit_coords[j]) - sum(roll) <= 5:
-                                self._log(f"Player Unit {playerName} Successfully charged Model Unit {j + 21}")
+                                self._log(f"{unit_label} успешно зачарджил {self._format_unit_label('model', j)}")
                                 self.enemyInAttack[i][0] = 1
                                 self.enemyInAttack[i][1] = j
                                 self.enemy_coords[i][0] = self.unit_coords[j][0] + 1
@@ -2019,7 +2091,7 @@ class Warhammer40kEnv(gym.Env):
                                     "charge",
                                     playerName,
                                     i,
-                                    f"Charge move: from {pos_before} -> {pos_after}, ended_in_engagement={self.enemyInAttack[i][0] == 1}.",
+                                    f"Движение чарджа: {pos_before} -> {pos_after}, в контакте={self.enemyInAttack[i][0] == 1}.",
                                 )
                                 # 10e: Heroic Intervention доступен защитнику после успешного charge move.
                                 self._resolve_heroic_intervention(
@@ -2030,22 +2102,22 @@ class Warhammer40kEnv(gym.Env):
                                     manual=False,
                                 )
                             else:
-                                self._log(f"Player Unit {playerName} Failed to charge Model Unit {j + 21}")
+                                self._log(f"{unit_label} не смог зачарджить {self._format_unit_label('model', j)}")
                         else:
-                            self._log("Not an available unit")
+                            self._log("Недоступная цель.")
             if not any_chargeable:
-                self._log("No available units to charge")
+                self._log("Нет доступных целей для чарджа.")
         elif side == "enemy":
             for i in range(len(self.enemy_health)):
                 advanced = advanced_flags[i] if advanced_flags else False
                 pos_before = tuple(self.enemy_coords[i])
                 if self.enemyFellBack[i]:
                     if self.trunc is False:
-                        self._log("Enemy Fell Back — cannot charge, skipping charge")
+                        self._log(f"{self._format_unit_label('enemy', i)}: отступил — чардж невозможен.")
                     continue
                 if advanced:
                     if self.trunc is False:
-                        self._log("Enemy advanced — cannot charge, skipping charge")
+                        self._log(f"{self._format_unit_label('enemy', i)}: был Advance — чардж невозможен.")
                 else:
                     chargeAble = []
                     diceRoll = sum(dice(num=2))
@@ -2062,12 +2134,12 @@ class Warhammer40kEnv(gym.Env):
                             "charge",
                             i + 21,
                             i,
-                            f"Charge объявлен по цели Model Unit {idOfM + 11}. Дистанция: {dist:.1f}. Бросок 2D6: {diceRoll}.",
+                            f"Charge объявлен по цели {self._format_unit_label('model', idOfM)}. Дистанция: {dist:.1f}. Бросок 2D6: {diceRoll}.",
                         )
                         if diceRoll >= required:
                             if self.trunc is False:
                                 self._log(
-                                    f"Enemy unit {i + 21} successfully charged Model unit {idOfM + 11} (roll {diceRoll} vs need {required:.1f})"
+                                    f"{self._format_unit_label('enemy', i)} успешно зачарджил {self._format_unit_label('model', idOfM)} (бросок {diceRoll} vs нужно {required:.1f})"
                                 )
                             self.enemy_coords[i][0] = self.unit_coords[idOfM][0] + 1
                             self.enemy_coords[i][1] = self.unit_coords[idOfM][1]
@@ -2095,7 +2167,7 @@ class Warhammer40kEnv(gym.Env):
                             )
                         elif self.trunc is False:
                             self._log(
-                                f"Enemy unit {i + 21} failed charge vs Model unit {idOfM + 11} (roll {diceRoll} vs need {required:.1f})"
+                                f"{self._format_unit_label('enemy', i)} не смог зачарджить {self._format_unit_label('model', idOfM)} (бросок {diceRoll} vs нужно {required:.1f})"
                             )
         return None
 
@@ -2108,9 +2180,9 @@ class Warhammer40kEnv(gym.Env):
             if not engaged_model and not engaged_enemy:
                 self._log("[MODEL] Ближний бой: нет доступных атак")
             else:
-                model_ids = [i + 21 for i in engaged_model]
-                enemy_ids = [i + 11 for i in engaged_enemy]
-                self._log(f"[MODEL] Ближний бой: участвуют Model units {model_ids}, Enemy units {enemy_ids}")
+                model_list = self._format_unit_choices("model", engaged_model)
+                enemy_list = self._format_unit_choices("enemy", engaged_enemy)
+                self._log(f"[MODEL] Ближний бой: участвуют {model_list}; противники {enemy_list}")
                 for idx in engaged_model:
                     def_idx = self.unitInAttack[idx][1]
                     if 0 <= def_idx < len(self.enemy_health):
@@ -2118,7 +2190,7 @@ class Warhammer40kEnv(gym.Env):
                             "MODEL",
                             idx + 21,
                             idx,
-                            f"В бою с Enemy Unit {def_idx + 11}",
+                            f"В бою с {self._format_unit_label('enemy', def_idx)}",
                         )
         self.resolve_fight_phase(active_side=side, trunc=self.trunc)
 
@@ -2276,7 +2348,7 @@ class Warhammer40kEnv(gym.Env):
                     "fight",
                     att_idx + 21,
                     att_idx,
-                    f"Выбран для атаки. Цель: Enemy Unit {def_idx + 11}.",
+                    f"Выбран для атаки. Цель: {self._format_unit_label('enemy', def_idx)}.",
                 )
 
                 weapon = self.unit_melee[att_idx]
@@ -2310,7 +2382,9 @@ class Warhammer40kEnv(gym.Env):
                 self.enemy_health[def_idx] = modHealth
 
                 wname = weapon.get("Name", "Melee") if isinstance(weapon, dict) else str(weapon)
-                _log(f"⚔️ Model Unit {att_idx + 21} fights Enemy Unit {def_idx + 11} with {wname}: dmg {float(np.sum(dmg))} | HP {hp_before} -> {modHealth}")
+                _log(
+                    f"⚔️ {self._format_unit_label('model', att_idx)} атакует {self._format_unit_label('enemy', def_idx)} оружием {wname}: урон {float(np.sum(dmg))} | HP {hp_before} -> {modHealth}"
+                )
                 self._log_unit_phase(
                     "MODEL",
                     "fight",
@@ -2349,7 +2423,7 @@ class Warhammer40kEnv(gym.Env):
                     "fight",
                     att_idx + 11,
                     att_idx,
-                    f"Выбран для атаки. Цель: Model Unit {def_idx + 21}.",
+                    f"Выбран для атаки. Цель: {self._format_unit_label('model', def_idx)}.",
                 )
 
                 weapon = self.enemy_melee[att_idx]
@@ -2383,7 +2457,9 @@ class Warhammer40kEnv(gym.Env):
                 self.unit_health[def_idx] = modHealth
 
                 wname = weapon.get("Name", "Melee") if isinstance(weapon, dict) else str(weapon)
-                _log(f"⚔️ Enemy Unit {att_idx + 11} fights Model Unit {def_idx + 21} with {wname}: dmg {float(np.sum(dmg))} | HP {hp_before} -> {modHealth}")
+                _log(
+                    f"⚔️ {self._format_unit_label('enemy', att_idx)} атакует {self._format_unit_label('model', def_idx)} оружием {wname}: урон {float(np.sum(dmg))} | HP {hp_before} -> {modHealth}"
+                )
                 self._log_unit_phase(
                     enemy_label,
                     "fight",
@@ -2524,15 +2600,20 @@ class Warhammer40kEnv(gym.Env):
             print(self.get_info())
         else:
             info = self.get_info()
-            moreInfo = "Model Unit Health: {}, Player Unit Health: {}\nModel CP: {}, Player CP: {}\nModel VP: {}, Player VP: {}\n".format(
-                info["model health"], info["player health"], info["modelCP"], info["playerCP"], info["model VP"], info["player VP"]
+            moreInfo = "Здоровье MODEL: {}, здоровье PLAYER: {}\nCP MODEL: {}, CP PLAYER: {}\nVP MODEL: {}, VP PLAYER: {}\n".format(
+                info["model health"],
+                info["player health"],
+                info["modelCP"],
+                info["playerCP"],
+                info["model VP"],
+                info["player VP"],
             )
 
         if self.playType is not False:
             if self.modelUpdates != "":
-                sendToGUI(moreInfo + self.modelUpdates + "\nWould you like to continue: ")
+                sendToGUI(moreInfo + self.modelUpdates + "\nПродолжить? (y/n): ")
             else:
-                sendToGUI(moreInfo + "\nWould you like to continue: ")
+                sendToGUI(moreInfo + "\nПродолжить? (y/n): ")
             ans = recieveGUI()
             response = False
             while response is False:
@@ -2544,48 +2625,51 @@ class Warhammer40kEnv(gym.Env):
                     info = self.get_info
                     return self.game_over, info
                 else:
-                    sendToGUI("Its a yes or no question dude...: ")
+                    sendToGUI("Введите y/yes или n/no: ")
                     ans = recieveGUI()
 
         for i in range(len(self.enemy_health)):
             playerName = i + 11
+            unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
             pos_before = tuple(self.enemy_coords[i])
             if self.playType is False:
-                print("For unit", playerName)
+                print("Юнит:", unit_label)
             else:
-                sendToGUI("For unit {}".format(playerName))
+                sendToGUI("Юнит: {}".format(unit_label))
 
             battleSh = False
             if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.unit_health[i] > 0:
                 if self.playType is False:
-                    print("This unit is Battle-shocked, starting test...")
-                    print("Rolling 2D6...")
+                    print(f"{unit_label}: ниже половины состава, тест Battle-shock.")
+                    print("Бросок 2D6...")
                     diceRoll = player_dice(num=2)
-                    print("You rolled", diceRoll[0], diceRoll[1])
+                    print("Бросок:", diceRoll[0], diceRoll[1])
                 else:
                     diceRoll = player_dice(num=2)
-                    sendToGUI("This unit is Battle-shocked, starting test...\nRolling 2D6...\nYou rolled: {} and {}".format(diceRoll[0], diceRoll[1]))
+                    sendToGUI(
+                        f"{unit_label}: ниже половины состава, тест Battle-shock.\nБросок 2D6...\nРезультат: {diceRoll[0]} и {diceRoll[1]}"
+                    )
 
                 if sum(diceRoll) >= self.enemy_data[i]["Ld"]:
                     if self.playType is False:
-                        print("Battle-shock test passed!")
+                        print("Тест Battle-shock пройден.")
                     else:
-                        sendToGUI("Battle-shock test passed!")
+                        sendToGUI("Тест Battle-shock пройден.")
                     self.enemyOC[i] = self.enemy_data[i]["OC"]
                 else:
                     battleSh = True
                     if self.playType is False:
-                        print("Battle-shock test failed")
+                        print("Тест Battle-shock провален.")
                     else:
-                        sendToGUI("Battle-shock test failed")
+                        sendToGUI("Тест Battle-shock провален.")
 
                     response = False
                     self.enemyOC[i] = 0
                     if self.enemyCP - 1 >= 0:
                         if self.playType is False:
-                            strat = input("Would you like to use the Insane Bravery Strategem? (y/n): ")
+                            strat = input("Использовать стратагему Insane Bravery (1 CP)? (y/n): ")
                         else:
-                            sendToGUI("Would you like to use the Insane Bravery Strategem for Unit {}? (y/n): ".format(playerName))
+                            sendToGUI(f"{unit_label}. Использовать стратагему Insane Bravery (1 CP)? (y/n): ")
                             strat = recieveGUI()
 
                         while response is False:
@@ -2602,16 +2686,20 @@ class Warhammer40kEnv(gym.Env):
                                 return self.game_over, info
                             elif strat.lower() in ("?", "help"):
                                 if self.playType is False:
-                                    print("The Insane Bravery Stratagem costs 1 CP and is used when a unit fails a Battle-Shock Test. If used it treats the unit as if it passed.")
-                                    strat = input("Would you like to use the Insane Bravery Stratagem? (y/n): ")
+                                    print(
+                                        "Insane Bravery стоит 1 CP и применяется, когда юнит провалил тест Battle-shock. При использовании тест считается пройденным."
+                                    )
+                                    strat = input("Использовать стратагему Insane Bravery? (y/n): ")
                                 else:
-                                    sendToGUI("The Insane Bravery Stratagem costs 1 CP and is used when a unit fails a Battle-Shock Test. If used it treats the unit as if it passed.\nWould you like to use the Insane Bravery Stratagem? (y/n): ")
+                                    sendToGUI(
+                                        "Insane Bravery стоит 1 CP и применяется, когда юнит провалил тест Battle-shock. При использовании тест считается пройденным.\nИспользовать стратагему Insane Bravery? (y/n): "
+                                    )
                                     strat = recieveGUI()
                             else:
                                 if self.playType is False:
-                                    strat = input("Valid answers are: y, yes, n, and no: ")
+                                    strat = input("Допустимые ответы: y/yes/n/no: ")
                                 else:
-                                    sendToGUI("Valid answers are: y, yes, n, and no: ")
+                                    sendToGUI("Допустимые ответы: y/yes/n/no: ")
                                     strat = recieveGUI()
 
             if self.enemyInAttack[i][0] == 0 and self.enemy_health[i] > 0:
@@ -2624,14 +2712,14 @@ class Warhammer40kEnv(gym.Env):
                 self.showBoard()
 
                 if self.playType is False:
-                    print("Take a look at board.txt or click the Show Board button in the GUI to view the current board")
-                    print("If you would like to end the game type 'quit' into the prompt")
-                    dire = input("Enter the direction of movement (up, down, left, right, none (no move)): ")
+                    print("Посмотрите board.txt или нажмите Show Board в GUI, чтобы увидеть поле.")
+                    print("Чтобы завершить игру, введите 'quit' в любом вопросе.")
+                    dire = input(f"Ход юнита: {unit_label}. Выберите направление (up/down/left/right/none): ")
                 else:
                     sendToGUI(
-                        "Take a look at board.txt or click the Show Board button in the GUI to view the current board\n"
-                        "If you would like to end the game type 'quit' into the prompt\n"
-                        "Enter the direction of movement for Unit {} (up, down, left, right, none (no move)): ".format(playerName)
+                        "Посмотрите board.txt или нажмите Show Board в GUI, чтобы увидеть поле.\n"
+                        "Чтобы завершить игру, введите 'quit' в любом вопросе.\n"
+                        f"Ход юнита: {unit_label}. Выберите направление (up/down/left/right/none): "
                     )
                     dire = recieveGUI()
 
@@ -2646,24 +2734,24 @@ class Warhammer40kEnv(gym.Env):
 
                 if dire.lower() != "none":
                     if self.playType is False:
-                        adv = input("Advance? (y/n): ").strip().lower()
+                        adv = input("Сделать Advance? (y/n): ").strip().lower()
                         if adv in ("y", "yes"):
                             advanced = True
-                            print("Rolling 1 D6 for Advance...")
+                            print("Бросок 1D6 на Advance...")
                             roll = player_dice()
-                            print("You rolled a", roll)
+                            print("Бросок:", roll)
                             movement_cap = self.enemy_data[i]["Movement"] + roll
                         else:
                             movement_cap = self.enemy_data[i]["Movement"]
 
-                        move_len = input(f"How many inches would you like to move (0..{movement_cap}): ")
+                        move_len = input(f"На сколько дюймов двигаться (0..{movement_cap}): ")
                     else:
                         # GUI branch оставляем максимально похожим на старую логику
                         adv = "y"
                         advanced = True
                         roll = player_dice()
                         movement_cap = self.enemy_data[i]["Movement"] + roll
-                        sendToGUI("How many inches would you like to move your unit (Max: {}): ".format(movement_cap))
+                        sendToGUI(f"На сколько дюймов двигаться (0..{movement_cap}): ")
                         move_len = recieveGUI()
 
                     response = False
@@ -2674,9 +2762,9 @@ class Warhammer40kEnv(gym.Env):
                                 response = True
                             else:
                                 if self.playType is False:
-                                    move_len = input("Not in range, try again: ")
+                                    move_len = input("Вне диапазона, попробуйте снова: ")
                                 else:
-                                    sendToGUI("Not in range, try again: ")
+                                    sendToGUI("Вне диапазона, попробуйте снова: ")
                                     move_len = recieveGUI()
                         elif move_len.lower() in ("quit", "q"):
                             self.game_over = True
@@ -2684,9 +2772,9 @@ class Warhammer40kEnv(gym.Env):
                             return self.game_over, info
                         else:
                             if self.playType is False:
-                                move_len = input("Not a number, try again: ")
+                                move_len = input("Это не число, попробуйте снова: ")
                             else:
-                                sendToGUI("Not a number, try again: ")
+                                sendToGUI("Это не число, попробуйте снова: ")
                                 move_len = recieveGUI()
 
                 # apply movement using move_num (NOT cap)
@@ -2712,9 +2800,9 @@ class Warhammer40kEnv(gym.Env):
                         return self.game_over, info
                     else:
                         if self.playType is False:
-                            dire = input("Not a valid response (up, down, left, right): ")
+                            dire = input("Неверный ввод (up/down/left/right): ")
                         else:
-                            sendToGUI("Not a valid response (up, down, left, right): ")
+                            sendToGUI("Неверный ввод (up/down/left/right): ")
                             dire = recieveGUI()
                         response = False
 
@@ -2743,15 +2831,15 @@ class Warhammer40kEnv(gym.Env):
                 # ======= Shooting phase (Assault rule after Advance) =======
                 if self.enemy_weapon[i] != "None":
                     if self.playType is False:
-                        print("Beginning shooting phase!")
+                        print("Начинается фаза стрельбы!")
                     else:
-                        sendToGUI("Beginning shooting phase!")
+                        sendToGUI("Начинается фаза стрельбы!")
 
                     if advanced and not weapon_is_assault(self.enemy_weapon[i]):
                         if self.playType is False:
-                            print("You advanced — non-Assault weapon, skipping shooting")
+                            print("Advance без Assault — стрельба пропущена.")
                         else:
-                            sendToGUI("You advanced — non-Assault weapon, skipping shooting")
+                            sendToGUI("Advance без Assault — стрельба пропущена.")
                     else:
                         shootAble = np.array([])
                         for j in range(len(self.unit_health)):
@@ -2762,9 +2850,11 @@ class Warhammer40kEnv(gym.Env):
                             response = False
                             while response is False:
                                 if self.playType is False:
-                                    shoot = input("Select which enemy unit you would like to shoot ({}): ".format(shootAble + 21))
+                                    targets_label = self._format_unit_choices("model", shootAble.astype(int).tolist())
+                                    shoot = input(f"Выберите цель для стрельбы. Доступные цели: {targets_label}. Введите ID цели: ")
                                 else:
-                                    sendToGUI("Select which enemy unit you would like to shoot ({}) with Unit {}: ".format(shootAble + 21, playerName))
+                                    targets_label = self._format_unit_choices("model", shootAble.astype(int).tolist())
+                                    sendToGUI(f"Выберите цель для стрельбы. Стреляет: {unit_label}. Доступные цели: {targets_label}. Введите ID цели: ")
                                     shoot = recieveGUI()
 
                                 if is_num(shoot) is True and int(shoot) - 21 in shootAble:
@@ -2791,9 +2881,13 @@ class Warhammer40kEnv(gym.Env):
 
                                     self.unit_health[idOfE] = modHealth
                                     if self.playType is False:
-                                        print(f"Player Unit {playerName} нанёс {sum(dmg)} урона по Model Unit {idOfE + 21}")
+                                        print(
+                                            f"{unit_label} нанёс {sum(dmg)} урона по {self._format_unit_label('model', idOfE)}"
+                                        )
                                     else:
-                                        sendToGUI("Player Unit {} нанёс {} урона по Model Unit {}".format(playerName, sum(dmg), idOfE + 21))
+                                        sendToGUI(
+                                            f"{unit_label} нанёс {sum(dmg)} урона по {self._format_unit_label('model', idOfE)}"
+                                        )
 
                                     logger.print_shoot_report(
                                         weapon=self.enemy_weapon[i],
@@ -2809,26 +2903,26 @@ class Warhammer40kEnv(gym.Env):
                                     return self.game_over, info
                                 else:
                                     if self.playType is False:
-                                        print("Not an available unit")
+                                        print("Недоступная цель.")
                                     else:
-                                        sendToGUI("Not an available unit")
+                                        sendToGUI("Недоступная цель.")
                 else:
                     if self.playType is False:
-                        print("No available weapons to shoot")
+                        print("Нет доступного оружия для стрельбы.")
                     else:
-                        sendToGUI("No available weapons to shoot")
+                        sendToGUI("Нет доступного оружия для стрельбы.")
 
                 # ======= Charge phase (no charge after Advance) =======
                 if self.playType is False:
-                    print("Beginning Charge phase!")
+                    print("Начинается фаза чарджа!")
                 else:
-                    sendToGUI("Beginning Charge phase!")
+                    sendToGUI("Начинается фаза чарджа!")
 
                 if advanced:
                     if self.playType is False:
-                        print("You advanced — cannot charge, skipping charge")
+                        print("Advance — чардж невозможен.")
                     else:
-                        sendToGUI("You advanced — cannot charge, skipping charge")
+                        sendToGUI("Advance — чардж невозможен.")
                 else:
                     charg = np.array([])
                     for j in range(len(self.unit_health)):
@@ -2839,22 +2933,24 @@ class Warhammer40kEnv(gym.Env):
                         response = False
                         while response is False:
                             if self.playType is False:
-                                attk = input("Select which enemy you would like to charge ({}): ".format(charg + 21))
+                                targets_label = self._format_unit_choices("model", charg.astype(int).tolist())
+                                attk = input(f"Выберите цель для чарджа. Доступные цели: {targets_label}. Введите ID цели: ")
                             else:
-                                sendToGUI("Select which enemy you would like to charge ({}) with Unit {}: ".format(charg + 21, playerName))
+                                targets_label = self._format_unit_choices("model", charg.astype(int).tolist())
+                                sendToGUI(f"Выберите цель для чарджа. Стреляет: {unit_label}. Доступные цели: {targets_label}. Введите ID цели: ")
                                 attk = recieveGUI()
 
                             if is_num(attk) is True and int(attk) - 21 in charg:
                                 response = True
                                 j = int(attk) - 21
                                 if self.playType is False:
-                                    print("Rolling 2 D6...")
+                                    print("Бросок 2D6...")
                                     roll = player_dice(num=2)
-                                    print("You rolled a", roll[0], "and", roll[1])
+                                    print("Бросок:", roll[0], "и", roll[1])
                                 else:
-                                    sendToGUI("Rolling 2 D6...")
+                                    sendToGUI("Бросок 2D6...")
                                     roll = player_dice(num=2)
-                                    sendToGUI("You rolled a {} and {}".format(roll[0], roll[1]))
+                                    sendToGUI("Бросок: {} и {}".format(roll[0], roll[1]))
 
                                 dist_to_target = distance(self.enemy_coords[i], self.unit_coords[j])
                                 self._log_unit_phase(
@@ -2862,13 +2958,15 @@ class Warhammer40kEnv(gym.Env):
                                     "charge",
                                     playerName,
                                     i,
-                                    f"Charge объявлен по цели Model Unit {j + 21}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {roll[0]} + {roll[1]} = {sum(roll)}.",
+                                    f"Charge объявлен по цели {self._format_unit_label('model', j)}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {roll[0]} + {roll[1]} = {sum(roll)}.",
                                 )
                                 if distance(self.enemy_coords[i], self.unit_coords[j]) - sum(roll) <= 5:
                                     if self.playType is False:
-                                        print("Player Unit", playerName, "Successfully charged Model Unit", j + 21)
+                                        print(f"{unit_label} успешно зачарджил {self._format_unit_label('model', j)}")
                                     else:
-                                        sendToGUI("Player Unit {} Successfully charged Model Unit {}".format(playerName, j + 21))
+                                        sendToGUI(
+                                            f"{unit_label} успешно зачарджил {self._format_unit_label('model', j)}"
+                                        )
 
                                     self.enemyInAttack[i][0] = 1
                                     self.enemyInAttack[i][1] = j
@@ -2889,7 +2987,7 @@ class Warhammer40kEnv(gym.Env):
                                         "charge",
                                         playerName,
                                         i,
-                                        f"Charge move: from {pos_before} -> {pos_after}, ended_in_engagement={self.enemyInAttack[i][0] == 1}.",
+                                        f"Движение чарджа: {pos_before} -> {pos_after}, в контакте={self.enemyInAttack[i][0] == 1}.",
                                     )
                                     # 10e: Heroic Intervention доступен защитнику после успешного charge move.
                                     self._resolve_heroic_intervention(
@@ -2901,9 +2999,13 @@ class Warhammer40kEnv(gym.Env):
                                     )
                                 else:
                                     if self.playType is False:
-                                        print("Player Unit {} Failed to charge Model Unit {}".format(playerName, j + 21))
+                                        print(
+                                            f"{unit_label} не смог зачарджить {self._format_unit_label('model', j)}"
+                                        )
                                     else:
-                                        sendToGUI("Player Unit {} Failed to charge Model Unit {}".format(playerName, j + 21))
+                                        sendToGUI(
+                                            f"{unit_label} не смог зачарджить {self._format_unit_label('model', j)}"
+                                        )
 
                             elif attk == "quit":
                                 self.game_over = True
@@ -2911,23 +3013,23 @@ class Warhammer40kEnv(gym.Env):
                                 return self.game_over, info
                             else:
                                 if self.playType is False:
-                                    print("Not an available unit")
+                                    print("Недоступная цель.")
                                 else:
-                                    sendToGUI("Not an available unit")
+                                    sendToGUI("Недоступная цель.")
                     else:
                         if self.playType is False:
-                            print("No available units to charge")
+                            print("Нет доступных целей для чарджа.")
                         else:
-                            sendToGUI("No available units to charge")
+                            sendToGUI("Нет доступных целей для чарджа.")
 
             elif self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
                 idOfE = self.enemyInAttack[i][1]
                 response = False
                 while response is False:
                     if self.playType is False:
-                        fallB = input("Would you like Unit {} to fallback? (y/n): ".format(playerName))
+                        fallB = input(f"{unit_label}. Отступить (fallback)? (y/n): ")
                     else:
-                        sendToGUI("Would you like Unit {} to fallback? (y/n): ".format(playerName))
+                        sendToGUI(f"{unit_label}. Отступить (fallback)? (y/n): ")
                         fallB = recieveGUI()
 
                     if fallB.lower() in ("n", "no"):
@@ -2935,9 +3037,13 @@ class Warhammer40kEnv(gym.Env):
 
                         # 10e: здесь НЕ атакуем. Атаки происходят в Fight Phase.
                         if self.playType is False:
-                            print("Player Unit", playerName, "stays in combat with Model Unit", idOfE + 21, "(will fight in Fight Phase)")
+                            print(
+                                f"{unit_label} остаётся в бою с {self._format_unit_label('model', idOfE)} (будет драться в фазе боя)"
+                            )
                         else:
-                            sendToGUI("Player Unit {} stays in combat with Model Unit {} (will fight in Fight Phase)".format(playerName, idOfE + 21))
+                            sendToGUI(
+                                f"{unit_label} остаётся в бою с {self._format_unit_label('model', idOfE)} (будет драться в фазе боя)"
+                            )
 
                         # Ничего не меняем: они остаются в бою
                         # self.enemyInAttack / self.unitInAttack остаются как есть
@@ -2946,9 +3052,9 @@ class Warhammer40kEnv(gym.Env):
                         if self.unit_health[idOfE] <= 0:
 
                             if self.playType is False:
-                                print("Model Unit", idOfE + 21, "has been killed")
+                                print(f"{self._format_unit_label('model', idOfE)} уничтожен")
                             else:
-                                sendToGUI("Model Unit {} has been killed".format(idOfE + 21))
+                                sendToGUI(f"{self._format_unit_label('model', idOfE)} уничтожен")
 
                             self.enemyInAttack[i][0] = 0
                             self.enemyInAttack[i][1] = 0
@@ -2958,9 +3064,9 @@ class Warhammer40kEnv(gym.Env):
                     elif fallB.lower() in ("y", "yes"):
                         response = True
                         if self.playType is False:
-                            print("Player Unit", playerName, "fell back from Enemy unit", idOfE + 21)
+                            print(f"{unit_label} отступил из боя с {self._format_unit_label('model', idOfE)}")
                         else:
-                            sendToGUI("Player Unit {} fell back from Enemy unit {}".format(playerName, idOfE + 21))
+                            sendToGUI(f"{unit_label} отступил из боя с {self._format_unit_label('model', idOfE)}")
 
                         if battleSh is True:
                             diceRoll = dice()
@@ -2980,16 +3086,16 @@ class Warhammer40kEnv(gym.Env):
                         return self.game_over, info
                     else:
                         if self.playType is False:
-                            fallB = input("It's a yes or no question dude: ")
+                            fallB = input("Введите y/yes или n/no: ")
                         else:
-                            sendToGUI("It's a yes or no question dude: ")
+                            sendToGUI("Введите y/yes или n/no: ")
                             fallB = recieveGUI()
 
             elif self.enemy_health[i] == 0:
                 if self.playType is False:
-                    print("Unit", playerName, "is dead")
+                    print(f"{unit_label} уничтожен")
                 else:
-                    sendToGUI("Unit {} is dead".format(playerName))
+                    sendToGUI(f"{unit_label} уничтожен")
 
         if self.modelStrat["overwatch"] != -1:
             self.modelStrat["overwatch"] = -1
@@ -3013,13 +3119,18 @@ class Warhammer40kEnv(gym.Env):
         if self.playType is False:
             self._log(str(info))
         else:
-            moreInfo = "Model Unit Health: {}, Player Unit Health: {}\nModel CP: {}, Player CP: {}\nModel VP: {}, Player VP: {}\n".format(
-                info["model health"], info["player health"], info["modelCP"], info["playerCP"], info["model VP"], info["player VP"]
+            moreInfo = "Здоровье MODEL: {}, здоровье PLAYER: {}\nCP MODEL: {}, CP PLAYER: {}\nVP MODEL: {}, VP PLAYER: {}\n".format(
+                info["model health"],
+                info["player health"],
+                info["modelCP"],
+                info["playerCP"],
+                info["model VP"],
+                info["player VP"],
             )
             if self.modelUpdates != "":
-                sendToGUI(moreInfo + self.modelUpdates + "\nWould you like to continue: ")
+                sendToGUI(moreInfo + self.modelUpdates + "\nПродолжить? (y/n): ")
             else:
-                sendToGUI(moreInfo + "\nWould you like to continue: ")
+                sendToGUI(moreInfo + "\nПродолжить? (y/n): ")
             ans = recieveGUI()
             response = False
             while response is False:
@@ -3031,7 +3142,7 @@ class Warhammer40kEnv(gym.Env):
                     info = self.get_info()
                     return self.game_over, info
                 else:
-                    sendToGUI("Its a yes or no question dude...: ")
+                    sendToGUI("Введите y/yes или n/no: ")
                     ans = recieveGUI()
 
         battle_shock = self.command_phase("enemy", manual=True)
@@ -3103,8 +3214,12 @@ class Warhammer40kEnv(gym.Env):
 
         fig.suptitle(title)
 
-        health = "Model Unit health: {}, CP: {}; Enemy Unit health: {}, CP {}\nVP {}".format(
-            self.unit_health, self.modelCP, self.enemy_health, self.enemyCP, [self.modelVP, self.enemyVP]
+        health = "Здоровье MODEL: {}, CP: {}; здоровье ENEMY: {}, CP {}\nVP {}".format(
+            self.unit_health,
+            self.modelCP,
+            self.enemy_health,
+            self.enemyCP,
+            [self.modelVP, self.enemyVP],
         )
         ax.set_title(health)
 

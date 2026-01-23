@@ -7,7 +7,7 @@ def unitData(army, unitName):
     for i in data["UnitData"]:
         if i["Army"].lower() == army.lower() and i["Name"].lower() == unitName.lower():
             return i
-    print("Unit Not Found")
+    print("Юнит не найден")
     return {}
 
 def weaponData(name):
@@ -18,5 +18,5 @@ def weaponData(name):
     for i in data["WeaponData"]:
         if i["Name"][0:len(name)].lower() == name.lower():
             return i
-    print(name, "Weapon Not Found")
+    print(name, "Оружие не найдено")
     return {}

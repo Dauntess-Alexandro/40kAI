@@ -1,6 +1,8 @@
 import math
 from typing import Callable, List, Sequence
 
+from gym_mod.engine.logging_utils import format_unit
+
 ABILITY_REANIMATION = "Reanimation Protocols"
 
 
@@ -85,13 +87,13 @@ def reanimation_protocols_one_unit(
     wounds = _build_wounds_per_model(unit_health, unit_data)
     if not _can_reanimate(wounds, unit_data):
         return float(unit_health)
-    _log_reanimation(log_fn, f"{unit_label}Using ability: {ABILITY_REANIMATION}")
+    _log_reanimation(log_fn, f"{unit_label}Используется способность: {ABILITY_REANIMATION}")
     roll = roll_d3(dice_fn)
 
-    _log_reanimation(log_fn, f"{unit_label}Reanimation Protocols: rolled D3 = {roll}")
+    _log_reanimation(log_fn, f"{unit_label}Reanimation Protocols: бросок D3 = {roll}")
     _log_reanimation(
         log_fn,
-        f"{unit_label}before: models={len(wounds)}, wounds={wounds} total={sum(wounds)}",
+        f"{unit_label}До: моделей={len(wounds)}, раны={wounds} всего={sum(wounds)}",
     )
 
     for _ in range(roll):
@@ -99,12 +101,12 @@ def reanimation_protocols_one_unit(
         if wounded_indices:
             idx = min(wounded_indices, key=lambda i: wounds[i])
             wounds[idx] += 1
-            _log_reanimation(log_fn, f"{unit_label}heal wounded model idx={idx}")
+            _log_reanimation(log_fn, f"{unit_label}Лечение раненой модели idx={idx}")
             continue
 
         if len(wounds) < starting_models:
             wounds.append(1)
-            _log_reanimation(log_fn, f"{unit_label}return destroyed model with 1 wound")
+            _log_reanimation(log_fn, f"{unit_label}Возвращена уничтоженная модель с 1 раной")
             continue
 
         break
@@ -112,7 +114,7 @@ def reanimation_protocols_one_unit(
     new_total = min(sum(wounds), starting_models * max_wounds)
     _log_reanimation(
         log_fn,
-        f"{unit_label}after:  models={len(wounds)}, wounds={wounds} total={new_total}",
+        f"{unit_label}После:  моделей={len(wounds)}, раны={wounds} всего={new_total}",
     )
     return float(new_total)
 
@@ -138,7 +140,7 @@ def apply_end_of_command_phase(env, side: str, dice_fn: DiceFn, log_fn: LogFn) -
         if not has_ability(unit_data, ABILITY_REANIMATION):
             continue
         unit_id = unit_id_offset + i
-        unit_label = f"[{side_label}][Unit {unit_id}|idx={i}] "
+        unit_label = f"[{side_label}] {format_unit(unit_id, unit_data)} "
         health[i] = reanimation_protocols_one_unit(
             health[i],
             unit_data,
@@ -172,4 +174,3 @@ def run_self_checks() -> None:
 if __name__ == "__main__":
     run_self_checks()
     print("skills.py self-checks passed")
-

@@ -4,6 +4,8 @@ from __future__ import annotations
 import random
 from typing import Iterable, List, Optional, Sequence, Tuple
 
+from gym_mod.engine.logging_utils import format_unit
+
 DEPLOY_DEPTH_RATIO = 0.25
 
 
@@ -60,11 +62,19 @@ def get_random_free_deploy_coord(
     return random.choice(choices)
 
 
-def _log_deploy(log_fn: Optional[callable], side: str, unit_idx: int, coord: Tuple[int, int]):
+def _log_deploy(log_fn: Optional[callable], side: str, unit_idx: int, coord: Tuple[int, int], unit=None):
     if log_fn is None:
         return
     unit_id = (11 + unit_idx) if side == "enemy" else (21 + unit_idx)
-    log_fn(f"[DEPLOY][{side.upper()}] Unit {unit_id} -> ({coord[0]},{coord[1]})")
+    unit_data = getattr(unit, "unit_data", None)
+    instance_id = getattr(unit, "instance_id", None)
+    unit_label = format_unit(
+        unit_id,
+        unit_data,
+        instance_id=instance_id,
+        include_instance_id=False,
+    )
+    log_fn(f"[DEPLOY][{side.upper()}] {unit_label} -> ({coord[0]},{coord[1]})")
 
 
 def deploy_only_war(
@@ -92,7 +102,7 @@ def deploy_only_war(
         coord = get_random_free_deploy_coord(side, b_len, b_hei, occupied)
         unit.unit_coords = [coord[0], coord[1]]
         occupied.add(coord)
-        _log_deploy(log_fn, side, unit_idx, coord)
+        _log_deploy(log_fn, side, unit_idx, coord, unit=unit)
 
     attacker_units = model_units if attacker_side == "model" else enemy_units
     defender_units = model_units if defender_side == "model" else enemy_units
