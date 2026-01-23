@@ -1,9 +1,8 @@
- (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
 diff --git a/gui/Application.cpp b/gui/Application.cpp
-index ecbaed27d908db74a28526b293afcb223ba3e887..638917de3d7ecfb094b6fa2cf31e820748f72216 100644
+index 638917de3d7ecfb094b6fa2cf31e820748f72216..d89c157390bbd3bf88ed99f280e1161ac8f18d2d 100644
 --- a/gui/Application.cpp
 +++ b/gui/Application.cpp
-@@ -2,50 +2,61 @@
+@@ -2,54 +2,54 @@
  #include <gtkmm.h>
  #include <cstdlib>
  #include <stdlib.h>
@@ -29,17 +28,20 @@ index ecbaed27d908db74a28526b293afcb223ba3e887..638917de3d7ecfb094b6fa2cf31e8207
  using json = nlohmann::json;
  
  namespace {
-+constexpr int kDefaultWidth = 1400;
-+constexpr int kDefaultHeight = 900;
-+constexpr int kMinimumWidth = 1100;
-+constexpr int kMinimumHeight = 700;
-+
-+std::string geometryPath() {
-+  const char* home = std::getenv("HOME");
-+  std::string base = home ? home : ".";
-+  return base + "/.config/40kAI/gui_layout.conf";
-+}
-+
+-constexpr int kDefaultWidth = 1400;
++constexpr int kDefaultWidth = 1500;
+ constexpr int kDefaultHeight = 900;
+-constexpr int kMinimumWidth = 1100;
+-constexpr int kMinimumHeight = 700;
++constexpr int kMinimumWidth = 1200;
++constexpr int kMinimumHeight = 800;
+ 
+ std::string geometryPath() {
+   const char* home = std::getenv("HOME");
+   std::string base = home ? home : ".";
+   return base + "/.config/40kAI/gui_layout.conf";
+ }
+ 
  std::string toLowerCopy(std::string data) {
    std::transform(data.begin(), data.end(), data.begin(),
                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -58,14 +60,12 @@ index ecbaed27d908db74a28526b293afcb223ba3e887..638917de3d7ecfb094b6fa2cf31e8207
    }
    std::string factionLower = toLowerCopy(faction);
    std::string nameLower = toLowerCopy(name);
-   for (const auto& unit : j.at("UnitData")) {
-     if (!unit.contains("Name") || !unit.contains("Army")) {
-       continue;
-     }
-     if (toLowerCopy(unit.at("Name").get<std::string>()) != nameLower) {
-       continue;
-     }
-@@ -66,55 +77,61 @@ std::string rewpth = "img/reward.png";
+@@ -72,73 +72,118 @@ int findDefaultModelsCount(const std::string& faction, const std::string& name)
+ }
+ }  // namespace
+ 
+ std::string gifpth = "img/model_train.gif";
+ std::string rewpth = "img/reward.png";
  std::string losspth = "img/loss.png";
  std::string eplenpth = "img/epLen.png";
  std::string winratepth = "img/winrate.png";
@@ -86,31 +86,87 @@ index ecbaed27d908db74a28526b293afcb223ba3e887..638917de3d7ecfb094b6fa2cf31e8207
    loadingRoster = false;
  
    bar.set_show_close_button(true);
++  bar.set_title("40kAI GUI");
++  set_titlebar(bar);
++
++  set_default_size(kDefaultWidth, kDefaultHeight);
++  set_size_request(kMinimumWidth, kMinimumHeight);
++
++  rootBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
++  topBarBox.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
++  topBarBox.set_spacing(8);
++  leftBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
++  mainSplit.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
++  rightSplit.set_orientation(Gtk::ORIENTATION_VERTICAL);
++
++  rootBox.set_hexpand(true);
++  rootBox.set_vexpand(true);
++  topBarBox.set_hexpand(true);
++  leftBox.set_hexpand(true);
++  leftBox.set_vexpand(true);
++  mainSplit.set_hexpand(true);
++  mainSplit.set_vexpand(true);
++  rightSplit.set_hexpand(true);
++  rightSplit.set_vexpand(true);
++
    help.set_image_from_icon_name("help-about");
    help.signal_button_release_event().connect([&](GdkEventButton*){
      openHelpMenu();
      return true;
    });
-+  resetLayoutButton.set_label("Reset Layout");
-+  resetLayoutButton.signal_button_release_event().connect([&](GdkEventButton*) {
-+    resetLayout();
-+    return true;
-+  });
-   bar.pack_end(help);
-+  bar.pack_start(resetLayoutButton);
-   set_titlebar(bar);
- 
--  set_default_size(1200, 900);
--  set_size_request(1000, 700);
-+  set_default_size(kDefaultWidth, kDefaultHeight);
-+  set_size_request(kMinimumWidth, kMinimumHeight);
-   scrolledWindow.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
- 
-   add(scrolledWindow);
-   scrolledWindow.add(fixed);
- 
-   fixed.add(tabControl1);
-   fixed.move(tabControl1, 10, 10);
+   resetLayoutButton.set_label("Reset Layout");
+   resetLayoutButton.signal_button_release_event().connect([&](GdkEventButton*) {
+     resetLayout();
+     return true;
+   });
+-  bar.pack_end(help);
+-  bar.pack_start(resetLayoutButton);
+-  set_titlebar(bar);
+-
+-  set_default_size(kDefaultWidth, kDefaultHeight);
+-  set_size_request(kMinimumWidth, kMinimumHeight);
+-  scrolledWindow.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
+-
+-  add(scrolledWindow);
+-  scrolledWindow.add(fixed);
+-
+-  fixed.add(tabControl1);
+-  fixed.move(tabControl1, 10, 10);
++  topBarBox.pack_start(resetLayoutButton, Gtk::PACK_SHRINK);
++  topBarBox.pack_start(help, Gtk::PACK_SHRINK);
++
++  add(rootBox);
++  rootBox.pack_start(topBarBox, Gtk::PACK_SHRINK);
++  rootBox.pack_start(mainSplit, Gtk::PACK_EXPAND_WIDGET);
++
++  tabControl1.set_hexpand(true);
++  tabControl1.set_vexpand(true);
++  leftBox.pack_start(tabControl1, Gtk::PACK_EXPAND_WIDGET);
++
++  mainSplit.add1(leftBox);
++  mainSplit.add2(rightSplit);
++
++  boardFrame.set_label("Board / Preview");
++  boardFrame.set_hexpand(true);
++  boardFrame.set_vexpand(true);
++  pictureBox1.set_hexpand(true);
++  pictureBox1.set_vexpand(true);
++  boardFrame.add(pictureBox1);
++
++  logView.set_hexpand(true);
++  logView.set_vexpand(true);
++  logView.set_editable(false);
++  logView.set_wrap_mode(Gtk::WRAP_WORD_CHAR);
++  auto logBuffer = Gtk::TextBuffer::create();
++  logView.set_buffer(logBuffer);
++
++  logScroll.set_hexpand(true);
++  logScroll.set_vexpand(true);
++  logScroll.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
++  logScroll.add(logView);
++
++  rightSplit.add1(boardFrame);
++  rightSplit.add2(logScroll);
  
    tabControl1.insert_page(tabPage2, "Train", 0);
    tabControl1.insert_page(tabPage3, "Show Trained Model", 1);
@@ -129,7 +185,134 @@ index ecbaed27d908db74a28526b293afcb223ba3e887..638917de3d7ecfb094b6fa2cf31e8207
    fixedTabPage1.move(textbox, 10, 10);
  
    fixedTabPage1.add(radioTop);
-@@ -632,71 +649,118 @@ Form :: Form() {
+   fixedTabPage1.move(radioTop, 10, 40);
+   radioTop.set_label("Top");
+   radioTop.set_group(radioButtonGroup);
+   radioTop.signal_toggled().connect([this]() {
+     tabControl1.set_tab_pos(PositionType::POS_TOP);
+   });
+ 
+@@ -153,59 +198,59 @@ Form :: Form() {
+   fixedTabPage1.add(radioRight);
+   fixedTabPage1.move(radioRight, 10, 100);
+   radioRight.set_label("Right");
+   radioRight.set_group(radioButtonGroup);
+   radioRight.signal_toggled().connect([this]() {
+     tabControl1.set_tab_pos(PositionType::POS_RIGHT);
+   });
+ 
+   fixedTabPage1.add(radioBottom);
+   fixedTabPage1.move(radioBottom, 10, 130);
+   radioBottom.set_label("Bottom");
+   radioBottom.set_group(radioButtonGroup);
+   radioBottom.signal_toggled().connect([this]() {
+     tabControl1.set_tab_pos(PositionType::POS_BOTTOM);
+   });
+ 
+     // train tab
+ 
+   savetoTxt(enemyUnits, modelUnits);
+ 
+   labelPage2.set_label("Train");
+   tabControl1.set_tab_label(tabPage2, labelPage2);
+   tabPage2.add(fixedTabPage2);
+ 
+   textbox1.set_text("Train Model:");
+-  status.set_text("Press the Train button to train a model");
++  setStatusMessage("Press the Train button to train a model");
+     
+   button1.set_label("Train");
+   button1.signal_button_release_event().connect([&](GdkEventButton*) {
+     saveLastRoster();
+     syncEnemyUnitsFromRoster();
+     updateInits(modelClass, enemyClass);
+     if (exists_test("data.json") && training == false) {
+-      status.set_text("Training...");
++      setStatusMessage("Training...");
+       startTrainInBackground();
+     }
+     return true;
+   });
+ 
+   numOfGames.set_text("# of Games in Training:");
+   setIters.set_text("100");
+ 
+   modelUnitLabel.set_text("Enter Model Units:");
+   enemyUnitLabel.set_text("Enter Player Units:");
+   openArmyPopup.set_label("Army Viewer");
+   openArmyPopup.signal_button_release_event().connect([&](GdkEventButton*) {
+     openArmyView();
+     return true;
+   });
+ 
+   dimens.set_text("Dimensions of Board: ");
+ 
+   dimX.set_text("X : ");
+   enterDimensX.set_text(std::to_string(x));
+   upX.set_label("+");
+   upX.signal_button_release_event().connect([&](GdkEventButton*) {
+     x+=10;
+     enterDimensX.set_text(std::to_string(x));
+     return true;
+@@ -517,52 +562,54 @@ Form :: Form() {
+   fixedTabPage2.move(enemyEnter, 300, 200);
+   fixedTabPage2.add(clearAllModel);
+   fixedTabPage2.move(clearAllModel, 340, 160);
+   fixedTabPage2.add(clearAllEnemy);
+   fixedTabPage2.move(clearAllEnemy, 340, 200);
+   fixedTabPage2.add(mirrorRosterButton);
+   fixedTabPage2.move(mirrorRosterButton, 400, 140);
+   fixedTabPage2.add(openArmyPopup);
+   fixedTabPage2.move(openArmyPopup, 400, (160+200)/2);
+   fixedTabPage2.add(textbox1);
+   fixedTabPage2.move(textbox1, 10, 10);
+   fixedTabPage2.add(button1);
+   fixedTabPage2.move(button1, 150, 300);
+   fixedTabPage2.add(setIters);
+   fixedTabPage2.move(setIters, 160, 40);
+   fixedTabPage2.add(button3);
+   fixedTabPage2.move(button3, 10, 300);
+   fixedTabPage2.add(status);
+   fixedTabPage2.move(status, 10, 350);
+ 
+     // show trained model tab
+ 
+   labelPage3.set_label("Show Trained Model");
+   tabControl1.set_tab_label(tabPage3, labelPage3);
+   tabPage3.add(fixedTabPage3);
+-    
+-  fixedTabPage3.add(pictureBox1);
++
++  showModelHint.set_text("Preview shown in the right panel.");
++  fixedTabPage3.add(showModelHint);
++  fixedTabPage3.move(showModelHint, 10, 10);
+   pictureBox1.set_size_request(280, 280);
+   update_picture();
+ 
+   // show metrics tab
+   labelPage5.set_label("Model Metrics");
+   tabControl1.set_tab_label(tabPage5, labelPage5);
+   tabPage5.add(fixedTabPage5);
+   
+   chooseMetrics.set_label("Choose");
+   chooseMetrics.signal_button_release_event().connect([&](GdkEventButton * event){
+ 	FileChooserDialog folderBrowserDialog("", FILE_CHOOSER_ACTION_OPEN);
+     folderBrowserDialog.add_button("Cancel", RESPONSE_CANCEL);
+     folderBrowserDialog.add_button("Open", RESPONSE_OK);
+ 	system("clear");
+     char resolved_path[PATH_MAX];
+     realpath("../../40kAI", resolved_path);
+     strcat(resolved_path, "/models");
+     folderBrowserDialog.set_current_folder(resolved_path);
+     folderBrowserDialog.set_transient_for(*this);
+ 
+     auto filter_text = Gtk::FileFilter::create();
+     filter_text->set_name("Pickle Files");
+     filter_text->add_pattern("*.pickle");
+     folderBrowserDialog.add_filter(filter_text);
+ 
+@@ -648,87 +695,94 @@ Form :: Form() {
+ 	if (playing == false) {
  		saveLastRoster();
  		syncEnemyUnitsFromRoster();
  		openPlayGUI();
@@ -154,12 +337,12 @@ index ecbaed27d908db74a28526b293afcb223ba3e887..638917de3d7ecfb094b6fa2cf31e8207
    fixedTabPage4.move(button5, 10, 40);
    fixedTabPage4.move(setModelFile, 80, 40);
  
-   bar.set_title("40kAI GUI");
--  resize(700, 600);
-+  if (!loadWindowGeometry()) {
-+    resize(kDefaultWidth, kDefaultHeight);
-+  }
-+  ensureMinimumSize();
+-  bar.set_title("40kAI GUI");
+-  if (!loadWindowGeometry()) {
+-    resize(kDefaultWidth, kDefaultHeight);
+-  }
+-  ensureMinimumSize();
++  loadWindowGeometry();
    loadLastRoster();
    if (modelUnits.empty()) {
      modelUnits.push_back({"Apothecary", "Space_Marine", findDefaultModelsCount("Space_Marine", "Apothecary"),
@@ -176,87 +359,238 @@ index ecbaed27d908db74a28526b293afcb223ba3e887..638917de3d7ecfb094b6fa2cf31e8207
    }
    signal_hide().connect([this]() {
      saveLastRoster();
-+    saveWindowGeometry();
+     saveWindowGeometry();
    });
    show_all();
  }
  
-+bool Form :: loadWindowGeometry() {
-+  std::ifstream infile(geometryPath());
-+  if (!infile) {
-+    return false;
-+  }
-+  int width = 0;
-+  int height = 0;
-+  if (!(infile >> width >> height)) {
-+    return false;
-+  }
-+  resize(width, height);
-+  return true;
-+}
-+
-+void Form :: saveWindowGeometry() {
-+  std::string path = geometryPath();
-+  fs::create_directories(fs::path(path).parent_path());
-+  int width = 0;
-+  int height = 0;
-+  get_size(width, height);
-+  std::ofstream outfile(path);
-+  if (!outfile) {
++void Form :: setStatusMessage(const std::string& message) {
++  status.set_text(message);
++  auto logBuffer = logView.get_buffer();
++  if (!logBuffer) {
 +    return;
 +  }
-+  outfile << width << " " << height;
++  logBuffer->insert(logBuffer->end(), message + "\n");
++  auto endIter = logBuffer->end();
++  logView.scroll_to(endIter);
 +}
 +
-+void Form :: ensureMinimumSize() {
-+  int width = 0;
-+  int height = 0;
-+  get_size(width, height);
-+  if (width < kMinimumWidth || height < kMinimumHeight) {
-+    resize(std::max(width, kMinimumWidth), std::max(height, kMinimumHeight));
-+  }
-+}
-+
-+void Form :: resetLayout() {
-+  std::error_code ec;
-+  fs::remove(geometryPath(), ec);
-+  resize(kDefaultWidth, kDefaultHeight);
-+  ensureMinimumSize();
-+}
-+
- void Form :: changeMetrics(std::string path) {
-     std::string jsonID = path.substr(path.length()-16,9);
- 
- 	if (jsonID[0] == '-') {
- 		jsonID = path.substr(path.length()-15,8);
- 	} 
- 
- 	std::ifstream infile("../models/data_"+jsonID+".json");
- 	json j;
- 	infile >> j;
- 
- 	losspth = j.value("loss", losspth);
- 	rewpth = j.value("reward", rewpth);
- 	eplenpth = j.value("epLen", eplenpth);
- 
- 	// optional extra metrics (backwards compatible with older models)
- 	winratepth = j.value("winrate", winratepth);
- 	vpdiffpth = j.value("vpdiff", vpdiffpth);
- 	endreasonpth = j.value("endreasons", endreasonpth);
- 
- 	update_metrics();
+ bool Form :: loadWindowGeometry() {
+   std::ifstream infile(geometryPath());
+   if (!infile) {
+     return false;
+   }
+   int width = 0;
+   int height = 0;
+   if (!(infile >> width >> height)) {
+     return false;
+   }
+-  resize(width, height);
++  set_default_size(width, height);
+   return true;
  }
  
- int Form :: openPopUp(bool textMode) {
-   boardShow = new PopUp(textMode);
+ void Form :: saveWindowGeometry() {
+   std::string path = geometryPath();
+   fs::create_directories(fs::path(path).parent_path());
+   int width = 0;
+   int height = 0;
+   get_size(width, height);
+   std::ofstream outfile(path);
+   if (!outfile) {
+     return;
+   }
+   outfile << width << " " << height;
+ }
+ 
+ void Form :: ensureMinimumSize() {
+   int width = 0;
+   int height = 0;
+   get_size(width, height);
+   if (width < kMinimumWidth || height < kMinimumHeight) {
+     resize(std::max(width, kMinimumWidth), std::max(height, kMinimumHeight));
+   }
+ }
+ 
+@@ -779,65 +833,65 @@ int Form :: openArmyView() {
+   armyView->show();
+   return 0;
+ }
+ 
+ int Form :: openWarnMenu(std::string mess, int comm) {
+   warn = new Warn(mess, comm);
+   warn->show();
+   return 0;
+ }
+ 
+ int Form :: openHelpMenu() {
+   helpMenu = new Help;
+   helpMenu->show();
+   return 0;
+ }
+ 
+ std::string Form :: toLower(std::string data) {
+   std::transform(data.begin(), data.end(), data.begin(),[](unsigned char c){ return std::tolower(c); });
+   return data;
+ }
+ 
+ void Form :: mirrorRoster() {
+   auto playerEntry = enterEnemyUnit.get_text();
+   syncEnemyUnitsFromRoster();
+   if (rosterModel.empty() && playerEntry.empty()) {
+-    status.set_text("Player roster is empty, nothing to mirror.");
++    setStatusMessage("Player roster is empty, nothing to mirror.");
+     return;
+   }
+ 
+   if (!playerEntry.empty()) {
+     enterModelUnit.set_text(playerEntry);
+   }
+ 
+   if (!enemyClass.empty()) {
+     applyFactionToModel(enemyClass.substr(1));
+   }
+ 
+   modelUnits = rosterModel.expandedUnits();
+   savetoTxt(enemyUnits, modelUnits);
+-  status.set_text("Mirrored Player roster to Model.");
++  setStatusMessage("Mirrored Player roster to Model.");
+ }
+ 
+ void Form :: applyFactionToModel(const std::string& faction) {
+   if (faction.empty()) {
+     return;
+   }
+ 
+   std::string normalized = toLower(faction);
+   std::replace(normalized.begin(), normalized.end(), ' ', '_');
+   if (normalized == "orks") {
+     orksModel.set_active(true);
+   } else if (normalized == "space_marine") {
+     spmModel.set_active(true);
+   } else if (normalized == "sisters_of_battle") {
+     sobModel.set_active(true);
+   } else if (normalized == "custodes") {
+     adcModel.set_active(true);
+   } else if (normalized == "tyrannids") {
+     tyrModel.set_active(true);
+   } else if (normalized == "militarum") {
+     milModel.set_active(true);
+   } else if (normalized == "tau") {
+     tauModel.set_active(true);
+   } else if (normalized == "necrons") {
+     necModel.set_active(true);
+@@ -864,51 +918,51 @@ void Form :: applyFactionToEnemy(const std::string& faction) {
+   } else if (normalized == "militarum") {
+     milEnemy.set_active(true);
+   } else if (normalized == "tau") {
+     tauEnemy.set_active(true);
+   } else if (normalized == "necrons") {
+     necEnemy.set_active(true);
+   }
+ }
+ 
+ void Form :: saveLastRoster() {
+   rosterModel.saveToFile(RosterModel::defaultRosterPath());
+ }
+ 
+ void Form :: loadLastRoster() {
+   if (!rosterModel.loadFromFile(RosterModel::defaultRosterPath())) {
+     return;
+   }
+ 
+   if (!rosterModel.faction().empty()) {
+     loadingRoster = true;
+     applyFactionToEnemy(rosterModel.faction());
+     loadingRoster = false;
+   }
+ 
+   syncEnemyUnitsFromRoster();
+-  status.set_text("Loaded last roster.");
++  setStatusMessage("Loaded last roster.");
+ }
+ 
+ void Form :: syncEnemyUnitsFromRoster() {
+   enemyUnits = rosterModel.expandedUnits();
+   savetoTxt(enemyUnits, modelUnits);
+ }
+ 
+ bool Form :: addEnemyUnitFromEntry(const std::string& entryText) {
+   if (entryText.empty()) {
+     return false;
+   }
+   std::ifstream infile("../gym_mod/gym_mod/engine/unitData.json");
+   json j;
+   infile >> j;
+ 
+   if (!j.contains("UnitData") || !j.at("UnitData").is_array()) {
+     return false;
+   }
+ 
+   for (const auto& unit : j.at("UnitData")) {
+     if (!unit.contains("Name") || !unit.contains("Army")) {
+       continue;
+     }
+     std::string name = unit.at("Name").get<std::string>();
+     if (strcmp(toLower(name).data(), toLower(entryText).data()) != 0) {
+@@ -1007,51 +1061,51 @@ void Form :: update_metrics() {
+ }
+ 
+ void Form :: updateInits(std::string model, std::string enemy) {
+   std::string command = "cd .. ; ./data.sh ";
+   command.append(setIters.get_text().data());
+   command.append(model);
+   command.append(enemy);
+   command.append(" ");
+   command.append(enterDimensX.get_text().data());
+   command.append(" ");
+   command.append(enterDimensY.get_text().data());
+   system(command.data());
+ }
+ 
+ void Form :: startTrainInBackground() {
+   std::thread t(&Form::startTrain, this);
+   t.detach();
+ }
+ 
+ void Form :: startTrain() {
+   training = true;
+   system("clear");
+   std::string command = "cd .. ; ";
+   command.append("./train.sh");
+   system(command.data());
+-  status.set_text("Completed!");
++  setStatusMessage("Completed!");
+   training = false;
+   update_picture();
+   update_metrics();
+ }
+ 
+ void Form :: runPlayAgainstModelInBackground() {
+   std::thread t(&Form::playAgainstModel, this);
+   t.detach();
+ }
+   
+ void Form :: playAgainstModel() {
+   path = setModelFile.get_text();
+ 
+   std::string envPrefix;
+ 
+   std::string command;
+ 
+   if (playInGUI == "True") {
+     command = "cd .. ; " + envPrefix + "./play.sh ";
+     if (strlen(path.data()) < 2) {
+       command.append("None");
+     } else {
+       command.append("\"");
+       command.append(path);
+       command.append("\"");
 diff --git a/gui/include/Application.h b/gui/include/Application.h
-index 3b90c0f0aac55b7c604c81d991581812014efba8..24854b2fb1b005374b81d4450390ddf146213a37 100644
+index 24854b2fb1b005374b81d4450390ddf146213a37..0e88a78b6ee73a319c7f161fe0a5e01eb669eb4d 100644
 --- a/gui/include/Application.h
 +++ b/gui/include/Application.h
-@@ -22,54 +22,58 @@ public :
-   Form();
-   int openPopUp(bool textMode);
-   void update_picture();
+@@ -25,69 +25,77 @@ public :
    void update_metrics();
    void updateInits(std::string model, std::string enemy);
    void startTrainInBackground();
@@ -279,14 +613,15 @@ index 3b90c0f0aac55b7c604c81d991581812014efba8..24854b2fb1b005374b81d4450390ddf1
    void loadLastRoster();
    void syncEnemyUnitsFromRoster();
    bool addEnemyUnitFromEntry(const std::string& entryText);
-+  void resetLayout();
+   void resetLayout();
  
  private:
++  void setStatusMessage(const std::string& message);
    void applyFactionToModel(const std::string& faction);
    void applyFactionToEnemy(const std::string& faction);
-+  bool loadWindowGeometry();
-+  void saveWindowGeometry();
-+  void ensureMinimumSize();
+   bool loadWindowGeometry();
+   void saveWindowGeometry();
+   void ensureMinimumSize();
    Window* boardShow;
    Window* armyView;
    Window* warn;
@@ -299,8 +634,17 @@ index 3b90c0f0aac55b7c604c81d991581812014efba8..24854b2fb1b005374b81d4450390ddf1
  Image metricBox4;
  Image metricBox5;
  Image metricBox6;
-   Fixed fixed;
-   ScrolledWindow scrolledWindow;
+-  Fixed fixed;
+-  ScrolledWindow scrolledWindow;
++  Box rootBox;
++  Box topBarBox;
++  Box leftBox;
++  Paned mainSplit;
++  Paned rightSplit;
++  Frame boardFrame;
++  ScrolledWindow logScroll;
++  TextView logView;
++  Label showModelHint;
    Notebook tabControl1;
    Label labelPage1;
    Label labelPage2;
@@ -312,322 +656,18 @@ index 3b90c0f0aac55b7c604c81d991581812014efba8..24854b2fb1b005374b81d4450390ddf1
    Frame tabPage2;
    Frame tabPage3;
    Frame tabPage4;
-@@ -132,31 +136,32 @@ Image metricBox6;
-   Button downX;
-   Button upY;
-   Button downY;
-   Button modelEnter;
-   Button enemyEnter;
-   Button mirrorRosterButton;
-   Button openArmyPopup;
-   Entry enterModelUnit;
-   Entry enterEnemyUnit;
-   Button clearAllModel;
-   Button clearAllEnemy;
-   int x;
-   int y;
-   bool open;
-   bool training;
-   bool playing;
-   bool loadingRoster;
-   Label error;
-   Label modelUnitLabel;
-   Label enemyUnitLabel;
-   std::vector<RosterEntry> modelUnits;
-   std::vector<RosterEntry> enemyUnits;
-   RosterModel rosterModel;
-   HeaderBar bar;
-   Button help;
-+  Button resetLayoutButton;
-   Button chooseMetrics;
-   Button playGUI;
-   std::string playInGUI;
- };
- 
- #endif
-diff --git a/gui/include/play.h b/gui/include/play.h
-index a1b3c7ea1b92c1b1b715b04350a8b30e8137d90e..f1a95e4a35231eccd77daa99bd0db2264f056cd8 100644
---- a/gui/include/play.h
-+++ b/gui/include/play.h
-@@ -1,40 +1,49 @@
- #ifndef PLAY_H
- #define PLAY_H
- 
- #include <iostream>
- #include <gtkmm.h>
- #include <cstdlib>
- #include <stdlib.h>
- #include <string>
- 
- using namespace Glib;
- using namespace Gtk;
- using namespace std;
- 
- class Play : public Gtk::Window {
-     public:
-         Play();
-         void update();
-         void keepUpdating();
-         void backgroundUpdate();
-         void update_text_view();
-         bool file_exists(char * fileName);
-+        std::string openBoardFile(const std::string& board);
-     private:
--        Fixed fixed;
--        ScrolledWindow scrolledWindow;
--        ScrolledWindow innerWindow;
-+        Box rootBox;
-+        Paned mainSplit;
-+        Paned rightSplit;
-+        Box leftControls;
-+        ScrolledWindow boardScroll;
-+        ScrolledWindow logScroll;
-+        TextView boardView;
-+        TextView logView;
-+        CheckButton autoScrollToggle;
-+        Button clearLogButton;
-         HeaderBar bar;
- 		Button enter;
-         Button plus;
-         Button minus;
- 		RadioButtonGroup yesOrNoRadio;
-   		RadioButton radioYes;
-   		RadioButton radioNo;
-   		Entry numBox;
--  		Label text;
-+        Label responseLabel;
-   		bool takeInput;
-   		std::string response;
-+        std::string boardText;
-   		Dispatcher dispatcher;
- };
- 
- #endif
-diff --git a/gui/play.cpp b/gui/play.cpp
-index ab5832603ffbb1b652ed9af04d310a4f693c350a..c0a6fb9efdeb5ce78d722a917bd60cb4e50b8e10 100644
---- a/gui/play.cpp
-+++ b/gui/play.cpp
-@@ -1,93 +1,196 @@
- #include <iostream>
- #include <gtkmm.h>
- #include <cstdlib>
- #include <stdlib.h>
- #include <string>
- #include <fstream>
- #include <thread>
- #include "include/play.h"
- 
- using namespace Glib;
- using namespace Gtk;
- using namespace std;
- 
-+namespace {
-+bool is_board_num(char num) {
-+	string nums= "0123456789";
-+	for (char n : nums) {
-+		if (n == num) {
-+			return true;
-+		}
-+	}
-+	return false;
-+}
-+}
-+
- bool Play :: file_exists(char * fileName) {
- 	ifstream infile(fileName);
- 	return infile.good();
- }
- 
- void Play :: update() {
-+	bool updated = false;
- 	if (file_exists("response.txt")) {
- 		ifstream file("response.txt");
- 		string line;
- 		while(getline(file, line)) {
- 			for (int i = 0; line.length() > i; i++) {
- 				response += line[i];
- 			}
- 			response += "\n";
- 		}
- 		file.close();
-+		updated = true;
-+	}
-+
-+	string nextBoard = openBoardFile("../board.txt");
-+	if (!nextBoard.empty() && nextBoard != boardText) {
-+		boardText = nextBoard;
-+		updated = true;
-+	}
-+
-+	if (updated) {
- 		dispatcher.emit();
- 	}
- }
- 
- void Play :: update_text_view() {
--	text.set_text(response);
--	system("rm response.txt");
-+	auto logBuffer = logView.get_buffer();
-+	if (logBuffer) {
-+		logBuffer->set_text(response);
-+		if (autoScrollToggle.get_active()) {
-+			auto endIter = logBuffer->end();
-+			logBuffer->place_cursor(endIter);
-+			logView.scroll_to(endIter);
-+		}
-+	}
-+	auto boardBuffer = boardView.get_buffer();
-+	if (boardBuffer) {
-+		boardBuffer->set_text(boardText);
-+	}
-+	char responseFile[] = "response.txt";
-+	if (file_exists(responseFile)) {
-+		system("rm response.txt");
-+	}
- }
- 
- void Play :: keepUpdating() {
- 	while (true) {
-     	update();
-     	std::this_thread::sleep_for(std::chrono::seconds(1));
- 	}
- }
- 
- void Play :: backgroundUpdate() {
- 	std::thread t(&Play::keepUpdating, this);
- 	t.detach();
- }
- 
- Play :: Play() {
- 	bar.set_show_close_button(true);
- 	set_titlebar(bar);
- 
--	set_default_size(600, 500);
--	set_size_request(500, 400);
--
--	add(scrolledWindow);
--	scrolledWindow.add(fixed);
--	scrolledWindow.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
-+	set_default_size(1000, 700);
-+	set_size_request(800, 600);
- 
- 	bar.set_title("Playing Against the Model");
- 
--	numBox.set_text("Enter Response Here");
-+	rootBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
-+	mainSplit.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
-+	rightSplit.set_orientation(Gtk::ORIENTATION_VERTICAL);
-+	leftControls.set_orientation(Gtk::ORIENTATION_VERTICAL);
-+
-+	add(rootBox);
-+	rootBox.pack_start(mainSplit, Gtk::PACK_EXPAND_WIDGET);
-+
-+	mainSplit.add1(leftControls);
-+	mainSplit.add2(rightSplit);
-+	mainSplit.set_position(260);
-+
-+	rightSplit.add1(boardScroll);
-+	rightSplit.add2(logScroll);
-+	rightSplit.set_position(350);
-+
-+	responseLabel.set_text("Enter Response Here");
-+	numBox.set_text("");
- 
- 	enter.set_label("Enter");
- 	enter.signal_button_release_event().connect([&](GdkEventButton*) {	
- 		ofstream file("response.txt", ios::out | ios::trunc);
- 		file << numBox.get_text();
- 		file.close();
- 		numBox.set_text("");
- 		return true;
- 	});
- 
--	text.set_text("When the game starts, text will appear here");
--	text.set_line_wrap(true);
-+	clearLogButton.set_label("Clear Logs");
-+	clearLogButton.signal_clicked().connect([this]() {
-+		response.clear();
-+		auto logBuffer = logView.get_buffer();
-+		if (logBuffer) {
-+			logBuffer->set_text("");
-+		}
-+	});
-+	autoScrollToggle.set_label("Auto-scroll logs");
-+	autoScrollToggle.set_active(true);
-+
-+	auto logBuffer = Gtk::TextBuffer::create();
-+	logView.set_buffer(logBuffer);
-+	logView.set_editable(false);
-+	logView.set_wrap_mode(Gtk::WRAP_WORD_CHAR);
-+
-+	auto boardBuffer = Gtk::TextBuffer::create();
-+	boardView.set_buffer(boardBuffer);
-+	boardView.set_editable(false);
-+	boardView.set_monospace(true);
-+	boardView.set_wrap_mode(Gtk::WRAP_NONE);
-+
- 	dispatcher.connect(sigc::mem_fun(*this, &Play::update_text_view));
- 	backgroundUpdate();
--	innerWindow.add(text);
--	innerWindow.set_size_request(520,260);
--	innerWindow.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
--	
--	
--	fixed.add(numBox);
--	fixed.add(enter);
--	fixed.add(innerWindow);
--	fixed.move(innerWindow, 10, 10);
--	fixed.move(numBox, 10, 120);
--	fixed.move(enter, 10, 170);
--
--    resize(600,500);
-+
-+	boardScroll.add(boardView);
-+	boardScroll.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
-+	logScroll.add(logView);
-+	logScroll.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
-+
-+	leftControls.pack_start(responseLabel, Gtk::PACK_SHRINK);
-+	leftControls.pack_start(numBox, Gtk::PACK_SHRINK);
-+	leftControls.pack_start(enter, Gtk::PACK_SHRINK);
-+	leftControls.pack_start(clearLogButton, Gtk::PACK_SHRINK);
-+	leftControls.pack_start(autoScrollToggle, Gtk::PACK_SHRINK);
-+
-     show_all();
- }
-+
-+std::string Play :: openBoardFile(const std::string& board) {
-+	std::fstream file;
-+	file.open(board, std::ios::in);
-+	std::string fullFile;
-+	char last = '\0';
-+	if (!file) {
-+		return "";
-+	}
-+	char ch;
-+	while (1) {
-+		file >> ch;
-+		if (file.eof()) {
-+			break;
-+		}
-+		if (last == '0' && ch != ',') {
-+			fullFile += '\n';
-+		} else if (ch == '0' && is_board_num(last)) {
-+			fullFile += '\n';
-+		} else if (is_board_num(ch) && ch != '0' && ch != '3') {
-+			fullFile += ch;
-+		} else if (is_board_num(ch) && ch == '3') {
-+			fullFile += '0';
-+			fullFile += '\x20';
-+		} else {
-+			fullFile += '_';
-+			fullFile += '\x20';
-+		}
-+		last = ch;
-+	}
-+	file.close();
-+	return fullFile;
-+}
- 
-EOF
-)
+   Frame tabPage5;
+   RadioButtonGroup radioButtonGroup;
+   RadioButton radioTop;
+   RadioButton radioLeft;
+   RadioButton radioRight;
+   RadioButton radioBottom;
+   Fixed fixedTabPage1;
+   Fixed fixedTabPage2;
+   Fixed fixedTabPage3;
+   Fixed fixedTabPage4;
+   Fixed fixedTabPage5;
+   Button button1;
+   Button button2;
+   Button button3;
+

@@ -24,10 +24,10 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 namespace {
-constexpr int kDefaultWidth = 1400;
+constexpr int kDefaultWidth = 1500;
 constexpr int kDefaultHeight = 900;
-constexpr int kMinimumWidth = 1100;
-constexpr int kMinimumHeight = 700;
+constexpr int kMinimumWidth = 1200;
+constexpr int kMinimumHeight = 800;
 
 std::string geometryPath() {
   const char* home = std::getenv("HOME");
@@ -94,6 +94,29 @@ Form :: Form() {
   loadingRoster = false;
 
   bar.set_show_close_button(true);
+  bar.set_title("40kAI GUI");
+  set_titlebar(bar);
+
+  set_default_size(kDefaultWidth, kDefaultHeight);
+  set_size_request(kMinimumWidth, kMinimumHeight);
+
+  rootBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
+  topBarBox.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+  topBarBox.set_spacing(8);
+  leftBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
+  mainSplit.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+  rightSplit.set_orientation(Gtk::ORIENTATION_VERTICAL);
+
+  rootBox.set_hexpand(true);
+  rootBox.set_vexpand(true);
+  topBarBox.set_hexpand(true);
+  leftBox.set_hexpand(true);
+  leftBox.set_vexpand(true);
+  mainSplit.set_hexpand(true);
+  mainSplit.set_vexpand(true);
+  rightSplit.set_hexpand(true);
+  rightSplit.set_vexpand(true);
+
   help.set_image_from_icon_name("help-about");
   help.signal_button_release_event().connect([&](GdkEventButton*){
     openHelpMenu();
@@ -104,19 +127,41 @@ Form :: Form() {
     resetLayout();
     return true;
   });
-  bar.pack_end(help);
-  bar.pack_start(resetLayoutButton);
-  set_titlebar(bar);
+  topBarBox.pack_start(resetLayoutButton, Gtk::PACK_SHRINK);
+  topBarBox.pack_start(help, Gtk::PACK_SHRINK);
 
-  set_default_size(kDefaultWidth, kDefaultHeight);
-  set_size_request(kMinimumWidth, kMinimumHeight);
-  scrolledWindow.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
+  add(rootBox);
+  rootBox.pack_start(topBarBox, Gtk::PACK_SHRINK);
+  rootBox.pack_start(mainSplit, Gtk::PACK_EXPAND_WIDGET);
 
-  add(scrolledWindow);
-  scrolledWindow.add(fixed);
+  tabControl1.set_hexpand(true);
+  tabControl1.set_vexpand(true);
+  leftBox.pack_start(tabControl1, Gtk::PACK_EXPAND_WIDGET);
 
-  fixed.add(tabControl1);
-  fixed.move(tabControl1, 10, 10);
+  mainSplit.add1(leftBox);
+  mainSplit.add2(rightSplit);
+
+  boardFrame.set_label("Board / Preview");
+  boardFrame.set_hexpand(true);
+  boardFrame.set_vexpand(true);
+  pictureBox1.set_hexpand(true);
+  pictureBox1.set_vexpand(true);
+  boardFrame.add(pictureBox1);
+
+  logView.set_hexpand(true);
+  logView.set_vexpand(true);
+  logView.set_editable(false);
+  logView.set_wrap_mode(Gtk::WRAP_WORD_CHAR);
+  auto logBuffer = Gtk::TextBuffer::create();
+  logView.set_buffer(logBuffer);
+
+  logScroll.set_hexpand(true);
+  logScroll.set_vexpand(true);
+  logScroll.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
+  logScroll.add(logView);
+
+  rightSplit.add1(boardFrame);
+  rightSplit.add2(logScroll);
 
   tabControl1.insert_page(tabPage2, "Train", 0);
   tabControl1.insert_page(tabPage3, "Show Trained Model", 1);
@@ -175,7 +220,7 @@ Form :: Form() {
   tabPage2.add(fixedTabPage2);
 
   textbox1.set_text("Train Model:");
-  status.set_text("Press the Train button to train a model");
+  setStatusMessage("Press the Train button to train a model");
     
   button1.set_label("Train");
   button1.signal_button_release_event().connect([&](GdkEventButton*) {
@@ -183,7 +228,7 @@ Form :: Form() {
     syncEnemyUnitsFromRoster();
     updateInits(modelClass, enemyClass);
     if (exists_test("data.json") && training == false) {
-      status.set_text("Training...");
+      setStatusMessage("Training...");
       startTrainInBackground();
     }
     return true;
@@ -539,8 +584,10 @@ Form :: Form() {
   labelPage3.set_label("Show Trained Model");
   tabControl1.set_tab_label(tabPage3, labelPage3);
   tabPage3.add(fixedTabPage3);
-    
-  fixedTabPage3.add(pictureBox1);
+
+  showModelHint.set_text("Preview shown in the right panel.");
+  fixedTabPage3.add(showModelHint);
+  fixedTabPage3.move(showModelHint, 10, 10);
   pictureBox1.set_size_request(280, 280);
   update_picture();
 
@@ -670,11 +717,7 @@ Form :: Form() {
   fixedTabPage4.move(button5, 10, 40);
   fixedTabPage4.move(setModelFile, 80, 40);
 
-  bar.set_title("40kAI GUI");
-  if (!loadWindowGeometry()) {
-    resize(kDefaultWidth, kDefaultHeight);
-  }
-  ensureMinimumSize();
+  loadWindowGeometry();
   loadLastRoster();
   if (modelUnits.empty()) {
     modelUnits.push_back({"Apothecary", "Space_Marine", findDefaultModelsCount("Space_Marine", "Apothecary"),
@@ -696,6 +739,17 @@ Form :: Form() {
   show_all();
 }
 
+void Form :: setStatusMessage(const std::string& message) {
+  status.set_text(message);
+  auto logBuffer = logView.get_buffer();
+  if (!logBuffer) {
+    return;
+  }
+  logBuffer->insert(logBuffer->end(), message + "\n");
+  auto endIter = logBuffer->end();
+  logView.scroll_to(endIter);
+}
+
 bool Form :: loadWindowGeometry() {
   std::ifstream infile(geometryPath());
   if (!infile) {
@@ -706,7 +760,7 @@ bool Form :: loadWindowGeometry() {
   if (!(infile >> width >> height)) {
     return false;
   }
-  resize(width, height);
+  set_default_size(width, height);
   return true;
 }
 
@@ -801,7 +855,7 @@ void Form :: mirrorRoster() {
   auto playerEntry = enterEnemyUnit.get_text();
   syncEnemyUnitsFromRoster();
   if (rosterModel.empty() && playerEntry.empty()) {
-    status.set_text("Player roster is empty, nothing to mirror.");
+    setStatusMessage("Player roster is empty, nothing to mirror.");
     return;
   }
 
@@ -815,7 +869,7 @@ void Form :: mirrorRoster() {
 
   modelUnits = rosterModel.expandedUnits();
   savetoTxt(enemyUnits, modelUnits);
-  status.set_text("Mirrored Player roster to Model.");
+  setStatusMessage("Mirrored Player roster to Model.");
 }
 
 void Form :: applyFactionToModel(const std::string& faction) {
@@ -886,7 +940,7 @@ void Form :: loadLastRoster() {
   }
 
   syncEnemyUnitsFromRoster();
-  status.set_text("Loaded last roster.");
+  setStatusMessage("Loaded last roster.");
 }
 
 void Form :: syncEnemyUnitsFromRoster() {
@@ -1029,7 +1083,7 @@ void Form :: startTrain() {
   std::string command = "cd .. ; ";
   command.append("./train.sh");
   system(command.data());
-  status.set_text("Completed!");
+  setStatusMessage("Completed!");
   training = false;
   update_picture();
   update_metrics();

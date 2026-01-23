@@ -47,6 +47,7 @@ public :
   void resetLayout();
 
 private:
+  void setStatusMessage(const std::string& message);
   void applyFactionToModel(const std::string& faction);
   void applyFactionToEnemy(const std::string& faction);
   bool loadWindowGeometry();
@@ -64,8 +65,15 @@ private:
 Image metricBox4;
 Image metricBox5;
 Image metricBox6;
-  Fixed fixed;
-  ScrolledWindow scrolledWindow;
+  Box rootBox;
+  Box topBarBox;
+  Box leftBox;
+  Paned mainSplit;
+  Paned rightSplit;
+  Frame boardFrame;
+  ScrolledWindow logScroll;
+  TextView logView;
+  Label showModelHint;
   Notebook tabControl1;
   Label labelPage1;
   Label labelPage2;
