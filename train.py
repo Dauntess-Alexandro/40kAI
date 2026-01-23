@@ -160,6 +160,8 @@ if os.path.isfile("gui/data.json"):
     b_hei = initFile.getBoardY()
     enemy_counts = initFile.getEnemyUnitCounts()
     model_counts = initFile.getModelUnitCounts()
+    enemy_instance_ids = initFile.getEnemyUnitInstanceIds()
+    model_instance_ids = initFile.getModelUnitInstanceIds()
     print("Model Units:\n")
     if len(initFile.getEnemyUnits()) > 0:
         enemy = []
@@ -167,7 +169,9 @@ if os.path.isfile("gui/data.json"):
             unit_data = unitData(initFile.getEnemyFaction(), initFile.getEnemyUnits()[i])
             if i < len(enemy_counts) and enemy_counts[i] > 0:
                 unit_data["#OfModels"] = enemy_counts[i]
-            enemy.append(Unit(unit_data, weaponData(initFile.getEnemyW()[i][0]), weaponData(initFile.getEnemyW()[i][1]), b_len, b_hei))
+            instance_id = enemy_instance_ids[i] if i < len(enemy_instance_ids) else ""
+            enemy.append(Unit(unit_data, weaponData(initFile.getEnemyW()[i][0]), weaponData(initFile.getEnemyW()[i][1]),
+                              b_len, b_hei, instance_id=instance_id))
             print("Name:", initFile.getEnemyUnits()[i], "Weapons: ", initFile.getEnemyW()[i][0], initFile.getEnemyW()[i][1])
     print("Enemy Units:\n")
     if len(initFile.getModelUnits()) > 0:
@@ -176,7 +180,9 @@ if os.path.isfile("gui/data.json"):
             unit_data = unitData(initFile.getModelFaction(), initFile.getModelUnits()[i])
             if i < len(model_counts) and model_counts[i] > 0:
                 unit_data["#OfModels"] = model_counts[i]
-            model.append(Unit(unit_data, weaponData(initFile.getModelW()[i][0]), weaponData(initFile.getModelW()[i][1]), b_len, b_hei))
+            instance_id = model_instance_ids[i] if i < len(model_instance_ids) else ""
+            model.append(Unit(unit_data, weaponData(initFile.getModelW()[i][0]), weaponData(initFile.getModelW()[i][1]),
+                              b_len, b_hei, instance_id=instance_id))
             print("Name:", initFile.getModelUnits()[i], "Weapons: ", initFile.getModelW()[i][0], initFile.getModelW()[i][1])
 
 numLifeT = 0
@@ -193,13 +199,14 @@ if verbose:
         unit_data = unit.showUnitData()
         unit_name = unit_data.get("Name", "Unknown")
         unit_models = unit_data.get("#OfModels", 1)
-        print(f"[roster] model[{idx}] name={unit_name} models={unit_models}")
+        print(f"[roster] model[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
     for idx, unit in enumerate(enemy):
         unit_data = unit.showUnitData()
         unit_name = unit_data.get("Name", "Unknown")
         unit_models = unit_data.get("#OfModels", 1)
-        print(f"[roster] enemy[{idx}] name={unit_name} models={unit_models}")
+        print(f"[roster] enemy[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
     print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
+print("Units:", [(u.name, u.instance_id, u.models_count) for u in model])
 
 deploy_only_war(
     model_units=model,

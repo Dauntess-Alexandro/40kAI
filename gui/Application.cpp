@@ -653,8 +653,11 @@ Form :: Form() {
   resize(700, 600);
   loadLastRoster();
   if (modelUnits.empty()) {
-    modelUnits.push_back({"Apothecary", findDefaultModelsCount("Space_Marine", "Apothecary")});
-    modelUnits.push_back({"Eliminator Squad", findDefaultModelsCount("Space_Marine", "Eliminator Squad")});
+    modelUnits.push_back({"Apothecary", "Space_Marine", findDefaultModelsCount("Space_Marine", "Apothecary"),
+                          RosterModel::generateInstanceId()});
+    modelUnits.push_back({"Eliminator Squad", "Space_Marine",
+                          findDefaultModelsCount("Space_Marine", "Eliminator Squad"),
+                          RosterModel::generateInstanceId()});
   }
   if (enemyUnits.empty()) {
     rosterModel.addUnit("Apothecary", 1, enemyClass.substr(1));
@@ -873,10 +876,12 @@ bool Form :: isValidUnit(int id, std::string name) {
         modelsCount = unit.at("#OfModels").get<int>();
       }
       if (id == 0 && strcmp(toLower(unit.at("Army").get<std::string>()).data(), toLower(modelClass.substr(1, modelClass.length())).data()) == 0) {
-        modelUnits.push_back({unit.at("Name").get<std::string>(), modelsCount});
+        modelUnits.push_back({unit.at("Name").get<std::string>(), modelClass.substr(1, modelClass.length()),
+                              modelsCount, RosterModel::generateInstanceId()});
         return true;
       } else if (id == 1 && strcmp(toLower(unit.at("Army").get<std::string>()).data(), toLower(enemyClass.substr(1, enemyClass.length())).data()) == 0) {
-        enemyUnits.push_back({unit.at("Name").get<std::string>(), modelsCount});
+        enemyUnits.push_back({unit.at("Name").get<std::string>(), enemyClass.substr(1, enemyClass.length()),
+                              modelsCount, RosterModel::generateInstanceId()});
         return true;
       }
     }
@@ -889,11 +894,19 @@ void Form :: savetoTxt(const std::vector<RosterEntry>& enemyUnits, const std::ve
   std::ofstream outfile("units.txt");
   outfile << "Player Units\n";
   for (const auto& entry : enemyUnits) {
-    outfile << entry.name << "|" << entry.modelsCount << std::endl;
+    outfile << entry.name << "|" << entry.modelsCount;
+    if (!entry.instanceId.empty()) {
+      outfile << "|" << entry.instanceId;
+    }
+    outfile << std::endl;
   }
   outfile << "Model Units\n";
   for (const auto& entry : modelUnits) {
-    outfile << entry.name << "|" << entry.modelsCount << std::endl;
+    outfile << entry.name << "|" << entry.modelsCount;
+    if (!entry.instanceId.empty()) {
+      outfile << "|" << entry.instanceId;
+    }
+    outfile << std::endl;
   }
   outfile.close();
 }

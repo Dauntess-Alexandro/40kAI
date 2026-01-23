@@ -8,7 +8,9 @@ from gym_mod.engine.deployment import get_random_free_deploy_coord
 
 
 class Unit:
-    def __init__(self, data, weapon, melee=None, GUI=False, b_len=0, b_hei=0):
+    _instance_counter = 1
+
+    def __init__(self, data, weapon, melee=None, b_len=0, b_hei=0, GUI=False, instance_id=None):
         self.unit_data = data
         self.unit_weapon = weapon
         self.unit_melee = melee
@@ -16,6 +18,11 @@ class Unit:
         self.b_hei = int(b_hei) if b_hei else 0
         self.unit_coords = np.array([0, 0])
         self.playInGUI = GUI
+        if instance_id:
+            self.instance_id = str(instance_id)
+        else:
+            self.instance_id = f"unit-{Unit._instance_counter}"
+            Unit._instance_counter += 1
 
     # --- FIX: подхватываем размеры поля из board.txt, если они нулевые ---
     def _ensure_board_dims(self):
@@ -144,3 +151,11 @@ class Unit:
 
     def showCoords(self):
         return self.unit_coords
+
+    @property
+    def name(self):
+        return self.unit_data.get("Name", "Unknown")
+
+    @property
+    def models_count(self):
+        return int(self.unit_data.get("#OfModels", 1))

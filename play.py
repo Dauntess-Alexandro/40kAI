@@ -79,12 +79,23 @@ if verbose:
         unit_data = unit.showUnitData()
         unit_name = unit_data.get("Name", "Unknown")
         unit_models = unit_data.get("#OfModels", 1)
-        _log(f"[roster] model[{idx}] name={unit_name} models={unit_models}")
+        instance_id = getattr(unit, "instance_id", "unknown")
+        _log(f"[roster] model[{idx}] name={unit_name} instance_id={instance_id} models={unit_models}")
     for idx, unit in enumerate(enemy):
         unit_data = unit.showUnitData()
         unit_name = unit_data.get("Name", "Unknown")
         unit_models = unit_data.get("#OfModels", 1)
-        _log(f"[roster] enemy[{idx}] name={unit_name} models={unit_models}")
+        instance_id = getattr(unit, "instance_id", "unknown")
+        _log(f"[roster] enemy[{idx}] name={unit_name} instance_id={instance_id} models={unit_models}")
+_log(
+    "Units: "
+    + str(
+        [
+            (u.name, getattr(u, "instance_id", "unknown"), u.models_count)
+            for u in model
+        ]
+    )
+)
 
 deploy_only_war(
     model_units=model,

@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string>
 #include <fstream>
+#include <unordered_map>
 #include <nlohmann/json.hpp>
 #include "include/units.h"
 
@@ -57,11 +58,22 @@ void Units::refreshRosterView() {
     return;
   }
   rosterStore->clear();
+  std::unordered_map<std::string, int> totalByName;
+  for (const auto& entry : rosterModel->units()) {
+    totalByName[entry.name] += 1;
+  }
+  std::unordered_map<std::string, int> seenByName;
   for (const auto& entry : rosterModel->units()) {
     auto row = *(rosterStore->append());
     row[rosterColumns.name] = entry.name;
     row[rosterColumns.modelsCount] = entry.modelsCount;
-    row[rosterColumns.display] = formatRosterDisplay(entry.name, entry.modelsCount);
+    row[rosterColumns.instanceId] = entry.instanceId;
+    int ordinal = ++seenByName[entry.name];
+    std::string displayName = entry.name;
+    if (totalByName[entry.name] > 1) {
+      displayName += " #" + std::to_string(ordinal);
+    }
+    row[rosterColumns.display] = formatRosterDisplay(displayName, entry.modelsCount);
   }
 }
 
@@ -104,7 +116,13 @@ void Units::removeSelectedUnit() {
   if (path.empty()) {
     return;
   }
-  rosterModel->removeUnit(static_cast<size_t>(path.front()));
+  Glib::ustring instanceValue = (*iter)[rosterColumns.instanceId];
+  std::string instanceId = instanceValue.raw();
+  if (!instanceId.empty()) {
+    rosterModel->removeUnitByInstanceId(instanceId);
+  } else {
+    rosterModel->removeUnit(static_cast<size_t>(path.front()));
+  }
   refreshRosterView();
   persistRoster();
 }
