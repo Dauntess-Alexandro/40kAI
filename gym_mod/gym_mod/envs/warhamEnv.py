@@ -17,6 +17,7 @@ from gym_mod.engine.mission import (
 )
 from gym_mod.engine.skills import apply_end_of_command_phase
 from gym_mod.engine.logging_utils import format_unit
+from gym_mod.engine.state_export import write_state_json
 
 # ============================================================
 # 🔧 FIX: resolve string weapons like "Bolt pistol [PISTOL]"
@@ -3196,6 +3197,8 @@ class Warhammer40kEnv(gym.Env):
 
         for i in range(len(self.coordsOfOM)):
             self.board[int(self.coordsOfOM[i][0])][int(self.coordsOfOM[i][1])] = 3
+
+        write_state_json(self)
 
     def returnBoard(self):
         return self.board

@@ -1,0 +1,105 @@
+import json
+import os
+from datetime import datetime
+
+
+DEFAULT_STATE_PATH = os.path.join(os.getcwd(), "gui", "state.json")
+
+
+def _safe_int(value, fallback=None):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _safe_float(value, fallback=None):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _read_log_tail(max_lines=30):
+    candidates = [
+        os.path.join(os.getcwd(), "gui", "response.txt"),
+        os.path.join(os.getcwd(), "response.txt"),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+                lines = [line.rstrip("\n") for line in handle.readlines()]
+                return lines[-max_lines:] if lines else []
+    return []
+
+
+def _unit_payload(side, unit_id, unit_data, coords, hp):
+    name = "—"
+    models = None
+    if isinstance(unit_data, dict):
+        name = unit_data.get("Name") or name
+        models = _safe_int(unit_data.get("#OfModels"), None)
+
+    return {
+        "side": side,
+        "id": unit_id,
+        "name": name,
+        "models": models,
+        "hp": _safe_float(hp, None),
+        "x": _safe_int(coords[0], None) if coords is not None else None,
+        "y": _safe_int(coords[1], None) if coords is not None else None,
+    }
+
+
+def write_state_json(env, path=None):
+    state_path = path or os.getenv("STATE_JSON_PATH", DEFAULT_STATE_PATH)
+    os.makedirs(os.path.dirname(state_path), exist_ok=True)
+
+    units = []
+    for idx, coords in enumerate(getattr(env, "enemy_coords", [])):
+        unit_id = env._unit_id("enemy", idx)
+        unit_data = env._get_unit_data("enemy", idx)
+        hp = env.enemy_health[idx] if idx < len(env.enemy_health) else None
+        units.append(_unit_payload("player", unit_id, unit_data, coords, hp))
+
+    for idx, coords in enumerate(getattr(env, "unit_coords", [])):
+        unit_id = env._unit_id("model", idx)
+        unit_data = env._get_unit_data("model", idx)
+        hp = env.unit_health[idx] if idx < len(env.unit_health) else None
+        units.append(_unit_payload("model", unit_id, unit_data, coords, hp))
+
+    objectives = []
+    for idx, coords in enumerate(getattr(env, "coordsOfOM", [])):
+        objectives.append({
+            "id": idx + 1,
+            "x": _safe_int(coords[0], None),
+            "y": _safe_int(coords[1], None),
+        })
+
+    active_side = getattr(env, "active_side", None)
+    if active_side == "enemy":
+        active_side = "player"
+    elif active_side == "model":
+        active_side = "model"
+
+    payload = {
+        "board": {"width": _safe_int(getattr(env, "b_len", None), None),
+                  "height": _safe_int(getattr(env, "b_hei", None), None)},
+        "turn": _safe_int(getattr(env, "numTurns", None), None),
+        "round": _safe_int(getattr(env, "battle_round", None), None),
+        "phase": getattr(env, "phase", None),
+        "active": active_side,
+        "vp": {"player": _safe_int(getattr(env, "enemyVP", None), None),
+               "model": _safe_int(getattr(env, "modelVP", None), None)},
+        "cp": {"player": _safe_int(getattr(env, "enemyCP", None), None),
+               "model": _safe_int(getattr(env, "modelCP", None), None)},
+        "units": units,
+        "objectives": objectives,
+        "log_tail": _read_log_tail(),
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+    with open(state_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+    return payload
