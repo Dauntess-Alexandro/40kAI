@@ -110,6 +110,10 @@ void PopUp :: applyStyles() {
       ".log-view text {"
       "  color: #d0d0d0;"
       "}"
+      "separator {"
+      "  background-color: #1f1f1f;"
+      "  min-height: 1px;"
+      "}"
   );
   auto screen = Gdk::Screen::get_default();
   if (screen) {
@@ -128,7 +132,7 @@ void PopUp :: update() {
   }
   std::string statusText = openStatusFile("../board_status.txt");
   statusLabel.set_text(statusText);
-  statusLabel.set_tooltip_text(statusText);
+  statusFrame.set_tooltip_text(statusText);
 
   auto trim_left = [](std::string value) {
     value.erase(value.begin(), std::find_if(value.begin(), value.end(),
@@ -158,17 +162,50 @@ void PopUp :: update() {
       cp = trim_left(line.substr(3));
     }
   }
+  auto split_dash = [&trim_left](const std::string& value) {
+    std::string left;
+    std::string right;
+    auto dash = value.find('-');
+    if (dash != std::string::npos) {
+      left = trim_left(value.substr(0, dash));
+      right = trim_left(value.substr(dash + 1));
+    } else {
+      left = trim_left(value);
+    }
+    return std::make_pair(left, right);
+  };
+
   if (!turn.empty() || !round.empty() || !phase.empty() || !active.empty()) {
+    statusTurnLabel.set_text("Turn " + turn + " • Round " + round);
+    statusPhaseLabel.set_text("Phase " + phase);
+    statusActiveLabel.set_text("Active " + active);
+    auto vpParts = split_dash(vp);
+    auto cpParts = split_dash(cp);
+    statusVpLabel.set_text("VP " + vpParts.first + " - " + vpParts.second);
+    statusCpLabel.set_text("CP Player " + cpParts.second + " - " + cpParts.first + " Model");
     statusBarLabel.set_text("Turn " + turn + " • Round " + round + " • Phase " + phase +
-                            " • Active " + active + "\nVP " + vp + " | CP " + cp);
+                            " • Active " + active + "\nVP " + vpParts.first + " - " + vpParts.second +
+                            " | CP Player " + cpParts.second + " - " + cpParts.first + " Model");
   } else {
+    statusTurnLabel.set_text("Waiting for status data...");
+    statusPhaseLabel.set_text("");
+    statusActiveLabel.set_text("");
+    statusVpLabel.set_text("");
+    statusCpLabel.set_text("");
     statusBarLabel.set_text("Waiting for status data...");
   }
 
   std::string latestLog = openLogFile("response.txt");
   if (!latestLog.empty() && latestLog != lastLogLine) {
     lastLogLine = latestLog;
-    logText += latestLog + "\n";
+    std::istringstream logStream(latestLog);
+    std::string logLine;
+    while (std::getline(logStream, logLine)) {
+      if (logLine.empty()) {
+        continue;
+      }
+      logText += "• " + logLine + "\n";
+    }
   }
   auto logBuffer = logView.get_buffer();
   if (logBuffer) {
@@ -215,6 +252,7 @@ PopUp :: PopUp(bool textMode)
       mainSplit(Gtk::ORIENTATION_HORIZONTAL),
       sideBox(Gtk::ORIENTATION_VERTICAL),
       statusBarBox(Gtk::ORIENTATION_VERTICAL),
+      statusContentBox(Gtk::ORIENTATION_VERTICAL),
       logBox(Gtk::ORIENTATION_VERTICAL),
       logControls(Gtk::ORIENTATION_HORIZONTAL),
       textModeEnabled(textMode) {
@@ -267,13 +305,38 @@ PopUp :: PopUp(bool textMode)
   statusLabel.set_line_wrap(true);
   statusLabel.set_max_width_chars(40);
   statusLabel.get_style_context()->add_class("status-text");
-  statusFrame.add(statusLabel);
+  statusLabel.set_no_show_all(true);
+
+  statusTurnLabel.set_xalign(0.0f);
+  statusPhaseLabel.set_xalign(0.0f);
+  statusActiveLabel.set_xalign(0.0f);
+  statusVpLabel.set_xalign(0.0f);
+  statusCpLabel.set_xalign(0.0f);
+  statusTurnLabel.get_style_context()->add_class("status-text");
+  statusPhaseLabel.get_style_context()->add_class("status-text");
+  statusActiveLabel.get_style_context()->add_class("status-text");
+  statusVpLabel.get_style_context()->add_class("status-text");
+  statusCpLabel.get_style_context()->add_class("status-text");
+
+  statusContentBox.set_spacing(6);
+  statusContentBox.pack_start(statusTurnLabel, Gtk::PACK_SHRINK);
+  statusContentBox.pack_start(statusSeparatorTop, Gtk::PACK_SHRINK);
+  statusContentBox.pack_start(statusPhaseLabel, Gtk::PACK_SHRINK);
+  statusContentBox.pack_start(statusActiveLabel, Gtk::PACK_SHRINK);
+  statusContentBox.pack_start(statusSeparatorBottom, Gtk::PACK_SHRINK);
+  statusContentBox.pack_start(statusVpLabel, Gtk::PACK_SHRINK);
+  statusContentBox.pack_start(statusCpLabel, Gtk::PACK_SHRINK);
+  statusFrame.add(statusContentBox);
 
   legendFrame.set_label("Legend");
   legendFrame.get_style_context()->add_class("panel-frame");
   legendLabel.set_xalign(0.0f);
   legendLabel.set_line_wrap(true);
-  legendLabel.set_text("• Model Unit (blue)\n• Player Unit (green)\n• Objective Marker (black)");
+  legendLabel.set_use_markup(true);
+  legendLabel.set_markup(
+      "<span foreground=\"#5a78b5\">●</span> Model Units\n"
+      "<span foreground=\"#5e8f4b\">●</span> Player Units\n"
+      "<span foreground=\"#2b2b2b\">●</span> Objective Markers");
   legendLabel.get_style_context()->add_class("legend-text");
   legendFrame.add(legendLabel);
 
@@ -341,7 +404,7 @@ PopUp :: PopUp(bool textMode)
 
   update();
 
-  resize(800,500);
+  resize(900,700);
   show_all();
 }
 
