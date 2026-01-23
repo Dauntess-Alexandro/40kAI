@@ -22,9 +22,25 @@ class PopUp : public Gtk::Window {
     void keepUpdatingElecBoogaloo();
     void updateImage();
   private:
+    Box rootBox;
+    Paned mainSplit;
+    Box boardArea;
+    Frame boardFrame;
+    ScrolledWindow boardScroll;
+    Fixed boardFixed;
+    Frame statusFrame;
+    Box statusPanel;
+    Label turnRoundLabel;
+    Label phaseLabel;
+    Label activeSideLabel;
+    Label vpLabel;
+    Label cpLabel;
+    Label legendLabel;
+    Frame logFrame;
+    ScrolledWindow logScroll;
+    TextView logView;
+    RefPtr<TextBuffer> logBuffer;
     Label contents;
-    Fixed fixed;
-    ScrolledWindow scrolledWindow;
     HeaderBar bar;
     Button changeMode;
     Image pictureBox;
