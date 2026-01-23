@@ -58,11 +58,48 @@ if sys.argv[2] == "True":
     playInGUI = True
 
 
-def _log(msg: str):
+JOURNAL_PATH = os.getenv("TUI_JOURNAL", "journal.txt")
+JOURNAL_MAX_LINES = int(os.getenv("TUI_JOURNAL_MAX_LINES", "2000"))
+_journal_writes = 0
+
+
+def _append_journal(msg: str):
+    global _journal_writes
+    if not msg:
+        return
+    try:
+        with open(JOURNAL_PATH, "a", encoding="utf-8") as journal:
+            journal.write(msg.rstrip() + "\n")
+        _journal_writes += 1
+        if _journal_writes % 20 == 0:
+            _trim_journal()
+    except OSError:
+        return
+
+
+def _trim_journal():
+    try:
+        with open(JOURNAL_PATH, "r", encoding="utf-8") as journal:
+            lines = journal.read().splitlines()
+        if len(lines) <= JOURNAL_MAX_LINES:
+            return
+        trimmed = lines[-JOURNAL_MAX_LINES :]
+        with open(JOURNAL_PATH, "w", encoding="utf-8") as journal:
+            journal.write("\n".join(trimmed) + "\n")
+    except OSError:
+        return
+
+
+def _emit(msg: str):
     if playInGUI:
         sendToGUI(msg)
     else:
         print(msg)
+    _append_journal(msg)
+
+
+def _log(msg: str):
+    _emit(msg)
 
 
 verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
@@ -154,11 +191,11 @@ else:
 
 reward = 0
 if playInGUI == False:
-    print("\nInstructions:\n")
-    print("The player (you) controls units starting with 1 (i.e. 11, 12, etc)")
-    print("The model controls units starting with 2 (i.e. 21, 22, etc)\n")
+    _emit("\nInstructions:\n")
+    _emit("The player (you) controls units starting with 1 (i.e. 11, 12, etc)")
+    _emit("The model controls units starting with 2 (i.e. 21, 22, etc)\n")
 else:
-    sendToGUI("\nInstructions:\nThe player (you) controls units starting with 1 (i.e. 11, 12, etc)\nThe model controls units starting with 2 (i.e. 21, 22, etc)\n")
+    _emit("\nInstructions:\nThe player (you) controls units starting with 1 (i.e. 11, 12, etc)\nThe model controls units starting with 2 (i.e. 21, 22, etc)\n")
 
 while isdone == False:
     done, info = env.player()
@@ -174,22 +211,13 @@ while isdone == False:
 
         board = env.render()
         message = "Iteration {} ended with reward {}, Player health {}, Model health {}".format(i, reward, enemy_health, unit_health)
-        if playInGUI == False:
-            print(message)
-        else:
-            sendToGUI(message)
+        _emit(message)
         next_state = torch.tensor(next_observation, dtype=torch.float32, device=device).unsqueeze(0)
         state = next_state
     if done == True:
         if reward > 0:
-            if playInGUI == False:
-                print("model won!")
-            else:
-                sendToGUI("model won!")
+            _emit("model won!")
         else:
-            if playInGUI == False:
-                print("you won!")
-            else:
-                sendToGUI("you won!")
+            _emit("you won!")
         isdone = True
     i+=1
