@@ -3,7 +3,7 @@ set -e
 
 cd "$(dirname "$0")"
 
-RUN_CMD="cd \"$PWD\" && ./scripts/tui.sh"
+RUN_CMD="cd \"$PWD\" && ./scripts/tui.sh; echo; read -r -p \"Нажмите Enter, чтобы закрыть окно...\" _"
 
 if command -v x-terminal-emulator >/dev/null 2>&1; then
   x-terminal-emulator -e bash -lc "$RUN_CMD"
