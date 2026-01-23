@@ -28,6 +28,8 @@ public :
   void startTrain();
   void runPlayAgainstModelInBackground();
   void playAgainstModel();
+  void runTuiWatcherInBackground();
+  void runTuiWatcher();
   inline bool exists_test (const std::string& name);
   void on_dropdown_changed();
   void savetoTxt(const std::vector<RosterEntry>& enemyUnits, const std::vector<RosterEntry>& modelUnits);
@@ -104,6 +106,7 @@ Image metricBox6;
   Button button6;
   Button showBoard;
   Button showBoardImg;
+  Button showBoardTui;
   Label textbox;
   Label textbox2;
   Label textbox1;

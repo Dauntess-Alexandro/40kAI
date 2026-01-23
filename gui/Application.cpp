@@ -690,6 +690,12 @@ Form :: Form() {
 	return true;
   });
 
+  showBoardTui.set_label("Запустить карту в TUI");
+  showBoardTui.signal_button_release_event().connect([&](GdkEventButton* event) {
+    runTuiWatcherInBackground();
+    return true;
+  });
+
   playGUI.set_label("Play in GUI");
   playGUI.signal_button_release_event().connect([&](GdkEventButton* event) {
 	if (playing == false) {
@@ -706,6 +712,7 @@ Form :: Form() {
   fixedTabPage4.add(button2);
   fixedTabPage4.add(showBoard);
   fixedTabPage4.add(showBoardImg);
+  fixedTabPage4.add(showBoardTui);
   fixedTabPage4.add(playGUI);
   fixedTabPage4.add(button5);
   fixedTabPage4.add(setModelFile);
@@ -713,6 +720,7 @@ Form :: Form() {
   fixedTabPage4.move(playGUI, 130, 80);
   fixedTabPage4.move(showBoard, 220, 80);
   fixedTabPage4.move(showBoardImg, 395, 80);  
+  fixedTabPage4.move(showBoardTui, 10, 120);
   fixedTabPage4.move(button2, 10, 80);
   fixedTabPage4.move(button5, 10, 40);
   fixedTabPage4.move(setModelFile, 80, 40);
@@ -1093,6 +1101,11 @@ void Form :: runPlayAgainstModelInBackground() {
   std::thread t(&Form::playAgainstModel, this);
   t.detach();
 }
+
+void Form :: runTuiWatcherInBackground() {
+  std::thread t(&Form::runTuiWatcher, this);
+  t.detach();
+}
   
 void Form :: playAgainstModel() {
   path = setModelFile.get_text();
@@ -1127,6 +1140,12 @@ void Form :: playAgainstModel() {
   system("clear");
   system(command.data());
   playing = false;
+}
+
+void Form :: runTuiWatcher() {
+  system("clear");
+  std::string command = "cd .. ; ./launch_tui.sh";
+  system(command.data());
 }
 
 
