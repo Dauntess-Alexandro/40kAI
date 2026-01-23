@@ -3212,12 +3212,24 @@ class Warhammer40kEnv(gym.Env):
 
         fig.suptitle(title)
 
+        phase_map = {
+            "command": "Command",
+            "movement": "Move",
+            "shooting": "Shoot",
+            "charge": "Charge",
+            "fight": "Fight",
+        }
+        phase_label = phase_map.get(self.phase, self.phase.title())
+        active_label = self._display_side(self.active_side)
         status_lines = [
             f"Turn: {self.iter}",
+            f"Round: {self.battle_round}",
+            f"Phase: {phase_label}",
+            f"Active Player: {active_label}",
+            f"VP: {self.modelVP} - {self.enemyVP}",
+            f"CP: {self.modelCP} - {self.enemyCP}",
             f"Model HP: {self.unit_health}",
             f"{self._display_side('enemy')} HP: {self.enemy_health}",
-            f"CP (Model/Player): {self.modelCP}/{self.enemyCP}",
-            f"VP (Model/Player): {self.modelVP}/{self.enemyVP}",
         ]
         status_text = "\n".join(status_lines)
         with open("board_status.txt", "w", encoding="utf-8") as status_file:

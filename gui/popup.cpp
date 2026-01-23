@@ -6,6 +6,9 @@
 #include <fstream>
 #include <thread>
 #include <chrono>
+#include <sstream>
+#include <algorithm>
+#include <cctype>
 
 #include "include/popup.h"
 
@@ -70,6 +73,51 @@ std::string PopUp :: openStatusFile(const std::string& statusFile) {
   return statusText;
 }
 
+std::string PopUp :: openLogFile(const std::string& logFile) {
+  std::ifstream file(logFile);
+  if (!file) {
+    return "";
+  }
+  std::string logText((std::istreambuf_iterator<char>(file)),
+                      std::istreambuf_iterator<char>());
+  return logText;
+}
+
+void PopUp :: applyStyles() {
+  auto cssProvider = Gtk::CssProvider::create();
+  cssProvider->load_from_data(
+      "window, .board-popup {"
+      "  background-color: #2c2c2c;"
+      "  color: #e6e1d5;"
+      "}"
+      ".board-frame, .panel-frame, .status-bar, .log-frame {"
+      "  background-color: #3a3a3a;"
+      "  border: 1px solid #1f1f1f;"
+      "  border-radius: 6px;"
+      "  padding: 6px;"
+      "}"
+      ".panel-frame {"
+      "  background-color: #353535;"
+      "}"
+      ".status-text, .legend-text, .status-bar-text {"
+      "  color: #e6e1d5;"
+      "  font-size: 13px;"
+      "}"
+      ".status-title, .legend-title, .log-title {"
+      "  color: #d8c9a7;"
+      "  font-weight: bold;"
+      "}"
+      ".log-view text {"
+      "  color: #d0d0d0;"
+      "}"
+  );
+  auto screen = Gdk::Screen::get_default();
+  if (screen) {
+    Gtk::StyleContext::add_provider_for_screen(
+        screen, cssProvider, GTK_STYLE_PROVIDER_PRIORITY_USER);
+  }
+}
+
 void PopUp :: update() {
   std::string boardpth = "../board.txt";
   std::string board;
@@ -81,6 +129,56 @@ void PopUp :: update() {
   std::string statusText = openStatusFile("../board_status.txt");
   statusLabel.set_text(statusText);
   statusLabel.set_tooltip_text(statusText);
+
+  auto trim_left = [](std::string value) {
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(),
+                                           [](unsigned char ch) { return !std::isspace(ch); }));
+    return value;
+  };
+  std::istringstream statusStream(statusText);
+  std::string line;
+  std::string turn;
+  std::string round;
+  std::string phase;
+  std::string active;
+  std::string vp;
+  std::string cp;
+  while (std::getline(statusStream, line)) {
+    if (line.rfind("Turn:", 0) == 0) {
+      turn = trim_left(line.substr(5));
+    } else if (line.rfind("Round:", 0) == 0) {
+      round = trim_left(line.substr(6));
+    } else if (line.rfind("Phase:", 0) == 0) {
+      phase = trim_left(line.substr(6));
+    } else if (line.rfind("Active Player:", 0) == 0) {
+      active = trim_left(line.substr(14));
+    } else if (line.rfind("VP:", 0) == 0) {
+      vp = trim_left(line.substr(3));
+    } else if (line.rfind("CP:", 0) == 0) {
+      cp = trim_left(line.substr(3));
+    }
+  }
+  if (!turn.empty() || !round.empty() || !phase.empty() || !active.empty()) {
+    statusBarLabel.set_text("Turn " + turn + " • Round " + round + " • Phase " + phase +
+                            " • Active " + active + "\nVP " + vp + " | CP " + cp);
+  } else {
+    statusBarLabel.set_text("Waiting for status data...");
+  }
+
+  std::string latestLog = openLogFile("response.txt");
+  if (!latestLog.empty() && latestLog != lastLogLine) {
+    lastLogLine = latestLog;
+    logText += latestLog + "\n";
+  }
+  auto logBuffer = logView.get_buffer();
+  if (logBuffer) {
+    logBuffer->set_text(logText);
+    if (autoScrollToggle.get_active()) {
+      auto endIter = logBuffer->end();
+      logBuffer->place_cursor(endIter);
+      logView.scroll_to(endIter);
+    }
+  }
 }
 
 void PopUp :: keepUpdating() {
@@ -92,9 +190,7 @@ void PopUp :: keepUpdating() {
 
 void PopUp :: updateImage() {
 	pictureBox.set("img/board.png");
-  std::string statusText = openStatusFile("../board_status.txt");
-  statusLabel.set_text(statusText);
-  statusLabel.set_tooltip_text(statusText);
+  update();
 }
 
 void PopUp :: keepUpdatingElecBoogaloo() {
@@ -118,14 +214,26 @@ PopUp :: PopUp(bool textMode)
     : rootBox(Gtk::ORIENTATION_VERTICAL),
       mainSplit(Gtk::ORIENTATION_HORIZONTAL),
       sideBox(Gtk::ORIENTATION_VERTICAL),
+      statusBarBox(Gtk::ORIENTATION_VERTICAL),
+      logBox(Gtk::ORIENTATION_VERTICAL),
+      logControls(Gtk::ORIENTATION_HORIZONTAL),
       textModeEnabled(textMode) {
 
   system("cp img/boardINIT.png img/board.png");
   bar.set_show_close_button(true);
   set_titlebar(bar);
 
+  applyStyles();
+
   add(rootBox);
+  rootBox.set_margin_start(8);
+  rootBox.set_margin_end(8);
+  rootBox.set_margin_top(8);
+  rootBox.set_margin_bottom(8);
+  rootBox.get_style_context()->add_class("board-popup");
   rootBox.pack_start(mainSplit, Gtk::PACK_EXPAND_WIDGET);
+  rootBox.pack_start(statusBarFrame, Gtk::PACK_SHRINK);
+  rootBox.pack_start(logFrame, Gtk::PACK_EXPAND_WIDGET);
   
   bar.set_title("Game Board");
   if (textMode == false) {
@@ -137,6 +245,7 @@ PopUp :: PopUp(bool textMode)
   boardFrame.set_label("Board");
   boardFrame.set_hexpand(true);
   boardFrame.set_vexpand(true);
+  boardFrame.get_style_context()->add_class("board-frame");
   boardStack.set_hexpand(true);
   boardStack.set_vexpand(true);
 
@@ -152,15 +261,20 @@ PopUp :: PopUp(bool textMode)
   boardFrame.add(boardStack);
 
   statusFrame.set_label("Status");
+  statusFrame.get_style_context()->add_class("panel-frame");
+  statusFrame.set_margin_bottom(8);
   statusLabel.set_xalign(0.0f);
   statusLabel.set_line_wrap(true);
   statusLabel.set_max_width_chars(40);
+  statusLabel.get_style_context()->add_class("status-text");
   statusFrame.add(statusLabel);
 
   legendFrame.set_label("Legend");
+  legendFrame.get_style_context()->add_class("panel-frame");
   legendLabel.set_xalign(0.0f);
   legendLabel.set_line_wrap(true);
   legendLabel.set_text("• Model Unit (blue)\n• Player Unit (green)\n• Objective Marker (black)");
+  legendLabel.get_style_context()->add_class("legend-text");
   legendFrame.add(legendLabel);
 
   sideBox.set_spacing(10);
@@ -175,6 +289,55 @@ PopUp :: PopUp(bool textMode)
   mainSplit.add1(boardFrame);
   mainSplit.add2(sideBox);
   mainSplit.set_position(650);
+
+  statusBarFrame.set_label(" ");
+  statusBarFrame.get_style_context()->add_class("status-bar");
+  statusBarFrame.set_margin_top(8);
+  statusBarFrame.set_margin_bottom(4);
+  statusBarLabel.set_xalign(0.0f);
+  statusBarLabel.set_line_wrap(true);
+  statusBarLabel.get_style_context()->add_class("status-bar-text");
+  statusBarBox.set_spacing(4);
+  statusBarBox.pack_start(statusBarLabel, Gtk::PACK_SHRINK);
+  statusBarFrame.add(statusBarBox);
+
+  logFrame.set_label("Log");
+  logFrame.get_style_context()->add_class("log-frame");
+  logFrame.set_margin_top(4);
+  auto logBuffer = Gtk::TextBuffer::create();
+  logView.set_buffer(logBuffer);
+  logView.set_editable(false);
+  logView.set_wrap_mode(Gtk::WRAP_WORD_CHAR);
+  logView.get_style_context()->add_class("log-view");
+  logScroll.add(logView);
+  logScroll.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
+
+  clearLogButton.set_label("Clear");
+  clearLogButton.signal_clicked().connect([this]() {
+    logText.clear();
+    auto buffer = logView.get_buffer();
+    if (buffer) {
+      buffer->set_text("");
+    }
+  });
+  copyLogButton.set_label("Copy Log");
+  copyLogButton.signal_clicked().connect([this]() {
+    auto clipboard = Gtk::Clipboard::get();
+    if (clipboard) {
+      clipboard->set_text(logText);
+    }
+  });
+  autoScrollToggle.set_label("Auto-scroll");
+  autoScrollToggle.set_active(true);
+  logControls.set_spacing(8);
+  logControls.pack_start(clearLogButton, Gtk::PACK_SHRINK);
+  logControls.pack_start(copyLogButton, Gtk::PACK_SHRINK);
+  logControls.pack_end(autoScrollToggle, Gtk::PACK_SHRINK);
+
+  logBox.set_spacing(6);
+  logBox.pack_start(logScroll, Gtk::PACK_EXPAND_WIDGET);
+  logBox.pack_start(logControls, Gtk::PACK_SHRINK);
+  logFrame.add(logBox);
 
   update();
 
