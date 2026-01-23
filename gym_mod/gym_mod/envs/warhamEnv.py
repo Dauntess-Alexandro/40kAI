@@ -3205,22 +3205,7 @@ class Warhammer40kEnv(gym.Env):
         ax = fig.add_subplot()
         fig.subplots_adjust(top=0.85)
 
-        if mode == 'train':
-            title = "Turn " + str(self.iter) + " Lifetime " + str(self.restarts)
-        else:
-            title = "Turn " + str(self.iter)
-
-        fig.suptitle(title)
-
-        health = "Здоровье MODEL: {}, CP: {}; здоровье {}: {}, CP {}\nVP {}".format(
-            self.unit_health,
-            self.modelCP,
-            self._display_side("enemy"),
-            self.enemy_health,
-            self.enemyCP,
-            [self.modelVP, self.enemyVP],
-        )
-        ax.set_title(health)
+        fig.suptitle(f"Ход {self.iter}")
 
         x1 = np.linspace(0, self.b_len, 10)
         y1 = np.zeros(10)
