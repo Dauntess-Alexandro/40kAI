@@ -11,3 +11,12 @@ if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
 fi
 
 python -m viewer "$@"
+status=$?
+
+if [ $status -ne 0 ] && [ -z "${QT_QPA_PLATFORM:-}" ]; then
+  echo "Viewer failed, retrying with QT_QPA_PLATFORM=offscreen..." >&2
+  QT_QPA_PLATFORM=offscreen python -m viewer "$@"
+  exit $?
+fi
+
+exit $status

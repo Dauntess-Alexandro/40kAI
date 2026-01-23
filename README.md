@@ -78,6 +78,12 @@ scripts/viewer.sh
 QT_QPA_PLATFORM=offscreen python -m viewer
 ```
 
+Если в окружении есть DISPLAY, но не хватает `xcb`/`xcb-cursor0`, запустите viewer с:
+
+```bash
+QT_QPA_PLATFORM=offscreen python -m viewer
+```
+
 ---
 
 # 📅 19.01.26
