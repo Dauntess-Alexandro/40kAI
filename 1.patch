@@ -1,1119 +1,2244 @@
-diff --git a/gui/Application.cpp b/gui/Application.cpp
-index ed3c7afe3ff53e9b079208742e58b37dee3ff1e7..7fa529be1d5aa504819c07f953af87abdd9c8766 100644
---- a/gui/Application.cpp
-+++ b/gui/Application.cpp
-@@ -631,52 +631,55 @@ Form :: Form() {
- 		playInGUI = "True";
- 		runPlayAgainstModelInBackground();
- 	}
- 	return true;
-   });
+diff --git a/gym_mod/gym_mod/engine/utils.py b/gym_mod/gym_mod/engine/utils.py
+index 2ffc208142f68615e422dc2f3a1c1b2fc67b3558..b5062841b0c3238207a403229c2902ff516e9a9b 100644
+--- a/gym_mod/gym_mod/engine/utils.py
++++ b/gym_mod/gym_mod/engine/utils.py
+@@ -175,80 +175,83 @@ def _roll_attacks_expr(expr, _roll_fn):
+       - int / numeric string
+       - "D3", "D6"
  
-   fixedTabPage4.add(textbox2);
-   fixedTabPage4.add(button2);
-   fixedTabPage4.add(showBoard);
-   fixedTabPage4.add(showBoardImg);
-   fixedTabPage4.add(playGUI);
-   fixedTabPage4.add(button5);
-   fixedTabPage4.add(setModelFile);
-   fixedTabPage4.move(textbox2, 10, 10);
-   fixedTabPage4.move(playGUI, 130, 80);
-   fixedTabPage4.move(showBoard, 220, 80);
-   fixedTabPage4.move(showBoardImg, 395, 80);  
-   fixedTabPage4.move(button2, 10, 80);
-   fixedTabPage4.move(button5, 10, 40);
-   fixedTabPage4.move(setModelFile, 80, 40);
+     Возвращает tuple: (value:int, rolled:bool)
+     """
+     if isinstance(expr, (int, np.integer)):
+         return int(expr), False
  
-   bar.set_title("40kAI GUI");
-   resize(700, 600);
-   loadLastRoster();
-   if (modelUnits.empty()) {
--    modelUnits.push_back({"Apothecary", findDefaultModelsCount("Space_Marine", "Apothecary")});
--    modelUnits.push_back({"Eliminator Squad", findDefaultModelsCount("Space_Marine", "Eliminator Squad")});
-+    modelUnits.push_back({"Apothecary", "Space_Marine", findDefaultModelsCount("Space_Marine", "Apothecary"),
-+                          RosterModel::generateInstanceId()});
-+    modelUnits.push_back({"Eliminator Squad", "Space_Marine",
-+                          findDefaultModelsCount("Space_Marine", "Eliminator Squad"),
-+                          RosterModel::generateInstanceId()});
-   }
-   if (enemyUnits.empty()) {
-     rosterModel.addUnit("Apothecary", 1, enemyClass.substr(1));
-     rosterModel.addUnit("Eliminator Squad", 1, enemyClass.substr(1));
-     syncEnemyUnitsFromRoster();
-     saveLastRoster();
-   }
-   signal_hide().connect([this]() {
-     saveLastRoster();
-   });
-   show_all();
- }
+     if isinstance(expr, str):
+         e = expr.strip().upper()
+         if e == "D3":
+             return int(_roll_fn(min=1, max=3, num=1)), True
+         if e == "D6":
+             return int(_roll_fn(min=1, max=6, num=1)), True
  
- void Form :: changeMetrics(std::string path) {
-     std::string jsonID = path.substr(path.length()-16,9);
+         # numeric-like string: "1", "2", "3+"...
+         v = _to_int(e, default=None)
+         if v is not None:
+             return int(v), False
  
- 	if (jsonID[0] == '-') {
- 		jsonID = path.substr(path.length()-15,8);
- 	} 
+     # неизвестно что — считаем 1
+     return 1, False
  
- 	std::ifstream infile("../models/data_"+jsonID+".json");
- 	json j;
- 	infile >> j;
  
- 	losspth = j.value("loss", losspth);
-@@ -851,71 +854,81 @@ bool Form :: addEnemyUnitFromEntry(const std::string& entryText) {
-     if (unit.contains("#OfModels") && unit.at("#OfModels").is_number_integer()) {
-       defaultCount = unit.at("#OfModels").get<int>();
-     }
-     rosterModel.addUnit(name, defaultCount, army);
-     return true;
-   }
-   return false;
- }
+ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attackeeData,
+-           rangeOfComb="Ranged", effects=None, roller=None, distance_to_target=None):
++           rangeOfComb="Ranged", effects=None, roller=None, distance_to_target=None, hit_on_6: bool = False):
+     """Attack resolution (приведено к "10e-стилю" бросков).
  
- // model: id = 0
- // enemy: id = 1
+     Поддержано (упрощённо):
+       - RAPID FIRE X: +X к Attacks, если цель в половине дальности
+       - LETHAL HITS: крит-хит (натуральная 6) авто-ранит (без wound roll)
  
- bool Form :: isValidUnit(int id, std::string name) {
-   std::ifstream infile("../gym_mod/gym_mod/engine/unitData.json");
-   json j;
-   infile >> j;
+     roller:
+       - None => используем RNG dice()
+       - иначе => функция броска, сигнатура: roller(num=1, max=6) -> int или list[int]
+                  (min в проекте везде = 1)
  
-   const auto& unitData = j.at("UnitData");
-   for (const auto& unit : unitData) {
-     if (strcmp(toLower(unit.at("Name").get<std::string>()).data(), toLower(name).data()) == 0) {
-       int modelsCount = 1;
-       if (unit.contains("#OfModels") && unit.at("#OfModels").is_number_integer()) {
-         modelsCount = unit.at("#OfModels").get<int>();
-       }
-       if (id == 0 && strcmp(toLower(unit.at("Army").get<std::string>()).data(), toLower(modelClass.substr(1, modelClass.length())).data()) == 0) {
--        modelUnits.push_back({unit.at("Name").get<std::string>(), modelsCount});
-+        modelUnits.push_back({unit.at("Name").get<std::string>(), modelClass.substr(1, modelClass.length()),
-+                              modelsCount, RosterModel::generateInstanceId()});
-         return true;
-       } else if (id == 1 && strcmp(toLower(unit.at("Army").get<std::string>()).data(), toLower(enemyClass.substr(1, enemyClass.length())).data()) == 0) {
--        enemyUnits.push_back({unit.at("Name").get<std::string>(), modelsCount});
-+        enemyUnits.push_back({unit.at("Name").get<std::string>(), enemyClass.substr(1, enemyClass.length()),
-+                              modelsCount, RosterModel::generateInstanceId()});
-         return true;
-       }
-     }
-   }
-   return false;
- }
+     distance_to_target:
+       - float/int (дюймы) — дистанция между атакующим и целью (для Rapid Fire)
+     """
  
- void Form :: savetoTxt(const std::vector<RosterEntry>& enemyUnits, const std::vector<RosterEntry>& modelUnits) {
+     def _roll(min=1, max=6, num=1):
+         if roller is None:
+             return dice(min=min, max=max, num=num)
  
-   std::ofstream outfile("units.txt");
-   outfile << "Player Units\n";
-   for (const auto& entry : enemyUnits) {
--    outfile << entry.name << "|" << entry.modelsCount << std::endl;
-+    outfile << entry.name << "|" << entry.modelsCount;
-+    if (!entry.instanceId.empty()) {
-+      outfile << "|" << entry.instanceId;
-+    }
-+    outfile << std::endl;
-   }
-   outfile << "Model Units\n";
-   for (const auto& entry : modelUnits) {
--    outfile << entry.name << "|" << entry.modelsCount << std::endl;
-+    outfile << entry.name << "|" << entry.modelsCount;
-+    if (!entry.instanceId.empty()) {
-+      outfile << "|" << entry.instanceId;
-+    }
-+    outfile << std::endl;
-   }
-   outfile.close();
- }
+         # player_dice поддерживает (num, max) и подразумевает min=1
+         if min != 1:
+             raise ValueError("roller поддерживает только min=1")
+         return roller(num=num, max=max)
  
- void Form :: update_picture() {
-   pictureBox1.set(gifpth);
- }
+     # --- Targets / profile parsing ---
+     sv_base = _to_int(attackeeData.get("Sv"), default=7)
+     inv = _to_int(attackeeData.get("IVSave"), default=0)  # 0 = нет инвула
  
- void Form :: update_metrics() {
+     bs = _to_int(attackerWeapon.get("BS") if rangeOfComb == "Ranged" else attackerWeapon.get("WS"), default=7)
++    if hit_on_6:
++        # Overwatch 10e: попадания только на натуральную 6.
++        bs = 6
  
-   const int IMG_W = 330;
-   const int IMG_H = 160;
+     s = _to_int(attackerWeapon.get("S"), default=0)
+     t = _to_int(attackeeData.get("T"), default=0)
  
-   auto load_scaled = [&](const std::string& rel) -> Glib::RefPtr<Gdk::Pixbuf> {
-     std::string path = "../gui/" + rel;
-     if (!fs::exists(path)) {
-       return Glib::RefPtr<Gdk::Pixbuf>();
-     }
-     auto pix = Gdk::Pixbuf::create_from_file(path);
-     return pix->scale_simple(IMG_W, IMG_H, Gdk::INTERP_BILINEAR);
-   };
+     # AP в 10e обычно отрицательный (например -1, -2)
+     ap = _to_int(attackerWeapon.get("AP"), default=0)
  
-   if (auto p = load_scaled(rewpth)) metricBox.set(p);
-   if (auto p = load_scaled(losspth)) metricBox2.set(p);
-   if (auto p = load_scaled(winratepth)) metricBox4.set(p);
-diff --git a/gui/RosterModel.cpp b/gui/RosterModel.cpp
-index ca23f97959779cce08e204da1100f2d623c5417a..74f552556e99263b13eb7ccc9cd8bcbebd9ef5af 100644
---- a/gui/RosterModel.cpp
-+++ b/gui/RosterModel.cpp
-@@ -1,156 +1,221 @@
- #include "include/RosterModel.h"
+     # Benefit of cover: +1 к сейву => целевое значение СНИЖАЕТСЯ на 1 (мин 2+)
+     cover_bonus = 1 if (effects == "benefit of cover" and rangeOfComb == "Ranged") else 0
  
- #include <algorithm>
- #include <fstream>
-+#include <unordered_set>
+     # Цель сейва: Sv - cover_bonus - AP  (если AP отрицательный, то минус AP => +)
+     save_target = sv_base - cover_bonus - ap
+     if save_target < 2:
+         save_target = 2
+     # 7+ = нельзя засейвить (кроме инвула)
+     if save_target > 6:
+         save_target = 7
+ 
+     if inv and inv > 0:
+         save_target = min(save_target, inv)
+ 
+     # --- How many attacks? ---
+     n_models_raw = attackerData.get("#OfModels")
+     n_models = int(n_models_raw) if n_models_raw is not None else None
+     if n_models is not None and n_models < 1:
+diff --git a/gym_mod/gym_mod/envs/warhamEnv.py b/gym_mod/gym_mod/envs/warhamEnv.py
+index a290a9cce2d3d619cfe823323bd7081458449328..c4b120573f5d99a406ed0d5d3dd6e1ba2e812129 100644
+--- a/gym_mod/gym_mod/envs/warhamEnv.py
++++ b/gym_mod/gym_mod/envs/warhamEnv.py
+@@ -793,76 +793,379 @@ class Warhammer40kEnv(gym.Env):
+     def _log(self, msg: str):
+         if not self._should_log():
+             return
+         if self.playType is True:
+             sendToGUI(msg)
+         else:
+             print(msg)
+ 
+     def _log_phase(self, side: str, phase: str):
+         if not self._should_log():
+             return
+         phase_title = {
+             "command": "Фаза командования!",
+             "movement": "Фаза движения!",
+             "shooting": "Фаза стрельбы!",
+             "charge": "Фаза чарджа!",
+             "fight": "Фаза битвы!",
+         }.get(phase, f"Фаза {phase}!")
+         self._log(f"[{side.upper()}] {phase_title}")
+ 
+     def _log_unit(self, side: str, unit_id: int, unit_idx: int, msg: str):
+         if not self._should_log():
+             return
+         self._log(f"[{side.upper()}][Unit {unit_id}|idx={unit_idx}] {msg}")
+ 
++    def _side_label(self, side: str, manual: bool = False) -> str:
++        if side == "model":
++            return "MODEL"
++        if side == "enemy":
++            return "PLAYER" if manual else "ENEMY"
++        return side.upper()
 +
-+namespace {
-+int g_nextInstanceId = 1;
++    def _log_phase_msg(self, side_label: str, phase: str, msg: str):
++        if not self._should_log():
++            return
++        self._log(f"[{side_label}][{phase.upper()}] {msg}")
 +
-+bool isNumericString(const std::string& value) {
-+  if (value.empty()) {
-+    return false;
-+  }
-+  for (char c : value) {
-+    if (c < '0' || c > '9') {
-+      return false;
-+    }
-+  }
-+  return true;
-+}
++    def _log_unit_phase(self, side_label: str, phase: str, unit_id: int, unit_idx: int, msg: str):
++        if not self._should_log():
++            return
++        self._log(f"[{side_label}][{phase.upper()}][Unit {unit_id}|idx={unit_idx}] {msg}")
 +
-+int parseCountValue(const nlohmann::json& value) {
-+  if (value.is_number_integer()) {
-+    return value.get<int>();
-+  }
-+  if (value.is_string()) {
-+    try {
-+      return std::stoi(value.get<std::string>());
-+    } catch (...) {
-+      return 0;
-+    }
-+  }
-+  return 0;
-+}
-+}  // namespace
+     def _get_input(self, prompt: str) -> str:
+         if self.playType is True:
+             sendToGUI(prompt)
+             return recieveGUI()
+         return input(prompt)
  
- void RosterModel::setFaction(const std::string& faction) {
-   rosterFaction = faction;
- }
+     def _prompt_choice(self, prompt: str, allowed: dict, normalize: dict, allow_quit: bool = True):
+         allowed_labels = ", ".join(allowed.values())
+         while True:
+             response = self._get_input(prompt).strip().lower()
+             if allow_quit and response in ("quit", "q"):
+                 return None
+             if response in normalize:
+                 response = normalize[response]
+             if response in allowed:
+                 return response
+             self._log(f"Not a valid response ({allowed_labels}): {response}")
  
- const std::string& RosterModel::faction() const {
-   return rosterFaction;
- }
+     def _prompt_yes_no(self, prompt: str, allow_quit: bool = True):
+         normalize = {"y": "yes", "n": "no", "yes": "yes", "no": "no"}
+         allowed = {"yes": "yes", "no": "no"}
+         response = self._prompt_choice(prompt, allowed, normalize, allow_quit=allow_quit)
+         if response is None:
+             return None
+         return response == "yes"
  
- const std::vector<RosterEntry>& RosterModel::units() const {
-   return rosterUnits;
- }
- 
- bool RosterModel::empty() const {
-   return rosterUnits.empty();
- }
- 
- void RosterModel::addUnit(const std::string& name, int countDefault, const std::string& faction) {
-   if (!faction.empty()) {
-     rosterFaction = faction;
-   }
- 
-   int countToAdd = countDefault > 0 ? countDefault : 1;
--  auto it = std::find_if(rosterUnits.begin(), rosterUnits.end(),
--                         [&](const RosterEntry& entry) { return entry.name == name; });
--  if (it != rosterUnits.end()) {
--    it->modelsCount += countToAdd;
--    return;
--  }
--
--  rosterUnits.push_back({name, countToAdd});
-+  // NOTE: Do not merge same-name entries; each roster row is a separate unit instance.
-+  rosterUnits.push_back({name, faction.empty() ? rosterFaction : faction, countToAdd, generateInstanceId()});
- }
- 
- void RosterModel::removeUnit(size_t index) {
-   if (index >= rosterUnits.size()) {
-     return;
-   }
-   rosterUnits.erase(rosterUnits.begin() + static_cast<long>(index));
- }
- 
-+void RosterModel::removeUnitByInstanceId(const std::string& instanceId) {
-+  auto it = std::find_if(rosterUnits.begin(), rosterUnits.end(),
-+                         [&](const RosterEntry& entry) { return entry.instanceId == instanceId; });
-+  if (it == rosterUnits.end()) {
-+    return;
-+  }
-+  rosterUnits.erase(it);
-+}
++    def _unit_has_keyword(self, unit_data: dict, keyword: str) -> bool:
++        if not unit_data:
++            return False
++        keyword = keyword.lower()
++        for key in ("Keywords", "KeyWords", "Tags", "Abilities", "Rules", "SpecialRules", "Special", "Type", "Faction"):
++            value = unit_data.get(key)
++            if value is None:
++                continue
++            if isinstance(value, (list, tuple)):
++                if any(keyword in str(v).lower() for v in value):
++                    return True
++            else:
++                if keyword in str(value).lower():
++                    return True
++        # fallback: check all fields
++        for value in unit_data.values():
++            if isinstance(value, (list, tuple)):
++                if any(keyword in str(v).lower() for v in value):
++                    return True
++            else:
++                if keyword in str(value).lower():
++                    return True
++        return False
 +
- void RosterModel::clear() {
-   rosterUnits.clear();
- }
- 
- std::vector<RosterEntry> RosterModel::expandedUnits() const {
-   return rosterUnits;
- }
- 
- nlohmann::json RosterModel::toJson() const {
-   nlohmann::json j;
-   j["faction"] = rosterFaction;
-   j["units"] = nlohmann::json::array();
-   for (const auto& entry : rosterUnits) {
--    j["units"].push_back({{"name", entry.name}, {"models_count", entry.modelsCount}});
-+    j["units"].push_back({
-+        {"name", entry.name},
-+        {"faction", entry.faction},
-+        {"models_count", entry.modelsCount},
-+        {"instance_id", entry.instanceId},
-+    });
-   }
-   return j;
- }
- 
- bool RosterModel::fromJson(const nlohmann::json& data) {
-   if (!data.is_object()) {
-     return false;
-   }
-   std::string loadedFaction;
-   if (data.contains("faction") && data.at("faction").is_string()) {
-     loadedFaction = data.at("faction").get<std::string>();
-   }
- 
-   std::vector<RosterEntry> loadedUnits;
-+  std::unordered_set<std::string> seenIds;
-+  int maxNumericId = 0;
-+  auto registerInstanceId = [&](const std::string& candidate) -> std::string {
-+    if (candidate.empty() || seenIds.count(candidate) > 0) {
-+      std::string generated = generateInstanceId();
-+      seenIds.insert(generated);
-+      return generated;
-+    }
-+    seenIds.insert(candidate);
-+    if (isNumericString(candidate)) {
-+      maxNumericId = std::max(maxNumericId, std::stoi(candidate));
-+    }
-+    return candidate;
-+  };
++    def _unit_has_smoke(self, unit_data: dict) -> bool:
++        return self._unit_has_keyword(unit_data, "smoke")
 +
-   if (data.contains("units") && data.at("units").is_array()) {
-     for (const auto& item : data.at("units")) {
-       if (!item.is_object()) {
-         continue;
-       }
--      if (!item.contains("name")) {
--        continue;
--      }
--      if (!item.at("name").is_string()) {
-+      if (!item.contains("name") || !item.at("name").is_string()) {
-         continue;
-       }
-       int count = 0;
-       if (item.contains("models_count")) {
--        if (item.at("models_count").is_number_integer()) {
--          count = item.at("models_count").get<int>();
--        } else if (item.at("models_count").is_string()) {
--          try {
--            count = std::stoi(item.at("models_count").get<std::string>());
--          } catch (...) {
--            count = 0;
--          }
--        }
-+        count = parseCountValue(item.at("models_count"));
-       } else if (item.contains("count")) {
--        if (item.at("count").is_number_integer()) {
--          count = item.at("count").get<int>();
--        } else if (item.at("count").is_string()) {
--          try {
--            count = std::stoi(item.at("count").get<std::string>());
--          } catch (...) {
--            count = 0;
--          }
--        }
-+        count = parseCountValue(item.at("count"));
-       }
-       if (count <= 0) {
-         continue;
-       }
--      loadedUnits.push_back({item.at("name").get<std::string>(), count});
-+      std::string faction;
-+      if (item.contains("faction") && item.at("faction").is_string()) {
-+        faction = item.at("faction").get<std::string>();
-+      }
-+      if (faction.empty()) {
-+        faction = loadedFaction;
-+      }
-+      std::string instanceId;
-+      if (item.contains("instance_id") && item.at("instance_id").is_string()) {
-+        instanceId = item.at("instance_id").get<std::string>();
-+      }
-+      instanceId = registerInstanceId(instanceId);
-+      loadedUnits.push_back({item.at("name").get<std::string>(), faction, count, instanceId});
-+    }
-+  } else if (data.contains("units") && data.at("units").is_object()) {
-+    for (auto it = data.at("units").begin(); it != data.at("units").end(); ++it) {
-+      if (!it.key().empty()) {
-+        int count = parseCountValue(it.value());
-+        if (count <= 0) {
-+          continue;
-+        }
-+        std::string instanceId = registerInstanceId("");
-+        loadedUnits.push_back({it.key(), loadedFaction, count, instanceId});
-+      }
-     }
-   }
- 
-   rosterFaction = loadedFaction;
-   rosterUnits = std::move(loadedUnits);
-+  if (maxNumericId >= g_nextInstanceId) {
-+    g_nextInstanceId = maxNumericId + 1;
-+  }
-   return true;
- }
- 
- bool RosterModel::loadFromFile(const std::filesystem::path& path) {
-   if (!std::filesystem::exists(path)) {
-     return false;
-   }
-   std::ifstream infile(path);
-   if (!infile) {
-     return false;
-   }
-   nlohmann::json j;
-   try {
-     infile >> j;
-   } catch (...) {
-     return false;
-   }
-   return fromJson(j);
- }
- 
- bool RosterModel::saveToFile(const std::filesystem::path& path) const {
-   std::error_code error;
-   std::filesystem::create_directories(path.parent_path(), error);
-   std::ofstream outfile(path);
-   if (!outfile) {
-     return false;
-   }
-   outfile << toJson().dump(2);
-   return true;
- }
- 
- std::filesystem::path RosterModel::defaultRosterPath() {
-   const char* xdgData = std::getenv("XDG_DATA_HOME");
-   if (xdgData && *xdgData) {
-     return std::filesystem::path(xdgData) / "40kAI" / "last_roster.json";
-   }
-   const char* home = std::getenv("HOME");
-   if (home && *home) {
-     return std::filesystem::path(home) / ".local" / "share" / "40kAI" / "last_roster.json";
-   }
-   return std::filesystem::current_path() / "last_roster.json";
- }
-+
-+std::string RosterModel::generateInstanceId() {
-+  return std::to_string(g_nextInstanceId++);
-+}
-diff --git a/gui/include/RosterModel.h b/gui/include/RosterModel.h
-index 07ff9d086a2447c0e80e257ddf38190fc5440943..523f8590d79f220cc0095da71f1874e20d12dd40 100644
---- a/gui/include/RosterModel.h
-+++ b/gui/include/RosterModel.h
-@@ -1,35 +1,39 @@
- #ifndef ROSTER_MODEL_H
- #define ROSTER_MODEL_H
- 
- #include <filesystem>
- #include <string>
- #include <vector>
- #include <nlohmann/json.hpp>
- 
- struct RosterEntry {
-   std::string name;
-+  std::string faction;
-   int modelsCount;
-+  std::string instanceId;
- };
- 
- class RosterModel {
-   public:
-     void setFaction(const std::string& faction);
-     const std::string& faction() const;
-     const std::vector<RosterEntry>& units() const;
-     bool empty() const;
-     void addUnit(const std::string& name, int countDefault, const std::string& faction = "");
-     void removeUnit(size_t index);
-+    void removeUnitByInstanceId(const std::string& instanceId);
-     void clear();
-     std::vector<RosterEntry> expandedUnits() const;
-     nlohmann::json toJson() const;
-     bool fromJson(const nlohmann::json& data);
-     bool loadFromFile(const std::filesystem::path& path);
-     bool saveToFile(const std::filesystem::path& path) const;
-     static std::filesystem::path defaultRosterPath();
-+    static std::string generateInstanceId();
- 
-   private:
-     std::string rosterFaction;
-     std::vector<RosterEntry> rosterUnits;
- };
- 
- #endif
-diff --git a/gui/include/units.h b/gui/include/units.h
-index c97ad963cc74ce044b48b63dfca973a8edf02a98..4fd7fa87440d0971e0130f024431675aa6bcdfd2 100644
---- a/gui/include/units.h
-+++ b/gui/include/units.h
-@@ -12,54 +12,55 @@
- #include <filesystem>
- #include "RosterModel.h"
- 
- using namespace Glib;
- using namespace Gtk;
- 
- class Units : public Gtk::Window {
-   public : 
-     explicit Units(RosterModel* rosterModel);
-     void loadAvailableUnits();
-     void refreshRosterView();
-     void addSelectedUnit();
-     void removeSelectedUnit();
-     void clearRoster();
-   private:
-     class AvailableColumns : public Gtk::TreeModel::ColumnRecord {
-       public:
-         AvailableColumns() { add(name); add(faction); add(defaultCount); }
-         Gtk::TreeModelColumn<Glib::ustring> name;
-         Gtk::TreeModelColumn<Glib::ustring> faction;
-         Gtk::TreeModelColumn<int> defaultCount;
-     };
- 
-     class RosterColumns : public Gtk::TreeModel::ColumnRecord {
-       public:
--        RosterColumns() { add(display); add(name); add(modelsCount); }
-+        RosterColumns() { add(display); add(name); add(modelsCount); add(instanceId); }
-         Gtk::TreeModelColumn<Glib::ustring> display;
-         Gtk::TreeModelColumn<Glib::ustring> name;
-         Gtk::TreeModelColumn<int> modelsCount;
-+        Gtk::TreeModelColumn<Glib::ustring> instanceId;
-     };
- 
-     std::string formatRosterDisplay(const std::string& name, int modelsCount) const;
-     void persistRoster();
- 
-     RosterModel* rosterModel;
-     AvailableColumns availableColumns;
-     RosterColumns rosterColumns;
-     Glib::RefPtr<Gtk::ListStore> availableStore;
-     Glib::RefPtr<Gtk::ListStore> rosterStore;
-     Gtk::TreeView availableView;
-     Gtk::TreeView rosterView;
-     Gtk::ScrolledWindow availableScroll;
-     Gtk::ScrolledWindow rosterScroll;
-     Gtk::Box mainBox{Gtk::ORIENTATION_HORIZONTAL, 12};
-     Gtk::Box availableBox{Gtk::ORIENTATION_VERTICAL, 6};
-     Gtk::Box rosterBox{Gtk::ORIENTATION_VERTICAL, 6};
-     Gtk::Box buttonBox{Gtk::ORIENTATION_VERTICAL, 6};
-     Gtk::Label availableLabel;
-     Gtk::Label rosterLabel;
-     Gtk::Button addButton;
-     Gtk::Button removeButton;
-     Gtk::Button clearButton;
-     HeaderBar bar;
- };
-diff --git a/gui/units.cpp b/gui/units.cpp
-index 6a13074fdbb41585421cf7ef70cf5fb925f2a473..1b46bba7d66f76c1441228713104aa9b1b67a8fd 100644
---- a/gui/units.cpp
-+++ b/gui/units.cpp
-@@ -1,31 +1,32 @@
- #include <iostream>
- #include <gtkmm.h>
- #include <cstdlib>
- #include <stdlib.h>
- #include <string>
- #include <fstream>
-+#include <unordered_map>
- #include <nlohmann/json.hpp>
- #include "include/units.h"
- 
- using namespace Glib;
- using namespace Gtk;
- using json = nlohmann::json;
- 
- void Units::loadAvailableUnits() {
-   availableStore->clear();
-   std::ifstream infile("../gym_mod/gym_mod/engine/unitData.json");
-   if (!infile) {
-     return;
-   }
-   json j;
-   infile >> j;
- 
-   if (!j.contains("UnitData") || !j.at("UnitData").is_array()) {
-     return;
-   }
- 
-   for (const auto& unit : j.at("UnitData")) {
-     if (!unit.contains("Army") || !unit.contains("Name")) {
-       continue;
-     }
-     std::string army = unit.at("Army").get<std::string>();
-@@ -35,98 +36,115 @@ void Units::loadAvailableUnits() {
-       defaultCount = unit.at("#OfModels").get<int>();
-     }
-     auto row = *(availableStore->append());
-     row[availableColumns.name] = name;
-     row[availableColumns.faction] = army;
-     row[availableColumns.defaultCount] = defaultCount;
-   }
- }
- 
- std::string Units::formatRosterDisplay(const std::string& name, int modelsCount) const {
-   return "(Unit) " + name + " (x" + std::to_string(modelsCount) + " Models)";
- }
- 
- void Units::persistRoster() {
-   if (!rosterModel) {
-     return;
-   }
-   rosterModel->saveToFile(RosterModel::defaultRosterPath());
- }
- 
- void Units::refreshRosterView() {
-   if (!rosterStore || !rosterModel) {
-     return;
-   }
-   rosterStore->clear();
-+  std::unordered_map<std::string, int> totalByName;
-+  for (const auto& entry : rosterModel->units()) {
-+    totalByName[entry.name] += 1;
-+  }
-+  std::unordered_map<std::string, int> seenByName;
-   for (const auto& entry : rosterModel->units()) {
-     auto row = *(rosterStore->append());
-     row[rosterColumns.name] = entry.name;
-     row[rosterColumns.modelsCount] = entry.modelsCount;
--    row[rosterColumns.display] = formatRosterDisplay(entry.name, entry.modelsCount);
-+    row[rosterColumns.instanceId] = entry.instanceId;
-+    int ordinal = ++seenByName[entry.name];
-+    std::string displayName = entry.name;
-+    if (totalByName[entry.name] > 1) {
-+      displayName += " #" + std::to_string(ordinal);
-+    }
-+    row[rosterColumns.display] = formatRosterDisplay(displayName, entry.modelsCount);
-   }
- }
- 
- void Units::addSelectedUnit() {
-   if (!rosterModel) {
-     return;
-   }
-   auto selection = availableView.get_selection();
-   if (!selection) {
-     return;
-   }
-   auto iter = selection->get_selected();
-   if (!iter) {
-     return;
-   }
-   auto row = *iter;
-   Glib::ustring nameValue = row[availableColumns.name];
-   Glib::ustring factionValue = row[availableColumns.faction];
-   std::string name = nameValue.raw();
-   std::string faction = factionValue.raw();
-   int defaultCount = row[availableColumns.defaultCount];
-   rosterModel->addUnit(name, defaultCount, faction);
-   refreshRosterView();
-   persistRoster();
- }
- 
- void Units::removeSelectedUnit() {
-   if (!rosterModel) {
-     return;
-   }
-   auto selection = rosterView.get_selection();
-   if (!selection) {
-     return;
-   }
-   auto iter = selection->get_selected();
-   if (!iter) {
-     return;
-   }
-   auto path = rosterStore->get_path(iter);
-   if (path.empty()) {
-     return;
-   }
--  rosterModel->removeUnit(static_cast<size_t>(path.front()));
-+  Glib::ustring instanceValue = (*iter)[rosterColumns.instanceId];
-+  std::string instanceId = instanceValue.raw();
-+  if (!instanceId.empty()) {
-+    rosterModel->removeUnitByInstanceId(instanceId);
-+  } else {
-+    rosterModel->removeUnit(static_cast<size_t>(path.front()));
-+  }
-   refreshRosterView();
-   persistRoster();
- }
- 
- void Units::clearRoster() {
-   if (!rosterModel) {
-     return;
-   }
-   rosterModel->clear();
-   refreshRosterView();
-   persistRoster();
- }
- 
- Units::Units(RosterModel* rosterModel) : rosterModel(rosterModel) {
-   bar.set_show_close_button(true);
-   set_titlebar(bar);
-   bar.set_title("Army Viewer");
- 
-   add(mainBox);
- 
-   availableLabel.set_text("Available Units");
-   rosterLabel.set_text("Roster");
- 
-   availableStore = Gtk::ListStore::create(availableColumns);
-   rosterStore = Gtk::ListStore::create(rosterColumns);
-diff --git a/gym_mod/gym_mod/engine/initFile.py b/gym_mod/gym_mod/engine/initFile.py
-index 060464b9c81eda8fb498d814ea4e730703124c4f..231b6e6b82ed51a9dae733a75fe397671bc4494b 100644
---- a/gym_mod/gym_mod/engine/initFile.py
-+++ b/gym_mod/gym_mod/engine/initFile.py
-@@ -1,91 +1,109 @@
- import json
- import os
- import sys
- 
- def makeFile(numIters, modelFaction, enemyFaction, modelUnits, enemyUnits, modelW, enemyW,
--             modelCounts=None, enemyCounts=None, boardx = 60, boardy = 44):
-+             modelCounts=None, enemyCounts=None, modelInstanceIds=None, enemyInstanceIds=None,
-+             boardx = 60, boardy = 44):
-     if modelCounts is None:
-         modelCounts = []
-     if enemyCounts is None:
-         enemyCounts = []
-+    if modelInstanceIds is None:
-+        modelInstanceIds = []
-+    if enemyInstanceIds is None:
-+        enemyInstanceIds = []
- 
-     data = {
-         "Army1":modelFaction,
-         "Army2":enemyFaction,
-         "modelUnits":modelUnits,
-         "enemyUnits":enemyUnits,
-         "modelUnitCounts":modelCounts,
-         "enemyUnitCounts":enemyCounts,
-+        "modelUnitInstanceIds": modelInstanceIds,
-+        "enemyUnitInstanceIds": enemyInstanceIds,
-         "modelWeapons":modelW,
-         "enemyWeapons":enemyW,
-         "numLife": int(numIters),
-         "x": int(boardx),
-         "y": int(boardy)
-     }
- 
-     with open('gui/data.json', 'w') as f:
-         json.dump(data, f)
-     
- def addingUnits():
-     model = []
-     enemy = []
-     model_counts = []
-     enemy_counts = []
-+    model_instance_ids = []
-+    enemy_instance_ids = []
-     file = open("gui/units.txt", "r")
-     content = file.readlines()
-     flip = 0
-     for i in content[1:len(content)]:
-         name = i[0:len(i)-1]
-         if name == "Model Units":
-             flip = 1
-         elif flip == 0:
--            unit_name, count = _parse_unit_entry(name)
-+            unit_name, count, instance_id = _parse_unit_entry(name)
-             if unit_name:
-                 enemy.append(unit_name)
-                 enemy_counts.append(count)
-+                enemy_instance_ids.append(instance_id)
-         elif flip == 1:
--            unit_name, count = _parse_unit_entry(name)
-+            unit_name, count, instance_id = _parse_unit_entry(name)
-             if unit_name:
-                 model.append(unit_name)
-                 model_counts.append(count)
-+                model_instance_ids.append(instance_id)
- 
--    return model, enemy, model_counts, enemy_counts
-+    return model, enemy, model_counts, enemy_counts, model_instance_ids, enemy_instance_ids
- 
- def _parse_unit_entry(value):
-     if not value:
--        return "", 0
-+        return "", 0, ""
-     if "|" not in value:
--        return value, 0
--    name_part, count_part = value.rsplit("|", 1)
-+        return value, 0, ""
-+    parts = value.split("|")
-+    if len(parts) < 2:
-+        return value, 0, ""
-+    name_part = parts[0]
-+    count_part = parts[1]
-     name = name_part.strip()
-     count = 0
-     try:
-         count = int(count_part.strip())
-     except ValueError:
-         count = 0
--    return name, count
-+    instance_id = ""
-+    if len(parts) >= 3:
-+        instance_id = parts[2].strip()
-+    return name, count, instance_id
- 
- def addingWeapons(m, e):
- 
-     with open(os.path.abspath("gym_mod/gym_mod/engine/unitData.json")) as j:
-         data = json.loads(j.read())
- 
-     model = []
-     enemy = []
- 
-     for i in data["UnitData"]:
-         for j in m:
-             weaps = ["None", "None"]
-             if i["Name"] == j:
-                 for k in i["Weapons"]:
-                     for l in data["WeaponData"]:
-                         if l["Name"][0:len(k)].lower() == k.lower():
-                             if l["Type"] == "Ranged":
-                                 weaps[0] = l["Name"]
-                             elif l["Type"] == "Melee":
-                                 weaps[1] = l["Name"]
-                 model.append(weaps)
- 
-         for j in e:
-             weaps = ["None", "None"]
-             if i["Name"] == j:
-@@ -138,44 +156,57 @@ def getBoardY():
- 
- def getModelUnits():
-     with open(os.path.abspath("gui/data.json")) as j:
-         data = json.loads(j.read())
- 
-     return data["modelUnits"]
- 
- def getEnemyUnits():
-     with open(os.path.abspath("gui/data.json")) as j:
-         data = json.loads(j.read())
- 
-     return data["enemyUnits"]
- 
- def getModelUnitCounts():
-     with open(os.path.abspath("gui/data.json")) as j:
-         data = json.loads(j.read())
- 
-     return data.get("modelUnitCounts", [])
- 
- def getEnemyUnitCounts():
-     with open(os.path.abspath("gui/data.json")) as j:
-         data = json.loads(j.read())
- 
-     return data.get("enemyUnitCounts", [])
- 
-+def getModelUnitInstanceIds():
-+    with open(os.path.abspath("gui/data.json")) as j:
-+        data = json.loads(j.read())
-+
-+    return data.get("modelUnitInstanceIds", [])
-+
-+def getEnemyUnitInstanceIds():
-+    with open(os.path.abspath("gui/data.json")) as j:
-+        data = json.loads(j.read())
-+
-+    return data.get("enemyUnitInstanceIds", [])
-+
- def getModelW():
-     with open(os.path.abspath("gui/data.json")) as j:
-         data = json.loads(j.read())
- 
-     return data["modelWeapons"]
- 
- def getEnemyW():
-     with open(os.path.abspath("gui/data.json")) as j:
-         data = json.loads(j.read())
- 
-     return data["enemyWeapons"]
- 
- def delFile():
-     os.system("rm gui/data.json")
- 
- if __name__ == "__main__":
--    model, enemy, model_counts, enemy_counts = addingUnits()
-+    model, enemy, model_counts, enemy_counts, model_instance_ids, enemy_instance_ids = addingUnits()
-     modelw, enemyw = addingWeapons(model, enemy)
--    makeFile(sys.argv[1], sys.argv[2], sys.argv[3],model, enemy, modelw, enemyw, model_counts, enemy_counts, sys.argv[4], sys.argv[5])
-+    makeFile(sys.argv[1], sys.argv[2], sys.argv[3],model, enemy, modelw, enemyw,
-+             model_counts, enemy_counts, model_instance_ids, enemy_instance_ids, sys.argv[4], sys.argv[5])
-diff --git a/gym_mod/gym_mod/engine/unit.py b/gym_mod/gym_mod/engine/unit.py
-index 80fa101b61f5b9a47891f273fb05533a80aba1f3..30e29816b82a719ca369fb0b5d9ecae5b6b2e157 100644
---- a/gym_mod/gym_mod/engine/unit.py
-+++ b/gym_mod/gym_mod/engine/unit.py
-@@ -1,43 +1,50 @@
- import os
- import csv
- import numpy as np
- from gym_mod.engine.GUIinteract import *
- import time
- 
- from gym_mod.engine.deployment import get_random_free_deploy_coord
- 
- 
- class Unit:
--    def __init__(self, data, weapon, melee=None, GUI=False, b_len=0, b_hei=0):
-+    _instance_counter = 1
-+
-+    def __init__(self, data, weapon, melee=None, b_len=0, b_hei=0, GUI=False, instance_id=None):
-         self.unit_data = data
-         self.unit_weapon = weapon
-         self.unit_melee = melee
-         self.b_len = int(b_len) if b_len else 0
-         self.b_hei = int(b_hei) if b_hei else 0
-         self.unit_coords = np.array([0, 0])
-         self.playInGUI = GUI
-+        if instance_id:
-+            self.instance_id = str(instance_id)
++    def _maybe_use_smokescreen(self, defender_side: str, defender_idx: int, phase: str, manual: bool = False):
++        """
++        10e Smokescreen: реакция защитника в момент выбора цели для стрельбы.
++        Упрощение: проверяем только keyword SMOKE и CP.
++        """
++        side_label = self._side_label(defender_side, manual=manual)
++        if defender_side == "model":
++            cp = self.modelCP
++            unit_data = self.unit_data[defender_idx]
 +        else:
-+            self.instance_id = f"unit-{Unit._instance_counter}"
-+            Unit._instance_counter += 1
++            cp = self.enemyCP
++            unit_data = self.enemy_data[defender_idx]
++
++        if not self._unit_has_smoke(unit_data):
++            return None
++        if cp < 1:
++            self._log_unit_phase(
++                side_label,
++                phase,
++                defender_idx + (21 if defender_side == "model" else 11),
++                defender_idx,
++                "Smokescreen недоступен: недостаточно CP.",
++            )
++            return None
++
++        use_it = True
++        if manual:
++            strat = self._prompt_yes_no("Использовать Smokescreen (1 CP)? (y/n): ")
++            if strat is None:
++                self.game_over = True
++                return None
++            use_it = strat
++
++        if not use_it:
++            return None
++
++        if defender_side == "model":
++            self.modelCP -= 1
++        else:
++            self.enemyCP -= 1
++
++        self._log_unit_phase(
++            side_label,
++            phase,
++            defender_idx + (21 if defender_side == "model" else 11),
++            defender_idx,
++            "Использован Smokescreen: -1 CP, эффект = benefit of cover до конца атаки.",
++        )
++        return "benefit of cover"
++
++    def _collect_overwatch_candidates(self, defender_side: str, moving_unit_side: str, moving_idx: int):
++        if defender_side == "model":
++            defender_health = self.unit_health
++            defender_coords = self.unit_coords
++            defender_weapon = self.unit_weapon
++            defender_in_attack = self.unitInAttack
++            target_coords = self.enemy_coords if moving_unit_side == "enemy" else self.unit_coords
++        else:
++            defender_health = self.enemy_health
++            defender_coords = self.enemy_coords
++            defender_weapon = self.enemy_weapon
++            defender_in_attack = self.enemyInAttack
++            target_coords = self.unit_coords if moving_unit_side == "model" else self.enemy_coords
++
++        target_pos = target_coords[moving_idx]
++        candidates = []
++        for i in range(len(defender_health)):
++            if defender_health[i] <= 0:
++                continue
++            if defender_in_attack[i][0] == 1:
++                continue
++            if defender_weapon[i] == "None":
++                continue
++            if distance(defender_coords[i], target_pos) <= defender_weapon[i]["Range"]:
++                candidates.append(i)
++        return candidates
++
++    def _resolve_overwatch(self, defender_side: str, moving_unit_side: str, moving_idx: int, phase: str, manual: bool = False):
++        """
++        10e Fire Overwatch: реакция защитника после завершения перемещения врага.
++        Упрощение: проверяем дальность, не учитываем LOS.
++        """
++        side_label = self._side_label(defender_side, manual=manual)
++        target_label = self._side_label(moving_unit_side, manual=False)
++        candidates = self._collect_overwatch_candidates(defender_side, moving_unit_side, moving_idx)
++        if not candidates:
++            self._log_phase_msg(side_label, phase, "Overwatch невозможен: нет доступных стреляющих юнитов.")
++            return
++
++        cp = self.modelCP if defender_side == "model" else self.enemyCP
++        if cp < 1:
++            self._log_phase_msg(side_label, phase, "Overwatch невозможен: недостаточно CP.")
++            return
++
++        self._log_phase_msg(
++            side_label,
++            phase,
++            f"Сработал триггер Overwatch против {target_label} Unit {moving_idx + (21 if moving_unit_side == 'model' else 11)}.",
++        )
++
++        use_it = True
++        chosen = candidates[0]
++        if manual:
++            ids = [c + (21 if defender_side == "model" else 11) for c in candidates]
++            strat = self._prompt_yes_no(f"Использовать Overwatch (1 CP)? Доступные юниты: {ids} (y/n): ")
++            if strat is None:
++                self.game_over = True
++                return
++            if not strat:
++                return
++            choice = self._get_input("Введите номер юнита для Overwatch: ").strip()
++            if not is_num(choice) or int(choice) - (21 if defender_side == "model" else 11) not in candidates:
++                self._log_phase_msg(side_label, phase, "Overwatch отменён: выбран недоступный юнит.")
++                return
++            chosen = int(choice) - (21 if defender_side == "model" else 11)
++
++        if defender_side == "model":
++            self.modelCP -= 1
++            attacker_health = self.unit_health
++            attacker_weapon = self.unit_weapon
++            attacker_data = self.unit_data
++            target_health = self.enemy_health if moving_unit_side == "enemy" else self.unit_health
++            target_data = self.enemy_data if moving_unit_side == "enemy" else self.unit_data
++            target_coords = self.enemy_coords if moving_unit_side == "enemy" else self.unit_coords
++        else:
++            self.enemyCP -= 1
++            attacker_health = self.enemy_health
++            attacker_weapon = self.enemy_weapon
++            attacker_data = self.enemy_data
++            target_health = self.unit_health if moving_unit_side == "model" else self.enemy_health
++            target_data = self.unit_data if moving_unit_side == "model" else self.enemy_data
++            target_coords = self.unit_coords if moving_unit_side == "model" else self.enemy_coords
++
++        distance_to_target = distance(
++            self.unit_coords[chosen] if defender_side == "model" else self.enemy_coords[chosen],
++            target_coords[moving_idx],
++        )
++        _logger = None
++        if self.trunc is False and _verbose_logs_enabled():
++            _logger = RollLogger(auto_dice)
++            dmg, modHealth = attack(
++                attacker_health[chosen],
++                attacker_weapon[chosen],
++                attacker_data[chosen],
++                target_health[moving_idx],
++                target_data[moving_idx],
++                distance_to_target=distance_to_target,
++                hit_on_6=True,
++                roller=_logger.roll,
++            )
++        else:
++            dmg, modHealth = attack(
++                attacker_health[chosen],
++                attacker_weapon[chosen],
++                attacker_data[chosen],
++                target_health[moving_idx],
++                target_data[moving_idx],
++                distance_to_target=distance_to_target,
++                hit_on_6=True,
++            )
++
++        target_health[moving_idx] = modHealth
++        attacker_unit_id = chosen + (21 if defender_side == "model" else 11)
++        target_unit_id = moving_idx + (21 if moving_unit_side == "model" else 11)
++        self._log_unit_phase(
++            side_label,
++            phase,
++            attacker_unit_id,
++            chosen,
++            f"Overwatch по {target_label} Unit {target_unit_id}: -1 CP, урон {float(np.sum(dmg))}.",
++        )
++        if _logger is not None:
++            _logger.print_shoot_report(
++                weapon=attacker_weapon[chosen],
++                attacker_data=attacker_data[chosen],
++                defender_data=target_data[moving_idx],
++                dmg_list=dmg,
++                effect=None,
++            )
++
++    def _resolve_heroic_intervention(self, defender_side: str, charging_side: str, charging_idx: int, phase: str, manual: bool = False):
++        """
++        10e Heroic Intervention: реакция защитника после успешного charge move врага.
++        Упрощение: eligible = юниты защитника в 6" от charging unit.
++        Из-за 1v1 структуры unitInAttack отмечаем только защитника.
++        """
++        side_label = self._side_label(defender_side, manual=manual)
++        if defender_side == "model":
++            defender_health = self.unit_health
++            defender_coords = self.unit_coords
++            defender_in_attack = self.unitInAttack
++            defender_cp = self.modelCP
++        else:
++            defender_health = self.enemy_health
++            defender_coords = self.enemy_coords
++            defender_in_attack = self.enemyInAttack
++            defender_cp = self.enemyCP
++
++        charging_coords = self.unit_coords if charging_side == "model" else self.enemy_coords
++        eligible = []
++        for i in range(len(defender_health)):
++            if defender_health[i] <= 0:
++                continue
++            if defender_in_attack[i][0] == 1:
++                continue
++            if distance(defender_coords[i], charging_coords[charging_idx]) <= 6:
++                eligible.append(i)
++
++        if not eligible:
++            self._log_phase_msg(side_label, phase, "Heroic Intervention недоступен: нет eligible юнитов в 6\".")
++            return
++
++        if defender_cp < 2:
++            self._log_phase_msg(side_label, phase, "Heroic Intervention недоступен: недостаточно CP.")
++            return
++
++        unit_ids = [i + (21 if defender_side == "model" else 11) for i in eligible]
++        self._log_phase_msg(
++            side_label,
++            phase,
++            f"Доступные юниты для Heroic Intervention: {unit_ids}.",
++        )
++
++        use_it = True
++        chosen = eligible[0]
++        if manual:
++            strat = self._prompt_yes_no("Использовать Heroic Intervention (2 CP)? (y/n): ")
++            if strat is None:
++                self.game_over = True
++                return
++            if not strat:
++                return
++            choice = self._get_input("Введите номер юнита для Heroic Intervention: ").strip()
++            if not is_num(choice) or int(choice) - (21 if defender_side == "model" else 11) not in eligible:
++                self._log_phase_msg(side_label, phase, "Heroic Intervention отменён: выбран недоступный юнит.")
++                return
++            chosen = int(choice) - (21 if defender_side == "model" else 11)
++
++        if defender_side == "model":
++            self.modelCP -= 2
++        else:
++            self.enemyCP -= 2
++
++        pos_before = tuple(defender_coords[chosen])
++        defender_coords[chosen][0] = charging_coords[charging_idx][0] + 1
++        defender_coords[chosen][1] = charging_coords[charging_idx][1] + 1
++        defender_coords[chosen] = bounds(defender_coords[chosen], self.b_len, self.b_hei)
++        defender_in_attack[chosen][0] = 1
++        defender_in_attack[chosen][1] = charging_idx
++        pos_after = tuple(defender_coords[chosen])
++
++        self._log_unit_phase(
++            side_label,
++            phase,
++            chosen + (21 if defender_side == "model" else 11),
++            chosen,
++            f"Выбран для Heroic Intervention. Переместился: {pos_before} -> {pos_after}, entered_in_engagement=True.",
++        )
++
+     def _prompt_int(self, prompt: str, min_val: int, max_val: int, allow_quit: bool = True):
+         while True:
+             response = self._get_input(prompt).strip().lower()
+             if allow_quit and response in ("quit", "q"):
+                 return None
+             if response.isdigit():
+                 value = int(response)
+                 if min_val <= value <= max_val:
+                     return value
+                 self._log(f"Not in range ({min_val}..{max_val}): {value}")
+             else:
+                 self._log("Not a number, try again.")
  
-     # --- FIX: подхватываем размеры поля из board.txt, если они нулевые ---
-     def _ensure_board_dims(self):
-         if self.b_len > 0 and self.b_hei > 0:
+     def begin_phase(self, side: str, phase: str):
+         self.active_side = side
+         self.phase = phase
+         if not self._round_banner_shown:
+             self._log(f"=== BATTLE ROUND {self.battle_round} ===")
+             self._round_banner_shown = True
+         if phase == "command":
+             self._log(f"--- {side.upper()} TURN ---")
+             if side == "model":
+                 self.unitFellBack = [False] * len(self.unit_health)
+             elif side == "enemy":
+                 self.enemyFellBack = [False] * len(self.enemy_health)
+@@ -903,178 +1206,125 @@ class Warhammer40kEnv(gym.Env):
+                 if isBelowHalfStr(self.unit_data[i], self.unit_health[i]) is True and self.unit_health[i] > 0:
+                     if self.trunc is False:
+                         self._log("This unit is Battle-shocked, starting test...")
+                         self._log("Rolling 2D6...")
+                     diceRoll = dice(num=2)
+                     if self.trunc is False:
+                         self._log(f"Model rolled {diceRoll[0]} {diceRoll[1]}")
+                     if sum(diceRoll) >= self.unit_data[i]["Ld"]:
+                         self.modelOC[i] = self.unit_data[i]["OC"]
+                         if self.trunc is False:
+                             self._log("Battle-shock test passed!")
+                     else:
+                         battle_shock[i] = True
+                         self.modelOC[i] = 0
+                         if self.trunc is False:
+                             self._log("Battle-shock test failed")
+                         if action and action.get("use_cp") == 1 and action.get("cp_on") == i:
+                             if self.modelCP - 1 >= 0:
+                                 battle_shock[i] = False
+                                 reward_delta += 0.5
+                                 self.modelCP -= 1
+                                 if self.trunc is False:
+                                     self._log("Used Insane Bravery Stratagem to pass Battle Shock test")
+                             else:
+                                 reward_delta -= 0.5
+-                if action and action.get("use_cp") == 4 and action.get("cp_on") == i:
+-                    if self.modelCP - 2 >= 0 and self.unitInAttack[i][0] == 0:
+-                        for j in range(len(self.enemyInAttack)):
+-                            if self.enemyInAttack[j][0] == 1 and distance(self.unit_coords[i], self.enemy_coords[j]) >= 6:
+-                                self.unitInAttack[i][0] = 1
+-                                self.unitInAttack[i][1] = j
+-                                self.unitInAttack[self.enemyInAttack[j][1]][0] = 0
+-                                self.unitInAttack[self.enemyInAttack[j][1]][1] = 0
+-                                self.unit_coords[i][0] = self.enemy_coords[j][0] + 1
+-                                self.unit_coords[i][1] = self.enemy_coords[j][1] + 1
+-                                self.unit_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
+-                                self.enemyInAttack[j][1] = i
+-                                self.modelCP -= 2
+-                                reward_delta += 0.5
+-                                break
+-                        reward_delta += 0.5
+-                    else:
+-                        reward_delta -= 0.5
+             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
+             apply_end_of_command_phase(self, side="model", dice_fn=dice_fn, log_fn=self._log)
+             score_end_of_command_phase(self, "model", log_fn=self._log)
+             return battle_shock, reward_delta
+ 
+         if side == "enemy" and manual:
+             self.enemyCP += 1
+             self.modelCP += 1
+             battle_shock = [False] * len(self.enemy_health)
+             for i in range(len(self.enemy_health)):
+                 playerName = i + 11
+                 battleSh = False
+                 if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.unit_health[i] > 0:
+                     self._log("This unit is Battle-shocked, starting test...")
+                     self._log("Rolling 2D6...")
+                     diceRoll = player_dice(num=2)
+                     self._log(f"You rolled {diceRoll[0]} {diceRoll[1]}")
+                     if sum(diceRoll) >= self.enemy_data[i]["Ld"]:
+                         self._log("Battle-shock test passed!")
+                         self.enemyOC[i] = self.enemy_data[i]["OC"]
+                     else:
+                         battleSh = True
+                         self._log("Battle-shock test failed")
+                         self.enemyOC[i] = 0
+                         if self.enemyCP - 1 >= 0:
+                             strat = self._prompt_yes_no(
+                                 f"Would you like to use the Insane Bravery Strategem for Unit {playerName}? (y/n): "
+                             )
+                             if strat is None:
+                                 self.game_over = True
+                                 return None
+                             if strat:
+                                 battleSh = False
+                                 self.enemyCP -= 1
+                                 self.enemyOC[i] = self.enemy_data[i]["OC"]
+                 battle_shock[i] = battleSh
+-                if self.enemyCP - 2 >= 0 and self.enemyInAttack[i][0] == 0:
+-                    strat = self._prompt_yes_no(
+-                        f"Would you like to use the Heroic Intervention Stratagem for Unit {playerName}? (y/n): "
+-                    )
+-                    if strat is None:
+-                        self.game_over = True
+-                        return None
+-                    if strat:
+-                        for j in range(len(self.unitInAttack)):
+-                            if self.unitInAttack[j][0] == 1 and distance(self.enemy_coords[i], self.unit_coords[j]) >= 6:
+-                                self.enemyInAttack[i][0] = 1
+-                                self.enemyInAttack[i][1] = j
+-                                self.enemyInAttack[self.enemyInAttack[j][1]][0] = 0
+-                                self.enemyInAttack[self.enemyInAttack[j][1]][1] = 0
+-                                self.enemy_coords[i][0] = self.enemy_coords[j][0] + 1
+-                                self.enemy_coords[i][1] = self.enemy_coords[j][1] + 1
+-                                self.enemy_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
+-                                self.unitInAttack[j][1] = i
+-                                self.enemyCP -= 2
+-                                self._log("Heroic Intervention Successfully used!")
+-                                break
+                 if battleSh:
+                     continue
+             self._manual_enemy_battle_shock = battle_shock
+             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
+             apply_end_of_command_phase(self, side="enemy", dice_fn=dice_fn, log_fn=self._log)
+             score_end_of_command_phase(self, "enemy", log_fn=self._log)
+             return battle_shock
+ 
+         if side == "enemy":
+             self.enemyCP += 1
+             self.modelCP += 1
+             battle_shock = [False] * len(self.enemy_health)
+             cp_on = np.random.randint(0, len(self.enemy_health))
+             use_cp = np.random.randint(0, 5)
+             self._enemy_cp_on = cp_on
+             self._enemy_use_cp = use_cp
+             for i in range(len(self.enemy_health)):
+                 battleSh = False
+                 if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.unit_health[i] > 0:
+                     if self.trunc is False:
+                         self._log("This unit is Below Half Strength, starting test...")
+                         self._log("Rolling 2D6...")
+                     diceRoll = dice(num=2)
+                     if self.trunc is False:
+                         self._log(f"Player rolled {diceRoll[0]} {diceRoll[1]}")
+                     if sum(diceRoll) >= self.enemy_data[i]["Ld"]:
+                         if self.trunc is False:
+                             self._log("Battle-shock test passed!")
+                         self.enemyOC[i] = self.enemy_data[i]["OC"]
+                     else:
+                         battleSh = True
+                         self.enemyOC[i] = 0
+                         if self.trunc is False:
+                             self._log("Battle-shock test failed")
+                         if use_cp == 1 and cp_on == i and self.enemyCP - 1 >= 0:
+                             battleSh = False
+                             self.enemyCP -= 1
+                             self.enemyOC[i] = self.enemy_data[i]["OC"]
+ 
+-                if use_cp == 4 and cp_on == i:
+-                    if self.enemyCP - 2 >= 0 and self.enemyInAttack[i][0] == 0:
+-                        for j in range(len(self.unitInAttack)):
+-                            if self.unitInAttack[j][0] == 1 and distance(self.enemy_coords[i], self.unit_coords[j]) >= 6:
+-                                self.enemyInAttack[i][0] = 1
+-                                self.enemyInAttack[i][1] = j
+-                                self.enemyInAttack[self.enemyInAttack[j][1]][0] = 0
+-                                self.enemyInAttack[self.enemyInAttack[j][1]][1] = 0
+-                                self.enemy_coords[i][0] = self.enemy_coords[j][0] + 1
+-                                self.enemy_coords[i][1] = self.enemy_coords[j][1] + 1
+-                                self.enemy_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
+-                                self.unitInAttack[j][1] = i
+-                                self.enemyCP -= 2
+-                                break
+                 battle_shock[i] = battleSh
+             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
+             apply_end_of_command_phase(self, side="enemy", dice_fn=dice_fn, log_fn=self._log)
+             score_end_of_command_phase(self, "enemy", log_fn=self._log)
+             return battle_shock
+ 
+         return None
+ 
+     def movement_phase(self, side: str, action=None, manual: bool = False, battle_shock=None):
+         self.begin_phase(side, "movement")
+         if side == "model":
+             self._log_phase("MODEL", "movement")
+             advanced_flags = [False] * len(self.unit_health)
+             reward_delta = 0
+             for i in range(len(self.unit_health)):
+                 modelName = i + 21
+                 battleSh = battle_shock[i] if battle_shock else False
+                 pos_before = tuple(self.unit_coords[i])
+                 if self.unit_health[i] <= 0:
+                     self._log_unit("MODEL", modelName, i, f"Юнит мертв, движение пропущено. Позиция: {pos_before}")
+                     continue
+                 if self.unitInAttack[i][0] == 0 and self.unit_health[i] > 0:
+                     base_m = self.unit_data[i]["Movement"]
+                     label = "move_num_" + str(i)
+                     want = int(action[label])
+@@ -1105,146 +1355,125 @@ class Warhammer40kEnv(gym.Env):
+                     advanced_flags[i] = advanced
+                     direction = {0: "down", 1: "up", 2: "left", 3: "right", 4: "none"}.get(action["move"], "none")
+                     actual_movement = movement if action["move"] != 4 else 0
+                     advance_text = "да" if advanced else "нет"
+                     if advance_roll is not None:
+                         advance_detail = f", бросок={advance_roll}, макс={max_move}"
+                     else:
+                         advance_detail = ""
+                     self._log_unit(
+                         "MODEL",
+                         modelName,
+                         i,
+                         f"Позиция до: {pos_before}. Выбор: {direction}, advance={advance_text}{advance_detail}, distance={actual_movement}",
+                     )
+ 
+                     self.unit_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
+                     for j in range(len(self.enemy_health)):
+                         if self.unit_coords[i] == self.enemy_coords[j]:
+                             self.unit_coords[i][0] -= 1
+                     pos_after = tuple(self.unit_coords[i])
+                     if action["move"] == 4:
+                         self._log_unit("MODEL", modelName, i, f"Движение пропущено (no move). Позиция после: {pos_after}")
+                     else:
+                         self._log_unit("MODEL", modelName, i, f"Позиция после: {pos_after}")
+ 
+-                    if self.enemyStrat["overwatch"] != -1 and self.enemy_weapon[self.enemyStrat["overwatch"]] != "None":
+-                        if distance(self.unit_coords[i], self.enemy_coords[self.enemyStrat["overwatch"]]) <= self.enemy_weapon[self.enemyStrat["overwatch"]]["Range"]:
+-                            dmg, modHealth = attack(
+-                                self.enemy_health[self.enemyStrat["overwatch"]],
+-                                self.enemy_weapon[self.enemyStrat["overwatch"]],
+-                                self.enemy_data[self.enemyStrat["overwatch"]],
+-                                self.unit_health[i],
+-                                self.unit_data[i],
+-                                distance_to_target=distance(self.unit_coords[i], self.enemy_coords[self.enemyStrat["overwatch"]]),
+-                            )
+-                            self.unit_health[i] = modHealth
+-                            if self.trunc is False:
+-                                self._log(
+-                                    "Player unit {} successfully hit model unit {} for {} damage using the overwatch strategem".format(
+-                                        self.enemyStrat["overwatch"] + 11, i + 11, sum(dmg)
+-                                    )
+-                                )
+-                            self.enemyStrat["overwatch"] = -1
+-
+-                    if action["use_cp"] == 2 and action["cp_on"] == i:
+-                        if self.modelCP - 1 >= 0 and self.enemy_weapon[i] != "None":
+-                            self.modelCP -= 1
+-                            self.modelStrat["overwatch"] = i
+-                            reward_delta += 0.5
+-                        elif battleSh is not False:
+-                            if self.trunc is False:
+-                                self._log("This unit is BattleShocked, no stratagems can be used on it")
+-                            reward_delta -= 0.5
+-
+-                    if action["use_cp"] == 3 and action["cp_on"] == i:
+-                        if self.modelCP - 1 >= 0:
+-                            self.modelCP -= 1
+-                            self.modelStrat["smokescreen"] = i
+-                            reward_delta += 0.5
+-                        elif battleSh is not False:
+-                            if self.trunc is False:
+-                                self._log("This unit is Battle shocked, stratagems can not be used")
+-                            reward_delta -= 0.5
++                    if pos_before != pos_after:
++                        self._resolve_overwatch(
++                            defender_side="enemy",
++                            moving_unit_side="model",
++                            moving_idx=i,
++                            phase="movement",
++                            manual=os.getenv("MANUAL_DICE", "0") == "1",
++                        )
+ 
+                     for j in range(len(self.coordsOfOM)):
+                         if distance(self.coordsOfOM[j], self.unit_coords[i]) <= 5:
+                             reward_delta += 0.5
+ 
+                 elif self.unitInAttack[i][0] == 1 and self.unit_health[i] > 0:
+                     idOfE = self.unitInAttack[i][1]
+                     if self.enemy_health[idOfE] <= 0:
+                         reward_delta += 0.3
+                         self.unitInAttack[i][0] = 0
+                         self.unitInAttack[i][1] = 0
+                         self.enemyInAttack[idOfE][0] = 0
+                         self.enemyInAttack[idOfE][1] = 0
+                         self._log_unit(
+                             "MODEL",
+                             modelName,
+                             i,
+                             f"Цель в ближнем бою мертва (Enemy Unit {idOfE + 11}), юнит выходит из боя. Позиция: {pos_before}",
+                         )
+                     else:
+                         if action["attack"] == 0:
+                             if self.unit_health[i] * 2 >= self.enemy_health[idOfE]:
+                                 reward_delta -= 0.5
+                             self._log_unit(
+                                 "MODEL",
+                                 modelName,
+                                 i,
+                                 f"Отступление из боя с Enemy Unit {idOfE + 11}. Позиция до: {pos_before}",
+                             )
+                             self.unitFellBack[i] = True
+                             if battleSh is True:
+                                 diceRoll = dice()
+                                 if diceRoll < 3:
+                                     self.unit_health[i] -= self.unit_data[i]["W"]
+                             self.unit_coords[i][0] += self.unit_data[i]["Movement"]
+                             self.unitInAttack[i][0] = 0
+                             self.unitInAttack[i][1] = 0
+                             self.enemyInAttack[idOfE][0] = 0
+                             self.enemyInAttack[idOfE][1] = 0
+                             pos_after = tuple(self.unit_coords[i])
+                             self._log_unit("MODEL", modelName, i, f"Отступление завершено. Позиция после: {pos_after}")
++                            if pos_before != pos_after:
++                                self._resolve_overwatch(
++                                    defender_side="enemy",
++                                    moving_unit_side="model",
++                                    moving_idx=i,
++                                    phase="movement",
++                                    manual=os.getenv("MANUAL_DICE", "0") == "1",
++                                )
+                         else:
+                             reward_delta += 0.2
+                             self._log_unit(
+                                 "MODEL",
+                                 modelName,
+                                 i,
+                                 f"Остаётся в ближнем бою с Enemy Unit {idOfE + 11}, движение пропущено.",
+                             )
+             return advanced_flags, reward_delta
+ 
+         if side == "enemy" and manual:
+             direction_map = {"up": "up", "down": "down", "left": "left", "right": "right", "none": "none"}
+             normalize = {"u": "up", "d": "down", "l": "left", "r": "right", "n": "none"}
+             advanced_flags = [False] * len(self.enemy_health)
+             for i in range(len(self.enemy_health)):
+                 playerName = i + 11
+                 battleSh = battle_shock[i] if battle_shock else False
++                pos_before = tuple(self.enemy_coords[i])
+                 if self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
+                     fall_back = self._prompt_yes_no(f"Would you like Unit {playerName} to fallback? (y/n): ")
+                     if fall_back is None:
+                         self.game_over = True
+                         return None
+                     if fall_back:
+                         idOfE = self.enemyInAttack[i][1]
+                         self._log(f"Player Unit {playerName} fell back from Enemy unit {idOfE + 21}")
+                         self.enemyFellBack[i] = True
+                         if battleSh is True:
+                             diceRoll = dice()
+                             if diceRoll < 3:
+                                 self.enemy_health[i] -= self.enemy_data[i]["W"]
+                         self.enemy_coords[i][0] += self.enemy_data[i]["Movement"]
+                         self.enemyInAttack[i] = [0, 0]
+                         self.unitInAttack[idOfE][0] = 0
+                         self.unitInAttack[idOfE][1] = 0
+                     else:
+                         idOfE = self.enemyInAttack[i][1]
+                         self._log(
+                             f"Player Unit {playerName} stays in combat with Model Unit {idOfE + 21} (will fight in Fight Phase)"
+                         )
+                     continue
+ 
+                 if self.enemyInAttack[i][0] == 0 and self.enemy_health[i] > 0:
+@@ -1287,188 +1516,122 @@ class Warhammer40kEnv(gym.Env):
+                             0,
+                             movement_cap,
+                         )
+                         if move_num is None:
+                             self.game_over = True
+                             return None
+ 
+                     advanced_flags[i] = advanced
+                     if dire == "down":
+                         self.enemy_coords[i][0] += move_num
+                     elif dire == "up":
+                         self.enemy_coords[i][0] -= move_num
+                     elif dire == "left":
+                         self.enemy_coords[i][1] -= move_num
+                     elif dire == "right":
+                         self.enemy_coords[i][1] += move_num
+ 
+                     self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                     for j in range(len(self.enemy_health)):
+                         if self.enemy_coords[i] == self.unit_coords[j]:
+                             self.enemy_coords[i][0] -= 1
+ 
+                     self.updateBoard()
+                     self.showBoard()
+ 
+-                    if self.enemyCP - 1 >= 0 and battleSh is False:
+-                        strat = self._prompt_yes_no("Would you like to use the Fire Overwatch Stratagem? (y/n): ")
+-                        if strat is None:
+-                            self.game_over = True
+-                            return None
+-                        if strat:
+-                            self.enemyStrat["overwatch"] = i
+-                            self.enemyCP -= 1
+-
+-                    if self.modelStrat["overwatch"] != -1 and self.unit_weapon[self.modelStrat["overwatch"]] != "None":
+-                        if distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]) <= self.unit_weapon[self.modelStrat["overwatch"]]["Range"]:
+-                            _logger = None
+-                            if self.playType is False and _verbose_logs_enabled():
+-                                _logger = RollLogger(auto_dice)
+-                                dmg, modHealth = attack(
+-                                    self.unit_health[self.modelStrat["overwatch"]],
+-                                    self.unit_weapon[self.modelStrat["overwatch"]],
+-                                    self.unit_data[self.modelStrat["overwatch"]],
+-                                    self.enemy_health[i],
+-                                    self.enemy_data[i],
+-                                    roller=_logger.roll,
+-                                )
+-                            else:
+-                                dmg, modHealth = attack(
+-                                    self.unit_health[self.modelStrat["overwatch"]],
+-                                    self.unit_weapon[self.modelStrat["overwatch"]],
+-                                    self.unit_data[self.modelStrat["overwatch"]],
+-                                    self.enemy_health[i],
+-                                    self.enemy_data[i],
+-                                )
+-                            self.enemy_health[i] = modHealth
+-                            self._log(
+-                                f"Model unit {self.modelStrat['overwatch'] + 21} successfully hit player unit {i + 11} for {sum(dmg)} damage using the overwatch strategem"
+-                            )
+-                            if _logger is not None:
+-                                _logger.print_shoot_report(
+-                                    weapon=self.unit_weapon[self.modelStrat["overwatch"]],
+-                                    attacker_data=self.unit_data[self.modelStrat["overwatch"]],
+-                                    defender_data=self.enemy_data[i],
+-                                    dmg_list=dmg,
+-                                    effect=None,
+-                                )
+-                            self.modelStrat["overwatch"] = -1
++                    pos_after = tuple(self.enemy_coords[i])
++                    if pos_before != pos_after:
++                        self._resolve_overwatch(
++                            defender_side="model",
++                            moving_unit_side="enemy",
++                            moving_idx=i,
++                            phase="movement",
++                            manual=False,
++                        )
+ 
+                     self.updateBoard()
+                     self.showBoard()
+             return advanced_flags
+ 
+         if side == "enemy":
+             advanced_flags = [False] * len(self.enemy_health)
+             cp_on = getattr(self, "_enemy_cp_on", None)
+             use_cp = getattr(self, "_enemy_use_cp", None)
+             for i in range(len(self.enemy_health)):
++                pos_before = tuple(self.enemy_coords[i])
+                 if self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
+                     decide = np.random.randint(0, 10)
+                     if decide == 5:
+                         idOfM = self.enemyInAttack[i][1]
+                         if self.trunc is False:
+                             self._log(f"Enemy unit {i + 21} pulled out of fight with Model unit {idOfM + 11}")
+                         self.enemyFellBack[i] = True
+                         if battle_shock and battle_shock[i]:
+                             diceRoll = dice()
+                             if diceRoll < 3:
+                                 self.enemy_health[i] -= self.enemy_data[i]["W"]
+                         self.enemy_coords[i][0] -= self.enemy_data[i]["Movement"]
+                         self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                         self.unitInAttack[idOfM][0] = 0
+                         self.unitInAttack[idOfM][1] = 0
+                         self.enemyInAttack[i] = [0, 0]
+                     continue
+ 
+                 if self.enemyInAttack[i][0] == 0 and self.enemy_health[i] > 0:
+                     aliveUnits = [j for j in range(len(self.unit_health)) if self.unit_health[j] > 0]
+                     if len(aliveUnits) == 0:
+                         break
+                     idOfM = np.random.choice(aliveUnits)
+                     base_m = self.enemy_data[i]["Movement"]
+                     dist_to_target = distance(self.unit_coords[idOfM], self.enemy_coords[i])
+                     advanced = dist_to_target > (base_m + 6)
+                     movement = base_m + dice() if advanced else base_m
+ 
+                     if distance(self.unit_coords[idOfM], [self.enemy_coords[i][0], self.enemy_coords[i][1] - movement]) < distance(self.unit_coords[idOfM], self.enemy_coords[i]):
+                         self.enemy_coords[i][1] -= movement
+                     elif distance(self.unit_coords[idOfM], [self.enemy_coords[i][0], self.enemy_coords[i][1] + movement]) < distance(self.unit_coords[idOfM], self.enemy_coords[i]):
+                         self.enemy_coords[i][1] += movement
+                     elif distance(self.unit_coords[idOfM], [self.enemy_coords[i][0] - movement, self.enemy_coords[i][1]]) < distance(self.unit_coords[idOfM], self.enemy_coords[i]):
+                         self.enemy_coords[i][0] -= movement
+                     elif distance(self.unit_coords[idOfM], [self.enemy_coords[i][0] + movement, self.enemy_coords[i][1]]) < distance(self.unit_coords[idOfM], self.enemy_coords[i]):
+                         self.enemy_coords[i][0] += movement
+ 
+                     self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                     for j in range(len(self.unit_health)):
+                         if self.enemy_coords[i] == self.unit_coords[j]:
+                             self.enemy_coords[i][0] -= 1
+                     advanced_flags[i] = advanced
+ 
+-                    if self.modelStrat["overwatch"] != -1 and self.unit_weapon[self.modelStrat["overwatch"]] != "None":
+-                        if distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]) <= self.unit_weapon[self.modelStrat["overwatch"]]["Range"]:
+-                            _logger = None
+-                            if self.trunc is False and _verbose_logs_enabled():
+-                                _logger = RollLogger(auto_dice)
+-                                dmg, modHealth = attack(
+-                                    self.unit_health[self.modelStrat["overwatch"]],
+-                                    self.unit_weapon[self.modelStrat["overwatch"]],
+-                                    self.unit_data[self.modelStrat["overwatch"]],
+-                                    self.enemy_health[i],
+-                                    self.enemy_data[i],
+-                                    distance_to_target=distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]),
+-                                    roller=_logger.roll,
+-                                )
+-                            else:
+-                                dmg, modHealth = attack(
+-                                    self.unit_health[self.modelStrat["overwatch"]],
+-                                    self.unit_weapon[self.modelStrat["overwatch"]],
+-                                    self.unit_data[self.modelStrat["overwatch"]],
+-                                    self.enemy_health[i],
+-                                    self.enemy_data[i],
+-                                    distance_to_target=distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]),
+-                                )
+-                            self.enemy_health[i] = modHealth
+-                            if self.trunc is False and _logger is not None:
+-                                self._log("\n🟦 Model Overwatch (подробно):")
+-                                _logger.print_shoot_report(
+-                                    weapon=self.unit_weapon[self.modelStrat["overwatch"]],
+-                                    attacker_data=self.unit_data[self.modelStrat["overwatch"]],
+-                                    defender_data=self.enemy_data[i],
+-                                    dmg_list=dmg,
+-                                    effect=None,
+-                                )
+-                            self.modelStrat["overwatch"] = -1
+-
+-                    if use_cp == 2 and cp_on == i and self.enemyCP - 1 >= 0 and not (battle_shock and battle_shock[i]):
+-                        self.enemyCP -= 1
+-                        self.enemyStrat["overwatch"] = i
+-
+-                    if use_cp == 3 and cp_on == i and self.enemyCP - 1 >= 0 and not (battle_shock and battle_shock[i]):
+-                        self.enemyCP -= 1
+-                        self.enemyStrat["smokescreen"] = i
++                    pos_after = tuple(self.enemy_coords[i])
++                    if pos_before != pos_after:
++                        self._resolve_overwatch(
++                            defender_side="model",
++                            moving_unit_side="enemy",
++                            moving_idx=i,
++                            phase="movement",
++                            manual=False,
++                        )
+             return advanced_flags
+ 
+         return None
+ 
+     def shooting_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False):
+         self.begin_phase(side, "shooting")
+         if side == "model":
+             self._log_phase("MODEL", "shooting")
+             reward_delta = 0
+             for i in range(len(self.unit_health)):
+                 modelName = i + 21
+                 advanced = advanced_flags[i] if advanced_flags else False
+                 if self.unit_health[i] <= 0:
+                     self._log_unit("MODEL", modelName, i, "Юнит мертв, стрельба пропущена.")
+                     continue
+                 if self.unitFellBack[i]:
+                     self._log_unit("MODEL", modelName, i, "Fall Back в этом ходу — стрельба недоступна.")
+                     continue
+                 if self.unitInAttack[i][0] == 1:
+                     self._log_unit("MODEL", modelName, i, "Юнит в ближнем бою, стрельба недоступна.")
+                     continue
+                 if self.unit_weapon[i] == "None":
+                     self._log_unit("MODEL", modelName, i, "Нет дальнобойного оружия, стрельба пропущена.")
+                     continue
+                 if advanced and not weapon_is_assault(self.unit_weapon[i]):
+@@ -1480,53 +1643,56 @@ class Warhammer40kEnv(gym.Env):
+                     if (
+                         distance(self.unit_coords[i], self.enemy_coords[j]) <= self.unit_weapon[i]["Range"]
+                         and self.enemy_health[j] > 0
+                         and self.enemyInAttack[j][0] == 0
+                     ):
+                         shootAbleUnits.append(j)
+                 if len(shootAbleUnits) > 0:
+                     target_ids = [j + 11 for j in shootAbleUnits]
+                     idOfE = action["shoot"]
+                     if idOfE in shootAbleUnits:
+                         distances = {j: distance(self.unit_coords[i], self.enemy_coords[j]) for j in shootAbleUnits}
+                         closest = min(distances, key=distances.get)
+                         min_hp = min(shootAbleUnits, key=lambda idx: self.enemy_health[idx])
+                         if idOfE == closest:
+                             reason = "самая близкая"
+                         elif idOfE == min_hp:
+                             reason = "цель с меньшим HP"
+                         else:
+                             reason = "выбор политики"
+                         self._log_unit(
+                             "MODEL",
+                             modelName,
+                             i,
+                             f"Цели в дальности: {target_ids}, выбрана: {idOfE + 11} (причина: {reason})",
+                         )
+-                        effect = None
+-                        if idOfE == self.enemyStrat["smokescreen"]:
+-                            effect = "benefit of cover"
++                        effect = self._maybe_use_smokescreen(
++                            defender_side="enemy",
++                            defender_idx=idOfE,
++                            phase="shooting",
++                            manual=os.getenv("MANUAL_DICE", "0") == "1",
++                        )
+                         _logger = None
+                         if self.trunc is False and _verbose_logs_enabled():
+                             _logger = RollLogger(auto_dice)
+                             dmg, modHealth = attack(
+                                 self.unit_health[i],
+                                 self.unit_weapon[i],
+                                 self.unit_data[i],
+                                 self.enemy_health[idOfE],
+                                 self.enemy_data[idOfE],
+                                 effects=effect,
+                                 distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
+                                 roller=_logger.roll,
+                             )
+                         else:
+                             dmg, modHealth = attack(
+                                 self.unit_health[i],
+                                 self.unit_weapon[i],
+                                 self.unit_data[i],
+                                 self.enemy_health[idOfE],
+                                 self.enemy_data[idOfE],
+                                 effects=effect,
+                                 distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
+                             )
+                         self.enemy_health[idOfE] = modHealth
+                         reward_delta += 0.2
+@@ -1566,313 +1732,389 @@ class Warhammer40kEnv(gym.Env):
+             for i in range(len(self.enemy_health)):
+                 playerName = i + 11
+                 advanced = advanced_flags[i] if advanced_flags else False
+                 if self.enemyFellBack[i]:
+                     self._log(f"Unit {playerName} Fell Back this turn — skipping shooting")
+                     continue
+                 if self.enemy_weapon[i] != "None":
+                     if advanced and not weapon_is_assault(self.enemy_weapon[i]):
+                         self._log("You advanced — non-Assault weapon, skipping shooting")
+                     else:
+                         shootAble = np.array([])
+                         for j in range(len(self.unit_health)):
+                             if distance(self.enemy_coords[i], self.unit_coords[j]) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
+                                 shootAble = np.append(shootAble, j)
+                         if len(shootAble) > 0:
+                             response = False
+                             while response is False:
+                                 shoot = self._get_input(
+                                     "Select which enemy unit you would like to shoot ({}) with Unit {}: ".format(shootAble + 21, playerName)
+                                 ).strip()
+                                 if shoot.lower() in ("quit", "q"):
+                                     self.game_over = True
+                                     return None
+                                 if is_num(shoot) is True and int(shoot) - 21 in shootAble:
+                                     idOfE = int(shoot) - 21
+-                                    if self.modelStrat["smokescreen"] != -1 and self.modelStrat["smokescreen"] == idOfE:
+-                                        self._log(f"Model unit {self.modelStrat['smokescreen'] + 21} used the Smokescreen Strategem")
+-                                        self.modelStrat["smokescreen"] = -1
+-                                        effect = "benefit of cover"
+-                                    else:
+-                                        effect = None
++                                    effect = self._maybe_use_smokescreen(
++                                        defender_side="model",
++                                        defender_idx=idOfE,
++                                        phase="shooting",
++                                        manual=False,
++                                    )
+                                     logger = RollLogger(player_dice)
+                                     dmg, modHealth = attack(
+                                         self.enemy_health[i],
+                                         self.enemy_weapon[i],
+                                         self.enemy_data[i],
+                                         self.unit_health[idOfE],
+                                         self.unit_data[idOfE],
+                                         effects=effect,
+                                         distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfE]),
+                                         roller=logger.roll,
+                                     )
+                                     self.unit_health[idOfE] = modHealth
+                                     self._log(f"Player Unit {playerName} нанёс {sum(dmg)} урона по Model Unit {idOfE + 21}")
+                                     logger.print_shoot_report(
+                                         weapon=self.enemy_weapon[i],
+                                         attacker_data=self.enemy_data[i],
+                                         defender_data=self.unit_data[idOfE],
+                                         dmg_list=dmg,
+                                         effect=effect,
+                                     )
+                                     response = True
+                                 else:
+                                     self._log("Not an available unit")
+                 else:
+                     self._log("No available weapons to shoot")
+         elif side == "enemy":
+             for i in range(len(self.enemy_health)):
+                 advanced = advanced_flags[i] if advanced_flags else False
+                 if self.enemyFellBack[i]:
+                     if self.trunc is False:
+                         self._log(f"Enemy Unit {i + 21} Fell Back — skipping shooting")
+                     continue
+                 if self.enemy_weapon[i] != "None":
+                     if advanced and not weapon_is_assault(self.enemy_weapon[i]):
+                         if self.trunc is False:
+                             self._log("Enemy advanced — non-Assault weapon, skipping shooting")
+                     else:
+                         shootAbleUnits = []
+                         for j in range(len(self.unit_health)):
+                             if distance(self.enemy_coords[i], self.unit_coords[j]) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
+                                 shootAbleUnits.append(j)
+                         if len(shootAbleUnits) > 0:
+                             idOfM = np.random.choice(shootAbleUnits)
+-                            if self.modelStrat["smokescreen"] != -1 and self.modelStrat["smokescreen"] == idOfM:
+-                                self.modelStrat["smokescreen"] = -1
+-                                effect = "benefit of cover"
+-                            else:
+-                                effect = None
++                            effect = self._maybe_use_smokescreen(
++                                defender_side="model",
++                                defender_idx=idOfM,
++                                phase="shooting",
++                                manual=False,
++                            )
+                             dmg, modHealth = attack(
+                                 self.enemy_health[i],
+                                 self.enemy_weapon[i],
+                                 self.enemy_data[i],
+                                 self.unit_health[idOfM],
+                                 self.unit_data[idOfM],
+                                 effects=effect,
+                                 distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfM]),
+                             )
+                             self.unit_health[idOfM] = modHealth
+                             if self.trunc is False:
+                                 self._log(f"Enemy Unit {i + 21} shoots Model Unit {idOfM + 11} {float(np.sum(dmg))} damage")
+         return None
+ 
+     def charge_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False):
+         self.begin_phase(side, "charge")
+         if side == "model":
+             self._log_phase("MODEL", "charge")
+             reward_delta = 0
+             any_charge_targets = False
+             for i in range(len(self.unit_health)):
+                 modelName = i + 21
+                 advanced = advanced_flags[i] if advanced_flags else False
++                pos_before = tuple(self.unit_coords[i])
+                 if self.unit_health[i] <= 0:
+                     self._log_unit("MODEL", modelName, i, "Юнит мертв, чардж пропущен.")
+                     continue
+                 if self.unitFellBack[i]:
+                     self._log_unit("MODEL", modelName, i, "Fall Back в этом ходу — чардж невозможен.")
+                     continue
+                 if self.unitInAttack[i][0] == 1:
+                     self._log_unit("MODEL", modelName, i, "Уже в ближнем бою, чардж невозможен.")
+                     continue
+                 if advanced:
+                     self._log_unit("MODEL", modelName, i, "Advance — чардж невозможен.")
+                 else:
+                     potential_targets = []
+                     for j in range(len(self.enemy_health)):
+                         if distance(self.enemy_coords[j], self.unit_coords[i]) <= 12 and self.enemyInAttack[j][0] == 0 and self.enemy_health[j] > 0:
+                             potential_targets.append(j)
+                     if potential_targets:
+                         any_charge_targets = True
+                     if action["attack"] != 1:
+                         if potential_targets:
+                             target_ids = [j + 11 for j in potential_targets]
+                             self._log_unit(
+                                 "MODEL",
+                                 modelName,
+                                 i,
+                                 f"Доступные цели для чарджа: {target_ids}. Решение: пропуск чарджа.",
+                             )
+                         else:
+                             self._log_unit("MODEL", modelName, i, "Нет целей в 12\", чардж пропущен.")
+                         continue
+                     chargeAble = []
+                     dice_vals = dice(num=2)
+                     diceRoll = sum(dice_vals)
+                     if action["attack"] == 1:
+                         for j in range(len(self.enemy_health)):
+                             if distance(self.enemy_coords[j], self.unit_coords[i]) <= 12 and self.enemyInAttack[j][0] == 0 and self.enemy_health[j] > 0:
+                                 if distance(self.enemy_coords[j], self.unit_coords[i]) - diceRoll <= 5:
+                                     chargeAble.append(j)
+                     if len(chargeAble) > 0:
+                         idOfE = action["charge"]
+                         target_ids = [j + 11 for j in chargeAble]
+                         dist_to_target = distance(self.enemy_coords[idOfE], self.unit_coords[i]) if idOfE in chargeAble else None
+                         if _verbose_logs_enabled():
+                             roll_text = f"бросок: {dice_vals[0]} + {dice_vals[1]} = {diceRoll}"
+                         else:
+                             roll_text = f"бросок total={diceRoll}"
+                         if idOfE in chargeAble:
++                            self._log_unit_phase(
++                                "MODEL",
++                                "charge",
++                                modelName,
++                                i,
++                                f"Charge объявлен по цели Enemy Unit {idOfE + 11}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {dice_vals[0]} + {dice_vals[1]} = {diceRoll}.",
++                            )
+                             self._log_unit(
+                                 "MODEL",
+                                 modelName,
+                                 i,
+                                 f"Чардж цели: {target_ids}, выбрана {idOfE + 11} (dist={dist_to_target:.1f}). {roll_text}. Результат: успех.",
+                             )
+                             self.unitInAttack[i][0] = 1
+                             self.unitInAttack[i][1] = idOfE
+                             self.unit_coords[i][0] = self.enemy_coords[idOfE][0] + 1
+                             self.unit_coords[i][1] = self.enemy_coords[idOfE][1] + 1
+                             self.unit_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
+                             self.enemyInAttack[idOfE][0] = 1
+                             self.enemyInAttack[idOfE][1] = i
+                             self.unitCharged[i] = 1
++                            pos_after = tuple(self.unit_coords[i])
++                            self._log_unit_phase(
++                                "MODEL",
++                                "charge",
++                                modelName,
++                                i,
++                                f"Charge move: from {pos_before} -> {pos_after}, ended_in_engagement={self.unitInAttack[i][0] == 1}.",
++                            )
++                            # 10e: Heroic Intervention доступен защитнику после успешного charge move.
++                            self._resolve_heroic_intervention(
++                                defender_side="enemy",
++                                charging_side="model",
++                                charging_idx=i,
++                                phase="charge",
++                                manual=os.getenv("MANUAL_DICE", "0") == "1",
++                            )
+                             reward_delta += 0.5
+                         else:
+                             reason = "цель вне досягаемости" if idOfE in potential_targets else "цель недоступна"
++                            if idOfE in potential_targets:
++                                dist_to_target = distance(self.enemy_coords[idOfE], self.unit_coords[i])
++                                self._log_unit_phase(
++                                    "MODEL",
++                                    "charge",
++                                    modelName,
++                                    i,
++                                    f"Charge объявлен по цели Enemy Unit {idOfE + 11}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {dice_vals[0]} + {dice_vals[1]} = {diceRoll}.",
++                                )
+                             self._log_unit(
+                                 "MODEL",
+                                 modelName,
+                                 i,
+                                 f"Чардж цели: {target_ids}, выбрана {idOfE + 11}. {roll_text}. Результат: провал ({reason}).",
+                             )
+                             reward_delta -= 0.5
+                     else:
+                         if potential_targets:
+                             target_ids = [j + 11 for j in potential_targets]
+                             if _verbose_logs_enabled():
+                                 roll_text = f"бросок: {dice_vals[0]} + {dice_vals[1]} = {diceRoll}"
+                             else:
+                                 roll_text = f"бросок total={diceRoll}"
+                             self._log_unit(
+                                 "MODEL",
+                                 modelName,
+                                 i,
+                                 f"Цели в 12\": {target_ids}. {roll_text}. Нет достижимых целей.",
+                             )
+                         else:
+                             self._log_unit("MODEL", modelName, i, "Нет целей в 12\", чардж пропущен.")
+             if not any_charge_targets:
+                 self._log("[MODEL] Чардж: нет доступных целей")
+             return reward_delta
+         elif side == "enemy" and manual:
+             any_chargeable = False
+             battle_shock = getattr(self, "_manual_enemy_battle_shock", None)
+             for i in range(len(self.enemy_health)):
+                 playerName = i + 11
+                 advanced = advanced_flags[i] if advanced_flags else False
++                pos_before = tuple(self.enemy_coords[i])
+                 if self.enemyFellBack[i]:
+                     self._log(f"Unit {playerName} Fell Back this turn — skipping charge")
+                     continue
+                 if advanced:
+                     self._log("You advanced — cannot charge, skipping charge")
+                     continue
+                 charg = np.array([])
+                 for j in range(len(self.unit_health)):
+                     if distance(self.unit_coords[j], self.enemy_coords[i]) <= 12 and self.unitInAttack[j][0] == 0 and self.unit_health[j] > 0:
+                         charg = np.append(charg, j)
+                 if len(charg) > 0:
+                     any_chargeable = True
+                     want_charge = self._prompt_yes_no(f"Would you like Unit {playerName} to charge? (y/n): ")
+                     if want_charge is None:
+                         self.game_over = True
+                         return None
+                     if not want_charge:
+                         self._log(f"Player Unit {playerName} decided to skip charge")
+                         continue
+                     response = False
+                     while response is False:
+                         attk = self._get_input(
+                             "Select which enemy you would like to charge ({}) with Unit {}: ".format(charg + 21, playerName)
+                         ).strip()
+                         if attk.lower() in ("quit", "q"):
+                             self.game_over = True
+                             return None
+                         if is_num(attk) is True and int(attk) - 21 in charg:
+                             response = True
+                             j = int(attk) - 21
+                             self._log("Rolling 2 D6...")
+                             roll = player_dice(num=2)
+                             self._log(f"You rolled a {roll[0]} and {roll[1]}")
++                            dist_to_target = distance(self.enemy_coords[i], self.unit_coords[j])
++                            self._log_unit_phase(
++                                self._side_label("enemy", manual=True),
++                                "charge",
++                                playerName,
++                                i,
++                                f"Charge объявлен по цели Model Unit {j + 21}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {roll[0]} + {roll[1]} = {sum(roll)}.",
++                            )
+                             if distance(self.enemy_coords[i], self.unit_coords[j]) - sum(roll) <= 5:
+                                 self._log(f"Player Unit {playerName} Successfully charged Model Unit {j + 21}")
+                                 self.enemyInAttack[i][0] = 1
+                                 self.enemyInAttack[i][1] = j
+                                 self.enemy_coords[i][0] = self.unit_coords[j][0] + 1
+                                 self.enemy_coords[i][1] = self.unit_coords[j][1] + 1
+                                 self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                                 self.enemyCharged[i] = 1
+                                 self.updateBoard()
+                                 self.unitInAttack[j][0] = 1
+                                 self.unitInAttack[j][1] = i
++                                pos_after = tuple(self.enemy_coords[i])
++                                self._log_unit_phase(
++                                    self._side_label("enemy", manual=True),
++                                    "charge",
++                                    playerName,
++                                    i,
++                                    f"Charge move: from {pos_before} -> {pos_after}, ended_in_engagement={self.enemyInAttack[i][0] == 1}.",
++                                )
++                                # 10e: Heroic Intervention доступен защитнику после успешного charge move.
++                                self._resolve_heroic_intervention(
++                                    defender_side="model",
++                                    charging_side="enemy",
++                                    charging_idx=i,
++                                    phase="charge",
++                                    manual=False,
++                                )
+                             else:
+                                 self._log(f"Player Unit {playerName} Failed to charge Model Unit {j + 21}")
+                         else:
+                             self._log("Not an available unit")
+-                if self.enemyCP - 1 >= 0 and not (battle_shock and battle_shock[i]):
+-                    strat = self._prompt_yes_no("Would you like to use the Smokescreen Stratagem for this unit? (y/n): ")
+-                    if strat is None:
+-                        self.game_over = True
+-                        return None
+-                    if strat:
+-                        self.enemyStrat["smokescreen"] = i
+             if not any_chargeable:
+                 self._log("No available units to charge")
+         elif side == "enemy":
+             for i in range(len(self.enemy_health)):
+                 advanced = advanced_flags[i] if advanced_flags else False
++                pos_before = tuple(self.enemy_coords[i])
+                 if self.enemyFellBack[i]:
+                     if self.trunc is False:
+                         self._log("Enemy Fell Back — cannot charge, skipping charge")
+                     continue
+                 if advanced:
+                     if self.trunc is False:
+                         self._log("Enemy advanced — cannot charge, skipping charge")
+                 else:
+                     chargeAble = []
+                     diceRoll = sum(dice(num=2))
+                     for j in range(len(self.unit_health)):
+                         if distance(self.enemy_coords[i], self.unit_coords[j]) <= 12 and self.unitInAttack[j][0] == 0:
+                             if distance(self.enemy_coords[i], self.unit_coords[j]) - diceRoll <= 5:
+                                 chargeAble.append(j)
+                     if len(chargeAble) > 0:
+                         idOfM = int(np.random.choice(chargeAble))
+                         dist = distance(self.enemy_coords[i], self.unit_coords[idOfM])
+                         required = max(0, dist - 1)
++                        self._log_unit_phase(
++                            "ENEMY",
++                            "charge",
++                            i + 21,
++                            i,
++                            f"Charge объявлен по цели Model Unit {idOfM + 11}. Дистанция: {dist:.1f}. Бросок 2D6: {diceRoll}.",
++                        )
+                         if diceRoll >= required:
+                             if self.trunc is False:
+                                 self._log(
+                                     f"Enemy unit {i + 21} successfully charged Model unit {idOfM + 11} (roll {diceRoll} vs need {required:.1f})"
+                                 )
+                             self.enemy_coords[i][0] = self.unit_coords[idOfM][0] + 1
+                             self.enemy_coords[i][1] = self.unit_coords[idOfM][1]
+                             self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                             self.enemyInAttack[i][0] = 1
+                             self.enemyInAttack[i][1] = idOfM
+                             self.unitInAttack[idOfM][0] = 1
+                             self.unitInAttack[idOfM][1] = i
+                             self.enemyCharged[i] = 1
++                            pos_after = tuple(self.enemy_coords[i])
++                            self._log_unit_phase(
++                                "ENEMY",
++                                "charge",
++                                i + 21,
++                                i,
++                                f"Charge move: from {pos_before} -> {pos_after}, ended_in_engagement={self.enemyInAttack[i][0] == 1}.",
++                            )
++                            # 10e: Heroic Intervention доступен защитнику после успешного charge move.
++                            self._resolve_heroic_intervention(
++                                defender_side="model",
++                                charging_side="enemy",
++                                charging_idx=i,
++                                phase="charge",
++                                manual=False,
++                            )
+                         elif self.trunc is False:
+                             self._log(
+                                 f"Enemy unit {i + 21} failed charge vs Model unit {idOfM + 11} (roll {diceRoll} vs need {required:.1f})"
+                             )
+         return None
+ 
+     def fight_phase(self, side: str):
+         self.begin_phase(side, "fight")
+         if side == "model":
+             self._log_phase("MODEL", "fight")
+             engaged_model = [i for i in range(len(self.unit_health)) if self.unit_health[i] > 0 and self.unitInAttack[i][0] == 1]
+             engaged_enemy = [i for i in range(len(self.enemy_health)) if self.enemy_health[i] > 0 and self.enemyInAttack[i][0] == 1]
+             if not engaged_model and not engaged_enemy:
+                 self._log("[MODEL] Ближний бой: нет доступных атак")
+             else:
+                 model_ids = [i + 21 for i in engaged_model]
+                 enemy_ids = [i + 11 for i in engaged_enemy]
+                 self._log(f"[MODEL] Ближний бой: участвуют Model units {model_ids}, Enemy units {enemy_ids}")
+                 for idx in engaged_model:
+                     def_idx = self.unitInAttack[idx][1]
+                     if 0 <= def_idx < len(self.enemy_health):
+                         self._log_unit(
+                             "MODEL",
+                             idx + 21,
+                             idx,
+@@ -2007,162 +2249,202 @@ class Warhammer40kEnv(gym.Env):
+         No pile-in/consolidate here (упрощение).
+         """
+         quiet = self.trunc if trunc is None else trunc
+ 
+         # кто кидает кубы (если MANUAL_DICE=1 — спрашиваем руками)
+         dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" else auto_dice
+ 
+         def _log(msg: str):
+             if quiet is False:
+                 self._log(msg)
+ 
+         def _do_melee(att_side: str, att_idx: int):
+             """
+             att_side: "model" (self.unit_*) or "enemy" (self.enemy_*)
+             att_idx: index in corresponding arrays
+             """
+             # проверка жив/в бою
+             if att_side == "model":
+                 if self.unit_health[att_idx] <= 0 or self.unitInAttack[att_idx][0] != 1:
+                     return False
+                 def_idx = self.unitInAttack[att_idx][1]
+                 if def_idx < 0 or def_idx >= len(self.enemy_health) or self.enemy_health[def_idx] <= 0:
+                     # цель мертва/невалидна — снимаем бой
+                     self.unitInAttack[att_idx] = [0, 0]
+                     return False
++                self._log_unit_phase(
++                    "MODEL",
++                    "fight",
++                    att_idx + 21,
++                    att_idx,
++                    f"Выбран для атаки. Цель: Enemy Unit {def_idx + 11}.",
++                )
+ 
+                 weapon = self.unit_melee[att_idx]
+                 attacker_data = self.unit_data[att_idx]
+                 defender_data = self.enemy_data[def_idx]
+                 hp_before = self.enemy_health[def_idx]
+ 
+                 _logger = None
+                 if quiet is False and _verbose_logs_enabled():
+                     _logger = RollLogger(auto_dice)
+                     _logger.configure_for_weapon(weapon)
+                     dmg, modHealth = attack(
+                         self.unit_health[att_idx],
+                         weapon,
+                         attacker_data,
+                         self.enemy_health[def_idx],
+                         defender_data,
+                         rangeOfComb="Melee",
+                         roller=_logger.roll,
+                     )
+                 else:
+                     dmg, modHealth = attack(
+                         self.unit_health[att_idx],
+                         weapon,
+                         attacker_data,
+                         self.enemy_health[def_idx],
+                         defender_data,
+                         rangeOfComb="Melee",
+                     )
+ 
+                 self.enemy_health[def_idx] = modHealth
+ 
+                 wname = weapon.get("Name", "Melee") if isinstance(weapon, dict) else str(weapon)
+                 _log(f"⚔️ Model Unit {att_idx + 21} fights Enemy Unit {def_idx + 11} with {wname}: dmg {float(np.sum(dmg))} | HP {hp_before} -> {modHealth}")
++                self._log_unit_phase(
++                    "MODEL",
++                    "fight",
++                    att_idx + 21,
++                    att_idx,
++                    f"Итог атаки: урон {float(np.sum(dmg))}, HP цели {hp_before} -> {modHealth}.",
++                )
+ 
+                 # если у тебя уже есть print_melee_report — можно включить:
+                 if quiet is False and _logger is not None and hasattr(_logger, "print_melee_report"):
+                     _logger.print_melee_report(
+                         weapon=weapon,
+                         attacker_data=attacker_data,
+                         defender_data=defender_data,
+                         dmg_list=dmg,
+                         effect=None,
+                     )
+ 
+                 # если цель умерла — снимаем “в бою” с обеих сторон
+                 if self.enemy_health[def_idx] <= 0:
+                     self.enemyInAttack[def_idx] = [0, 0]
+                     self.unitInAttack[att_idx] = [0, 0]
+ 
+                 return True
+ 
+             else:  # att_side == "enemy"
+                 if self.enemy_health[att_idx] <= 0 or self.enemyInAttack[att_idx][0] != 1:
+                     return False
+                 def_idx = self.enemyInAttack[att_idx][1]
+                 if def_idx < 0 or def_idx >= len(self.unit_health) or self.unit_health[def_idx] <= 0:
+                     self.enemyInAttack[att_idx] = [0, 0]
+                     return False
++                enemy_label = self._side_label("enemy", manual=os.getenv("MANUAL_DICE", "0") == "1")
++                self._log_unit_phase(
++                    enemy_label,
++                    "fight",
++                    att_idx + 11,
++                    att_idx,
++                    f"Выбран для атаки. Цель: Model Unit {def_idx + 21}.",
++                )
+ 
+                 weapon = self.enemy_melee[att_idx]
+                 attacker_data = self.enemy_data[att_idx]
+                 defender_data = self.unit_data[def_idx]
+                 hp_before = self.unit_health[def_idx]
+ 
+                 _logger = None
+                 if quiet is False and _verbose_logs_enabled():
+                     _logger = RollLogger(dice_fn)
+                     _logger.configure_for_weapon(weapon)
+                     dmg, modHealth = attack(
+                         self.enemy_health[att_idx],
+                         weapon,
+                         attacker_data,
+                         self.unit_health[def_idx],
+                         defender_data,
+                         rangeOfComb="Melee",
+                         roller=_logger.roll,
+                     )
+                 else:
+                     dmg, modHealth = attack(
+                         self.enemy_health[att_idx],
+                         weapon,
+                         attacker_data,
+                         self.unit_health[def_idx],
+                         defender_data,
+                         rangeOfComb="Melee",
+                     )
+ 
+                 self.unit_health[def_idx] = modHealth
+ 
+                 wname = weapon.get("Name", "Melee") if isinstance(weapon, dict) else str(weapon)
+                 _log(f"⚔️ Enemy Unit {att_idx + 11} fights Model Unit {def_idx + 21} with {wname}: dmg {float(np.sum(dmg))} | HP {hp_before} -> {modHealth}")
++                self._log_unit_phase(
++                    enemy_label,
++                    "fight",
++                    att_idx + 11,
++                    att_idx,
++                    f"Итог атаки: урон {float(np.sum(dmg))}, HP цели {hp_before} -> {modHealth}.",
++                )
+ 
+                 if quiet is False and _logger is not None and hasattr(_logger, "print_melee_report"):
+                     _logger.print_melee_report(
+                         weapon=weapon,
+                         attacker_data=attacker_data,
+                         defender_data=defender_data,
+                         dmg_list=dmg,
+                         effect=None,
+                     )
+ 
+                 if self.unit_health[def_idx] <= 0:
+                     self.unitInAttack[def_idx] = [0, 0]
+                     self.enemyInAttack[att_idx] = [0, 0]
+ 
+                 return True
+ 
+         # есть ли вообще кому драться?
+         any_fight = any(x[0] == 1 for x in self.unitInAttack) or any(x[0] == 1 for x in self.enemyInAttack)
+         if not any_fight:
              return
  
-         candidates = []
++        model_eligible = [i for i in range(len(self.unit_health)) if self.unit_health[i] > 0 and self.unitInAttack[i][0] == 1]
++        enemy_eligible = [i for i in range(len(self.enemy_health)) if self.enemy_health[i] > 0 and self.enemyInAttack[i][0] == 1]
++        active_label = self._side_label(active_side, manual=os.getenv("MANUAL_DICE", "0") == "1" and active_side == "enemy")
++        self._log_phase_msg(
++            active_label,
++            "fight",
++            "Начало Fight phase. Первым выбирает активный игрок. "
++            f"Eligible MODEL: {[i + 21 for i in model_eligible]}, "
++            f"Eligible ENEMY: {[i + 11 for i in enemy_eligible]}.",
++        )
++
+         fought_model = set()
+         fought_enemy = set()
  
-         # 1) board.txt в текущей папке запуска (часто это /home/dolbaeb/40kAI)
-         candidates.append(os.path.join(os.getcwd(), "board.txt"))
+         # 1) chargers fight first (упрощение: только активная сторона)
+         if active_side == "model":
+             chargers = [i for i in range(len(self.unit_health))
+                         if self.unitCharged[i] == 1 and self.unitInAttack[i][0] == 1 and self.unit_health[i] > 0]
+             for i in chargers:
+                 if i not in fought_model:
+                     if _do_melee("model", i):
+                         fought_model.add(i)
+         else:
+             chargers = [i for i in range(len(self.enemy_health))
+                         if self.enemyCharged[i] == 1 and self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0]
+             for i in chargers:
+                 if i not in fought_enemy:
+                     if _do_melee("enemy", i):
+                         fought_enemy.add(i)
  
-         # 2) board.txt относительно расположения этого файла (на случай запуска из site-packages)
-         # unit.py лежит в .../gym_mod/gym_mod/engine/unit.py
-         # репо-root обычно на 4 уровня выше и там лежит board.txt
-         candidates.append(
-             os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "board.txt"))
-         )
+         # 2) then alternate, starting with NON-active side
+         next_side = "enemy" if active_side == "model" else "model"
  
-         board_path = None
-         for p in candidates:
-             if os.path.exists(p):
-                 board_path = p
-                 break
- 
-         if not board_path:
-@@ -122,25 +129,33 @@ class Unit:
-         self._ensure_board_dims()
-         if self.b_hei <= 0 or self.b_len <= 0:
-             raise RuntimeError(
-                 f"Board size is zero (b_hei={self.b_hei}, b_len={self.b_len}). "
-                 f"Не удалось прочитать board.txt или размеры не выставляются."
+         while True:
+             model_left = [i for i in range(len(self.unit_health))
+                           if self.unit_health[i] > 0 and self.unitInAttack[i][0] == 1 and i not in fought_model]
+@@ -2245,50 +2527,51 @@ class Warhammer40kEnv(gym.Env):
+             moreInfo = "Model Unit Health: {}, Player Unit Health: {}\nModel CP: {}, Player CP: {}\nModel VP: {}, Player VP: {}\n".format(
+                 info["model health"], info["player health"], info["modelCP"], info["playerCP"], info["model VP"], info["player VP"]
              )
  
-         if occupied is None:
-             occupied = set()
-         coord = get_random_free_deploy_coord(unitType, self.b_len, self.b_hei, occupied)
-         self.unit_coords = np.array([coord[0], coord[1]])
-         occupied.add((coord[0], coord[1]))
-         return coord
+         if self.playType is not False:
+             if self.modelUpdates != "":
+                 sendToGUI(moreInfo + self.modelUpdates + "\nWould you like to continue: ")
+             else:
+                 sendToGUI(moreInfo + "\nWould you like to continue: ")
+             ans = recieveGUI()
+             response = False
+             while response is False:
+                 if ans.lower() in ("y", "yes"):
+                     response = True
+                     self.modelUpdates = ""
+                 elif ans.lower() in ("n", "no"):
+                     self.game_over = True
+                     info = self.get_info
+                     return self.game_over, info
+                 else:
+                     sendToGUI("Its a yes or no question dude...: ")
+                     ans = recieveGUI()
  
-     def showUnitData(self):
-         return self.unit_data
+         for i in range(len(self.enemy_health)):
+             playerName = i + 11
++            pos_before = tuple(self.enemy_coords[i])
+             if self.playType is False:
+                 print("For unit", playerName)
+             else:
+                 sendToGUI("For unit {}".format(playerName))
  
-     def showWeapon(self):
-         return self.unit_weapon
+             battleSh = False
+             if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.unit_health[i] > 0:
+                 if self.playType is False:
+                     print("This unit is Battle-shocked, starting test...")
+                     print("Rolling 2D6...")
+                     diceRoll = player_dice(num=2)
+                     print("You rolled", diceRoll[0], diceRoll[1])
+                 else:
+                     diceRoll = player_dice(num=2)
+                     sendToGUI("This unit is Battle-shocked, starting test...\nRolling 2D6...\nYou rolled: {} and {}".format(diceRoll[0], diceRoll[1]))
  
-     def showMelee(self):
-         return self.unit_melee
+                 if sum(diceRoll) >= self.enemy_data[i]["Ld"]:
+                     if self.playType is False:
+                         print("Battle-shock test passed!")
+                     else:
+                         sendToGUI("Battle-shock test passed!")
+                     self.enemyOC[i] = self.enemy_data[i]["OC"]
+                 else:
+                     battleSh = True
+                     if self.playType is False:
+@@ -2309,105 +2592,50 @@ class Warhammer40kEnv(gym.Env):
+                             if strat.lower() in ("y", "yes"):
+                                 response = True
+                                 battleSh = False
+                                 self.enemyCP -= 1
+                                 self.enemyOC[i] = self.enemy_data[i]["OC"]
+                             elif strat.lower() in ("n", "no"):
+                                 response = True
+                             elif strat.lower() == "quit":
+                                 self.game_over = True
+                                 info = self.get_info()
+                                 return self.game_over, info
+                             elif strat.lower() in ("?", "help"):
+                                 if self.playType is False:
+                                     print("The Insane Bravery Stratagem costs 1 CP and is used when a unit fails a Battle-Shock Test. If used it treats the unit as if it passed.")
+                                     strat = input("Would you like to use the Insane Bravery Stratagem? (y/n): ")
+                                 else:
+                                     sendToGUI("The Insane Bravery Stratagem costs 1 CP and is used when a unit fails a Battle-Shock Test. If used it treats the unit as if it passed.\nWould you like to use the Insane Bravery Stratagem? (y/n): ")
+                                     strat = recieveGUI()
+                             else:
+                                 if self.playType is False:
+                                     strat = input("Valid answers are: y, yes, n, and no: ")
+                                 else:
+                                     sendToGUI("Valid answers are: y, yes, n, and no: ")
+                                     strat = recieveGUI()
  
-     def showCoords(self):
-         return self.unit_coords
+-            # Heroic Intervention (player)
+-            if self.enemyCP - 2 >= 0 and self.enemyInAttack[i][0] == 0:
+-                response = False
+-                if self.playType is False:
+-                    strat = input("Would you like to use the Heroic Intervention Stratagem? (y/n): ")
+-                else:
+-                    sendToGUI("Would you like to use the Heroic Intervention Stratagem for Unit {}? (y/n): ".format(playerName))
+-                    strat = recieveGUI()
+-
+-                while response is False:
+-                    if strat.lower() in ("y", "yes"):
+-                        response = True
+-                        for j in range(len(self.unitInAttack)):
+-                            if self.unitInAttack[j][0] == 1 and distance(self.enemy_coords[i], self.unit_coords[j]) >= 6:
+-                                self.enemyInAttack[i][0] = 1
+-                                self.enemyInAttack[i][1] = j
+-
+-                                self.enemyInAttack[self.enemyInAttack[j][1]][0] = 0
+-                                self.enemyInAttack[self.enemyInAttack[j][1]][1] = 0
+-
+-                                self.enemy_coords[i][0] = self.enemy_coords[j][0] + 1
+-                                self.enemy_coords[i][1] = self.enemy_coords[j][1] + 1
+-                                self.enemy_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
+-
+-                                self.unitInAttack[j][1] = i
+-                                self.enemyCP -= 2
+-
+-                                if self.playType is False:
+-                                    print("Heroic Intervention Successfully used!")
+-                                else:
+-                                    sendToGUI("Heroic Intervention Successfully used!")
+-                                break
+-                    elif strat.lower() in ("n", "no"):
+-                        response = True
+-                    elif strat.lower() == "quit":
+-                        self.game_over = True
+-                        info = self.get_info
+-                        return self.game_over, info
+-                    elif strat.lower() in ("?", "help"):
+-                        if self.playType is False:
+-                            print("The Heroic Intervention stratagem allows the player to choose an enemy unit within 6 inches and charge them")
+-                            strat = input("Would you like to use the Heroic Intervention Stratagem? (y/n): ")
+-                        else:
+-                            sendToGUI("The Heroic Intervention stratagem allows the player to choose an enemy unit within 6 inches and charge them\nWould you like to use the Heroic Intervention Stratagem? (y/n): ")
+-                            strat = recieveGUI()
+-                    else:
+-                        if self.playType is False:
+-                            strat = input("Valid answers are: y, yes, n, and no: ")
+-
+-                if self.enemyInAttack[i][0] != 1:
+-                    if self.playType is False:
+-                        print("Heroic Intervention failed")
+-                    else:
+-                        sendToGUI("Heroic Intervention failed")
+-
+             if self.enemyInAttack[i][0] == 0 and self.enemy_health[i] > 0:
+                 self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                 for j in range(len(self.enemy_health)):
+                     if self.enemy_coords[i] == self.unit_coords[j]:
+                         self.enemy_coords[i][0] -= 1
+ 
+                 self.updateBoard()
+                 self.showBoard()
+ 
+                 if self.playType is False:
+                     print("Take a look at board.txt or click the Show Board button in the GUI to view the current board")
+                     print("If you would like to end the game type 'quit' into the prompt")
+                     dire = input("Enter the direction of movement (up, down, left, right, none (no move)): ")
+                 else:
+                     sendToGUI(
+                         "Take a look at board.txt or click the Show Board button in the GUI to view the current board\n"
+                         "If you would like to end the game type 'quit' into the prompt\n"
+                         "Enter the direction of movement for Unit {} (up, down, left, right, none (no move)): ".format(playerName)
+                     )
+                     dire = recieveGUI()
+ 
+                 if dire.lower() == "quit":
+                     self.game_over = True
+                     info = self.get_info()
+                     return self.game_over, info
+@@ -2477,162 +2705,98 @@ class Warhammer40kEnv(gym.Env):
+                         self.enemy_coords[i][1] += move_num
+                         response = True
+                     elif dire.lower() == "none":
+                         response = True
+                     elif dire.lower() == "quit":
+                         self.game_over = True
+                         info = self.get_info()
+                         return self.game_over, info
+                     else:
+                         if self.playType is False:
+                             dire = input("Not a valid response (up, down, left, right): ")
+                         else:
+                             sendToGUI("Not a valid response (up, down, left, right): ")
+                             dire = recieveGUI()
+                         response = False
+ 
+                 # bounds + collision
+                 self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                 for j in range(len(self.enemy_health)):
+                     if self.enemy_coords[i] == self.unit_coords[j]:
+                         self.enemy_coords[i][0] -= 1
+ 
+                 self.updateBoard()
+                 self.showBoard()
+ 
+-                # Overwatch strat prompt (kept)
+-                if self.enemyCP - 1 >= 0 and battleSh is False:
+-                    response = False
+-                    if self.playType is False:
+-                        strat = input("Would you like to use the Fire Overwatch Stratagem? (y/n): ")
+-                    else:
+-                        sendToGUI("Would you like to use the Fire Overwatch Stratagem? (y/n): ")
+-                        strat = recieveGUI()
+-
+-                    while response is False:
+-                        if strat.lower() in ("y", "yes"):
+-                            response = True
+-                            self.enemyStrat["overwatch"] = i
+-                            self.enemyCP -= 1
+-                        elif strat.lower() in ("n", "no"):
+-                            response = True
+-                        elif strat.lower() in ("?", "help"):
+-                            if self.playType is False:
+-                                print("Fire Overwatch costs 1 CP and lets your unit shoot during enemy Movement/Charge (simplified here).")
+-                                strat = input("Would you like to use the Fire Overwatch Stratagem? (y/n): ")
+-                            else:
+-                                sendToGUI("Fire Overwatch costs 1 CP and lets your unit shoot during enemy Movement/Charge (simplified here).\nWould you like to use the Fire Overwatch Stratagem? (y/n): ")
+-                                strat = recieveGUI()
+-                        elif strat.lower() == "quit":
+-                            self.game_over = True
+-                            info = self.get_info()
+-                            return self.game_over, info
+-                        else:
+-                            if self.playType is False:
+-                                strat = input("Valid answers are: y, yes, n, and no: ")
+-                            else:
+-                                sendToGUI("Valid answers are: y, yes, n, and no: ")
+-                                strat = recieveGUI()
+-
+-                # model overwatch reaction
+-                if self.modelStrat["overwatch"] != -1 and self.unit_weapon[self.modelStrat["overwatch"]] != "None":
+-                    if distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]) <= self.unit_weapon[self.modelStrat["overwatch"]]["Range"]:
+-                        _logger = None
+-                        if self.playType is False and _verbose_logs_enabled():
+-                            _logger = RollLogger(auto_dice)
+-                            dmg, modHealth = attack(
+-                                self.unit_health[self.modelStrat["overwatch"]],
+-                                self.unit_weapon[self.modelStrat["overwatch"]],
+-                                self.unit_data[self.modelStrat["overwatch"]],
+-                                self.enemy_health[i],
+-                                self.enemy_data[i],
+-                                roller=_logger.roll,
+-                            )
+-                        else:
+-                            dmg, modHealth = attack(
+-                                self.unit_health[self.modelStrat["overwatch"]],
+-                                self.unit_weapon[self.modelStrat["overwatch"]],
+-                                self.unit_data[self.modelStrat["overwatch"]],
+-                                self.enemy_health[i],
+-                                self.enemy_data[i],
+-                            )
+-                        self.enemy_health[i] = modHealth
+-                        if self.playType is False:
+-                            print("Model unit", self.modelStrat["overwatch"] + 21, "successfully hit player unit", i + 11, "for", sum(dmg), "damage using the overwatch strategem")
+-                            if _logger is not None:
+-                                _logger.print_shoot_report(
+-                                    weapon=self.unit_weapon[self.modelStrat["overwatch"]],
+-                                    attacker_data=self.unit_data[self.modelStrat["overwatch"]],
+-                                    defender_data=self.enemy_data[i],
+-                                    dmg_list=dmg,
+-                                    effect=None,
+-                                )
+-                        else:
+-                            sendToGUI("Model unit {} successfully hit player unit {} for {} damage using the overwatch stratagem".format(self.modelStrat["overwatch"] + 21, i + 11, sum(dmg)))
+-                        self.modelStrat["overwatch"] = -1
++                pos_after = tuple(self.enemy_coords[i])
++                if pos_before != pos_after:
++                    self._resolve_overwatch(
++                        defender_side="model",
++                        moving_unit_side="enemy",
++                        moving_idx=i,
++                        phase="movement",
++                        manual=False,
++                    )
+ 
+                 self.updateBoard()
+                 self.showBoard()
+ 
+                 # ======= Shooting phase (Assault rule after Advance) =======
+                 if self.enemy_weapon[i] != "None":
+                     if self.playType is False:
+                         print("Beginning shooting phase!")
+                     else:
+                         sendToGUI("Beginning shooting phase!")
+ 
+                     if advanced and not weapon_is_assault(self.enemy_weapon[i]):
+                         if self.playType is False:
+                             print("You advanced — non-Assault weapon, skipping shooting")
+                         else:
+                             sendToGUI("You advanced — non-Assault weapon, skipping shooting")
+                     else:
+                         shootAble = np.array([])
+                         for j in range(len(self.unit_health)):
+                             if distance(self.enemy_coords[i], self.unit_coords[j]) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
+                                 shootAble = np.append(shootAble, j)
+ 
+                         if len(shootAble) > 0:
+                             response = False
+                             while response is False:
+                                 if self.playType is False:
+                                     shoot = input("Select which enemy unit you would like to shoot ({}): ".format(shootAble + 21))
+                                 else:
+                                     sendToGUI("Select which enemy unit you would like to shoot ({}) with Unit {}: ".format(shootAble + 21, playerName))
+                                     shoot = recieveGUI()
+ 
+                                 if is_num(shoot) is True and int(shoot) - 21 in shootAble:
+                                     idOfE = int(shoot) - 21
+-                                    if self.modelStrat["smokescreen"] != -1 and self.modelStrat["smokescreen"] == idOfE:
+-                                        if self.playType is False:
+-                                            print("Model unit", self.modelStrat["smokescreen"] + 21, "used the Smokescreen Strategem")
+-                                        else:
+-                                            sendToGUI("Model unit {} used the Smokescreen Stratagem".format(self.modelStrat["smokescreen"] + 21))
+-                                        self.modelStrat["smokescreen"] = -1
+-                                        effect = "benefit of cover"
+-                                    else:
+-                                        effect = None
++                                    effect = self._maybe_use_smokescreen(
++                                        defender_side="model",
++                                        defender_idx=idOfE,
++                                        phase="shooting",
++                                        manual=False,
++                                    )
+ 
+                                     logger = RollLogger(player_dice)
+ 
+                                     dmg, modHealth = attack(
+                                         self.enemy_health[i],
+                                         self.enemy_weapon[i],
+                                         self.enemy_data[i],
+                                         self.unit_health[idOfE],
+                                         self.unit_data[idOfE],
+                                         effects=effect,
+                                         distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfE]),
+                                         roller=logger.roll,
+                                     )
+ 
+                                     self.unit_health[idOfE] = modHealth
+                                     if self.playType is False:
+                                         print(f"Player Unit {playerName} нанёс {sum(dmg)} урона по Model Unit {idOfE + 21}")
+                                     else:
+                                         sendToGUI("Player Unit {} нанёс {} урона по Model Unit {}".format(playerName, sum(dmg), idOfE + 21))
+ 
+                                     logger.print_shoot_report(
+                                         weapon=self.enemy_weapon[i],
+                                         attacker_data=self.enemy_data[i],
+                                         defender_data=self.unit_data[idOfE],
+                                         dmg_list=dmg,
+@@ -2670,121 +2834,114 @@ class Warhammer40kEnv(gym.Env):
+                     for j in range(len(self.unit_health)):
+                         if distance(self.unit_coords[j], self.enemy_coords[i]) <= 12 and self.unitInAttack[j][0] == 0 and self.unit_health[j] > 0:
+                             charg = np.append(charg, j)
+ 
+                     if len(charg) > 0:
+                         response = False
+                         while response is False:
+                             if self.playType is False:
+                                 attk = input("Select which enemy you would like to charge ({}): ".format(charg + 21))
+                             else:
+                                 sendToGUI("Select which enemy you would like to charge ({}) with Unit {}: ".format(charg + 21, playerName))
+                                 attk = recieveGUI()
+ 
+                             if is_num(attk) is True and int(attk) - 21 in charg:
+                                 response = True
+                                 j = int(attk) - 21
+                                 if self.playType is False:
+                                     print("Rolling 2 D6...")
+                                     roll = player_dice(num=2)
+                                     print("You rolled a", roll[0], "and", roll[1])
+                                 else:
+                                     sendToGUI("Rolling 2 D6...")
+                                     roll = player_dice(num=2)
+                                     sendToGUI("You rolled a {} and {}".format(roll[0], roll[1]))
+ 
++                                dist_to_target = distance(self.enemy_coords[i], self.unit_coords[j])
++                                self._log_unit_phase(
++                                    self._side_label("enemy", manual=True),
++                                    "charge",
++                                    playerName,
++                                    i,
++                                    f"Charge объявлен по цели Model Unit {j + 21}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {roll[0]} + {roll[1]} = {sum(roll)}.",
++                                )
+                                 if distance(self.enemy_coords[i], self.unit_coords[j]) - sum(roll) <= 5:
+                                     if self.playType is False:
+                                         print("Player Unit", playerName, "Successfully charged Model Unit", j + 21)
+                                     else:
+                                         sendToGUI("Player Unit {} Successfully charged Model Unit {}".format(playerName, j + 21))
+ 
+                                     self.enemyInAttack[i][0] = 1
+                                     self.enemyInAttack[i][1] = j
+ 
+                                     self.enemy_coords[i][0] = self.unit_coords[j][0] + 1
+                                     self.enemy_coords[i][1] = self.unit_coords[j][1] + 1
+                                     self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+ 
+                                     # 10e: Charge не наносит урон. Урон — в Fight Phase
+                                     self.enemyCharged[i] = 1
+                                     self.updateBoard()
+ 
+                                     self.unitInAttack[j][0] = 1
+                                     self.unitInAttack[j][1] = i
++                                    pos_after = tuple(self.enemy_coords[i])
++                                    self._log_unit_phase(
++                                        self._side_label("enemy", manual=True),
++                                        "charge",
++                                        playerName,
++                                        i,
++                                        f"Charge move: from {pos_before} -> {pos_after}, ended_in_engagement={self.enemyInAttack[i][0] == 1}.",
++                                    )
++                                    # 10e: Heroic Intervention доступен защитнику после успешного charge move.
++                                    self._resolve_heroic_intervention(
++                                        defender_side="model",
++                                        charging_side="enemy",
++                                        charging_idx=i,
++                                        phase="charge",
++                                        manual=False,
++                                    )
+                                 else:
+                                     if self.playType is False:
+                                         print("Player Unit {} Failed to charge Model Unit {}".format(playerName, j + 21))
+                                     else:
+                                         sendToGUI("Player Unit {} Failed to charge Model Unit {}".format(playerName, j + 21))
+ 
+                             elif attk == "quit":
+                                 self.game_over = True
+                                 info = self.get_info()
+                                 return self.game_over, info
+                             else:
+                                 if self.playType is False:
+                                     print("Not an available unit")
+                                 else:
+                                     sendToGUI("Not an available unit")
+                     else:
+                         if self.playType is False:
+                             print("No available units to charge")
+                         else:
+                             sendToGUI("No available units to charge")
+ 
+-                # Smokescreen prompt (kept)
+-                if self.enemyCP - 1 >= 0 and battleSh is False:
+-                    response = False
+-                    if self.playType is False:
+-                        strat = input("Would you like to use the Smokescreen Stratagem for this unit? (y/n): ")
+-                    else:
+-                        sendToGUI("Would you like to use the Smokescreen Stratagem for this unit? (y/n): ")
+-                        strat = recieveGUI()
+-
+-                    while response is False:
+-                        if strat.lower() in ("y", "yes"):
+-                            self.enemyStrat["smokescreen"] = i
+-                            response = True
+-                        elif strat.lower() in ("n", "no"):
+-                            response = True
+-                        elif strat.lower() in ("?", "help"):
+-                            if self.playType is False:
+-                                print("Smokescreen costs 1 CP and gives benefit of cover / stealth (simplified here).")
+-                                strat = input("Would you like to use the Smokescreen Stratagem? (y/n): ")
+-                            else:
+-                                sendToGUI("Smokescreen costs 1 CP and gives benefit of cover / stealth (simplified here).\nWould you like to use the Smokescreen Stratagem? (y/n): ")
+-                                strat = recieveGUI()
+-                        else:
+-                            if self.playType is False:
+-                                strat = input("It's a yes or no question dude: ")
+-                            else:
+-                                sendToGUI("It's a yes or no question dude: ")
+-                                strat = recieveGUI()
+-
+-                    # Objective control is recalculated in refresh_objective_control.
+-
+             elif self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
+                 idOfE = self.enemyInAttack[i][1]
+                 response = False
+                 while response is False:
+                     if self.playType is False:
+                         fallB = input("Would you like Unit {} to fallback? (y/n): ".format(playerName))
+                     else:
+                         sendToGUI("Would you like Unit {} to fallback? (y/n): ".format(playerName))
+                         fallB = recieveGUI()
+ 
+                     if fallB.lower() in ("n", "no"):
+                         response = True
+ 
+                         # 10e: здесь НЕ атакуем. Атаки происходят в Fight Phase.
+                         if self.playType is False:
+                             print("Player Unit", playerName, "stays in combat with Model Unit", idOfE + 21, "(will fight in Fight Phase)")
+                         else:
+                             sendToGUI("Player Unit {} stays in combat with Model Unit {} (will fight in Fight Phase)".format(playerName, idOfE + 21))
+ 
+                         # Ничего не меняем: они остаются в бою
+                         # self.enemyInAttack / self.unitInAttack остаются как есть
+                         continue
+ 
+                         if self.unit_health[idOfE] <= 0:
+ 
+diff --git a/scripts/debug_stratagems.py b/scripts/debug_stratagems.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..d163c545051025dc7069c42e659e3ed26c8960b4
+--- /dev/null
++++ b/scripts/debug_stratagems.py
+@@ -0,0 +1,60 @@
++"""
++Минимальный debug-сценарий для проверки логов стратагем 10e.
 +
-+    @property
-+    def name(self):
-+        return self.unit_data.get("Name", "Unknown")
++Запуск (нужен сохранённый pickle с env/model/enemy, как в play.py):
++  VERBOSE_LOGS=1 python scripts/debug_stratagems.py path/to/save.pickle
 +
-+    @property
-+    def models_count(self):
-+        return int(self.unit_data.get("#OfModels", 1))
-diff --git a/play.py b/play.py
-index 47d23ea7ed67da6051cd6142db228fbe559f2e86..2180fe8a76b2f5314f222a351638dcfac96c0b7c 100644
---- a/play.py
-+++ b/play.py
-@@ -57,56 +57,67 @@ playInGUI = False
- if sys.argv[2] == "True":
-     playInGUI = True
- 
- 
- def _log(msg: str):
-     if playInGUI:
-         sendToGUI(msg)
-     else:
-         print(msg)
- 
- 
- verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
- log_fn = _log if verbose else None
- 
- attacker_side, defender_side = roll_off_attacker_defender(
-     manual_roll_allowed=(playInGUI is False),
-     log_fn=_log,
- )
- if verbose:
-     _log(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
-     _log(f"[roster] model_units={len(model)} enemy_units={len(enemy)}")
-     for idx, unit in enumerate(model):
-         unit_data = unit.showUnitData()
-         unit_name = unit_data.get("Name", "Unknown")
-         unit_models = unit_data.get("#OfModels", 1)
--        _log(f"[roster] model[{idx}] name={unit_name} models={unit_models}")
-+        instance_id = getattr(unit, "instance_id", "unknown")
-+        _log(f"[roster] model[{idx}] name={unit_name} instance_id={instance_id} models={unit_models}")
-     for idx, unit in enumerate(enemy):
-         unit_data = unit.showUnitData()
-         unit_name = unit_data.get("Name", "Unknown")
-         unit_models = unit_data.get("#OfModels", 1)
--        _log(f"[roster] enemy[{idx}] name={unit_name} models={unit_models}")
-+        instance_id = getattr(unit, "instance_id", "unknown")
-+        _log(f"[roster] enemy[{idx}] name={unit_name} instance_id={instance_id} models={unit_models}")
-+_log(
-+    "Units: "
-+    + str(
-+        [
-+            (u.name, getattr(u, "instance_id", "unknown"), u.models_count)
-+            for u in model
-+        ]
-+    )
-+)
- 
- deploy_only_war(
-     model_units=model,
-     enemy_units=enemy,
-     b_len=env.b_len,
-     b_hei=env.b_hei,
-     attacker_side=attacker_side,
-     log_fn=log_fn,
- )
- post_deploy_setup(log_fn=log_fn)
- 
- env.attacker_side = attacker_side
- env.defender_side = defender_side
- 
- state, info = env.reset(m=model, e=enemy)
- if verbose:
-     squads_for_actions_count = len(model)
-     _log(f"[action_space] squads_for_actions_count={squads_for_actions_count}")
-     for idx, unit in enumerate(model):
-         unit_data = unit.showUnitData()
-         unit_name = unit_data.get("Name", "Unknown")
-         _log(f"[action_space] squad[{idx}] name={unit_name}")
-     total_models_count = 0
-     for unit in model:
-         unit_data = unit.showUnitData()
-diff --git a/train.py b/train.py
-index 537a2f0e57d8eb7a6950c767c03c821f2ee179ba..6559878ea634086692bbfb8a66bc5ce4390bbfb8 100644
---- a/train.py
-+++ b/train.py
-@@ -138,90 +138,97 @@ b_len = 60
- b_hei = 40
- 
- print("\nTraining...\n")
- 
- enemy1 = Unit(unitData("Space_Marine", "Eliminator Squad"), weaponData("Bolt Pistol"), weaponData("Close combat weapon"), b_len, b_hei)
- model1 = Unit(unitData("Space_Marine", "Eliminator Squad"), weaponData("Bolt Pistol"), weaponData("Close combat weapon"), b_len, b_hei)
- 
- enemy2 = Unit(unitData("Space_Marine", "Apothecary"), weaponData("Absolver Bolt Pistol"), weaponData("Close combat weapon"), b_len, b_hei)
- model2 = Unit(unitData("Space_Marine", "Apothecary"), weaponData("Absolver Bolt Pistol"), weaponData("Close combat weapon"), b_len, b_hei)
- 
- enemy = [enemy1, enemy2]
- model = [model1, model2]
- 
- end = False
- trunc = True
- totLifeT = 10
- steps_done = 0
- 
- if os.path.isfile("gui/data.json"):
- 
-     totLifeT = initFile.getNumLife()
-     b_len = initFile.getBoardX()
-     b_hei = initFile.getBoardY()
-     enemy_counts = initFile.getEnemyUnitCounts()
-     model_counts = initFile.getModelUnitCounts()
-+    enemy_instance_ids = initFile.getEnemyUnitInstanceIds()
-+    model_instance_ids = initFile.getModelUnitInstanceIds()
-     print("Model Units:\n")
-     if len(initFile.getEnemyUnits()) > 0:
-         enemy = []
-         for i in range(len(initFile.getEnemyUnits())):
-             unit_data = unitData(initFile.getEnemyFaction(), initFile.getEnemyUnits()[i])
-             if i < len(enemy_counts) and enemy_counts[i] > 0:
-                 unit_data["#OfModels"] = enemy_counts[i]
--            enemy.append(Unit(unit_data, weaponData(initFile.getEnemyW()[i][0]), weaponData(initFile.getEnemyW()[i][1]), b_len, b_hei))
-+            instance_id = enemy_instance_ids[i] if i < len(enemy_instance_ids) else ""
-+            enemy.append(Unit(unit_data, weaponData(initFile.getEnemyW()[i][0]), weaponData(initFile.getEnemyW()[i][1]),
-+                              b_len, b_hei, instance_id=instance_id))
-             print("Name:", initFile.getEnemyUnits()[i], "Weapons: ", initFile.getEnemyW()[i][0], initFile.getEnemyW()[i][1])
-     print("Enemy Units:\n")
-     if len(initFile.getModelUnits()) > 0:
-         model = []
-         for i in range(len(initFile.getModelUnits())):
-             unit_data = unitData(initFile.getModelFaction(), initFile.getModelUnits()[i])
-             if i < len(model_counts) and model_counts[i] > 0:
-                 unit_data["#OfModels"] = model_counts[i]
--            model.append(Unit(unit_data, weaponData(initFile.getModelW()[i][0]), weaponData(initFile.getModelW()[i][1]), b_len, b_hei))
-+            instance_id = model_instance_ids[i] if i < len(model_instance_ids) else ""
-+            model.append(Unit(unit_data, weaponData(initFile.getModelW()[i][0]), weaponData(initFile.getModelW()[i][1]),
-+                              b_len, b_hei, instance_id=instance_id))
-             print("Name:", initFile.getModelUnits()[i], "Weapons: ", initFile.getModelW()[i][0], initFile.getModelW()[i][1])
- 
- numLifeT = 0
- 
- verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
- log_fn = print if verbose else None
- attacker_side, defender_side = roll_off_attacker_defender(
-     manual_roll_allowed=False,
-     log_fn=print,
- )
- if verbose:
-     print(f"[roster] model_units={len(model)} enemy_units={len(enemy)}")
-     for idx, unit in enumerate(model):
-         unit_data = unit.showUnitData()
-         unit_name = unit_data.get("Name", "Unknown")
-         unit_models = unit_data.get("#OfModels", 1)
--        print(f"[roster] model[{idx}] name={unit_name} models={unit_models}")
-+        print(f"[roster] model[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
-     for idx, unit in enumerate(enemy):
-         unit_data = unit.showUnitData()
-         unit_name = unit_data.get("Name", "Unknown")
-         unit_models = unit_data.get("#OfModels", 1)
--        print(f"[roster] enemy[{idx}] name={unit_name} models={unit_models}")
-+        print(f"[roster] enemy[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
-     print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
-+print("Units:", [(u.name, u.instance_id, u.models_count) for u in model])
- 
- deploy_only_war(
-     model_units=model,
-     enemy_units=enemy,
-     b_len=b_len,
-     b_hei=b_hei,
-     attacker_side=attacker_side,
-     log_fn=log_fn,
- )
- post_deploy_setup(log_fn=log_fn)
- 
- env = gym.make("40kAI-v0", disable_env_checker=True, enemy = enemy, model = model, b_len = b_len, b_hei = b_hei)
- env.attacker_side = attacker_side
- env.defender_side = defender_side
- 
- ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
- for i_u in range(len(model)):
-     ordered_keys.append(f"move_num_{i_u}")
- 
- n_actions = []
- for k in ordered_keys:
-     sp = env.action_space.spaces[k]
- 
-     # Discrete (и gym, и gymnasium)
-     if hasattr(sp, "n"):
++Скрипт искусственно сближает первые юниты, чтобы гарантировать:
++  - Smokescreen (в момент выбора цели стрельбы)
++  - Overwatch (после завершения перемещения врага)
++  - Heroic Intervention (после успешного charge move)
++"""
++
++import sys
++import pickle
++
++
++def _build_action(env):
++    action = {
++        "move": 4,
++        "attack": 1,
++        "charge": 0,
++        "shoot": 0,
++        "use_cp": 0,
++        "cp_on": 0,
++    }
++    for i in range(len(env.unit_health)):
++        action[f"move_num_{i}"] = 0
++    return action
++
++
++def main(path):
++    with open(path, "rb") as f:
++        env, model, enemy = pickle.load(f)
++
++    env.reset(m=model, e=enemy, trunc=False)
++    env.modelCP = 2
++    env.enemyCP = 2
++
++    # Сближаем первые юниты, чтобы были в дальности стрельбы/чарджа.
++    if env.unit_coords and env.enemy_coords:
++        env.unit_coords[0] = [5, 5]
++        env.enemy_coords[0] = [7, 5]
++
++    action = _build_action(env)
++
++    # Movement (enemy) -> должен триггернуть Overwatch защитника.
++    env.movement_phase("enemy", battle_shock=[False] * len(env.enemy_health))
++
++    # Shooting (model) -> должен вызвать Smokescreen при выборе цели.
++    env.shooting_phase("model", advanced_flags=[False] * len(env.unit_health), action=action)
++
++    # Charge (model) -> должен вызвать Heroic Intervention после успешного чарджа.
++    env.charge_phase("model", advanced_flags=[False] * len(env.unit_health), action=action)
++
++
++if __name__ == "__main__":
++    if len(sys.argv) < 2:
++        print("Usage: python scripts/debug_stratagems.py path/to/save.pickle")
++        raise SystemExit(1)
++    main(sys.argv[1])
 

@@ -815,6 +815,23 @@ class Warhammer40kEnv(gym.Env):
             return
         self._log(f"[{side.upper()}][Unit {unit_id}|idx={unit_idx}] {msg}")
 
+    def _side_label(self, side: str, manual: bool = False) -> str:
+        if side == "model":
+            return "MODEL"
+        if side == "enemy":
+            return "PLAYER" if manual else "ENEMY"
+        return side.upper()
+
+    def _log_phase_msg(self, side_label: str, phase: str, msg: str):
+        if not self._should_log():
+            return
+        self._log(f"[{side_label}][{phase.upper()}] {msg}")
+
+    def _log_unit_phase(self, side_label: str, phase: str, unit_id: int, unit_idx: int, msg: str):
+        if not self._should_log():
+            return
+        self._log(f"[{side_label}][{phase.upper()}][Unit {unit_id}|idx={unit_idx}] {msg}")
+
     def _get_input(self, prompt: str) -> str:
         if self.playType is True:
             sendToGUI(prompt)
@@ -840,6 +857,292 @@ class Warhammer40kEnv(gym.Env):
         if response is None:
             return None
         return response == "yes"
+
+    def _unit_has_keyword(self, unit_data: dict, keyword: str) -> bool:
+        if not unit_data:
+            return False
+        keyword = keyword.lower()
+        for key in ("Keywords", "KeyWords", "Tags", "Abilities", "Rules", "SpecialRules", "Special", "Type", "Faction"):
+            value = unit_data.get(key)
+            if value is None:
+                continue
+            if isinstance(value, (list, tuple)):
+                if any(keyword in str(v).lower() for v in value):
+                    return True
+            else:
+                if keyword in str(value).lower():
+                    return True
+        # fallback: check all fields
+        for value in unit_data.values():
+            if isinstance(value, (list, tuple)):
+                if any(keyword in str(v).lower() for v in value):
+                    return True
+            else:
+                if keyword in str(value).lower():
+                    return True
+        return False
+
+    def _unit_has_smoke(self, unit_data: dict) -> bool:
+        return self._unit_has_keyword(unit_data, "smoke")
+
+    def _maybe_use_smokescreen(self, defender_side: str, defender_idx: int, phase: str, manual: bool = False):
+        """
+        10e Smokescreen: реакция защитника в момент выбора цели для стрельбы.
+        Упрощение: проверяем только keyword SMOKE и CP.
+        """
+        side_label = self._side_label(defender_side, manual=manual)
+        if defender_side == "model":
+            cp = self.modelCP
+            unit_data = self.unit_data[defender_idx]
+        else:
+            cp = self.enemyCP
+            unit_data = self.enemy_data[defender_idx]
+
+        if not self._unit_has_smoke(unit_data):
+            return None
+        if cp < 1:
+            self._log_unit_phase(
+                side_label,
+                phase,
+                defender_idx + (21 if defender_side == "model" else 11),
+                defender_idx,
+                "Smokescreen недоступен: недостаточно CP.",
+            )
+            return None
+
+        use_it = True
+        if manual:
+            strat = self._prompt_yes_no("Использовать Smokescreen (1 CP)? (y/n): ")
+            if strat is None:
+                self.game_over = True
+                return None
+            use_it = strat
+
+        if not use_it:
+            return None
+
+        if defender_side == "model":
+            self.modelCP -= 1
+        else:
+            self.enemyCP -= 1
+
+        self._log_unit_phase(
+            side_label,
+            phase,
+            defender_idx + (21 if defender_side == "model" else 11),
+            defender_idx,
+            "Использован Smokescreen: -1 CP, эффект = benefit of cover до конца атаки.",
+        )
+        return "benefit of cover"
+
+    def _collect_overwatch_candidates(self, defender_side: str, moving_unit_side: str, moving_idx: int):
+        if defender_side == "model":
+            defender_health = self.unit_health
+            defender_coords = self.unit_coords
+            defender_weapon = self.unit_weapon
+            defender_in_attack = self.unitInAttack
+            target_coords = self.enemy_coords if moving_unit_side == "enemy" else self.unit_coords
+        else:
+            defender_health = self.enemy_health
+            defender_coords = self.enemy_coords
+            defender_weapon = self.enemy_weapon
+            defender_in_attack = self.enemyInAttack
+            target_coords = self.unit_coords if moving_unit_side == "model" else self.enemy_coords
+
+        target_pos = target_coords[moving_idx]
+        candidates = []
+        for i in range(len(defender_health)):
+            if defender_health[i] <= 0:
+                continue
+            if defender_in_attack[i][0] == 1:
+                continue
+            if defender_weapon[i] == "None":
+                continue
+            if distance(defender_coords[i], target_pos) <= defender_weapon[i]["Range"]:
+                candidates.append(i)
+        return candidates
+
+    def _resolve_overwatch(self, defender_side: str, moving_unit_side: str, moving_idx: int, phase: str, manual: bool = False):
+        """
+        10e Fire Overwatch: реакция защитника после завершения перемещения врага.
+        Упрощение: проверяем дальность, не учитываем LOS.
+        """
+        side_label = self._side_label(defender_side, manual=manual)
+        target_label = self._side_label(moving_unit_side, manual=False)
+        candidates = self._collect_overwatch_candidates(defender_side, moving_unit_side, moving_idx)
+        if not candidates:
+            self._log_phase_msg(side_label, phase, "Overwatch невозможен: нет доступных стреляющих юнитов.")
+            return
+
+        cp = self.modelCP if defender_side == "model" else self.enemyCP
+        if cp < 1:
+            self._log_phase_msg(side_label, phase, "Overwatch невозможен: недостаточно CP.")
+            return
+
+        self._log_phase_msg(
+            side_label,
+            phase,
+            f"Сработал триггер Overwatch против {target_label} Unit {moving_idx + (21 if moving_unit_side == 'model' else 11)}.",
+        )
+
+        use_it = True
+        chosen = candidates[0]
+        if manual:
+            ids = [c + (21 if defender_side == "model" else 11) for c in candidates]
+            strat = self._prompt_yes_no(f"Использовать Overwatch (1 CP)? Доступные юниты: {ids} (y/n): ")
+            if strat is None:
+                self.game_over = True
+                return
+            if not strat:
+                return
+            choice = self._get_input("Введите номер юнита для Overwatch: ").strip()
+            if not is_num(choice) or int(choice) - (21 if defender_side == "model" else 11) not in candidates:
+                self._log_phase_msg(side_label, phase, "Overwatch отменён: выбран недоступный юнит.")
+                return
+            chosen = int(choice) - (21 if defender_side == "model" else 11)
+
+        if defender_side == "model":
+            self.modelCP -= 1
+            attacker_health = self.unit_health
+            attacker_weapon = self.unit_weapon
+            attacker_data = self.unit_data
+            target_health = self.enemy_health if moving_unit_side == "enemy" else self.unit_health
+            target_data = self.enemy_data if moving_unit_side == "enemy" else self.unit_data
+            target_coords = self.enemy_coords if moving_unit_side == "enemy" else self.unit_coords
+        else:
+            self.enemyCP -= 1
+            attacker_health = self.enemy_health
+            attacker_weapon = self.enemy_weapon
+            attacker_data = self.enemy_data
+            target_health = self.unit_health if moving_unit_side == "model" else self.enemy_health
+            target_data = self.unit_data if moving_unit_side == "model" else self.enemy_data
+            target_coords = self.unit_coords if moving_unit_side == "model" else self.enemy_coords
+
+        distance_to_target = distance(
+            self.unit_coords[chosen] if defender_side == "model" else self.enemy_coords[chosen],
+            target_coords[moving_idx],
+        )
+        _logger = None
+        if self.trunc is False and _verbose_logs_enabled():
+            _logger = RollLogger(auto_dice)
+            dmg, modHealth = attack(
+                attacker_health[chosen],
+                attacker_weapon[chosen],
+                attacker_data[chosen],
+                target_health[moving_idx],
+                target_data[moving_idx],
+                distance_to_target=distance_to_target,
+                hit_on_6=True,
+                roller=_logger.roll,
+            )
+        else:
+            dmg, modHealth = attack(
+                attacker_health[chosen],
+                attacker_weapon[chosen],
+                attacker_data[chosen],
+                target_health[moving_idx],
+                target_data[moving_idx],
+                distance_to_target=distance_to_target,
+                hit_on_6=True,
+            )
+
+        target_health[moving_idx] = modHealth
+        attacker_unit_id = chosen + (21 if defender_side == "model" else 11)
+        target_unit_id = moving_idx + (21 if moving_unit_side == "model" else 11)
+        self._log_unit_phase(
+            side_label,
+            phase,
+            attacker_unit_id,
+            chosen,
+            f"Overwatch по {target_label} Unit {target_unit_id}: -1 CP, урон {float(np.sum(dmg))}.",
+        )
+        if _logger is not None:
+            _logger.print_shoot_report(
+                weapon=attacker_weapon[chosen],
+                attacker_data=attacker_data[chosen],
+                defender_data=target_data[moving_idx],
+                dmg_list=dmg,
+                effect=None,
+            )
+
+    def _resolve_heroic_intervention(self, defender_side: str, charging_side: str, charging_idx: int, phase: str, manual: bool = False):
+        """
+        10e Heroic Intervention: реакция защитника после успешного charge move врага.
+        Упрощение: eligible = юниты защитника в 6" от charging unit.
+        Из-за 1v1 структуры unitInAttack отмечаем только защитника.
+        """
+        side_label = self._side_label(defender_side, manual=manual)
+        if defender_side == "model":
+            defender_health = self.unit_health
+            defender_coords = self.unit_coords
+            defender_in_attack = self.unitInAttack
+            defender_cp = self.modelCP
+        else:
+            defender_health = self.enemy_health
+            defender_coords = self.enemy_coords
+            defender_in_attack = self.enemyInAttack
+            defender_cp = self.enemyCP
+
+        charging_coords = self.unit_coords if charging_side == "model" else self.enemy_coords
+        eligible = []
+        for i in range(len(defender_health)):
+            if defender_health[i] <= 0:
+                continue
+            if defender_in_attack[i][0] == 1:
+                continue
+            if distance(defender_coords[i], charging_coords[charging_idx]) <= 6:
+                eligible.append(i)
+
+        if not eligible:
+            self._log_phase_msg(side_label, phase, "Heroic Intervention недоступен: нет eligible юнитов в 6\".")
+            return
+
+        if defender_cp < 2:
+            self._log_phase_msg(side_label, phase, "Heroic Intervention недоступен: недостаточно CP.")
+            return
+
+        unit_ids = [i + (21 if defender_side == "model" else 11) for i in eligible]
+        self._log_phase_msg(
+            side_label,
+            phase,
+            f"Доступные юниты для Heroic Intervention: {unit_ids}.",
+        )
+
+        use_it = True
+        chosen = eligible[0]
+        if manual:
+            strat = self._prompt_yes_no("Использовать Heroic Intervention (2 CP)? (y/n): ")
+            if strat is None:
+                self.game_over = True
+                return
+            if not strat:
+                return
+            choice = self._get_input("Введите номер юнита для Heroic Intervention: ").strip()
+            if not is_num(choice) or int(choice) - (21 if defender_side == "model" else 11) not in eligible:
+                self._log_phase_msg(side_label, phase, "Heroic Intervention отменён: выбран недоступный юнит.")
+                return
+            chosen = int(choice) - (21 if defender_side == "model" else 11)
+
+        if defender_side == "model":
+            self.modelCP -= 2
+        else:
+            self.enemyCP -= 2
+
+        pos_before = tuple(defender_coords[chosen])
+        defender_coords[chosen][0] = charging_coords[charging_idx][0] + 1
+        defender_coords[chosen][1] = charging_coords[charging_idx][1] + 1
+        defender_coords[chosen] = bounds(defender_coords[chosen], self.b_len, self.b_hei)
+        defender_in_attack[chosen][0] = 1
+        defender_in_attack[chosen][1] = charging_idx
+        pos_after = tuple(defender_coords[chosen])
+
+        self._log_unit_phase(
+            side_label,
+            phase,
+            chosen + (21 if defender_side == "model" else 11),
+            chosen,
+            f"Выбран для Heroic Intervention. Переместился: {pos_before} -> {pos_after}, entered_in_engagement=True.",
+        )
 
     def _prompt_int(self, prompt: str, min_val: int, max_val: int, allow_quit: bool = True):
         while True:
@@ -925,24 +1228,6 @@ class Warhammer40kEnv(gym.Env):
                                     self._log("Used Insane Bravery Stratagem to pass Battle Shock test")
                             else:
                                 reward_delta -= 0.5
-                if action and action.get("use_cp") == 4 and action.get("cp_on") == i:
-                    if self.modelCP - 2 >= 0 and self.unitInAttack[i][0] == 0:
-                        for j in range(len(self.enemyInAttack)):
-                            if self.enemyInAttack[j][0] == 1 and distance(self.unit_coords[i], self.enemy_coords[j]) >= 6:
-                                self.unitInAttack[i][0] = 1
-                                self.unitInAttack[i][1] = j
-                                self.unitInAttack[self.enemyInAttack[j][1]][0] = 0
-                                self.unitInAttack[self.enemyInAttack[j][1]][1] = 0
-                                self.unit_coords[i][0] = self.enemy_coords[j][0] + 1
-                                self.unit_coords[i][1] = self.enemy_coords[j][1] + 1
-                                self.unit_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
-                                self.enemyInAttack[j][1] = i
-                                self.modelCP -= 2
-                                reward_delta += 0.5
-                                break
-                        reward_delta += 0.5
-                    else:
-                        reward_delta -= 0.5
             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
             apply_end_of_command_phase(self, side="model", dice_fn=dice_fn, log_fn=self._log)
             score_end_of_command_phase(self, "model", log_fn=self._log)
@@ -979,27 +1264,6 @@ class Warhammer40kEnv(gym.Env):
                                 self.enemyCP -= 1
                                 self.enemyOC[i] = self.enemy_data[i]["OC"]
                 battle_shock[i] = battleSh
-                if self.enemyCP - 2 >= 0 and self.enemyInAttack[i][0] == 0:
-                    strat = self._prompt_yes_no(
-                        f"Would you like to use the Heroic Intervention Stratagem for Unit {playerName}? (y/n): "
-                    )
-                    if strat is None:
-                        self.game_over = True
-                        return None
-                    if strat:
-                        for j in range(len(self.unitInAttack)):
-                            if self.unitInAttack[j][0] == 1 and distance(self.enemy_coords[i], self.unit_coords[j]) >= 6:
-                                self.enemyInAttack[i][0] = 1
-                                self.enemyInAttack[i][1] = j
-                                self.enemyInAttack[self.enemyInAttack[j][1]][0] = 0
-                                self.enemyInAttack[self.enemyInAttack[j][1]][1] = 0
-                                self.enemy_coords[i][0] = self.enemy_coords[j][0] + 1
-                                self.enemy_coords[i][1] = self.enemy_coords[j][1] + 1
-                                self.enemy_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
-                                self.unitInAttack[j][1] = i
-                                self.enemyCP -= 2
-                                self._log("Heroic Intervention Successfully used!")
-                                break
                 if battleSh:
                     continue
             self._manual_enemy_battle_shock = battle_shock
@@ -1039,20 +1303,6 @@ class Warhammer40kEnv(gym.Env):
                             self.enemyCP -= 1
                             self.enemyOC[i] = self.enemy_data[i]["OC"]
 
-                if use_cp == 4 and cp_on == i:
-                    if self.enemyCP - 2 >= 0 and self.enemyInAttack[i][0] == 0:
-                        for j in range(len(self.unitInAttack)):
-                            if self.unitInAttack[j][0] == 1 and distance(self.enemy_coords[i], self.unit_coords[j]) >= 6:
-                                self.enemyInAttack[i][0] = 1
-                                self.enemyInAttack[i][1] = j
-                                self.enemyInAttack[self.enemyInAttack[j][1]][0] = 0
-                                self.enemyInAttack[self.enemyInAttack[j][1]][1] = 0
-                                self.enemy_coords[i][0] = self.enemy_coords[j][0] + 1
-                                self.enemy_coords[i][1] = self.enemy_coords[j][1] + 1
-                                self.enemy_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
-                                self.unitInAttack[j][1] = i
-                                self.enemyCP -= 2
-                                break
                 battle_shock[i] = battleSh
             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
             apply_end_of_command_phase(self, side="enemy", dice_fn=dice_fn, log_fn=self._log)
@@ -1127,44 +1377,14 @@ class Warhammer40kEnv(gym.Env):
                     else:
                         self._log_unit("MODEL", modelName, i, f"Позиция после: {pos_after}")
 
-                    if self.enemyStrat["overwatch"] != -1 and self.enemy_weapon[self.enemyStrat["overwatch"]] != "None":
-                        if distance(self.unit_coords[i], self.enemy_coords[self.enemyStrat["overwatch"]]) <= self.enemy_weapon[self.enemyStrat["overwatch"]]["Range"]:
-                            dmg, modHealth = attack(
-                                self.enemy_health[self.enemyStrat["overwatch"]],
-                                self.enemy_weapon[self.enemyStrat["overwatch"]],
-                                self.enemy_data[self.enemyStrat["overwatch"]],
-                                self.unit_health[i],
-                                self.unit_data[i],
-                                distance_to_target=distance(self.unit_coords[i], self.enemy_coords[self.enemyStrat["overwatch"]]),
-                            )
-                            self.unit_health[i] = modHealth
-                            if self.trunc is False:
-                                self._log(
-                                    "Player unit {} successfully hit model unit {} for {} damage using the overwatch strategem".format(
-                                        self.enemyStrat["overwatch"] + 11, i + 11, sum(dmg)
-                                    )
-                                )
-                            self.enemyStrat["overwatch"] = -1
-
-                    if action["use_cp"] == 2 and action["cp_on"] == i:
-                        if self.modelCP - 1 >= 0 and self.enemy_weapon[i] != "None":
-                            self.modelCP -= 1
-                            self.modelStrat["overwatch"] = i
-                            reward_delta += 0.5
-                        elif battleSh is not False:
-                            if self.trunc is False:
-                                self._log("This unit is BattleShocked, no stratagems can be used on it")
-                            reward_delta -= 0.5
-
-                    if action["use_cp"] == 3 and action["cp_on"] == i:
-                        if self.modelCP - 1 >= 0:
-                            self.modelCP -= 1
-                            self.modelStrat["smokescreen"] = i
-                            reward_delta += 0.5
-                        elif battleSh is not False:
-                            if self.trunc is False:
-                                self._log("This unit is Battle shocked, stratagems can not be used")
-                            reward_delta -= 0.5
+                    if pos_before != pos_after:
+                        self._resolve_overwatch(
+                            defender_side="enemy",
+                            moving_unit_side="model",
+                            moving_idx=i,
+                            phase="movement",
+                            manual=os.getenv("MANUAL_DICE", "0") == "1",
+                        )
 
                     for j in range(len(self.coordsOfOM)):
                         if distance(self.coordsOfOM[j], self.unit_coords[i]) <= 5:
@@ -1206,6 +1426,14 @@ class Warhammer40kEnv(gym.Env):
                             self.enemyInAttack[idOfE][1] = 0
                             pos_after = tuple(self.unit_coords[i])
                             self._log_unit("MODEL", modelName, i, f"Отступление завершено. Позиция после: {pos_after}")
+                            if pos_before != pos_after:
+                                self._resolve_overwatch(
+                                    defender_side="enemy",
+                                    moving_unit_side="model",
+                                    moving_idx=i,
+                                    phase="movement",
+                                    manual=os.getenv("MANUAL_DICE", "0") == "1",
+                                )
                         else:
                             reward_delta += 0.2
                             self._log_unit(
@@ -1223,6 +1451,7 @@ class Warhammer40kEnv(gym.Env):
             for i in range(len(self.enemy_health)):
                 playerName = i + 11
                 battleSh = battle_shock[i] if battle_shock else False
+                pos_before = tuple(self.enemy_coords[i])
                 if self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
                     fall_back = self._prompt_yes_no(f"Would you like Unit {playerName} to fallback? (y/n): ")
                     if fall_back is None:
@@ -1309,49 +1538,15 @@ class Warhammer40kEnv(gym.Env):
                     self.updateBoard()
                     self.showBoard()
 
-                    if self.enemyCP - 1 >= 0 and battleSh is False:
-                        strat = self._prompt_yes_no("Would you like to use the Fire Overwatch Stratagem? (y/n): ")
-                        if strat is None:
-                            self.game_over = True
-                            return None
-                        if strat:
-                            self.enemyStrat["overwatch"] = i
-                            self.enemyCP -= 1
-
-                    if self.modelStrat["overwatch"] != -1 and self.unit_weapon[self.modelStrat["overwatch"]] != "None":
-                        if distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]) <= self.unit_weapon[self.modelStrat["overwatch"]]["Range"]:
-                            _logger = None
-                            if self.playType is False and _verbose_logs_enabled():
-                                _logger = RollLogger(auto_dice)
-                                dmg, modHealth = attack(
-                                    self.unit_health[self.modelStrat["overwatch"]],
-                                    self.unit_weapon[self.modelStrat["overwatch"]],
-                                    self.unit_data[self.modelStrat["overwatch"]],
-                                    self.enemy_health[i],
-                                    self.enemy_data[i],
-                                    roller=_logger.roll,
-                                )
-                            else:
-                                dmg, modHealth = attack(
-                                    self.unit_health[self.modelStrat["overwatch"]],
-                                    self.unit_weapon[self.modelStrat["overwatch"]],
-                                    self.unit_data[self.modelStrat["overwatch"]],
-                                    self.enemy_health[i],
-                                    self.enemy_data[i],
-                                )
-                            self.enemy_health[i] = modHealth
-                            self._log(
-                                f"Model unit {self.modelStrat['overwatch'] + 21} successfully hit player unit {i + 11} for {sum(dmg)} damage using the overwatch strategem"
-                            )
-                            if _logger is not None:
-                                _logger.print_shoot_report(
-                                    weapon=self.unit_weapon[self.modelStrat["overwatch"]],
-                                    attacker_data=self.unit_data[self.modelStrat["overwatch"]],
-                                    defender_data=self.enemy_data[i],
-                                    dmg_list=dmg,
-                                    effect=None,
-                                )
-                            self.modelStrat["overwatch"] = -1
+                    pos_after = tuple(self.enemy_coords[i])
+                    if pos_before != pos_after:
+                        self._resolve_overwatch(
+                            defender_side="model",
+                            moving_unit_side="enemy",
+                            moving_idx=i,
+                            phase="movement",
+                            manual=False,
+                        )
 
                     self.updateBoard()
                     self.showBoard()
@@ -1362,6 +1557,7 @@ class Warhammer40kEnv(gym.Env):
             cp_on = getattr(self, "_enemy_cp_on", None)
             use_cp = getattr(self, "_enemy_use_cp", None)
             for i in range(len(self.enemy_health)):
+                pos_before = tuple(self.enemy_coords[i])
                 if self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
                     decide = np.random.randint(0, 10)
                     if decide == 5:
@@ -1405,48 +1601,15 @@ class Warhammer40kEnv(gym.Env):
                             self.enemy_coords[i][0] -= 1
                     advanced_flags[i] = advanced
 
-                    if self.modelStrat["overwatch"] != -1 and self.unit_weapon[self.modelStrat["overwatch"]] != "None":
-                        if distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]) <= self.unit_weapon[self.modelStrat["overwatch"]]["Range"]:
-                            _logger = None
-                            if self.trunc is False and _verbose_logs_enabled():
-                                _logger = RollLogger(auto_dice)
-                                dmg, modHealth = attack(
-                                    self.unit_health[self.modelStrat["overwatch"]],
-                                    self.unit_weapon[self.modelStrat["overwatch"]],
-                                    self.unit_data[self.modelStrat["overwatch"]],
-                                    self.enemy_health[i],
-                                    self.enemy_data[i],
-                                    distance_to_target=distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]),
-                                    roller=_logger.roll,
-                                )
-                            else:
-                                dmg, modHealth = attack(
-                                    self.unit_health[self.modelStrat["overwatch"]],
-                                    self.unit_weapon[self.modelStrat["overwatch"]],
-                                    self.unit_data[self.modelStrat["overwatch"]],
-                                    self.enemy_health[i],
-                                    self.enemy_data[i],
-                                    distance_to_target=distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]),
-                                )
-                            self.enemy_health[i] = modHealth
-                            if self.trunc is False and _logger is not None:
-                                self._log("\n🟦 Model Overwatch (подробно):")
-                                _logger.print_shoot_report(
-                                    weapon=self.unit_weapon[self.modelStrat["overwatch"]],
-                                    attacker_data=self.unit_data[self.modelStrat["overwatch"]],
-                                    defender_data=self.enemy_data[i],
-                                    dmg_list=dmg,
-                                    effect=None,
-                                )
-                            self.modelStrat["overwatch"] = -1
-
-                    if use_cp == 2 and cp_on == i and self.enemyCP - 1 >= 0 and not (battle_shock and battle_shock[i]):
-                        self.enemyCP -= 1
-                        self.enemyStrat["overwatch"] = i
-
-                    if use_cp == 3 and cp_on == i and self.enemyCP - 1 >= 0 and not (battle_shock and battle_shock[i]):
-                        self.enemyCP -= 1
-                        self.enemyStrat["smokescreen"] = i
+                    pos_after = tuple(self.enemy_coords[i])
+                    if pos_before != pos_after:
+                        self._resolve_overwatch(
+                            defender_side="model",
+                            moving_unit_side="enemy",
+                            moving_idx=i,
+                            phase="movement",
+                            manual=False,
+                        )
             return advanced_flags
 
         return None
@@ -1502,9 +1665,12 @@ class Warhammer40kEnv(gym.Env):
                             i,
                             f"Цели в дальности: {target_ids}, выбрана: {idOfE + 11} (причина: {reason})",
                         )
-                        effect = None
-                        if idOfE == self.enemyStrat["smokescreen"]:
-                            effect = "benefit of cover"
+                        effect = self._maybe_use_smokescreen(
+                            defender_side="enemy",
+                            defender_idx=idOfE,
+                            phase="shooting",
+                            manual=os.getenv("MANUAL_DICE", "0") == "1",
+                        )
                         _logger = None
                         if self.trunc is False and _verbose_logs_enabled():
                             _logger = RollLogger(auto_dice)
@@ -1588,12 +1754,12 @@ class Warhammer40kEnv(gym.Env):
                                     return None
                                 if is_num(shoot) is True and int(shoot) - 21 in shootAble:
                                     idOfE = int(shoot) - 21
-                                    if self.modelStrat["smokescreen"] != -1 and self.modelStrat["smokescreen"] == idOfE:
-                                        self._log(f"Model unit {self.modelStrat['smokescreen'] + 21} used the Smokescreen Strategem")
-                                        self.modelStrat["smokescreen"] = -1
-                                        effect = "benefit of cover"
-                                    else:
-                                        effect = None
+                                    effect = self._maybe_use_smokescreen(
+                                        defender_side="model",
+                                        defender_idx=idOfE,
+                                        phase="shooting",
+                                        manual=False,
+                                    )
                                     logger = RollLogger(player_dice)
                                     dmg, modHealth = attack(
                                         self.enemy_health[i],
@@ -1637,11 +1803,12 @@ class Warhammer40kEnv(gym.Env):
                                 shootAbleUnits.append(j)
                         if len(shootAbleUnits) > 0:
                             idOfM = np.random.choice(shootAbleUnits)
-                            if self.modelStrat["smokescreen"] != -1 and self.modelStrat["smokescreen"] == idOfM:
-                                self.modelStrat["smokescreen"] = -1
-                                effect = "benefit of cover"
-                            else:
-                                effect = None
+                            effect = self._maybe_use_smokescreen(
+                                defender_side="model",
+                                defender_idx=idOfM,
+                                phase="shooting",
+                                manual=False,
+                            )
                             dmg, modHealth = attack(
                                 self.enemy_health[i],
                                 self.enemy_weapon[i],
@@ -1665,6 +1832,7 @@ class Warhammer40kEnv(gym.Env):
             for i in range(len(self.unit_health)):
                 modelName = i + 21
                 advanced = advanced_flags[i] if advanced_flags else False
+                pos_before = tuple(self.unit_coords[i])
                 if self.unit_health[i] <= 0:
                     self._log_unit("MODEL", modelName, i, "Юнит мертв, чардж пропущен.")
                     continue
@@ -1712,6 +1880,13 @@ class Warhammer40kEnv(gym.Env):
                         else:
                             roll_text = f"бросок total={diceRoll}"
                         if idOfE in chargeAble:
+                            self._log_unit_phase(
+                                "MODEL",
+                                "charge",
+                                modelName,
+                                i,
+                                f"Charge объявлен по цели Enemy Unit {idOfE + 11}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {dice_vals[0]} + {dice_vals[1]} = {diceRoll}.",
+                            )
                             self._log_unit(
                                 "MODEL",
                                 modelName,
@@ -1726,9 +1901,34 @@ class Warhammer40kEnv(gym.Env):
                             self.enemyInAttack[idOfE][0] = 1
                             self.enemyInAttack[idOfE][1] = i
                             self.unitCharged[i] = 1
+                            pos_after = tuple(self.unit_coords[i])
+                            self._log_unit_phase(
+                                "MODEL",
+                                "charge",
+                                modelName,
+                                i,
+                                f"Charge move: from {pos_before} -> {pos_after}, ended_in_engagement={self.unitInAttack[i][0] == 1}.",
+                            )
+                            # 10e: Heroic Intervention доступен защитнику после успешного charge move.
+                            self._resolve_heroic_intervention(
+                                defender_side="enemy",
+                                charging_side="model",
+                                charging_idx=i,
+                                phase="charge",
+                                manual=os.getenv("MANUAL_DICE", "0") == "1",
+                            )
                             reward_delta += 0.5
                         else:
                             reason = "цель вне досягаемости" if idOfE in potential_targets else "цель недоступна"
+                            if idOfE in potential_targets:
+                                dist_to_target = distance(self.enemy_coords[idOfE], self.unit_coords[i])
+                                self._log_unit_phase(
+                                    "MODEL",
+                                    "charge",
+                                    modelName,
+                                    i,
+                                    f"Charge объявлен по цели Enemy Unit {idOfE + 11}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {dice_vals[0]} + {dice_vals[1]} = {diceRoll}.",
+                                )
                             self._log_unit(
                                 "MODEL",
                                 modelName,
@@ -1760,6 +1960,7 @@ class Warhammer40kEnv(gym.Env):
             for i in range(len(self.enemy_health)):
                 playerName = i + 11
                 advanced = advanced_flags[i] if advanced_flags else False
+                pos_before = tuple(self.enemy_coords[i])
                 if self.enemyFellBack[i]:
                     self._log(f"Unit {playerName} Fell Back this turn — skipping charge")
                     continue
@@ -1793,6 +1994,14 @@ class Warhammer40kEnv(gym.Env):
                             self._log("Rolling 2 D6...")
                             roll = player_dice(num=2)
                             self._log(f"You rolled a {roll[0]} and {roll[1]}")
+                            dist_to_target = distance(self.enemy_coords[i], self.unit_coords[j])
+                            self._log_unit_phase(
+                                self._side_label("enemy", manual=True),
+                                "charge",
+                                playerName,
+                                i,
+                                f"Charge объявлен по цели Model Unit {j + 21}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {roll[0]} + {roll[1]} = {sum(roll)}.",
+                            )
                             if distance(self.enemy_coords[i], self.unit_coords[j]) - sum(roll) <= 5:
                                 self._log(f"Player Unit {playerName} Successfully charged Model Unit {j + 21}")
                                 self.enemyInAttack[i][0] = 1
@@ -1804,22 +2013,32 @@ class Warhammer40kEnv(gym.Env):
                                 self.updateBoard()
                                 self.unitInAttack[j][0] = 1
                                 self.unitInAttack[j][1] = i
+                                pos_after = tuple(self.enemy_coords[i])
+                                self._log_unit_phase(
+                                    self._side_label("enemy", manual=True),
+                                    "charge",
+                                    playerName,
+                                    i,
+                                    f"Charge move: from {pos_before} -> {pos_after}, ended_in_engagement={self.enemyInAttack[i][0] == 1}.",
+                                )
+                                # 10e: Heroic Intervention доступен защитнику после успешного charge move.
+                                self._resolve_heroic_intervention(
+                                    defender_side="model",
+                                    charging_side="enemy",
+                                    charging_idx=i,
+                                    phase="charge",
+                                    manual=False,
+                                )
                             else:
                                 self._log(f"Player Unit {playerName} Failed to charge Model Unit {j + 21}")
                         else:
                             self._log("Not an available unit")
-                if self.enemyCP - 1 >= 0 and not (battle_shock and battle_shock[i]):
-                    strat = self._prompt_yes_no("Would you like to use the Smokescreen Stratagem for this unit? (y/n): ")
-                    if strat is None:
-                        self.game_over = True
-                        return None
-                    if strat:
-                        self.enemyStrat["smokescreen"] = i
             if not any_chargeable:
                 self._log("No available units to charge")
         elif side == "enemy":
             for i in range(len(self.enemy_health)):
                 advanced = advanced_flags[i] if advanced_flags else False
+                pos_before = tuple(self.enemy_coords[i])
                 if self.enemyFellBack[i]:
                     if self.trunc is False:
                         self._log("Enemy Fell Back — cannot charge, skipping charge")
@@ -1838,6 +2057,13 @@ class Warhammer40kEnv(gym.Env):
                         idOfM = int(np.random.choice(chargeAble))
                         dist = distance(self.enemy_coords[i], self.unit_coords[idOfM])
                         required = max(0, dist - 1)
+                        self._log_unit_phase(
+                            "ENEMY",
+                            "charge",
+                            i + 21,
+                            i,
+                            f"Charge объявлен по цели Model Unit {idOfM + 11}. Дистанция: {dist:.1f}. Бросок 2D6: {diceRoll}.",
+                        )
                         if diceRoll >= required:
                             if self.trunc is False:
                                 self._log(
@@ -1851,6 +2077,22 @@ class Warhammer40kEnv(gym.Env):
                             self.unitInAttack[idOfM][0] = 1
                             self.unitInAttack[idOfM][1] = i
                             self.enemyCharged[i] = 1
+                            pos_after = tuple(self.enemy_coords[i])
+                            self._log_unit_phase(
+                                "ENEMY",
+                                "charge",
+                                i + 21,
+                                i,
+                                f"Charge move: from {pos_before} -> {pos_after}, ended_in_engagement={self.enemyInAttack[i][0] == 1}.",
+                            )
+                            # 10e: Heroic Intervention доступен защитнику после успешного charge move.
+                            self._resolve_heroic_intervention(
+                                defender_side="model",
+                                charging_side="enemy",
+                                charging_idx=i,
+                                phase="charge",
+                                manual=False,
+                            )
                         elif self.trunc is False:
                             self._log(
                                 f"Enemy unit {i + 21} failed charge vs Model unit {idOfM + 11} (roll {diceRoll} vs need {required:.1f})"
@@ -2029,6 +2271,13 @@ class Warhammer40kEnv(gym.Env):
                     # цель мертва/невалидна — снимаем бой
                     self.unitInAttack[att_idx] = [0, 0]
                     return False
+                self._log_unit_phase(
+                    "MODEL",
+                    "fight",
+                    att_idx + 21,
+                    att_idx,
+                    f"Выбран для атаки. Цель: Enemy Unit {def_idx + 11}.",
+                )
 
                 weapon = self.unit_melee[att_idx]
                 attacker_data = self.unit_data[att_idx]
@@ -2062,6 +2311,13 @@ class Warhammer40kEnv(gym.Env):
 
                 wname = weapon.get("Name", "Melee") if isinstance(weapon, dict) else str(weapon)
                 _log(f"⚔️ Model Unit {att_idx + 21} fights Enemy Unit {def_idx + 11} with {wname}: dmg {float(np.sum(dmg))} | HP {hp_before} -> {modHealth}")
+                self._log_unit_phase(
+                    "MODEL",
+                    "fight",
+                    att_idx + 21,
+                    att_idx,
+                    f"Итог атаки: урон {float(np.sum(dmg))}, HP цели {hp_before} -> {modHealth}.",
+                )
 
                 # если у тебя уже есть print_melee_report — можно включить:
                 if quiet is False and _logger is not None and hasattr(_logger, "print_melee_report"):
@@ -2087,6 +2343,14 @@ class Warhammer40kEnv(gym.Env):
                 if def_idx < 0 or def_idx >= len(self.unit_health) or self.unit_health[def_idx] <= 0:
                     self.enemyInAttack[att_idx] = [0, 0]
                     return False
+                enemy_label = self._side_label("enemy", manual=os.getenv("MANUAL_DICE", "0") == "1")
+                self._log_unit_phase(
+                    enemy_label,
+                    "fight",
+                    att_idx + 11,
+                    att_idx,
+                    f"Выбран для атаки. Цель: Model Unit {def_idx + 21}.",
+                )
 
                 weapon = self.enemy_melee[att_idx]
                 attacker_data = self.enemy_data[att_idx]
@@ -2120,6 +2384,13 @@ class Warhammer40kEnv(gym.Env):
 
                 wname = weapon.get("Name", "Melee") if isinstance(weapon, dict) else str(weapon)
                 _log(f"⚔️ Enemy Unit {att_idx + 11} fights Model Unit {def_idx + 21} with {wname}: dmg {float(np.sum(dmg))} | HP {hp_before} -> {modHealth}")
+                self._log_unit_phase(
+                    enemy_label,
+                    "fight",
+                    att_idx + 11,
+                    att_idx,
+                    f"Итог атаки: урон {float(np.sum(dmg))}, HP цели {hp_before} -> {modHealth}.",
+                )
 
                 if quiet is False and _logger is not None and hasattr(_logger, "print_melee_report"):
                     _logger.print_melee_report(
@@ -2140,6 +2411,17 @@ class Warhammer40kEnv(gym.Env):
         any_fight = any(x[0] == 1 for x in self.unitInAttack) or any(x[0] == 1 for x in self.enemyInAttack)
         if not any_fight:
             return
+
+        model_eligible = [i for i in range(len(self.unit_health)) if self.unit_health[i] > 0 and self.unitInAttack[i][0] == 1]
+        enemy_eligible = [i for i in range(len(self.enemy_health)) if self.enemy_health[i] > 0 and self.enemyInAttack[i][0] == 1]
+        active_label = self._side_label(active_side, manual=os.getenv("MANUAL_DICE", "0") == "1" and active_side == "enemy")
+        self._log_phase_msg(
+            active_label,
+            "fight",
+            "Начало Fight phase. Первым выбирает активный игрок. "
+            f"Eligible MODEL: {[i + 21 for i in model_eligible]}, "
+            f"Eligible ENEMY: {[i + 11 for i in enemy_eligible]}.",
+        )
 
         fought_model = set()
         fought_enemy = set()
@@ -2267,6 +2549,7 @@ class Warhammer40kEnv(gym.Env):
 
         for i in range(len(self.enemy_health)):
             playerName = i + 11
+            pos_before = tuple(self.enemy_coords[i])
             if self.playType is False:
                 print("For unit", playerName)
             else:
@@ -2330,61 +2613,6 @@ class Warhammer40kEnv(gym.Env):
                                 else:
                                     sendToGUI("Valid answers are: y, yes, n, and no: ")
                                     strat = recieveGUI()
-
-            # Heroic Intervention (player)
-            if self.enemyCP - 2 >= 0 and self.enemyInAttack[i][0] == 0:
-                response = False
-                if self.playType is False:
-                    strat = input("Would you like to use the Heroic Intervention Stratagem? (y/n): ")
-                else:
-                    sendToGUI("Would you like to use the Heroic Intervention Stratagem for Unit {}? (y/n): ".format(playerName))
-                    strat = recieveGUI()
-
-                while response is False:
-                    if strat.lower() in ("y", "yes"):
-                        response = True
-                        for j in range(len(self.unitInAttack)):
-                            if self.unitInAttack[j][0] == 1 and distance(self.enemy_coords[i], self.unit_coords[j]) >= 6:
-                                self.enemyInAttack[i][0] = 1
-                                self.enemyInAttack[i][1] = j
-
-                                self.enemyInAttack[self.enemyInAttack[j][1]][0] = 0
-                                self.enemyInAttack[self.enemyInAttack[j][1]][1] = 0
-
-                                self.enemy_coords[i][0] = self.enemy_coords[j][0] + 1
-                                self.enemy_coords[i][1] = self.enemy_coords[j][1] + 1
-                                self.enemy_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
-
-                                self.unitInAttack[j][1] = i
-                                self.enemyCP -= 2
-
-                                if self.playType is False:
-                                    print("Heroic Intervention Successfully used!")
-                                else:
-                                    sendToGUI("Heroic Intervention Successfully used!")
-                                break
-                    elif strat.lower() in ("n", "no"):
-                        response = True
-                    elif strat.lower() == "quit":
-                        self.game_over = True
-                        info = self.get_info
-                        return self.game_over, info
-                    elif strat.lower() in ("?", "help"):
-                        if self.playType is False:
-                            print("The Heroic Intervention stratagem allows the player to choose an enemy unit within 6 inches and charge them")
-                            strat = input("Would you like to use the Heroic Intervention Stratagem? (y/n): ")
-                        else:
-                            sendToGUI("The Heroic Intervention stratagem allows the player to choose an enemy unit within 6 inches and charge them\nWould you like to use the Heroic Intervention Stratagem? (y/n): ")
-                            strat = recieveGUI()
-                    else:
-                        if self.playType is False:
-                            strat = input("Valid answers are: y, yes, n, and no: ")
-
-                if self.enemyInAttack[i][0] != 1:
-                    if self.playType is False:
-                        print("Heroic Intervention failed")
-                    else:
-                        sendToGUI("Heroic Intervention failed")
 
             if self.enemyInAttack[i][0] == 0 and self.enemy_health[i] > 0:
                 self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
@@ -2499,76 +2727,15 @@ class Warhammer40kEnv(gym.Env):
                 self.updateBoard()
                 self.showBoard()
 
-                # Overwatch strat prompt (kept)
-                if self.enemyCP - 1 >= 0 and battleSh is False:
-                    response = False
-                    if self.playType is False:
-                        strat = input("Would you like to use the Fire Overwatch Stratagem? (y/n): ")
-                    else:
-                        sendToGUI("Would you like to use the Fire Overwatch Stratagem? (y/n): ")
-                        strat = recieveGUI()
-
-                    while response is False:
-                        if strat.lower() in ("y", "yes"):
-                            response = True
-                            self.enemyStrat["overwatch"] = i
-                            self.enemyCP -= 1
-                        elif strat.lower() in ("n", "no"):
-                            response = True
-                        elif strat.lower() in ("?", "help"):
-                            if self.playType is False:
-                                print("Fire Overwatch costs 1 CP and lets your unit shoot during enemy Movement/Charge (simplified here).")
-                                strat = input("Would you like to use the Fire Overwatch Stratagem? (y/n): ")
-                            else:
-                                sendToGUI("Fire Overwatch costs 1 CP and lets your unit shoot during enemy Movement/Charge (simplified here).\nWould you like to use the Fire Overwatch Stratagem? (y/n): ")
-                                strat = recieveGUI()
-                        elif strat.lower() == "quit":
-                            self.game_over = True
-                            info = self.get_info()
-                            return self.game_over, info
-                        else:
-                            if self.playType is False:
-                                strat = input("Valid answers are: y, yes, n, and no: ")
-                            else:
-                                sendToGUI("Valid answers are: y, yes, n, and no: ")
-                                strat = recieveGUI()
-
-                # model overwatch reaction
-                if self.modelStrat["overwatch"] != -1 and self.unit_weapon[self.modelStrat["overwatch"]] != "None":
-                    if distance(self.enemy_coords[i], self.unit_coords[self.modelStrat["overwatch"]]) <= self.unit_weapon[self.modelStrat["overwatch"]]["Range"]:
-                        _logger = None
-                        if self.playType is False and _verbose_logs_enabled():
-                            _logger = RollLogger(auto_dice)
-                            dmg, modHealth = attack(
-                                self.unit_health[self.modelStrat["overwatch"]],
-                                self.unit_weapon[self.modelStrat["overwatch"]],
-                                self.unit_data[self.modelStrat["overwatch"]],
-                                self.enemy_health[i],
-                                self.enemy_data[i],
-                                roller=_logger.roll,
-                            )
-                        else:
-                            dmg, modHealth = attack(
-                                self.unit_health[self.modelStrat["overwatch"]],
-                                self.unit_weapon[self.modelStrat["overwatch"]],
-                                self.unit_data[self.modelStrat["overwatch"]],
-                                self.enemy_health[i],
-                                self.enemy_data[i],
-                            )
-                        self.enemy_health[i] = modHealth
-                        if self.playType is False:
-                            print("Model unit", self.modelStrat["overwatch"] + 21, "successfully hit player unit", i + 11, "for", sum(dmg), "damage using the overwatch strategem")
-                            if _logger is not None:
-                                _logger.print_shoot_report(
-                                    weapon=self.unit_weapon[self.modelStrat["overwatch"]],
-                                    attacker_data=self.unit_data[self.modelStrat["overwatch"]],
-                                    defender_data=self.enemy_data[i],
-                                    dmg_list=dmg,
-                                    effect=None,
-                                )
-                        else:
-                            sendToGUI("Model unit {} successfully hit player unit {} for {} damage using the overwatch stratagem".format(self.modelStrat["overwatch"] + 21, i + 11, sum(dmg)))
-                        self.modelStrat["overwatch"] = -1
+                pos_after = tuple(self.enemy_coords[i])
+                if pos_before != pos_after:
+                    self._resolve_overwatch(
+                        defender_side="model",
+                        moving_unit_side="enemy",
+                        moving_idx=i,
+                        phase="movement",
+                        manual=False,
+                    )
 
                 self.updateBoard()
                 self.showBoard()
@@ -2602,15 +2769,12 @@ class Warhammer40kEnv(gym.Env):
 
                                 if is_num(shoot) is True and int(shoot) - 21 in shootAble:
                                     idOfE = int(shoot) - 21
-                                    if self.modelStrat["smokescreen"] != -1 and self.modelStrat["smokescreen"] == idOfE:
-                                        if self.playType is False:
-                                            print("Model unit", self.modelStrat["smokescreen"] + 21, "used the Smokescreen Strategem")
-                                        else:
-                                            sendToGUI("Model unit {} used the Smokescreen Stratagem".format(self.modelStrat["smokescreen"] + 21))
-                                        self.modelStrat["smokescreen"] = -1
-                                        effect = "benefit of cover"
-                                    else:
-                                        effect = None
+                                    effect = self._maybe_use_smokescreen(
+                                        defender_side="model",
+                                        defender_idx=idOfE,
+                                        phase="shooting",
+                                        manual=False,
+                                    )
 
                                     logger = RollLogger(player_dice)
 
@@ -2692,6 +2856,14 @@ class Warhammer40kEnv(gym.Env):
                                     roll = player_dice(num=2)
                                     sendToGUI("You rolled a {} and {}".format(roll[0], roll[1]))
 
+                                dist_to_target = distance(self.enemy_coords[i], self.unit_coords[j])
+                                self._log_unit_phase(
+                                    self._side_label("enemy", manual=True),
+                                    "charge",
+                                    playerName,
+                                    i,
+                                    f"Charge объявлен по цели Model Unit {j + 21}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {roll[0]} + {roll[1]} = {sum(roll)}.",
+                                )
                                 if distance(self.enemy_coords[i], self.unit_coords[j]) - sum(roll) <= 5:
                                     if self.playType is False:
                                         print("Player Unit", playerName, "Successfully charged Model Unit", j + 21)
@@ -2711,6 +2883,22 @@ class Warhammer40kEnv(gym.Env):
 
                                     self.unitInAttack[j][0] = 1
                                     self.unitInAttack[j][1] = i
+                                    pos_after = tuple(self.enemy_coords[i])
+                                    self._log_unit_phase(
+                                        self._side_label("enemy", manual=True),
+                                        "charge",
+                                        playerName,
+                                        i,
+                                        f"Charge move: from {pos_before} -> {pos_after}, ended_in_engagement={self.enemyInAttack[i][0] == 1}.",
+                                    )
+                                    # 10e: Heroic Intervention доступен защитнику после успешного charge move.
+                                    self._resolve_heroic_intervention(
+                                        defender_side="model",
+                                        charging_side="enemy",
+                                        charging_idx=i,
+                                        phase="charge",
+                                        manual=False,
+                                    )
                                 else:
                                     if self.playType is False:
                                         print("Player Unit {} Failed to charge Model Unit {}".format(playerName, j + 21))
@@ -2731,37 +2919,6 @@ class Warhammer40kEnv(gym.Env):
                             print("No available units to charge")
                         else:
                             sendToGUI("No available units to charge")
-
-                # Smokescreen prompt (kept)
-                if self.enemyCP - 1 >= 0 and battleSh is False:
-                    response = False
-                    if self.playType is False:
-                        strat = input("Would you like to use the Smokescreen Stratagem for this unit? (y/n): ")
-                    else:
-                        sendToGUI("Would you like to use the Smokescreen Stratagem for this unit? (y/n): ")
-                        strat = recieveGUI()
-
-                    while response is False:
-                        if strat.lower() in ("y", "yes"):
-                            self.enemyStrat["smokescreen"] = i
-                            response = True
-                        elif strat.lower() in ("n", "no"):
-                            response = True
-                        elif strat.lower() in ("?", "help"):
-                            if self.playType is False:
-                                print("Smokescreen costs 1 CP and gives benefit of cover / stealth (simplified here).")
-                                strat = input("Would you like to use the Smokescreen Stratagem? (y/n): ")
-                            else:
-                                sendToGUI("Smokescreen costs 1 CP and gives benefit of cover / stealth (simplified here).\nWould you like to use the Smokescreen Stratagem? (y/n): ")
-                                strat = recieveGUI()
-                        else:
-                            if self.playType is False:
-                                strat = input("It's a yes or no question dude: ")
-                            else:
-                                sendToGUI("It's a yes or no question dude: ")
-                                strat = recieveGUI()
-
-                    # Objective control is recalculated in refresh_objective_control.
 
             elif self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
                 idOfE = self.enemyInAttack[i][1]

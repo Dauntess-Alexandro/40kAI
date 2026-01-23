@@ -197,7 +197,7 @@ def _roll_attacks_expr(expr, _roll_fn):
 
 
 def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attackeeData,
-           rangeOfComb="Ranged", effects=None, roller=None, distance_to_target=None):
+           rangeOfComb="Ranged", effects=None, roller=None, distance_to_target=None, hit_on_6: bool = False):
     """Attack resolution (приведено к "10e-стилю" бросков).
 
     Поддержано (упрощённо):
@@ -227,6 +227,9 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
     inv = _to_int(attackeeData.get("IVSave"), default=0)  # 0 = нет инвула
 
     bs = _to_int(attackerWeapon.get("BS") if rangeOfComb == "Ranged" else attackerWeapon.get("WS"), default=7)
+    if hit_on_6:
+        # Overwatch 10e: попадания только на натуральную 6.
+        bs = 6
 
     s = _to_int(attackerWeapon.get("S"), default=0)
     t = _to_int(attackeeData.get("T"), default=0)
