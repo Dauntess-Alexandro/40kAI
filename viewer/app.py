@@ -1,9 +1,17 @@
 import os
+import sys
 from PySide6 import QtCore, QtGui, QtWidgets
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+GYM_PATH = os.path.join(ROOT_DIR, "gym_mod")
+if GYM_PATH not in sys.path:
+    sys.path.insert(0, GYM_PATH)
 
 from viewer.scene import MapScene
 from viewer.state import StateWatcher
 from viewer.styles import Theme
+
+from gym_mod.engine.game_controller import GameController
 
 
 class MapView(QtWidgets.QGraphicsView):
@@ -28,11 +36,14 @@ class MapView(QtWidgets.QGraphicsView):
 
 
 class ViewerWindow(QtWidgets.QMainWindow):
-    def __init__(self, state_path):
+    def __init__(self, state_path, model_path=None):
         super().__init__()
         self.state_path = state_path
         self.setWindowTitle("40kAI Viewer")
         self.resize(1200, 800)
+
+        self.controller = GameController(model_path=model_path, state_path=state_path)
+        self._pending_request = None
 
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = MapScene(cell_size=18)
@@ -104,10 +115,21 @@ class ViewerWindow(QtWidgets.QMainWindow):
         log_buttons.addWidget(clear_button)
         log_layout.addLayout(log_buttons)
 
+        command_group = QtWidgets.QGroupBox("КОМАНДЫ")
+        command_layout = QtWidgets.QVBoxLayout(command_group)
+        self.command_prompt = QtWidgets.QLabel("Ожидаю команду...")
+        self.command_prompt.setWordWrap(True)
+        command_layout.addWidget(self.command_prompt)
+
+        self.command_stack = QtWidgets.QStackedWidget()
+        self._build_command_pages()
+        command_layout.addWidget(self.command_stack)
+
         central = QtWidgets.QWidget()
         central_layout = QtWidgets.QVBoxLayout(central)
         central_layout.addWidget(splitter, stretch=3)
         central_layout.addWidget(log_group, stretch=1)
+        central_layout.addWidget(command_group, stretch=0)
         self.setCentralWidget(central)
 
         self._apply_dark_theme()
@@ -119,6 +141,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.timer.start()
 
         self._poll_state()
+        QtCore.QTimer.singleShot(0, self._start_controller)
 
     def _apply_dark_theme(self):
         palette = self.palette()
@@ -180,6 +203,143 @@ class ViewerWindow(QtWidgets.QMainWindow):
         row.addWidget(QtWidgets.QLabel(label))
         row.addStretch()
         return row
+
+    def _build_command_pages(self):
+        self._command_pages = {}
+
+        text_page = QtWidgets.QWidget()
+        text_layout = QtWidgets.QHBoxLayout(text_page)
+        self.command_input = QtWidgets.QLineEdit()
+        self.command_input.setPlaceholderText("Введите команду...")
+        self.command_send = QtWidgets.QPushButton("Отправить")
+        self.command_input.returnPressed.connect(self._submit_text)
+        self.command_send.clicked.connect(self._submit_text)
+        text_layout.addWidget(self.command_input)
+        text_layout.addWidget(self.command_send)
+        self._command_pages["text"] = self.command_stack.addWidget(text_page)
+
+        direction_page = QtWidgets.QWidget()
+        direction_layout = QtWidgets.QGridLayout(direction_page)
+        self.direction_buttons = {}
+        direction_map = {
+            "up": "↑",
+            "down": "↓",
+            "left": "←",
+            "right": "→",
+            "none": "Нет",
+        }
+        self.direction_buttons["up"] = QtWidgets.QPushButton(direction_map["up"])
+        self.direction_buttons["down"] = QtWidgets.QPushButton(direction_map["down"])
+        self.direction_buttons["left"] = QtWidgets.QPushButton(direction_map["left"])
+        self.direction_buttons["right"] = QtWidgets.QPushButton(direction_map["right"])
+        self.direction_buttons["none"] = QtWidgets.QPushButton(direction_map["none"])
+        self.direction_buttons["up"].clicked.connect(lambda: self._submit_answer("up"))
+        self.direction_buttons["down"].clicked.connect(lambda: self._submit_answer("down"))
+        self.direction_buttons["left"].clicked.connect(lambda: self._submit_answer("left"))
+        self.direction_buttons["right"].clicked.connect(lambda: self._submit_answer("right"))
+        self.direction_buttons["none"].clicked.connect(lambda: self._submit_answer("none"))
+        direction_layout.addWidget(self.direction_buttons["up"], 0, 1)
+        direction_layout.addWidget(self.direction_buttons["left"], 1, 0)
+        direction_layout.addWidget(self.direction_buttons["none"], 1, 1)
+        direction_layout.addWidget(self.direction_buttons["right"], 1, 2)
+        direction_layout.addWidget(self.direction_buttons["down"], 2, 1)
+        self._command_pages["direction"] = self.command_stack.addWidget(direction_page)
+
+        bool_page = QtWidgets.QWidget()
+        bool_layout = QtWidgets.QHBoxLayout(bool_page)
+        self.bool_yes = QtWidgets.QPushButton("Да")
+        self.bool_no = QtWidgets.QPushButton("Нет")
+        self.bool_yes.clicked.connect(lambda: self._submit_answer(True))
+        self.bool_no.clicked.connect(lambda: self._submit_answer(False))
+        bool_layout.addWidget(self.bool_yes)
+        bool_layout.addWidget(self.bool_no)
+        self._command_pages["bool"] = self.command_stack.addWidget(bool_page)
+
+        int_page = QtWidgets.QWidget()
+        int_layout = QtWidgets.QHBoxLayout(int_page)
+        self.int_spin = QtWidgets.QSpinBox()
+        self.int_spin.setRange(0, 999)
+        self.int_ok = QtWidgets.QPushButton("ОК")
+        self.int_ok.clicked.connect(lambda: self._submit_answer(self.int_spin.value()))
+        int_layout.addWidget(self.int_spin)
+        int_layout.addWidget(self.int_ok)
+        self._command_pages["int"] = self.command_stack.addWidget(int_page)
+
+        choice_page = QtWidgets.QWidget()
+        choice_layout = QtWidgets.QHBoxLayout(choice_page)
+        self.choice_combo = QtWidgets.QComboBox()
+        self.choice_ok = QtWidgets.QPushButton("ОК")
+        self.choice_ok.clicked.connect(self._submit_choice)
+        choice_layout.addWidget(self.choice_combo)
+        choice_layout.addWidget(self.choice_ok)
+        self._command_pages["choice"] = self.command_stack.addWidget(choice_page)
+
+        self.command_stack.setCurrentIndex(self._command_pages["text"])
+
+    def _set_request(self, request):
+        self._pending_request = request
+        if request is None:
+            if self.controller.is_finished:
+                self.command_prompt.setText("Игра завершена.")
+            else:
+                self.command_prompt.setText("Команда не требуется.")
+            self.command_stack.setEnabled(False)
+            return
+
+        self.command_prompt.setText(request.prompt)
+        self.command_stack.setEnabled(True)
+        kind = getattr(request, "kind", "text")
+        if kind == "direction":
+            self.command_stack.setCurrentIndex(self._command_pages["direction"])
+        elif kind == "bool":
+            self.command_stack.setCurrentIndex(self._command_pages["bool"])
+        elif kind == "int":
+            min_value = request.min_value if request.min_value is not None else 0
+            max_value = request.max_value if request.max_value is not None else 999
+            self.int_spin.setRange(min_value, max_value)
+            self.int_spin.setValue(min_value)
+            self.command_stack.setCurrentIndex(self._command_pages["int"])
+        elif kind == "choice":
+            self.choice_combo.clear()
+            if request.options:
+                self.choice_combo.addItems([str(opt) for opt in request.options])
+                self.command_stack.setCurrentIndex(self._command_pages["choice"])
+            else:
+                self.command_stack.setCurrentIndex(self._command_pages["text"])
+        else:
+            self.command_stack.setCurrentIndex(self._command_pages["text"])
+
+    def _append_log(self, messages):
+        if not messages:
+            return
+        for msg in messages:
+            self.log_view.appendPlainText(str(msg))
+        self.log_view.verticalScrollBar().setValue(self.log_view.verticalScrollBar().maximum())
+
+    def _start_controller(self):
+        messages, request = self.controller.start()
+        self._append_log(messages)
+        self._set_request(request)
+        self._poll_state()
+
+    def _submit_text(self):
+        text = self.command_input.text().strip()
+        if not text:
+            return
+        self.command_input.clear()
+        self._submit_answer(text)
+
+    def _submit_choice(self):
+        value = self.choice_combo.currentText()
+        self._submit_answer(value)
+
+    def _submit_answer(self, value):
+        if self._pending_request is None:
+            return
+        messages, request = self.controller.answer(value)
+        self._append_log(messages)
+        self._set_request(request)
+        self._poll_state()
 
     def _fit_view(self):
         rect = self.map_scene.sceneRect()
@@ -256,8 +416,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.map_scene.select_unit(side, unit_id)
 
 
-def launch(state_path):
+def launch(state_path, model_path=None):
     app = QtWidgets.QApplication([])
-    window = ViewerWindow(state_path)
+    window = ViewerWindow(state_path, model_path=model_path)
     window.showMaximized()
     app.exec()

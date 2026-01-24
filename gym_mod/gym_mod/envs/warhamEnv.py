@@ -5,10 +5,10 @@ import matplotlib.pyplot as plt
 import os
 import random
 import re
+from typing import Optional
 
 from ..engine.utils import *
 from ..engine import utils as engine_utils
-from gym_mod.engine.GUIinteract import *
 from gym_mod.engine.mission import (
     MISSION_NAME,
     MAX_BATTLE_ROUNDS,
@@ -18,6 +18,7 @@ from gym_mod.engine.mission import (
 from gym_mod.engine.skills import apply_end_of_command_phase
 from gym_mod.engine.logging_utils import format_unit
 from gym_mod.engine.state_export import write_state_json
+from gym_mod.engine.game_io import get_active_io
 
 # ============================================================
 # 🔧 FIX: resolve string weapons like "Bolt pistol [PISTOL]"
@@ -110,36 +111,23 @@ def player_dice(num=1, max=6):
             return random.randint(1, max)
         return [random.randint(1, max) for _ in range(num)]
 
-    def ask_one():
+    io = get_active_io()
+
+    def ask_one(idx: Optional[int] = None):
+        suffix = f" {idx}/{num}" if idx is not None else ""
         while True:
-            s = input(f"Введи результат броска (1..{max}): ").strip()
-            try:
-                v = int(s)
-            except ValueError:
-                print("❌ Нужно число")
+            v = io.request_int(f"Введи результат броска{suffix} (1..{max}): ", min_value=1, max_value=max)
+            if v is None:
+                io.log("Нужно число в допустимом диапазоне.")
                 continue
             if 1 <= v <= max:
                 return v
-            print(f"❌ Должно быть от 1 до {max}")
+            io.log(f"Должно быть от 1 до {max}.")
 
     if num == 1:
         return ask_one()
 
-    while True:
-        s = input(f"Введи {num} значений (1..{max}) через пробел: ").strip()
-        parts = s.split()
-        if len(parts) != num:
-            print("❌ Неверное количество значений")
-            continue
-        try:
-            vals = [int(x) for x in parts]
-        except ValueError:
-            print("❌ Нужны числа")
-            continue
-        if any(v < 1 or v > max for v in vals):
-            print(f"❌ Все значения должны быть 1..{max}")
-            continue
-        return vals
+    return [ask_one(idx=i + 1) for i in range(num)]
 
 
 def weapon_is_assault(weapon) -> bool:
@@ -311,6 +299,10 @@ class RollLogger:
         self.calls = []
         self.labels = []
         self.has_attack_count_roll = False
+        self._io = get_active_io()
+
+    def _log(self, message: str):
+        self._io.log(message)
 
     def configure_for_weapon(self, weapon: dict):
         # Пытаемся понять, есть ли рандом по количеству выстрелов (Attacks = D6/D3 и т.п.)
@@ -343,13 +335,13 @@ class RollLogger:
     def roll(self, num=1, max=6):
         idx = len(self.calls)
         label = self.labels[idx] if idx < len(self.labels) else f"бросок #{idx+1}"
-        print(f"\n🎲 Бросок {label}: {num}D{max}")
+        self._log(f"\n🎲 Бросок {label}: {num}D{max}")
         res = self.base(num=num, max=max)
         vals = [res] if isinstance(res, int) else list(res)
         self.calls.append({"label": label, "num": num, "max": max, "vals": vals})
         return res
     def print_melee_report(self, weapon: dict, attacker_data: dict, defender_data: dict, dmg_list, effect=None):
-        print("\n📌 --- ОТЧЁТ ПО БОЮ (MELEE) ---")
+        self._log("\n📌 --- ОТЧЁТ ПО БОЮ (MELEE) ---")
 
         # В движке WS/BS обычно берём из профиля оружия (как в 10e)
         ws = _get_int(weapon, ["WS", "Ws", "WeaponSkill", "WS+"], default=None)
@@ -382,20 +374,20 @@ class RollLogger:
             lethal = False
 
         wname = weapon.get("Name", weapon) if isinstance(weapon, dict) else weapon
-        print(f"Оружие: {wname}")
+        self._log(f"Оружие: {wname}")
         if ws is not None:
-            print(f"WS бойца: {ws}+")
+            self._log(f"WS бойца: {ws}+")
         if s is not None and t is not None:
-            print(f"S vs T: {s} vs {t}  -> базово ранение на {_wound_target(s, t)}+")
+            self._log(f"S vs T: {s} vs {t}  -> базово ранение на {_wound_target(s, t)}+")
         if sv is not None:
             inv_txt = f"{inv}+" if inv is not None else "нет"
-            print(f"Save цели: {sv}+ (invul: {inv_txt})")
+            self._log(f"Save цели: {sv}+ (invul: {inv_txt})")
         if ap_val != 0:
-            print(f"AP: {ap_val}")
+            self._log(f"AP: {ap_val}")
         if lethal:
-            print("Абилка: Lethal Hits (6 на попадание = авто-ранение)")
+            self._log("Абилка: Lethal Hits (6 на попадание = авто-ранение)")
         if effect:
-            print(f"Эффект: {effect}")
+            self._log(f"Эффект: {effect}")
 
         off = 1 if self.has_attack_count_roll else 0
         hit_rolls = self.calls[0 + off]["vals"] if len(self.calls) > (0 + off) else []
@@ -461,30 +453,30 @@ class RollLogger:
             if lethal and crit_hits is not None:
                 extra.append(f"crit(6s): {crit_hits} -> авто ран: {auto_wounds}")
             suf = ("  -> " + ", ".join(extra)) if extra else ""
-            print(f"Hit rolls:    {hit_rolls}{suf}")
+            self._log(f"Hit rolls:    {hit_rolls}{suf}")
 
         if wound_rolls:
             if wt is not None:
-                print(f"Wound rolls:  {wound_rolls}  (цель {wt}+) -> wounds: {rolled_wounds}")
+                self._log(f"Wound rolls:  {wound_rolls}  (цель {wt}+) -> wounds: {rolled_wounds}")
             else:
-                print(f"Wound rolls:  {wound_rolls}")
+                self._log(f"Wound rolls:  {wound_rolls}")
 
         if save_rolls:
             if save_target is not None:
                 fs = failed_saves if failed_saves is not None else "??"
-                print(f"Save rolls:   {save_rolls}  (цель {save_target}+) -> failed saves: {fs}")
+                self._log(f"Save rolls:   {save_rolls}  (цель {save_target}+) -> failed saves: {fs}")
             else:
-                print(f"Save rolls:   {save_rolls}")
+                self._log(f"Save rolls:   {save_rolls}")
 
-        print(f"\n✅ Итог по движку: прошло урона = {total_damage}")
-        print("📌 -------------------------\n")
+        self._log(f"\n✅ Итог по движку: прошло урона = {total_damage}")
+        self._log("📌 -------------------------\n")
 
 
 
 
 
     def print_shoot_report(self, weapon: dict, attacker_data: dict, defender_data: dict, dmg_list, effect=None):
-        print("\n📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---")
+        self._log("\n📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---")
 
         # В движке BS/WS берём из профиля оружия (как в 10e)
         bs = _get_int(weapon, ["BS", "Bs", "BallisticSkill", "BS+"], default=None)
@@ -519,11 +511,11 @@ class RollLogger:
         except Exception:
             pass
 
-        print(f"Оружие: {wname}")
+        self._log(f"Оружие: {wname}")
         if bs is not None:
-            print(f"BS оружия: {bs}+")
+            self._log(f"BS оружия: {bs}+")
         if s is not None and t is not None:
-            print(f"S vs T: {s} vs {t}  -> базово ранение на {_wound_target(s, t)}+")
+            self._log(f"S vs T: {s} vs {t}  -> базово ранение на {_wound_target(s, t)}+")
         if sv is not None:
             # В данных проекта часто invul=0 означает "нет инвула".
             inv_txt = "нет"
@@ -534,17 +526,17 @@ class RollLogger:
                         inv_txt = f"{inv_i}+"
                 except Exception:
                     pass
-            print(f"Save цели: {sv}+ (invul: {inv_txt})")
+            self._log(f"Save цели: {sv}+ (invul: {inv_txt})")
 
         if ap_val != 0:
-            print(f"AP: {ap_val}")
+            self._log(f"AP: {ap_val}")
 
         if rf:
-            print(f"Правило: Rapid Fire {rf} (если цель в половине дальности: +{rf} атак)")
+            self._log(f"Правило: Rapid Fire {rf} (если цель в половине дальности: +{rf} атак)")
         if lethal:
-            print("Правило: Lethal Hits (крит-хиты авто-ранят)")
+            self._log("Правило: Lethal Hits (крит-хиты авто-ранят)")
         if effect:
-            print(f"Эффект: {effect}")
+            self._log(f"Эффект: {effect}")
 
         off = 1 if self.has_attack_count_roll else 0
 
@@ -631,33 +623,33 @@ class RollLogger:
            total_damage = 0
 
         if atk_rolls:
-            print(f"\nAttacks roll: {atk_rolls}")
+            self._log(f"\nAttacks roll: {atk_rolls}")
         if hit_rolls:
             extra = ""
             if hits is not None:
                 extra = f"  -> hits: {hits}"
                 if crit_hits is not None and crit_hits > 0:
                     extra += f" (crits: {crit_hits})"
-            print(f"Hit rolls:    {hit_rolls}{extra}")
+            self._log(f"Hit rolls:    {hit_rolls}{extra}")
 
         if wound_rolls:
             if wt is not None and rolled_wounds is not None:
                 if lethal and auto_wounds:
-                    print(f"Wound rolls:  {wound_rolls}  (цель {wt}+) -> rolled wounds: {rolled_wounds} + auto(w/LETHAL): {auto_wounds} = {total_wounds}")
+                    self._log(f"Wound rolls:  {wound_rolls}  (цель {wt}+) -> rolled wounds: {rolled_wounds} + auto(w/LETHAL): {auto_wounds} = {total_wounds}")
                 else:
-                    print(f"Wound rolls:  {wound_rolls}  (цель {wt}+) -> wounds: {rolled_wounds}")
+                    self._log(f"Wound rolls:  {wound_rolls}  (цель {wt}+) -> wounds: {rolled_wounds}")
             else:
-                print(f"Wound rolls:  {wound_rolls}")
+                self._log(f"Wound rolls:  {wound_rolls}")
 
         if save_rolls:
             if save_target is not None:
                 fs = failed_saves if failed_saves is not None else "??"
-                print(f"Save rolls:   {save_rolls}  (цель {save_target}+) -> failed saves: {fs}")
+                self._log(f"Save rolls:   {save_rolls}  (цель {save_target}+) -> failed saves: {fs}")
             else:
-                print(f"Save rolls:   {save_rolls}")
+                self._log(f"Save rolls:   {save_rolls}")
 
-        print(f"\n✅ Итог по движку: прошло урона = {total_damage}")
-        print("📌 -------------------------\n")
+        self._log(f"\n✅ Итог по движку: прошло урона = {total_damage}")
+        self._log("📌 -------------------------\n")
 
 class Warhammer40kEnv(gym.Env):
     def __init__(self, enemy, model, b_len, b_hei):
@@ -689,7 +681,7 @@ class Warhammer40kEnv(gym.Env):
 
         # ✅ 3) Теперь только ОДИН раз создаём spaces.Dict
         self.action_space = spaces.Dict(action_spaces)
-        print("Action keys:", self.action_space.spaces.keys())
+        get_active_io().log(f"Action keys: {self.action_space.spaces.keys()}")
 
         # Initialize game state + board
         self.iter = 0
@@ -794,15 +786,17 @@ class Warhammer40kEnv(gym.Env):
     def _is_verbose(self) -> bool:
         return os.getenv("VERBOSE_LOGS", "0") == "1" or os.getenv("MANUAL_DICE", "0") == "1"
 
+    def _ensure_io(self):
+        if not hasattr(self, "io") or self.io is None:
+            self.io = get_active_io()
+        return self.io
+
     def _log(self, msg: str, verbose_only: bool = False):
         if verbose_only and not self._is_verbose():
             return
         if not self._should_log():
             return
-        if self.playType is True:
-            sendToGUI(msg)
-        else:
-            print(msg)
+        self._ensure_io().log(msg)
 
     def _log_phase(self, side: str, phase: str):
         if not self._should_log():
@@ -900,15 +894,31 @@ class Warhammer40kEnv(gym.Env):
         return ", ".join(self._format_unit_label(side, idx) for idx in indices)
 
     def _get_input(self, prompt: str) -> str:
-        if self.playType is True:
-            sendToGUI(prompt)
-            return recieveGUI()
-        return input(prompt)
+        return str(self._ensure_io().request_choice(prompt, []))
+
+    def _request_choice(self, prompt: str, options: list[str]):
+        return self._ensure_io().request_choice(prompt, options)
+
+    def _request_bool(self, prompt: str):
+        return self._ensure_io().request_bool(prompt)
+
+    def _request_int(self, prompt: str, min_value: Optional[int] = None, max_value: Optional[int] = None):
+        return self._ensure_io().request_int(prompt, min_value=min_value, max_value=max_value)
+
+    def _request_direction(self, prompt: str, options: list[str]):
+        return self._ensure_io().request_direction(prompt, options)
 
     def _prompt_choice(self, prompt: str, allowed: dict, normalize: dict, allow_quit: bool = True):
         allowed_labels = ", ".join(allowed.values())
+        options = list(allowed.keys())
         while True:
-            response = self._get_input(prompt).strip().lower()
+            response = self._request_choice(prompt, options)
+            if response is None:
+                if allow_quit:
+                    return None
+                self._log(f"Неверный ввод (доступно: {allowed_labels}).")
+                continue
+            response = str(response).strip().lower()
             if allow_quit and response in ("quit", "q"):
                 return None
             if response in normalize:
@@ -918,12 +928,10 @@ class Warhammer40kEnv(gym.Env):
             self._log(f"Неверный ввод (доступно: {allowed_labels}): {response}")
 
     def _prompt_yes_no(self, prompt: str, allow_quit: bool = True):
-        normalize = {"y": "yes", "n": "no", "yes": "yes", "no": "no"}
-        allowed = {"yes": "yes", "no": "no"}
-        response = self._prompt_choice(prompt, allowed, normalize, allow_quit=allow_quit)
-        if response is None:
+        response = self._request_bool(prompt)
+        if response is None and allow_quit:
             return None
-        return response == "yes"
+        return bool(response)
 
     def _unit_has_keyword(self, unit_data: dict, keyword: str) -> bool:
         if not unit_data:
@@ -1065,7 +1073,14 @@ class Warhammer40kEnv(gym.Env):
                 return
             if not strat:
                 return
-            choice = self._get_input("Введите номер юнита для Overwatch: ").strip()
+            choice = self._request_choice(
+                "Введите номер юнита для Overwatch: ",
+                [str(unit_id) for unit_id in ids],
+            )
+            if choice is None:
+                self.game_over = True
+                return
+            choice = str(choice).strip()
             if not is_num(choice) or int(choice) - (21 if defender_side == "model" else 11) not in candidates:
                 self._log_phase_msg(side_label, phase, "Overwatch отменён: выбран недоступный юнит.")
                 return
@@ -1181,7 +1196,15 @@ class Warhammer40kEnv(gym.Env):
                 return
             if not strat:
                 return
-            choice = self._get_input("Введите номер юнита для Heroic Intervention: ").strip()
+            ids = [c + (21 if defender_side == "model" else 11) for c in eligible]
+            choice = self._request_choice(
+                "Введите номер юнита для Heroic Intervention: ",
+                [str(unit_id) for unit_id in ids],
+            )
+            if choice is None:
+                self.game_over = True
+                return
+            choice = str(choice).strip()
             if not is_num(choice) or int(choice) - (21 if defender_side == "model" else 11) not in eligible:
                 self._log_phase_msg(side_label, phase, "Heroic Intervention отменён: выбран недоступный юнит.")
                 return
@@ -1210,10 +1233,10 @@ class Warhammer40kEnv(gym.Env):
 
     def _prompt_int(self, prompt: str, min_val: int, max_val: int, allow_quit: bool = True):
         while True:
-            response = self._get_input(prompt).strip().lower()
-            if allow_quit and response in ("quit", "q"):
+            response = self._request_int(prompt, min_value=min_val, max_value=max_val)
+            if response is None and allow_quit:
                 return None
-            if response.isdigit():
+            if response is not None:
                 value = int(response)
                 if min_val <= value <= max_val:
                     return value
@@ -1814,14 +1837,17 @@ class Warhammer40kEnv(gym.Env):
                             response = False
                             while response is False:
                                 targets_label = self._format_unit_choices("model", shootAble.astype(int).tolist())
-                                shoot = self._get_input(
-                                    f"Выберите цель для стрельбы. Стреляет: {unit_label}. Доступные цели: {targets_label}. Введите ID цели: "
-                                ).strip()
-                                if shoot.lower() in ("quit", "q"):
+                                options = [str(21 + int(idx)) for idx in shootAble.astype(int).tolist()]
+                                shoot = self._request_choice(
+                                    f"Выберите цель для стрельбы. Стреляет: {unit_label}. Доступные цели: {targets_label}. Введите ID цели: ",
+                                    options,
+                                )
+                                if shoot is None:
                                     self.game_over = True
                                     return None
-                                if is_num(shoot) is True and int(shoot) - 21 in shootAble:
-                                    idOfE = int(shoot) - 21
+                                shoot_value = str(shoot).strip()
+                                if is_num(shoot_value) is True and int(shoot_value) - 21 in shootAble:
+                                    idOfE = int(shoot_value) - 21
                                     effect = self._maybe_use_smokescreen(
                                         defender_side="model",
                                         defender_idx=idOfE,
@@ -2057,15 +2083,18 @@ class Warhammer40kEnv(gym.Env):
                     response = False
                     while response is False:
                         targets_label = self._format_unit_choices("model", charg.astype(int).tolist())
-                        attk = self._get_input(
-                            f"Выберите цель для чарджа. Доступные цели: {targets_label}. Введите ID цели: "
-                        ).strip()
-                        if attk.lower() in ("quit", "q"):
+                        options = [str(21 + int(idx)) for idx in charg.astype(int).tolist()]
+                        attk = self._request_choice(
+                            f"Выберите цель для чарджа. Доступные цели: {targets_label}. Введите ID цели: ",
+                            options,
+                        )
+                        if attk is None:
                             self.game_over = True
                             return None
-                        if is_num(attk) is True and int(attk) - 21 in charg:
+                        attk_value = str(attk).strip()
+                        if is_num(attk_value) is True and int(attk_value) - 21 in charg:
                             response = True
-                            j = int(attk) - 21
+                            j = int(attk_value) - 21
                             self._log("Бросок 2D6...", verbose_only=True)
                             roll = player_dice(num=2)
                             self._log(f"Бросок: {roll[0]} и {roll[1]}", verbose_only=True)
@@ -2594,555 +2623,29 @@ class Warhammer40kEnv(gym.Env):
         info = self.get_info()
         return self._get_observation(), reward, self.game_over, res, info
 
-    # for a real person playing
-    def player(self):
-        self.enemyCP += 1
-        self.modelCP += 1
-
-        if self.playType is False:
-            print(self.get_info())
-        else:
-            info = self.get_info()
-            moreInfo = "Здоровье MODEL: {}, здоровье PLAYER: {}\nCP MODEL: {}, CP PLAYER: {}\nVP MODEL: {}, VP PLAYER: {}\n".format(
-                info["model health"],
-                info["player health"],
-                info["modelCP"],
-                info["playerCP"],
-                info["model VP"],
-                info["player VP"],
-            )
-
-        if self.playType is not False:
-            if self.modelUpdates != "":
-                sendToGUI(moreInfo + self.modelUpdates + "\nПродолжить? (y/n): ")
-            else:
-                sendToGUI(moreInfo + "\nПродолжить? (y/n): ")
-            ans = recieveGUI()
-            response = False
-            while response is False:
-                if ans.lower() in ("y", "yes"):
-                    response = True
-                    self.modelUpdates = ""
-                elif ans.lower() in ("n", "no"):
-                    self.game_over = True
-                    info = self.get_info
-                    return self.game_over, info
-                else:
-                    sendToGUI("Введите y/yes или n/no: ")
-                    ans = recieveGUI()
-
-        for i in range(len(self.enemy_health)):
-            playerName = i + 11
-            unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
-            pos_before = tuple(self.enemy_coords[i])
-            if self.playType is False:
-                print("Юнит:", unit_label)
-            else:
-                sendToGUI("Юнит: {}".format(unit_label))
-
-            battleSh = False
-            if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.unit_health[i] > 0:
-                if self.playType is False:
-                    print(f"{unit_label}: ниже половины состава, тест Battle-shock.")
-                    print("Бросок 2D6...")
-                    diceRoll = player_dice(num=2)
-                    print("Бросок:", diceRoll[0], diceRoll[1])
-                else:
-                    diceRoll = player_dice(num=2)
-                    sendToGUI(
-                        f"{unit_label}: ниже половины состава, тест Battle-shock.\nБросок 2D6...\nРезультат: {diceRoll[0]} и {diceRoll[1]}"
-                    )
-
-                if sum(diceRoll) >= self.enemy_data[i]["Ld"]:
-                    if self.playType is False:
-                        print("Тест Battle-shock пройден.")
-                    else:
-                        sendToGUI("Тест Battle-shock пройден.")
-                    self.enemyOC[i] = self.enemy_data[i]["OC"]
-                else:
-                    battleSh = True
-                    if self.playType is False:
-                        print("Тест Battle-shock провален.")
-                    else:
-                        sendToGUI("Тест Battle-shock провален.")
-
-                    response = False
-                    self.enemyOC[i] = 0
-                    if self.enemyCP - 1 >= 0:
-                        if self.playType is False:
-                            strat = input("Использовать стратагему Insane Bravery (1 CP)? (y/n): ")
-                        else:
-                            sendToGUI(f"{unit_label}. Использовать стратагему Insane Bravery (1 CP)? (y/n): ")
-                            strat = recieveGUI()
-
-                        while response is False:
-                            if strat.lower() in ("y", "yes"):
-                                response = True
-                                battleSh = False
-                                self.enemyCP -= 1
-                                self.enemyOC[i] = self.enemy_data[i]["OC"]
-                            elif strat.lower() in ("n", "no"):
-                                response = True
-                            elif strat.lower() == "quit":
-                                self.game_over = True
-                                info = self.get_info()
-                                return self.game_over, info
-                            elif strat.lower() in ("?", "help"):
-                                if self.playType is False:
-                                    print(
-                                        "Insane Bravery стоит 1 CP и применяется, когда юнит провалил тест Battle-shock. При использовании тест считается пройденным."
-                                    )
-                                    strat = input("Использовать стратагему Insane Bravery? (y/n): ")
-                                else:
-                                    sendToGUI(
-                                        "Insane Bravery стоит 1 CP и применяется, когда юнит провалил тест Battle-shock. При использовании тест считается пройденным.\nИспользовать стратагему Insane Bravery? (y/n): "
-                                    )
-                                    strat = recieveGUI()
-                            else:
-                                if self.playType is False:
-                                    strat = input("Допустимые ответы: y/yes/n/no: ")
-                                else:
-                                    sendToGUI("Допустимые ответы: y/yes/n/no: ")
-                                    strat = recieveGUI()
-
-            if self.enemyInAttack[i][0] == 0 and self.enemy_health[i] > 0:
-                self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
-                for j in range(len(self.enemy_health)):
-                    if self.enemy_coords[i] == self.unit_coords[j]:
-                        self.enemy_coords[i][0] -= 1
-
-                self.updateBoard()
-                self.showBoard()
-
-                if self.playType is False:
-                    dire = input(f"Ход юнита: {unit_label}. Выберите направление (up/down/left/right/none): ")
-                else:
-                    sendToGUI(
-                        f"Ход юнита: {unit_label}. Выберите направление (up/down/left/right/none): "
-                    )
-                    dire = recieveGUI()
-
-                if dire.lower() == "quit":
-                    self.game_over = True
-                    info = self.get_info()
-                    return self.game_over, info
-
-                # ======= FIX: Advance is optional, move distance is exactly what you choose =======
-                advanced = False
-                move_num = 0
-
-                if dire.lower() != "none":
-                    if self.playType is False:
-                        adv = input("Сделать Advance? (y/n): ").strip().lower()
-                        if adv in ("y", "yes"):
-                            advanced = True
-                            print("Бросок 1D6 на Advance...")
-                            roll = player_dice()
-                            print("Бросок:", roll)
-                            movement_cap = self.enemy_data[i]["Movement"] + roll
-                        else:
-                            movement_cap = self.enemy_data[i]["Movement"]
-
-                        move_len = input(f"На сколько дюймов двигаться (0..{movement_cap}): ")
-                    else:
-                        # GUI branch оставляем максимально похожим на старую логику
-                        adv = "y"
-                        advanced = True
-                        roll = player_dice()
-                        movement_cap = self.enemy_data[i]["Movement"] + roll
-                        sendToGUI(f"На сколько дюймов двигаться (0..{movement_cap}): ")
-                        move_len = recieveGUI()
-
-                    response = False
-                    while response is False:
-                        if is_num(move_len) is True:
-                            if int(move_len) <= movement_cap:
-                                move_num = int(move_len)
-                                response = True
-                            else:
-                                if self.playType is False:
-                                    move_len = input("Вне диапазона, попробуйте снова: ")
-                                else:
-                                    sendToGUI("Вне диапазона, попробуйте снова: ")
-                                    move_len = recieveGUI()
-                        elif move_len.lower() in ("quit", "q"):
-                            self.game_over = True
-                            info = self.get_info()
-                            return self.game_over, info
-                        else:
-                            if self.playType is False:
-                                move_len = input("Это не число, попробуйте снова: ")
-                            else:
-                                sendToGUI("Это не число, попробуйте снова: ")
-                                move_len = recieveGUI()
-
-                # apply movement using move_num (NOT cap)
-                response = False
-                while response is False:
-                    if dire.lower() == "down":
-                        self.enemy_coords[i][0] += move_num
-                        response = True
-                    elif dire.lower() == "up":
-                        self.enemy_coords[i][0] -= move_num
-                        response = True
-                    elif dire.lower() == "left":
-                        self.enemy_coords[i][1] -= move_num
-                        response = True
-                    elif dire.lower() == "right":
-                        self.enemy_coords[i][1] += move_num
-                        response = True
-                    elif dire.lower() == "none":
-                        response = True
-                    elif dire.lower() == "quit":
-                        self.game_over = True
-                        info = self.get_info()
-                        return self.game_over, info
-                    else:
-                        if self.playType is False:
-                            dire = input("Неверный ввод (up/down/left/right): ")
-                        else:
-                            sendToGUI("Неверный ввод (up/down/left/right): ")
-                            dire = recieveGUI()
-                        response = False
-
-                # bounds + collision
-                self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
-                for j in range(len(self.enemy_health)):
-                    if self.enemy_coords[i] == self.unit_coords[j]:
-                        self.enemy_coords[i][0] -= 1
-
-                self.updateBoard()
-                self.showBoard()
-
-                pos_after = tuple(self.enemy_coords[i])
-                if pos_before != pos_after:
-                    self._resolve_overwatch(
-                        defender_side="model",
-                        moving_unit_side="enemy",
-                        moving_idx=i,
-                        phase="movement",
-                        manual=False,
-                    )
-
-                self.updateBoard()
-                self.showBoard()
-
-                # ======= Shooting phase (Assault rule after Advance) =======
-                if self.enemy_weapon[i] != "None":
-                    if self.playType is False:
-                        print("Начинается фаза стрельбы!")
-                    else:
-                        sendToGUI("Начинается фаза стрельбы!")
-
-                    if advanced and not weapon_is_assault(self.enemy_weapon[i]):
-                        if self.playType is False:
-                            print("Advance без Assault — стрельба пропущена.")
-                        else:
-                            sendToGUI("Advance без Assault — стрельба пропущена.")
-                    else:
-                        shootAble = np.array([])
-                        for j in range(len(self.unit_health)):
-                            if distance(self.enemy_coords[i], self.unit_coords[j]) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
-                                shootAble = np.append(shootAble, j)
-
-                        if len(shootAble) > 0:
-                            response = False
-                            while response is False:
-                                if self.playType is False:
-                                    targets_label = self._format_unit_choices("model", shootAble.astype(int).tolist())
-                                    shoot = input(f"Выберите цель для стрельбы. Доступные цели: {targets_label}. Введите ID цели: ")
-                                else:
-                                    targets_label = self._format_unit_choices("model", shootAble.astype(int).tolist())
-                                    sendToGUI(f"Выберите цель для стрельбы. Стреляет: {unit_label}. Доступные цели: {targets_label}. Введите ID цели: ")
-                                    shoot = recieveGUI()
-
-                                if is_num(shoot) is True and int(shoot) - 21 in shootAble:
-                                    idOfE = int(shoot) - 21
-                                    effect = self._maybe_use_smokescreen(
-                                        defender_side="model",
-                                        defender_idx=idOfE,
-                                        phase="shooting",
-                                        manual=False,
-                                    )
-
-                                    logger = RollLogger(player_dice)
-
-                                    dmg, modHealth = attack(
-                                        self.enemy_health[i],
-                                        self.enemy_weapon[i],
-                                        self.enemy_data[i],
-                                        self.unit_health[idOfE],
-                                        self.unit_data[idOfE],
-                                        effects=effect,
-                                        distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfE]),
-                                        roller=logger.roll,
-                                    )
-
-                                    self.unit_health[idOfE] = modHealth
-                                    if self.playType is False:
-                                        print(
-                                            f"{unit_label} нанёс {sum(dmg)} урона по {self._format_unit_label('model', idOfE)}"
-                                        )
-                                    else:
-                                        sendToGUI(
-                                            f"{unit_label} нанёс {sum(dmg)} урона по {self._format_unit_label('model', idOfE)}"
-                                        )
-
-                                    logger.print_shoot_report(
-                                        weapon=self.enemy_weapon[i],
-                                        attacker_data=self.enemy_data[i],
-                                        defender_data=self.unit_data[idOfE],
-                                        dmg_list=dmg,
-                                        effect=effect,
-                                    )
-                                    response = True
-                                elif shoot == "quit":
-                                    self.game_over = True
-                                    info = self.get_info()
-                                    return self.game_over, info
-                                else:
-                                    if self.playType is False:
-                                        print("Недоступная цель.")
-                                    else:
-                                        sendToGUI("Недоступная цель.")
-                else:
-                    if self.playType is False:
-                        print("Нет доступного оружия для стрельбы.")
-                    else:
-                        sendToGUI("Нет доступного оружия для стрельбы.")
-
-                # ======= Charge phase (no charge after Advance) =======
-                if self.playType is False:
-                    print("Начинается фаза чарджа!")
-                else:
-                    sendToGUI("Начинается фаза чарджа!")
-
-                if advanced:
-                    if self.playType is False:
-                        print("Advance — чардж невозможен.")
-                    else:
-                        sendToGUI("Advance — чардж невозможен.")
-                else:
-                    charg = np.array([])
-                    for j in range(len(self.unit_health)):
-                        if distance(self.unit_coords[j], self.enemy_coords[i]) <= 12 and self.unitInAttack[j][0] == 0 and self.unit_health[j] > 0:
-                            charg = np.append(charg, j)
-
-                    if len(charg) > 0:
-                        response = False
-                        while response is False:
-                            if self.playType is False:
-                                targets_label = self._format_unit_choices("model", charg.astype(int).tolist())
-                                attk = input(f"Выберите цель для чарджа. Доступные цели: {targets_label}. Введите ID цели: ")
-                            else:
-                                targets_label = self._format_unit_choices("model", charg.astype(int).tolist())
-                                sendToGUI(f"Выберите цель для чарджа. Стреляет: {unit_label}. Доступные цели: {targets_label}. Введите ID цели: ")
-                                attk = recieveGUI()
-
-                            if is_num(attk) is True and int(attk) - 21 in charg:
-                                response = True
-                                j = int(attk) - 21
-                                if self.playType is False:
-                                    print("Бросок 2D6...")
-                                    roll = player_dice(num=2)
-                                    print("Бросок:", roll[0], "и", roll[1])
-                                else:
-                                    sendToGUI("Бросок 2D6...")
-                                    roll = player_dice(num=2)
-                                    sendToGUI("Бросок: {} и {}".format(roll[0], roll[1]))
-
-                                dist_to_target = distance(self.enemy_coords[i], self.unit_coords[j])
-                                self._log_unit_phase(
-                                    self._side_label("enemy", manual=True),
-                                    "charge",
-                                    playerName,
-                                    i,
-                                    f"Charge объявлен по цели {self._format_unit_label('model', j)}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {roll[0]} + {roll[1]} = {sum(roll)}.",
-                                )
-                                if distance(self.enemy_coords[i], self.unit_coords[j]) - sum(roll) <= 5:
-                                    if self.playType is False:
-                                        print(f"{unit_label} успешно зачарджил {self._format_unit_label('model', j)}")
-                                    else:
-                                        sendToGUI(
-                                            f"{unit_label} успешно зачарджил {self._format_unit_label('model', j)}"
-                                        )
-
-                                    self.enemyInAttack[i][0] = 1
-                                    self.enemyInAttack[i][1] = j
-
-                                    self.enemy_coords[i][0] = self.unit_coords[j][0] + 1
-                                    self.enemy_coords[i][1] = self.unit_coords[j][1] + 1
-                                    self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
-
-                                    # 10e: Charge не наносит урон. Урон — в Fight Phase
-                                    self.enemyCharged[i] = 1
-                                    self.updateBoard()
-
-                                    self.unitInAttack[j][0] = 1
-                                    self.unitInAttack[j][1] = i
-                                    pos_after = tuple(self.enemy_coords[i])
-                                    self._log_unit_phase(
-                                        self._side_label("enemy", manual=True),
-                                        "charge",
-                                        playerName,
-                                        i,
-                                        f"Движение чарджа: {pos_before} -> {pos_after}, в контакте={self.enemyInAttack[i][0] == 1}.",
-                                    )
-                                    # 10e: Heroic Intervention доступен защитнику после успешного charge move.
-                                    self._resolve_heroic_intervention(
-                                        defender_side="model",
-                                        charging_side="enemy",
-                                        charging_idx=i,
-                                        phase="charge",
-                                        manual=False,
-                                    )
-                                else:
-                                    if self.playType is False:
-                                        print(
-                                            f"{unit_label} не смог зачарджить {self._format_unit_label('model', j)}"
-                                        )
-                                    else:
-                                        sendToGUI(
-                                            f"{unit_label} не смог зачарджить {self._format_unit_label('model', j)}"
-                                        )
-
-                            elif attk == "quit":
-                                self.game_over = True
-                                info = self.get_info()
-                                return self.game_over, info
-                            else:
-                                if self.playType is False:
-                                    print("Недоступная цель.")
-                                else:
-                                    sendToGUI("Недоступная цель.")
-                    else:
-                        if self.playType is False:
-                            print("Нет доступных целей для чарджа.")
-                        else:
-                            sendToGUI("Нет доступных целей для чарджа.")
-
-            elif self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
-                idOfE = self.enemyInAttack[i][1]
-                response = False
-                while response is False:
-                    if self.playType is False:
-                        fallB = input(f"{unit_label}. Отступить (fallback)? (y/n): ")
-                    else:
-                        sendToGUI(f"{unit_label}. Отступить (fallback)? (y/n): ")
-                        fallB = recieveGUI()
-
-                    if fallB.lower() in ("n", "no"):
-                        response = True
-
-                        # 10e: здесь НЕ атакуем. Атаки происходят в Fight Phase.
-                        if self.playType is False:
-                            print(
-                                f"{unit_label} остаётся в бою с {self._format_unit_label('model', idOfE)} (будет драться в фазе боя)"
-                            )
-                        else:
-                            sendToGUI(
-                                f"{unit_label} остаётся в бою с {self._format_unit_label('model', idOfE)} (будет драться в фазе боя)"
-                            )
-
-                        # Ничего не меняем: они остаются в бою
-                        # self.enemyInAttack / self.unitInAttack остаются как есть
-                        continue
-
-                        if self.unit_health[idOfE] <= 0:
-
-                            if self.playType is False:
-                                print(f"{self._format_unit_label('model', idOfE)} уничтожен")
-                            else:
-                                sendToGUI(f"{self._format_unit_label('model', idOfE)} уничтожен")
-
-                            self.enemyInAttack[i][0] = 0
-                            self.enemyInAttack[i][1] = 0
-                            self.unitInAttack[idOfE][0] = 0
-                            self.unitInAttack[idOfE][1] = 0
-
-                    elif fallB.lower() in ("y", "yes"):
-                        response = True
-                        if self.playType is False:
-                            print(f"{unit_label} отступил из боя с {self._format_unit_label('model', idOfE)}")
-                        else:
-                            sendToGUI(f"{unit_label} отступил из боя с {self._format_unit_label('model', idOfE)}")
-
-                        if battleSh is True:
-                            diceRoll = dice()
-                            if diceRoll < 3:
-                                self.enemy_health[i] -= self.enemy_data[i]["W"]
-
-                        self.enemy_coords[i][0] += self.enemy_data[i]["Movement"]
-                        self.enemyInAttack[i][0] = 0
-                        self.enemyInAttack[i][1] = 0
-
-                        self.unitInAttack[idOfE][0] = 0
-                        self.unitInAttack[idOfE][1] = 0
-
-                    elif fallB.lower() == "quit":
-                        self.game_over = True
-                        info = self.get_info()
-                        return self.game_over, info
-                    else:
-                        if self.playType is False:
-                            fallB = input("Введите y/yes или n/no: ")
-                        else:
-                            sendToGUI("Введите y/yes или n/no: ")
-                            fallB = recieveGUI()
-
-            elif self.enemy_health[i] == 0:
-                if self.playType is False:
-                    print(f"{unit_label} уничтожен")
-                else:
-                    sendToGUI(f"{unit_label} уничтожен")
-
-        if self.modelStrat["overwatch"] != -1:
-            self.modelStrat["overwatch"] = -1
-        if self.modelStrat["smokescreen"] != -1:
-            self.modelStrat["smokescreen"] = -1
-
-        apply_end_of_battle(self, log_fn=self._log)
-
-        for k in range(len(self.enemy_health)):
-            if self.enemy_health[k] < 0:
-                self.enemy_health[k] = 0
-
-        self.iter += 1
-        info = self.get_info()
-        return self.game_over, info
-
     def player(self):
         self.active_side = "enemy"
 
         info = self.get_info()
-        if self.playType is False:
-            self._log(str(info))
+        self._log(str(info))
+        more_info = "Здоровье MODEL: {}, здоровье PLAYER: {}\nCP MODEL: {}, CP PLAYER: {}\nVP MODEL: {}, VP PLAYER: {}\n".format(
+            info["model health"],
+            info["player health"],
+            info["modelCP"],
+            info["playerCP"],
+            info["model VP"],
+            info["player VP"],
+        )
+        if self.modelUpdates:
+            self._log(more_info + self.modelUpdates)
         else:
-            moreInfo = "Здоровье MODEL: {}, здоровье PLAYER: {}\nCP MODEL: {}, CP PLAYER: {}\nVP MODEL: {}, VP PLAYER: {}\n".format(
-                info["model health"],
-                info["player health"],
-                info["modelCP"],
-                info["playerCP"],
-                info["model VP"],
-                info["player VP"],
-            )
-            if self.modelUpdates != "":
-                sendToGUI(moreInfo + self.modelUpdates + "\nПродолжить? (y/n): ")
-            else:
-                sendToGUI(moreInfo + "\nПродолжить? (y/n): ")
-            ans = recieveGUI()
-            response = False
-            while response is False:
-                if ans.lower() in ("y", "yes"):
-                    response = True
-                    self.modelUpdates = ""
-                elif ans.lower() in ("n", "no"):
-                    self.game_over = True
-                    info = self.get_info()
-                    return self.game_over, info
-                else:
-                    sendToGUI("Введите y/yes или n/no: ")
-                    ans = recieveGUI()
+            self._log(more_info)
+        continue_game = self._request_bool("Продолжить? (y/n): ")
+        if continue_game is None or not continue_game:
+            self.game_over = True
+            info = self.get_info()
+            return self.game_over, info
+        self.modelUpdates = ""
 
         battle_shock = self.command_phase("enemy", manual=True)
         if self.game_over:

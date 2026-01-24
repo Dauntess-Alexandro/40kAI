@@ -1,8 +1,7 @@
 import os
 import csv
 import numpy as np
-from gym_mod.engine.GUIinteract import *
-import time
+from gym_mod.engine.game_io import get_active_io
 
 from gym_mod.engine.deployment import get_random_free_deploy_coord
 
@@ -71,58 +70,25 @@ class Unit:
 
     def selectUnitPos(self, xmin, xmax, ymin, ymax):
         xmin, xmax, ymin, ymax = int(xmin), int(xmax), int(ymin), int(ymax)
-
-        if self.playInGUI is False:
-            coords = input("Enter the coordinates (example: 10,10): ")
-        else:
-            sendToGUI("Enter the coordinates (example: 10,10): ")
-            coords = recieveGUI()
+        io = get_active_io()
 
         run = True
         while run:
-            if len(coords) == 0 or coords[0].isnumeric() is not True:
-                if self.playInGUI is False:
-                    coords = input("Use the format: x,y: ")
-                else:
-                    sendToGUI("Use the format: x,y: ")
-                    coords = recieveGUI()
+            xi = io.request_int("Введите координату X: ", min_value=xmin, max_value=xmax)
+            yi = io.request_int("Введите координату Y: ", min_value=ymin, max_value=ymax)
+            if xi is None or yi is None:
+                io.log("Нужны корректные координаты в пределах поля.")
+                continue
+            if xmin <= xi <= xmax and ymin <= yi <= ymax:
+                run = False
+                self.unit_coords[0] = xi
+                self.unit_coords[1] = yi
             else:
-                x = ""
-                y = ""
-                switch = 0
-                for i in range(len(coords)):
-                    if coords[i].isnumeric() is not True:
-                        switch = 1
-                    elif switch == 0:
-                        x += coords[i]
-                    elif switch == 1:
-                        y += coords[i]
-
-                if x == "" or y == "":
-                    if self.playInGUI is False:
-                        coords = input("Use the format: x,y: ")
-                    else:
-                        sendToGUI("Use the format: x,y: ")
-                        coords = recieveGUI()
-                    continue
-
-                xi = int(x)
-                yi = int(y)
-
-                if xi >= xmin and xi <= xmax and yi >= ymin and yi <= ymax:
-                    run = False
-                    self.unit_coords[0] = xi
-                    self.unit_coords[1] = yi
-                else:
-                    if self.playInGUI is False:
-                        coords = input("Not in bounds, try again: ")
-                    else:
-                        sendToGUI(
-                            "Not in bounds (xmin: {}, xmax: {}, ymin: {}, ymax: {}), try again:".format(
-                                xmin, xmax, ymin, ymax
-                            )
-                        )
-                        coords = recieveGUI()
+                io.log(
+                    "Координаты вне поля (xmin: {}, xmax: {}, ymin: {}, ymax: {}). Повторите ввод.".format(
+                        xmin, xmax, ymin, ymax
+                    )
+                )
 
     def deployUnit(self, unitType, occupied=None):
         # --- FIX: убедимся, что размеры поля не нулевые ---

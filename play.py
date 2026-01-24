@@ -9,7 +9,7 @@ warnings.filterwarnings("ignore")
 
 from model.DQN import *
 from model.utils import *
-from gym_mod.engine.GUIinteract import *
+from gym_mod.engine.game_io import ConsoleIO, set_active_io
 from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
 from gym_mod.envs.warhamEnv import roll_off_attacker_defender
 
@@ -57,12 +57,12 @@ playInGUI = False
 if sys.argv[2] == "True":
     playInGUI = True
 
+io = ConsoleIO()
+set_active_io(io)
+
 
 def _log(msg: str):
-    if playInGUI:
-        sendToGUI(msg)
-    else:
-        print(msg)
+    io.log(msg)
 
 
 verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
@@ -148,17 +148,16 @@ isdone = False
 i = 0
 
 if playInGUI == True:
-    env.reset(m=model, e=enemy, playType = playInGUI, Type="big", trunc=True)
+    env.reset(m=model, e=enemy, playType=playInGUI, Type="big", trunc=True)
 else:
-    env.reset(m=model, e=enemy, playType = playInGUI, Type="big", trunc=False)
+    env.reset(m=model, e=enemy, playType=playInGUI, Type="big", trunc=False)
+
+env.io = io
 
 reward = 0
-if playInGUI == False:
-    print("\nInstructions:\n")
-    print("The player (you) controls units starting with 1 (i.e. 11, 12, etc)")
-    print("The model controls units starting with 2 (i.e. 21, 22, etc)\n")
-else:
-    sendToGUI("\nInstructions:\nThe player (you) controls units starting with 1 (i.e. 11, 12, etc)\nThe model controls units starting with 2 (i.e. 21, 22, etc)\n")
+io.log("\nИнструкции:\n")
+io.log("Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.)")
+io.log("Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.)\n")
 
 while isdone == False:
     done, info = env.player()
@@ -174,22 +173,13 @@ while isdone == False:
 
         board = env.render()
         message = "Iteration {} ended with reward {}, Player health {}, Model health {}".format(i, reward, enemy_health, unit_health)
-        if playInGUI == False:
-            print(message)
-        else:
-            sendToGUI(message)
+        io.log(message)
         next_state = torch.tensor(next_observation, dtype=torch.float32, device=device).unsqueeze(0)
         state = next_state
     if done == True:
         if reward > 0:
-            if playInGUI == False:
-                print("model won!")
-            else:
-                sendToGUI("model won!")
+            io.log("Модель победила!")
         else:
-            if playInGUI == False:
-                print("you won!")
-            else:
-                sendToGUI("you won!")
+            io.log("Вы победили!")
         isdone = True
     i+=1

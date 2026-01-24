@@ -1,0 +1,187 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional, List
+import os
+import threading
+import queue
+
+
+LOG_DEFAULT_PATH = os.path.join(os.getcwd(), "gui", "response.txt")
+
+
+@dataclass
+class Request:
+    kind: str
+    prompt: str
+    options: Optional[List[str]] = None
+    min_value: Optional[int] = None
+    max_value: Optional[int] = None
+
+
+class BaseIO:
+    def log(self, message: str) -> None:
+        raise NotImplementedError
+
+    def request_bool(self, prompt: str) -> Optional[bool]:
+        raise NotImplementedError
+
+    def request_int(self, prompt: str, min_value: Optional[int] = None, max_value: Optional[int] = None):
+        raise NotImplementedError
+
+    def request_choice(self, prompt: str, options: list[str]):
+        raise NotImplementedError
+
+    def request_direction(self, prompt: str, options: list[str]):
+        raise NotImplementedError
+
+
+def _append_log_line(message: str, path: Optional[str] = None) -> None:
+    if message is None:
+        return
+    log_path = path or LOG_DEFAULT_PATH
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    with open(log_path, "a", encoding="utf-8") as handle:
+        handle.write(message.rstrip("\n") + "\n")
+
+
+class ConsoleIO(BaseIO):
+    def __init__(self, log_path: Optional[str] = None):
+        self.log_path = log_path or LOG_DEFAULT_PATH
+
+    def log(self, message: str) -> None:
+        if message is None:
+            return
+        print(message)
+        _append_log_line(message, self.log_path)
+
+    def request_bool(self, prompt: str) -> Optional[bool]:
+        while True:
+            response = input(prompt).strip().lower()
+            if response in ("y", "yes", "да", "д"):
+                return True
+            if response in ("n", "no", "нет", "н"):
+                return False
+            if response in ("q", "quit"):
+                return None
+            self.log("Неверный ввод: нужно Да/Нет.")
+
+    def request_int(self, prompt: str, min_value: Optional[int] = None, max_value: Optional[int] = None):
+        while True:
+            response = input(prompt).strip()
+            if response.lower() in ("q", "quit"):
+                return None
+            try:
+                value = int(response)
+            except ValueError:
+                self.log("Неверный ввод: нужно число.")
+                continue
+            if min_value is not None and value < min_value:
+                self.log(f"Значение меньше минимума {min_value}.")
+                continue
+            if max_value is not None and value > max_value:
+                self.log(f"Значение больше максимума {max_value}.")
+                continue
+            return value
+
+    def request_choice(self, prompt: str, options: list[str]):
+        response = input(prompt).strip()
+        if response.lower() in ("q", "quit"):
+            return None
+        return response
+
+    def request_direction(self, prompt: str, options: list[str]):
+        response = input(prompt).strip().lower()
+        if response in ("q", "quit"):
+            return None
+        return response
+
+
+class GuiIO(BaseIO):
+    def __init__(
+        self,
+        request_queue: queue.Queue,
+        answer_queue: queue.Queue,
+        log_path: Optional[str] = None,
+    ):
+        self.request_queue = request_queue
+        self.answer_queue = answer_queue
+        self.log_path = log_path or LOG_DEFAULT_PATH
+        self._messages: list[str] = []
+        self._lock = threading.Lock()
+
+    def consume_messages(self) -> list[str]:
+        with self._lock:
+            messages = list(self._messages)
+            self._messages.clear()
+        return messages
+
+    def log(self, message: str) -> None:
+        if message is None:
+            return
+        with self._lock:
+            self._messages.append(message)
+        _append_log_line(message, self.log_path)
+
+    def _wait_for_answer(self):
+        return self.answer_queue.get()
+
+    def request_bool(self, prompt: str) -> Optional[bool]:
+        request = Request(kind="bool", prompt=prompt, options=["Да", "Нет"])
+        self.request_queue.put(request)
+        answer = self._wait_for_answer()
+        if isinstance(answer, bool):
+            return answer
+        if isinstance(answer, str):
+            lowered = answer.strip().lower()
+            if lowered in ("y", "yes", "да", "д"):
+                return True
+            if lowered in ("n", "no", "нет", "н"):
+                return False
+            if lowered in ("q", "quit"):
+                return None
+        return None
+
+    def request_int(self, prompt: str, min_value: Optional[int] = None, max_value: Optional[int] = None):
+        request = Request(kind="int", prompt=prompt, min_value=min_value, max_value=max_value)
+        self.request_queue.put(request)
+        answer = self._wait_for_answer()
+        if isinstance(answer, int):
+            return answer
+        if isinstance(answer, str):
+            try:
+                return int(answer.strip())
+            except ValueError:
+                return None
+        return None
+
+    def request_choice(self, prompt: str, options: list[str]):
+        request = Request(kind="choice", prompt=prompt, options=list(options))
+        self.request_queue.put(request)
+        answer = self._wait_for_answer()
+        if answer is None:
+            return None
+        return str(answer).strip()
+
+    def request_direction(self, prompt: str, options: list[str]):
+        request = Request(kind="direction", prompt=prompt, options=list(options))
+        self.request_queue.put(request)
+        answer = self._wait_for_answer()
+        if answer is None:
+            return None
+        return str(answer).strip().lower()
+
+
+_ACTIVE_IO: Optional[BaseIO] = None
+
+
+def set_active_io(io: BaseIO) -> None:
+    global _ACTIVE_IO
+    _ACTIVE_IO = io
+
+
+def get_active_io() -> BaseIO:
+    global _ACTIVE_IO
+    if _ACTIVE_IO is None:
+        _ACTIVE_IO = ConsoleIO()
+    return _ACTIVE_IO
