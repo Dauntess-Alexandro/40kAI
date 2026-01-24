@@ -123,12 +123,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         palette.setColor(QtGui.QPalette.ButtonText, Theme.text)
         palette.setColor(QtGui.QPalette.Highlight, Theme.model)
         palette.setColor(QtGui.QPalette.HighlightedText, Theme.text)
+        palette.setColor(QtGui.QPalette.PlaceholderText, Theme.muted)
         self.setPalette(palette)
-        self.setStyleSheet(
-            "QGroupBox { font-weight: bold; }"
-            "QHeaderView::section { background-color: #2a2d31; padding: 4px; }"
-            "QTableWidget { gridline-color: #3a3d41; }"
-        )
+        self.setStyleSheet(Theme.stylesheet())
 
     def _group_status(self):
         box = QtWidgets.QGroupBox("СТАТУС")

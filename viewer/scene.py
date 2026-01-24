@@ -9,7 +9,7 @@ class UnitItem(QtWidgets.QGraphicsEllipseItem):
         self.unit = unit
         self.setRect(-radius, -radius, radius * 2, radius * 2)
         self.setBrush(Theme.brush(color))
-        self.setPen(Theme.pen(QtGui.QColor("#111"), 0.8))
+        self.setPen(Theme.pen(Theme.outline, 0.8))
         self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, True)
         self.setAcceptHoverEvents(True)
 
@@ -64,7 +64,7 @@ class MapScene(QtWidgets.QGraphicsScene):
         for item in self.grid_items:
             self.removeItem(item)
         self.grid_items = []
-        pen = Theme.pen(Theme.grid, 0.6)
+        pen = Theme.pen(Theme.grid, 0.5)
         for x in range(width + 1):
             line = self.addLine(
                 x * self.cell_size, 0, x * self.cell_size, height * self.cell_size, pen
@@ -124,7 +124,7 @@ class MapScene(QtWidgets.QGraphicsScene):
             radius = self.cell_size * 0.2
             item = QtWidgets.QGraphicsEllipseItem(-radius, -radius, radius * 2, radius * 2)
             item.setBrush(Theme.brush(Theme.objective))
-            item.setPen(Theme.pen(QtGui.QColor("#111"), 0.8))
+            item.setPen(Theme.pen(Theme.outline, 0.8))
             item.setPos(x * self.cell_size + self.cell_size / 2,
                         y * self.cell_size + self.cell_size / 2)
             self.addItem(item)

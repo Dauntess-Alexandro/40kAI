@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>40kAI Viewer — Warhammer Mockup</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #1c1a17;
+      --panel: #2b2824;
+      --panel-alt: #332f2a;
+      --border: #6f4b2a;
+      --accent: #b08d57;
+      --accent-soft: #d7b66f;
+      --text: #e7dfd4;
+      --muted: #b3a99c;
+      --danger: #a73b32;
+      --success: #6a8f3a;
+      --info: #4a7aa8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Inter", "Roboto", system-ui, sans-serif;
+      background: radial-gradient(circle at top left, #25221e, #1c1a17 50%);
+      color: var(--text);
+    }
+    .window {
+      padding: 18px;
+      display: grid;
+      grid-template-rows: auto 220px;
+      gap: 16px;
+      height: 100vh;
+    }
+    .upper {
+      display: grid;
+      grid-template-columns: 3fr 1.1fr;
+      gap: 16px;
+      min-height: 0;
+    }
+    .panel {
+      background: linear-gradient(160deg, #2f2b26, #25221e);
+      border: 1px solid var(--border);
+      box-shadow: inset 0 0 0 1px #1a1714;
+      border-radius: 6px;
+      padding: 12px;
+      position: relative;
+    }
+    .panel h3 {
+      margin: 0 0 10px 0;
+      font-family: "Cinzel", "EB Garamond", serif;
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .map {
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+    .map .toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .btn {
+      background: #3b322b;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 4px;
+    }
+    .map-grid {
+      background:
+        linear-gradient(90deg, rgba(176, 141, 87, 0.15) 1px, transparent 1px) 0 0 / 18px 18px,
+        linear-gradient(0deg, rgba(176, 141, 87, 0.15) 1px, transparent 1px) 0 0 / 18px 18px,
+        #1a1815;
+      border: 1px solid #3a322b;
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+    }
+    .unit {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      position: absolute;
+      border: 2px solid #110e0b;
+      box-shadow: 0 0 0 2px rgba(215, 182, 111, 0.7);
+    }
+    .unit.player { background: var(--success); }
+    .unit.model { background: var(--info); }
+    .unit.objective { background: var(--accent-soft); width: 10px; height: 10px; }
+
+    .right-column {
+      display: grid;
+      gap: 10px;
+      grid-template-rows: auto auto 1fr auto;
+      min-height: 0;
+    }
+    .list {
+      display: grid;
+      gap: 6px;
+      font-size: 12px;
+    }
+    .list span { color: var(--muted); }
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 6px;
+      font-size: 12px;
+    }
+    .badge {
+      background: #3b322b;
+      border: 1px solid var(--border);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--accent-soft);
+    }
+    .table {
+      border: 1px solid #3a322b;
+      border-radius: 4px;
+      overflow: hidden;
+      font-size: 12px;
+    }
+    .table .head {
+      background: var(--panel-alt);
+      display: grid;
+      grid-template-columns: 1fr 60px 1.2fr 60px 80px;
+      gap: 0;
+      color: var(--accent);
+      font-weight: 600;
+      padding: 6px;
+    }
+    .table .row {
+      display: grid;
+      grid-template-columns: 1fr 60px 1.2fr 60px 80px;
+      padding: 6px;
+      border-top: 1px solid #2a2520;
+      background: #26221e;
+    }
+    .table .row:nth-child(even) {
+      background: #2a2621;
+    }
+    .legend {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .log {
+      background: linear-gradient(160deg, #2f2b26, #25221e);
+      border: 1px solid var(--border);
+      box-shadow: inset 0 0 0 1px #1a1714;
+      border-radius: 6px;
+      padding: 12px;
+      font-size: 12px;
+    }
+    .log .entry {
+      margin-bottom: 6px;
+    }
+    .entry strong { color: var(--accent-soft); }
+    .entry.danger strong { color: var(--danger); }
+  </style>
+</head>
+<body>
+  <div class="window">
+    <div class="upper">
+      <section class="panel map">
+        <div class="toolbar">
+          <button class="btn">Fit</button>
+          <span class="badge">BATTLEFIELD</span>
+        </div>
+        <div class="map-grid">
+          <div class="unit player" style="left: 120px; top: 90px;"></div>
+          <div class="unit player" style="left: 180px; top: 210px;"></div>
+          <div class="unit model" style="left: 280px; top: 110px;"></div>
+          <div class="unit model" style="left: 320px; top: 240px;"></div>
+          <div class="unit objective" style="left: 210px; top: 160px;"></div>
+        </div>
+      </section>
+
+      <aside class="right-column">
+        <section class="panel">
+          <h3>Статус</h3>
+          <div class="list">
+            <div>Раунд: <span>3</span></div>
+            <div>Ход: <span>Игрок</span></div>
+            <div>Фаза: <span>Стрельба</span></div>
+            <div>Активен: <span>Necron Warriors</span></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h3>Очки</h3>
+          <div class="stats">
+            <div>VP: <span class="badge">4 / 3</span></div>
+            <div>CP: <span class="badge">2 / 1</span></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h3>Отряды</h3>
+          <div class="table">
+            <div class="head">
+              <div>Сторона</div><div>ID</div><div>Имя</div><div>HP</div><div>Модели</div>
+            </div>
+            <div class="row">
+              <div>Игрок</div><div>21</div><div>Necron Warriors</div><div>10</div><div>10</div>
+            </div>
+            <div class="row">
+              <div>Модель</div><div>11</div><div>Scarabs</div><div>9</div><div>3</div>
+            </div>
+            <div class="row">
+              <div>Игрок</div><div>13</div><div>Immortals</div><div>12</div><div>5</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h3>Легенда</h3>
+          <div class="legend">
+            <div class="legend-item"><span class="dot" style="background: var(--success)"></span> Игрок</div>
+            <div class="legend-item"><span class="dot" style="background: var(--info)"></span> Модель</div>
+            <div class="legend-item"><span class="dot" style="background: var(--accent-soft)"></span> Цель</div>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+    <section class="log">
+      <h3>ЖУРНАЛ</h3>
+      <div class="entry"><strong>[LOG]</strong> Necron Warriors открывают огонь по цели.</div>
+      <div class="entry danger"><strong>[DMG]</strong> Цель получила 2 урона (сейв провален).</div>
+      <div class="entry"><strong>[INFO]</strong> Контроль точки: +1 VP.</div>
+    </section>
+  </div>
+</body>
+</html>
