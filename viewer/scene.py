@@ -9,19 +9,27 @@ class UnitItem(QtWidgets.QGraphicsEllipseItem):
         self.unit = unit
         self.setRect(-radius, -radius, radius * 2, radius * 2)
         self.setBrush(Theme.brush(color))
-        self.setPen(Theme.pen(QtGui.QColor("#111"), 0.8))
+        self.setPen(Theme.pen(Theme.unit_outline, 0.9))
         self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, True)
         self.setAcceptHoverEvents(True)
 
     def hoverEnterEvent(self, event):
+        side = self.unit.get("side")
+        if side in ("player", "enemy"):
+            side_label = "Игрок"
+        elif side == "model":
+            side_label = "Модель"
+        else:
+            side_label = "—"
         self.setToolTip(
-            "ID: {id}\n{label}\nHP: {hp}\nМодели: {models}\nКоорд: ({x}, {y})".format(
+            "ID: {id}\n{label}\nHP: {hp}\nМодели: {models}\nКоорд: ({x}, {y})\nСторона: {side}".format(
                 id=self.unit.get("id", "—"),
                 label=self.unit.get("name", "—"),
                 hp=self.unit.get("hp", "—"),
                 models=self.unit.get("models", "—"),
                 x=self.unit.get("x", "—"),
                 y=self.unit.get("y", "—"),
+                side=side_label,
             )
         )
         super().hoverEnterEvent(event)
@@ -49,7 +57,7 @@ class MapScene(QtWidgets.QGraphicsScene):
             if isinstance(item, UnitItem):
                 side = item.unit.get("side")
                 unit_id = item.unit.get("id")
-                if side and unit_id:
+                if side is not None and unit_id is not None:
                     self.unit_selected.emit(side, unit_id)
                     return
 
@@ -64,7 +72,7 @@ class MapScene(QtWidgets.QGraphicsScene):
         for item in self.grid_items:
             self.removeItem(item)
         self.grid_items = []
-        pen = Theme.pen(Theme.grid, 0.6)
+        pen = Theme.pen(Theme.grid, 0.5)
         for x in range(width + 1):
             line = self.addLine(
                 x * self.cell_size, 0, x * self.cell_size, height * self.cell_size, pen
@@ -102,7 +110,8 @@ class MapScene(QtWidgets.QGraphicsScene):
             center_x = x * self.cell_size + self.cell_size / 2 + offset
             center_y = y * self.cell_size + self.cell_size / 2 - offset
 
-            color = Theme.player if unit.get("side") == "player" else Theme.model
+            side = unit.get("side")
+            color = Theme.player if side in ("player", "enemy") else Theme.model
             radius = self.cell_size * 0.35
             item = UnitItem(unit, radius, color)
             item.setPos(center_x, center_y)
@@ -111,8 +120,8 @@ class MapScene(QtWidgets.QGraphicsScene):
 
             label = QtWidgets.QGraphicsSimpleTextItem(str(unit.get("id", "")))
             label.setBrush(Theme.brush(Theme.text))
-            label.setFont(Theme.font(size=8, bold=True))
-            label.setPos(center_x - radius, center_y - radius - 8)
+            label.setFont(Theme.font(size=9, bold=True))
+            label.setPos(center_x - radius, center_y - radius - 10)
             self.addItem(label)
             self.label_items.append(label)
 
@@ -121,10 +130,18 @@ class MapScene(QtWidgets.QGraphicsScene):
             y = objective.get("y")
             if x is None or y is None:
                 continue
-            radius = self.cell_size * 0.2
-            item = QtWidgets.QGraphicsEllipseItem(-radius, -radius, radius * 2, radius * 2)
+            radius = self.cell_size * 0.28
+            diamond = QtGui.QPolygonF(
+                [
+                    QtCore.QPointF(0, -radius),
+                    QtCore.QPointF(radius, 0),
+                    QtCore.QPointF(0, radius),
+                    QtCore.QPointF(-radius, 0),
+                ]
+            )
+            item = QtWidgets.QGraphicsPolygonItem(diamond)
             item.setBrush(Theme.brush(Theme.objective))
-            item.setPen(Theme.pen(QtGui.QColor("#111"), 0.8))
+            item.setPen(Theme.pen(Theme.unit_outline, 0.9))
             item.setPos(x * self.cell_size + self.cell_size / 2,
                         y * self.cell_size + self.cell_size / 2)
             self.addItem(item)

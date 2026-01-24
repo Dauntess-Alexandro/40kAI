@@ -2,16 +2,19 @@ from PySide6 import QtGui
 
 
 class Theme:
-    background = QtGui.QColor("#1f2124")
-    panel = QtGui.QColor("#2a2d31")
-    grid = QtGui.QColor(70, 70, 70)
-    text = QtGui.QColor("#e6e6e6")
-    muted = QtGui.QColor("#a7a7a7")
+    background = QtGui.QColor("#181a1e")
+    panel = QtGui.QColor("#23262b")
+    card = QtGui.QColor("#262a30")
+    grid = QtGui.QColor("#2f3439")
+    text = QtGui.QColor("#e6e9ef")
+    muted = QtGui.QColor("#a7abb3")
+    accent = QtGui.QColor("#f7d154")
 
     player = QtGui.QColor("#4caf50")
     model = QtGui.QColor("#42a5f5")
     objective = QtGui.QColor("#fbc02d")
     selection = QtGui.QColor("#ffffff")
+    unit_outline = QtGui.QColor("#0f1114")
 
     @staticmethod
     def font(size=10, bold=False):
