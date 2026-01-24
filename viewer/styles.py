@@ -64,8 +64,16 @@ class Theme:
             gridline-color: {Theme.grid.name()};
             selection-background-color: {Theme.accent_dark.name()};
             selection-color: {Theme.text.name()};
+            color: {Theme.text.name()};
             border: 1px solid {Theme.accent_dark.name()};
             border-radius: 4px;
+        }}
+        QTableWidget::item {{
+            color: {Theme.text.name()};
+        }}
+        QTableWidget::item:selected {{
+            background-color: {Theme.accent_dark.name()};
+            color: {Theme.text.name()};
         }}
         QHeaderView::section {{
             background-color: {Theme.panel_alt.name()};

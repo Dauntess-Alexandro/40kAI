@@ -57,6 +57,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.units_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.units_table.setAlternatingRowColors(True)
         self.units_table.itemSelectionChanged.connect(self._sync_selection_from_table)
+        self._apply_units_table_font()
 
         self.log_view = QtWidgets.QPlainTextEdit()
         self.log_view.setReadOnly(True)
@@ -126,6 +127,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
         palette.setColor(QtGui.QPalette.PlaceholderText, Theme.muted)
         self.setPalette(palette)
         self.setStyleSheet(Theme.stylesheet())
+
+    def _apply_units_table_font(self):
+        body_font = Theme.font(size=11)
+        header_font = Theme.font(size=10, bold=True)
+        self.units_table.setFont(body_font)
+        header = self.units_table.horizontalHeader()
+        header.setFont(header_font)
+        self.units_table.verticalHeader().setDefaultSectionSize(22)
 
     def _group_status(self):
         box = QtWidgets.QGroupBox("СТАТУС")
