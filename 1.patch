@@ -1,8 +1,100 @@
+diff --git a/gui/Application.cpp b/gui/Application.cpp
+index ca35dfce3a756ec1862cbb387fbc67ea0691aab8..1df3da1c2be4216bbe317b583d480622f4bf82da 100644
+--- a/gui/Application.cpp
++++ b/gui/Application.cpp
+@@ -668,79 +668,65 @@ Form :: Form() {
+ 
+     auto filter_text = Gtk::FileFilter::create();
+     filter_text->set_name("Pickle Files");
+     filter_text->add_pattern("*.pickle");
+     folderBrowserDialog.add_filter(filter_text);
+ 
+     if (folderBrowserDialog.run() == RESPONSE_OK) {
+       path = folderBrowserDialog.get_file()->get_path();
+       setModelFile.set_text(path);
+     }
+     return true;
+   });
+   
+   showBoard.set_label("Show Board (Ascii Mode)");
+   showBoard.signal_button_release_event().connect([&](GdkEventButton* event) {
+     openPopUp(true);
+     return true;
+   });
+ 
+   showBoardImg.set_label("Show Board (Image Mode)");
+   showBoardImg.signal_button_release_event().connect([&](GdkEventButton* event) {
+ 	openPopUp(false);
+ 	return true;
+   });
+ 
+-  playGUI.set_label("Play in GUI");
+-  playGUI.signal_button_release_event().connect([&](GdkEventButton* event) {
+-	if (playing == false) {
+-		saveLastRoster();
+-		syncEnemyUnitsFromRoster();
+-		openPlayGUI();
+-		playInGUI = "True";
+-		runPlayAgainstModelInBackground();
+-	}
+-	return true;
+-  });
+-
+-  playGraphicsView.set_label("Play in GraphicsView");
++  playGraphicsView.set_label("Играть в GUI");
+   playGraphicsView.signal_button_release_event().connect([&](GdkEventButton* event) {
+     system("cd .. && scripts/viewer.sh &");
+     return true;
+   });
+ 
+   fixedTabPage4.add(textbox2);
+   fixedTabPage4.add(button2);
+   fixedTabPage4.add(showBoard);
+   fixedTabPage4.add(showBoardImg);
+-  fixedTabPage4.add(playGUI);
+   fixedTabPage4.add(playGraphicsView);
+   fixedTabPage4.add(button5);
+   fixedTabPage4.add(setModelFile);
+   fixedTabPage4.move(textbox2, 10, 10);
+-  fixedTabPage4.move(playGUI, 130, 80);
+-  fixedTabPage4.move(playGraphicsView, 240, 80);
++  fixedTabPage4.move(playGraphicsView, 130, 80);
+   fixedTabPage4.move(showBoard, 395, 80);
+   fixedTabPage4.move(showBoardImg, 570, 80);
+   fixedTabPage4.move(button2, 10, 80);
+   fixedTabPage4.move(button5, 10, 40);
+   fixedTabPage4.move(setModelFile, 80, 40);
+ 
+   loadWindowGeometry();
+   loadLastRoster();
+   if (modelUnits.empty()) {
+     modelUnits.push_back({"Apothecary", "Space_Marine", findDefaultModelsCount("Space_Marine", "Apothecary"),
+                           RosterModel::generateInstanceId()});
+     modelUnits.push_back({"Eliminator Squad", "Space_Marine",
+                           findDefaultModelsCount("Space_Marine", "Eliminator Squad"),
+                           RosterModel::generateInstanceId()});
+   }
+   if (enemyUnits.empty()) {
+     rosterModel.addUnit("Apothecary", 1, enemyClass.substr(1));
+     rosterModel.addUnit("Eliminator Squad", 1, enemyClass.substr(1));
+     syncEnemyUnitsFromRoster();
+     saveLastRoster();
+   }
+   signal_hide().connect([this]() {
+     saveLastRoster();
+     saveWindowGeometry();
+   });
 diff --git a/viewer/app.py b/viewer/app.py
-index 9fd3ba7bfe197ec392379fb1f2e308a670f65c80..f3e6e88a3217bdebcf55b8003f52592ca01b462b 100644
+index f3e6e88a3217bdebcf55b8003f52592ca01b462b..f2acd7926b7c15e661ee1987947e9ffee6b1d808 100644
 --- a/viewer/app.py
 +++ b/viewer/app.py
-@@ -35,50 +35,51 @@ class ViewerWindow(QtWidgets.QMainWindow):
+@@ -29,51 +29,56 @@ class MapView(QtWidgets.QGraphicsView):
+ 
+ class ViewerWindow(QtWidgets.QMainWindow):
+     def __init__(self, state_path):
+         super().__init__()
+         self.state_path = state_path
+         self.setWindowTitle("40kAI Viewer")
          self.resize(1200, 800)
  
          self.state_watcher = StateWatcher(self.state_path)
@@ -22,13 +114,19 @@ index 9fd3ba7bfe197ec392379fb1f2e308a670f65c80..f3e6e88a3217bdebcf55b8003f52592c
  
          self.units_table = QtWidgets.QTableWidget(0, 5)
          self.units_table.setHorizontalHeaderLabels(["Сторона", "ID", "Имя", "HP", "Модели"])
-         self.units_table.horizontalHeader().setStretchLastSection(True)
+-        self.units_table.horizontalHeader().setStretchLastSection(True)
++        header = self.units_table.horizontalHeader()
++        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
++        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
++        header.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
++        header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
++        header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)
          self.units_table.verticalHeader().setVisible(False)
          self.units_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
          self.units_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
          self.units_table.setAlternatingRowColors(True)
          self.units_table.itemSelectionChanged.connect(self._sync_selection_from_table)
-+        self._apply_units_table_font()
+         self._apply_units_table_font()
  
          self.log_view = QtWidgets.QPlainTextEdit()
          self.log_view.setReadOnly(True)
@@ -48,135 +146,33 @@ index 9fd3ba7bfe197ec392379fb1f2e308a670f65c80..f3e6e88a3217bdebcf55b8003f52592c
          left_layout.addWidget(self.map_view)
  
          right_widget = QtWidgets.QWidget()
-         right_layout = QtWidgets.QVBoxLayout(right_widget)
-         right_layout.addWidget(self._group_status())
-         right_layout.addWidget(self._group_points())
-         right_layout.addWidget(self._group_units())
-         right_layout.addWidget(self._group_legend())
-         right_layout.addStretch()
-@@ -105,50 +106,58 @@ class ViewerWindow(QtWidgets.QMainWindow):
-         self.setCentralWidget(central)
+@@ -232,27 +237,27 @@ class ViewerWindow(QtWidgets.QMainWindow):
+             self.log_view.verticalScrollBar().setValue(self.log_view.verticalScrollBar().maximum())
  
-         self._apply_dark_theme()
-         self._fit_view()
+     def _select_row_for_unit(self, side, unit_id):
+         if not hasattr(self, "_row_lookup"):
+             return
+         for row, key in enumerate(self._row_lookup):
+             if key == (side, unit_id):
+                 self.units_table.selectRow(row)
+                 return
  
-         self.timer = QtCore.QTimer(self)
-         self.timer.setInterval(300)
-         self.timer.timeout.connect(self._poll_state)
-         self.timer.start()
+     def _sync_selection_from_table(self):
+         selected = self.units_table.selectionModel().selectedRows()
+         if not selected:
+             return
+         row = selected[0].row()
+         if not hasattr(self, "_row_lookup") or row >= len(self._row_lookup):
+             return
+         side, unit_id = self._row_lookup[row]
+         if side and unit_id is not None:
+             self.map_scene.select_unit(side, unit_id)
  
-         self._poll_state()
  
-     def _apply_dark_theme(self):
-         palette = self.palette()
-         palette.setColor(QtGui.QPalette.Window, Theme.background)
-         palette.setColor(QtGui.QPalette.Base, Theme.panel)
-         palette.setColor(QtGui.QPalette.Text, Theme.text)
-         palette.setColor(QtGui.QPalette.Button, Theme.panel)
-         palette.setColor(QtGui.QPalette.ButtonText, Theme.text)
-         palette.setColor(QtGui.QPalette.Highlight, Theme.model)
-         palette.setColor(QtGui.QPalette.HighlightedText, Theme.text)
-         palette.setColor(QtGui.QPalette.PlaceholderText, Theme.muted)
-         self.setPalette(palette)
-         self.setStyleSheet(Theme.stylesheet())
- 
-+    def _apply_units_table_font(self):
-+        body_font = Theme.font(size=11)
-+        header_font = Theme.font(size=10, bold=True)
-+        self.units_table.setFont(body_font)
-+        header = self.units_table.horizontalHeader()
-+        header.setFont(header_font)
-+        self.units_table.verticalHeader().setDefaultSectionSize(22)
-+
-     def _group_status(self):
-         box = QtWidgets.QGroupBox("СТАТУС")
-         layout = QtWidgets.QVBoxLayout(box)
-         layout.addWidget(self.status_round)
-         layout.addWidget(self.status_turn)
-         layout.addWidget(self.status_phase)
-         layout.addWidget(self.status_active)
-         return box
- 
-     def _group_points(self):
-         box = QtWidgets.QGroupBox("ОЧКИ")
-         layout = QtWidgets.QVBoxLayout(box)
-         layout.addWidget(self.points_vp)
-         layout.addWidget(self.points_cp)
-         return box
- 
-     def _group_units(self):
-         box = QtWidgets.QGroupBox("ОТРЯДЫ")
-         layout = QtWidgets.QVBoxLayout(box)
-         layout.addWidget(self.units_table)
-         return box
- 
-     def _group_legend(self):
-         box = QtWidgets.QGroupBox("ЛЕГЕНДА")
-         layout = QtWidgets.QVBoxLayout(box)
-diff --git a/viewer/styles.py b/viewer/styles.py
-index 7861d469a6e083b38957676b7555b4f97e2b4548..d45d73b3ef7f79295f51efc169d25cae03e0ab00 100644
---- a/viewer/styles.py
-+++ b/viewer/styles.py
-@@ -42,53 +42,61 @@ class Theme:
-         QGroupBox {{
-             border: 1px solid {Theme.accent_dark.name()};
-             border-radius: 6px;
-             margin-top: 16px;
-             padding: 8px;
-             font-weight: 600;
-         }}
-         QGroupBox::title {{
-             subcontrol-origin: margin;
-             left: 10px;
-             padding: 2px 8px;
-             color: {Theme.accent.name()};
-             background-color: {Theme.panel_alt.name()};
-             border: 1px solid {Theme.accent_dark.name()};
-             border-radius: 4px;
-         }}
-         QLabel {{
-             color: {Theme.text.name()};
-         }}
-         QTableWidget {{
-             background-color: {Theme.panel.name()};
-             alternate-background-color: {Theme.panel_alt.name()};
-             gridline-color: {Theme.grid.name()};
-             selection-background-color: {Theme.accent_dark.name()};
-             selection-color: {Theme.text.name()};
-+            color: {Theme.text.name()};
-             border: 1px solid {Theme.accent_dark.name()};
-             border-radius: 4px;
-         }}
-+        QTableWidget::item {{
-+            color: {Theme.text.name()};
-+        }}
-+        QTableWidget::item:selected {{
-+            background-color: {Theme.accent_dark.name()};
-+            color: {Theme.text.name()};
-+        }}
-         QHeaderView::section {{
-             background-color: {Theme.panel_alt.name()};
-             color: {Theme.accent.name()};
-             border: 1px solid {Theme.accent_dark.name()};
-             padding: 4px 6px;
-         }}
-         QPlainTextEdit {{
-             background-color: {Theme.panel.name()};
-             border: 1px solid {Theme.accent_dark.name()};
-             border-radius: 4px;
-             color: {Theme.text.name()};
-         }}
-         QPushButton {{
-             background-color: {Theme.panel_alt.name()};
-             border: 1px solid {Theme.accent_dark.name()};
-             color: {Theme.text.name()};
-             padding: 4px 10px;
-             border-radius: 4px;
-         }}
-         QPushButton:hover {{
-             background-color: {Theme.accent_dark.name()};
-         }}
-         QPushButton:pressed {{
-             background-color: {Theme.accent.name()};
-             color: {Theme.background.name()};
+ def launch(state_path):
+     app = QtWidgets.QApplication([])
+     window = ViewerWindow(state_path)
+-    window.show()
++    window.showMaximized()
+     app.exec()
 

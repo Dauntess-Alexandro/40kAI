@@ -51,7 +51,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self.units_table = QtWidgets.QTableWidget(0, 5)
         self.units_table.setHorizontalHeaderLabels(["Сторона", "ID", "Имя", "HP", "Модели"])
-        self.units_table.horizontalHeader().setStretchLastSection(True)
+        header = self.units_table.horizontalHeader()
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
+        header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)
         self.units_table.verticalHeader().setVisible(False)
         self.units_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.units_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -254,5 +259,5 @@ class ViewerWindow(QtWidgets.QMainWindow):
 def launch(state_path):
     app = QtWidgets.QApplication([])
     window = ViewerWindow(state_path)
-    window.show()
+    window.showMaximized()
     app.exec()
