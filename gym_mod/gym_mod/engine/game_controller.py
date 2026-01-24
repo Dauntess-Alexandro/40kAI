@@ -100,6 +100,10 @@ class GameController:
 
     def _run_game_loop(self):
         os.environ["STATE_JSON_PATH"] = self.state_path
+        if "MANUAL_DICE" not in os.environ:
+            os.environ["MANUAL_DICE"] = "1"
+        if "VERBOSE_LOGS" not in os.environ and os.environ.get("MANUAL_DICE") == "1":
+            os.environ["VERBOSE_LOGS"] = "1"
         set_active_io(self._io)
 
         try:
