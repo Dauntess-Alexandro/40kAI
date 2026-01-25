@@ -1299,6 +1299,10 @@ class Warhammer40kEnv(gym.Env):
             battle_shock = [False] * len(self.unit_health)
             for i in range(len(self.unit_health)):
                 unit_label = self._format_unit_label("model", i)
+                if self.unit_health[i] <= 0:
+                    self.modelOC[i] = 0
+                    continue
+                self.modelOC[i] = self.unit_data[i]["OC"]
                 if isBelowHalfStr(self.unit_data[i], self.unit_health[i]) is True and self.unit_health[i] > 0:
                     if self.trunc is False:
                         self._log(f"{unit_label}: ниже половины состава, тест Battle-shock.")
@@ -1337,7 +1341,12 @@ class Warhammer40kEnv(gym.Env):
                 playerName = i + 11
                 battleSh = False
                 unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
-                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.unit_health[i] > 0:
+                if self.enemy_health[i] <= 0:
+                    self.enemyOC[i] = 0
+                    battle_shock[i] = False
+                    continue
+                self.enemyOC[i] = self.enemy_data[i]["OC"]
+                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.enemy_health[i] > 0:
                     self._log(f"{unit_label}: ниже половины состава, тест Battle-shock.")
                     self._log("Бросок 2D6...", verbose_only=True)
                     diceRoll = player_dice(num=2)
@@ -1380,7 +1389,12 @@ class Warhammer40kEnv(gym.Env):
             for i in range(len(self.enemy_health)):
                 battleSh = False
                 unit_label = self._format_unit_label("enemy", i)
-                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.unit_health[i] > 0:
+                if self.enemy_health[i] <= 0:
+                    self.enemyOC[i] = 0
+                    battle_shock[i] = False
+                    continue
+                self.enemyOC[i] = self.enemy_data[i]["OC"]
+                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.enemy_health[i] > 0:
                     if self.trunc is False:
                         self._log(f"{unit_label}: ниже половины состава, тест Battle-shock.")
                         self._log("Бросок 2D6...", verbose_only=True)
@@ -1565,9 +1579,14 @@ class Warhammer40kEnv(gym.Env):
                             if diceRoll < 3:
                                 self.enemy_health[i] -= self.enemy_data[i]["W"]
                         self.enemy_coords[i][0] += self.enemy_data[i]["Movement"]
+                        self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
                         self.enemyInAttack[i] = [0, 0]
                         self.unitInAttack[idOfE][0] = 0
                         self.unitInAttack[idOfE][1] = 0
+                        pos_after = tuple(self.enemy_coords[i])
+                        self._log(f"{unit_label}: отступление завершено. Позиция после: {pos_after}")
+                        self.updateBoard()
+                        self.showBoard()
                     else:
                         idOfE = self.enemyInAttack[i][1]
                         self._log(

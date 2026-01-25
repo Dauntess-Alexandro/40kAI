@@ -1,311 +1,213 @@
-diff --git a/gym_mod/gym_mod/engine/game_controller.py b/gym_mod/gym_mod/engine/game_controller.py
-index 7d59d90a5d32fc09084ff6cf212c4bebb87144e6..37ce3de0b9299e070463b37a98c8d0db2c215d53 100644
---- a/gym_mod/gym_mod/engine/game_controller.py
-+++ b/gym_mod/gym_mod/engine/game_controller.py
-@@ -112,89 +112,89 @@ class GameController:
-             env.io = self._io
-             env.playType = True
- 
-             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
- 
-             attacker_side, defender_side = roll_off_attacker_defender(
-                 manual_roll_allowed=True,
-                 log_fn=self._io.log,
-             )
- 
-             self._io.log(
-                 "Юниты: "
-                 + str(
-                     [
-                         (u.name, getattr(u, "instance_id", "unknown"), u.models_count)
-                         for u in model
-                     ]
-                 )
-             )
- 
-             from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
- 
-             deploy_only_war(
-                 model_units=model,
-                 enemy_units=enemy,
--                b_len=env.b_len,
--                b_hei=env.b_hei,
-+                b_len=env.unwrapped.b_len,
-+                b_hei=env.unwrapped.b_hei,
-                 attacker_side=attacker_side,
-                 log_fn=self._io.log,
-             )
-             post_deploy_setup(log_fn=self._io.log)
- 
-             env.attacker_side = attacker_side
-             env.defender_side = defender_side
- 
-             state, info = env.reset(m=model, e=enemy, playType=True, Type="big", trunc=True)
- 
-             n_actions = [5, 2, len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
-             for _ in range(len(model)):
-                 n_actions.append(12)
-             n_observations = len(state)
- 
-             policy_net = DQN(n_observations, n_actions).to(device)
-             target_net = DQN(n_observations, n_actions).to(device)
-             optimizer = torch.optim.Adam(policy_net.parameters())
- 
-             policy_net.load_state_dict(checkpoint["policy_net"])
-             target_net.load_state_dict(checkpoint["target_net"])
-             optimizer.load_state_dict(checkpoint["optimizer"])
- 
-             policy_net.eval()
-             target_net.eval()
- 
-             self._io.log(
-                 "\nИнструкции:\nИгрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).\n"
-                 "Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).\n"
-             )
- 
-             is_done = False
-             i = 0
-             reward = 0
- 
-             while not is_done:
--                done, info = env.player()
-+                done, info = env.unwrapped.player()
-                 env.updateBoard()
-                 state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-                 action = select_action(env, state_tensor, i, policy_net, len(model))
-                 action_dict = convertToDict(action)
-                 if done is not True:
-                     next_observation, reward, done, _, info = env.step(action_dict)
-                     reward_tensor = torch.tensor([reward], device=device)
-                     unit_health = info["model health"]
-                     enemy_health = info["player health"]
- 
-                     message = (
-                         f"Итерация {i} завершена с наградой {reward_tensor}, "
-                         f"здоровье игрока {enemy_health}, здоровье модели {unit_health}"
-                     )
-                     self._io.log(message)
-                     state = next_observation
-                     env.updateBoard()
- 
-                 if done is True:
-                     if reward > 0:
-                         self._io.log("Модель победила!")
-                     else:
-                         self._io.log("Вы победили!")
-                     is_done = True
-                 i += 1
 diff --git a/gym_mod/gym_mod/envs/warhamEnv.py b/gym_mod/gym_mod/envs/warhamEnv.py
-index 2513dfdc2d347c527a2f6e5a0f64ce12b67203f7..477ccc0949dd95767c042b259c2af746c152ca20 100644
+index 477ccc0949dd95767c042b259c2af746c152ca20..e230ccbeaf375ae9573a9a12be6fc06fb42111bb 100644
 --- a/gym_mod/gym_mod/envs/warhamEnv.py
 +++ b/gym_mod/gym_mod/envs/warhamEnv.py
-@@ -1,28 +1,30 @@
- import gymnasium as gym
- from gymnasium import spaces
- import numpy as np
-+import matplotlib
-+matplotlib.use("Agg")
- import matplotlib.pyplot as plt
- import os
- import random
- import re
- from typing import Optional
+@@ -1277,132 +1277,146 @@ class Warhammer40kEnv(gym.Env):
+         self._log(f"=== КОНЕЦ БОЕВОГО РАУНДА {self.battle_round} ===")
+         self.battle_round += 1
+         self.numTurns = self.battle_round
+         self._round_banner_shown = False
+         apply_end_of_battle(self, log_fn=self._log)
  
- from ..engine.utils import *
- from ..engine import utils as engine_utils
- from gym_mod.engine.mission import (
-     MISSION_NAME,
-     MAX_BATTLE_ROUNDS,
-     score_end_of_command_phase,
-     apply_end_of_battle,
- )
- from gym_mod.engine.skills import apply_end_of_command_phase
- from gym_mod.engine.logging_utils import format_unit
- from gym_mod.engine.state_export import write_state_json
- from gym_mod.engine.game_io import get_active_io
- 
- # ============================================================
- # 🔧 FIX: resolve string weapons like "Bolt pistol [PISTOL]"
- # so engine.utils.attack() always receives a dict (or we safely
- # skip the attack instead of crashing with "'str' object has no attribute 'get'").
- # This is intentionally defensive: if WeaponData can't be found,
- # we still won't crash during training.
-@@ -2752,58 +2754,64 @@ class Warhammer40kEnv(gym.Env):
-         ax.plot(y2, x2, color="black")
-         ax.plot(y1 + self.b_hei, x1, color="black")
-         ax.plot(y2, x2 + self.b_len, color="black")
- 
-         for i in range(len(self.unit_health)):
-             if i == 0:
-                 ax.plot(self.unit_coords[i][1], self.unit_coords[i][0], 'bo', label="Model Unit")
-             else:
-                 ax.plot(self.unit_coords[i][1], self.unit_coords[i][0], 'bo')
- 
-         for i in range(len(self.enemy_coords)):
-             if i == 0:
-                 ax.plot(self.enemy_coords[i][1], self.enemy_coords[i][0], 'go', label="Player Unit")
-             else:
-                 ax.plot(self.enemy_coords[i][1], self.enemy_coords[i][0], 'go')
- 
-         for i in range(len(self.coordsOfOM)):
-             if i == 0:
-                 ax.plot(self.coordsOfOM[i][1], self.coordsOfOM[i][0], 'o', color="black", label="Objective Marker(s)")
-             else:
-                 ax.plot(self.coordsOfOM[i][1], self.coordsOfOM[i][0], 'o', color="black")
- 
-         ax.legend(loc="right")
- 
-         if mode == "train":
--            fileName = "display/" + str(self.restarts) + "_" + str(self.iter) + ".png"
-+            output_dir = "display"
-+            os.makedirs(output_dir, exist_ok=True)
-+            fileName = os.path.join(output_dir, f"{self.restarts}_{self.iter}.png")
+     def _advance_turn_order(self):
+         if self.active_side == self.turn_order[-1]:
+             self._end_battle_round()
+             self.active_side = self.turn_order[0]
          else:
--            fileName = "gui/build/img/board.png"
--            fig.savefig("gui/img/board.png")
-+            output_dir = os.path.join("gui", "build", "img")
-+            legacy_dir = os.path.join("gui", "img")
-+            os.makedirs(output_dir, exist_ok=True)
-+            os.makedirs(legacy_dir, exist_ok=True)
-+            fileName = os.path.join(output_dir, "board.png")
-+            fig.savefig(os.path.join(legacy_dir, "board.png"))
+             current_index = self.turn_order.index(self.active_side)
+             self.active_side = self.turn_order[current_index + 1]
+         self.phase = "command"
  
-         fig.savefig(fileName)
-         ax.cla()
--        plt.close()
-+        plt.close(fig)
-         return self.board
+     def command_phase(self, side: str, action=None, manual: bool = False):
+         self.begin_phase(side, "command")
+         if side == "model":
+             self._log_phase("MODEL", "command")
+             self.modelCP += 1
+             self.enemyCP += 1
+             reward_delta = 0
+             battle_shock = [False] * len(self.unit_health)
+             for i in range(len(self.unit_health)):
+                 unit_label = self._format_unit_label("model", i)
++                if self.unit_health[i] <= 0:
++                    self.modelOC[i] = 0
++                    continue
++                self.modelOC[i] = self.unit_data[i]["OC"]
+                 if isBelowHalfStr(self.unit_data[i], self.unit_health[i]) is True and self.unit_health[i] > 0:
+                     if self.trunc is False:
+                         self._log(f"{unit_label}: ниже половины состава, тест Battle-shock.")
+                         self._log("Бросок 2D6...", verbose_only=True)
+                     diceRoll = dice(num=2)
+                     if self.trunc is False:
+                         self._log(f"Бросок: {diceRoll[0]} {diceRoll[1]}", verbose_only=True)
+                     if sum(diceRoll) >= self.unit_data[i]["Ld"]:
+                         self.modelOC[i] = self.unit_data[i]["OC"]
+                         if self.trunc is False:
+                             self._log(f"{unit_label}: тест Battle-shock пройден.")
+                     else:
+                         battle_shock[i] = True
+                         self.modelOC[i] = 0
+                         if self.trunc is False:
+                             self._log(f"{unit_label}: тест Battle-shock провален.")
+                         if action and action.get("use_cp") == 1 and action.get("cp_on") == i:
+                             if self.modelCP - 1 >= 0:
+                                 battle_shock[i] = False
+                                 reward_delta += 0.5
+                                 self.modelCP -= 1
+                                 if self.trunc is False:
+                                     self._log(f"{unit_label}: применена Insane Bravery (-1 CP), тест пройден.")
+                             else:
+                                 reward_delta -= 0.5
+             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
+             apply_end_of_command_phase(self, side="model", dice_fn=dice_fn, log_fn=self._log)
+             score_end_of_command_phase(self, "model", log_fn=self._log)
+             return battle_shock, reward_delta
  
-     def showBoard(self):
-         board = self.returnBoard()
-         np.savetxt("board.txt", board.astype(int), fmt="%i", delimiter=",")
-         self.render(mode="play")
+         if side == "enemy" and manual:
+             self.enemyCP += 1
+             self.modelCP += 1
+             battle_shock = [False] * len(self.enemy_health)
+             for i in range(len(self.enemy_health)):
+                 playerName = i + 11
+                 battleSh = False
+                 unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
+-                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.unit_health[i] > 0:
++                if self.enemy_health[i] <= 0:
++                    self.enemyOC[i] = 0
++                    battle_shock[i] = False
++                    continue
++                self.enemyOC[i] = self.enemy_data[i]["OC"]
++                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.enemy_health[i] > 0:
+                     self._log(f"{unit_label}: ниже половины состава, тест Battle-shock.")
+                     self._log("Бросок 2D6...", verbose_only=True)
+                     diceRoll = player_dice(num=2)
+                     self._log(f"Бросок: {diceRoll[0]} {diceRoll[1]}", verbose_only=True)
+                     if sum(diceRoll) >= self.enemy_data[i]["Ld"]:
+                         self._log(f"{unit_label}: тест Battle-shock пройден.")
+                         self.enemyOC[i] = self.enemy_data[i]["OC"]
+                     else:
+                         battleSh = True
+                         self._log(f"{unit_label}: тест Battle-shock провален.")
+                         self.enemyOC[i] = 0
+                         if self.enemyCP - 1 >= 0:
+                             strat = self._prompt_yes_no(
+                                 f"{unit_label}. Использовать стратагему Insane Bravery (1 CP)? (y/n): "
+                             )
+                             if strat is None:
+                                 self.game_over = True
+                                 return None
+                             if strat:
+                                 battleSh = False
+                                 self.enemyCP -= 1
+                                 self.enemyOC[i] = self.enemy_data[i]["OC"]
+                 battle_shock[i] = battleSh
+                 if battleSh:
+                     continue
+             self._manual_enemy_battle_shock = battle_shock
+             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
+             apply_end_of_command_phase(self, side="enemy", dice_fn=dice_fn, log_fn=self._log)
+             score_end_of_command_phase(self, "enemy", log_fn=self._log)
+             return battle_shock
  
-     def close(self):
-         pass
+         if side == "enemy":
+             self.enemyCP += 1
+             self.modelCP += 1
+             battle_shock = [False] * len(self.enemy_health)
+             cp_on = np.random.randint(0, len(self.enemy_health))
+             use_cp = np.random.randint(0, 5)
+             self._enemy_cp_on = cp_on
+             self._enemy_use_cp = use_cp
+             for i in range(len(self.enemy_health)):
+                 battleSh = False
+                 unit_label = self._format_unit_label("enemy", i)
+-                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.unit_health[i] > 0:
++                if self.enemy_health[i] <= 0:
++                    self.enemyOC[i] = 0
++                    battle_shock[i] = False
++                    continue
++                self.enemyOC[i] = self.enemy_data[i]["OC"]
++                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.enemy_health[i] > 0:
+                     if self.trunc is False:
+                         self._log(f"{unit_label}: ниже половины состава, тест Battle-shock.")
+                         self._log("Бросок 2D6...", verbose_only=True)
+                     diceRoll = dice(num=2)
+                     if self.trunc is False:
+                         self._log(f"Бросок: {diceRoll[0]} {diceRoll[1]}", verbose_only=True)
+                     if sum(diceRoll) >= self.enemy_data[i]["Ld"]:
+                         if self.trunc is False:
+                             self._log(f"{unit_label}: тест Battle-shock пройден.")
+                         self.enemyOC[i] = self.enemy_data[i]["OC"]
+                     else:
+                         battleSh = True
+                         self.enemyOC[i] = 0
+                         if self.trunc is False:
+                             self._log(f"{unit_label}: тест Battle-shock провален.")
+                         if use_cp == 1 and cp_on == i and self.enemyCP - 1 >= 0:
+                             battleSh = False
+                             self.enemyCP -= 1
+                             self.enemyOC[i] = self.enemy_data[i]["OC"]
  
-     def _get_observation(self):
-         obs = []
+                 battle_shock[i] = battleSh
+             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
+             apply_end_of_command_phase(self, side="enemy", dice_fn=dice_fn, log_fn=self._log)
+             score_end_of_command_phase(self, "enemy", log_fn=self._log)
+             return battle_shock
+@@ -1543,53 +1557,58 @@ class Warhammer40kEnv(gym.Env):
+             return advanced_flags, reward_delta
  
-         for i in range(len(self.unit_health)):
-             obs.append(self.unit_health[i])
-             obs.append(self.unit_coords[i][0])
-             obs.append(self.unit_coords[i][1])
+         if side == "enemy" and manual:
+             direction_map = {"up": "up", "down": "down", "left": "left", "right": "right", "none": "none"}
+             normalize = {"u": "up", "d": "down", "l": "left", "r": "right", "n": "none"}
+             advanced_flags = [False] * len(self.enemy_health)
+             for i in range(len(self.enemy_health)):
+                 playerName = i + 11
+                 battleSh = battle_shock[i] if battle_shock else False
+                 unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
+                 pos_before = tuple(self.enemy_coords[i])
+                 if self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
+                     fall_back = self._prompt_yes_no(f"{unit_label}. Отступить (fallback)? (y/n): ")
+                     if fall_back is None:
+                         self.game_over = True
+                         return None
+                     if fall_back:
+                         idOfE = self.enemyInAttack[i][1]
+                         self._log(f"{unit_label} отступил из боя с {self._format_unit_label('model', idOfE)}")
+                         self.enemyFellBack[i] = True
+                         if battleSh is True:
+                             diceRoll = dice()
+                             if diceRoll < 3:
+                                 self.enemy_health[i] -= self.enemy_data[i]["W"]
+                         self.enemy_coords[i][0] += self.enemy_data[i]["Movement"]
++                        self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                         self.enemyInAttack[i] = [0, 0]
+                         self.unitInAttack[idOfE][0] = 0
+                         self.unitInAttack[idOfE][1] = 0
++                        pos_after = tuple(self.enemy_coords[i])
++                        self._log(f"{unit_label}: отступление завершено. Позиция после: {pos_after}")
++                        self.updateBoard()
++                        self.showBoard()
+                     else:
+                         idOfE = self.enemyInAttack[i][1]
+                         self._log(
+                             f"{unit_label} остаётся в бою с {self._format_unit_label('model', idOfE)} (будет драться в фазе боя)."
+                         )
+                     continue
  
-         obs.append(self.modelCP)
+                 if self.enemyInAttack[i][0] == 0 and self.enemy_health[i] > 0:
+                     self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                     for j in range(len(self.enemy_health)):
+                         if self.enemy_coords[i] == self.unit_coords[j]:
+                             self.enemy_coords[i][0] -= 1
  
-         for i in range(len(self.enemy_health)):
-             obs.append(self.enemy_health[i])
-             obs.append(self.enemy_coords[i][0])
-             obs.append(self.enemy_coords[i][1])
+                     self.updateBoard()
+                     self.showBoard()
  
-diff --git a/play.py b/play.py
-index 6eb3973f2bda27a3bd53fd61d6b98dedf41f250b..67cdca9a12a4e451082ffc725b9d5754a85a0ac5 100644
---- a/play.py
-+++ b/play.py
-@@ -78,52 +78,52 @@ if verbose:
-     for idx, unit in enumerate(model):
-         unit_data = unit.showUnitData()
-         unit_name = unit_data.get("Name", "Unknown")
-         unit_models = unit_data.get("#OfModels", 1)
-         instance_id = getattr(unit, "instance_id", "unknown")
-         _log(f"[roster] model[{idx}] name={unit_name} instance_id={instance_id} models={unit_models}")
-     for idx, unit in enumerate(enemy):
-         unit_data = unit.showUnitData()
-         unit_name = unit_data.get("Name", "Unknown")
-         unit_models = unit_data.get("#OfModels", 1)
-         instance_id = getattr(unit, "instance_id", "unknown")
-         _log(f"[roster] enemy[{idx}] name={unit_name} instance_id={instance_id} models={unit_models}")
- _log(
-     "Units: "
-     + str(
-         [
-             (u.name, getattr(u, "instance_id", "unknown"), u.models_count)
-             for u in model
-         ]
-     )
- )
+                     dire = self._prompt_choice(
+                         f"Ход юнита: {unit_label}. Выберите направление (up/down/left/right/none): ",
+                         direction_map,
+                         normalize,
+                     )
+                     if dire is None:
+                         self.game_over = True
+                         return None
  
- deploy_only_war(
-     model_units=model,
-     enemy_units=enemy,
--    b_len=env.b_len,
--    b_hei=env.b_hei,
-+    b_len=env.unwrapped.b_len,
-+    b_hei=env.unwrapped.b_hei,
-     attacker_side=attacker_side,
-     log_fn=log_fn,
- )
- post_deploy_setup(log_fn=log_fn)
- 
- env.attacker_side = attacker_side
- env.defender_side = defender_side
- 
- state, info = env.reset(m=model, e=enemy)
- if verbose:
-     squads_for_actions_count = len(model)
-     _log(f"[action_space] squads_for_actions_count={squads_for_actions_count}")
-     for idx, unit in enumerate(model):
-         unit_data = unit.showUnitData()
-         unit_name = unit_data.get("Name", "Unknown")
-         _log(f"[action_space] squad[{idx}] name={unit_name}")
-     total_models_count = 0
-     for unit in model:
-         unit_data = unit.showUnitData()
-         total_models_count += int(unit_data.get("#OfModels", 1))
-     _log(f"[action_space] total_models_count={total_models_count}")
-     move_num_keys = [
-         key for key in env.action_space.spaces.keys() if key.startswith("move_num_")
-     ]
-     _log(f"[action_space] move_num_keys_count={len(move_num_keys)}")
-@@ -138,48 +138,48 @@ target_net = DQN(n_observations, n_actions).to(device)
- optimizer = torch.optim.Adam(policy_net.parameters())
- 
- policy_net.load_state_dict(checkpoint['policy_net'])
- target_net.load_state_dict(checkpoint['target_net'])
- optimizer.load_state_dict(checkpoint['optimizer'])
- 
- policy_net.eval()
- target_net.eval()
- 
- isdone = False
- i = 0
- 
- if playInGUI == True:
-     env.reset(m=model, e=enemy, playType=playInGUI, Type="big", trunc=True)
- else:
-     env.reset(m=model, e=enemy, playType=playInGUI, Type="big", trunc=False)
- 
- env.io = io
- 
- reward = 0
- io.log("\nИнструкции:\n")
- io.log("Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.)")
- io.log("Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.)\n")
- 
- while isdone == False:
--    done, info = env.player()
-+    done, info = env.unwrapped.player()
-     state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-     action = select_action(env, state, i, policy_net, len(model))
-     action_dict = convertToDict(action)
-     if done != True:
-         next_observation, reward, done, _, info = env.step(action_dict)
-         reward = torch.tensor([reward], device=device)
-         unit_health = info["model health"]
-         enemy_health = info["player health"]
-         inAttack = info["in attack"]
- 
-         board = env.render()
-         message = "Iteration {} ended with reward {}, Player health {}, Model health {}".format(i, reward, enemy_health, unit_health)
-         io.log(message)
-         next_state = torch.tensor(next_observation, dtype=torch.float32, device=device).unsqueeze(0)
-         state = next_state
-     if done == True:
-         if reward > 0:
-             io.log("Модель победила!")
-         else:
-             io.log("Вы победили!")
-         isdone = True
-     i+=1
 
