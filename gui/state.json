@@ -5,15 +5,15 @@
   },
   "turn": 1,
   "round": 1,
-  "phase": "command",
+  "phase": "movement",
   "active": "player",
   "vp": {
     "player": 0,
     "model": 0
   },
   "cp": {
-    "player": 0,
-    "model": 0
+    "player": 1,
+    "model": 1
   },
   "units": [
     {
@@ -22,8 +22,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 37,
-      "y": 9
+      "x": 33,
+      "y": 37
     },
     {
       "side": "player",
@@ -31,8 +31,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 38,
-      "y": 36
+      "x": 39,
+      "y": 11
     },
     {
       "side": "player",
@@ -40,8 +40,8 @@
       "name": "Canoptek Scarab Swarms",
       "models": 3,
       "hp": 12.0,
-      "x": 36,
-      "y": 53
+      "x": 31,
+      "y": 28
     },
     {
       "side": "model",
@@ -49,8 +49,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 4,
-      "y": 38
+      "x": 8,
+      "y": 16
     },
     {
       "side": "model",
@@ -58,8 +58,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 9,
-      "y": 3
+      "x": 5,
+      "y": 18
     },
     {
       "side": "model",
@@ -68,7 +68,7 @@
       "models": 3,
       "hp": 12.0,
       "x": 4,
-      "y": 13
+      "y": 29
     }
   ],
   "objectives": [
@@ -94,36 +94,36 @@
     }
   ],
   "log_tail": [
-    "--- ФАЗА СТРЕЛЬБЫ ---",
-    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.",
-    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Цели в дальности: Unit 11 — Necrons Necron Warriors (x10 моделей), Unit 12 — Necrons Necron Warriors (x10 моделей), Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей), выбрана: Unit 11 — Necrons Necron Warriors (x10 моделей) (причина: выбор политики)",
-    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Итог урона по Unit 11 — Necrons Necron Warriors (x10 моделей): 1.0",
-    "[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет дальнобойного оружия, стрельба пропущена.",
-    "--- ФАЗА ЧАРДЖА ---",
-    "--- ФАЗА ЧАРДЖА ---",
-    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.",
-    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Доступные цели для чарджа: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Решение: пропуск чарджа.",
-    "[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет целей в 12\", чардж пропущен.",
-    "--- ФАЗА БОЯ ---",
-    "--- ФАЗА БОЯ ---",
-    "[MODEL] Ближний бой: нет доступных атак",
-    "=== КОНЕЦ БОЕВОГО РАУНДА 2 ===",
-    "Итерация 1 завершена с наградой tensor([0.2000], device='cuda:0'), здоровье игрока [8.0, 8.0, 12.0], здоровье модели [10.0, 8.0, 12.0]",
-    "{'model health': [10.0, 8.0, 12.0], 'player health': [8.0, 8.0, 12.0], 'modelCP': 1, 'playerCP': 4, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 1, 'player VP': 0, 'mission': 'Only War', 'turn': 3, 'battle round': 3, 'active side': 'enemy', 'phase': 'command'}",
-    "Здоровье MODEL: [10.0, 8.0, 12.0], здоровье PLAYER: [8.0, 8.0, 12.0]",
-    "CP MODEL: 1, CP PLAYER: 4",
-    "VP MODEL: 1, VP PLAYER: 0",
-    "Unit 22 — Necrons Necron Warriors (x10 моделей) стреляет по Unit 11 — Necrons Necron Warriors (x10 моделей) 1.0 раз(а)",
-    "Roll-off Attacker/Defender: enemy=4 model=3 -> attacker=enemy",
+    "CP MODEL: 0, CP PLAYER: 0",
+    "VP MODEL: 0, VP PLAYER: 0",
+    "=== БОЕВОЙ РАУНД 1 ===",
+    "--- ХОД PLAYER ---",
+    "--- ФАЗА КОМАНДОВАНИЯ ---",
+    "[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0",
+    "--- ФАЗА ДВИЖЕНИЯ ---",
+    "Roll-off Attacker/Defender: enemy=1 model=3 -> attacker=model",
     "Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]",
-    "[DEPLOY] Order: enemy first, alternating",
-    "[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (9,37)",
-    "[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (38,4)",
-    "[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (36,38)",
-    "[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (3,9)",
-    "[DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (53,36)",
-    "[DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (13,4)",
-    "[MISSION Only War] Post-deploy: currently no post-deploy units supported"
+    "[DEPLOY] Order: model first, alternating",
+    "[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (16,8)",
+    "[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (37,33)",
+    "[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (18,5)",
+    "[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (11,39)",
+    "[DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (29,4)",
+    "[DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (28,31)",
+    "[MISSION Only War] Post-deploy: currently no post-deploy units supported",
+    "",
+    "Инструкции:",
+    "Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).",
+    "Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).",
+    "{'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}",
+    "Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]",
+    "CP MODEL: 0, CP PLAYER: 0",
+    "VP MODEL: 0, VP PLAYER: 0",
+    "=== БОЕВОЙ РАУНД 1 ===",
+    "--- ХОД PLAYER ---",
+    "--- ФАЗА КОМАНДОВАНИЯ ---",
+    "[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0",
+    "--- ФАЗА ДВИЖЕНИЯ ---"
   ],
-  "generated_at": "2026-01-24T16:23:45.091964Z"
+  "generated_at": "2026-01-25T11:56:33.440192Z"
 }

@@ -100,8 +100,8 @@ _log(
 deploy_only_war(
     model_units=model,
     enemy_units=enemy,
-    b_len=env.b_len,
-    b_hei=env.b_hei,
+    b_len=env.unwrapped.b_len,
+    b_hei=env.unwrapped.b_hei,
     attacker_side=attacker_side,
     log_fn=log_fn,
 )
@@ -160,7 +160,7 @@ io.log("Игрок управляет юнитами, начинающимися
 io.log("Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.)\n")
 
 while isdone == False:
-    done, info = env.player()
+    done, info = env.unwrapped.player()
     state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
     action = select_action(env, state, i, policy_net, len(model))
     action_dict = convertToDict(action)

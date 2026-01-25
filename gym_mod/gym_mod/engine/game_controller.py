@@ -134,8 +134,8 @@ class GameController:
             deploy_only_war(
                 model_units=model,
                 enemy_units=enemy,
-                b_len=env.b_len,
-                b_hei=env.b_hei,
+                b_len=env.unwrapped.b_len,
+                b_hei=env.unwrapped.b_hei,
                 attacker_side=attacker_side,
                 log_fn=self._io.log,
             )
@@ -172,7 +172,7 @@ class GameController:
             reward = 0
 
             while not is_done:
-                done, info = env.player()
+                done, info = env.unwrapped.player()
                 env.updateBoard()
                 state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
                 action = select_action(env, state_tensor, i, policy_net, len(model))

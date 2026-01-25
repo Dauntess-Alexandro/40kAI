@@ -1,6 +1,8 @@
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import os
 import random
@@ -2774,14 +2776,20 @@ class Warhammer40kEnv(gym.Env):
         ax.legend(loc="right")
 
         if mode == "train":
-            fileName = "display/" + str(self.restarts) + "_" + str(self.iter) + ".png"
+            output_dir = "display"
+            os.makedirs(output_dir, exist_ok=True)
+            fileName = os.path.join(output_dir, f"{self.restarts}_{self.iter}.png")
         else:
-            fileName = "gui/build/img/board.png"
-            fig.savefig("gui/img/board.png")
+            output_dir = os.path.join("gui", "build", "img")
+            legacy_dir = os.path.join("gui", "img")
+            os.makedirs(output_dir, exist_ok=True)
+            os.makedirs(legacy_dir, exist_ok=True)
+            fileName = os.path.join(output_dir, "board.png")
+            fig.savefig(os.path.join(legacy_dir, "board.png"))
 
         fig.savefig(fileName)
         ax.cla()
-        plt.close()
+        plt.close(fig)
         return self.board
 
     def showBoard(self):

@@ -1,669 +1,311 @@
-diff --git a/gym_mod/gym_mod/engine/game_io.py b/gym_mod/gym_mod/engine/game_io.py
-index b895a550b625fe4775a4cb2e17d2def6c2c18a37..07df4c31e0f19232effedf50545f35bccaa6624e 100644
---- a/gym_mod/gym_mod/engine/game_io.py
-+++ b/gym_mod/gym_mod/engine/game_io.py
-@@ -1,62 +1,95 @@
- from __future__ import annotations
+diff --git a/gym_mod/gym_mod/engine/game_controller.py b/gym_mod/gym_mod/engine/game_controller.py
+index 7d59d90a5d32fc09084ff6cf212c4bebb87144e6..37ce3de0b9299e070463b37a98c8d0db2c215d53 100644
+--- a/gym_mod/gym_mod/engine/game_controller.py
++++ b/gym_mod/gym_mod/engine/game_controller.py
+@@ -112,89 +112,89 @@ class GameController:
+             env.io = self._io
+             env.playType = True
  
- from dataclasses import dataclass
- from typing import Optional, List
-+import re
- import os
- import threading
- import queue
+             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
  
+             attacker_side, defender_side = roll_off_attacker_defender(
+                 manual_roll_allowed=True,
+                 log_fn=self._io.log,
+             )
  
- LOG_DEFAULT_PATH = os.path.join(os.getcwd(), "gui", "response.txt")
+             self._io.log(
+                 "Юниты: "
+                 + str(
+                     [
+                         (u.name, getattr(u, "instance_id", "unknown"), u.models_count)
+                         for u in model
+                     ]
+                 )
+             )
  
+             from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
  
- @dataclass
- class Request:
-     kind: str
-     prompt: str
-     options: Optional[List[str]] = None
-     min_value: Optional[int] = None
-     max_value: Optional[int] = None
-+    count: Optional[int] = None
+             deploy_only_war(
+                 model_units=model,
+                 enemy_units=enemy,
+-                b_len=env.b_len,
+-                b_hei=env.b_hei,
++                b_len=env.unwrapped.b_len,
++                b_hei=env.unwrapped.b_hei,
+                 attacker_side=attacker_side,
+                 log_fn=self._io.log,
+             )
+             post_deploy_setup(log_fn=self._io.log)
  
+             env.attacker_side = attacker_side
+             env.defender_side = defender_side
  
- class BaseIO:
-     def log(self, message: str) -> None:
-         raise NotImplementedError
+             state, info = env.reset(m=model, e=enemy, playType=True, Type="big", trunc=True)
  
-     def request_bool(self, prompt: str) -> Optional[bool]:
-         raise NotImplementedError
+             n_actions = [5, 2, len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
+             for _ in range(len(model)):
+                 n_actions.append(12)
+             n_observations = len(state)
  
-     def request_int(self, prompt: str, min_value: Optional[int] = None, max_value: Optional[int] = None):
-         raise NotImplementedError
+             policy_net = DQN(n_observations, n_actions).to(device)
+             target_net = DQN(n_observations, n_actions).to(device)
+             optimizer = torch.optim.Adam(policy_net.parameters())
  
-     def request_choice(self, prompt: str, options: list[str]):
-         raise NotImplementedError
+             policy_net.load_state_dict(checkpoint["policy_net"])
+             target_net.load_state_dict(checkpoint["target_net"])
+             optimizer.load_state_dict(checkpoint["optimizer"])
  
-     def request_direction(self, prompt: str, options: list[str]):
-         raise NotImplementedError
+             policy_net.eval()
+             target_net.eval()
  
-+    def request_dice(
-+        self,
-+        prompt: str,
-+        count: int,
-+        min_value: Optional[int] = None,
-+        max_value: Optional[int] = None,
-+    ):
-+        raise NotImplementedError
-+
-+
-+def parse_dice_values(text: str, count: int, min_value: int = 1, max_value: int = 6) -> list[int]:
-+    if text is None:
-+        raise ValueError("пустой ввод")
-+    stripped = text.strip()
-+    if not stripped:
-+        raise ValueError("пустой ввод")
-+    if stripped.isdigit() and len(stripped) == count:
-+        values = [int(ch) for ch in stripped]
-+    else:
-+        parts = [part for part in re.split(r"[,\s]+", stripped) if part]
-+        try:
-+            values = [int(part) for part in parts]
-+        except ValueError as exc:
-+            raise ValueError("есть нечисловые значения") from exc
-+    if len(values) != count:
-+        raise ValueError(f"ожидалось {count}, получено {len(values)}")
-+    for value in values:
-+        if value < min_value or value > max_value:
-+            raise ValueError(f"значение вне диапазона {min_value}..{max_value}")
-+    return values
-+
+             self._io.log(
+                 "\nИнструкции:\nИгрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).\n"
+                 "Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).\n"
+             )
  
- def _append_log_line(message: str, path: Optional[str] = None) -> None:
-     if message is None:
-         return
-     log_path = path or LOG_DEFAULT_PATH
-     os.makedirs(os.path.dirname(log_path), exist_ok=True)
-     with open(log_path, "a", encoding="utf-8") as handle:
-         handle.write(message.rstrip("\n") + "\n")
+             is_done = False
+             i = 0
+             reward = 0
  
+             while not is_done:
+-                done, info = env.player()
++                done, info = env.unwrapped.player()
+                 env.updateBoard()
+                 state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+                 action = select_action(env, state_tensor, i, policy_net, len(model))
+                 action_dict = convertToDict(action)
+                 if done is not True:
+                     next_observation, reward, done, _, info = env.step(action_dict)
+                     reward_tensor = torch.tensor([reward], device=device)
+                     unit_health = info["model health"]
+                     enemy_health = info["player health"]
  
- class ConsoleIO(BaseIO):
-     def __init__(self, log_path: Optional[str] = None):
-         self.log_path = log_path or LOG_DEFAULT_PATH
+                     message = (
+                         f"Итерация {i} завершена с наградой {reward_tensor}, "
+                         f"здоровье игрока {enemy_health}, здоровье модели {unit_health}"
+                     )
+                     self._io.log(message)
+                     state = next_observation
+                     env.updateBoard()
  
-     def log(self, message: str) -> None:
-         if message is None:
-             return
-         print(message)
-         _append_log_line(message, self.log_path)
- 
-     def request_bool(self, prompt: str) -> Optional[bool]:
-         while True:
-             response = input(prompt).strip().lower()
-             if response in ("y", "yes", "да", "д"):
-                 return True
-@@ -74,50 +107,70 @@ class ConsoleIO(BaseIO):
-             try:
-                 value = int(response)
-             except ValueError:
-                 self.log("Неверный ввод: нужно число.")
-                 continue
-             if min_value is not None and value < min_value:
-                 self.log(f"Значение меньше минимума {min_value}.")
-                 continue
-             if max_value is not None and value > max_value:
-                 self.log(f"Значение больше максимума {max_value}.")
-                 continue
-             return value
- 
-     def request_choice(self, prompt: str, options: list[str]):
-         response = input(prompt).strip()
-         if response.lower() in ("q", "quit"):
-             return None
-         return response
- 
-     def request_direction(self, prompt: str, options: list[str]):
-         response = input(prompt).strip().lower()
-         if response in ("q", "quit"):
-             return None
-         return response
- 
-+    def request_dice(
-+        self,
-+        prompt: str,
-+        count: int,
-+        min_value: Optional[int] = None,
-+        max_value: Optional[int] = None,
-+    ):
-+        min_val = 1 if min_value is None else min_value
-+        max_val = 6 if max_value is None else max_value
-+        while True:
-+            response = input(prompt).strip()
-+            if response.lower() in ("q", "quit"):
-+                return None
-+            try:
-+                return parse_dice_values(response, count=count, min_value=min_val, max_value=max_val)
-+            except ValueError:
-+                self.log(
-+                    f"Ошибка ввода кубов: нужно ввести {count} значений от {min_val} до {max_val}."
-+                )
-+
- 
- class GuiIO(BaseIO):
-     def __init__(
-         self,
-         request_queue: queue.Queue,
-         answer_queue: queue.Queue,
-         log_path: Optional[str] = None,
-     ):
-         self.request_queue = request_queue
-         self.answer_queue = answer_queue
-         self.log_path = log_path or LOG_DEFAULT_PATH
-         self._messages: list[str] = []
-         self._lock = threading.Lock()
- 
-     def consume_messages(self) -> list[str]:
-         with self._lock:
-             messages = list(self._messages)
-             self._messages.clear()
-         return messages
- 
-     def log(self, message: str) -> None:
-         if message is None:
-             return
-         with self._lock:
-             self._messages.append(message)
-@@ -149,39 +202,68 @@ class GuiIO(BaseIO):
-         if isinstance(answer, int):
-             return answer
-         if isinstance(answer, str):
-             try:
-                 return int(answer.strip())
-             except ValueError:
-                 return None
-         return None
- 
-     def request_choice(self, prompt: str, options: list[str]):
-         request = Request(kind="choice", prompt=prompt, options=list(options))
-         self.request_queue.put(request)
-         answer = self._wait_for_answer()
-         if answer is None:
-             return None
-         return str(answer).strip()
- 
-     def request_direction(self, prompt: str, options: list[str]):
-         request = Request(kind="direction", prompt=prompt, options=list(options))
-         self.request_queue.put(request)
-         answer = self._wait_for_answer()
-         if answer is None:
-             return None
-         return str(answer).strip().lower()
- 
-+    def request_dice(
-+        self,
-+        prompt: str,
-+        count: int,
-+        min_value: Optional[int] = None,
-+        max_value: Optional[int] = None,
-+    ):
-+        request = Request(
-+            kind="dice",
-+            prompt=prompt,
-+            min_value=min_value,
-+            max_value=max_value,
-+            count=count,
-+        )
-+        self.request_queue.put(request)
-+        answer = self._wait_for_answer()
-+        if answer is None:
-+            return None
-+        if isinstance(answer, list):
-+            return answer
-+        if isinstance(answer, str):
-+            try:
-+                min_val = 1 if min_value is None else min_value
-+                max_val = 6 if max_value is None else max_value
-+                return parse_dice_values(answer, count=count, min_value=min_val, max_value=max_val)
-+            except ValueError:
-+                return None
-+        return None
-+
- 
- _ACTIVE_IO: Optional[BaseIO] = None
- 
- 
- def set_active_io(io: BaseIO) -> None:
-     global _ACTIVE_IO
-     _ACTIVE_IO = io
- 
- 
- def get_active_io() -> BaseIO:
-     global _ACTIVE_IO
-     if _ACTIVE_IO is None:
-         _ACTIVE_IO = ConsoleIO()
-     return _ACTIVE_IO
+                 if done is True:
+                     if reward > 0:
+                         self._io.log("Модель победила!")
+                     else:
+                         self._io.log("Вы победили!")
+                     is_done = True
+                 i += 1
 diff --git a/gym_mod/gym_mod/envs/warhamEnv.py b/gym_mod/gym_mod/envs/warhamEnv.py
-index 78fc371742f457f7be663b548424f1b6205f9cb6..2513dfdc2d347c527a2f6e5a0f64ce12b67203f7 100644
+index 2513dfdc2d347c527a2f6e5a0f64ce12b67203f7..477ccc0949dd95767c042b259c2af746c152ca20 100644
 --- a/gym_mod/gym_mod/envs/warhamEnv.py
 +++ b/gym_mod/gym_mod/envs/warhamEnv.py
-@@ -105,51 +105,64 @@ def player_dice(num=1, max=6):
-     - иначе используем рандом (удобно, если хочешь быстро без кубов)
-     """
-     manual = os.getenv("MANUAL_DICE", "0") == "1"
- 
-     if not manual:
-         if num == 1:
-             return random.randint(1, max)
-         return [random.randint(1, max) for _ in range(num)]
- 
-     io = get_active_io()
- 
-     def ask_one(idx: Optional[int] = None):
-         suffix = f" {idx}/{num}" if idx is not None else ""
-         while True:
-             v = io.request_int(f"Введи результат броска{suffix} (1..{max}): ", min_value=1, max_value=max)
-             if v is None:
-                 io.log("Нужно число в допустимом диапазоне.")
-                 continue
-             if 1 <= v <= max:
-                 return v
-             io.log(f"Должно быть от 1 до {max}.")
- 
-     if num == 1:
-         return ask_one()
- 
--    return [ask_one(idx=i + 1) for i in range(num)]
-+    while True:
-+        rolls = io.request_dice(
-+            f"Введи {num} результатов (1..{max}) через пробел или запятую: ",
-+            count=num,
-+            min_value=1,
-+            max_value=max,
-+        )
-+        if rolls is None:
-+            io.log(
-+                f"Ошибка ввода кубов: нужно ввести {num} значений от 1 до {max}. "
-+                "Где: ввод кубов. Что делать дальше: повторите ввод."
-+            )
-+            continue
-+        return rolls
- 
- 
- def weapon_is_assault(weapon) -> bool:
-     """
-     Пытаемся понять, Assault ли оружие.
-     Работает даже если weapon — dict/строка/что угодно.
-     """
-     if weapon is None or weapon == "None":
-         return False
- 
-     try:
-         if isinstance(weapon, dict):
-             blob = " ".join([f"{k} {v}" for k, v in weapon.items()])
-         else:
-             blob = str(weapon)
-     except Exception:
-         blob = str(weapon)
- 
-     return "assault" in blob.lower()
- 
- def _verbose_logs_enabled() -> bool:
-     """
-     Подробные логи бросков (hit/wound/save/damage).
-     Включаем автоматически, когда включены MANUAL_DICE, чтобы удобно было играть руками.
-     Можно принудительно включить: VERBOSE_LOGS=1.
-diff --git a/viewer/app.py b/viewer/app.py
-index 5d5b59100de07aed130da72e8a789bbfa84fff45..ab3fc0cbb0165086b2ceb1035901816f7be29c48 100644
---- a/viewer/app.py
-+++ b/viewer/app.py
-@@ -1,86 +1,90 @@
+@@ -1,28 +1,30 @@
+ import gymnasium as gym
+ from gymnasium import spaces
+ import numpy as np
++import matplotlib
++matplotlib.use("Agg")
+ import matplotlib.pyplot as plt
  import os
-+import re
- import sys
- from PySide6 import QtCore, QtGui, QtWidgets
+ import random
+ import re
+ from typing import Optional
  
- ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
- GYM_PATH = os.path.join(ROOT_DIR, "gym_mod")
- if GYM_PATH not in sys.path:
-     sys.path.insert(0, GYM_PATH)
+ from ..engine.utils import *
+ from ..engine import utils as engine_utils
+ from gym_mod.engine.mission import (
+     MISSION_NAME,
+     MAX_BATTLE_ROUNDS,
+     score_end_of_command_phase,
+     apply_end_of_battle,
+ )
+ from gym_mod.engine.skills import apply_end_of_command_phase
+ from gym_mod.engine.logging_utils import format_unit
+ from gym_mod.engine.state_export import write_state_json
+ from gym_mod.engine.game_io import get_active_io
  
- from viewer.scene import MapScene
- from viewer.state import StateWatcher
- from viewer.styles import Theme
+ # ============================================================
+ # 🔧 FIX: resolve string weapons like "Bolt pistol [PISTOL]"
+ # so engine.utils.attack() always receives a dict (or we safely
+ # skip the attack instead of crashing with "'str' object has no attribute 'get'").
+ # This is intentionally defensive: if WeaponData can't be found,
+ # we still won't crash during training.
+@@ -2752,58 +2754,64 @@ class Warhammer40kEnv(gym.Env):
+         ax.plot(y2, x2, color="black")
+         ax.plot(y1 + self.b_hei, x1, color="black")
+         ax.plot(y2, x2 + self.b_len, color="black")
  
- from gym_mod.engine.game_controller import GameController
-+from gym_mod.engine.game_io import parse_dice_values
- 
- 
- class MapView(QtWidgets.QGraphicsView):
-     def __init__(self, *args, **kwargs):
-         super().__init__(*args, **kwargs)
-         self.setRenderHints(
-             QtGui.QPainter.Antialiasing
-             | QtGui.QPainter.TextAntialiasing
-             | QtGui.QPainter.SmoothPixmapTransform
-         )
-         self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
-         self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
-         self.setViewportUpdateMode(QtWidgets.QGraphicsView.SmartViewportUpdate)
- 
-     def wheelEvent(self, event):
-         zoom_in = 1.15
-         zoom_out = 1 / zoom_in
-         if event.angleDelta().y() > 0:
-             self.scale(zoom_in, zoom_in)
-         else:
-             self.scale(zoom_out, zoom_out)
- 
- 
- class ViewerWindow(QtWidgets.QMainWindow):
-     def __init__(self, state_path, model_path=None):
-         super().__init__()
-         self.state_path = state_path
-         self.setWindowTitle("40kAI Viewer")
-         self.resize(1200, 800)
- 
-         self.controller = GameController(model_path=model_path, state_path=state_path)
-         self._pending_request = None
- 
-         self.state_watcher = StateWatcher(self.state_path)
-         self.map_scene = MapScene(cell_size=18)
-         self.map_scene.unit_selected.connect(self._select_row_for_unit)
- 
-         self.map_view = MapView(self.map_scene)
-         self.map_view.setBackgroundBrush(Theme.brush(Theme.background))
- 
-         self.status_round = QtWidgets.QLabel("Раунд: —")
-         self.status_turn = QtWidgets.QLabel("Ход: —")
-         self.status_phase = QtWidgets.QLabel("Фаза: —")
-         self.status_active = QtWidgets.QLabel("Активен: —")
- 
--        self.points_vp = QtWidgets.QLabel("VP: — / —")
--        self.points_cp = QtWidgets.QLabel("CP: — / —")
-+        self.points_vp_player = QtWidgets.QLabel("Player VP: —")
-+        self.points_vp_model = QtWidgets.QLabel("Model VP: —")
-+        self.points_cp_player = QtWidgets.QLabel("Player CP: —")
-+        self.points_cp_model = QtWidgets.QLabel("Model CP: —")
- 
-         self.units_table = QtWidgets.QTableWidget(0, 5)
-         self.units_table.setHorizontalHeaderLabels(["Сторона", "ID", "Имя", "HP", "Модели"])
-         header = self.units_table.horizontalHeader()
-         header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
-         header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
-         header.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
-         header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
-         header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)
-         self.units_table.verticalHeader().setVisible(False)
-         self.units_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-         self.units_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-         self.units_table.setAlternatingRowColors(True)
-         self.units_table.itemSelectionChanged.connect(self._sync_selection_from_table)
-         self._apply_units_table_font()
- 
-         self.log_view = QtWidgets.QPlainTextEdit()
-         self.log_view.setReadOnly(True)
-         self.log_view.setMaximumBlockCount(500)
- 
-         copy_button = QtWidgets.QPushButton("Copy")
-         clear_button = QtWidgets.QPushButton("Clear")
-         copy_button.clicked.connect(self._copy_log)
-         clear_button.clicked.connect(self.log_view.clear)
- 
-@@ -154,52 +158,54 @@ class ViewerWindow(QtWidgets.QMainWindow):
-         palette.setColor(QtGui.QPalette.HighlightedText, Theme.text)
-         palette.setColor(QtGui.QPalette.PlaceholderText, Theme.muted)
-         self.setPalette(palette)
-         self.setStyleSheet(Theme.stylesheet())
- 
-     def _apply_units_table_font(self):
-         body_font = Theme.font(size=11)
-         header_font = Theme.font(size=10, bold=True)
-         self.units_table.setFont(body_font)
-         header = self.units_table.horizontalHeader()
-         header.setFont(header_font)
-         self.units_table.verticalHeader().setDefaultSectionSize(22)
- 
-     def _group_status(self):
-         box = QtWidgets.QGroupBox("СТАТУС")
-         layout = QtWidgets.QVBoxLayout(box)
-         layout.addWidget(self.status_round)
-         layout.addWidget(self.status_turn)
-         layout.addWidget(self.status_phase)
-         layout.addWidget(self.status_active)
-         return box
- 
-     def _group_points(self):
-         box = QtWidgets.QGroupBox("ОЧКИ")
-         layout = QtWidgets.QVBoxLayout(box)
--        layout.addWidget(self.points_vp)
--        layout.addWidget(self.points_cp)
-+        layout.addWidget(self.points_vp_player)
-+        layout.addWidget(self.points_vp_model)
-+        layout.addWidget(self.points_cp_player)
-+        layout.addWidget(self.points_cp_model)
-         return box
- 
-     def _group_units(self):
-         box = QtWidgets.QGroupBox("ОТРЯДЫ")
-         layout = QtWidgets.QVBoxLayout(box)
-         layout.addWidget(self.units_table)
-         return box
- 
-     def _group_legend(self):
-         box = QtWidgets.QGroupBox("ЛЕГЕНДА")
-         layout = QtWidgets.QVBoxLayout(box)
-         layout.addLayout(self._legend_row("Игрок", Theme.player))
-         layout.addLayout(self._legend_row("Модель", Theme.model))
-         layout.addLayout(self._legend_row("Цель", Theme.objective))
-         return box
- 
-     def _legend_row(self, label, color):
-         row = QtWidgets.QHBoxLayout()
-         swatch = QtWidgets.QLabel()
-         swatch.setFixedSize(14, 14)
-         swatch.setStyleSheet(f"background-color: {color.name()}; border-radius: 7px;")
-         row.addWidget(swatch)
-         row.addWidget(QtWidgets.QLabel(label))
-         row.addStretch()
-         return row
-@@ -268,156 +274,201 @@ class ViewerWindow(QtWidgets.QMainWindow):
-         choice_page = QtWidgets.QWidget()
-         choice_layout = QtWidgets.QHBoxLayout(choice_page)
-         self.choice_combo = QtWidgets.QComboBox()
-         self.choice_ok = QtWidgets.QPushButton("ОК")
-         self.choice_ok.clicked.connect(self._submit_choice)
-         choice_layout.addWidget(self.choice_combo)
-         choice_layout.addWidget(self.choice_ok)
-         self._command_pages["choice"] = self.command_stack.addWidget(choice_page)
- 
-         self.command_stack.setCurrentIndex(self._command_pages["text"])
- 
-     def _set_request(self, request):
-         self._pending_request = request
-         if request is None:
-             if self.controller.is_finished:
-                 self.command_prompt.setText("Игра завершена.")
+         for i in range(len(self.unit_health)):
+             if i == 0:
+                 ax.plot(self.unit_coords[i][1], self.unit_coords[i][0], 'bo', label="Model Unit")
              else:
-                 self.command_prompt.setText("Команда не требуется.")
-             self.command_stack.setEnabled(False)
-             return
+                 ax.plot(self.unit_coords[i][1], self.unit_coords[i][0], 'bo')
  
-         self.command_prompt.setText(request.prompt)
-         self.command_stack.setEnabled(True)
-         kind = getattr(request, "kind", "text")
-         if kind == "direction":
-+            self.command_input.setPlaceholderText("Введите команду...")
-             self.command_stack.setCurrentIndex(self._command_pages["direction"])
-         elif kind == "bool":
-+            self.command_input.setPlaceholderText("Введите команду...")
-             self.command_stack.setCurrentIndex(self._command_pages["bool"])
-         elif kind == "int":
-             min_value = request.min_value if request.min_value is not None else 0
-             max_value = request.max_value if request.max_value is not None else 999
-             self.int_spin.setRange(min_value, max_value)
-             self.int_spin.setValue(min_value)
-+            self.command_input.setPlaceholderText("Введите команду...")
-             self.command_stack.setCurrentIndex(self._command_pages["int"])
-         elif kind == "choice":
-             self.choice_combo.clear()
-             if request.options:
-                 self.choice_combo.addItems([str(opt) for opt in request.options])
-                 self.command_stack.setCurrentIndex(self._command_pages["choice"])
+         for i in range(len(self.enemy_coords)):
+             if i == 0:
+                 ax.plot(self.enemy_coords[i][1], self.enemy_coords[i][0], 'go', label="Player Unit")
              else:
-                 self.command_stack.setCurrentIndex(self._command_pages["text"])
-+            self.command_input.setPlaceholderText("Введите команду...")
-+        elif kind == "dice":
-+            count = request.count or 0
-+            example_values = [str((idx % 6) + 1) for idx in range(count)]
-+            spaced = " ".join(example_values)
-+            comma = ",".join(example_values)
-+            compact = "".join(example_values)
-+            self.command_input.setPlaceholderText(
-+                f"Например: {spaced} или {comma}"
-+                + (f" или {compact}" if compact else "")
-+            )
-+            self.command_stack.setCurrentIndex(self._command_pages["text"])
+                 ax.plot(self.enemy_coords[i][1], self.enemy_coords[i][0], 'go')
+ 
+         for i in range(len(self.coordsOfOM)):
+             if i == 0:
+                 ax.plot(self.coordsOfOM[i][1], self.coordsOfOM[i][0], 'o', color="black", label="Objective Marker(s)")
+             else:
+                 ax.plot(self.coordsOfOM[i][1], self.coordsOfOM[i][0], 'o', color="black")
+ 
+         ax.legend(loc="right")
+ 
+         if mode == "train":
+-            fileName = "display/" + str(self.restarts) + "_" + str(self.iter) + ".png"
++            output_dir = "display"
++            os.makedirs(output_dir, exist_ok=True)
++            fileName = os.path.join(output_dir, f"{self.restarts}_{self.iter}.png")
          else:
-+            self.command_input.setPlaceholderText("Введите команду...")
-             self.command_stack.setCurrentIndex(self._command_pages["text"])
+-            fileName = "gui/build/img/board.png"
+-            fig.savefig("gui/img/board.png")
++            output_dir = os.path.join("gui", "build", "img")
++            legacy_dir = os.path.join("gui", "img")
++            os.makedirs(output_dir, exist_ok=True)
++            os.makedirs(legacy_dir, exist_ok=True)
++            fileName = os.path.join(output_dir, "board.png")
++            fig.savefig(os.path.join(legacy_dir, "board.png"))
  
-     def _append_log(self, messages):
-         if not messages:
-             return
-         for msg in messages:
-             self.log_view.appendPlainText(str(msg))
-         self.log_view.verticalScrollBar().setValue(self.log_view.verticalScrollBar().maximum())
+         fig.savefig(fileName)
+         ax.cla()
+-        plt.close()
++        plt.close(fig)
+         return self.board
  
-     def _start_controller(self):
-         messages, request = self.controller.start()
-         self._append_log(messages)
-         self._set_request(request)
-         self._poll_state()
+     def showBoard(self):
+         board = self.returnBoard()
+         np.savetxt("board.txt", board.astype(int), fmt="%i", delimiter=",")
+         self.render(mode="play")
  
-     def _submit_text(self):
-         text = self.command_input.text().strip()
-         if not text:
-             return
-+        if self._pending_request and getattr(self._pending_request, "kind", "") == "dice":
-+            count = self._pending_request.count or 0
-+            min_value = self._pending_request.min_value or 1
-+            max_value = self._pending_request.max_value or 6
-+            try:
-+                values = parse_dice_values(text, count=count, min_value=min_value, max_value=max_value)
-+            except ValueError as exc:
-+                entered = self._count_dice_entries(text)
-+                self.command_prompt.setText(
-+                    "Ошибка ввода кубов в панели «Команды»: "
-+                    f"{exc}. Нужно {count}, введено {entered}. "
-+                    "Что делать дальше: исправьте ввод и отправьте снова.\n"
-+                    f"{self._pending_request.prompt}"
-+                )
-+                return
-+            self.command_input.clear()
-+            self._submit_answer(values)
-+            return
-         self.command_input.clear()
-         self._submit_answer(text)
+     def close(self):
+         pass
  
-     def _submit_choice(self):
-         value = self.choice_combo.currentText()
-         self._submit_answer(value)
+     def _get_observation(self):
+         obs = []
  
-     def _submit_answer(self, value):
-         if self._pending_request is None:
-             return
-         messages, request = self.controller.answer(value)
-         self._append_log(messages)
-         self._set_request(request)
-         self._poll_state()
+         for i in range(len(self.unit_health)):
+             obs.append(self.unit_health[i])
+             obs.append(self.unit_coords[i][0])
+             obs.append(self.unit_coords[i][1])
  
-     def _fit_view(self):
-         rect = self.map_scene.sceneRect()
-         if rect.width() > 0 and rect.height() > 0:
-             self.map_view.fitInView(rect, QtCore.Qt.KeepAspectRatio)
+         obs.append(self.modelCP)
  
-     def _copy_log(self):
-         QtWidgets.QApplication.clipboard().setText(self.log_view.toPlainText())
+         for i in range(len(self.enemy_health)):
+             obs.append(self.enemy_health[i])
+             obs.append(self.enemy_coords[i][0])
+             obs.append(self.enemy_coords[i][1])
  
-     def _poll_state(self):
-         if self.state_watcher.load_if_changed():
-             self._apply_state(self.state_watcher.state)
+diff --git a/play.py b/play.py
+index 6eb3973f2bda27a3bd53fd61d6b98dedf41f250b..67cdca9a12a4e451082ffc725b9d5754a85a0ac5 100644
+--- a/play.py
++++ b/play.py
+@@ -78,52 +78,52 @@ if verbose:
+     for idx, unit in enumerate(model):
+         unit_data = unit.showUnitData()
+         unit_name = unit_data.get("Name", "Unknown")
+         unit_models = unit_data.get("#OfModels", 1)
+         instance_id = getattr(unit, "instance_id", "unknown")
+         _log(f"[roster] model[{idx}] name={unit_name} instance_id={instance_id} models={unit_models}")
+     for idx, unit in enumerate(enemy):
+         unit_data = unit.showUnitData()
+         unit_name = unit_data.get("Name", "Unknown")
+         unit_models = unit_data.get("#OfModels", 1)
+         instance_id = getattr(unit, "instance_id", "unknown")
+         _log(f"[roster] enemy[{idx}] name={unit_name} instance_id={instance_id} models={unit_models}")
+ _log(
+     "Units: "
+     + str(
+         [
+             (u.name, getattr(u, "instance_id", "unknown"), u.models_count)
+             for u in model
+         ]
+     )
+ )
  
-     def _apply_state(self, state):
-         board = state.get("board", {})
-         self.map_scene.update_state(state)
+ deploy_only_war(
+     model_units=model,
+     enemy_units=enemy,
+-    b_len=env.b_len,
+-    b_hei=env.b_hei,
++    b_len=env.unwrapped.b_len,
++    b_hei=env.unwrapped.b_hei,
+     attacker_side=attacker_side,
+     log_fn=log_fn,
+ )
+ post_deploy_setup(log_fn=log_fn)
  
-         self.status_round.setText(f"Раунд: {state.get('round', '—')}")
-         self.status_turn.setText(f"Ход: {state.get('turn', '—')}")
-         self.status_phase.setText(f"Фаза: {state.get('phase', '—')}")
-         active = state.get("active")
-         active_label = "Игрок" if active == "player" else "Модель" if active == "model" else "—"
-         self.status_active.setText(f"Активен: {active_label}")
+ env.attacker_side = attacker_side
+ env.defender_side = defender_side
  
-         vp = state.get("vp", {})
-         cp = state.get("cp", {})
--        self.points_vp.setText(f"VP: {vp.get('player', '—')} / {vp.get('model', '—')}")
--        self.points_cp.setText(f"CP: {cp.get('player', '—')} / {cp.get('model', '—')}")
-+        self.points_vp_player.setText(f"Player VP: {vp.get('player', '—')}")
-+        self.points_vp_model.setText(f"Model VP: {vp.get('model', '—')}")
-+        self.points_cp_player.setText(f"Player CP: {cp.get('player', '—')}")
-+        self.points_cp_model.setText(f"Model CP: {cp.get('model', '—')}")
+ state, info = env.reset(m=model, e=enemy)
+ if verbose:
+     squads_for_actions_count = len(model)
+     _log(f"[action_space] squads_for_actions_count={squads_for_actions_count}")
+     for idx, unit in enumerate(model):
+         unit_data = unit.showUnitData()
+         unit_name = unit_data.get("Name", "Unknown")
+         _log(f"[action_space] squad[{idx}] name={unit_name}")
+     total_models_count = 0
+     for unit in model:
+         unit_data = unit.showUnitData()
+         total_models_count += int(unit_data.get("#OfModels", 1))
+     _log(f"[action_space] total_models_count={total_models_count}")
+     move_num_keys = [
+         key for key in env.action_space.spaces.keys() if key.startswith("move_num_")
+     ]
+     _log(f"[action_space] move_num_keys_count={len(move_num_keys)}")
+@@ -138,48 +138,48 @@ target_net = DQN(n_observations, n_actions).to(device)
+ optimizer = torch.optim.Adam(policy_net.parameters())
  
-         self._populate_units_table(state.get("units", []))
-         self._update_log(state.get("log_tail", []))
+ policy_net.load_state_dict(checkpoint['policy_net'])
+ target_net.load_state_dict(checkpoint['target_net'])
+ optimizer.load_state_dict(checkpoint['optimizer'])
  
-     def _populate_units_table(self, units):
-         self.units_table.setRowCount(len(units))
-         self.units_table.setSortingEnabled(False)
-         self._row_lookup = []
-         for row, unit in enumerate(units):
-             side_label = "Игрок" if unit.get("side") == "player" else "Модель"
-             values = [
-                 side_label,
-                 str(unit.get("id", "—")),
-                 unit.get("name", "—"),
-                 str(unit.get("hp", "—")),
-                 str(unit.get("models", "—")),
-             ]
-             for col, value in enumerate(values):
-                 item = QtWidgets.QTableWidgetItem(value)
-                 self.units_table.setItem(row, col, item)
-             self._row_lookup.append((unit.get("side"), unit.get("id")))
-         self.units_table.setSortingEnabled(True)
+ policy_net.eval()
+ target_net.eval()
  
-     def _update_log(self, lines):
-         if isinstance(lines, list):
-             self.log_view.setPlainText("\n".join(lines))
-             self.log_view.verticalScrollBar().setValue(self.log_view.verticalScrollBar().maximum())
+ isdone = False
+ i = 0
  
-     def _select_row_for_unit(self, side, unit_id):
-         if not hasattr(self, "_row_lookup"):
-             return
-         for row, key in enumerate(self._row_lookup):
-             if key == (side, unit_id):
-                 self.units_table.selectRow(row)
-                 return
+ if playInGUI == True:
+     env.reset(m=model, e=enemy, playType=playInGUI, Type="big", trunc=True)
+ else:
+     env.reset(m=model, e=enemy, playType=playInGUI, Type="big", trunc=False)
  
-     def _sync_selection_from_table(self):
-         selected = self.units_table.selectionModel().selectedRows()
-         if not selected:
-             return
-         row = selected[0].row()
-         if not hasattr(self, "_row_lookup") or row >= len(self._row_lookup):
-             return
-         side, unit_id = self._row_lookup[row]
-         if side and unit_id is not None:
-             self.map_scene.select_unit(side, unit_id)
+ env.io = io
  
-+    def _count_dice_entries(self, text: str) -> int:
-+        stripped = text.strip()
-+        if not stripped:
-+            return 0
-+        if stripped.isdigit():
-+            return len(stripped)
-+        parts = [part for part in re.split(r"[,\s]+", stripped) if part]
-+        return len(parts)
-+
+ reward = 0
+ io.log("\nИнструкции:\n")
+ io.log("Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.)")
+ io.log("Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.)\n")
  
- def launch(state_path, model_path=None):
-     app = QtWidgets.QApplication([])
-     window = ViewerWindow(state_path, model_path=model_path)
-     window.showMaximized()
-     app.exec()
+ while isdone == False:
+-    done, info = env.player()
++    done, info = env.unwrapped.player()
+     state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+     action = select_action(env, state, i, policy_net, len(model))
+     action_dict = convertToDict(action)
+     if done != True:
+         next_observation, reward, done, _, info = env.step(action_dict)
+         reward = torch.tensor([reward], device=device)
+         unit_health = info["model health"]
+         enemy_health = info["player health"]
+         inAttack = info["in attack"]
+ 
+         board = env.render()
+         message = "Iteration {} ended with reward {}, Player health {}, Model health {}".format(i, reward, enemy_health, unit_health)
+         io.log(message)
+         next_state = torch.tensor(next_observation, dtype=torch.float32, device=device).unsqueeze(0)
+         state = next_state
+     if done == True:
+         if reward > 0:
+             io.log("Модель победила!")
+         else:
+             io.log("Вы победили!")
+         isdone = True
+     i+=1
 
