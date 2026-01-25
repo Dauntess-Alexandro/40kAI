@@ -490,8 +490,20 @@ class RollLogger:
 
 
 
-    def print_shoot_report(self, weapon: dict, attacker_data: dict, defender_data: dict, dmg_list, effect=None):
-        self._log("\n📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---")
+    def print_shoot_report(
+        self,
+        weapon: dict,
+        attacker_data: dict,
+        defender_data: dict,
+        dmg_list,
+        effect=None,
+        report_title: Optional[str] = None,
+        attacker_label: Optional[str] = None,
+        defender_label: Optional[str] = None,
+        extra_rules: Optional[list[str]] = None,
+    ):
+        title = report_title or "ОТЧЁТ ПО СТРЕЛЬБЕ"
+        self._log(f"\n📌 --- {title} ---")
 
         # В движке BS/WS берём из профиля оружия (как в 10e)
         bs = _get_int(weapon, ["BS", "Bs", "BallisticSkill", "BS+"], default=None)
@@ -526,6 +538,14 @@ class RollLogger:
         except Exception:
             pass
 
+        if attacker_label or defender_label:
+            parts = []
+            if attacker_label:
+                parts.append(f"Стреляет: {attacker_label}")
+            if defender_label:
+                parts.append(f"цель: {defender_label}")
+            self._log("; ".join(parts))
+
         self._log(f"Оружие: {wname}")
         if bs is not None:
             self._log(f"BS оружия: {bs}+")
@@ -550,6 +570,9 @@ class RollLogger:
             self._log(f"Правило: Rapid Fire {rf} (если цель в половине дальности: +{rf} атак)")
         if lethal:
             self._log("Правило: Lethal Hits (крит-хиты авто-ранят)")
+        if extra_rules:
+            for rule in extra_rules:
+                self._log(f"Правило: {rule}")
         if effect:
             self._log(f"Эффект: {effect}")
 
@@ -1123,8 +1146,9 @@ class Warhammer40kEnv(gym.Env):
             target_coords[moving_idx],
         )
         _logger = None
-        if self.trunc is False and _verbose_logs_enabled():
+        if _verbose_logs_enabled():
             _logger = RollLogger(auto_dice)
+            _logger.configure_for_weapon(attacker_weapon[chosen])
             dmg, modHealth = attack(
                 attacker_health[chosen],
                 attacker_weapon[chosen],
@@ -1161,6 +1185,10 @@ class Warhammer40kEnv(gym.Env):
                 defender_data=target_data[moving_idx],
                 dmg_list=dmg,
                 effect=None,
+                report_title="ОТЧЁТ ПО OVERWATCH",
+                attacker_label=self._format_unit_label(defender_side, chosen),
+                defender_label=target_label,
+                extra_rules=["Overwatch: попадания только на 6+"],
             )
 
     def _resolve_heroic_intervention(self, defender_side: str, charging_side: str, charging_idx: int, phase: str, manual: bool = False):
@@ -1790,8 +1818,9 @@ class Warhammer40kEnv(gym.Env):
                             manual=os.getenv("MANUAL_DICE", "0") == "1",
                         )
                         _logger = None
-                        if self.trunc is False and _verbose_logs_enabled():
+                        if _verbose_logs_enabled():
                             _logger = RollLogger(auto_dice)
+                            _logger.configure_for_weapon(self.unit_weapon[i])
                             dmg, modHealth = attack(
                                 self.unit_health[i],
                                 self.unit_weapon[i],
@@ -1830,13 +1859,15 @@ class Warhammer40kEnv(gym.Env):
                                 self._format_unit_label("enemy", idOfE),
                                 sum(dmg),
                             )
-                        if self.trunc is False and _logger is not None:
+                        if _logger is not None:
                             _logger.print_shoot_report(
                                 weapon=self.unit_weapon[i],
                                 attacker_data=self.unit_data[i],
                                 defender_data=self.enemy_data[idOfE],
                                 dmg_list=dmg,
                                 effect=effect,
+                                attacker_label=self._format_unit_label("model", i),
+                                defender_label=self._format_unit_label("enemy", idOfE),
                             )
                     else:
                         reward_delta -= 0.5
@@ -1894,6 +1925,7 @@ class Warhammer40kEnv(gym.Env):
                                         manual=False,
                                     )
                                     logger = RollLogger(player_dice)
+                                    logger.configure_for_weapon(self.enemy_weapon[i])
                                     dmg, modHealth = attack(
                                         self.enemy_health[i],
                                         self.enemy_weapon[i],
@@ -1914,6 +1946,8 @@ class Warhammer40kEnv(gym.Env):
                                         defender_data=self.unit_data[idOfE],
                                         dmg_list=dmg,
                                         effect=effect,
+                                        attacker_label=unit_label,
+                                        defender_label=self._format_unit_label("model", idOfE),
                                     )
                                     response = True
                                 else:

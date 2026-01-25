@@ -1,53 +1,251 @@
 diff --git a/gym_mod/gym_mod/envs/warhamEnv.py b/gym_mod/gym_mod/envs/warhamEnv.py
-index 264e34aa47cd70d87eeb99a7fbb3079796aab255..f8aa4f76f812c1954a15aa52550e9c648ffca28c 100644
+index f8aa4f76f812c1954a15aa52550e9c648ffca28c..c30e21d77ca401b64d33849be7f1e283022adb8c 100644
 --- a/gym_mod/gym_mod/envs/warhamEnv.py
 +++ b/gym_mod/gym_mod/envs/warhamEnv.py
-@@ -1741,63 +1741,64 @@ class Warhammer40kEnv(gym.Env):
-                 if self.unit_health[i] <= 0:
-                     self._log_unit("MODEL", modelName, i, "Юнит мертв, стрельба пропущена.")
-                     continue
-                 if self.unitFellBack[i]:
-                     self._log_unit("MODEL", modelName, i, "Fall Back в этом ходу — стрельба недоступна.")
-                     continue
-                 if self.unitInAttack[i][0] == 1:
-                     self._log_unit("MODEL", modelName, i, "Юнит в ближнем бою, стрельба недоступна.")
-                     continue
-                 if self.unit_weapon[i] == "None":
-                     self._log_unit("MODEL", modelName, i, "Нет дальнобойного оружия, стрельба пропущена.")
-                     continue
-                 if advanced and not weapon_is_assault(self.unit_weapon[i]):
-                     self._log_unit("MODEL", modelName, i, "Advance без Assault — стрельба пропущена.")
-                     continue
+@@ -468,110 +468,133 @@ class RollLogger:
+             if lethal and crit_hits is not None:
+                 extra.append(f"crit(6s): {crit_hits} -> авто ран: {auto_wounds}")
+             suf = ("  -> " + ", ".join(extra)) if extra else ""
+             self._log(f"Hit rolls:    {hit_rolls}{suf}")
  
-                 shootAbleUnits = []
-                 for j in range(len(self.enemy_health)):
-                     if (
-                         distance(self.unit_coords[i], self.enemy_coords[j]) <= self.unit_weapon[i]["Range"]
-                         and self.enemy_health[j] > 0
-                         and self.enemyInAttack[j][0] == 0
-                     ):
-                         shootAbleUnits.append(j)
-                 if len(shootAbleUnits) > 0:
--                    target_ids = [j + 11 for j in shootAbleUnits]
--                    idOfE = action["shoot"]
--                    if idOfE in shootAbleUnits:
--                        distances = {j: distance(self.unit_coords[i], self.enemy_coords[j]) for j in shootAbleUnits}
-+                    valid_target_ids = shootAbleUnits
-+                    raw = action["shoot"]
-+                    if 0 <= raw < len(valid_target_ids):
-+                        idOfE = valid_target_ids[raw]
-+                        distances = {j: distance(self.unit_coords[i], self.enemy_coords[j]) for j in valid_target_ids}
+         if wound_rolls:
+             if wt is not None:
+                 self._log(f"Wound rolls:  {wound_rolls}  (цель {wt}+) -> wounds: {rolled_wounds}")
+             else:
+                 self._log(f"Wound rolls:  {wound_rolls}")
+ 
+         if save_rolls:
+             if save_target is not None:
+                 fs = failed_saves if failed_saves is not None else "??"
+                 self._log(f"Save rolls:   {save_rolls}  (цель {save_target}+) -> failed saves: {fs}")
+             else:
+                 self._log(f"Save rolls:   {save_rolls}")
+ 
+         self._log(f"\n✅ Итог по движку: прошло урона = {total_damage}")
+         self._log("📌 -------------------------\n")
+ 
+ 
+ 
+ 
+ 
+-    def print_shoot_report(self, weapon: dict, attacker_data: dict, defender_data: dict, dmg_list, effect=None):
+-        self._log("\n📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---")
++    def print_shoot_report(
++        self,
++        weapon: dict,
++        attacker_data: dict,
++        defender_data: dict,
++        dmg_list,
++        effect=None,
++        report_title: Optional[str] = None,
++        attacker_label: Optional[str] = None,
++        defender_label: Optional[str] = None,
++        extra_rules: Optional[list[str]] = None,
++    ):
++        title = report_title or "ОТЧЁТ ПО СТРЕЛЬБЕ"
++        self._log(f"\n📌 --- {title} ---")
+ 
+         # В движке BS/WS берём из профиля оружия (как в 10e)
+         bs = _get_int(weapon, ["BS", "Bs", "BallisticSkill", "BS+"], default=None)
+         ws = _get_int(weapon, ["WS", "Ws", "WeaponSkill", "WS+"], default=None)
+ 
+         # Если почему-то BS/WS отсутствуют в оружии — откатимся к данным юнита (как было раньше)
+         if bs is None:
+             bs = _get_int(attacker_data, ["BS", "Bs", "BallisticSkill", "BS+"], default=None)
+ 
+         s = _get_int(weapon, ["S", "Strength"], default=None)
+ 
+         ap_val = 0
+         if isinstance(weapon, dict):
+             ap_parsed = _parse_int_like(weapon.get("AP"))
+             if ap_parsed is not None:
+                 ap_val = ap_parsed
+ 
+         t = _get_int(defender_data, ["T", "Toughness"], default=None)
+         sv = _get_int(defender_data, ["Sv", "SV", "Save", "Sv+"], default=None)
+         inv = _get_int(defender_data, ["IVSave", "Invul", "Invulnerable", "Inv", "Invul+"], default=None)
+ 
+         wname = weapon
+         if isinstance(weapon, dict):
+             wname = weapon.get("Name", weapon)
+ 
+         # Абилки оружия (берём из engine.utils, там же, где расчёт)
+         lethal = False
+         rf = 0
+         try:
+             lethal = bool(engine_utils._weapon_has_lethal_hits(weapon))
+             rf = int(engine_utils._weapon_rapid_fire_x(weapon) or 0)
+         except Exception:
+             pass
+ 
++        if attacker_label or defender_label:
++            parts = []
++            if attacker_label:
++                parts.append(f"Стреляет: {attacker_label}")
++            if defender_label:
++                parts.append(f"цель: {defender_label}")
++            self._log("; ".join(parts))
++
+         self._log(f"Оружие: {wname}")
+         if bs is not None:
+             self._log(f"BS оружия: {bs}+")
+         if s is not None and t is not None:
+             self._log(f"S vs T: {s} vs {t}  -> базово ранение на {_wound_target(s, t)}+")
+         if sv is not None:
+             # В данных проекта часто invul=0 означает "нет инвула".
+             inv_txt = "нет"
+             if inv is not None:
+                 try:
+                     inv_i = int(inv)
+                     if inv_i > 0:
+                         inv_txt = f"{inv_i}+"
+                 except Exception:
+                     pass
+             self._log(f"Save цели: {sv}+ (invul: {inv_txt})")
+ 
+         if ap_val != 0:
+             self._log(f"AP: {ap_val}")
+ 
+         if rf:
+             self._log(f"Правило: Rapid Fire {rf} (если цель в половине дальности: +{rf} атак)")
+         if lethal:
+             self._log("Правило: Lethal Hits (крит-хиты авто-ранят)")
++        if extra_rules:
++            for rule in extra_rules:
++                self._log(f"Правило: {rule}")
+         if effect:
+             self._log(f"Эффект: {effect}")
+ 
+         off = 1 if self.has_attack_count_roll else 0
+ 
+         atk_rolls = self.calls[0]["vals"] if self.has_attack_count_roll and len(self.calls) > 0 else []
+         hit_rolls = self.calls[0 + off]["vals"] if len(self.calls) > (0 + off) else []
+         wound_rolls = self.calls[1 + off]["vals"] if len(self.calls) > (1 + off) else []
+         save_rolls = self.calls[2 + off]["vals"] if len(self.calls) > (2 + off) else []
+ 
+         # --- hits ---
+         hits = None
+         crit_hits = None
+         if bs is not None and hit_rolls:
+             crit_hits = sum(1 for r in hit_rolls if int(r) == 6)
+             hits = 0
+             for r in hit_rolls:
+                 r = int(r)
+                 if r == 1:
+                     continue
+                 if r == 6:
+                     hits += 1
+                     continue
+                 if r >= bs:
+                     hits += 1
+@@ -1101,88 +1124,93 @@ class Warhammer40kEnv(gym.Env):
+                 return
+             chosen = int(choice) - (21 if defender_side == "model" else 11)
+ 
+         if defender_side == "model":
+             self.modelCP -= 1
+             attacker_health = self.unit_health
+             attacker_weapon = self.unit_weapon
+             attacker_data = self.unit_data
+             target_health = self.enemy_health if moving_unit_side == "enemy" else self.unit_health
+             target_data = self.enemy_data if moving_unit_side == "enemy" else self.unit_data
+             target_coords = self.enemy_coords if moving_unit_side == "enemy" else self.unit_coords
+         else:
+             self.enemyCP -= 1
+             attacker_health = self.enemy_health
+             attacker_weapon = self.enemy_weapon
+             attacker_data = self.enemy_data
+             target_health = self.unit_health if moving_unit_side == "model" else self.enemy_health
+             target_data = self.unit_data if moving_unit_side == "model" else self.enemy_data
+             target_coords = self.unit_coords if moving_unit_side == "model" else self.enemy_coords
+ 
+         distance_to_target = distance(
+             self.unit_coords[chosen] if defender_side == "model" else self.enemy_coords[chosen],
+             target_coords[moving_idx],
+         )
+         _logger = None
+-        if self.trunc is False and _verbose_logs_enabled():
++        if _verbose_logs_enabled():
+             _logger = RollLogger(auto_dice)
++            _logger.configure_for_weapon(attacker_weapon[chosen])
+             dmg, modHealth = attack(
+                 attacker_health[chosen],
+                 attacker_weapon[chosen],
+                 attacker_data[chosen],
+                 target_health[moving_idx],
+                 target_data[moving_idx],
+                 distance_to_target=distance_to_target,
+                 hit_on_6=True,
+                 roller=_logger.roll,
+             )
+         else:
+             dmg, modHealth = attack(
+                 attacker_health[chosen],
+                 attacker_weapon[chosen],
+                 attacker_data[chosen],
+                 target_health[moving_idx],
+                 target_data[moving_idx],
+                 distance_to_target=distance_to_target,
+                 hit_on_6=True,
+             )
+ 
+         target_health[moving_idx] = modHealth
+         self._log_rule(
+             defender_side,
+             chosen,
+             "Overwatch",
+             f"Цель: {target_label}. Стоимость: -1 CP. Итоговый урон: {float(np.sum(dmg))}.",
+             phase=phase,
+         )
+         if _logger is not None:
+             _logger.print_shoot_report(
+                 weapon=attacker_weapon[chosen],
+                 attacker_data=attacker_data[chosen],
+                 defender_data=target_data[moving_idx],
+                 dmg_list=dmg,
+                 effect=None,
++                report_title="ОТЧЁТ ПО OVERWATCH",
++                attacker_label=self._format_unit_label(defender_side, chosen),
++                defender_label=target_label,
++                extra_rules=["Overwatch: попадания только на 6+"],
+             )
+ 
+     def _resolve_heroic_intervention(self, defender_side: str, charging_side: str, charging_idx: int, phase: str, manual: bool = False):
+         """
+         10e Heroic Intervention: реакция защитника после успешного charge move врага.
+         Упрощение: eligible = юниты защитника в 6" от charging unit.
+         Из-за 1v1 структуры unitInAttack отмечаем только защитника.
+         """
+         side_label = self._side_label(defender_side, manual=manual)
+         if defender_side == "model":
+             defender_health = self.unit_health
+             defender_coords = self.unit_coords
+             defender_in_attack = self.unitInAttack
+             defender_cp = self.modelCP
+         else:
+             defender_health = self.enemy_health
+             defender_coords = self.enemy_coords
+             defender_in_attack = self.enemyInAttack
+             defender_cp = self.enemyCP
+ 
+         charging_coords = self.unit_coords if charging_side == "model" else self.enemy_coords
+         eligible = []
+         for i in range(len(defender_health)):
+             if defender_health[i] <= 0:
+                 continue
+@@ -1768,97 +1796,100 @@ class Warhammer40kEnv(gym.Env):
+                     if 0 <= raw < len(valid_target_ids):
+                         idOfE = valid_target_ids[raw]
+                         distances = {j: distance(self.unit_coords[i], self.enemy_coords[j]) for j in valid_target_ids}
                          closest = min(distances, key=distances.get)
--                        min_hp = min(shootAbleUnits, key=lambda idx: self.enemy_health[idx])
-+                        min_hp = min(valid_target_ids, key=lambda idx: self.enemy_health[idx])
+                         min_hp = min(valid_target_ids, key=lambda idx: self.enemy_health[idx])
                          if idOfE == closest:
                              reason = "самая близкая"
                          elif idOfE == min_hp:
                              reason = "цель с меньшим HP"
                          else:
                              reason = "выбор политики"
--                        target_list = self._format_unit_choices("enemy", shootAbleUnits)
-+                        target_list = self._format_unit_choices("enemy", valid_target_ids)
+                         target_list = self._format_unit_choices("enemy", valid_target_ids)
                          self._log_unit(
                              "MODEL",
                              modelName,
@@ -61,8 +259,10 @@ index 264e34aa47cd70d87eeb99a7fbb3079796aab255..f8aa4f76f812c1954a15aa52550e9c64
                              manual=os.getenv("MANUAL_DICE", "0") == "1",
                          )
                          _logger = None
-                         if self.trunc is False and _verbose_logs_enabled():
+-                        if self.trunc is False and _verbose_logs_enabled():
++                        if _verbose_logs_enabled():
                              _logger = RollLogger(auto_dice)
++                            _logger.configure_for_weapon(self.unit_weapon[i])
                              dmg, modHealth = attack(
                                  self.unit_health[i],
                                  self.unit_weapon[i],
@@ -73,7 +273,19 @@ index 264e34aa47cd70d87eeb99a7fbb3079796aab255..f8aa4f76f812c1954a15aa52550e9c64
                                  distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
                                  roller=_logger.roll,
                              )
-@@ -1817,57 +1818,61 @@ class Warhammer40kEnv(gym.Env):
+                         else:
+                             dmg, modHealth = attack(
+                                 self.unit_health[i],
+                                 self.unit_weapon[i],
+                                 self.unit_data[i],
+                                 self.enemy_health[idOfE],
+                                 self.enemy_data[idOfE],
+                                 effects=effect,
+                                 distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
+                             )
+                         self.enemy_health[idOfE] = modHealth
+                         reward_delta += 0.2
+                         self._log_unit(
                              "MODEL",
                              modelName,
                              i,
@@ -89,29 +301,30 @@ index 264e34aa47cd70d87eeb99a7fbb3079796aab255..f8aa4f76f812c1954a15aa52550e9c64
                                  self._format_unit_label("enemy", idOfE),
                                  sum(dmg),
                              )
-                         if self.trunc is False and _logger is not None:
+-                        if self.trunc is False and _logger is not None:
++                        if _logger is not None:
                              _logger.print_shoot_report(
                                  weapon=self.unit_weapon[i],
                                  attacker_data=self.unit_data[i],
                                  defender_data=self.enemy_data[idOfE],
                                  dmg_list=dmg,
                                  effect=effect,
++                                attacker_label=self._format_unit_label("model", i),
++                                defender_label=self._format_unit_label("enemy", idOfE),
                              )
                      else:
                          reward_delta -= 0.5
--                        target_list = self._format_unit_choices("enemy", shootAbleUnits)
-+                        target_list = self._format_unit_choices("enemy", valid_target_ids)
+                         target_list = self._format_unit_choices("enemy", valid_target_ids)
                          self._log_unit(
                              "MODEL",
                              modelName,
                              i,
--                            f"Цели в дальности: {target_list}, выбрана недоступная цель {idOfE + 11}. Стрельба пропущена.",
-+                            f"Цели в дальности: {target_list}, выбрана недоступная цель (raw={raw}). Стрельба пропущена.",
+                             f"Цели в дальности: {target_list}, выбрана недоступная цель (raw={raw}). Стрельба пропущена.",
                          )
-+                        if _verbose_logs_enabled():
-+                            self._log(
-+                                f"[MODEL][SHOOT] Невалидный выбор цели: raw={raw}, доступные={valid_target_ids} (ожидался индекс 0..{len(valid_target_ids) - 1}). Стрельба пропущена."
-+                            )
+                         if _verbose_logs_enabled():
+                             self._log(
+                                 f"[MODEL][SHOOT] Невалидный выбор цели: raw={raw}, доступные={valid_target_ids} (ожидался индекс 0..{len(valid_target_ids) - 1}). Стрельба пропущена."
+                             )
                          if self.trunc is False:
                              self._log(f"{self._format_unit_label('model', i)} не смог стрелять: выбранная цель недоступна.")
                  else:
@@ -123,13 +336,7 @@ index 264e34aa47cd70d87eeb99a7fbb3079796aab255..f8aa4f76f812c1954a15aa52550e9c64
                  unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
                  advanced = advanced_flags[i] if advanced_flags else False
                  if self.enemyFellBack[i]:
-                     self._log(f"{unit_label}: отступил в этом ходу — стрельба пропущена.")
-                     continue
-                 if self.enemy_weapon[i] != "None":
-                     if advanced and not weapon_is_assault(self.enemy_weapon[i]):
-                         self._log(f"{unit_label}: был Advance без Assault — стрельба пропущена.")
-                     else:
-                         shootAble = np.array([])
+@@ -1872,70 +1903,73 @@ class Warhammer40kEnv(gym.Env):
                          for j in range(len(self.unit_health)):
                              if distance(self.enemy_coords[i], self.unit_coords[j]) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
                                  shootAble = np.append(shootAble, j)
@@ -137,4 +344,70 @@ index 264e34aa47cd70d87eeb99a7fbb3079796aab255..f8aa4f76f812c1954a15aa52550e9c64
                              response = False
                              while response is False:
                                  targets_label = self._format_unit_choices("model", shootAble.astype(int).tolist())
+                                 options = [str(21 + int(idx)) for idx in shootAble.astype(int).tolist()]
+                                 shoot = self._request_choice(
+                                     f"Выберите цель для стрельбы. Стреляет: {unit_label}. Доступные цели: {targets_label}. Введите ID цели: ",
+                                     options,
+                                 )
+                                 if shoot is None:
+                                     self.game_over = True
+                                     return None
+                                 shoot_value = str(shoot).strip()
+                                 if is_num(shoot_value) is True and int(shoot_value) - 21 in shootAble:
+                                     idOfE = int(shoot_value) - 21
+                                     effect = self._maybe_use_smokescreen(
+                                         defender_side="model",
+                                         defender_idx=idOfE,
+                                         phase="shooting",
+                                         manual=False,
+                                     )
+                                     logger = RollLogger(player_dice)
++                                    logger.configure_for_weapon(self.enemy_weapon[i])
+                                     dmg, modHealth = attack(
+                                         self.enemy_health[i],
+                                         self.enemy_weapon[i],
+                                         self.enemy_data[i],
+                                         self.unit_health[idOfE],
+                                         self.unit_data[idOfE],
+                                         effects=effect,
+                                         distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfE]),
+                                         roller=logger.roll,
+                                     )
+                                     self.unit_health[idOfE] = modHealth
+                                     self._log(
+                                         f"{unit_label} нанёс {sum(dmg)} урона по {self._format_unit_label('model', idOfE)}"
+                                     )
+                                     logger.print_shoot_report(
+                                         weapon=self.enemy_weapon[i],
+                                         attacker_data=self.enemy_data[i],
+                                         defender_data=self.unit_data[idOfE],
+                                         dmg_list=dmg,
+                                         effect=effect,
++                                        attacker_label=unit_label,
++                                        defender_label=self._format_unit_label("model", idOfE),
+                                     )
+                                     response = True
+                                 else:
+                                     self._log("Недоступная цель, попробуйте снова.")
+                 else:
+                     self._log("Нет доступного оружия для стрельбы.")
+         elif side == "enemy":
+             for i in range(len(self.enemy_health)):
+                 advanced = advanced_flags[i] if advanced_flags else False
+                 if self.enemyFellBack[i]:
+                     if self.trunc is False:
+                         self._log(f"{self._format_unit_label('enemy', i)}: отступил — стрельба пропущена.")
+                     continue
+                 if self.enemy_weapon[i] != "None":
+                     if advanced and not weapon_is_assault(self.enemy_weapon[i]):
+                         if self.trunc is False:
+                             self._log(f"{self._format_unit_label('enemy', i)}: Advance без Assault — стрельба пропущена.")
+                     else:
+                         shootAbleUnits = []
+                         for j in range(len(self.unit_health)):
+                             if distance(self.enemy_coords[i], self.unit_coords[j]) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
+                                 shootAbleUnits.append(j)
+                         if len(shootAbleUnits) > 0:
+                             idOfM = np.random.choice(shootAbleUnits)
+                             effect = self._maybe_use_smokescreen(
 
