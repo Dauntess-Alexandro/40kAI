@@ -1763,19 +1763,20 @@ class Warhammer40kEnv(gym.Env):
                     ):
                         shootAbleUnits.append(j)
                 if len(shootAbleUnits) > 0:
-                    target_ids = [j + 11 for j in shootAbleUnits]
-                    idOfE = action["shoot"]
-                    if idOfE in shootAbleUnits:
-                        distances = {j: distance(self.unit_coords[i], self.enemy_coords[j]) for j in shootAbleUnits}
+                    valid_target_ids = shootAbleUnits
+                    raw = action["shoot"]
+                    if 0 <= raw < len(valid_target_ids):
+                        idOfE = valid_target_ids[raw]
+                        distances = {j: distance(self.unit_coords[i], self.enemy_coords[j]) for j in valid_target_ids}
                         closest = min(distances, key=distances.get)
-                        min_hp = min(shootAbleUnits, key=lambda idx: self.enemy_health[idx])
+                        min_hp = min(valid_target_ids, key=lambda idx: self.enemy_health[idx])
                         if idOfE == closest:
                             reason = "самая близкая"
                         elif idOfE == min_hp:
                             reason = "цель с меньшим HP"
                         else:
                             reason = "выбор политики"
-                        target_list = self._format_unit_choices("enemy", shootAbleUnits)
+                        target_list = self._format_unit_choices("enemy", valid_target_ids)
                         self._log_unit(
                             "MODEL",
                             modelName,
@@ -1839,13 +1840,17 @@ class Warhammer40kEnv(gym.Env):
                             )
                     else:
                         reward_delta -= 0.5
-                        target_list = self._format_unit_choices("enemy", shootAbleUnits)
+                        target_list = self._format_unit_choices("enemy", valid_target_ids)
                         self._log_unit(
                             "MODEL",
                             modelName,
                             i,
-                            f"Цели в дальности: {target_list}, выбрана недоступная цель {idOfE + 11}. Стрельба пропущена.",
+                            f"Цели в дальности: {target_list}, выбрана недоступная цель (raw={raw}). Стрельба пропущена.",
                         )
+                        if _verbose_logs_enabled():
+                            self._log(
+                                f"[MODEL][SHOOT] Невалидный выбор цели: raw={raw}, доступные={valid_target_ids} (ожидался индекс 0..{len(valid_target_ids) - 1}). Стрельба пропущена."
+                            )
                         if self.trunc is False:
                             self._log(f"{self._format_unit_label('model', i)} не смог стрелять: выбранная цель недоступна.")
                 else:
