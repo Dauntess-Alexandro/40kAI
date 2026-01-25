@@ -2549,6 +2549,69 @@ class Warhammer40kEnv(gym.Env):
 
                 return True
 
+        manual_enemy = bool(getattr(self, "playType", False))
+
+        def _prompt_enemy_attacker(eligible_indices: list[int]) -> Optional[int]:
+            if not eligible_indices:
+                return None
+            unit_choices = self._format_unit_choices("enemy", eligible_indices)
+            self._log("ФАЗА БОЯ (Игрок): выберите атакующего юнита")
+            self._log("ФАЗА БОЯ: ожидается выбор атакующего юнита")
+            options = [str(11 + idx) for idx in eligible_indices]
+            while True:
+                choice = self._request_choice(
+                    f"ФАЗА БОЯ: выбери юнита для атаки. Доступные: {unit_choices}. Введите ID юнита: ",
+                    options,
+                )
+                if choice is None:
+                    self.game_over = True
+                    return None
+                choice_value = str(choice).strip()
+                if is_num(choice_value) and int(choice_value) - 11 in eligible_indices:
+                    return int(choice_value) - 11
+                self._log(f"Неверный ввод: выберите юнита из списка {unit_choices}.")
+
+        def _prompt_enemy_target(att_idx: int) -> Optional[int]:
+            def_idx = self.enemyInAttack[att_idx][1]
+            targets = []
+            if 0 <= def_idx < len(self.unit_health) and self.unit_health[def_idx] > 0:
+                targets = [def_idx]
+            if not targets:
+                self._log("Целей для атаки нет: бой пропущен.")
+                return None
+            target_choices = self._format_unit_choices("model", targets)
+            self._log("Выберите цель")
+            self._log("ФАЗА БОЯ: ожидается выбор цели")
+            options = [str(21 + idx) for idx in targets]
+            while True:
+                choice = self._request_choice(
+                    f"Выберите цель. Доступные цели: {target_choices}. Введите ID цели: ",
+                    options,
+                )
+                if choice is None:
+                    self.game_over = True
+                    return None
+                choice_value = str(choice).strip()
+                if is_num(choice_value) and int(choice_value) - 21 in targets:
+                    return int(choice_value) - 21
+                self._log(f"Неверный ввод: выберите цель из списка {target_choices}.")
+
+        def _manual_enemy_attack(eligible_indices: list[int]) -> Optional[int]:
+            while True:
+                attacker_idx = _prompt_enemy_attacker(eligible_indices)
+                if attacker_idx is None:
+                    return None
+                target_idx = _prompt_enemy_target(attacker_idx)
+                if target_idx is None:
+                    return None
+                confirm = self._request_bool("Начать атаку? (y/n): ")
+                if confirm is None:
+                    self.game_over = True
+                    return None
+                if confirm:
+                    return attacker_idx
+                self._log("Атака отменена: выберите юнита и цель заново.")
+
         # есть ли вообще кому драться?
         any_fight = any(x[0] == 1 for x in self.unitInAttack) or any(x[0] == 1 for x in self.enemyInAttack)
         if not any_fight:
@@ -2579,10 +2642,20 @@ class Warhammer40kEnv(gym.Env):
         else:
             chargers = [i for i in range(len(self.enemy_health))
                         if self.enemyCharged[i] == 1 and self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0]
-            for i in chargers:
-                if i not in fought_enemy:
-                    if _do_melee("enemy", i):
-                        fought_enemy.add(i)
+            if manual_enemy:
+                remaining = [i for i in chargers if i not in fought_enemy]
+                while remaining:
+                    attacker_idx = _manual_enemy_attack(remaining)
+                    if attacker_idx is None:
+                        return
+                    if _do_melee("enemy", attacker_idx):
+                        fought_enemy.add(attacker_idx)
+                    remaining = [i for i in chargers if i not in fought_enemy]
+            else:
+                for i in chargers:
+                    if i not in fought_enemy:
+                        if _do_melee("enemy", i):
+                            fought_enemy.add(i)
 
         # 2) then alternate, starting with NON-active side
         next_side = "enemy" if active_side == "model" else "model"
@@ -2604,9 +2677,16 @@ class Warhammer40kEnv(gym.Env):
                 next_side = "enemy"
             else:
                 if enemy_left:
-                    i = enemy_left[0]
-                    _do_melee("enemy", i)
-                    fought_enemy.add(i)
+                    if manual_enemy:
+                        attacker_idx = _manual_enemy_attack(enemy_left)
+                        if attacker_idx is None:
+                            return
+                        _do_melee("enemy", attacker_idx)
+                        fought_enemy.add(attacker_idx)
+                    else:
+                        i = enemy_left[0]
+                        _do_melee("enemy", i)
+                        fought_enemy.add(i)
                 next_side = "model"
 
         # после Fight Phase — charged сбрасываем (на всякий)

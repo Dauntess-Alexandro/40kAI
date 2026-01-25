@@ -1,213 +1,201 @@
 diff --git a/gym_mod/gym_mod/envs/warhamEnv.py b/gym_mod/gym_mod/envs/warhamEnv.py
-index 477ccc0949dd95767c042b259c2af746c152ca20..e230ccbeaf375ae9573a9a12be6fc06fb42111bb 100644
+index e230ccbeaf375ae9573a9a12be6fc06fb42111bb..264e34aa47cd70d87eeb99a7fbb3079796aab255 100644
 --- a/gym_mod/gym_mod/envs/warhamEnv.py
 +++ b/gym_mod/gym_mod/envs/warhamEnv.py
-@@ -1277,132 +1277,146 @@ class Warhammer40kEnv(gym.Env):
-         self._log(f"=== КОНЕЦ БОЕВОГО РАУНДА {self.battle_round} ===")
-         self.battle_round += 1
-         self.numTurns = self.battle_round
-         self._round_banner_shown = False
-         apply_end_of_battle(self, log_fn=self._log)
+@@ -2527,108 +2527,188 @@ class Warhammer40kEnv(gym.Env):
+                     f"⚔️ {self._format_unit_label('enemy', att_idx)} атакует {self._format_unit_label('model', def_idx)} оружием {wname}: урон {float(np.sum(dmg))} | HP {hp_before} -> {modHealth}"
+                 )
+                 self._log_unit_phase(
+                     enemy_label,
+                     "fight",
+                     att_idx + 11,
+                     att_idx,
+                     f"Итог атаки: урон {float(np.sum(dmg))}, HP цели {hp_before} -> {modHealth}.",
+                 )
  
-     def _advance_turn_order(self):
-         if self.active_side == self.turn_order[-1]:
-             self._end_battle_round()
-             self.active_side = self.turn_order[0]
-         else:
-             current_index = self.turn_order.index(self.active_side)
-             self.active_side = self.turn_order[current_index + 1]
-         self.phase = "command"
- 
-     def command_phase(self, side: str, action=None, manual: bool = False):
-         self.begin_phase(side, "command")
-         if side == "model":
-             self._log_phase("MODEL", "command")
-             self.modelCP += 1
-             self.enemyCP += 1
-             reward_delta = 0
-             battle_shock = [False] * len(self.unit_health)
-             for i in range(len(self.unit_health)):
-                 unit_label = self._format_unit_label("model", i)
-+                if self.unit_health[i] <= 0:
-+                    self.modelOC[i] = 0
-+                    continue
-+                self.modelOC[i] = self.unit_data[i]["OC"]
-                 if isBelowHalfStr(self.unit_data[i], self.unit_health[i]) is True and self.unit_health[i] > 0:
-                     if self.trunc is False:
-                         self._log(f"{unit_label}: ниже половины состава, тест Battle-shock.")
-                         self._log("Бросок 2D6...", verbose_only=True)
-                     diceRoll = dice(num=2)
-                     if self.trunc is False:
-                         self._log(f"Бросок: {diceRoll[0]} {diceRoll[1]}", verbose_only=True)
-                     if sum(diceRoll) >= self.unit_data[i]["Ld"]:
-                         self.modelOC[i] = self.unit_data[i]["OC"]
-                         if self.trunc is False:
-                             self._log(f"{unit_label}: тест Battle-shock пройден.")
-                     else:
-                         battle_shock[i] = True
-                         self.modelOC[i] = 0
-                         if self.trunc is False:
-                             self._log(f"{unit_label}: тест Battle-shock провален.")
-                         if action and action.get("use_cp") == 1 and action.get("cp_on") == i:
-                             if self.modelCP - 1 >= 0:
-                                 battle_shock[i] = False
-                                 reward_delta += 0.5
-                                 self.modelCP -= 1
-                                 if self.trunc is False:
-                                     self._log(f"{unit_label}: применена Insane Bravery (-1 CP), тест пройден.")
-                             else:
-                                 reward_delta -= 0.5
-             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
-             apply_end_of_command_phase(self, side="model", dice_fn=dice_fn, log_fn=self._log)
-             score_end_of_command_phase(self, "model", log_fn=self._log)
-             return battle_shock, reward_delta
- 
-         if side == "enemy" and manual:
-             self.enemyCP += 1
-             self.modelCP += 1
-             battle_shock = [False] * len(self.enemy_health)
-             for i in range(len(self.enemy_health)):
-                 playerName = i + 11
-                 battleSh = False
-                 unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
--                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.unit_health[i] > 0:
-+                if self.enemy_health[i] <= 0:
-+                    self.enemyOC[i] = 0
-+                    battle_shock[i] = False
-+                    continue
-+                self.enemyOC[i] = self.enemy_data[i]["OC"]
-+                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.enemy_health[i] > 0:
-                     self._log(f"{unit_label}: ниже половины состава, тест Battle-shock.")
-                     self._log("Бросок 2D6...", verbose_only=True)
-                     diceRoll = player_dice(num=2)
-                     self._log(f"Бросок: {diceRoll[0]} {diceRoll[1]}", verbose_only=True)
-                     if sum(diceRoll) >= self.enemy_data[i]["Ld"]:
-                         self._log(f"{unit_label}: тест Battle-shock пройден.")
-                         self.enemyOC[i] = self.enemy_data[i]["OC"]
-                     else:
-                         battleSh = True
-                         self._log(f"{unit_label}: тест Battle-shock провален.")
-                         self.enemyOC[i] = 0
-                         if self.enemyCP - 1 >= 0:
-                             strat = self._prompt_yes_no(
-                                 f"{unit_label}. Использовать стратагему Insane Bravery (1 CP)? (y/n): "
-                             )
-                             if strat is None:
-                                 self.game_over = True
-                                 return None
-                             if strat:
-                                 battleSh = False
-                                 self.enemyCP -= 1
-                                 self.enemyOC[i] = self.enemy_data[i]["OC"]
-                 battle_shock[i] = battleSh
-                 if battleSh:
-                     continue
-             self._manual_enemy_battle_shock = battle_shock
-             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
-             apply_end_of_command_phase(self, side="enemy", dice_fn=dice_fn, log_fn=self._log)
-             score_end_of_command_phase(self, "enemy", log_fn=self._log)
-             return battle_shock
- 
-         if side == "enemy":
-             self.enemyCP += 1
-             self.modelCP += 1
-             battle_shock = [False] * len(self.enemy_health)
-             cp_on = np.random.randint(0, len(self.enemy_health))
-             use_cp = np.random.randint(0, 5)
-             self._enemy_cp_on = cp_on
-             self._enemy_use_cp = use_cp
-             for i in range(len(self.enemy_health)):
-                 battleSh = False
-                 unit_label = self._format_unit_label("enemy", i)
--                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.unit_health[i] > 0:
-+                if self.enemy_health[i] <= 0:
-+                    self.enemyOC[i] = 0
-+                    battle_shock[i] = False
-+                    continue
-+                self.enemyOC[i] = self.enemy_data[i]["OC"]
-+                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.enemy_health[i] > 0:
-                     if self.trunc is False:
-                         self._log(f"{unit_label}: ниже половины состава, тест Battle-shock.")
-                         self._log("Бросок 2D6...", verbose_only=True)
-                     diceRoll = dice(num=2)
-                     if self.trunc is False:
-                         self._log(f"Бросок: {diceRoll[0]} {diceRoll[1]}", verbose_only=True)
-                     if sum(diceRoll) >= self.enemy_data[i]["Ld"]:
-                         if self.trunc is False:
-                             self._log(f"{unit_label}: тест Battle-shock пройден.")
-                         self.enemyOC[i] = self.enemy_data[i]["OC"]
-                     else:
-                         battleSh = True
-                         self.enemyOC[i] = 0
-                         if self.trunc is False:
-                             self._log(f"{unit_label}: тест Battle-shock провален.")
-                         if use_cp == 1 and cp_on == i and self.enemyCP - 1 >= 0:
-                             battleSh = False
-                             self.enemyCP -= 1
-                             self.enemyOC[i] = self.enemy_data[i]["OC"]
- 
-                 battle_shock[i] = battleSh
-             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
-             apply_end_of_command_phase(self, side="enemy", dice_fn=dice_fn, log_fn=self._log)
-             score_end_of_command_phase(self, "enemy", log_fn=self._log)
-             return battle_shock
-@@ -1543,53 +1557,58 @@ class Warhammer40kEnv(gym.Env):
-             return advanced_flags, reward_delta
- 
-         if side == "enemy" and manual:
-             direction_map = {"up": "up", "down": "down", "left": "left", "right": "right", "none": "none"}
-             normalize = {"u": "up", "d": "down", "l": "left", "r": "right", "n": "none"}
-             advanced_flags = [False] * len(self.enemy_health)
-             for i in range(len(self.enemy_health)):
-                 playerName = i + 11
-                 battleSh = battle_shock[i] if battle_shock else False
-                 unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
-                 pos_before = tuple(self.enemy_coords[i])
-                 if self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
-                     fall_back = self._prompt_yes_no(f"{unit_label}. Отступить (fallback)? (y/n): ")
-                     if fall_back is None:
-                         self.game_over = True
-                         return None
-                     if fall_back:
-                         idOfE = self.enemyInAttack[i][1]
-                         self._log(f"{unit_label} отступил из боя с {self._format_unit_label('model', idOfE)}")
-                         self.enemyFellBack[i] = True
-                         if battleSh is True:
-                             diceRoll = dice()
-                             if diceRoll < 3:
-                                 self.enemy_health[i] -= self.enemy_data[i]["W"]
-                         self.enemy_coords[i][0] += self.enemy_data[i]["Movement"]
-+                        self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
-                         self.enemyInAttack[i] = [0, 0]
-                         self.unitInAttack[idOfE][0] = 0
-                         self.unitInAttack[idOfE][1] = 0
-+                        pos_after = tuple(self.enemy_coords[i])
-+                        self._log(f"{unit_label}: отступление завершено. Позиция после: {pos_after}")
-+                        self.updateBoard()
-+                        self.showBoard()
-                     else:
-                         idOfE = self.enemyInAttack[i][1]
-                         self._log(
-                             f"{unit_label} остаётся в бою с {self._format_unit_label('model', idOfE)} (будет драться в фазе боя)."
-                         )
-                     continue
- 
-                 if self.enemyInAttack[i][0] == 0 and self.enemy_health[i] > 0:
-                     self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
-                     for j in range(len(self.enemy_health)):
-                         if self.enemy_coords[i] == self.unit_coords[j]:
-                             self.enemy_coords[i][0] -= 1
- 
-                     self.updateBoard()
-                     self.showBoard()
- 
-                     dire = self._prompt_choice(
-                         f"Ход юнита: {unit_label}. Выберите направление (up/down/left/right/none): ",
-                         direction_map,
-                         normalize,
+                 if quiet is False and _logger is not None and hasattr(_logger, "print_melee_report"):
+                     _logger.print_melee_report(
+                         weapon=weapon,
+                         attacker_data=attacker_data,
+                         defender_data=defender_data,
+                         dmg_list=dmg,
+                         effect=None,
                      )
-                     if dire is None:
-                         self.game_over = True
-                         return None
  
+                 if self.unit_health[def_idx] <= 0:
+                     self.unitInAttack[def_idx] = [0, 0]
+                     self.enemyInAttack[att_idx] = [0, 0]
+ 
+                 return True
+ 
++        manual_enemy = bool(getattr(self, "playType", False))
++
++        def _prompt_enemy_attacker(eligible_indices: list[int]) -> Optional[int]:
++            if not eligible_indices:
++                return None
++            unit_choices = self._format_unit_choices("enemy", eligible_indices)
++            self._log("ФАЗА БОЯ (Игрок): выберите атакующего юнита")
++            self._log("ФАЗА БОЯ: ожидается выбор атакующего юнита")
++            options = [str(11 + idx) for idx in eligible_indices]
++            while True:
++                choice = self._request_choice(
++                    f"ФАЗА БОЯ: выбери юнита для атаки. Доступные: {unit_choices}. Введите ID юнита: ",
++                    options,
++                )
++                if choice is None:
++                    self.game_over = True
++                    return None
++                choice_value = str(choice).strip()
++                if is_num(choice_value) and int(choice_value) - 11 in eligible_indices:
++                    return int(choice_value) - 11
++                self._log(f"Неверный ввод: выберите юнита из списка {unit_choices}.")
++
++        def _prompt_enemy_target(att_idx: int) -> Optional[int]:
++            def_idx = self.enemyInAttack[att_idx][1]
++            targets = []
++            if 0 <= def_idx < len(self.unit_health) and self.unit_health[def_idx] > 0:
++                targets = [def_idx]
++            if not targets:
++                self._log("Целей для атаки нет: бой пропущен.")
++                return None
++            target_choices = self._format_unit_choices("model", targets)
++            self._log("Выберите цель")
++            self._log("ФАЗА БОЯ: ожидается выбор цели")
++            options = [str(21 + idx) for idx in targets]
++            while True:
++                choice = self._request_choice(
++                    f"Выберите цель. Доступные цели: {target_choices}. Введите ID цели: ",
++                    options,
++                )
++                if choice is None:
++                    self.game_over = True
++                    return None
++                choice_value = str(choice).strip()
++                if is_num(choice_value) and int(choice_value) - 21 in targets:
++                    return int(choice_value) - 21
++                self._log(f"Неверный ввод: выберите цель из списка {target_choices}.")
++
++        def _manual_enemy_attack(eligible_indices: list[int]) -> Optional[int]:
++            while True:
++                attacker_idx = _prompt_enemy_attacker(eligible_indices)
++                if attacker_idx is None:
++                    return None
++                target_idx = _prompt_enemy_target(attacker_idx)
++                if target_idx is None:
++                    return None
++                confirm = self._request_bool("Начать атаку? (y/n): ")
++                if confirm is None:
++                    self.game_over = True
++                    return None
++                if confirm:
++                    return attacker_idx
++                self._log("Атака отменена: выберите юнита и цель заново.")
++
+         # есть ли вообще кому драться?
+         any_fight = any(x[0] == 1 for x in self.unitInAttack) or any(x[0] == 1 for x in self.enemyInAttack)
+         if not any_fight:
+             return
+ 
+         model_eligible = [i for i in range(len(self.unit_health)) if self.unit_health[i] > 0 and self.unitInAttack[i][0] == 1]
+         enemy_eligible = [i for i in range(len(self.enemy_health)) if self.enemy_health[i] > 0 and self.enemyInAttack[i][0] == 1]
+         active_label = self._side_label(active_side, manual=os.getenv("MANUAL_DICE", "0") == "1" and active_side == "enemy")
+         self._log_phase_msg(
+             active_label,
+             "fight",
+             "Начало Fight phase. Первым выбирает активный игрок. "
+             f"Eligible MODEL: {[i + 21 for i in model_eligible]}, "
+             f"Eligible {self._display_side('enemy')}: {[i + 11 for i in enemy_eligible]}.",
+         )
+ 
+         fought_model = set()
+         fought_enemy = set()
+ 
+         # 1) chargers fight first (упрощение: только активная сторона)
+         if active_side == "model":
+             chargers = [i for i in range(len(self.unit_health))
+                         if self.unitCharged[i] == 1 and self.unitInAttack[i][0] == 1 and self.unit_health[i] > 0]
+             for i in chargers:
+                 if i not in fought_model:
+                     if _do_melee("model", i):
+                         fought_model.add(i)
+         else:
+             chargers = [i for i in range(len(self.enemy_health))
+                         if self.enemyCharged[i] == 1 and self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0]
+-            for i in chargers:
+-                if i not in fought_enemy:
+-                    if _do_melee("enemy", i):
+-                        fought_enemy.add(i)
++            if manual_enemy:
++                remaining = [i for i in chargers if i not in fought_enemy]
++                while remaining:
++                    attacker_idx = _manual_enemy_attack(remaining)
++                    if attacker_idx is None:
++                        return
++                    if _do_melee("enemy", attacker_idx):
++                        fought_enemy.add(attacker_idx)
++                    remaining = [i for i in chargers if i not in fought_enemy]
++            else:
++                for i in chargers:
++                    if i not in fought_enemy:
++                        if _do_melee("enemy", i):
++                            fought_enemy.add(i)
+ 
+         # 2) then alternate, starting with NON-active side
+         next_side = "enemy" if active_side == "model" else "model"
+ 
+         while True:
+             model_left = [i for i in range(len(self.unit_health))
+                           if self.unit_health[i] > 0 and self.unitInAttack[i][0] == 1 and i not in fought_model]
+             enemy_left = [i for i in range(len(self.enemy_health))
+                           if self.enemy_health[i] > 0 and self.enemyInAttack[i][0] == 1 and i not in fought_enemy]
+ 
+             if not model_left and not enemy_left:
+                 break
+ 
+             if next_side == "model":
+                 if model_left:
+                     i = model_left[0]
+                     _do_melee("model", i)
+                     fought_model.add(i)
+                 next_side = "enemy"
+             else:
+                 if enemy_left:
+-                    i = enemy_left[0]
+-                    _do_melee("enemy", i)
+-                    fought_enemy.add(i)
++                    if manual_enemy:
++                        attacker_idx = _manual_enemy_attack(enemy_left)
++                        if attacker_idx is None:
++                            return
++                        _do_melee("enemy", attacker_idx)
++                        fought_enemy.add(attacker_idx)
++                    else:
++                        i = enemy_left[0]
++                        _do_melee("enemy", i)
++                        fought_enemy.add(i)
+                 next_side = "model"
+ 
+         # после Fight Phase — charged сбрасываем (на всякий)
+         self.unitCharged = [0] * len(self.unit_health)
+         self.enemyCharged = [0] * len(self.enemy_health)
+ 
+         if quiet is False:
+             self._log("⚔️ Combat resolution complete.\n")
+ 
+ 
+ 
+     def step(self, action):
+         reward = 0
+         res = 0
+         self.unitCharged = [0] * len(self.unit_health)
+         self.enemyCharged = [0] * len(self.enemy_health)
+         self.active_side = "model"
+         battle_shock, delta = self.command_phase("model", action=action)
+         reward += delta
+         advanced_flags, delta = self.movement_phase("model", action=action, battle_shock=battle_shock)
+         reward += delta
+         reward += self.shooting_phase("model", advanced_flags=advanced_flags, action=action) or 0
+         reward += self.charge_phase("model", advanced_flags=advanced_flags, action=action) or 0
+         self.fight_phase("model")
+         game_over, _, winner = apply_end_of_battle(self, log_fn=self._log)
 

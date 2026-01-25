@@ -3,8 +3,8 @@
     "width": 40,
     "height": 60
   },
-  "turn": 3,
-  "round": 3,
+  "turn": 4,
+  "round": 4,
   "phase": "command",
   "active": "player",
   "vp": {
@@ -12,8 +12,8 @@
     "model": 0
   },
   "cp": {
-    "player": 4,
-    "model": 2
+    "player": 6,
+    "model": 1
   },
   "units": [
     {
@@ -23,25 +23,25 @@
       "models": 10,
       "hp": 10.0,
       "x": 31,
-      "y": 40
+      "y": 23
     },
     {
       "side": "player",
       "id": 12,
       "name": "Necron Warriors",
       "models": 10,
-      "hp": 10.0,
-      "x": 31,
-      "y": 18
+      "hp": 4.0,
+      "x": 16,
+      "y": 48
     },
     {
       "side": "player",
       "id": 13,
       "name": "Canoptek Scarab Swarms",
       "models": 3,
-      "hp": 1.0,
-      "x": 6,
-      "y": 58
+      "hp": 8.0,
+      "x": 1,
+      "y": 5
     },
     {
       "side": "model",
@@ -49,8 +49,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 5,
-      "y": 57
+      "x": 0,
+      "y": 38
     },
     {
       "side": "model",
@@ -59,7 +59,7 @@
       "models": 10,
       "hp": 10.0,
       "x": 0,
-      "y": 58
+      "y": 9
     },
     {
       "side": "model",
@@ -67,8 +67,8 @@
       "name": "Canoptek Scarab Swarms",
       "models": 3,
       "hp": 12.0,
-      "x": 0,
-      "y": 59
+      "x": 3,
+      "y": 55
     }
   ],
   "objectives": [
@@ -94,36 +94,36 @@
     }
   ],
   "log_tail": [
+    "--- ХОД MODEL ---",
+    "--- ФАЗА КОМАНДОВАНИЯ ---",
+    "--- ФАЗА КОМАНДОВАНИЯ ---",
+    "[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0",
     "--- ФАЗА ДВИЖЕНИЯ ---",
-    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Остаётся в ближнем бою с Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей), движение пропущено.",
-    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (58, 4). Выбор: left, advance=да, бросок=2, макс=7, distance=6",
-    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (58, 0)",
+    "--- ФАЗА ДВИЖЕНИЯ ---",
+    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (38, 0). Выбор: none, advance=нет, distance=0",
+    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Движение пропущено (no move). Позиция после: (38, 0)",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Отступление из боя с Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Позиция до: (4, 0)",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Отступление завершено. Позиция после: (9, 0)",
     "[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.",
-    "[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция до: (59, 6). Выбор: left, advance=нет, distance=9",
-    "[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция после: (59, 0)",
-    "[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.",
+    "[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция до: (55, 3). Выбор: none, advance=нет, distance=0",
+    "[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Движение пропущено (no move). Позиция после: (55, 3)",
     "--- ФАЗА СТРЕЛЬБЫ ---",
     "--- ФАЗА СТРЕЛЬБЫ ---",
-    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Юнит в ближнем бою, стрельба недоступна.",
-    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.",
+    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Цели в дальности: Unit 12 — Necrons Necron Warriors (x10 моделей), выбрана: Unit 12 — Necrons Necron Warriors (x10 моделей) (причина: самая близкая)",
+    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Итог урона по Unit 12 — Necrons Necron Warriors (x10 моделей): 3.0",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Fall Back в этом ходу — стрельба недоступна.",
     "[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет дальнобойного оружия, стрельба пропущена.",
     "--- ФАЗА ЧАРДЖА ---",
     "--- ФАЗА ЧАРДЖА ---",
-    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Уже в ближнем бою, чардж невозможен.",
-    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.",
+    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12\", чардж пропущен.",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Fall Back в этом ходу — чардж невозможен.",
     "[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет целей в 12\", чардж пропущен.",
     "[MODEL] Чардж: нет доступных целей",
     "--- ФАЗА БОЯ ---",
     "--- ФАЗА БОЯ ---",
-    "[MODEL] Ближний бой: участвуют Unit 21 — Necrons Necron Warriors (x10 моделей); противники Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей)",
-    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): В бою с Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей)",
-    "[MODEL][FIGHT] Начало Fight phase. Первым выбирает активный игрок. Eligible MODEL: [21], Eligible PLAYER: [13].",
-    "[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Выбран для атаки. Цель: Unit 21 — Necrons Necron Warriors (x10 моделей).",
-    "[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Итог атаки: урон 0.0, HP цели 10.0 -> 10.0.",
-    "[MODEL][FIGHT] Unit 21 — Necrons Necron Warriors (x10 моделей): Выбран для атаки. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).",
-    "[MODEL][FIGHT] Unit 21 — Necrons Necron Warriors (x10 моделей): Итог атаки: урон 3.0, HP цели 4.0 -> 1.0.",
-    "=== КОНЕЦ БОЕВОГО РАУНДА 2 ===",
-    "Итерация 1 завершена с наградой tensor([0.2000], device='cuda:0'), здоровье игрока [10.0, 10.0, 1.0], здоровье модели [10.0, 10.0, 12.0]"
+    "[MODEL] Ближний бой: нет доступных атак",
+    "=== КОНЕЦ БОЕВОГО РАУНДА 3 ===",
+    "Итерация 2 завершена с наградой tensor([-4.3000], device='cuda:0'), здоровье игрока [10.0, 4.0, 8.0], здоровье модели [10.0, 10.0, 12.0]"
   ],
-  "generated_at": "2026-01-25T15:05:07.395743Z"
+  "generated_at": "2026-01-25T15:29:14.837265Z"
 }
