@@ -3,17 +3,17 @@
     "width": 40,
     "height": 60
   },
-  "turn": 2,
-  "round": 2,
-  "phase": "command",
-  "active": "model",
+  "turn": 3,
+  "round": 3,
+  "phase": "movement",
+  "active": "player",
   "vp": {
     "player": 0,
     "model": 0
   },
   "cp": {
-    "player": 3,
-    "model": 0
+    "player": 5,
+    "model": 2
   },
   "units": [
     {
@@ -22,8 +22,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 32,
-      "y": 19
+      "x": 23,
+      "y": 31
     },
     {
       "side": "player",
@@ -31,26 +31,26 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 20,
-      "y": 45
+      "x": 22,
+      "y": 0
     },
     {
       "side": "player",
       "id": 13,
       "name": "Canoptek Scarab Swarms",
       "models": 3,
-      "hp": 8.0,
-      "x": 3,
-      "y": 30
+      "hp": 0.0,
+      "x": 7,
+      "y": 42
     },
     {
       "side": "model",
       "id": 21,
       "name": "Necron Warriors",
       "models": 10,
-      "hp": 7.0,
+      "hp": 10.0,
       "x": 0,
-      "y": 35
+      "y": 44
     },
     {
       "side": "model",
@@ -58,17 +58,17 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 2,
-      "y": 55
+      "x": 4,
+      "y": 5
     },
     {
       "side": "model",
       "id": 23,
       "name": "Canoptek Scarab Swarms",
       "models": 3,
-      "hp": 10.0,
-      "x": 2,
-      "y": 29
+      "hp": 9.0,
+      "x": 6,
+      "y": 41
     }
   ],
   "objectives": [
@@ -94,36 +94,36 @@
     }
   ],
   "log_tail": [
-    "Правило: Lethal Hits (крит-хиты авто-ранят)",
-    "Hit rolls:    [1, 1, 1, 1, 1, 1, 5, 5, 6, 6]  -> hits: 4 (crits: 2)",
-    "Wound rolls:  [5, 5]  (цель 4+) -> rolled wounds: 2 + auto(w/LETHAL): 2 = 4",
-    "Save rolls:   [1, 2, 3, 4]  (цель 4+) -> failed saves: 3",
-    "",
-    "✅ Итог по движку: прошло урона = 3.0",
-    "📌 -------------------------",
-    "Нет доступного оружия для стрельбы.",
     "--- ФАЗА ЧАРДЖА ---",
-    "Бросок 2D6...",
-    "Бросок: 5 и 5",
-    "[PLAYER][CHARGE] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Charge объявлен по цели Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей). Дистанция: 4.0. Бросок 2D6: 5 + 5 = 10.",
-    "Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) успешно зачарджил Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей)",
-    "[PLAYER][CHARGE] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Движение чарджа: (29, 6) -> (30, 3), в контакте=True.",
-    "[MODEL][CHARGE] Heroic Intervention недоступен: недостаточно CP.",
+    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12\", чардж пропущен.",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в 12\", чардж пропущен.",
+    "[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Уже в ближнем бою, чардж невозможен.",
+    "[MODEL] Чардж: нет доступных целей",
     "--- ФАЗА БОЯ ---",
-    "[PLAYER][FIGHT] Начало Fight phase. Первым выбирает активный игрок. Eligible MODEL: [23], Eligible PLAYER: [13].",
-    "ФАЗА БОЯ (Игрок): выберите атакующего юнита",
-    "ФАЗА БОЯ: ожидается выбор атакующего юнита",
-    "Выберите цель",
-    "ФАЗА БОЯ: ожидается выбор цели",
-    "Атака отменена: выберите юнита и цель заново.",
-    "ФАЗА БОЯ (Игрок): выберите атакующего юнита",
-    "ФАЗА БОЯ: ожидается выбор атакующего юнита",
-    "Выберите цель",
-    "ФАЗА БОЯ: ожидается выбор цели",
+    "--- ФАЗА БОЯ ---",
+    "[MODEL] Ближний бой: участвуют Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей); противники Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей)",
+    "[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): В бою с Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей)",
+    "[MODEL][FIGHT] Начало Fight phase. Первым выбирает активный игрок. Eligible MODEL: [23], Eligible PLAYER: [13].",
     "[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Выбран для атаки. Цель: Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей).",
-    "[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Итог атаки: урон 2.0, HP цели 12.0 -> 10.0.",
+    "[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Итог атаки: урон 3.0, HP цели 12.0 -> 9.0.",
     "[MODEL][FIGHT] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Выбран для атаки. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).",
-    "[MODEL][FIGHT] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Итог атаки: урон 4.0, HP цели 12.0 -> 8.0."
+    "[MODEL][FIGHT] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Итог атаки: урон 4.0, HP цели 2.0 -> 0.",
+    "=== КОНЕЦ БОЕВОГО РАУНДА 2 ===",
+    "Итерация 1 завершена с наградой tensor([-0.3000], device='cuda:0'), здоровье игрока [10.0, 9.0, 0], здоровье модели [10.0, 10.0, 9.0]",
+    "{'model health': [10.0, 10.0, 9.0], 'player health': [10.0, 9.0, 0], 'modelCP': 1, 'playerCP': 4, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 3, 'battle round': 3, 'active side': 'enemy', 'phase': 'command'}",
+    "Здоровье MODEL: [10.0, 10.0, 9.0], здоровье PLAYER: [10.0, 9.0, 0]",
+    "CP MODEL: 1, CP PLAYER: 4",
+    "VP MODEL: 0, VP PLAYER: 0",
+    "=== БОЕВОЙ РАУНД 3 ===",
+    "--- ХОД PLAYER ---",
+    "--- ФАЗА КОМАНДОВАНИЯ ---",
+    "[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols",
+    "[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 2",
+    "[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) До: моделей=9, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1] всего=9",
+    "[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной",
+    "[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) После:  моделей=10, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1] всего=10",
+    "[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0",
+    "--- ФАЗА ДВИЖЕНИЯ ---"
   ],
-  "generated_at": "2026-01-25T15:47:11.329925Z"
+  "generated_at": "2026-01-25T16:02:34.704531Z"
 }
