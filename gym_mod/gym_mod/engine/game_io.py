@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional, List
+import re
 import os
 import threading
 import queue
@@ -17,6 +18,7 @@ class Request:
     options: Optional[List[str]] = None
     min_value: Optional[int] = None
     max_value: Optional[int] = None
+    count: Optional[int] = None
 
 
 class BaseIO:
@@ -34,6 +36,37 @@ class BaseIO:
 
     def request_direction(self, prompt: str, options: list[str]):
         raise NotImplementedError
+
+    def request_dice(
+        self,
+        prompt: str,
+        count: int,
+        min_value: Optional[int] = None,
+        max_value: Optional[int] = None,
+    ):
+        raise NotImplementedError
+
+
+def parse_dice_values(text: str, count: int, min_value: int = 1, max_value: int = 6) -> list[int]:
+    if text is None:
+        raise ValueError("пустой ввод")
+    stripped = text.strip()
+    if not stripped:
+        raise ValueError("пустой ввод")
+    if stripped.isdigit() and len(stripped) == count:
+        values = [int(ch) for ch in stripped]
+    else:
+        parts = [part for part in re.split(r"[,\s]+", stripped) if part]
+        try:
+            values = [int(part) for part in parts]
+        except ValueError as exc:
+            raise ValueError("есть нечисловые значения") from exc
+    if len(values) != count:
+        raise ValueError(f"ожидалось {count}, получено {len(values)}")
+    for value in values:
+        if value < min_value or value > max_value:
+            raise ValueError(f"значение вне диапазона {min_value}..{max_value}")
+    return values
 
 
 def _append_log_line(message: str, path: Optional[str] = None) -> None:
@@ -95,6 +128,26 @@ class ConsoleIO(BaseIO):
         if response in ("q", "quit"):
             return None
         return response
+
+    def request_dice(
+        self,
+        prompt: str,
+        count: int,
+        min_value: Optional[int] = None,
+        max_value: Optional[int] = None,
+    ):
+        min_val = 1 if min_value is None else min_value
+        max_val = 6 if max_value is None else max_value
+        while True:
+            response = input(prompt).strip()
+            if response.lower() in ("q", "quit"):
+                return None
+            try:
+                return parse_dice_values(response, count=count, min_value=min_val, max_value=max_val)
+            except ValueError:
+                self.log(
+                    f"Ошибка ввода кубов: нужно ввести {count} значений от {min_val} до {max_val}."
+                )
 
 
 class GuiIO(BaseIO):
@@ -170,6 +223,35 @@ class GuiIO(BaseIO):
         if answer is None:
             return None
         return str(answer).strip().lower()
+
+    def request_dice(
+        self,
+        prompt: str,
+        count: int,
+        min_value: Optional[int] = None,
+        max_value: Optional[int] = None,
+    ):
+        request = Request(
+            kind="dice",
+            prompt=prompt,
+            min_value=min_value,
+            max_value=max_value,
+            count=count,
+        )
+        self.request_queue.put(request)
+        answer = self._wait_for_answer()
+        if answer is None:
+            return None
+        if isinstance(answer, list):
+            return answer
+        if isinstance(answer, str):
+            try:
+                min_val = 1 if min_value is None else min_value
+                max_val = 6 if max_value is None else max_value
+                return parse_dice_values(answer, count=count, min_value=min_val, max_value=max_val)
+            except ValueError:
+                return None
+        return None
 
 
 _ACTIVE_IO: Optional[BaseIO] = None

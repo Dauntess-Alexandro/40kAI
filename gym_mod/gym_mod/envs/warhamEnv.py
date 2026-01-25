@@ -127,7 +127,20 @@ def player_dice(num=1, max=6):
     if num == 1:
         return ask_one()
 
-    return [ask_one(idx=i + 1) for i in range(num)]
+    while True:
+        rolls = io.request_dice(
+            f"Введи {num} результатов (1..{max}) через пробел или запятую: ",
+            count=num,
+            min_value=1,
+            max_value=max,
+        )
+        if rolls is None:
+            io.log(
+                f"Ошибка ввода кубов: нужно ввести {num} значений от 1 до {max}. "
+                "Где: ввод кубов. Что делать дальше: повторите ввод."
+            )
+            continue
+        return rolls
 
 
 def weapon_is_assault(weapon) -> bool:

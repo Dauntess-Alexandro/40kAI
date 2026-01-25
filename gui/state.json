@@ -22,8 +22,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 31,
-      "y": 16
+      "x": 37,
+      "y": 9
     },
     {
       "side": "player",
@@ -31,8 +31,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 30,
-      "y": 58
+      "x": 38,
+      "y": 36
     },
     {
       "side": "player",
@@ -40,8 +40,8 @@
       "name": "Canoptek Scarab Swarms",
       "models": 3,
       "hp": 12.0,
-      "x": 35,
-      "y": 59
+      "x": 36,
+      "y": 53
     },
     {
       "side": "model",
@@ -49,8 +49,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 6,
-      "y": 18
+      "x": 4,
+      "y": 38
     },
     {
       "side": "model",
@@ -58,8 +58,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 5,
-      "y": 40
+      "x": 9,
+      "y": 3
     },
     {
       "side": "model",
@@ -67,8 +67,8 @@
       "name": "Canoptek Scarab Swarms",
       "models": 3,
       "hp": 12.0,
-      "x": 3,
-      "y": 18
+      "x": 4,
+      "y": 13
     }
   ],
   "objectives": [
@@ -93,6 +93,37 @@
       "y": 22
     }
   ],
-  "log_tail": [],
-  "generated_at": "2026-01-24T09:45:55.806105Z"
+  "log_tail": [
+    "--- ФАЗА СТРЕЛЬБЫ ---",
+    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Цели в дальности: Unit 11 — Necrons Necron Warriors (x10 моделей), Unit 12 — Necrons Necron Warriors (x10 моделей), Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей), выбрана: Unit 11 — Necrons Necron Warriors (x10 моделей) (причина: выбор политики)",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Итог урона по Unit 11 — Necrons Necron Warriors (x10 моделей): 1.0",
+    "[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет дальнобойного оружия, стрельба пропущена.",
+    "--- ФАЗА ЧАРДЖА ---",
+    "--- ФАЗА ЧАРДЖА ---",
+    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Доступные цели для чарджа: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Решение: пропуск чарджа.",
+    "[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет целей в 12\", чардж пропущен.",
+    "--- ФАЗА БОЯ ---",
+    "--- ФАЗА БОЯ ---",
+    "[MODEL] Ближний бой: нет доступных атак",
+    "=== КОНЕЦ БОЕВОГО РАУНДА 2 ===",
+    "Итерация 1 завершена с наградой tensor([0.2000], device='cuda:0'), здоровье игрока [8.0, 8.0, 12.0], здоровье модели [10.0, 8.0, 12.0]",
+    "{'model health': [10.0, 8.0, 12.0], 'player health': [8.0, 8.0, 12.0], 'modelCP': 1, 'playerCP': 4, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 1, 'player VP': 0, 'mission': 'Only War', 'turn': 3, 'battle round': 3, 'active side': 'enemy', 'phase': 'command'}",
+    "Здоровье MODEL: [10.0, 8.0, 12.0], здоровье PLAYER: [8.0, 8.0, 12.0]",
+    "CP MODEL: 1, CP PLAYER: 4",
+    "VP MODEL: 1, VP PLAYER: 0",
+    "Unit 22 — Necrons Necron Warriors (x10 моделей) стреляет по Unit 11 — Necrons Necron Warriors (x10 моделей) 1.0 раз(а)",
+    "Roll-off Attacker/Defender: enemy=4 model=3 -> attacker=enemy",
+    "Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]",
+    "[DEPLOY] Order: enemy first, alternating",
+    "[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (9,37)",
+    "[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (38,4)",
+    "[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (36,38)",
+    "[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (3,9)",
+    "[DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (53,36)",
+    "[DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (13,4)",
+    "[MISSION Only War] Post-deploy: currently no post-deploy units supported"
+  ],
+  "generated_at": "2026-01-24T16:23:45.091964Z"
 }

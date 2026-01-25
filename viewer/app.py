@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -12,6 +13,7 @@ from viewer.state import StateWatcher
 from viewer.styles import Theme
 
 from gym_mod.engine.game_controller import GameController
+from gym_mod.engine.game_io import parse_dice_values
 
 
 class MapView(QtWidgets.QGraphicsView):
@@ -57,8 +59,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.status_phase = QtWidgets.QLabel("Фаза: —")
         self.status_active = QtWidgets.QLabel("Активен: —")
 
-        self.points_vp = QtWidgets.QLabel("VP: — / —")
-        self.points_cp = QtWidgets.QLabel("CP: — / —")
+        self.points_vp_player = QtWidgets.QLabel("Player VP: —")
+        self.points_vp_model = QtWidgets.QLabel("Model VP: —")
+        self.points_cp_player = QtWidgets.QLabel("Player CP: —")
+        self.points_cp_model = QtWidgets.QLabel("Model CP: —")
 
         self.units_table = QtWidgets.QTableWidget(0, 5)
         self.units_table.setHorizontalHeaderLabels(["Сторона", "ID", "Имя", "HP", "Модели"])
@@ -176,8 +180,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _group_points(self):
         box = QtWidgets.QGroupBox("ОЧКИ")
         layout = QtWidgets.QVBoxLayout(box)
-        layout.addWidget(self.points_vp)
-        layout.addWidget(self.points_cp)
+        layout.addWidget(self.points_vp_player)
+        layout.addWidget(self.points_vp_model)
+        layout.addWidget(self.points_cp_player)
+        layout.addWidget(self.points_cp_model)
         return box
 
     def _group_units(self):
@@ -290,14 +296,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.command_stack.setEnabled(True)
         kind = getattr(request, "kind", "text")
         if kind == "direction":
+            self.command_input.setPlaceholderText("Введите команду...")
             self.command_stack.setCurrentIndex(self._command_pages["direction"])
         elif kind == "bool":
+            self.command_input.setPlaceholderText("Введите команду...")
             self.command_stack.setCurrentIndex(self._command_pages["bool"])
         elif kind == "int":
             min_value = request.min_value if request.min_value is not None else 0
             max_value = request.max_value if request.max_value is not None else 999
             self.int_spin.setRange(min_value, max_value)
             self.int_spin.setValue(min_value)
+            self.command_input.setPlaceholderText("Введите команду...")
             self.command_stack.setCurrentIndex(self._command_pages["int"])
         elif kind == "choice":
             self.choice_combo.clear()
@@ -306,7 +315,20 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 self.command_stack.setCurrentIndex(self._command_pages["choice"])
             else:
                 self.command_stack.setCurrentIndex(self._command_pages["text"])
+            self.command_input.setPlaceholderText("Введите команду...")
+        elif kind == "dice":
+            count = request.count or 0
+            example_values = [str((idx % 6) + 1) for idx in range(count)]
+            spaced = " ".join(example_values)
+            comma = ",".join(example_values)
+            compact = "".join(example_values)
+            self.command_input.setPlaceholderText(
+                f"Например: {spaced} или {comma}"
+                + (f" или {compact}" if compact else "")
+            )
+            self.command_stack.setCurrentIndex(self._command_pages["text"])
         else:
+            self.command_input.setPlaceholderText("Введите команду...")
             self.command_stack.setCurrentIndex(self._command_pages["text"])
 
     def _append_log(self, messages):
@@ -325,6 +347,24 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _submit_text(self):
         text = self.command_input.text().strip()
         if not text:
+            return
+        if self._pending_request and getattr(self._pending_request, "kind", "") == "dice":
+            count = self._pending_request.count or 0
+            min_value = self._pending_request.min_value or 1
+            max_value = self._pending_request.max_value or 6
+            try:
+                values = parse_dice_values(text, count=count, min_value=min_value, max_value=max_value)
+            except ValueError as exc:
+                entered = self._count_dice_entries(text)
+                self.command_prompt.setText(
+                    "Ошибка ввода кубов в панели «Команды»: "
+                    f"{exc}. Нужно {count}, введено {entered}. "
+                    "Что делать дальше: исправьте ввод и отправьте снова.\n"
+                    f"{self._pending_request.prompt}"
+                )
+                return
+            self.command_input.clear()
+            self._submit_answer(values)
             return
         self.command_input.clear()
         self._submit_answer(text)
@@ -366,8 +406,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         vp = state.get("vp", {})
         cp = state.get("cp", {})
-        self.points_vp.setText(f"VP: {vp.get('player', '—')} / {vp.get('model', '—')}")
-        self.points_cp.setText(f"CP: {cp.get('player', '—')} / {cp.get('model', '—')}")
+        self.points_vp_player.setText(f"Player VP: {vp.get('player', '—')}")
+        self.points_vp_model.setText(f"Model VP: {vp.get('model', '—')}")
+        self.points_cp_player.setText(f"Player CP: {cp.get('player', '—')}")
+        self.points_cp_model.setText(f"Model CP: {cp.get('model', '—')}")
 
         self._populate_units_table(state.get("units", []))
         self._update_log(state.get("log_tail", []))
@@ -414,6 +456,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         side, unit_id = self._row_lookup[row]
         if side and unit_id is not None:
             self.map_scene.select_unit(side, unit_id)
+
+    def _count_dice_entries(self, text: str) -> int:
+        stripped = text.strip()
+        if not stripped:
+            return 0
+        if stripped.isdigit():
+            return len(stripped)
+        parts = [part for part in re.split(r"[,\s]+", stripped) if part]
+        return len(parts)
 
 
 def launch(state_path, model_path=None):
