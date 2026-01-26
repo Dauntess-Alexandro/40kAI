@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+from datetime import datetime
 from PySide6 import QtCore, QtGui, QtWidgets
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -85,14 +86,22 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.units_table.itemSelectionChanged.connect(self._sync_selection_from_table)
         self._apply_units_table_font()
 
-        self.log_view = QtWidgets.QPlainTextEdit()
-        self.log_view.setReadOnly(True)
-        self.log_view.setMaximumBlockCount(500)
-
-        copy_button = QtWidgets.QPushButton("Copy")
-        clear_button = QtWidgets.QPushButton("Clear")
-        copy_button.clicked.connect(self._copy_log)
-        clear_button.clicked.connect(self.log_view.clear)
+        self._log_entries = []
+        self._current_turn_number = None
+        self._log_tail_snapshot = None
+        self._log_tabs = {}
+        self._log_tab_defs = [
+            ("all", "Все"),
+            ("turn", "Ход"),
+            ("shooting", "Стрельба"),
+            ("fight", "Ближний бой"),
+            ("dice", "Кубы"),
+            ("errors", "Ошибки"),
+        ]
+        self._max_log_lines = 5000
+        self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS.md")
+        self._log_file_max_bytes = 5 * 1024 * 1024
+        self._init_log_viewer()
 
         fit_button = QtWidgets.QPushButton("Fit")
         fit_button.clicked.connect(self._fit_view)
@@ -118,12 +127,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         log_group = QtWidgets.QGroupBox("ЖУРНАЛ")
         log_layout = QtWidgets.QVBoxLayout(log_group)
-        log_layout.addWidget(self.log_view)
-        log_buttons = QtWidgets.QHBoxLayout()
-        log_buttons.addStretch()
-        log_buttons.addWidget(copy_button)
-        log_buttons.addWidget(clear_button)
-        log_layout.addLayout(log_buttons)
+        log_layout.addLayout(self._log_controls_layout)
+        log_layout.addWidget(self.log_tabs)
 
         command_group = QtWidgets.QGroupBox("КОМАНДЫ")
         command_layout = QtWidgets.QVBoxLayout(command_group)
@@ -376,12 +381,38 @@ class ViewerWindow(QtWidgets.QMainWindow):
         else:
             self.command_hint.setText("Горячие клавиши: Enter — отправить")
 
+    def _init_log_viewer(self):
+        fixed_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
+        fixed_font.setPointSize(10)
+
+        self.log_tabs = QtWidgets.QTabWidget()
+        for key, label in self._log_tab_defs:
+            view = QtWidgets.QPlainTextEdit()
+            view.setReadOnly(True)
+            view.setFont(fixed_font)
+            view.setMaximumBlockCount(self._max_log_lines)
+            self._log_tabs[key] = view
+            self.log_tabs.addTab(view, label)
+
+        self.log_only_current_turn = QtWidgets.QCheckBox("Показать только текущий ход")
+        self.log_only_current_turn.toggled.connect(self._refresh_log_views)
+
+        self.log_copy_turn = QtWidgets.QPushButton("Копировать ход")
+        self.log_copy_turn.clicked.connect(self._copy_current_turn)
+        self.log_clear = QtWidgets.QPushButton("Очистить")
+        self.log_clear.clicked.connect(self._clear_log_viewer)
+
+        self._log_controls_layout = QtWidgets.QHBoxLayout()
+        self._log_controls_layout.addWidget(self.log_only_current_turn)
+        self._log_controls_layout.addStretch()
+        self._log_controls_layout.addWidget(self.log_copy_turn)
+        self._log_controls_layout.addWidget(self.log_clear)
+
     def _append_log(self, messages):
         if not messages:
             return
         for msg in messages:
-            self.log_view.appendPlainText(str(msg))
-        self.log_view.verticalScrollBar().setValue(self.log_view.verticalScrollBar().maximum())
+            self.add_log_line(str(msg))
 
     def _start_controller(self):
         messages, request = self.controller.start()
@@ -430,9 +461,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         rect = self.map_scene.sceneRect()
         if rect.width() > 0 and rect.height() > 0:
             self.map_view.fitInView(rect, QtCore.Qt.KeepAspectRatio)
-
-    def _copy_log(self):
-        QtWidgets.QApplication.clipboard().setText(self.log_view.toPlainText())
 
     def _poll_state(self):
         if self.state_watcher.load_if_changed():
@@ -489,8 +517,21 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _update_log(self, lines):
         if isinstance(lines, list):
-            self.log_view.setPlainText("\n".join(lines))
-            self.log_view.verticalScrollBar().setValue(self.log_view.verticalScrollBar().maximum())
+            text_lines = [str(line) for line in lines]
+            if self._log_tail_snapshot == text_lines:
+                return
+            if not self._log_entries:
+                self._reset_log_lines(text_lines, write_to_file=True)
+                self._log_tail_snapshot = text_lines
+                return
+            existing = [entry["text"] for entry in self._log_entries]
+            if len(text_lines) >= len(existing) and text_lines[: len(existing)] == existing:
+                for line in text_lines[len(existing) :]:
+                    self.add_log_line(line)
+                self._log_tail_snapshot = text_lines
+                return
+            self._reset_log_lines(text_lines, write_to_file=False)
+            self._log_tail_snapshot = text_lines
 
     def _select_row_for_unit(self, side, unit_id):
         unit_key = (side, unit_id)
@@ -518,6 +559,207 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if side and unit_id is not None:
             self.map_scene.select_unit(side, unit_id)
             self._append_log([f"Выбрано в таблице: row={row} -> unit_id={unit_id}"])
+
+    def add_log_line(self, line: str):
+        text = str(line)
+        new_turn = self._detect_turn_number(text)
+        if new_turn is not None:
+            self._current_turn_number = new_turn
+        categories = self._classify_line(text)
+        entry = {
+            "text": text,
+            "turn": self._current_turn_number,
+            "categories": categories,
+        }
+        self._log_entries.append(entry)
+        self._append_log_to_file(text)
+        if len(self._log_entries) > self._max_log_lines:
+            self._log_entries = self._log_entries[-self._max_log_lines :]
+            self._refresh_log_views()
+            return
+        if new_turn is not None and self.log_only_current_turn.isChecked():
+            self._refresh_log_views()
+            return
+        for key, _ in self._log_tab_defs:
+            if self._should_show_entry(entry, key):
+                self._append_to_view(self._log_tabs[key], text)
+
+    def _append_to_view(self, view: QtWidgets.QPlainTextEdit, text: str):
+        scrollbar = view.verticalScrollBar()
+        at_bottom = scrollbar.value() >= scrollbar.maximum()
+        view.appendPlainText(text)
+        if at_bottom:
+            scrollbar.setValue(scrollbar.maximum())
+
+    def _classify_line(self, line: str):
+        lowered = line.lower()
+        categories = set()
+        if self._matches_any(
+            lowered,
+            [
+                "боевого раунда",
+                "фаза",
+                "===",
+                "iteration",
+                "раунд",
+                "turn",
+            ],
+        ):
+            categories.add("turn")
+        if self._matches_any(
+            lowered,
+            [
+                "[shoot]",
+                "отчёт по стрельбе",
+                "hit rolls",
+                "wound",
+                "save",
+                "оружие",
+                "стрельб",
+            ],
+        ):
+            categories.add("shooting")
+        if self._matches_any(
+            lowered,
+            [
+                "[fight]",
+                "фаза боя",
+                "melee",
+                "атаки",
+                "удар",
+            ],
+        ):
+            categories.add("fight")
+        if self._matches_any(
+            lowered,
+            [
+                "d6",
+                "2d6",
+                "d3",
+                "бросок",
+                "roll",
+                "rolling",
+                "🎲",
+            ],
+        ):
+            categories.add("dice")
+        if self._matches_any(
+            lowered,
+            [
+                "error",
+                "traceback",
+                "exception",
+                "warn",
+                "warning",
+                "недоступен",
+                "ошибка",
+            ],
+        ):
+            categories.add("errors")
+        return categories
+
+    def _matches_any(self, lowered: str, tokens):
+        return any(token in lowered for token in tokens)
+
+    def _detect_turn_number(self, line: str):
+        match = re.search(r"боевого раунда\\s*(\\d+)", line, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        match = re.search(r"\\bturn\\s*(\\d+)", line, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        match = re.search(r"\\bраунд\\s*(\\d+)", line, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        return None
+
+    def _should_show_entry(self, entry, tab_key):
+        if tab_key != "all" and tab_key not in entry["categories"]:
+            return False
+        if not self.log_only_current_turn.isChecked():
+            return True
+        if self._current_turn_number is None:
+            return True
+        return entry["turn"] == self._current_turn_number
+
+    def _refresh_log_views(self):
+        for view in self._log_tabs.values():
+            view.clear()
+        grouped_lines = {key: [] for key, _ in self._log_tab_defs}
+        for entry in self._log_entries:
+            for key, _ in self._log_tab_defs:
+                if self._should_show_entry(entry, key):
+                    grouped_lines[key].append(entry["text"])
+        for key, lines in grouped_lines.items():
+            if lines:
+                self._log_tabs[key].setPlainText("\n".join(lines))
+                scrollbar = self._log_tabs[key].verticalScrollBar()
+                scrollbar.setValue(scrollbar.maximum())
+
+    def _reset_log_lines(self, lines, write_to_file: bool):
+        self._log_entries = []
+        self._current_turn_number = None
+        for line in lines:
+            if write_to_file:
+                self.add_log_line(line)
+            else:
+                text = str(line)
+                new_turn = self._detect_turn_number(text)
+                if new_turn is not None:
+                    self._current_turn_number = new_turn
+                self._log_entries.append(
+                    {
+                        "text": text,
+                        "turn": self._current_turn_number,
+                        "categories": self._classify_line(text),
+                    }
+                )
+        self._refresh_log_views()
+
+    def _clear_log_viewer(self):
+        self._log_entries = []
+        self._current_turn_number = None
+        self._log_tail_snapshot = None
+        for view in self._log_tabs.values():
+            view.clear()
+
+    def _collect_current_turn_logs(self):
+        if self._current_turn_number is None:
+            return "\n".join(entry["text"] for entry in self._log_entries)
+        return "\n".join(
+            entry["text"]
+            for entry in self._log_entries
+            if entry["turn"] == self._current_turn_number
+        )
+
+    def _copy_current_turn(self):
+        QtWidgets.QApplication.clipboard().setText(self._collect_current_turn_logs())
+
+    def _append_log_to_file(self, line: str):
+        self._rotate_log_file_if_needed()
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            with open(self._log_file_path, "a", encoding="utf-8") as log_file:
+                log_file.write(f"{timestamp} | {line}\n")
+        except OSError:
+            pass
+
+    def _rotate_log_file_if_needed(self):
+        if not os.path.exists(self._log_file_path):
+            return
+        try:
+            size = os.path.getsize(self._log_file_path)
+        except OSError:
+            return
+        if size <= self._log_file_max_bytes:
+            return
+        rotated = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS.old.md")
+        try:
+            if os.path.exists(rotated):
+                os.remove(rotated)
+            os.replace(self._log_file_path, rotated)
+        except OSError:
+            pass
 
     def _count_dice_entries(self, text: str) -> int:
         stripped = text.strip()
