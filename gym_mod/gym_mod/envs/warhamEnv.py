@@ -490,8 +490,20 @@ class RollLogger:
 
 
 
-    def print_shoot_report(self, weapon: dict, attacker_data: dict, defender_data: dict, dmg_list, effect=None):
-        self._log("\n📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---")
+    def print_shoot_report(
+        self,
+        weapon: dict,
+        attacker_data: dict,
+        defender_data: dict,
+        dmg_list,
+        effect=None,
+        report_title: Optional[str] = None,
+        attacker_label: Optional[str] = None,
+        defender_label: Optional[str] = None,
+        extra_rules: Optional[list[str]] = None,
+    ):
+        title = report_title or "ОТЧЁТ ПО СТРЕЛЬБЕ"
+        self._log(f"\n📌 --- {title} ---")
 
         # В движке BS/WS берём из профиля оружия (как в 10e)
         bs = _get_int(weapon, ["BS", "Bs", "BallisticSkill", "BS+"], default=None)
@@ -526,6 +538,14 @@ class RollLogger:
         except Exception:
             pass
 
+        if attacker_label or defender_label:
+            parts = []
+            if attacker_label:
+                parts.append(f"Стреляет: {attacker_label}")
+            if defender_label:
+                parts.append(f"цель: {defender_label}")
+            self._log("; ".join(parts))
+
         self._log(f"Оружие: {wname}")
         if bs is not None:
             self._log(f"BS оружия: {bs}+")
@@ -550,6 +570,9 @@ class RollLogger:
             self._log(f"Правило: Rapid Fire {rf} (если цель в половине дальности: +{rf} атак)")
         if lethal:
             self._log("Правило: Lethal Hits (крит-хиты авто-ранят)")
+        if extra_rules:
+            for rule in extra_rules:
+                self._log(f"Правило: {rule}")
         if effect:
             self._log(f"Эффект: {effect}")
 
@@ -1123,8 +1146,9 @@ class Warhammer40kEnv(gym.Env):
             target_coords[moving_idx],
         )
         _logger = None
-        if self.trunc is False and _verbose_logs_enabled():
+        if _verbose_logs_enabled():
             _logger = RollLogger(auto_dice)
+            _logger.configure_for_weapon(attacker_weapon[chosen])
             dmg, modHealth = attack(
                 attacker_health[chosen],
                 attacker_weapon[chosen],
@@ -1161,6 +1185,10 @@ class Warhammer40kEnv(gym.Env):
                 defender_data=target_data[moving_idx],
                 dmg_list=dmg,
                 effect=None,
+                report_title="ОТЧЁТ ПО OVERWATCH",
+                attacker_label=self._format_unit_label(defender_side, chosen),
+                defender_label=target_label,
+                extra_rules=["Overwatch: попадания только на 6+"],
             )
 
     def _resolve_heroic_intervention(self, defender_side: str, charging_side: str, charging_idx: int, phase: str, manual: bool = False):
@@ -1299,6 +1327,10 @@ class Warhammer40kEnv(gym.Env):
             battle_shock = [False] * len(self.unit_health)
             for i in range(len(self.unit_health)):
                 unit_label = self._format_unit_label("model", i)
+                if self.unit_health[i] <= 0:
+                    self.modelOC[i] = 0
+                    continue
+                self.modelOC[i] = self.unit_data[i]["OC"]
                 if isBelowHalfStr(self.unit_data[i], self.unit_health[i]) is True and self.unit_health[i] > 0:
                     if self.trunc is False:
                         self._log(f"{unit_label}: ниже половины состава, тест Battle-shock.")
@@ -1337,7 +1369,12 @@ class Warhammer40kEnv(gym.Env):
                 playerName = i + 11
                 battleSh = False
                 unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
-                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.unit_health[i] > 0:
+                if self.enemy_health[i] <= 0:
+                    self.enemyOC[i] = 0
+                    battle_shock[i] = False
+                    continue
+                self.enemyOC[i] = self.enemy_data[i]["OC"]
+                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.enemy_health[i] > 0:
                     self._log(f"{unit_label}: ниже половины состава, тест Battle-shock.")
                     self._log("Бросок 2D6...", verbose_only=True)
                     diceRoll = player_dice(num=2)
@@ -1380,7 +1417,12 @@ class Warhammer40kEnv(gym.Env):
             for i in range(len(self.enemy_health)):
                 battleSh = False
                 unit_label = self._format_unit_label("enemy", i)
-                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.unit_health[i] > 0:
+                if self.enemy_health[i] <= 0:
+                    self.enemyOC[i] = 0
+                    battle_shock[i] = False
+                    continue
+                self.enemyOC[i] = self.enemy_data[i]["OC"]
+                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.enemy_health[i] > 0:
                     if self.trunc is False:
                         self._log(f"{unit_label}: ниже половины состава, тест Battle-shock.")
                         self._log("Бросок 2D6...", verbose_only=True)
@@ -1565,9 +1607,14 @@ class Warhammer40kEnv(gym.Env):
                             if diceRoll < 3:
                                 self.enemy_health[i] -= self.enemy_data[i]["W"]
                         self.enemy_coords[i][0] += self.enemy_data[i]["Movement"]
+                        self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
                         self.enemyInAttack[i] = [0, 0]
                         self.unitInAttack[idOfE][0] = 0
                         self.unitInAttack[idOfE][1] = 0
+                        pos_after = tuple(self.enemy_coords[i])
+                        self._log(f"{unit_label}: отступление завершено. Позиция после: {pos_after}")
+                        self.updateBoard()
+                        self.showBoard()
                     else:
                         idOfE = self.enemyInAttack[i][1]
                         self._log(
@@ -1744,19 +1791,20 @@ class Warhammer40kEnv(gym.Env):
                     ):
                         shootAbleUnits.append(j)
                 if len(shootAbleUnits) > 0:
-                    target_ids = [j + 11 for j in shootAbleUnits]
-                    idOfE = action["shoot"]
-                    if idOfE in shootAbleUnits:
-                        distances = {j: distance(self.unit_coords[i], self.enemy_coords[j]) for j in shootAbleUnits}
+                    valid_target_ids = shootAbleUnits
+                    raw = action["shoot"]
+                    if 0 <= raw < len(valid_target_ids):
+                        idOfE = valid_target_ids[raw]
+                        distances = {j: distance(self.unit_coords[i], self.enemy_coords[j]) for j in valid_target_ids}
                         closest = min(distances, key=distances.get)
-                        min_hp = min(shootAbleUnits, key=lambda idx: self.enemy_health[idx])
+                        min_hp = min(valid_target_ids, key=lambda idx: self.enemy_health[idx])
                         if idOfE == closest:
                             reason = "самая близкая"
                         elif idOfE == min_hp:
                             reason = "цель с меньшим HP"
                         else:
                             reason = "выбор политики"
-                        target_list = self._format_unit_choices("enemy", shootAbleUnits)
+                        target_list = self._format_unit_choices("enemy", valid_target_ids)
                         self._log_unit(
                             "MODEL",
                             modelName,
@@ -1770,8 +1818,9 @@ class Warhammer40kEnv(gym.Env):
                             manual=os.getenv("MANUAL_DICE", "0") == "1",
                         )
                         _logger = None
-                        if self.trunc is False and _verbose_logs_enabled():
+                        if _verbose_logs_enabled():
                             _logger = RollLogger(auto_dice)
+                            _logger.configure_for_weapon(self.unit_weapon[i])
                             dmg, modHealth = attack(
                                 self.unit_health[i],
                                 self.unit_weapon[i],
@@ -1810,23 +1859,29 @@ class Warhammer40kEnv(gym.Env):
                                 self._format_unit_label("enemy", idOfE),
                                 sum(dmg),
                             )
-                        if self.trunc is False and _logger is not None:
+                        if _logger is not None:
                             _logger.print_shoot_report(
                                 weapon=self.unit_weapon[i],
                                 attacker_data=self.unit_data[i],
                                 defender_data=self.enemy_data[idOfE],
                                 dmg_list=dmg,
                                 effect=effect,
+                                attacker_label=self._format_unit_label("model", i),
+                                defender_label=self._format_unit_label("enemy", idOfE),
                             )
                     else:
                         reward_delta -= 0.5
-                        target_list = self._format_unit_choices("enemy", shootAbleUnits)
+                        target_list = self._format_unit_choices("enemy", valid_target_ids)
                         self._log_unit(
                             "MODEL",
                             modelName,
                             i,
-                            f"Цели в дальности: {target_list}, выбрана недоступная цель {idOfE + 11}. Стрельба пропущена.",
+                            f"Цели в дальности: {target_list}, выбрана недоступная цель (raw={raw}). Стрельба пропущена.",
                         )
+                        if _verbose_logs_enabled():
+                            self._log(
+                                f"[MODEL][SHOOT] Невалидный выбор цели: raw={raw}, доступные={valid_target_ids} (ожидался индекс 0..{len(valid_target_ids) - 1}). Стрельба пропущена."
+                            )
                         if self.trunc is False:
                             self._log(f"{self._format_unit_label('model', i)} не смог стрелять: выбранная цель недоступна.")
                 else:
@@ -1870,6 +1925,7 @@ class Warhammer40kEnv(gym.Env):
                                         manual=False,
                                     )
                                     logger = RollLogger(player_dice)
+                                    logger.configure_for_weapon(self.enemy_weapon[i])
                                     dmg, modHealth = attack(
                                         self.enemy_health[i],
                                         self.enemy_weapon[i],
@@ -1890,6 +1946,8 @@ class Warhammer40kEnv(gym.Env):
                                         defender_data=self.unit_data[idOfE],
                                         dmg_list=dmg,
                                         effect=effect,
+                                        attacker_label=unit_label,
+                                        defender_label=self._format_unit_label("model", idOfE),
                                     )
                                     response = True
                                 else:
@@ -2479,6 +2537,7 @@ class Warhammer40kEnv(gym.Env):
                 hp_before = self.unit_health[def_idx]
 
                 _logger = None
+                manual_dice = os.getenv("MANUAL_DICE", "0") == "1"
                 if quiet is False and _verbose_logs_enabled():
                     _logger = RollLogger(dice_fn)
                     _logger.configure_for_weapon(weapon)
@@ -2492,6 +2551,7 @@ class Warhammer40kEnv(gym.Env):
                         roller=_logger.roll,
                     )
                 else:
+                    extra_kwargs = {"roller": dice_fn} if manual_dice else {}
                     dmg, modHealth = attack(
                         self.enemy_health[att_idx],
                         weapon,
@@ -2499,6 +2559,7 @@ class Warhammer40kEnv(gym.Env):
                         self.unit_health[def_idx],
                         defender_data,
                         rangeOfComb="Melee",
+                        **extra_kwargs,
                     )
 
                 self.unit_health[def_idx] = modHealth
@@ -2530,6 +2591,32 @@ class Warhammer40kEnv(gym.Env):
 
                 return True
 
+        manual_enemy = bool(getattr(self, "playType", False))
+
+        def _prompt_enemy_target(att_idx: int) -> Optional[int]:
+            def_idx = self.enemyInAttack[att_idx][1]
+            targets = []
+            if 0 <= def_idx < len(self.unit_health) and self.unit_health[def_idx] > 0:
+                targets = [def_idx]
+            if not targets:
+                self._log("Целей для атаки нет: бой пропущен.")
+                return None
+            target_choices = self._format_unit_choices("model", targets)
+            options = [str(21 + idx) for idx in targets]
+            while True:
+                choice = self._request_choice(
+                    f"Выберите цель для атаки. Атакует: {self._format_unit_label('enemy', att_idx)}. "
+                    f"Доступные цели: {target_choices}. Введите ID цели: ",
+                    options,
+                )
+                if choice is None:
+                    self.game_over = True
+                    return None
+                choice_value = str(choice).strip()
+                if is_num(choice_value) and int(choice_value) - 21 in targets:
+                    return int(choice_value) - 21
+                self._log("Недоступная цель, попробуйте снова.")
+
         # есть ли вообще кому драться?
         any_fight = any(x[0] == 1 for x in self.unitInAttack) or any(x[0] == 1 for x in self.enemyInAttack)
         if not any_fight:
@@ -2560,10 +2647,22 @@ class Warhammer40kEnv(gym.Env):
         else:
             chargers = [i for i in range(len(self.enemy_health))
                         if self.enemyCharged[i] == 1 and self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0]
-            for i in chargers:
-                if i not in fought_enemy:
-                    if _do_melee("enemy", i):
-                        fought_enemy.add(i)
+            if manual_enemy:
+                remaining = [i for i in chargers if i not in fought_enemy]
+                while remaining:
+                    attacker_idx = remaining[0]
+                    target_idx = _prompt_enemy_target(attacker_idx)
+                    if target_idx is None:
+                        return
+                    self.enemyInAttack[attacker_idx][1] = target_idx
+                    if _do_melee("enemy", attacker_idx):
+                        fought_enemy.add(attacker_idx)
+                    remaining = [i for i in chargers if i not in fought_enemy]
+            else:
+                for i in chargers:
+                    if i not in fought_enemy:
+                        if _do_melee("enemy", i):
+                            fought_enemy.add(i)
 
         # 2) then alternate, starting with NON-active side
         next_side = "enemy" if active_side == "model" else "model"
@@ -2585,9 +2684,18 @@ class Warhammer40kEnv(gym.Env):
                 next_side = "enemy"
             else:
                 if enemy_left:
-                    i = enemy_left[0]
-                    _do_melee("enemy", i)
-                    fought_enemy.add(i)
+                    if manual_enemy:
+                        attacker_idx = enemy_left[0]
+                        target_idx = _prompt_enemy_target(attacker_idx)
+                        if target_idx is None:
+                            return
+                        self.enemyInAttack[attacker_idx][1] = target_idx
+                        _do_melee("enemy", attacker_idx)
+                        fought_enemy.add(attacker_idx)
+                    else:
+                        i = enemy_left[0]
+                        _do_melee("enemy", i)
+                        fought_enemy.add(i)
                 next_side = "model"
 
         # после Fight Phase — charged сбрасываем (на всякий)

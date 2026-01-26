@@ -22,8 +22,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 33,
-      "y": 37
+      "x": 32,
+      "y": 28
     },
     {
       "side": "player",
@@ -31,8 +31,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 39,
-      "y": 11
+      "x": 37,
+      "y": 30
     },
     {
       "side": "player",
@@ -40,8 +40,8 @@
       "name": "Canoptek Scarab Swarms",
       "models": 3,
       "hp": 12.0,
-      "x": 31,
-      "y": 28
+      "x": 30,
+      "y": 3
     },
     {
       "side": "model",
@@ -49,8 +49,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 8,
-      "y": 16
+      "x": 7,
+      "y": 43
     },
     {
       "side": "model",
@@ -58,8 +58,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 5,
-      "y": 18
+      "x": 3,
+      "y": 31
     },
     {
       "side": "model",
@@ -67,8 +67,8 @@
       "name": "Canoptek Scarab Swarms",
       "models": 3,
       "hp": 12.0,
-      "x": 4,
-      "y": 29
+      "x": 2,
+      "y": 57
     }
   ],
   "objectives": [
@@ -94,22 +94,22 @@
     }
   ],
   "log_tail": [
-    "CP MODEL: 0, CP PLAYER: 0",
+    "[MODEL] Ближний бой: нет доступных атак",
+    "=== КОНЕЦ БОЕВОГО РАУНДА 1 ===",
+    "Итерация 0 завершена с наградой tensor([0], device='cuda:0'), здоровье игрока [10.0, 10.0, 12.0], здоровье модели [10.0, 10.0, 12.0]",
+    "{'model health': [10.0, 10.0, 12.0], 'player health': [10.0, 10.0, 12.0], 'modelCP': 1, 'playerCP': 2, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command'}",
+    "Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [10.0, 10.0, 12.0]",
+    "CP MODEL: 1, CP PLAYER: 2",
     "VP MODEL: 0, VP PLAYER: 0",
-    "=== БОЕВОЙ РАУНД 1 ===",
-    "--- ХОД PLAYER ---",
-    "--- ФАЗА КОМАНДОВАНИЯ ---",
-    "[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0",
-    "--- ФАЗА ДВИЖЕНИЯ ---",
     "Roll-off Attacker/Defender: enemy=1 model=3 -> attacker=model",
     "Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]",
     "[DEPLOY] Order: model first, alternating",
-    "[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (16,8)",
-    "[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (37,33)",
-    "[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (18,5)",
-    "[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (11,39)",
-    "[DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (29,4)",
-    "[DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (28,31)",
+    "[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (43,7)",
+    "[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (28,32)",
+    "[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (31,3)",
+    "[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (30,37)",
+    "[DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (57,2)",
+    "[DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (3,30)",
     "[MISSION Only War] Post-deploy: currently no post-deploy units supported",
     "",
     "Инструкции:",
@@ -125,5 +125,5 @@
     "[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0",
     "--- ФАЗА ДВИЖЕНИЯ ---"
   ],
-  "generated_at": "2026-01-25T11:56:33.440192Z"
+  "generated_at": "2026-01-26T14:08:32.100607Z"
 }

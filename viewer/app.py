@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+from datetime import datetime
 from PySide6 import QtCore, QtGui, QtWidgets
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -46,6 +47,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self.controller = GameController(model_path=model_path, state_path=state_path)
         self._pending_request = None
+        self._active_unit_id = None
+        self._active_unit_side = None
+        self._show_objective_radius = True
+        self._units_by_key = {}
+        self._unit_row_by_key = {}
 
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = MapScene(cell_size=18)
@@ -72,6 +78,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         header.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
         header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
         header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)
+        header.sortIndicatorChanged.connect(self._rebuild_unit_row_mapping)
         self.units_table.verticalHeader().setVisible(False)
         self.units_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.units_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -79,14 +86,22 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.units_table.itemSelectionChanged.connect(self._sync_selection_from_table)
         self._apply_units_table_font()
 
-        self.log_view = QtWidgets.QPlainTextEdit()
-        self.log_view.setReadOnly(True)
-        self.log_view.setMaximumBlockCount(500)
-
-        copy_button = QtWidgets.QPushButton("Copy")
-        clear_button = QtWidgets.QPushButton("Clear")
-        copy_button.clicked.connect(self._copy_log)
-        clear_button.clicked.connect(self.log_view.clear)
+        self._log_entries = []
+        self._current_turn_number = None
+        self._log_tail_snapshot = None
+        self._log_tabs = {}
+        self._log_tab_defs = [
+            ("all", "Все"),
+            ("turn", "Ход"),
+            ("shooting", "Стрельба"),
+            ("fight", "Ближний бой"),
+            ("dice", "Кубы"),
+            ("errors", "Ошибки"),
+        ]
+        self._max_log_lines = 5000
+        self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS.md")
+        self._log_file_max_bytes = 5 * 1024 * 1024
+        self._init_log_viewer()
 
         fit_button = QtWidgets.QPushButton("Fit")
         fit_button.clicked.connect(self._fit_view)
@@ -96,48 +111,60 @@ class ViewerWindow(QtWidgets.QMainWindow):
         left_layout.addWidget(fit_button, alignment=QtCore.Qt.AlignLeft)
         left_layout.addWidget(self.map_view)
 
-        right_widget = QtWidgets.QWidget()
-        right_layout = QtWidgets.QVBoxLayout(right_widget)
-        right_layout.addWidget(self._group_status())
-        right_layout.addWidget(self._group_points())
-        right_layout.addWidget(self._group_units())
-        right_layout.addWidget(self._group_legend())
-        right_layout.addStretch()
-
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        splitter.addWidget(left_widget)
-        splitter.addWidget(right_widget)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
-
         log_group = QtWidgets.QGroupBox("ЖУРНАЛ")
         log_layout = QtWidgets.QVBoxLayout(log_group)
-        log_layout.addWidget(self.log_view)
-        log_buttons = QtWidgets.QHBoxLayout()
-        log_buttons.addStretch()
-        log_buttons.addWidget(copy_button)
-        log_buttons.addWidget(clear_button)
-        log_layout.addLayout(log_buttons)
+        log_layout.addLayout(self._log_controls_layout)
+        log_layout.addWidget(self.log_tabs)
+        log_group.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+        )
 
         command_group = QtWidgets.QGroupBox("КОМАНДЫ")
         command_layout = QtWidgets.QVBoxLayout(command_group)
         self.command_prompt = QtWidgets.QLabel("Ожидаю команду...")
         self.command_prompt.setWordWrap(True)
         command_layout.addWidget(self.command_prompt)
+        self.command_hint = QtWidgets.QLabel("Горячие клавиши: —")
+        self.command_hint.setStyleSheet(f"color: {Theme.muted.name()};")
+        command_layout.addWidget(self.command_hint)
 
         self.command_stack = QtWidgets.QStackedWidget()
         self._build_command_pages()
         command_layout.addWidget(self.command_stack)
 
+        right_widget = QtWidgets.QWidget()
+        right_layout = QtWidgets.QVBoxLayout(right_widget)
+        right_layout.setSpacing(8)
+        right_layout.addWidget(self._group_status())
+        right_layout.addWidget(self._group_points())
+        right_layout.addWidget(self._group_units())
+        right_layout.addWidget(self._group_legend())
+        right_layout.addWidget(command_group)
+        right_layout.addStretch()
+
+        top_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        top_splitter.addWidget(left_widget)
+        top_splitter.addWidget(right_widget)
+        top_splitter.setStretchFactor(0, 4)
+        top_splitter.setStretchFactor(1, 1)
+
+        main_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        main_splitter.addWidget(top_splitter)
+        main_splitter.addWidget(log_group)
+        main_splitter.setStretchFactor(0, 3)
+        main_splitter.setStretchFactor(1, 2)
+
         central = QtWidgets.QWidget()
         central_layout = QtWidgets.QVBoxLayout(central)
-        central_layout.addWidget(splitter, stretch=3)
-        central_layout.addWidget(log_group, stretch=1)
-        central_layout.addWidget(command_group, stretch=0)
+        central_layout.addWidget(main_splitter)
         self.setCentralWidget(central)
 
         self._apply_dark_theme()
+        self._build_toolbar()
         self._fit_view()
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
 
         self.timer = QtCore.QTimer(self)
         self.timer.setInterval(300)
@@ -146,6 +173,20 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._poll_state()
         QtCore.QTimer.singleShot(0, self._start_controller)
+
+    def _build_toolbar(self):
+        toolbar = self.addToolBar("Вид")
+        toolbar.setMovable(False)
+        self.toggle_objective_radius = QtGui.QAction("Показать радиус целей", self)
+        self.toggle_objective_radius.setCheckable(True)
+        self.toggle_objective_radius.setChecked(True)
+        self.toggle_objective_radius.toggled.connect(self._toggle_objective_radius)
+        toolbar.addAction(self.toggle_objective_radius)
+
+    def _toggle_objective_radius(self, checked):
+        self._show_objective_radius = checked
+        self.map_scene.set_objective_radius_visible(checked)
+        self.map_scene.refresh_overlays()
 
     def _apply_dark_theme(self):
         palette = self.palette()
@@ -198,6 +239,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         layout.addLayout(self._legend_row("Игрок", Theme.player))
         layout.addLayout(self._legend_row("Модель", Theme.model))
         layout.addLayout(self._legend_row("Цель", Theme.objective))
+        layout.addLayout(self._legend_row("Подсветка хода", Theme.selection))
+        layout.addLayout(self._legend_row("Подсветка стрельбы", Theme.accent))
         return box
 
     def _legend_row(self, label, color):
@@ -290,6 +333,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             else:
                 self.command_prompt.setText("Команда не требуется.")
             self.command_stack.setEnabled(False)
+            self.command_hint.setText("Горячие клавиши: —")
+            self._refresh_active_context()
             return
 
         self.command_prompt.setText(request.prompt)
@@ -330,13 +375,53 @@ class ViewerWindow(QtWidgets.QMainWindow):
         else:
             self.command_input.setPlaceholderText("Введите команду...")
             self.command_stack.setCurrentIndex(self._command_pages["text"])
+        self._update_command_hint(kind)
+        self._refresh_active_context()
+
+    def _update_command_hint(self, kind):
+        if kind == "direction":
+            self.command_hint.setText("Горячие клавиши: ↑ ↓ ← →, пробел/0 — нет")
+        elif kind == "bool":
+            self.command_hint.setText("Горячие клавиши: Y — да, N — нет")
+        elif kind == "int":
+            self.command_hint.setText("Горячие клавиши: Enter — отправить")
+        elif kind == "choice":
+            self.command_hint.setText("Горячие клавиши: Enter — выбрать")
+        else:
+            self.command_hint.setText("Горячие клавиши: Enter — отправить")
+
+    def _init_log_viewer(self):
+        fixed_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
+        fixed_font.setPointSize(10)
+
+        self.log_tabs = QtWidgets.QTabWidget()
+        for key, label in self._log_tab_defs:
+            view = QtWidgets.QPlainTextEdit()
+            view.setReadOnly(True)
+            view.setFont(fixed_font)
+            view.setMaximumBlockCount(self._max_log_lines)
+            self._log_tabs[key] = view
+            self.log_tabs.addTab(view, label)
+
+        self.log_only_current_turn = QtWidgets.QCheckBox("Показать только текущий ход")
+        self.log_only_current_turn.toggled.connect(self._refresh_log_views)
+
+        self.log_copy_turn = QtWidgets.QPushButton("Копировать ход")
+        self.log_copy_turn.clicked.connect(self._copy_current_turn)
+        self.log_clear = QtWidgets.QPushButton("Очистить")
+        self.log_clear.clicked.connect(self._clear_log_viewer)
+
+        self._log_controls_layout = QtWidgets.QHBoxLayout()
+        self._log_controls_layout.addWidget(self.log_only_current_turn)
+        self._log_controls_layout.addStretch()
+        self._log_controls_layout.addWidget(self.log_copy_turn)
+        self._log_controls_layout.addWidget(self.log_clear)
 
     def _append_log(self, messages):
         if not messages:
             return
         for msg in messages:
-            self.log_view.appendPlainText(str(msg))
-        self.log_view.verticalScrollBar().setValue(self.log_view.verticalScrollBar().maximum())
+            self.add_log_line(str(msg))
 
     def _start_controller(self):
         messages, request = self.controller.start()
@@ -386,9 +471,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if rect.width() > 0 and rect.height() > 0:
             self.map_view.fitInView(rect, QtCore.Qt.KeepAspectRatio)
 
-    def _copy_log(self):
-        QtWidgets.QApplication.clipboard().setText(self.log_view.toPlainText())
-
     def _poll_state(self):
         if self.state_watcher.load_if_changed():
             self._apply_state(self.state_watcher.state)
@@ -396,6 +478,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _apply_state(self, state):
         board = state.get("board", {})
         self.map_scene.update_state(state)
+
+        self._units_by_key = {}
+        for unit in state.get("units", []) or []:
+            self._units_by_key[(unit.get("side"), unit.get("id"))] = unit
 
         self.status_round.setText(f"Раунд: {state.get('round', '—')}")
         self.status_turn.setText(f"Ход: {state.get('turn', '—')}")
@@ -413,13 +499,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._populate_units_table(state.get("units", []))
         self._update_log(state.get("log_tail", []))
+        self._refresh_active_context()
 
     def _populate_units_table(self, units):
         self.units_table.setRowCount(len(units))
         self.units_table.setSortingEnabled(False)
-        self._row_lookup = []
+        self._unit_row_by_key = {}
         for row, unit in enumerate(units):
             side_label = "Игрок" if unit.get("side") == "player" else "Модель"
+            unit_key = (unit.get("side"), unit.get("id"))
             values = [
                 side_label,
                 str(unit.get("id", "—")),
@@ -429,33 +517,258 @@ class ViewerWindow(QtWidgets.QMainWindow):
             ]
             for col, value in enumerate(values):
                 item = QtWidgets.QTableWidgetItem(value)
+                if col == 0:
+                    item.setData(QtCore.Qt.UserRole, unit_key)
                 self.units_table.setItem(row, col, item)
-            self._row_lookup.append((unit.get("side"), unit.get("id")))
+            self._unit_row_by_key[unit_key] = row
         self.units_table.setSortingEnabled(True)
+        self._rebuild_unit_row_mapping()
 
     def _update_log(self, lines):
         if isinstance(lines, list):
-            self.log_view.setPlainText("\n".join(lines))
-            self.log_view.verticalScrollBar().setValue(self.log_view.verticalScrollBar().maximum())
+            text_lines = [str(line) for line in lines]
+            if self._log_tail_snapshot == text_lines:
+                return
+            if not self._log_entries:
+                self._reset_log_lines(text_lines, write_to_file=True)
+                self._log_tail_snapshot = text_lines
+                return
+            existing = [entry["text"] for entry in self._log_entries]
+            if len(text_lines) >= len(existing) and text_lines[: len(existing)] == existing:
+                for line in text_lines[len(existing) :]:
+                    self.add_log_line(line)
+                self._log_tail_snapshot = text_lines
+                return
+            self._reset_log_lines(text_lines, write_to_file=False)
+            self._log_tail_snapshot = text_lines
 
     def _select_row_for_unit(self, side, unit_id):
-        if not hasattr(self, "_row_lookup"):
+        unit_key = (side, unit_id)
+        row = self._unit_row_by_key.get(unit_key)
+        if row is None:
+            row = self._find_row_for_unit(unit_key)
+        if row is None:
             return
-        for row, key in enumerate(self._row_lookup):
-            if key == (side, unit_id):
-                self.units_table.selectRow(row)
-                return
+        self.units_table.selectRow(row)
+        unit_name = self._units_by_key.get(unit_key, {}).get("name", "—")
+        self._append_log([f"Выбрано на карте: unit_id={unit_id}, name={unit_name}"])
 
     def _sync_selection_from_table(self):
         selected = self.units_table.selectionModel().selectedRows()
         if not selected:
             return
         row = selected[0].row()
-        if not hasattr(self, "_row_lookup") or row >= len(self._row_lookup):
+        item = self.units_table.item(row, 0)
+        if item is None:
             return
-        side, unit_id = self._row_lookup[row]
+        unit_key = item.data(QtCore.Qt.UserRole)
+        if not unit_key:
+            return
+        side, unit_id = unit_key
         if side and unit_id is not None:
             self.map_scene.select_unit(side, unit_id)
+            self._append_log([f"Выбрано в таблице: row={row} -> unit_id={unit_id}"])
+
+    def add_log_line(self, line: str):
+        text = str(line)
+        new_turn = self._detect_turn_number(text)
+        if new_turn is not None:
+            self._current_turn_number = new_turn
+        categories = self._classify_line(text)
+        entry = {
+            "text": text,
+            "turn": self._current_turn_number,
+            "categories": categories,
+        }
+        self._log_entries.append(entry)
+        self._append_log_to_file(text)
+        if len(self._log_entries) > self._max_log_lines:
+            self._log_entries = self._log_entries[-self._max_log_lines :]
+            self._refresh_log_views()
+            return
+        if new_turn is not None and self.log_only_current_turn.isChecked():
+            self._refresh_log_views()
+            return
+        for key, _ in self._log_tab_defs:
+            if self._should_show_entry(entry, key):
+                self._append_to_view(self._log_tabs[key], text)
+
+    def _append_to_view(self, view: QtWidgets.QPlainTextEdit, text: str):
+        scrollbar = view.verticalScrollBar()
+        at_bottom = scrollbar.value() >= scrollbar.maximum()
+        view.appendPlainText(text)
+        if at_bottom:
+            scrollbar.setValue(scrollbar.maximum())
+
+    def _classify_line(self, line: str):
+        lowered = line.lower()
+        categories = set()
+        if self._matches_any(
+            lowered,
+            [
+                "боевого раунда",
+                "фаза",
+                "===",
+                "iteration",
+                "раунд",
+                "turn",
+            ],
+        ):
+            categories.add("turn")
+        if self._matches_any(
+            lowered,
+            [
+                "[shoot]",
+                "отчёт по стрельбе",
+                "hit rolls",
+                "wound",
+                "save",
+                "оружие",
+                "стрельб",
+            ],
+        ):
+            categories.add("shooting")
+        if self._matches_any(
+            lowered,
+            [
+                "[fight]",
+                "фаза боя",
+                "melee",
+                "атаки",
+                "удар",
+            ],
+        ):
+            categories.add("fight")
+        if self._matches_any(
+            lowered,
+            [
+                "d6",
+                "2d6",
+                "d3",
+                "бросок",
+                "roll",
+                "rolling",
+                "🎲",
+            ],
+        ):
+            categories.add("dice")
+        if self._matches_any(
+            lowered,
+            [
+                "error",
+                "traceback",
+                "exception",
+                "warn",
+                "warning",
+                "недоступен",
+                "ошибка",
+            ],
+        ):
+            categories.add("errors")
+        return categories
+
+    def _matches_any(self, lowered: str, tokens):
+        return any(token in lowered for token in tokens)
+
+    def _detect_turn_number(self, line: str):
+        match = re.search(r"боевого раунда\\s*(\\d+)", line, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        match = re.search(r"\\bturn\\s*(\\d+)", line, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        match = re.search(r"\\bраунд\\s*(\\d+)", line, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        return None
+
+    def _should_show_entry(self, entry, tab_key):
+        if tab_key != "all" and tab_key not in entry["categories"]:
+            return False
+        if not self.log_only_current_turn.isChecked():
+            return True
+        if self._current_turn_number is None:
+            return True
+        return entry["turn"] == self._current_turn_number
+
+    def _refresh_log_views(self):
+        for view in self._log_tabs.values():
+            view.clear()
+        grouped_lines = {key: [] for key, _ in self._log_tab_defs}
+        for entry in self._log_entries:
+            for key, _ in self._log_tab_defs:
+                if self._should_show_entry(entry, key):
+                    grouped_lines[key].append(entry["text"])
+        for key, lines in grouped_lines.items():
+            if lines:
+                self._log_tabs[key].setPlainText("\n".join(lines))
+                scrollbar = self._log_tabs[key].verticalScrollBar()
+                scrollbar.setValue(scrollbar.maximum())
+
+    def _reset_log_lines(self, lines, write_to_file: bool):
+        self._log_entries = []
+        self._current_turn_number = None
+        for line in lines:
+            if write_to_file:
+                self.add_log_line(line)
+            else:
+                text = str(line)
+                new_turn = self._detect_turn_number(text)
+                if new_turn is not None:
+                    self._current_turn_number = new_turn
+                self._log_entries.append(
+                    {
+                        "text": text,
+                        "turn": self._current_turn_number,
+                        "categories": self._classify_line(text),
+                    }
+                )
+        self._refresh_log_views()
+
+    def _clear_log_viewer(self):
+        self._log_entries = []
+        self._current_turn_number = None
+        self._log_tail_snapshot = None
+        for view in self._log_tabs.values():
+            view.clear()
+
+    def _collect_current_turn_logs(self):
+        if self._current_turn_number is None:
+            return "\n".join(entry["text"] for entry in self._log_entries)
+        return "\n".join(
+            entry["text"]
+            for entry in self._log_entries
+            if entry["turn"] == self._current_turn_number
+        )
+
+    def _copy_current_turn(self):
+        QtWidgets.QApplication.clipboard().setText(self._collect_current_turn_logs())
+
+    def _append_log_to_file(self, line: str):
+        self._rotate_log_file_if_needed()
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            with open(self._log_file_path, "a", encoding="utf-8") as log_file:
+                log_file.write(f"{timestamp} | {line}\n")
+        except OSError:
+            pass
+
+    def _rotate_log_file_if_needed(self):
+        if not os.path.exists(self._log_file_path):
+            return
+        try:
+            size = os.path.getsize(self._log_file_path)
+        except OSError:
+            return
+        if size <= self._log_file_max_bytes:
+            return
+        rotated = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS.old.md")
+        try:
+            if os.path.exists(rotated):
+                os.remove(rotated)
+            os.replace(self._log_file_path, rotated)
+        except OSError:
+            pass
 
     def _count_dice_entries(self, text: str) -> int:
         stripped = text.strip()
@@ -465,6 +778,139 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return len(stripped)
         parts = [part for part in re.split(r"[,\s]+", stripped) if part]
         return len(parts)
+
+    def _rebuild_unit_row_mapping(self):
+        self._unit_row_by_key = {}
+        for row in range(self.units_table.rowCount()):
+            item = self.units_table.item(row, 0)
+            if item is None:
+                continue
+            unit_key = item.data(QtCore.Qt.UserRole)
+            if unit_key:
+                self._unit_row_by_key[unit_key] = row
+
+    def _find_row_for_unit(self, unit_key):
+        for row in range(self.units_table.rowCount()):
+            item = self.units_table.item(row, 0)
+            if item is None:
+                continue
+            if item.data(QtCore.Qt.UserRole) == unit_key:
+                return row
+        return None
+
+    def _extract_unit_id(self, prompt):
+        if not prompt:
+            return None
+        match = re.search(r"(?:юнит|unit)\\s*#?\\s*(\\d+)", prompt, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        return None
+
+    def _resolve_move_range(self, unit):
+        if not unit:
+            return None
+        for key in ("move", "movement", "move_range", "speed"):
+            value = unit.get(key)
+            if isinstance(value, (int, float)):
+                return int(value)
+        if self._pending_request and getattr(self._pending_request, "kind", "") == "int":
+            max_value = getattr(self._pending_request, "max_value", None)
+            if max_value is not None:
+                return int(max_value)
+        return 6
+
+    def _resolve_weapon_range(self, unit):
+        if not unit:
+            return None
+        for key in ("range", "weapon_range", "shoot_range", "shooting_range"):
+            value = unit.get(key)
+            if isinstance(value, (int, float)):
+                return int(value)
+        return 12
+
+    def _resolve_active_unit(self):
+        unit_id = self._extract_unit_id(getattr(self._pending_request, "prompt", ""))
+        if unit_id is None:
+            return None, None
+        for (side, candidate_id), unit in self._units_by_key.items():
+            if candidate_id == unit_id:
+                return unit_id, side
+        return unit_id, None
+
+    def _refresh_active_context(self):
+        unit_id, side = self._resolve_active_unit()
+        self._active_unit_id = unit_id
+        self._active_unit_side = side
+        active_unit = self._units_by_key.get((side, unit_id))
+        phase = None
+        if self.state_watcher and self.state_watcher.state:
+            phase = self.state_watcher.state.get("phase")
+        move_range = None
+        shoot_range = None
+        if self._is_movement_phase(phase):
+            move_range = self._resolve_move_range(active_unit)
+        if self._is_shooting_phase(phase):
+            shoot_range = self._resolve_weapon_range(active_unit)
+        self.map_scene.set_active_context(
+            active_unit_id=unit_id,
+            active_unit_side=side,
+            phase=phase,
+            move_range=move_range,
+            shoot_range=shoot_range,
+            show_objective_radius=self._show_objective_radius,
+            targets=self.state_watcher.state.get("available_targets")
+            if self.state_watcher and self.state_watcher.state
+            else None,
+        )
+
+    def _is_movement_phase(self, phase):
+        phase_text = str(phase or "").lower()
+        return "move" in phase_text or "движ" in phase_text or "movement" in phase_text
+
+    def _is_shooting_phase(self, phase):
+        phase_text = str(phase or "").lower()
+        return "shoot" in phase_text or "стрел" in phase_text or "shooting" in phase_text
+
+    def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.KeyPress and self._pending_request:
+            kind = getattr(self._pending_request, "kind", "")
+            key = event.key()
+            text = event.text().lower()
+            if kind == "direction":
+                if key == QtCore.Qt.Key_Up:
+                    self._submit_answer("up")
+                    return True
+                if key == QtCore.Qt.Key_Down:
+                    self._submit_answer("down")
+                    return True
+                if key == QtCore.Qt.Key_Left:
+                    self._submit_answer("left")
+                    return True
+                if key == QtCore.Qt.Key_Right:
+                    self._submit_answer("right")
+                    return True
+                if key in (QtCore.Qt.Key_Space, QtCore.Qt.Key_0):
+                    self._submit_answer("none")
+                    return True
+            elif kind == "bool":
+                if text == "y":
+                    self._submit_answer("y")
+                    return True
+                if text == "n":
+                    self._submit_answer("n")
+                    return True
+                if key == QtCore.Qt.Key_Escape:
+                    self.command_input.clear()
+                    return True
+            elif kind == "int":
+                if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+                    self._submit_answer(self.int_spin.value())
+                    return True
+            elif kind == "choice":
+                if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+                    self._submit_choice()
+                    return True
+        return super().eventFilter(obj, event)
 
 
 def launch(state_path, model_path=None):

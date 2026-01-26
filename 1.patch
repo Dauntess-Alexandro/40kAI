@@ -1,311 +1,63 @@
-diff --git a/gym_mod/gym_mod/engine/game_controller.py b/gym_mod/gym_mod/engine/game_controller.py
-index 7d59d90a5d32fc09084ff6cf212c4bebb87144e6..37ce3de0b9299e070463b37a98c8d0db2c215d53 100644
---- a/gym_mod/gym_mod/engine/game_controller.py
-+++ b/gym_mod/gym_mod/engine/game_controller.py
-@@ -112,89 +112,89 @@ class GameController:
-             env.io = self._io
-             env.playType = True
+diff --git a/viewer/scene.py b/viewer/scene.py
+index fb1443056cc0f9b0b1814522f769a19688801643..3d794ac7f4aa9f690d2913b1285156f0d9716542 100644
+--- a/viewer/scene.py
++++ b/viewer/scene.py
+@@ -238,51 +238,56 @@ class MapScene(QtWidgets.QGraphicsScene):
+         shoot_range=None,
+         show_objective_radius=True,
+         targets=None,
+     ):
+         self._active_unit_id = active_unit_id
+         self._active_unit_side = active_unit_side
+         self._phase = phase or ""
+         self._move_range = move_range
+         self._shoot_range = shoot_range
+         self._show_objective_radius = bool(show_objective_radius)
+         self._targets = targets
+         for item in self.objective_radius_items:
+             item.setVisible(self._show_objective_radius)
+         self.refresh_overlays()
  
-             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+     def set_objective_radius_visible(self, visible):
+         self._show_objective_radius = bool(visible)
+         for item in self.objective_radius_items:
+             item.setVisible(self._show_objective_radius)
  
-             attacker_side, defender_side = roll_off_attacker_defender(
-                 manual_roll_allowed=True,
-                 log_fn=self._io.log,
-             )
+     def refresh_overlays(self):
+         self._clear_overlay_items()
+         active_key = (self._active_unit_side, self._active_unit_id)
+         if not active_key[0] or active_key[1] is None:
+             return
+-        if self._hovered_unit_key != active_key and self._selected_unit_key != active_key:
++        force_active = self._should_show_movement() or self._should_show_shooting()
++        if (
++            self._hovered_unit_key != active_key
++            and self._selected_unit_key != active_key
++            and not force_active
++        ):
+             return
+         unit = self._state_unit(active_key)
+         if unit is None:
+             return
+         if self._should_show_movement():
+             self._draw_movement_overlay(unit)
+         if self._should_show_shooting():
+             self._draw_target_overlay(unit)
  
-             self._io.log(
-                 "Юниты: "
-                 + str(
-                     [
-                         (u.name, getattr(u, "instance_id", "unknown"), u.models_count)
-                         for u in model
-                     ]
-                 )
-             )
+     def _state_unit(self, unit_key):
+         units = self._state.get("units", []) or []
+         for unit in units:
+             if (unit.get("side"), unit.get("id")) == unit_key:
+                 return unit
+         return None
  
-             from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
+     def _should_show_movement(self):
+         phase = str(self._phase or "").lower()
+         return "move" in phase or "движ" in phase or "movement" in phase or self._move_range is not None
  
-             deploy_only_war(
-                 model_units=model,
-                 enemy_units=enemy,
--                b_len=env.b_len,
--                b_hei=env.b_hei,
-+                b_len=env.unwrapped.b_len,
-+                b_hei=env.unwrapped.b_hei,
-                 attacker_side=attacker_side,
-                 log_fn=self._io.log,
-             )
-             post_deploy_setup(log_fn=self._io.log)
+     def _should_show_shooting(self):
+         phase = str(self._phase or "").lower()
+         return "shoot" in phase or "стрел" in phase or "shooting" in phase
  
-             env.attacker_side = attacker_side
-             env.defender_side = defender_side
- 
-             state, info = env.reset(m=model, e=enemy, playType=True, Type="big", trunc=True)
- 
-             n_actions = [5, 2, len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
-             for _ in range(len(model)):
-                 n_actions.append(12)
-             n_observations = len(state)
- 
-             policy_net = DQN(n_observations, n_actions).to(device)
-             target_net = DQN(n_observations, n_actions).to(device)
-             optimizer = torch.optim.Adam(policy_net.parameters())
- 
-             policy_net.load_state_dict(checkpoint["policy_net"])
-             target_net.load_state_dict(checkpoint["target_net"])
-             optimizer.load_state_dict(checkpoint["optimizer"])
- 
-             policy_net.eval()
-             target_net.eval()
- 
-             self._io.log(
-                 "\nИнструкции:\nИгрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).\n"
-                 "Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).\n"
-             )
- 
-             is_done = False
-             i = 0
-             reward = 0
- 
-             while not is_done:
--                done, info = env.player()
-+                done, info = env.unwrapped.player()
-                 env.updateBoard()
-                 state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-                 action = select_action(env, state_tensor, i, policy_net, len(model))
-                 action_dict = convertToDict(action)
-                 if done is not True:
-                     next_observation, reward, done, _, info = env.step(action_dict)
-                     reward_tensor = torch.tensor([reward], device=device)
-                     unit_health = info["model health"]
-                     enemy_health = info["player health"]
- 
-                     message = (
-                         f"Итерация {i} завершена с наградой {reward_tensor}, "
-                         f"здоровье игрока {enemy_health}, здоровье модели {unit_health}"
-                     )
-                     self._io.log(message)
-                     state = next_observation
-                     env.updateBoard()
- 
-                 if done is True:
-                     if reward > 0:
-                         self._io.log("Модель победила!")
-                     else:
-                         self._io.log("Вы победили!")
-                     is_done = True
-                 i += 1
-diff --git a/gym_mod/gym_mod/envs/warhamEnv.py b/gym_mod/gym_mod/envs/warhamEnv.py
-index 2513dfdc2d347c527a2f6e5a0f64ce12b67203f7..477ccc0949dd95767c042b259c2af746c152ca20 100644
---- a/gym_mod/gym_mod/envs/warhamEnv.py
-+++ b/gym_mod/gym_mod/envs/warhamEnv.py
-@@ -1,28 +1,30 @@
- import gymnasium as gym
- from gymnasium import spaces
- import numpy as np
-+import matplotlib
-+matplotlib.use("Agg")
- import matplotlib.pyplot as plt
- import os
- import random
- import re
- from typing import Optional
- 
- from ..engine.utils import *
- from ..engine import utils as engine_utils
- from gym_mod.engine.mission import (
-     MISSION_NAME,
-     MAX_BATTLE_ROUNDS,
-     score_end_of_command_phase,
-     apply_end_of_battle,
- )
- from gym_mod.engine.skills import apply_end_of_command_phase
- from gym_mod.engine.logging_utils import format_unit
- from gym_mod.engine.state_export import write_state_json
- from gym_mod.engine.game_io import get_active_io
- 
- # ============================================================
- # 🔧 FIX: resolve string weapons like "Bolt pistol [PISTOL]"
- # so engine.utils.attack() always receives a dict (or we safely
- # skip the attack instead of crashing with "'str' object has no attribute 'get'").
- # This is intentionally defensive: if WeaponData can't be found,
- # we still won't crash during training.
-@@ -2752,58 +2754,64 @@ class Warhammer40kEnv(gym.Env):
-         ax.plot(y2, x2, color="black")
-         ax.plot(y1 + self.b_hei, x1, color="black")
-         ax.plot(y2, x2 + self.b_len, color="black")
- 
-         for i in range(len(self.unit_health)):
-             if i == 0:
-                 ax.plot(self.unit_coords[i][1], self.unit_coords[i][0], 'bo', label="Model Unit")
-             else:
-                 ax.plot(self.unit_coords[i][1], self.unit_coords[i][0], 'bo')
- 
-         for i in range(len(self.enemy_coords)):
-             if i == 0:
-                 ax.plot(self.enemy_coords[i][1], self.enemy_coords[i][0], 'go', label="Player Unit")
-             else:
-                 ax.plot(self.enemy_coords[i][1], self.enemy_coords[i][0], 'go')
- 
-         for i in range(len(self.coordsOfOM)):
-             if i == 0:
-                 ax.plot(self.coordsOfOM[i][1], self.coordsOfOM[i][0], 'o', color="black", label="Objective Marker(s)")
-             else:
-                 ax.plot(self.coordsOfOM[i][1], self.coordsOfOM[i][0], 'o', color="black")
- 
-         ax.legend(loc="right")
- 
-         if mode == "train":
--            fileName = "display/" + str(self.restarts) + "_" + str(self.iter) + ".png"
-+            output_dir = "display"
-+            os.makedirs(output_dir, exist_ok=True)
-+            fileName = os.path.join(output_dir, f"{self.restarts}_{self.iter}.png")
-         else:
--            fileName = "gui/build/img/board.png"
--            fig.savefig("gui/img/board.png")
-+            output_dir = os.path.join("gui", "build", "img")
-+            legacy_dir = os.path.join("gui", "img")
-+            os.makedirs(output_dir, exist_ok=True)
-+            os.makedirs(legacy_dir, exist_ok=True)
-+            fileName = os.path.join(output_dir, "board.png")
-+            fig.savefig(os.path.join(legacy_dir, "board.png"))
- 
-         fig.savefig(fileName)
-         ax.cla()
--        plt.close()
-+        plt.close(fig)
-         return self.board
- 
-     def showBoard(self):
-         board = self.returnBoard()
-         np.savetxt("board.txt", board.astype(int), fmt="%i", delimiter=",")
-         self.render(mode="play")
- 
-     def close(self):
-         pass
- 
-     def _get_observation(self):
-         obs = []
- 
-         for i in range(len(self.unit_health)):
-             obs.append(self.unit_health[i])
-             obs.append(self.unit_coords[i][0])
-             obs.append(self.unit_coords[i][1])
- 
-         obs.append(self.modelCP)
- 
-         for i in range(len(self.enemy_health)):
-             obs.append(self.enemy_health[i])
-             obs.append(self.enemy_coords[i][0])
-             obs.append(self.enemy_coords[i][1])
- 
-diff --git a/play.py b/play.py
-index 6eb3973f2bda27a3bd53fd61d6b98dedf41f250b..67cdca9a12a4e451082ffc725b9d5754a85a0ac5 100644
---- a/play.py
-+++ b/play.py
-@@ -78,52 +78,52 @@ if verbose:
-     for idx, unit in enumerate(model):
-         unit_data = unit.showUnitData()
-         unit_name = unit_data.get("Name", "Unknown")
-         unit_models = unit_data.get("#OfModels", 1)
-         instance_id = getattr(unit, "instance_id", "unknown")
-         _log(f"[roster] model[{idx}] name={unit_name} instance_id={instance_id} models={unit_models}")
-     for idx, unit in enumerate(enemy):
-         unit_data = unit.showUnitData()
-         unit_name = unit_data.get("Name", "Unknown")
-         unit_models = unit_data.get("#OfModels", 1)
-         instance_id = getattr(unit, "instance_id", "unknown")
-         _log(f"[roster] enemy[{idx}] name={unit_name} instance_id={instance_id} models={unit_models}")
- _log(
-     "Units: "
-     + str(
-         [
-             (u.name, getattr(u, "instance_id", "unknown"), u.models_count)
-             for u in model
-         ]
-     )
- )
- 
- deploy_only_war(
-     model_units=model,
-     enemy_units=enemy,
--    b_len=env.b_len,
--    b_hei=env.b_hei,
-+    b_len=env.unwrapped.b_len,
-+    b_hei=env.unwrapped.b_hei,
-     attacker_side=attacker_side,
-     log_fn=log_fn,
- )
- post_deploy_setup(log_fn=log_fn)
- 
- env.attacker_side = attacker_side
- env.defender_side = defender_side
- 
- state, info = env.reset(m=model, e=enemy)
- if verbose:
-     squads_for_actions_count = len(model)
-     _log(f"[action_space] squads_for_actions_count={squads_for_actions_count}")
-     for idx, unit in enumerate(model):
-         unit_data = unit.showUnitData()
-         unit_name = unit_data.get("Name", "Unknown")
-         _log(f"[action_space] squad[{idx}] name={unit_name}")
-     total_models_count = 0
-     for unit in model:
-         unit_data = unit.showUnitData()
-         total_models_count += int(unit_data.get("#OfModels", 1))
-     _log(f"[action_space] total_models_count={total_models_count}")
-     move_num_keys = [
-         key for key in env.action_space.spaces.keys() if key.startswith("move_num_")
-     ]
-     _log(f"[action_space] move_num_keys_count={len(move_num_keys)}")
-@@ -138,48 +138,48 @@ target_net = DQN(n_observations, n_actions).to(device)
- optimizer = torch.optim.Adam(policy_net.parameters())
- 
- policy_net.load_state_dict(checkpoint['policy_net'])
- target_net.load_state_dict(checkpoint['target_net'])
- optimizer.load_state_dict(checkpoint['optimizer'])
- 
- policy_net.eval()
- target_net.eval()
- 
- isdone = False
- i = 0
- 
- if playInGUI == True:
-     env.reset(m=model, e=enemy, playType=playInGUI, Type="big", trunc=True)
- else:
-     env.reset(m=model, e=enemy, playType=playInGUI, Type="big", trunc=False)
- 
- env.io = io
- 
- reward = 0
- io.log("\nИнструкции:\n")
- io.log("Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.)")
- io.log("Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.)\n")
- 
- while isdone == False:
--    done, info = env.player()
-+    done, info = env.unwrapped.player()
-     state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-     action = select_action(env, state, i, policy_net, len(model))
-     action_dict = convertToDict(action)
-     if done != True:
-         next_observation, reward, done, _, info = env.step(action_dict)
-         reward = torch.tensor([reward], device=device)
-         unit_health = info["model health"]
-         enemy_health = info["player health"]
-         inAttack = info["in attack"]
- 
-         board = env.render()
-         message = "Iteration {} ended with reward {}, Player health {}, Model health {}".format(i, reward, enemy_health, unit_health)
-         io.log(message)
-         next_state = torch.tensor(next_observation, dtype=torch.float32, device=device).unsqueeze(0)
-         state = next_state
-     if done == True:
-         if reward > 0:
-             io.log("Модель победила!")
-         else:
-             io.log("Вы победили!")
-         isdone = True
-     i+=1
+     def _draw_movement_overlay(self, unit):
 

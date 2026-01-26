@@ -255,3 +255,1870 @@ VP MODEL: 0, VP PLAYER: 0
 --- ФАЗА КОМАНДОВАНИЯ ---
 [ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
 --- ФАЗА ДВИЖЕНИЯ ---
+Roll-off Attacker/Defender: enemy=1 model=2 -> attacker=model
+Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+[DEPLOY] Order: model first, alternating
+[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (37,7)
+[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (31,38)
+[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (59,6)
+[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (41,39)
+[DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (11,7)
+[DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (7,31)
+[MISSION Only War] Post-deploy: currently no post-deploy units supported
+
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+{'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 1 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+Бросок 1D6 на Advance...
+Бросок: 1
+[MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+--- ФАЗА СТРЕЛЬБЫ ---
+Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): был Advance — чардж невозможен.
+Нет доступных целей для чарджа.
+--- ФАЗА БОЯ ---
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (37, 7). Выбор: up, advance=да, бросок=1, макс=6, distance=6
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (31, 7)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (59, 6). Выбор: up, advance=нет, distance=5
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (54, 6)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция до: (11, 7). Выбор: up, advance=нет, distance=2
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция после: (9, 7)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет дальнобойного оружия, стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Доступные цели для чарджа: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Решение: пропуск чарджа.
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: нет доступных атак
+=== КОНЕЦ БОЕВОГО РАУНДА 1 ===
+Итерация 0 завершена с наградой tensor([0], device='cuda:0'), здоровье игрока [10.0, 10.0, 12.0], здоровье модели [10.0, 10.0, 12.0]
+{'model health': [10.0, 10.0, 12.0], 'player health': [10.0, 10.0, 12.0], 'modelCP': 2, 'playerCP': 2, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [10.0, 10.0, 12.0]
+CP MODEL: 2, CP PLAYER: 2
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 2 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=1, gained=1, VP: 0 -> 1, objectives=[0]
+--- ФАЗА ДВИЖЕНИЯ ---
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 11 — Necrons Necron Warriors (x10 моделей).
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 11 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 0.0.
+Roll-off Attacker/Defender: enemy=5 model=6 -> attacker=model
+Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+[DEPLOY] Order: model first, alternating
+[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (59,4)
+[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (22,37)
+[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (16,7)
+[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (42,32)
+[DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (51,3)
+[DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (58,36)
+[MISSION Only War] Post-deploy: currently no post-deploy units supported
+
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+{'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 1 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=1, gained=0, VP: 0 -> 0, objectives=[0]
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Стоимость: -1 CP. Итоговый урон: 2.0.
+--- ФАЗА СТРЕЛЬБЫ ---
+Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): был Advance — чардж невозможен.
+Нет доступных целей для чарджа.
+--- ФАЗА БОЯ ---
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (59, 4). Выбор: up, advance=да, бросок=4, макс=9, distance=9
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (50, 4)
+[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 21 — Necrons Necron Warriors (x10 моделей).
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (16, 7). Выбор: up, advance=нет, distance=5
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (11, 7)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция до: (51, 3). Выбор: up, advance=нет, distance=2
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция после: (49, 3)
+[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей).
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет дальнобойного оружия, стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Чардж: нет доступных целей
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: нет доступных атак
+=== КОНЕЦ БОЕВОГО РАУНДА 1 ===
+Итерация 0 завершена с наградой tensor([0], device='cuda:0'), здоровье игрока [10.0, 10.0, 10.0], здоровье модели [10.0, 10.0, 12.0]
+{'model health': [10.0, 10.0, 12.0], 'player health': [10.0, 10.0, 10.0], 'modelCP': 1, 'playerCP': 2, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [10.0, 10.0, 10.0]
+CP MODEL: 1, CP PLAYER: 2
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 2 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Используется способность: Reanimation Protocols
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Reanimation Protocols: бросок D3 = 3
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) До: моделей=3, раны=[4, 4, 2] всего=10
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Лечение раненой модели idx=2
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Лечение раненой модели idx=2
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) После:  моделей=3, раны=[4, 4, 4] всего=12
+[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+Бросок 1D6 на Advance...
+Бросок: 4
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 12 — Necrons Necron Warriors (x10 моделей).
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 12 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 0.0.
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Стоимость: -1 CP. Итоговый урон: 0.0.
+--- ФАЗА СТРЕЛЬБЫ ---
+Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+Бросок 2D6...
+Бросок: 6 и 6
+[PLAYER][CHARGE] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Charge объявлен по цели Unit 21 — Necrons Necron Warriors (x10 моделей). Дистанция: 10.0. Бросок 2D6: 6 + 6 = 12.
+Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) успешно зачарджил Unit 21 — Necrons Necron Warriors (x10 моделей)
+[PLAYER][CHARGE] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Движение чарджа: (58, 10) -> (51, 5), в контакте=True.
+[MODEL][CHARGE] Heroic Intervention недоступен: недостаточно CP.
+--- ФАЗА БОЯ ---
+[PLAYER][FIGHT] Начало Fight phase. Первым выбирает активный игрок. Eligible MODEL: [21], Eligible PLAYER: [13].
+[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Выбран для атаки. Цель: Unit 21 — Necrons Necron Warriors (x10 моделей).
+[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Итог атаки: урон 1.0, HP цели 10.0 -> 9.0.
+[MODEL][FIGHT] Unit 21 — Necrons Necron Warriors (x10 моделей): Выбран для атаки. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[MODEL][FIGHT] Unit 21 — Necrons Necron Warriors (x10 моделей): Итог атаки: урон 4.0, HP цели 12.0 -> 8.0.
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 2
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) До: моделей=9, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1] всего=9
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) После:  моделей=10, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1] всего=10
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Отступление из боя с Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Позиция до: (50, 4)
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Отступление завершено. Позиция после: (55, 4)
+[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 21 — Necrons Necron Warriors (x10 моделей).
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (11, 7). Выбор: right, advance=да, бросок=5, макс=10, distance=7
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (11, 14)
+[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 22 — Necrons Necron Warriors (x10 моделей).
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция до: (49, 3). Выбор: right, advance=нет, distance=4
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция после: (49, 7)
+[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей).
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Fall Back в этом ходу — стрельба недоступна.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет дальнобойного оружия, стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Fall Back в этом ходу — чардж невозможен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Доступные цели для чарджа: Unit 12 — Necrons Necron Warriors (x10 моделей), Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Решение: пропуск чарджа.
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: нет доступных атак
+=== КОНЕЦ БОЕВОГО РАУНДА 2 ===
+Итерация 1 завершена с наградой tensor([-0.5000], device='cuda:0'), здоровье игрока [10.0, 10.0, 8.0], здоровье модели [10.0, 10.0, 12.0]
+{'model health': [10.0, 10.0, 12.0], 'player health': [10.0, 10.0, 8.0], 'modelCP': 1, 'playerCP': 4, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 3, 'battle round': 3, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [10.0, 10.0, 8.0]
+CP MODEL: 1, CP PLAYER: 4
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 3 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Используется способность: Reanimation Protocols
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Reanimation Protocols: бросок D3 = 2
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) До: моделей=2, раны=[4, 4] всего=8
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Возвращена уничтоженная модель с 1 раной
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Лечение раненой модели idx=2
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) После:  моделей=3, раны=[4, 4, 2] всего=10
+[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 12 — Necrons Necron Warriors (x10 моделей).
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 12 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 1.0.
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Стоимость: -1 CP. Итоговый урон: 6.0.
+--- ФАЗА СТРЕЛЬБЫ ---
+
+🎲 Бросок бросок #1: 10D6
+
+🎲 Бросок бросок #2: 2D6
+
+🎲 Бросок бросок #3: 2D6
+Unit 11 — Necrons Necron Warriors (x10 моделей) нанёс 0.0 урона по Unit 22 — Necrons Necron Warriors (x10 моделей)
+
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 4  -> базово ранение на 4+
+Save цели: 4+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Hit rolls:    [1, 1, 1, 1, 1, 1, 5, 5, 6, 6]  -> hits: 4 (crits: 2)
+Wound rolls:  [3, 3]  (цель 4+) -> rolled wounds: 0 + auto(w/LETHAL): 2 = 2
+Save rolls:   [4, 5]  (цель 4+) -> failed saves: 0
+
+✅ Итог по движку: прошло урона = 0.0
+📌 -------------------------
+
+🎲 Бросок бросок #1: 9D6
+Unit 12 — Necrons Necron Warriors (x10 моделей) нанёс 0 урона по Unit 21 — Necrons Necron Warriors (x10 моделей)
+
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 4  -> базово ранение на 4+
+Save цели: 4+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Hit rolls:    [1, 1, 1, 1, 1, 1, 1, 1, 1]  -> hits: 0
+
+✅ Итог по движку: прошло урона = 0.0
+📌 -------------------------
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Unit 12 — Necrons Necron Warriors (x10 моделей) решил пропустить чардж.
+Бросок 2D6...
+Бросок: 1 и 1
+[PLAYER][CHARGE] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Charge объявлен по цели Unit 21 — Necrons Necron Warriors (x10 моделей). Дистанция: 2.2. Бросок 2D6: 1 + 1 = 2.
+Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) успешно зачарджил Unit 21 — Necrons Necron Warriors (x10 моделей)
+[PLAYER][CHARGE] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Движение чарджа: (53, 5) -> (56, 5), в контакте=True.
+[MODEL][CHARGE] Heroic Intervention недоступен: нет подходящих юнитов в 6".
+--- ФАЗА БОЯ ---
+[PLAYER][FIGHT] Начало Fight phase. Первым выбирает активный игрок. Eligible MODEL: [21], Eligible PLAYER: [13].
+[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Выбран для атаки. Цель: Unit 21 — Necrons Necron Warriors (x10 моделей).
+[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Итог атаки: урон 0.0, HP цели 10.0 -> 10.0.
+[MODEL][FIGHT] Unit 21 — Necrons Necron Warriors (x10 моделей): Выбран для атаки. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[MODEL][FIGHT] Unit 21 — Necrons Necron Warriors (x10 моделей): Итог атаки: урон 6.0, HP цели 4.0 -> 0.
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (55, 4). Выбор: down, advance=да, бросок=1, макс=6, distance=6
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (59, 4)
+[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 21 — Necrons Necron Warriors (x10 моделей).
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (11, 14). Выбор: down, advance=да, бросок=4, макс=9, distance=9
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (20, 14)
+[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 22 — Necrons Necron Warriors (x10 моделей).
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция до: (49, 7). Выбор: down, advance=нет, distance=0
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция после: (49, 7)
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет дальнобойного оружия, стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Чардж цели: Unit 12 — Necrons Necron Warriors (x10 моделей), выбрана Unit 11 — Necrons Necron Warriors (x10 моделей). бросок: 6 + 2 = 8. Результат: провал (цель недоступна).
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: нет доступных атак
+=== КОНЕЦ БОЕВОГО РАУНДА 3 ===
+Итерация 2 завершена с наградой tensor([-0.5000], device='cuda:0'), здоровье игрока [10.0, 9.0, 0], здоровье модели [10.0, 10.0, 12.0]
+{'model health': [10.0, 10.0, 12.0], 'player health': [10.0, 9.0, 0], 'modelCP': 1, 'playerCP': 6, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 4, 'battle round': 4, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [10.0, 9.0, 0]
+CP MODEL: 1, CP PLAYER: 6
+VP MODEL: 0, VP PLAYER: 0
+Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+Roll-off Attacker/Defender: enemy=1 model=6 -> attacker=model
+Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+[DEPLOY] Order: model first, alternating
+[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (58,3)
+[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (6,38)
+[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (39,4)
+[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (56,39)
+[DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (31,1)
+[DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (6,33)
+[MISSION Only War] Post-deploy: currently no post-deploy units supported
+
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+{'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 1 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+Roll-off Attacker/Defender: enemy=1 model=4 -> attacker=model
+Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+[DEPLOY] Order: model first, alternating
+[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (51,5)
+[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (40,31)
+[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (57,4)
+[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (18,34)
+[DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (55,6)
+[DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (56,31)
+[MISSION Only War] Post-deploy: currently no post-deploy units supported
+
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+{'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 1 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=2, gained=0, VP: 0 -> 0, objectives=[0, 1]
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Стоимость: -1 CP. Итоговый урон: 3.0.
+--- ФАЗА СТРЕЛЬБЫ ---
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): был Advance — чардж невозможен.
+Нет доступных целей для чарджа.
+--- ФАЗА БОЯ ---
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (51, 5). Выбор: down, advance=да, бросок=6, макс=11, distance=6
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (57, 5)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (57, 4). Выбор: down, advance=нет, distance=1
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (58, 4)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция до: (55, 6). Выбор: down, advance=да, бросок=5, макс=15, distance=11
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция после: (59, 6)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Цели в дальности: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей), выбрана недоступная цель 12. Стрельба пропущена.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет дальнобойного оружия, стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Доступные цели для чарджа: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Решение: пропуск чарджа.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Advance — чардж невозможен.
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: нет доступных атак
+=== КОНЕЦ БОЕВОГО РАУНДА 1 ===
+Итерация 0 завершена с наградой tensor([-0.5000], device='cuda:0'), здоровье игрока [10.0, 10.0, 9.0], здоровье модели [10.0, 10.0, 12.0]
+{'model health': [10.0, 10.0, 12.0], 'player health': [10.0, 10.0, 9.0], 'modelCP': 1, 'playerCP': 2, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [10.0, 10.0, 9.0]
+CP MODEL: 1, CP PLAYER: 2
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 2 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Используется способность: Reanimation Protocols
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Reanimation Protocols: бросок D3 = 3
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) До: моделей=3, раны=[4, 4, 1] всего=9
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Лечение раненой модели idx=2
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Лечение раненой модели idx=2
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Лечение раненой модели idx=2
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) После:  моделей=3, раны=[4, 4, 4] всего=12
+[ENEMY] Only War: end of Command phase -> controlled=2, gained=2, VP: 0 -> 2, objectives=[0, 1]
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Стоимость: -1 CP. Итоговый урон: 4.0.
+--- ФАЗА СТРЕЛЬБЫ ---
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Бросок 2D6...
+Бросок: 2 и 2
+[PLAYER][CHARGE] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Charge объявлен по цели Unit 21 — Necrons Necron Warriors (x10 моделей). Дистанция: 1.0. Бросок 2D6: 2 + 2 = 4.
+Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) успешно зачарджил Unit 21 — Necrons Necron Warriors (x10 моделей)
+[PLAYER][CHARGE] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Движение чарджа: (56, 5) -> (58, 6), в контакте=True.
+[MODEL][CHARGE] Heroic Intervention недоступен: недостаточно CP.
+--- ФАЗА БОЯ ---
+[PLAYER][FIGHT] Начало Fight phase. Первым выбирает активный игрок. Eligible MODEL: [21], Eligible PLAYER: [13].
+[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Выбран для атаки. Цель: Unit 21 — Necrons Necron Warriors (x10 моделей).
+[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Итог атаки: урон 1.0, HP цели 10.0 -> 9.0.
+[MODEL][FIGHT] Unit 21 — Necrons Necron Warriors (x10 моделей): Выбран для атаки. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[MODEL][FIGHT] Unit 21 — Necrons Necron Warriors (x10 моделей): Итог атаки: урон 4.0, HP цели 8.0 -> 4.0.
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 2
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) До: моделей=9, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1] всего=9
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) После:  моделей=10, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1] всего=10
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Остаётся в ближнем бою с Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей), движение пропущено.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (58, 4). Выбор: left, advance=да, бросок=2, макс=7, distance=6
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (58, 0)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция до: (59, 6). Выбор: left, advance=нет, distance=9
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция после: (59, 0)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Юнит в ближнем бою, стрельба недоступна.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет дальнобойного оружия, стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Уже в ближнем бою, чардж невозможен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Чардж: нет доступных целей
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: участвуют Unit 21 — Necrons Necron Warriors (x10 моделей); противники Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей)
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): В бою с Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей)
+[MODEL][FIGHT] Начало Fight phase. Первым выбирает активный игрок. Eligible MODEL: [21], Eligible PLAYER: [13].
+[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Выбран для атаки. Цель: Unit 21 — Necrons Necron Warriors (x10 моделей).
+[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Итог атаки: урон 0.0, HP цели 10.0 -> 10.0.
+[MODEL][FIGHT] Unit 21 — Necrons Necron Warriors (x10 моделей): Выбран для атаки. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[MODEL][FIGHT] Unit 21 — Necrons Necron Warriors (x10 моделей): Итог атаки: урон 3.0, HP цели 4.0 -> 1.0.
+=== КОНЕЦ БОЕВОГО РАУНДА 2 ===
+Итерация 1 завершена с наградой tensor([0.2000], device='cuda:0'), здоровье игрока [10.0, 10.0, 1.0], здоровье модели [10.0, 10.0, 12.0]
+{'model health': [10.0, 10.0, 12.0], 'player health': [10.0, 10.0, 1.0], 'modelCP': 2, 'playerCP': 4, 'in attack': [[1, 2], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 2, 'mission': 'Only War', 'turn': 3, 'battle round': 3, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [10.0, 10.0, 1.0]
+CP MODEL: 2, CP PLAYER: 4
+VP MODEL: 0, VP PLAYER: 2
+Roll-off Attacker/Defender: enemy=5 model=3 -> attacker=enemy
+[MISSION Only War] Attacker=enemy, Defender=model
+[roster] model_units=3 enemy_units=3
+[roster] model[0] name=Necron Warriors instance_id=5 models=10
+[roster] model[1] name=Necron Warriors instance_id=6 models=10
+[roster] model[2] name=Canoptek Scarab Swarms instance_id=7 models=3
+[roster] enemy[0] name=Necron Warriors instance_id=5 models=10
+[roster] enemy[1] name=Necron Warriors instance_id=6 models=10
+[roster] enemy[2] name=Canoptek Scarab Swarms instance_id=7 models=3
+Units: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+[DEPLOY] Order: enemy first, alternating
+[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (50,37)
+[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (26,6)
+[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (26,31)
+[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (58,2)
+[DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (28,37)
+[DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (34,9)
+[MISSION Only War] Post-deploy: currently no post-deploy units supported
+[action_space] squads_for_actions_count=3
+[action_space] squad[0] name=Necron Warriors
+[action_space] squad[1] name=Necron Warriors
+[action_space] squad[2] name=Canoptek Scarab Swarms
+[action_space] total_models_count=23
+[action_space] move_num_keys_count=3
+[action_space] move_num_keys=['move_num_0', 'move_num_1', 'move_num_2']
+
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.)
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.)
+{'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 1 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=1, gained=0, VP: 0 -> 0, objectives=[1]
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 12 — Necrons Necron Warriors (x10 моделей).
+
+🎲 Бросок бросок #1: 10D6
+
+🎲 Бросок бросок #2: 1D6
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 12 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 0.0.
+
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 4  -> базово ранение на 4+
+Save цели: 4+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Hit rolls:    [3, 6, 2, 1, 4, 5, 3, 1, 4, 3]  -> hits: 4 (crits: 1)
+Wound rolls:  [5]  (цель 4+) -> rolled wounds: 1 + auto(w/LETHAL): 1 = 2
+
+✅ Итог по движку: прошло урона = 0.0
+📌 -------------------------
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Overwatch невозможен: недостаточно CP.
+--- ФАЗА СТРЕЛЬБЫ ---
+Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): был Advance — чардж невозможен.
+Нет доступных целей для чарджа.
+--- ФАЗА БОЯ ---
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Only War: end of Command phase -> controlled=1, gained=0, VP: 0 -> 0, objectives=[3]
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (26, 6). Выбор: down, advance=да, бросок=5, макс=10, distance=6
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (32, 6)
+[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 21 — Necrons Necron Warriors (x10 моделей).
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (58, 2). Выбор: down, advance=нет, distance=1
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (59, 2)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция до: (34, 9). Выбор: down, advance=да, бросок=6, макс=16, distance=11
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция после: (45, 9)
+[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей).
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет дальнобойного оружия, стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Advance — чардж невозможен.
+[MODEL] Чардж: нет доступных целей
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: нет доступных атак
+=== КОНЕЦ БОЕВОГО РАУНДА 1 ===
+Iteration 0 ended with reward tensor([0], device='cuda:0'), Player health [10.0, 10.0, 12.0], Model health [10.0, 10.0, 12.0]
+{'model health': [10.0, 10.0, 12.0], 'player health': [10.0, 10.0, 12.0], 'modelCP': 1, 'playerCP': 2, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [10.0, 10.0, 12.0]
+CP MODEL: 1, CP PLAYER: 2
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 2 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 12 — Necrons Necron Warriors (x10 моделей).
+
+🎲 Бросок бросок #1: 20D6
+
+🎲 Бросок бросок #2: 2D6
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 12 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 0.0.
+
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 4  -> базово ранение на 4+
+Save цели: 4+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Hit rolls:    [4, 5, 5, 1, 5, 2, 1, 6, 2, 1, 1, 2, 4, 4, 5, 4, 4, 3, 1, 6]  -> hits: 11 (crits: 2)
+Wound rolls:  [5, 6]  (цель 4+) -> rolled wounds: 2 + auto(w/LETHAL): 2 = 4
+
+✅ Итог по движку: прошло урона = 0.0
+📌 -------------------------
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+
+🎲 Бросок бросок #1: 20D6
+
+🎲 Бросок бросок #2: 5D6
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Стоимость: -1 CP. Итоговый урон: 4.0.
+
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 2  -> базово ранение на 2+
+Save цели: 6+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Hit rolls:    [6, 2, 6, 5, 1, 1, 2, 6, 1, 2, 2, 1, 1, 3, 4, 6, 6, 4, 5, 3]  -> hits: 9 (crits: 5)
+Wound rolls:  [5, 4, 5, 6, 5]  (цель 2+) -> rolled wounds: 5 + auto(w/LETHAL): 5 = 10
+
+✅ Итог по движку: прошло урона = 4.0
+📌 -------------------------
+--- ФАЗА СТРЕЛЬБЫ ---
+
+🎲 Бросок бросок #1: 10D6
+
+🎲 Бросок бросок #2: 2D6
+
+🎲 Бросок бросок #3: 4D6
+Unit 11 — Necrons Necron Warriors (x10 моделей) нанёс 4.0 урона по Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей)
+
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 2  -> базово ранение на 2+
+Save цели: 6+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Hit rolls:    [1, 1, 1, 1, 1, 1, 5, 5, 6, 6]  -> hits: 4 (crits: 2)
+Wound rolls:  [5, 5]  (цель 2+) -> rolled wounds: 2 + auto(w/LETHAL): 2 = 4
+Save rolls:   [4, 5, 1, 2]  (цель 6+) -> failed saves: 4
+
+✅ Итог по движку: прошло урона = 4.0
+📌 -------------------------
+
+🎲 Бросок бросок #1: 20D6
+
+🎲 Бросок бросок #2: 2D6
+Unit 12 — Necrons Necron Warriors (x10 моделей) нанёс 0.0 урона по Unit 21 — Necrons Necron Warriors (x10 моделей)
+
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 4  -> базово ранение на 4+
+Save цели: 4+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Hit rolls:    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 6, 6]  -> hits: 2 (crits: 2)
+Wound rolls:  [6, 6]  (цель 4+) -> rolled wounds: 2 + auto(w/LETHAL): 2 = 4
+
+✅ Итог по движку: прошло урона = 0.0
+📌 -------------------------
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Бросок 2D6...
+Бросок: 5 и 5
+[PLAYER][CHARGE] Unit 12 — Necrons Necron Warriors (x10 моделей): Charge объявлен по цели Unit 21 — Necrons Necron Warriors (x10 моделей). Дистанция: 10.8. Бросок 2D6: 5 + 5 = 10.
+Unit 12 — Necrons Necron Warriors (x10 моделей) успешно зачарджил Unit 21 — Necrons Necron Warriors (x10 моделей)
+[PLAYER][CHARGE] Unit 12 — Necrons Necron Warriors (x10 моделей): Движение чарджа: (26, 15) -> (33, 7), в контакте=True.
+[MODEL][CHARGE] Heroic Intervention недоступен: нет подходящих юнитов в 6".
+--- ФАЗА БОЯ ---
+[PLAYER][FIGHT] Начало Fight phase. Первым выбирает активный игрок. Eligible MODEL: [21], Eligible PLAYER: [12].
+[PLAYER][FIGHT] Unit 12 — Necrons Necron Warriors (x10 моделей): Выбран для атаки. Цель: Unit 21 — Necrons Necron Warriors (x10 моделей).
+
+🎲 Бросок на попадание (to hit): 10D6
+Ошибка ввода кубов: нужно ввести 10 значений от 1 до 6.
+⚔️ Unit 12 — Necrons Necron Warriors (x10 моделей) атакует Unit 21 — Necrons Necron Warriors (x10 моделей) оружием Necron close combat weapon: урон 0.0 | HP 10.0 -> 10.0
+[PLAYER][FIGHT] Unit 12 — Necrons Necron Warriors (x10 моделей): Итог атаки: урон 0.0, HP цели 10.0 -> 10.0.
+
+📌 --- ОТЧЁТ ПО БОЮ (MELEE) ---
+Оружие: Necron close combat weapon
+WS бойца: 4+
+S vs T: 4 vs 4  -> базово ранение на 4+
+Save цели: 4+ (invul: нет)
+Hit rolls:    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]  -> hits: 0
+
+✅ Итог по движку: прошло урона = 0.0
+📌 -------------------------
+[MODEL][FIGHT] Unit 21 — Necrons Necron Warriors (x10 моделей): Выбран для атаки. Цель: Unit 12 — Necrons Necron Warriors (x10 моделей).
+
+🎲 Бросок на попадание (to hit): 10D6
+
+🎲 Бросок на ранение (to wound): 4D6
+
+🎲 Бросок сейвы (save): 1D6
+⚔️ Unit 21 — Necrons Necron Warriors (x10 моделей) атакует Unit 12 — Necrons Necron Warriors (x10 моделей) оружием Necron close combat weapon: урон 1.0 | HP 10.0 -> 9.0
+[MODEL][FIGHT] Unit 21 — Necrons Necron Warriors (x10 моделей): Итог атаки: урон 1.0, HP цели 10.0 -> 9.0.
+
+📌 --- ОТЧЁТ ПО БОЮ (MELEE) ---
+Оружие: Necron close combat weapon
+WS бойца: 4+
+S vs T: 4 vs 4  -> базово ранение на 4+
+Save цели: 4+ (invul: нет)
+Hit rolls:    [4, 5, 2, 1, 3, 5, 2, 2, 3, 5]  -> hits: 4
+Wound rolls:  [2, 3, 3, 5]  (цель 4+) -> wounds: 1
+Save rolls:   [2]  (цель 4+) -> failed saves: 1
+
+✅ Итог по движку: прошло урона = 1.0
+📌 -------------------------
+⚔️ Combat resolution complete.
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) Используется способность: Reanimation Protocols
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) Reanimation Protocols: бросок D3 = 2
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) До: моделей=2, раны=[4, 4] всего=8
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) Возвращена уничтоженная модель с 1 раной
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) Лечение раненой модели idx=2
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) После:  моделей=3, раны=[4, 4, 2] всего=10
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Остаётся в ближнем бою с Unit 12 — Necrons Necron Warriors (x10 моделей), движение пропущено.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (59, 2). Выбор: up, advance=нет, distance=0
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (59, 2)
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция до: (45, 9). Выбор: up, advance=нет, distance=1
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция после: (44, 9)
+[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей).
+Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+Roll-off Attacker/Defender: enemy=6 model=1 -> attacker=enemy
+Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+[DEPLOY] Order: enemy first, alternating
+[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (23,31)
+[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (38,0)
+[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (48,31)
+[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (4,4)
+[DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (12,30)
+[DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (55,5)
+[MISSION Only War] Post-deploy: currently no post-deploy units supported
+
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+{'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 1 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=1, gained=0, VP: 0 -> 0, objectives=[1]
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+Бросок 1D6 на Advance...
+Бросок: 1
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[MODEL] [MOVEMENT] Unit 22 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Стоимость: -1 CP. Итоговый урон: 1.0.
+--- ФАЗА СТРЕЛЬБЫ ---
+
+🎲 Бросок бросок #1: 10D6
+
+🎲 Бросок бросок #2: 2D6
+
+🎲 Бросок бросок #3: 4D6
+Unit 12 — Necrons Necron Warriors (x10 моделей) нанёс 4.0 урона по Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей)
+
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 2  -> базово ранение на 2+
+Save цели: 6+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Hit rolls:    [1, 1, 1, 1, 1, 1, 6, 6, 5, 5]  -> hits: 4 (crits: 2)
+Wound rolls:  [5, 5]  (цель 2+) -> rolled wounds: 2 + auto(w/LETHAL): 2 = 4
+Save rolls:   [1, 2, 3, 4]  (цель 6+) -> failed saves: 4
+
+✅ Итог по движку: прошло урона = 4.0
+📌 -------------------------
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): был Advance — чардж невозможен.
+Нет доступных целей для чарджа.
+--- ФАЗА БОЯ ---
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) Используется способность: Reanimation Protocols
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) Reanimation Protocols: бросок D3 = 2
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) До: моделей=2, раны=[4, 4] всего=8
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) Возвращена уничтоженная модель с 1 раной
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) Лечение раненой модели idx=2
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) После:  моделей=3, раны=[4, 4, 2] всего=10
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (38, 0). Выбор: left, advance=нет, distance=0
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (38, 0)
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (4, 4). Выбор: left, advance=да, бросок=4, макс=9, distance=9
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (4, 0)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция до: (55, 5). Выбор: left, advance=нет, distance=1
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция после: (55, 4)
+[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей).
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет дальнобойного оружия, стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Чардж: нет доступных целей
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: нет доступных атак
+=== КОНЕЦ БОЕВОГО РАУНДА 1 ===
+Итерация 0 завершена с наградой tensor([0], device='cuda:0'), здоровье игрока [10.0, 10.0, 11.0], здоровье модели [10.0, 10.0, 10.0]
+{'model health': [10.0, 10.0, 10.0], 'player health': [10.0, 10.0, 11.0], 'modelCP': 1, 'playerCP': 2, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10.0, 10.0, 10.0], здоровье PLAYER: [10.0, 10.0, 11.0]
+CP MODEL: 1, CP PLAYER: 2
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 2 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Используется способность: Reanimation Protocols
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Reanimation Protocols: бросок D3 = 3
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) До: моделей=3, раны=[4, 4, 3] всего=11
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Лечение раненой модели idx=2
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) После:  моделей=3, раны=[4, 4, 4] всего=12
+[ENEMY] Only War: end of Command phase -> controlled=1, gained=1, VP: 0 -> 1, objectives=[1]
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 12 — Necrons Necron Warriors (x10 моделей).
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 12 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 1.0.
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[MODEL] [MOVEMENT] Unit 22 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Стоимость: -1 CP. Итоговый урон: 1.0.
+--- ФАЗА СТРЕЛЬБЫ ---
+
+🎲 Бросок бросок #1: 9D6
+Unit 12 — Necrons Necron Warriors (x10 моделей) нанёс 0 урона по Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей)
+
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 2  -> базово ранение на 2+
+Save цели: 6+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Hit rolls:    [1, 1, 1, 1, 1, 1, 1, 1, 1]  -> hits: 0
+
+✅ Итог по движку: прошло урона = 0.0
+📌 -------------------------
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Нет доступных целей для чарджа.
+--- ФАЗА БОЯ ---
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) Используется способность: Reanimation Protocols
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) Reanimation Protocols: бросок D3 = 3
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) До: моделей=3, раны=[4, 4, 2] всего=10
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) Лечение раненой модели idx=2
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) Лечение раненой модели idx=2
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) После:  моделей=3, раны=[4, 4, 4] всего=12
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (38, 0). Выбор: left, advance=нет, distance=5
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (38, 0)
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (4, 0). Выбор: left, advance=да, бросок=6, макс=11, distance=11
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (4, 0)
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция до: (55, 4). Выбор: left, advance=нет, distance=1
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция после: (55, 3)
+[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей).
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Цели в дальности: Unit 12 — Necrons Necron Warriors (x10 моделей), выбрана недоступная цель 13. Стрельба пропущена.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет дальнобойного оружия, стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Чардж: нет доступных целей
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: нет доступных атак
+=== КОНЕЦ БОЕВОГО РАУНДА 2 ===
+Итерация 1 завершена с наградой tensor([-0.5000], device='cuda:0'), здоровье игрока [10.0, 9.0, 11.0], здоровье модели [10.0, 10.0, 12.0]
+{'model health': [10.0, 10.0, 12.0], 'player health': [10.0, 9.0, 11.0], 'modelCP': 1, 'playerCP': 4, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 1, 'mission': 'Only War', 'turn': 3, 'battle round': 3, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [10.0, 9.0, 11.0]
+CP MODEL: 1, CP PLAYER: 4
+VP MODEL: 0, VP PLAYER: 1
+=== БОЕВОЙ РАУНД 3 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
+[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 1
+[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) До: моделей=9, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1] всего=9
+[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
+[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) После:  моделей=10, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1] всего=10
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Используется способность: Reanimation Protocols
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Reanimation Protocols: бросок D3 = 1
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) До: моделей=3, раны=[4, 4, 3] всего=11
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) Лечение раненой модели idx=2
+[PLAYER] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) После:  моделей=3, раны=[4, 4, 4] всего=12
+[ENEMY] Only War: end of Command phase -> controlled=1, gained=1, VP: 1 -> 2, objectives=[1]
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 12 — Necrons Necron Warriors (x10 моделей).
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 12 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 3.0.
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[MODEL] [MOVEMENT] Unit 22 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Стоимость: -1 CP. Итоговый урон: 3.0.
+--- ФАЗА СТРЕЛЬБЫ ---
+
+🎲 Бросок бросок #1: 7D6
+Unit 12 — Necrons Necron Warriors (x10 моделей) нанёс 0 урона по Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей)
+
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 2  -> базово ранение на 2+
+Save цели: 6+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Hit rolls:    [1, 1, 1, 1, 1, 1, 1]  -> hits: 0
+
+✅ Итог по движку: прошло урона = 0.0
+📌 -------------------------
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Бросок 2D6...
+Бросок: 6 и 6
+[PLAYER][CHARGE] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Charge объявлен по цели Unit 22 — Necrons Necron Warriors (x10 моделей). Дистанция: 8.0. Бросок 2D6: 6 + 6 = 12.
+Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) успешно зачарджил Unit 22 — Necrons Necron Warriors (x10 моделей)
+[PLAYER][CHARGE] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Движение чарджа: (12, 0) -> (5, 1), в контакте=True.
+[MODEL][CHARGE] Heroic Intervention недоступен: нет подходящих юнитов в 6".
+--- ФАЗА БОЯ ---
+[PLAYER][FIGHT] Начало Fight phase. Первым выбирает активный игрок. Eligible MODEL: [22], Eligible PLAYER: [13].
+ФАЗА БОЯ (Игрок): выберите атакующего юнита
+ФАЗА БОЯ: ожидается выбор атакующего юнита
+Выберите цель
+ФАЗА БОЯ: ожидается выбор цели
+[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Выбран для атаки. Цель: Unit 22 — Necrons Necron Warriors (x10 моделей).
+[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Итог атаки: урон 0.0, HP цели 10.0 -> 10.0.
+[MODEL][FIGHT] Unit 22 — Necrons Necron Warriors (x10 моделей): Выбран для атаки. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[MODEL][FIGHT] Unit 22 — Necrons Necron Warriors (x10 моделей): Итог атаки: урон 1.0, HP цели 9.0 -> 8.0.
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (38, 0). Выбор: none, advance=нет, distance=0
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Движение пропущено (no move). Позиция после: (38, 0)
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Отступление из боя с Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Позиция до: (4, 0)
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Отступление завершено. Позиция после: (9, 0)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция до: (55, 3). Выбор: none, advance=нет, distance=0
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Движение пропущено (no move). Позиция после: (55, 3)
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Цели в дальности: Unit 12 — Necrons Necron Warriors (x10 моделей), выбрана: Unit 12 — Necrons Necron Warriors (x10 моделей) (причина: самая близкая)
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Итог урона по Unit 12 — Necrons Necron Warriors (x10 моделей): 3.0
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Fall Back в этом ходу — стрельба недоступна.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет дальнобойного оружия, стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Fall Back в этом ходу — чардж невозможен.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Чардж: нет доступных целей
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: нет доступных атак
+=== КОНЕЦ БОЕВОГО РАУНДА 3 ===
+Итерация 2 завершена с наградой tensor([-4.3000], device='cuda:0'), здоровье игрока [10.0, 4.0, 8.0], здоровье модели [10.0, 10.0, 12.0]
+{'model health': [10.0, 10.0, 12.0], 'player health': [10.0, 4.0, 8.0], 'modelCP': 1, 'playerCP': 6, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 2, 'mission': 'Only War', 'turn': 4, 'battle round': 4, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [10.0, 4.0, 8.0]
+CP MODEL: 1, CP PLAYER: 6
+VP MODEL: 0, VP PLAYER: 2
+Unit 21 — Necrons Necron Warriors (x10 моделей) стреляет по Unit 12 — Necrons Necron Warriors (x10 моделей) 3.0 раз(а)
+Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+Roll-off Attacker/Defender: enemy=1 model=6 -> attacker=model
+Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+[DEPLOY] Order: model first, alternating
+[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (5,9)
+[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (13,37)
+[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (37,3)
+[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (15,32)
+[DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (6,2)
+[DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (54,33)
+[MISSION Only War] Post-deploy: currently no post-deploy units supported
+
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+{'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 1 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 11 — Necrons Necron Warriors (x10 моделей).
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 11 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 2.0.
+Бросок 1D6 на Advance...
+Бросок: 1
+[MODEL][MOVEMENT] Overwatch невозможен: недостаточно CP.
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Overwatch невозможен: недостаточно CP.
+--- ФАЗА СТРЕЛЬБЫ ---
+Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): был Advance — чардж невозможен.
+Нет доступных целей для чарджа.
+--- ФАЗА БОЯ ---
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (5, 9). Выбор: up, advance=нет, distance=0
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (5, 9)
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (37, 3). Выбор: up, advance=нет, distance=3
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (34, 3)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция до: (6, 2). Выбор: up, advance=нет, distance=10
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция после: (0, 2)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Цели в дальности: Unit 11 — Necrons Necron Warriors (x10 моделей), Unit 12 — Necrons Necron Warriors (x10 моделей), выбрана недоступная цель (raw=2). Стрельба пропущена.
+[MODEL][SHOOT] Невалидный выбор цели: raw=2, доступные=[0, 1] (ожидался индекс 0..1). Стрельба пропущена.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет дальнобойного оружия, стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Чардж: нет доступных целей
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: нет доступных атак
+=== КОНЕЦ БОЕВОГО РАУНДА 1 ===
+Итерация 0 завершена с наградой tensor([-0.5000], device='cuda:0'), здоровье игрока [8.0, 10.0, 12.0], здоровье модели [10.0, 10.0, 12.0]
+{'model health': [10.0, 10.0, 12.0], 'player health': [8.0, 10.0, 12.0], 'modelCP': 1, 'playerCP': 2, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [8.0, 10.0, 12.0]
+CP MODEL: 1, CP PLAYER: 2
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 2 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
+[PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 3
+[PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) До: моделей=8, раны=[1, 1, 1, 1, 1, 1, 1, 1] всего=8
+[PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
+[PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
+[PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) После:  моделей=10, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1] всего=10
+[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 11 — Necrons Necron Warriors (x10 моделей).
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 11 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 1.0.
+Бросок 1D6 на Advance...
+Бросок: 1
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 12 — Necrons Necron Warriors (x10 моделей).
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 12 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 1.0.
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Overwatch невозможен: недостаточно CP.
+--- ФАЗА СТРЕЛЬБЫ ---
+
+🎲 Бросок бросок #1: 9D6
+
+🎲 Бросок бросок #2: 4D6
+
+🎲 Бросок бросок #3: 5D6
+Unit 11 — Necrons Necron Warriors (x10 моделей) нанёс 3.0 урона по Unit 21 — Necrons Necron Warriors (x10 моделей)
+
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 4  -> базово ранение на 4+
+Save цели: 4+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Hit rolls:    [1, 1, 2, 2, 4, 4, 5, 5, 6]  -> hits: 5 (crits: 1)
+Wound rolls:  [5, 5, 5, 5]  (цель 4+) -> rolled wounds: 4 + auto(w/LETHAL): 1 = 5
+Save rolls:   [6, 1, 2, 3, 4]  (цель 4+) -> failed saves: 3
+
+✅ Итог по движку: прошло урона = 3.0
+📌 -------------------------
+Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): был Advance — чардж невозможен.
+Нет доступных целей для чарджа.
+--- ФАЗА БОЯ ---
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 3
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) До: моделей=7, раны=[1, 1, 1, 1, 1, 1, 1] всего=7
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) После:  моделей=10, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1] всего=10
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (5, 9). Выбор: left, advance=да, бросок=3, макс=8, distance=7
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (5, 2)
+[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 21 — Necrons Necron Warriors (x10 моделей).
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (34, 3). Выбор: left, advance=нет, distance=1
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (34, 2)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция до: (0, 2). Выбор: left, advance=нет, distance=0
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция после: (0, 2)
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Цели в дальности: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей), выбрана: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) (причина: самая близкая)
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Итог урона по Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): 7.0
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет дальнобойного оружия, стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Чардж: нет доступных целей
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: нет доступных атак
+=== КОНЕЦ БОЕВОГО РАУНДА 2 ===
+Итерация 1 завершена с наградой tensor([0.2000], device='cuda:0'), здоровье игрока [9.0, 9.0, 5.0], здоровье модели [10.0, 10.0, 12.0]
+{'model health': [10.0, 10.0, 12.0], 'player health': [9.0, 9.0, 5.0], 'modelCP': 1, 'playerCP': 4, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 3, 'battle round': 3, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [9.0, 9.0, 5.0]
+CP MODEL: 1, CP PLAYER: 4
+VP MODEL: 0, VP PLAYER: 0
+Unit 22 — Necrons Necron Warriors (x10 моделей) стреляет по Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) 7.0 раз(а)
+Roll-off Attacker/Defender: enemy=5 model=3 -> attacker=enemy
+Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+[DEPLOY] Order: enemy first, alternating
+[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (3,32)
+[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (35,2)
+[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (45,36)
+[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (55,3)
+[DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (29,32)
+[DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (29,2)
+[MISSION Only War] Post-deploy: currently no post-deploy units supported
+
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+{'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 1 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+
+🎲 Бросок на попадание (to hit): 10D6
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Стоимость: -1 CP. Итоговый урон: 0.0.
+
+📌 --- ОТЧЁТ ПО OVERWATCH ---
+Стреляет: Unit 21 — Necrons Necron Warriors (x10 моделей); цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей)
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 2  -> базово ранение на 2+
+Save цели: 6+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Правило: Overwatch: попадания только на 6+
+Hit rolls:    [1, 2, 5, 3, 1, 5, 1, 5, 4, 4]  -> hits: 5
+
+✅ Итог по движку: прошло урона = 0.0
+📌 -------------------------
+--- ФАЗА СТРЕЛЬБЫ ---
+Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): был Advance — чардж невозможен.
+Нет доступных целей для чарджа.
+--- ФАЗА БОЯ ---
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (35, 2). Выбор: left, advance=да, бросок=3, макс=8, distance=7
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (35, 0)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (55, 3). Выбор: left, advance=нет, distance=1
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (55, 2)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция до: (29, 2). Выбор: left, advance=нет, distance=0
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция после: (29, 2)
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет дальнобойного оружия, стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Чардж: нет доступных целей
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: нет доступных атак
+=== КОНЕЦ БОЕВОГО РАУНДА 1 ===
+Итерация 0 завершена с наградой tensor([0], device='cuda:0'), здоровье игрока [10.0, 10.0, 12.0], здоровье модели [10.0, 10.0, 12.0]
+{'model health': [10.0, 10.0, 12.0], 'player health': [10.0, 10.0, 12.0], 'modelCP': 1, 'playerCP': 2, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [10.0, 10.0, 12.0]
+CP MODEL: 1, CP PLAYER: 2
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 2 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 12 — Necrons Necron Warriors (x10 моделей).
+
+🎲 Бросок на попадание (to hit): 10D6
+
+🎲 Бросок на ранение (to wound): 1D6
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 12 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 0.0.
+
+📌 --- ОТЧЁТ ПО OVERWATCH ---
+Стреляет: Unit 21 — Necrons Necron Warriors (x10 моделей); цель: Unit 12 — Necrons Necron Warriors (x10 моделей)
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 4  -> базово ранение на 4+
+Save цели: 4+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Правило: Overwatch: попадания только на 6+
+Hit rolls:    [1, 4, 6, 3, 1, 1, 4, 3, 5, 5]  -> hits: 5 (crits: 1)
+Wound rolls:  [4]  (цель 4+) -> rolled wounds: 1 + auto(w/LETHAL): 1 = 2
+
+✅ Итог по движку: прошло урона = 0.0
+📌 -------------------------
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+
+🎲 Бросок на попадание (to hit): 20D6
+
+🎲 Бросок на ранение (to wound): 2D6
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Стоимость: -1 CP. Итоговый урон: 0.0.
+
+📌 --- ОТЧЁТ ПО OVERWATCH ---
+Стреляет: Unit 21 — Necrons Necron Warriors (x10 моделей); цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей)
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 2  -> базово ранение на 2+
+Save цели: 6+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Правило: Overwatch: попадания только на 6+
+Hit rolls:    [2, 5, 2, 4, 5, 6, 1, 5, 4, 4, 6, 1, 1, 1, 2, 5, 5, 2, 5, 1]  -> hits: 11 (crits: 2)
+Wound rolls:  [6, 6]  (цель 2+) -> rolled wounds: 2 + auto(w/LETHAL): 2 = 4
+
+✅ Итог по движку: прошло урона = 0.0
+📌 -------------------------
+--- ФАЗА СТРЕЛЬБЫ ---
+
+🎲 Бросок на попадание (to hit): 10D6
+
+🎲 Бросок на ранение (to wound): 2D6
+
+🎲 Бросок сейвы (save): 4D6
+Unit 12 — Necrons Necron Warriors (x10 моделей) нанёс 3.0 урона по Unit 21 — Necrons Necron Warriors (x10 моделей)
+
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+Стреляет: Unit 12 — Necrons Necron Warriors (x10 моделей); цель: Unit 21 — Necrons Necron Warriors (x10 моделей)
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 4  -> базово ранение на 4+
+Save цели: 4+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Hit rolls:    [1, 1, 1, 1, 1, 1, 5, 5, 6, 6]  -> hits: 4 (crits: 2)
+Wound rolls:  [5, 5]  (цель 4+) -> rolled wounds: 2 + auto(w/LETHAL): 2 = 4
+Save rolls:   [1, 2, 3, 4]  (цель 4+) -> failed saves: 3
+
+✅ Итог по движку: прошло урона = 3.0
+📌 -------------------------
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Бросок 2D6...
+Бросок: 5 и 5
+[PLAYER][CHARGE] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Charge объявлен по цели Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей). Дистанция: 4.0. Бросок 2D6: 5 + 5 = 10.
+Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) успешно зачарджил Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей)
+[PLAYER][CHARGE] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Движение чарджа: (29, 6) -> (30, 3), в контакте=True.
+[MODEL][CHARGE] Heroic Intervention недоступен: недостаточно CP.
+--- ФАЗА БОЯ ---
+[PLAYER][FIGHT] Начало Fight phase. Первым выбирает активный игрок. Eligible MODEL: [23], Eligible PLAYER: [13].
+ФАЗА БОЯ (Игрок): выберите атакующего юнита
+ФАЗА БОЯ: ожидается выбор атакующего юнита
+Выберите цель
+ФАЗА БОЯ: ожидается выбор цели
+Атака отменена: выберите юнита и цель заново.
+ФАЗА БОЯ (Игрок): выберите атакующего юнита
+ФАЗА БОЯ: ожидается выбор атакующего юнита
+Выберите цель
+ФАЗА БОЯ: ожидается выбор цели
+[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Выбран для атаки. Цель: Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Итог атаки: урон 2.0, HP цели 12.0 -> 10.0.
+[MODEL][FIGHT] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Выбран для атаки. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[MODEL][FIGHT] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Итог атаки: урон 4.0, HP цели 12.0 -> 8.0.
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 1
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) До: моделей=7, раны=[1, 1, 1, 1, 1, 1, 1] всего=7
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) После:  моделей=8, раны=[1, 1, 1, 1, 1, 1, 1, 1] всего=8
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) Используется способность: Reanimation Protocols
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) Reanimation Protocols: бросок D3 = 1
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) До: моделей=3, раны=[4, 4, 2] всего=10
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) Лечение раненой модели idx=2
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) После:  моделей=3, раны=[4, 4, 3] всего=11
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (35, 0). Выбор: down, advance=нет, distance=2
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (37, 0)
+[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 21 — Necrons Necron Warriors (x10 моделей).
+Roll-off Attacker/Defender: enemy=1 model=2 -> attacker=model
+Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+[DEPLOY] Order: model first, alternating
+[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (42,2)
+[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (31,39)
+[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (0,5)
+[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (0,32)
+[DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (41,6)
+[DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (40,34)
+[MISSION Only War] Post-deploy: currently no post-deploy units supported
+
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+{'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 1 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 12 — Necrons Necron Warriors (x10 моделей).
+
+🎲 Бросок на попадание (to hit): 10D6
+
+🎲 Бросок на ранение (to wound): 1D6
+[MODEL] [MOVEMENT] Unit 22 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 12 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 1.0.
+
+📌 --- ОТЧЁТ ПО OVERWATCH ---
+Стреляет: Unit 22 — Necrons Necron Warriors (x10 моделей); цель: Unit 12 — Necrons Necron Warriors (x10 моделей)
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 4  -> базово ранение на 4+
+Save цели: 4+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Правило: Overwatch: попадания только на 6+
+Hit rolls:    [5, 3, 3, 3, 4, 1, 3, 5, 6, 4]  -> hits: 5 (crits: 1)
+Wound rolls:  [2]  (цель 4+) -> rolled wounds: 0 + auto(w/LETHAL): 1 = 1
+
+✅ Итог по движку: прошло урона = 1.0
+📌 -------------------------
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Overwatch невозможен: недостаточно CP.
+--- ФАЗА СТРЕЛЬБЫ ---
+Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+
+🎲 Бросок на попадание (to hit): 9D6
+
+🎲 Бросок на ранение (to wound): 2D6
+
+🎲 Бросок сейвы (save): 3D6
+Unit 12 — Necrons Necron Warriors (x10 моделей) нанёс 2.0 урона по Unit 22 — Necrons Necron Warriors (x10 моделей)
+
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+Стреляет: Unit 12 — Necrons Necron Warriors (x10 моделей); цель: Unit 22 — Necrons Necron Warriors (x10 моделей)
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 4  -> базово ранение на 4+
+Save цели: 4+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Hit rolls:    [1, 1, 1, 1, 1, 1, 5, 5, 6]  -> hits: 3 (crits: 1)
+Wound rolls:  [5, 5]  (цель 4+) -> rolled wounds: 2 + auto(w/LETHAL): 1 = 3
+Save rolls:   [1, 2, 4]  (цель 4+) -> failed saves: 2
+
+✅ Итог по движку: прошло урона = 2.0
+📌 -------------------------
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): был Advance — чардж невозможен.
+Нет доступных целей для чарджа.
+--- ФАЗА БОЯ ---
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 1
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) До: моделей=8, раны=[1, 1, 1, 1, 1, 1, 1, 1] всего=8
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) После:  моделей=9, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1] всего=9
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (42, 2). Выбор: left, advance=да, бросок=6, макс=11, distance=7
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (42, 0)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (0, 5). Выбор: left, advance=нет, distance=1
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (0, 4)
+[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 22 — Necrons Necron Warriors (x10 моделей).
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция до: (41, 6). Выбор: left, advance=нет, distance=0
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция после: (41, 6)
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Цели в дальности: Unit 12 — Necrons Necron Warriors (x10 моделей), выбрана: Unit 12 — Necrons Necron Warriors (x10 моделей) (причина: самая близкая)
+
+🎲 Бросок на попадание (to hit): 9D6
+
+🎲 Бросок на ранение (to wound): 3D6
+
+🎲 Бросок сейвы (save): 1D6
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Итог урона по Unit 12 — Necrons Necron Warriors (x10 моделей): 1.0
+
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+Стреляет: Unit 22 — Necrons Necron Warriors (x10 моделей); цель: Unit 12 — Necrons Necron Warriors (x10 моделей)
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 4  -> базово ранение на 4+
+Save цели: 4+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Hit rolls:    [1, 3, 3, 4, 4, 3, 1, 3, 5]  -> hits: 3
+Wound rolls:  [4, 2, 3]  (цель 4+) -> wounds: 1
+Save rolls:   [2]  (цель 4+) -> failed saves: 1
+
+✅ Итог по движку: прошло урона = 1.0
+📌 -------------------------
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет дальнобойного оружия, стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Чардж: нет доступных целей
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: нет доступных атак
+=== КОНЕЦ БОЕВОГО РАУНДА 1 ===
+Итерация 0 завершена с наградой tensor([0.7000], device='cuda:0'), здоровье игрока [10.0, 8.0, 12.0], здоровье модели [10.0, 9.0, 12.0]
+{'model health': [10.0, 9.0, 12.0], 'player health': [10.0, 8.0, 12.0], 'modelCP': 1, 'playerCP': 2, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10.0, 9.0, 12.0], здоровье PLAYER: [10.0, 8.0, 12.0]
+CP MODEL: 1, CP PLAYER: 2
+VP MODEL: 0, VP PLAYER: 0
+Unit 22 — Necrons Necron Warriors (x10 моделей) стреляет по Unit 12 — Necrons Necron Warriors (x10 моделей) 1.0 раз(а)
+=== БОЕВОЙ РАУНД 2 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
+[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 1
+[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) До: моделей=8, раны=[1, 1, 1, 1, 1, 1, 1, 1] всего=8
+[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
+[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) После:  моделей=9, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1] всего=9
+[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 12 — Necrons Necron Warriors (x10 моделей).
+
+🎲 Бросок на попадание (to hit): 9D6
+
+🎲 Бросок на ранение (to wound): 3D6
+[MODEL] [MOVEMENT] Unit 22 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 12 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 0.0.
+
+📌 --- ОТЧЁТ ПО OVERWATCH ---
+Стреляет: Unit 22 — Necrons Necron Warriors (x10 моделей); цель: Unit 12 — Necrons Necron Warriors (x10 моделей)
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 4  -> базово ранение на 4+
+Save цели: 4+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Правило: Overwatch: попадания только на 6+
+Hit rolls:    [3, 5, 5, 2, 3, 6, 1, 6, 6]  -> hits: 5 (crits: 3)
+Wound rolls:  [5, 6, 4]  (цель 4+) -> rolled wounds: 3 + auto(w/LETHAL): 3 = 6
+
+✅ Итог по движку: прошло урона = 0.0
+📌 -------------------------
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+
+🎲 Бросок на попадание (to hit): 20D6
+
+🎲 Бросок на ранение (to wound): 5D6
+[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей). Стоимость: -1 CP. Итоговый урон: 5.0.
+
+📌 --- ОТЧЁТ ПО OVERWATCH ---
+Стреляет: Unit 21 — Necrons Necron Warriors (x10 моделей); цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей)
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 2  -> базово ранение на 2+
+Save цели: 6+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Правило: Overwatch: попадания только на 6+
+Hit rolls:    [3, 6, 3, 5, 6, 4, 3, 3, 6, 2, 5, 5, 4, 4, 6, 6, 2, 1, 5, 2]  -> hits: 12 (crits: 5)
+Wound rolls:  [4, 3, 4, 1, 2]  (цель 2+) -> rolled wounds: 4 + auto(w/LETHAL): 5 = 9
+
+✅ Итог по движку: прошло урона = 5.0
+📌 -------------------------
+--- ФАЗА СТРЕЛЬБЫ ---
+
+🎲 Бросок на попадание (to hit): 10D6
+Unit 11 — Necrons Necron Warriors (x10 моделей) нанёс 0 урона по Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей)
+
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+Стреляет: Unit 11 — Necrons Necron Warriors (x10 моделей); цель: Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей)
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 2  -> базово ранение на 2+
+Save цели: 6+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Hit rolls:    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]  -> hits: 0
+
+✅ Итог по движку: прошло урона = 0.0
+📌 -------------------------
+
+🎲 Бросок на попадание (to hit): 9D6
+
+🎲 Бросок на ранение (to wound): 3D6
+
+🎲 Бросок сейвы (save): 4D6
+Unit 12 — Necrons Necron Warriors (x10 моделей) нанёс 2.0 урона по Unit 22 — Necrons Necron Warriors (x10 моделей)
+
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+Стреляет: Unit 12 — Necrons Necron Warriors (x10 моделей); цель: Unit 22 — Necrons Necron Warriors (x10 моделей)
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 4  -> базово ранение на 4+
+Save цели: 4+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Hit rolls:    [1, 1, 1, 1, 6, 6, 5, 5, 5]  -> hits: 5 (crits: 2)
+Wound rolls:  [1, 4, 5]  (цель 4+) -> rolled wounds: 2 + auto(w/LETHAL): 2 = 4
+Save rolls:   [1, 2, 4, 5]  (цель 4+) -> failed saves: 2
+
+✅ Итог по движку: прошло урона = 2.0
+📌 -------------------------
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Бросок 2D6...
+Бросок: 2 и 2
+[PLAYER][CHARGE] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Charge объявлен по цели Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей). Дистанция: 2.2. Бросок 2D6: 2 + 2 = 4.
+Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) успешно зачарджил Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей)
+[PLAYER][CHARGE] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Движение чарджа: (40, 8) -> (42, 7), в контакте=True.
+[MODEL][CHARGE] Heroic Intervention недоступен: нет подходящих юнитов в 6".
+--- ФАЗА БОЯ ---
+[PLAYER][FIGHT] Начало Fight phase. Первым выбирает активный игрок. Eligible MODEL: [23], Eligible PLAYER: [13].
+[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Выбран для атаки. Цель: Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Итог атаки: урон 0.0, HP цели 12.0 -> 12.0.
+[MODEL][FIGHT] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Выбран для атаки. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[MODEL][FIGHT] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Итог атаки: урон 5.0, HP цели 7.0 -> 2.0.
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 3
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) До: моделей=7, раны=[1, 1, 1, 1, 1, 1, 1] всего=7
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) После:  моделей=10, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1] всего=10
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (42, 0). Выбор: down, advance=нет, distance=2
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (44, 0)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (0, 4). Выбор: down, advance=нет, distance=5
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (5, 4)
+[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 22 — Necrons Necron Warriors (x10 моделей).
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Остаётся в ближнем бою с Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей), движение пропущено.
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Цели в дальности: Unit 12 — Necrons Necron Warriors (x10 моделей), выбрана недоступная цель (raw=2). Стрельба пропущена.
+[MODEL][SHOOT] Невалидный выбор цели: raw=2, доступные=[1] (ожидался индекс 0..0). Стрельба пропущена.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Юнит в ближнем бою, стрельба недоступна.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Уже в ближнем бою, чардж невозможен.
+[MODEL] Чардж: нет доступных целей
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: участвуют Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей); противники Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей)
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): В бою с Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей)
+[MODEL][FIGHT] Начало Fight phase. Первым выбирает активный игрок. Eligible MODEL: [23], Eligible PLAYER: [13].
+[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Выбран для атаки. Цель: Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[PLAYER][FIGHT] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): Итог атаки: урон 3.0, HP цели 12.0 -> 9.0.
+[MODEL][FIGHT] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Выбран для атаки. Цель: Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей).
+[MODEL][FIGHT] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Итог атаки: урон 4.0, HP цели 2.0 -> 0.
+=== КОНЕЦ БОЕВОГО РАУНДА 2 ===
+Итерация 1 завершена с наградой tensor([-0.3000], device='cuda:0'), здоровье игрока [10.0, 9.0, 0], здоровье модели [10.0, 10.0, 9.0]
+{'model health': [10.0, 10.0, 9.0], 'player health': [10.0, 9.0, 0], 'modelCP': 1, 'playerCP': 4, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 3, 'battle round': 3, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10.0, 10.0, 9.0], здоровье PLAYER: [10.0, 9.0, 0]
+CP MODEL: 1, CP PLAYER: 4
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 3 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
+[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 2
+[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) До: моделей=9, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1] всего=9
+[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
+[PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) После:  моделей=10, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1] всего=10
+[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+
+🎲 Бросок на попадание (to hit): 10D6
+Unit 11 — Necrons Necron Warriors (x10 моделей) нанёс 0 урона по Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей)
+
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+Стреляет: Unit 11 — Necrons Necron Warriors (x10 моделей); цель: Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей)
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 2  -> базово ранение на 2+
+Save цели: 6+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Hit rolls:    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]  -> hits: 0
+
+✅ Итог по движку: прошло урона = 0.0
+📌 -------------------------
+
+🎲 Бросок на попадание (to hit): 10D6
+Unit 12 — Necrons Necron Warriors (x10 моделей) нанёс 0 урона по Unit 22 — Necrons Necron Warriors (x10 моделей)
+
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+Стреляет: Unit 12 — Necrons Necron Warriors (x10 моделей); цель: Unit 22 — Necrons Necron Warriors (x10 моделей)
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 4  -> базово ранение на 4+
+Save цели: 4+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Hit rolls:    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]  -> hits: 0
+
+✅ Итог по движку: прошло урона = 0.0
+📌 -------------------------
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Roll-off Attacker/Defender: enemy=1 model=3 -> attacker=model
+Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+[DEPLOY] Order: model first, alternating
+[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (32,9)
+[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (39,37)
+[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (36,2)
+[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (52,38)
+[DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (5,4)
+[DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (1,32)
+[MISSION Only War] Post-deploy: currently no post-deploy units supported
+
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+{'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 1 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+Roll-off Attacker/Defender: enemy=1 model=6 -> attacker=model
+Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+[DEPLOY] Order: model first, alternating
+[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (30,0)
+[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (10,34)
+[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (47,3)
+[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (58,34)
+[DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (49,0)
+[DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (12,31)
+[MISSION Only War] Post-deploy: currently no post-deploy units supported
+
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+{'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 1 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 12 — Necrons Necron Warriors (x10 моделей).
+
+🎲 Бросок на попадание (to hit): 10D6
+
+🎲 Бросок на ранение (to wound): 1D6
+[MODEL] [MOVEMENT] Unit 22 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 12 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 0.0.
+
+📌 --- ОТЧЁТ ПО OVERWATCH ---
+Стреляет: Unit 22 — Necrons Necron Warriors (x10 моделей); цель: Unit 12 — Necrons Necron Warriors (x10 моделей)
+Оружие: Gauss flayer
+BS оружия: 4+
+S vs T: 4 vs 4  -> базово ранение на 4+
+Save цели: 4+ (invul: нет)
+Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+Правило: Lethal Hits (крит-хиты авто-ранят)
+Правило: Overwatch: попадания только на 6+
+Hit rolls:    [6, 5, 3, 2, 5, 3, 5, 5, 5, 2]  -> hits: 6 (crits: 1)
+Wound rolls:  [4]  (цель 4+) -> rolled wounds: 1 + auto(w/LETHAL): 1 = 2
+
+✅ Итог по движку: прошло урона = 0.0
+📌 -------------------------
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Overwatch невозможен: недостаточно CP.
+--- ФАЗА СТРЕЛЬБЫ ---
+Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+Нет доступного оружия для стрельбы.
+--- ФАЗА ЧАРДЖА ---
+Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): был Advance — чардж невозможен.
+Нет доступных целей для чарджа.
+--- ФАЗА БОЯ ---
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (30, 0). Выбор: right, advance=да, бросок=4, макс=9, distance=7
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (30, 7)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (47, 3). Выбор: right, advance=да, бросок=2, макс=7, distance=7
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (47, 10)
+[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 22 — Necrons Necron Warriors (x10 моделей).
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция до: (49, 0). Выбор: right, advance=нет, distance=7
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Позиция после: (49, 7)
+[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей).
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет дальнобойного оружия, стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Чардж: нет доступных целей
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: нет доступных атак
+=== КОНЕЦ БОЕВОГО РАУНДА 1 ===
+Итерация 0 завершена с наградой tensor([0], device='cuda:0'), здоровье игрока [10.0, 10.0, 12.0], здоровье модели [10.0, 10.0, 12.0]
+{'model health': [10.0, 10.0, 12.0], 'player health': [10.0, 10.0, 12.0], 'modelCP': 1, 'playerCP': 2, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [10.0, 10.0, 12.0]
+CP MODEL: 1, CP PLAYER: 2
+VP MODEL: 0, VP PLAYER: 0
+Roll-off Attacker/Defender: enemy=1 model=3 -> attacker=model
+Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+[DEPLOY] Order: model first, alternating
+[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (43,7)
+[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (28,32)
+[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (31,3)
+[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (30,37)
+[DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (57,2)
+[DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (3,30)
+[MISSION Only War] Post-deploy: currently no post-deploy units supported
+
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+{'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 1 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+Бросок 1D6 на Advance...
+Бросок: 1
