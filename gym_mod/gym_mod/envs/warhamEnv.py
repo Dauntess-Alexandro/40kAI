@@ -9,6 +9,8 @@ import random
 import re
 from typing import Optional
 
+import reward_config as reward_cfg
+
 from ..engine.utils import *
 from ..engine import utils as engine_utils
 from gym_mod.engine.mission import (
@@ -786,6 +788,14 @@ class Warhammer40kEnv(gym.Env):
             self.enemyInAttack.append([0, 0])
             self.enemyOC.append(enemy[i].showUnitData()["OC"])
         self.enemyFellBack = [False] * len(self.enemy_health)
+        self.enemy_hp_max_total = max(
+            1,
+            sum(
+                unit.get("W", 0) * unit.get("#OfModels", 0)
+                for unit in self.enemy_data
+                if isinstance(unit, dict)
+            ),
+        )
 
         for i in range(len(model)):
             self.unit_weapon.append(model[i].showWeapon())
@@ -1795,6 +1805,8 @@ class Warhammer40kEnv(gym.Env):
                     raw = action["shoot"]
                     if 0 <= raw < len(valid_target_ids):
                         idOfE = valid_target_ids[raw]
+                        target_hp_prev = self.enemy_health[idOfE]
+                        target_max_hp = self.enemy_data[idOfE]["W"] * self.enemy_data[idOfE]["#OfModels"]
                         distances = {j: distance(self.unit_coords[i], self.enemy_coords[j]) for j in valid_target_ids}
                         closest = min(distances, key=distances.get)
                         min_hp = min(valid_target_ids, key=lambda idx: self.enemy_health[idx])
@@ -1842,6 +1854,20 @@ class Warhammer40kEnv(gym.Env):
                                 distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
                             )
                         self.enemy_health[idOfE] = modHealth
+                        damage_dealt = max(0.0, float(target_hp_prev - modHealth))
+                        normalized_damage = damage_dealt / max(1.0, float(self.enemy_hp_max_total))
+                        reward_delta += reward_cfg.SHOOT_REWARD_DAMAGE_SCALE * normalized_damage
+                        if modHealth <= 0:
+                            reward_delta += reward_cfg.SHOOT_REWARD_KILL_BONUS
+                        overkill = max(0.0, float(damage_dealt - target_hp_prev))
+                        if target_max_hp > 0 and overkill > 0:
+                            reward_delta -= reward_cfg.SHOOT_REWARD_OVERKILL_PENALTY * (overkill / target_max_hp)
+                        if target_max_hp > 0 and target_hp_prev / target_max_hp <= 0.3:
+                            reward_delta += reward_cfg.SHOOT_REWARD_TARGET_LOW_HP
+                        if any(distance(self.enemy_coords[idOfE], om) <= 5 for om in self.coordsOfOM):
+                            reward_delta += reward_cfg.SHOOT_REWARD_TARGET_ON_OBJ
+                        if self.enemy_data[idOfE].get("OC", 0) >= 2:
+                            reward_delta += reward_cfg.SHOOT_REWARD_TARGET_HIGH_OC
                         reward_delta += 0.2
                         self._log_unit(
                             "MODEL",
@@ -1871,6 +1897,7 @@ class Warhammer40kEnv(gym.Env):
                             )
                     else:
                         reward_delta -= 0.5
+                        reward_delta -= reward_cfg.SHOOT_REWARD_SKIP_PENALTY
                         target_list = self._format_unit_choices("enemy", valid_target_ids)
                         self._log_unit(
                             "MODEL",
@@ -2380,6 +2407,14 @@ class Warhammer40kEnv(gym.Env):
             self.enemy_health.append(self.enemy_data[i]["W"] * self.enemy_data[i]["#OfModels"])
             self.enemyInAttack.append([0, 0])
         self.enemyFellBack = [False] * len(self.enemy_health)
+        self.enemy_hp_max_total = max(
+            1,
+            sum(
+                unit.get("W", 0) * unit.get("#OfModels", 0)
+                for unit in self.enemy_data
+                if isinstance(unit, dict)
+            ),
+        )
 
         for i in range(len(self.unit_data)):
             self.unit_coords.append([m[i].showCoords()[0], m[i].showCoords()[1]])
