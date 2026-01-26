@@ -3,5 +3,3 @@ Necron Warriors|10|5
 Necron Warriors|10|6
 Canoptek Scarab Swarms|3|7
 Model Units
-Apothecary|1|8
-Eliminator Squad|4|9

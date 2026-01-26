@@ -2097,3 +2097,28 @@ Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей): был Advance �
 Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [10.0, 10.0, 12.0]
 CP MODEL: 1, CP PLAYER: 2
 VP MODEL: 0, VP PLAYER: 0
+Roll-off Attacker/Defender: enemy=1 model=3 -> attacker=model
+Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+[DEPLOY] Order: model first, alternating
+[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (43,7)
+[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (28,32)
+[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (31,3)
+[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (30,37)
+[DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (57,2)
+[DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (3,30)
+[MISSION Only War] Post-deploy: currently no post-deploy units supported
+
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+{'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 1 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+Бросок 1D6 на Advance...
+Бросок: 1

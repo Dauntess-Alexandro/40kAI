@@ -1,119 +1,63 @@
-diff --git a/viewer/app.py b/viewer/app.py
-index 14522f819eb9e82d991829a2d4e9a97554fdf92c..03477d8236dc3578e82853cd64d10aa63a639f4c 100644
---- a/viewer/app.py
-+++ b/viewer/app.py
-@@ -89,87 +89,96 @@ class ViewerWindow(QtWidgets.QMainWindow):
-         self._log_entries = []
-         self._current_turn_number = None
-         self._log_tail_snapshot = None
-         self._log_tabs = {}
-         self._log_tab_defs = [
-             ("all", "Все"),
-             ("turn", "Ход"),
-             ("shooting", "Стрельба"),
-             ("fight", "Ближний бой"),
-             ("dice", "Кубы"),
-             ("errors", "Ошибки"),
-         ]
-         self._max_log_lines = 5000
-         self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS.md")
-         self._log_file_max_bytes = 5 * 1024 * 1024
-         self._init_log_viewer()
+diff --git a/viewer/scene.py b/viewer/scene.py
+index fb1443056cc0f9b0b1814522f769a19688801643..3d794ac7f4aa9f690d2913b1285156f0d9716542 100644
+--- a/viewer/scene.py
++++ b/viewer/scene.py
+@@ -238,51 +238,56 @@ class MapScene(QtWidgets.QGraphicsScene):
+         shoot_range=None,
+         show_objective_radius=True,
+         targets=None,
+     ):
+         self._active_unit_id = active_unit_id
+         self._active_unit_side = active_unit_side
+         self._phase = phase or ""
+         self._move_range = move_range
+         self._shoot_range = shoot_range
+         self._show_objective_radius = bool(show_objective_radius)
+         self._targets = targets
+         for item in self.objective_radius_items:
+             item.setVisible(self._show_objective_radius)
+         self.refresh_overlays()
  
-         fit_button = QtWidgets.QPushButton("Fit")
-         fit_button.clicked.connect(self._fit_view)
+     def set_objective_radius_visible(self, visible):
+         self._show_objective_radius = bool(visible)
+         for item in self.objective_radius_items:
+             item.setVisible(self._show_objective_radius)
  
-         left_widget = QtWidgets.QWidget()
-         left_layout = QtWidgets.QVBoxLayout(left_widget)
-         left_layout.addWidget(fit_button, alignment=QtCore.Qt.AlignLeft)
-         left_layout.addWidget(self.map_view)
+     def refresh_overlays(self):
+         self._clear_overlay_items()
+         active_key = (self._active_unit_side, self._active_unit_id)
+         if not active_key[0] or active_key[1] is None:
+             return
+-        if self._hovered_unit_key != active_key and self._selected_unit_key != active_key:
++        force_active = self._should_show_movement() or self._should_show_shooting()
++        if (
++            self._hovered_unit_key != active_key
++            and self._selected_unit_key != active_key
++            and not force_active
++        ):
+             return
+         unit = self._state_unit(active_key)
+         if unit is None:
+             return
+         if self._should_show_movement():
+             self._draw_movement_overlay(unit)
+         if self._should_show_shooting():
+             self._draw_target_overlay(unit)
  
--        right_widget = QtWidgets.QWidget()
--        right_layout = QtWidgets.QVBoxLayout(right_widget)
--        right_layout.addWidget(self._group_status())
--        right_layout.addWidget(self._group_points())
--        right_layout.addWidget(self._group_units())
--        right_layout.addWidget(self._group_legend())
--        right_layout.addStretch()
--
--        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
--        splitter.addWidget(left_widget)
--        splitter.addWidget(right_widget)
--        splitter.setStretchFactor(0, 3)
--        splitter.setStretchFactor(1, 1)
--
-         log_group = QtWidgets.QGroupBox("ЖУРНАЛ")
-         log_layout = QtWidgets.QVBoxLayout(log_group)
-         log_layout.addLayout(self._log_controls_layout)
-         log_layout.addWidget(self.log_tabs)
-+        log_group.setSizePolicy(
-+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
-+        )
+     def _state_unit(self, unit_key):
+         units = self._state.get("units", []) or []
+         for unit in units:
+             if (unit.get("side"), unit.get("id")) == unit_key:
+                 return unit
+         return None
  
-         command_group = QtWidgets.QGroupBox("КОМАНДЫ")
-         command_layout = QtWidgets.QVBoxLayout(command_group)
-         self.command_prompt = QtWidgets.QLabel("Ожидаю команду...")
-         self.command_prompt.setWordWrap(True)
-         command_layout.addWidget(self.command_prompt)
-         self.command_hint = QtWidgets.QLabel("Горячие клавиши: —")
-         self.command_hint.setStyleSheet(f"color: {Theme.muted.name()};")
-         command_layout.addWidget(self.command_hint)
+     def _should_show_movement(self):
+         phase = str(self._phase or "").lower()
+         return "move" in phase or "движ" in phase or "movement" in phase or self._move_range is not None
  
-         self.command_stack = QtWidgets.QStackedWidget()
-         self._build_command_pages()
-         command_layout.addWidget(self.command_stack)
+     def _should_show_shooting(self):
+         phase = str(self._phase or "").lower()
+         return "shoot" in phase or "стрел" in phase or "shooting" in phase
  
-+        right_widget = QtWidgets.QWidget()
-+        right_layout = QtWidgets.QVBoxLayout(right_widget)
-+        right_layout.setSpacing(8)
-+        right_layout.addWidget(self._group_status())
-+        right_layout.addWidget(self._group_points())
-+        right_layout.addWidget(self._group_units())
-+        right_layout.addWidget(self._group_legend())
-+        right_layout.addWidget(command_group)
-+        right_layout.addStretch()
-+
-+        top_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-+        top_splitter.addWidget(left_widget)
-+        top_splitter.addWidget(right_widget)
-+        top_splitter.setStretchFactor(0, 4)
-+        top_splitter.setStretchFactor(1, 1)
-+
-+        main_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
-+        main_splitter.addWidget(top_splitter)
-+        main_splitter.addWidget(log_group)
-+        main_splitter.setStretchFactor(0, 3)
-+        main_splitter.setStretchFactor(1, 2)
-+
-         central = QtWidgets.QWidget()
-         central_layout = QtWidgets.QVBoxLayout(central)
--        central_layout.addWidget(splitter, stretch=3)
--        central_layout.addWidget(log_group, stretch=1)
--        central_layout.addWidget(command_group, stretch=0)
-+        central_layout.addWidget(main_splitter)
-         self.setCentralWidget(central)
- 
-         self._apply_dark_theme()
-         self._build_toolbar()
-         self._fit_view()
-         app = QtWidgets.QApplication.instance()
-         if app is not None:
-             app.installEventFilter(self)
- 
-         self.timer = QtCore.QTimer(self)
-         self.timer.setInterval(300)
-         self.timer.timeout.connect(self._poll_state)
-         self.timer.start()
- 
-         self._poll_state()
-         QtCore.QTimer.singleShot(0, self._start_controller)
- 
-     def _build_toolbar(self):
-         toolbar = self.addToolBar("Вид")
-         toolbar.setMovable(False)
-         self.toggle_objective_radius = QtGui.QAction("Показать радиус целей", self)
-         self.toggle_objective_radius.setCheckable(True)
-         self.toggle_objective_radius.setChecked(True)
-         self.toggle_objective_radius.toggled.connect(self._toggle_objective_radius)
-         toolbar.addAction(self.toggle_objective_radius)
+     def _draw_movement_overlay(self, unit):
 

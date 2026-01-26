@@ -260,7 +260,12 @@ class MapScene(QtWidgets.QGraphicsScene):
         active_key = (self._active_unit_side, self._active_unit_id)
         if not active_key[0] or active_key[1] is None:
             return
-        if self._hovered_unit_key != active_key and self._selected_unit_key != active_key:
+        force_active = self._should_show_movement() or self._should_show_shooting()
+        if (
+            self._hovered_unit_key != active_key
+            and self._selected_unit_key != active_key
+            and not force_active
+        ):
             return
         unit = self._state_unit(active_key)
         if unit is None:
