@@ -806,6 +806,14 @@ class Warhammer40kEnv(gym.Env):
             self.unitInAttack.append([0, 0])
             self.modelOC.append(model[i].showUnitData()["OC"])
         self.unitFellBack = [False] * len(self.unit_health)
+        self.model_hp_max_total = max(
+            1,
+            sum(
+                unit.get("W", 0) * unit.get("#OfModels", 0)
+                for unit in self.unit_data
+                if isinstance(unit, dict)
+            ),
+        )
 
         obsSpace = (len(model) * 3) + (len(enemy) * 3) + len(self.coordsOfOM * 2) + 1
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obsSpace,), dtype=np.float32)
@@ -1856,19 +1864,38 @@ class Warhammer40kEnv(gym.Env):
                         self.enemy_health[idOfE] = modHealth
                         damage_dealt = max(0.0, float(target_hp_prev - modHealth))
                         normalized_damage = damage_dealt / max(1.0, float(self.enemy_hp_max_total))
-                        reward_delta += reward_cfg.SHOOT_REWARD_DAMAGE_SCALE * normalized_damage
+                        damage_term = reward_cfg.SHOOT_REWARD_DAMAGE_SCALE * normalized_damage
+                        reward_delta += damage_term
+                        kill_term = 0.0
                         if modHealth <= 0:
-                            reward_delta += reward_cfg.SHOOT_REWARD_KILL_BONUS
+                            kill_term = reward_cfg.SHOOT_REWARD_KILL_BONUS
+                            reward_delta += kill_term
                         overkill = max(0.0, float(damage_dealt - target_hp_prev))
+                        overkill_penalty = 0.0
                         if target_max_hp > 0 and overkill > 0:
-                            reward_delta -= reward_cfg.SHOOT_REWARD_OVERKILL_PENALTY * (overkill / target_max_hp)
-                        if target_max_hp > 0 and target_hp_prev / target_max_hp <= 0.3:
-                            reward_delta += reward_cfg.SHOOT_REWARD_TARGET_LOW_HP
-                        if any(distance(self.enemy_coords[idOfE], om) <= 5 for om in self.coordsOfOM):
-                            reward_delta += reward_cfg.SHOOT_REWARD_TARGET_ON_OBJ
-                        if self.enemy_data[idOfE].get("OC", 0) >= 2:
-                            reward_delta += reward_cfg.SHOOT_REWARD_TARGET_HIGH_OC
-                        reward_delta += 0.2
+                            overkill_penalty = reward_cfg.SHOOT_REWARD_OVERKILL_PENALTY * (overkill / target_max_hp)
+                            reward_delta -= overkill_penalty
+                        quality_term = 0.0
+                        if damage_dealt > 0:
+                            if target_max_hp > 0 and target_hp_prev / target_max_hp <= 0.3:
+                                quality_term += reward_cfg.SHOOT_REWARD_TARGET_LOW_HP
+                            if any(distance(self.enemy_coords[idOfE], om) <= 5 for om in self.coordsOfOM):
+                                quality_term += reward_cfg.SHOOT_REWARD_TARGET_ON_OBJ
+                            if self.enemy_data[idOfE].get("OC", 0) >= 2:
+                                quality_term += reward_cfg.SHOOT_REWARD_TARGET_HIGH_OC
+                        reward_delta += quality_term
+                        action_bonus = reward_cfg.SHOOT_REWARD_ACTION_BONUS
+                        reward_delta += action_bonus
+                        shot_reward = damage_term + kill_term - overkill_penalty + quality_term + action_bonus
+                        self._log_unit(
+                            "MODEL",
+                            modelName,
+                            i,
+                            "Reward (стрельба): "
+                            f"damage={damage_term:.3f} (norm={normalized_damage:.3f}, dealt={damage_dealt:.2f}), "
+                            f"kill={kill_term:.3f}, overkill=-{overkill_penalty:.3f}, "
+                            f"quality={quality_term:.3f}, action={action_bonus:.3f}, total={shot_reward:.3f}",
+                        )
                         self._log_unit(
                             "MODEL",
                             modelName,
@@ -1896,14 +1923,20 @@ class Warhammer40kEnv(gym.Env):
                                 defender_label=self._format_unit_label("enemy", idOfE),
                             )
                     else:
-                        reward_delta -= 0.5
-                        reward_delta -= reward_cfg.SHOOT_REWARD_SKIP_PENALTY
+                        penalty = 0.5 + reward_cfg.SHOOT_REWARD_SKIP_PENALTY
+                        reward_delta -= penalty
                         target_list = self._format_unit_choices("enemy", valid_target_ids)
                         self._log_unit(
                             "MODEL",
                             modelName,
                             i,
                             f"Цели в дальности: {target_list}, выбрана недоступная цель (raw={raw}). Стрельба пропущена.",
+                        )
+                        self._log_unit(
+                            "MODEL",
+                            modelName,
+                            i,
+                            f"Reward (стрельба): штраф за пропуск = -{penalty:.3f}",
                         )
                         if _verbose_logs_enabled():
                             self._log(
@@ -2421,6 +2454,14 @@ class Warhammer40kEnv(gym.Env):
             self.unit_health.append(self.unit_data[i]["W"] * self.unit_data[i]["#OfModels"])
             self.unitInAttack.append([0, 0])
         self.unitFellBack = [False] * len(self.unit_health)
+        self.model_hp_max_total = max(
+            1,
+            sum(
+                unit.get("W", 0) * unit.get("#OfModels", 0)
+                for unit in self.unit_data
+                if isinstance(unit, dict)
+            ),
+        )
 
         self.game_over = False
         self.current_action_index = 0
@@ -2745,6 +2786,7 @@ class Warhammer40kEnv(gym.Env):
     def step(self, action):
         reward = 0
         res = 0
+        model_hp_start = float(sum(self.unit_health))
         self.unitCharged = [0] * len(self.unit_health)
         self.enemyCharged = [0] * len(self.enemy_health)
         self.active_side = "model"
@@ -2765,6 +2807,17 @@ class Warhammer40kEnv(gym.Env):
         for i in range(len(self.enemy_health)):
             if self.enemy_health[i] < 0:
                 self.enemy_health[i] = 0
+
+        model_hp_end = float(sum(self.unit_health))
+        damage_taken = max(0.0, model_hp_start - model_hp_end)
+        if damage_taken > 0:
+            damage_taken_norm = damage_taken / max(1.0, float(self.model_hp_max_total))
+            penalty = reward_cfg.DAMAGE_TAKEN_SCALE * damage_taken_norm
+            reward -= penalty
+            self._log(
+                "Reward (урон по модели): "
+                f"damage_taken={damage_taken:.2f}, norm={damage_taken_norm:.3f}, penalty=-{penalty:.3f}"
+            )
 
         if game_over:
             res = 4

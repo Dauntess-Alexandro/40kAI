@@ -1,63 +1,373 @@
-diff --git a/viewer/scene.py b/viewer/scene.py
-index fb1443056cc0f9b0b1814522f769a19688801643..3d794ac7f4aa9f690d2913b1285156f0d9716542 100644
---- a/viewer/scene.py
-+++ b/viewer/scene.py
-@@ -238,51 +238,56 @@ class MapScene(QtWidgets.QGraphicsScene):
-         shoot_range=None,
-         show_objective_radius=True,
-         targets=None,
-     ):
-         self._active_unit_id = active_unit_id
-         self._active_unit_side = active_unit_side
-         self._phase = phase or ""
-         self._move_range = move_range
-         self._shoot_range = shoot_range
-         self._show_objective_radius = bool(show_objective_radius)
-         self._targets = targets
-         for item in self.objective_radius_items:
-             item.setVisible(self._show_objective_radius)
-         self.refresh_overlays()
+diff --git a/gym_mod/gym_mod/envs/warhamEnv.py b/gym_mod/gym_mod/envs/warhamEnv.py
+index 0047fc3894ad3de35c76e69703f818ef96d6c282..b4b3f7997bbf9dd22ee623f88f5a014f7839e7df 100644
+--- a/gym_mod/gym_mod/envs/warhamEnv.py
++++ b/gym_mod/gym_mod/envs/warhamEnv.py
+@@ -784,50 +784,58 @@ class Warhammer40kEnv(gym.Env):
+             self.enemy_melee.append(enemy[i].showMelee())
+             self.enemy_data.append(enemy[i].showUnitData())
+             self.enemy_coords.append([enemy[i].showCoords()[0], enemy[i].showCoords()[1]])
+             self.enemy_health.append(enemy[i].showUnitData()["W"] * enemy[i].showUnitData()["#OfModels"])
+             self.enemyInAttack.append([0, 0])
+             self.enemyOC.append(enemy[i].showUnitData()["OC"])
+         self.enemyFellBack = [False] * len(self.enemy_health)
+         self.enemy_hp_max_total = max(
+             1,
+             sum(
+                 unit.get("W", 0) * unit.get("#OfModels", 0)
+                 for unit in self.enemy_data
+                 if isinstance(unit, dict)
+             ),
+         )
  
-     def set_objective_radius_visible(self, visible):
-         self._show_objective_radius = bool(visible)
-         for item in self.objective_radius_items:
-             item.setVisible(self._show_objective_radius)
+         for i in range(len(model)):
+             self.unit_weapon.append(model[i].showWeapon())
+             self.unit_melee.append(model[i].showMelee())
+             self.unit_data.append(model[i].showUnitData())
+             self.unit_coords.append([model[i].showCoords()[0], model[i].showCoords()[1]])
+             self.unit_health.append(model[i].showUnitData()["W"] * model[i].showUnitData()["#OfModels"])
+             self.unitInAttack.append([0, 0])
+             self.modelOC.append(model[i].showUnitData()["OC"])
+         self.unitFellBack = [False] * len(self.unit_health)
++        self.model_hp_max_total = max(
++            1,
++            sum(
++                unit.get("W", 0) * unit.get("#OfModels", 0)
++                for unit in self.unit_data
++                if isinstance(unit, dict)
++            ),
++        )
  
-     def refresh_overlays(self):
-         self._clear_overlay_items()
-         active_key = (self._active_unit_side, self._active_unit_id)
-         if not active_key[0] or active_key[1] is None:
-             return
--        if self._hovered_unit_key != active_key and self._selected_unit_key != active_key:
-+        force_active = self._should_show_movement() or self._should_show_shooting()
-+        if (
-+            self._hovered_unit_key != active_key
-+            and self._selected_unit_key != active_key
-+            and not force_active
-+        ):
-             return
-         unit = self._state_unit(active_key)
-         if unit is None:
-             return
-         if self._should_show_movement():
-             self._draw_movement_overlay(unit)
-         if self._should_show_shooting():
-             self._draw_target_overlay(unit)
+         obsSpace = (len(model) * 3) + (len(enemy) * 3) + len(self.coordsOfOM * 2) + 1
+         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obsSpace,), dtype=np.float32)
  
-     def _state_unit(self, unit_key):
-         units = self._state.get("units", []) or []
-         for unit in units:
-             if (unit.get("side"), unit.get("id")) == unit_key:
-                 return unit
-         return None
+     def get_info(self):
+         return {
+             "model health": self.unit_health,
+             "player health": self.enemy_health,
+             "modelCP": self.modelCP,
+             "playerCP": self.enemyCP,
+             "in attack": self.unitInAttack,
+             "model VP": self.modelVP,
+             "player VP": self.enemyVP,
+             "mission": self.mission_name,
+             "turn": self.numTurns,
+             "battle round": self.battle_round,
+             "active side": self.active_side,
+             "phase": self.phase,
+         }
  
-     def _should_show_movement(self):
-         phase = str(self._phase or "").lower()
-         return "move" in phase or "движ" in phase or "movement" in phase or self._move_range is not None
+     def _should_log(self) -> bool:
+         if self._is_verbose():
+             return True
+         return self.trunc is False
  
-     def _should_show_shooting(self):
-         phase = str(self._phase or "").lower()
-         return "shoot" in phase or "стрел" in phase or "shooting" in phase
+@@ -1834,99 +1842,124 @@ class Warhammer40kEnv(gym.Env):
+                             _logger = RollLogger(auto_dice)
+                             _logger.configure_for_weapon(self.unit_weapon[i])
+                             dmg, modHealth = attack(
+                                 self.unit_health[i],
+                                 self.unit_weapon[i],
+                                 self.unit_data[i],
+                                 self.enemy_health[idOfE],
+                                 self.enemy_data[idOfE],
+                                 effects=effect,
+                                 distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
+                                 roller=_logger.roll,
+                             )
+                         else:
+                             dmg, modHealth = attack(
+                                 self.unit_health[i],
+                                 self.unit_weapon[i],
+                                 self.unit_data[i],
+                                 self.enemy_health[idOfE],
+                                 self.enemy_data[idOfE],
+                                 effects=effect,
+                                 distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
+                             )
+                         self.enemy_health[idOfE] = modHealth
+                         damage_dealt = max(0.0, float(target_hp_prev - modHealth))
+                         normalized_damage = damage_dealt / max(1.0, float(self.enemy_hp_max_total))
+-                        reward_delta += reward_cfg.SHOOT_REWARD_DAMAGE_SCALE * normalized_damage
++                        damage_term = reward_cfg.SHOOT_REWARD_DAMAGE_SCALE * normalized_damage
++                        reward_delta += damage_term
++                        kill_term = 0.0
+                         if modHealth <= 0:
+-                            reward_delta += reward_cfg.SHOOT_REWARD_KILL_BONUS
++                            kill_term = reward_cfg.SHOOT_REWARD_KILL_BONUS
++                            reward_delta += kill_term
+                         overkill = max(0.0, float(damage_dealt - target_hp_prev))
++                        overkill_penalty = 0.0
+                         if target_max_hp > 0 and overkill > 0:
+-                            reward_delta -= reward_cfg.SHOOT_REWARD_OVERKILL_PENALTY * (overkill / target_max_hp)
+-                        if target_max_hp > 0 and target_hp_prev / target_max_hp <= 0.3:
+-                            reward_delta += reward_cfg.SHOOT_REWARD_TARGET_LOW_HP
+-                        if any(distance(self.enemy_coords[idOfE], om) <= 5 for om in self.coordsOfOM):
+-                            reward_delta += reward_cfg.SHOOT_REWARD_TARGET_ON_OBJ
+-                        if self.enemy_data[idOfE].get("OC", 0) >= 2:
+-                            reward_delta += reward_cfg.SHOOT_REWARD_TARGET_HIGH_OC
+-                        reward_delta += 0.2
++                            overkill_penalty = reward_cfg.SHOOT_REWARD_OVERKILL_PENALTY * (overkill / target_max_hp)
++                            reward_delta -= overkill_penalty
++                        quality_term = 0.0
++                        if damage_dealt > 0:
++                            if target_max_hp > 0 and target_hp_prev / target_max_hp <= 0.3:
++                                quality_term += reward_cfg.SHOOT_REWARD_TARGET_LOW_HP
++                            if any(distance(self.enemy_coords[idOfE], om) <= 5 for om in self.coordsOfOM):
++                                quality_term += reward_cfg.SHOOT_REWARD_TARGET_ON_OBJ
++                            if self.enemy_data[idOfE].get("OC", 0) >= 2:
++                                quality_term += reward_cfg.SHOOT_REWARD_TARGET_HIGH_OC
++                        reward_delta += quality_term
++                        action_bonus = reward_cfg.SHOOT_REWARD_ACTION_BONUS
++                        reward_delta += action_bonus
++                        shot_reward = damage_term + kill_term - overkill_penalty + quality_term + action_bonus
++                        self._log_unit(
++                            "MODEL",
++                            modelName,
++                            i,
++                            "Reward (стрельба): "
++                            f"damage={damage_term:.3f} (norm={normalized_damage:.3f}, dealt={damage_dealt:.2f}), "
++                            f"kill={kill_term:.3f}, overkill=-{overkill_penalty:.3f}, "
++                            f"quality={quality_term:.3f}, action={action_bonus:.3f}, total={shot_reward:.3f}",
++                        )
+                         self._log_unit(
+                             "MODEL",
+                             modelName,
+                             i,
+                             f"Итог урона по {self._format_unit_label('enemy', idOfE)}: {float(np.sum(dmg))}",
+                         )
+                         if self.trunc is False:
+                             self._log(
+                                 f"{self._format_unit_label('model', i)} стреляет по {self._format_unit_label('enemy', idOfE)}: урон {float(np.sum(dmg))}."
+                             )
+                         else:
+                             self.modelUpdates += "{} стреляет по {} {} раз(а)\n".format(
+                                 self._format_unit_label("model", i),
+                                 self._format_unit_label("enemy", idOfE),
+                                 sum(dmg),
+                             )
+                         if _logger is not None:
+                             _logger.print_shoot_report(
+                                 weapon=self.unit_weapon[i],
+                                 attacker_data=self.unit_data[i],
+                                 defender_data=self.enemy_data[idOfE],
+                                 dmg_list=dmg,
+                                 effect=effect,
+                                 attacker_label=self._format_unit_label("model", i),
+                                 defender_label=self._format_unit_label("enemy", idOfE),
+                             )
+                     else:
+-                        reward_delta -= 0.5
+-                        reward_delta -= reward_cfg.SHOOT_REWARD_SKIP_PENALTY
++                        penalty = 0.5 + reward_cfg.SHOOT_REWARD_SKIP_PENALTY
++                        reward_delta -= penalty
+                         target_list = self._format_unit_choices("enemy", valid_target_ids)
+                         self._log_unit(
+                             "MODEL",
+                             modelName,
+                             i,
+                             f"Цели в дальности: {target_list}, выбрана недоступная цель (raw={raw}). Стрельба пропущена.",
+                         )
++                        self._log_unit(
++                            "MODEL",
++                            modelName,
++                            i,
++                            f"Reward (стрельба): штраф за пропуск = -{penalty:.3f}",
++                        )
+                         if _verbose_logs_enabled():
+                             self._log(
+                                 f"[MODEL][SHOOT] Невалидный выбор цели: raw={raw}, доступные={valid_target_ids} (ожидался индекс 0..{len(valid_target_ids) - 1}). Стрельба пропущена."
+                             )
+                         if self.trunc is False:
+                             self._log(f"{self._format_unit_label('model', i)} не смог стрелять: выбранная цель недоступна.")
+                 else:
+                     self._log_unit("MODEL", modelName, i, "Нет целей в дальности, стрельба пропущена.")
+             return reward_delta
+         elif side == "enemy" and manual:
+             for i in range(len(self.enemy_health)):
+                 playerName = i + 11
+                 unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
+                 advanced = advanced_flags[i] if advanced_flags else False
+                 if self.enemyFellBack[i]:
+                     self._log(f"{unit_label}: отступил в этом ходу — стрельба пропущена.")
+                     continue
+                 if self.enemy_weapon[i] != "None":
+                     if advanced and not weapon_is_assault(self.enemy_weapon[i]):
+                         self._log(f"{unit_label}: был Advance без Assault — стрельба пропущена.")
+                     else:
+                         shootAble = np.array([])
+                         for j in range(len(self.unit_health)):
+                             if distance(self.enemy_coords[i], self.unit_coords[j]) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
+                                 shootAble = np.append(shootAble, j)
+@@ -2399,50 +2432,58 @@ class Warhammer40kEnv(gym.Env):
+         self.phase = "command"
+         self.numTurns = self.battle_round
+         self._round_banner_shown = False
+         self.mission_name = MISSION_NAME
+         self.modelUpdates = ""
  
-     def _draw_movement_overlay(self, unit):
+         for i in range(len(self.enemy_data)):
+             self.enemy_coords.append([e[i].showCoords()[0], e[i].showCoords()[1]])
+             self.enemy_health.append(self.enemy_data[i]["W"] * self.enemy_data[i]["#OfModels"])
+             self.enemyInAttack.append([0, 0])
+         self.enemyFellBack = [False] * len(self.enemy_health)
+         self.enemy_hp_max_total = max(
+             1,
+             sum(
+                 unit.get("W", 0) * unit.get("#OfModels", 0)
+                 for unit in self.enemy_data
+                 if isinstance(unit, dict)
+             ),
+         )
+ 
+         for i in range(len(self.unit_data)):
+             self.unit_coords.append([m[i].showCoords()[0], m[i].showCoords()[1]])
+             self.unit_health.append(self.unit_data[i]["W"] * self.unit_data[i]["#OfModels"])
+             self.unitInAttack.append([0, 0])
+         self.unitFellBack = [False] * len(self.unit_health)
++        self.model_hp_max_total = max(
++            1,
++            sum(
++                unit.get("W", 0) * unit.get("#OfModels", 0)
++                for unit in self.unit_data
++                if isinstance(unit, dict)
++            ),
++        )
+ 
+         self.game_over = False
+         self.current_action_index = 0
+         info = self.get_info()
+ 
+         if Type == "big":
+             self.updateBoard()
+ 
+         return self._get_observation(), info
+ 
+     def enemyTurn(self, trunc=False):
+         self.unitCharged = [0] * len(self.unit_health)
+         self.enemyCharged = [0] * len(self.enemy_health)
+         if trunc is True:
+             self.trunc = True
+ 
+         self.active_side = "enemy"
+         battle_shock = self.command_phase("enemy")
+         advanced_flags = self.movement_phase("enemy", battle_shock=battle_shock)
+         self.shooting_phase("enemy", advanced_flags=advanced_flags)
+         self.charge_phase("enemy", advanced_flags=advanced_flags)
+         self.fight_phase("enemy")
+         apply_end_of_battle(self, log_fn=self._log)
+ 
+         if self.modelStrat["overwatch"] != -1:
+@@ -2723,71 +2764,83 @@ class Warhammer40kEnv(gym.Env):
+                         attacker_idx = enemy_left[0]
+                         target_idx = _prompt_enemy_target(attacker_idx)
+                         if target_idx is None:
+                             return
+                         self.enemyInAttack[attacker_idx][1] = target_idx
+                         _do_melee("enemy", attacker_idx)
+                         fought_enemy.add(attacker_idx)
+                     else:
+                         i = enemy_left[0]
+                         _do_melee("enemy", i)
+                         fought_enemy.add(i)
+                 next_side = "model"
+ 
+         # после Fight Phase — charged сбрасываем (на всякий)
+         self.unitCharged = [0] * len(self.unit_health)
+         self.enemyCharged = [0] * len(self.enemy_health)
+ 
+         if quiet is False:
+             self._log("⚔️ Combat resolution complete.\n")
+ 
+ 
+ 
+     def step(self, action):
+         reward = 0
+         res = 0
++        model_hp_start = float(sum(self.unit_health))
+         self.unitCharged = [0] * len(self.unit_health)
+         self.enemyCharged = [0] * len(self.enemy_health)
+         self.active_side = "model"
+         battle_shock, delta = self.command_phase("model", action=action)
+         reward += delta
+         advanced_flags, delta = self.movement_phase("model", action=action, battle_shock=battle_shock)
+         reward += delta
+         reward += self.shooting_phase("model", advanced_flags=advanced_flags, action=action) or 0
+         reward += self.charge_phase("model", advanced_flags=advanced_flags, action=action) or 0
+         self.fight_phase("model")
+         game_over, _, winner = apply_end_of_battle(self, log_fn=self._log)
+         self.enemyStrat["overwatch"] = -1
+         self.enemyStrat["smokescreen"] = -1
+ 
+         for i in range(len(self.unit_health)):
+             if self.unit_health[i] < 0:
+                 self.unit_health[i] = 0
+         for i in range(len(self.enemy_health)):
+             if self.enemy_health[i] < 0:
+                 self.enemy_health[i] = 0
+ 
++        model_hp_end = float(sum(self.unit_health))
++        damage_taken = max(0.0, model_hp_start - model_hp_end)
++        if damage_taken > 0:
++            damage_taken_norm = damage_taken / max(1.0, float(self.model_hp_max_total))
++            penalty = reward_cfg.DAMAGE_TAKEN_SCALE * damage_taken_norm
++            reward -= penalty
++            self._log(
++                "Reward (урон по модели): "
++                f"damage_taken={damage_taken:.2f}, norm={damage_taken_norm:.3f}, penalty=-{penalty:.3f}"
++            )
++
+         if game_over:
+             res = 4
+             if winner == "model":
+                 reward += 2
+             elif winner == "enemy":
+                 reward -= 2
+ 
+         self._advance_turn_order()
+         if self.game_over and res == 0:
+             res = 4
+ 
+         self.iter += 1
+         info = self.get_info()
+         return self._get_observation(), reward, self.game_over, res, info
+ 
+     def player(self):
+         self.active_side = "enemy"
+ 
+         info = self.get_info()
+         self._log(str(info))
+         more_info = "Здоровье MODEL: {}, здоровье PLAYER: {}\nCP MODEL: {}, CP PLAYER: {}\nVP MODEL: {}, VP PLAYER: {}\n".format(
+             info["model health"],
+             info["player health"],
+             info["modelCP"],
+             info["playerCP"],
+diff --git a/reward_config.py b/reward_config.py
+index 56c442c8996a3339defddb93f5dcb86701758ed6..04892b5719376d657fab8ec57a526c6c3d296913 100644
+--- a/reward_config.py
++++ b/reward_config.py
+@@ -1,16 +1,20 @@
+ """
+ Конфигурация reward-шэйпинга.
+ Меняйте значения здесь, чтобы не лезть в код среды.
+ """
+ 
+ # =========================
+ # Reward shaping (shooting)
+ # =========================
+ # Базовые коэффициенты — подбирайте экспериментально.
+ SHOOT_REWARD_DAMAGE_SCALE = 0.6
+-SHOOT_REWARD_KILL_BONUS = 0.8
++SHOOT_REWARD_KILL_BONUS = 0.4
+ SHOOT_REWARD_OVERKILL_PENALTY = 0.2
+ SHOOT_REWARD_SKIP_PENALTY = 0.15
+-SHOOT_REWARD_TARGET_LOW_HP = 0.1
+-SHOOT_REWARD_TARGET_ON_OBJ = 0.15
+-SHOOT_REWARD_TARGET_HIGH_OC = 0.1
++SHOOT_REWARD_TARGET_LOW_HP = 0.05
++SHOOT_REWARD_TARGET_ON_OBJ = 0.07
++SHOOT_REWARD_TARGET_HIGH_OC = 0.05
++SHOOT_REWARD_ACTION_BONUS = 0.0
++
++# Penalize damage received during the model's step (normalized by model total max HP).
++DAMAGE_TAKEN_SCALE = 0.5
 

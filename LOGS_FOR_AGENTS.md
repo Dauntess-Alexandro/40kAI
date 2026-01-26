@@ -243,3 +243,178 @@ VP MODEL: 0, VP PLAYER: 0
 2026-01-26 17:08:32 | --- ФАЗА ДВИЖЕНИЯ ---
 2026-01-26 17:08:42 | Бросок 1D6 на Advance...
 2026-01-26 17:08:43 | Бросок: 1
+2026-01-26 17:32:34 | [MODEL] Ближний бой: нет доступных атак
+2026-01-26 17:32:34 | === КОНЕЦ БОЕВОГО РАУНДА 1 ===
+2026-01-26 17:32:34 | Итерация 0 завершена с наградой tensor([0], device='cuda:0'), здоровье игрока [10.0, 10.0, 12.0], здоровье модели [10.0, 10.0, 12.0]
+2026-01-26 17:32:34 | {'model health': [10.0, 10.0, 12.0], 'player health': [10.0, 10.0, 12.0], 'modelCP': 1, 'playerCP': 2, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command'}
+2026-01-26 17:32:34 | Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [10.0, 10.0, 12.0]
+2026-01-26 17:32:34 | CP MODEL: 1, CP PLAYER: 2
+2026-01-26 17:32:34 | VP MODEL: 0, VP PLAYER: 0
+2026-01-26 17:32:34 | Roll-off Attacker/Defender: enemy=1 model=3 -> attacker=model
+2026-01-26 17:32:34 | Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+2026-01-26 17:32:34 | [DEPLOY] Order: model first, alternating
+2026-01-26 17:32:34 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (43,7)
+2026-01-26 17:32:34 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (28,32)
+2026-01-26 17:32:34 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (31,3)
+2026-01-26 17:32:34 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (30,37)
+2026-01-26 17:32:34 | [DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (57,2)
+2026-01-26 17:32:34 | [DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (3,30)
+2026-01-26 17:32:34 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
+2026-01-26 17:32:34 | 
+2026-01-26 17:32:34 | Инструкции:
+2026-01-26 17:32:34 | Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+2026-01-26 17:32:34 | Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+2026-01-26 17:32:34 | {'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+2026-01-26 17:32:34 | Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+2026-01-26 17:32:34 | CP MODEL: 0, CP PLAYER: 0
+2026-01-26 17:32:34 | VP MODEL: 0, VP PLAYER: 0
+2026-01-26 17:32:34 | === БОЕВОЙ РАУНД 1 ===
+2026-01-26 17:32:34 | --- ХОД PLAYER ---
+2026-01-26 17:32:34 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-01-26 17:32:34 | [ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+2026-01-26 17:32:34 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-01-26 17:33:21 | [MODEL] Ближний бой: нет доступных атак
+2026-01-26 17:33:21 | === КОНЕЦ БОЕВОГО РАУНДА 1 ===
+2026-01-26 17:33:21 | Итерация 0 завершена с наградой tensor([0], device='cuda:0'), здоровье игрока [10.0, 10.0, 12.0], здоровье модели [10.0, 10.0, 12.0]
+2026-01-26 17:33:21 | {'model health': [10.0, 10.0, 12.0], 'player health': [10.0, 10.0, 12.0], 'modelCP': 1, 'playerCP': 2, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command'}
+2026-01-26 17:33:21 | Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [10.0, 10.0, 12.0]
+2026-01-26 17:33:21 | CP MODEL: 1, CP PLAYER: 2
+2026-01-26 17:33:21 | VP MODEL: 0, VP PLAYER: 0
+2026-01-26 17:33:21 | Roll-off Attacker/Defender: enemy=1 model=3 -> attacker=model
+2026-01-26 17:33:21 | Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+2026-01-26 17:33:21 | [DEPLOY] Order: model first, alternating
+2026-01-26 17:33:21 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (43,7)
+2026-01-26 17:33:21 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (28,32)
+2026-01-26 17:33:21 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (31,3)
+2026-01-26 17:33:21 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (30,37)
+2026-01-26 17:33:21 | [DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (57,2)
+2026-01-26 17:33:21 | [DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (3,30)
+2026-01-26 17:33:21 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
+2026-01-26 17:33:21 | 
+2026-01-26 17:33:21 | Инструкции:
+2026-01-26 17:33:21 | Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+2026-01-26 17:33:21 | Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+2026-01-26 17:33:21 | {'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+2026-01-26 17:33:21 | Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+2026-01-26 17:33:21 | CP MODEL: 0, CP PLAYER: 0
+2026-01-26 17:33:21 | VP MODEL: 0, VP PLAYER: 0
+2026-01-26 17:33:21 | === БОЕВОЙ РАУНД 1 ===
+2026-01-26 17:33:21 | --- ХОД PLAYER ---
+2026-01-26 17:33:21 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-01-26 17:33:21 | [ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+2026-01-26 17:33:21 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-01-26 17:33:44 | [MODEL] Ближний бой: нет доступных атак
+2026-01-26 17:33:44 | === КОНЕЦ БОЕВОГО РАУНДА 1 ===
+2026-01-26 17:33:44 | Итерация 0 завершена с наградой tensor([0], device='cuda:0'), здоровье игрока [10.0, 10.0, 12.0], здоровье модели [10.0, 10.0, 12.0]
+2026-01-26 17:33:44 | {'model health': [10.0, 10.0, 12.0], 'player health': [10.0, 10.0, 12.0], 'modelCP': 1, 'playerCP': 2, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command'}
+2026-01-26 17:33:44 | Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [10.0, 10.0, 12.0]
+2026-01-26 17:33:44 | CP MODEL: 1, CP PLAYER: 2
+2026-01-26 17:33:44 | VP MODEL: 0, VP PLAYER: 0
+2026-01-26 17:33:44 | Roll-off Attacker/Defender: enemy=1 model=3 -> attacker=model
+2026-01-26 17:33:44 | Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+2026-01-26 17:33:44 | [DEPLOY] Order: model first, alternating
+2026-01-26 17:33:44 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (43,7)
+2026-01-26 17:33:44 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (28,32)
+2026-01-26 17:33:44 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (31,3)
+2026-01-26 17:33:44 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (30,37)
+2026-01-26 17:33:44 | [DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (57,2)
+2026-01-26 17:33:44 | [DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (3,30)
+2026-01-26 17:33:44 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
+2026-01-26 17:33:44 | 
+2026-01-26 17:33:44 | Инструкции:
+2026-01-26 17:33:44 | Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+2026-01-26 17:33:44 | Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+2026-01-26 17:33:44 | {'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+2026-01-26 17:33:44 | Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+2026-01-26 17:33:44 | CP MODEL: 0, CP PLAYER: 0
+2026-01-26 17:33:44 | VP MODEL: 0, VP PLAYER: 0
+2026-01-26 17:33:44 | === БОЕВОЙ РАУНД 1 ===
+2026-01-26 17:33:44 | --- ХОД PLAYER ---
+2026-01-26 17:33:44 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-01-26 17:33:44 | [ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+2026-01-26 17:33:44 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-01-26 17:45:24 | Здоровье MODEL: [10.0, 10.0, 12.0], здоровье PLAYER: [10.0, 10.0, 12.0]
+2026-01-26 17:45:24 | CP MODEL: 1, CP PLAYER: 2
+2026-01-26 17:45:24 | VP MODEL: 0, VP PLAYER: 0
+2026-01-26 17:45:24 | Roll-off Attacker/Defender: enemy=1 model=3 -> attacker=model
+2026-01-26 17:45:24 | Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+2026-01-26 17:45:24 | [DEPLOY] Order: model first, alternating
+2026-01-26 17:45:24 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (43,7)
+2026-01-26 17:45:24 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (28,32)
+2026-01-26 17:45:24 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (31,3)
+2026-01-26 17:45:24 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (30,37)
+2026-01-26 17:45:24 | [DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (57,2)
+2026-01-26 17:45:24 | [DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (3,30)
+2026-01-26 17:45:24 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
+2026-01-26 17:45:24 | 
+2026-01-26 17:45:24 | Инструкции:
+2026-01-26 17:45:24 | Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+2026-01-26 17:45:24 | Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+2026-01-26 17:45:24 | {'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+2026-01-26 17:45:24 | Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+2026-01-26 17:45:24 | CP MODEL: 0, CP PLAYER: 0
+2026-01-26 17:45:24 | VP MODEL: 0, VP PLAYER: 0
+2026-01-26 17:45:24 | === БОЕВОЙ РАУНД 1 ===
+2026-01-26 17:45:24 | --- ХОД PLAYER ---
+2026-01-26 17:45:24 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-01-26 17:45:24 | [ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+2026-01-26 17:45:24 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-01-26 17:45:24 | Бросок 1D6 на Advance...
+2026-01-26 17:45:24 | Бросок: 1
+2026-01-26 17:45:24 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+2026-01-26 17:45:24 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+2026-01-26 18:00:59 | CP MODEL: 1, CP PLAYER: 2
+2026-01-26 18:00:59 | VP MODEL: 0, VP PLAYER: 0
+2026-01-26 18:00:59 | Roll-off Attacker/Defender: enemy=1 model=3 -> attacker=model
+2026-01-26 18:00:59 | Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+2026-01-26 18:00:59 | [DEPLOY] Order: model first, alternating
+2026-01-26 18:00:59 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (43,7)
+2026-01-26 18:00:59 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (28,32)
+2026-01-26 18:00:59 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (31,3)
+2026-01-26 18:00:59 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (30,37)
+2026-01-26 18:00:59 | [DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (57,2)
+2026-01-26 18:00:59 | [DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (3,30)
+2026-01-26 18:00:59 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
+2026-01-26 18:00:59 | 
+2026-01-26 18:00:59 | Инструкции:
+2026-01-26 18:00:59 | Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+2026-01-26 18:00:59 | Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+2026-01-26 18:00:59 | {'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+2026-01-26 18:00:59 | Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+2026-01-26 18:00:59 | CP MODEL: 0, CP PLAYER: 0
+2026-01-26 18:00:59 | VP MODEL: 0, VP PLAYER: 0
+2026-01-26 18:00:59 | === БОЕВОЙ РАУНД 1 ===
+2026-01-26 18:00:59 | --- ХОД PLAYER ---
+2026-01-26 18:00:59 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-01-26 18:00:59 | [ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+2026-01-26 18:00:59 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-01-26 18:00:59 | Бросок 1D6 на Advance...
+2026-01-26 18:00:59 | Бросок: 1
+2026-01-26 18:00:59 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+2026-01-26 18:00:59 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+2026-01-26 18:00:59 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+2026-01-26 18:01:02 | Roll-off Attacker/Defender: enemy=1 model=5 -> attacker=model
+2026-01-26 18:01:02 | Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+2026-01-26 18:01:02 | [DEPLOY] Order: model first, alternating
+2026-01-26 18:01:02 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (35,4)
+2026-01-26 18:01:02 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (10,30)
+2026-01-26 18:01:02 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (54,5)
+2026-01-26 18:01:02 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (54,37)
+2026-01-26 18:01:02 | [DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (26,9)
+2026-01-26 18:01:02 | [DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (39,31)
+2026-01-26 18:01:02 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
+2026-01-26 18:01:02 | 
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+
+2026-01-26 18:01:02 | {'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+2026-01-26 18:01:02 | Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+
+2026-01-26 18:01:10 | === БОЕВОЙ РАУНД 1 ===
+2026-01-26 18:01:10 | --- ХОД PLAYER ---
+2026-01-26 18:01:10 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-01-26 18:01:10 | [ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+2026-01-26 18:01:10 | --- ФАЗА ДВИЖЕНИЯ ---
