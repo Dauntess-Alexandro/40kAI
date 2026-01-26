@@ -111,24 +111,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         left_layout.addWidget(fit_button, alignment=QtCore.Qt.AlignLeft)
         left_layout.addWidget(self.map_view)
 
-        right_widget = QtWidgets.QWidget()
-        right_layout = QtWidgets.QVBoxLayout(right_widget)
-        right_layout.addWidget(self._group_status())
-        right_layout.addWidget(self._group_points())
-        right_layout.addWidget(self._group_units())
-        right_layout.addWidget(self._group_legend())
-        right_layout.addStretch()
-
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        splitter.addWidget(left_widget)
-        splitter.addWidget(right_widget)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
-
         log_group = QtWidgets.QGroupBox("ЖУРНАЛ")
         log_layout = QtWidgets.QVBoxLayout(log_group)
         log_layout.addLayout(self._log_controls_layout)
         log_layout.addWidget(self.log_tabs)
+        log_group.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+        )
 
         command_group = QtWidgets.QGroupBox("КОМАНДЫ")
         command_layout = QtWidgets.QVBoxLayout(command_group)
@@ -143,11 +132,31 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._build_command_pages()
         command_layout.addWidget(self.command_stack)
 
+        right_widget = QtWidgets.QWidget()
+        right_layout = QtWidgets.QVBoxLayout(right_widget)
+        right_layout.setSpacing(8)
+        right_layout.addWidget(self._group_status())
+        right_layout.addWidget(self._group_points())
+        right_layout.addWidget(self._group_units())
+        right_layout.addWidget(self._group_legend())
+        right_layout.addWidget(command_group)
+        right_layout.addStretch()
+
+        top_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        top_splitter.addWidget(left_widget)
+        top_splitter.addWidget(right_widget)
+        top_splitter.setStretchFactor(0, 4)
+        top_splitter.setStretchFactor(1, 1)
+
+        main_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        main_splitter.addWidget(top_splitter)
+        main_splitter.addWidget(log_group)
+        main_splitter.setStretchFactor(0, 3)
+        main_splitter.setStretchFactor(1, 2)
+
         central = QtWidgets.QWidget()
         central_layout = QtWidgets.QVBoxLayout(central)
-        central_layout.addWidget(splitter, stretch=3)
-        central_layout.addWidget(log_group, stretch=1)
-        central_layout.addWidget(command_group, stretch=0)
+        central_layout.addWidget(main_splitter)
         self.setCentralWidget(central)
 
         self._apply_dark_theme()
