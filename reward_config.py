@@ -18,3 +18,14 @@ SHOOT_REWARD_ACTION_BONUS = 0.0
 
 # Penalize damage received during the model's step (normalized by model total max HP).
 DAMAGE_TAKEN_SCALE = 0.5
+
+# ======================
+# Reward shaping (fight)
+# ======================
+# Базовые коэффициенты — подбирайте экспериментально.
+MELEE_REWARD_DAMAGE_SCALE = 0.6
+MELEE_REWARD_KILL_BONUS = 0.4
+MELEE_REWARD_TAKEN_SCALE = 0.5
+MELEE_ADVANTAGE_SCALE = 0.15
+MELEE_STRENGTH_SCALE = 0.1
+MELEE_OBJECTIVE_CONTROL_SCALE = 0.2

@@ -18,6 +18,7 @@ from gym_mod.engine.mission import (
     MAX_BATTLE_ROUNDS,
     score_end_of_command_phase,
     apply_end_of_battle,
+    controlled_objectives,
 )
 from gym_mod.engine.skills import apply_end_of_command_phase
 from gym_mod.engine.logging_utils import format_unit
@@ -853,6 +854,35 @@ class Warhammer40kEnv(gym.Env):
         if not self._should_log():
             return
         self._ensure_io().log(msg)
+
+    def _unit_max_hp(self, side: str, idx: int) -> float:
+        data_list = self.unit_data if side == "model" else self.enemy_data
+        if not (0 <= idx < len(data_list)):
+            return 1.0
+        unit_data = data_list[idx]
+        if not isinstance(unit_data, dict):
+            return 1.0
+        wounds = float(unit_data.get("W", 1))
+        models = float(unit_data.get("#OfModels", 1))
+        return max(1.0, wounds * models)
+
+    def _melee_strength_score(self, side: str, idx: int) -> float:
+        weapons = self.unit_melee if side == "model" else self.enemy_melee
+        data_list = self.unit_data if side == "model" else self.enemy_data
+        if not (0 <= idx < len(weapons)) or not (0 <= idx < len(data_list)):
+            return 0.0
+        weapon = weapons[idx]
+        if not isinstance(weapon, dict):
+            return 0.0
+        attacks = float(weapon.get("A", 1))
+        strength = float(weapon.get("S", 1))
+        damage = float(weapon.get("Damage", 1))
+        ws = float(weapon.get("WS", 4))
+        ap = float(weapon.get("AP", 0))
+        hit_chance = max(0.0, min(1.0, (7.0 - ws) / 6.0))
+        ap_bonus = 1.0 + max(0.0, -ap) * 0.05
+        models = float(data_list[idx].get("#OfModels", 1)) if isinstance(data_list[idx], dict) else 1.0
+        return attacks * strength * damage * hit_chance * ap_bonus * models
 
     def _log_phase(self, side: str, phase: str):
         if not self._should_log():
@@ -2338,6 +2368,14 @@ class Warhammer40kEnv(gym.Env):
 
     def fight_phase(self, side: str):
         self.begin_phase(side, "fight")
+        reward_delta = 0.0
+        engaged_pairs = []
+        pre_enemy_hp_total = None
+        pre_model_hp_total = None
+        pre_enemy_dead = None
+        pre_obj_controlled = None
+        advantage_term = 0.0
+        strength_term = 0.0
         if side == "model":
             self._log_phase("MODEL", "fight")
             engaged_model = [i for i in range(len(self.unit_health)) if self.unit_health[i] > 0 and self.unitInAttack[i][0] == 1]
@@ -2357,7 +2395,57 @@ class Warhammer40kEnv(gym.Env):
                             idx,
                             f"В бою с {self._format_unit_label('enemy', def_idx)}",
                         )
+                        engaged_pairs.append((idx, def_idx))
+                if engaged_pairs:
+                    pre_enemy_hp_total = float(sum(self.enemy_health))
+                    pre_model_hp_total = float(sum(self.unit_health))
+                    pre_enemy_dead = sum(1 for hp in self.enemy_health if hp <= 0)
+                    self.refresh_objective_control()
+                    pre_obj_controlled, _ = controlled_objectives(self, "model")
+                    for model_idx, enemy_idx in engaged_pairs:
+                        model_max_hp = self._unit_max_hp("model", model_idx)
+                        enemy_max_hp = self._unit_max_hp("enemy", enemy_idx)
+                        model_hp_frac = float(self.unit_health[model_idx]) / model_max_hp
+                        enemy_hp_frac = float(self.enemy_health[enemy_idx]) / enemy_max_hp
+                        advantage = max(-1.0, min(1.0, model_hp_frac - enemy_hp_frac))
+                        advantage_term += reward_cfg.MELEE_ADVANTAGE_SCALE * advantage
+                        model_power = self._melee_strength_score("model", model_idx)
+                        enemy_power = self._melee_strength_score("enemy", enemy_idx)
+                        if model_power > enemy_power:
+                            strength_term += reward_cfg.MELEE_STRENGTH_SCALE
+                        elif model_power < enemy_power:
+                            strength_term -= reward_cfg.MELEE_STRENGTH_SCALE
         self.resolve_fight_phase(active_side=side, trunc=self.trunc)
+
+        if side == "model" and engaged_pairs:
+            post_enemy_hp_total = float(sum(self.enemy_health))
+            post_model_hp_total = float(sum(self.unit_health))
+            post_enemy_dead = sum(1 for hp in self.enemy_health if hp <= 0)
+
+            damage_dealt = max(0.0, pre_enemy_hp_total - post_enemy_hp_total)
+            damage_taken = max(0.0, pre_model_hp_total - post_model_hp_total)
+            damage_dealt_norm = damage_dealt / max(1.0, float(self.enemy_hp_max_total))
+            damage_taken_norm = damage_taken / max(1.0, float(self.model_hp_max_total))
+            damage_term = reward_cfg.MELEE_REWARD_DAMAGE_SCALE * damage_dealt_norm
+            taken_term = reward_cfg.MELEE_REWARD_TAKEN_SCALE * damage_taken_norm
+            kill_delta = max(0, post_enemy_dead - pre_enemy_dead)
+            kill_term = reward_cfg.MELEE_REWARD_KILL_BONUS * kill_delta
+
+            self.refresh_objective_control()
+            post_obj_controlled, _ = controlled_objectives(self, "model")
+            obj_delta = post_obj_controlled - (pre_obj_controlled or 0)
+            obj_term = reward_cfg.MELEE_OBJECTIVE_CONTROL_SCALE * obj_delta
+
+            reward_delta += damage_term + kill_term - taken_term + advantage_term + strength_term + obj_term
+            self._log(
+                "Reward (бой): "
+                f"damage={damage_term:.3f} (norm={damage_dealt_norm:.3f}, dealt={damage_dealt:.2f}), "
+                f"kills={kill_term:.3f} (delta={kill_delta}), "
+                f"taken=-{taken_term:.3f} (norm={damage_taken_norm:.3f}, taken={damage_taken:.2f}), "
+                f"advantage={advantage_term:.3f}, strength={strength_term:.3f}, "
+                f"objectives={obj_term:.3f} (delta={obj_delta}), total={reward_delta:.3f}"
+            )
+        return reward_delta
 
     def refresh_objective_control(self):
         self.model_obj_oc = np.zeros(len(self.coordsOfOM), dtype=int)
@@ -2796,7 +2884,7 @@ class Warhammer40kEnv(gym.Env):
         reward += delta
         reward += self.shooting_phase("model", advanced_flags=advanced_flags, action=action) or 0
         reward += self.charge_phase("model", advanced_flags=advanced_flags, action=action) or 0
-        self.fight_phase("model")
+        reward += self.fight_phase("model") or 0
         game_over, _, winner = apply_end_of_battle(self, log_fn=self._log)
         self.enemyStrat["overwatch"] = -1
         self.enemyStrat["smokescreen"] = -1

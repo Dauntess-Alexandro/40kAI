@@ -1,56 +1,55 @@
 diff --git a/gym_mod/gym_mod/envs/warhamEnv.py b/gym_mod/gym_mod/envs/warhamEnv.py
-index 0047fc3894ad3de35c76e69703f818ef96d6c282..b4b3f7997bbf9dd22ee623f88f5a014f7839e7df 100644
+index b4b3f7997bbf9dd22ee623f88f5a014f7839e7df..b85d19b2e7fc069376058d8bdc04a065e6adbca8 100644
 --- a/gym_mod/gym_mod/envs/warhamEnv.py
 +++ b/gym_mod/gym_mod/envs/warhamEnv.py
-@@ -784,50 +784,58 @@ class Warhammer40kEnv(gym.Env):
-             self.enemy_melee.append(enemy[i].showMelee())
-             self.enemy_data.append(enemy[i].showUnitData())
-             self.enemy_coords.append([enemy[i].showCoords()[0], enemy[i].showCoords()[1]])
-             self.enemy_health.append(enemy[i].showUnitData()["W"] * enemy[i].showUnitData()["#OfModels"])
-             self.enemyInAttack.append([0, 0])
-             self.enemyOC.append(enemy[i].showUnitData()["OC"])
-         self.enemyFellBack = [False] * len(self.enemy_health)
-         self.enemy_hp_max_total = max(
-             1,
-             sum(
-                 unit.get("W", 0) * unit.get("#OfModels", 0)
-                 for unit in self.enemy_data
-                 if isinstance(unit, dict)
-             ),
-         )
+@@ -1,45 +1,46 @@
+ import gymnasium as gym
+ from gymnasium import spaces
+ import numpy as np
+ import matplotlib
+ matplotlib.use("Agg")
+ import matplotlib.pyplot as plt
+ import os
+ import random
+ import re
+ from typing import Optional
  
-         for i in range(len(model)):
-             self.unit_weapon.append(model[i].showWeapon())
-             self.unit_melee.append(model[i].showMelee())
-             self.unit_data.append(model[i].showUnitData())
-             self.unit_coords.append([model[i].showCoords()[0], model[i].showCoords()[1]])
-             self.unit_health.append(model[i].showUnitData()["W"] * model[i].showUnitData()["#OfModels"])
-             self.unitInAttack.append([0, 0])
-             self.modelOC.append(model[i].showUnitData()["OC"])
-         self.unitFellBack = [False] * len(self.unit_health)
-+        self.model_hp_max_total = max(
-+            1,
-+            sum(
-+                unit.get("W", 0) * unit.get("#OfModels", 0)
-+                for unit in self.unit_data
-+                if isinstance(unit, dict)
-+            ),
-+        )
+ import reward_config as reward_cfg
  
-         obsSpace = (len(model) * 3) + (len(enemy) * 3) + len(self.coordsOfOM * 2) + 1
-         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obsSpace,), dtype=np.float32)
+ from ..engine.utils import *
+ from ..engine import utils as engine_utils
+ from gym_mod.engine.mission import (
+     MISSION_NAME,
+     MAX_BATTLE_ROUNDS,
+     score_end_of_command_phase,
+     apply_end_of_battle,
++    controlled_objectives,
+ )
+ from gym_mod.engine.skills import apply_end_of_command_phase
+ from gym_mod.engine.logging_utils import format_unit
+ from gym_mod.engine.state_export import write_state_json
+ from gym_mod.engine.game_io import get_active_io
  
-     def get_info(self):
-         return {
-             "model health": self.unit_health,
-             "player health": self.enemy_health,
-             "modelCP": self.modelCP,
-             "playerCP": self.enemyCP,
-             "in attack": self.unitInAttack,
-             "model VP": self.modelVP,
-             "player VP": self.enemyVP,
-             "mission": self.mission_name,
-             "turn": self.numTurns,
+ # ============================================================
+ # 🔧 FIX: resolve string weapons like "Bolt pistol [PISTOL]"
+ # so engine.utils.attack() always receives a dict (or we safely
+ # skip the attack instead of crashing with "'str' object has no attribute 'get'").
+ # This is intentionally defensive: if WeaponData can't be found,
+ # we still won't crash during training.
+ # ============================================================
+ 
+ _attack_original = attack  # keep reference to the original engine attack
+ _WEAPON_INDEX = None
+ 
+ def _norm_weapon_name(x):
+     if not isinstance(x, str):
+         return x
+     # remove tags in square brackets: "Bolt pistol [PISTOL]" -> "Bolt pistol"
+     x = re.sub(r"\s*\[.*?\]\s*", "", x)
+     return x.strip().lower()
+ 
+ def _build_weapon_index():
+@@ -832,50 +833,79 @@ class Warhammer40kEnv(gym.Env):
              "battle round": self.battle_round,
              "active side": self.active_side,
              "phase": self.phase,
@@ -61,213 +60,206 @@ index 0047fc3894ad3de35c76e69703f818ef96d6c282..b4b3f7997bbf9dd22ee623f88f5a014f
              return True
          return self.trunc is False
  
-@@ -1834,99 +1842,124 @@ class Warhammer40kEnv(gym.Env):
-                             _logger = RollLogger(auto_dice)
-                             _logger.configure_for_weapon(self.unit_weapon[i])
-                             dmg, modHealth = attack(
-                                 self.unit_health[i],
-                                 self.unit_weapon[i],
-                                 self.unit_data[i],
-                                 self.enemy_health[idOfE],
-                                 self.enemy_data[idOfE],
-                                 effects=effect,
-                                 distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
-                                 roller=_logger.roll,
+     def _is_verbose(self) -> bool:
+         return os.getenv("VERBOSE_LOGS", "0") == "1" or os.getenv("MANUAL_DICE", "0") == "1"
+ 
+     def _ensure_io(self):
+         if not hasattr(self, "io") or self.io is None:
+             self.io = get_active_io()
+         return self.io
+ 
+     def _log(self, msg: str, verbose_only: bool = False):
+         if verbose_only and not self._is_verbose():
+             return
+         if not self._should_log():
+             return
+         self._ensure_io().log(msg)
+ 
++    def _unit_max_hp(self, side: str, idx: int) -> float:
++        data_list = self.unit_data if side == "model" else self.enemy_data
++        if not (0 <= idx < len(data_list)):
++            return 1.0
++        unit_data = data_list[idx]
++        if not isinstance(unit_data, dict):
++            return 1.0
++        wounds = float(unit_data.get("W", 1))
++        models = float(unit_data.get("#OfModels", 1))
++        return max(1.0, wounds * models)
++
++    def _melee_strength_score(self, side: str, idx: int) -> float:
++        weapons = self.unit_melee if side == "model" else self.enemy_melee
++        data_list = self.unit_data if side == "model" else self.enemy_data
++        if not (0 <= idx < len(weapons)) or not (0 <= idx < len(data_list)):
++            return 0.0
++        weapon = weapons[idx]
++        if not isinstance(weapon, dict):
++            return 0.0
++        attacks = float(weapon.get("A", 1))
++        strength = float(weapon.get("S", 1))
++        damage = float(weapon.get("Damage", 1))
++        ws = float(weapon.get("WS", 4))
++        ap = float(weapon.get("AP", 0))
++        hit_chance = max(0.0, min(1.0, (7.0 - ws) / 6.0))
++        ap_bonus = 1.0 + max(0.0, -ap) * 0.05
++        models = float(data_list[idx].get("#OfModels", 1)) if isinstance(data_list[idx], dict) else 1.0
++        return attacks * strength * damage * hit_chance * ap_bonus * models
++
+     def _log_phase(self, side: str, phase: str):
+         if not self._should_log():
+             return
+         phase_title = {
+             "command": "ФАЗА КОМАНДОВАНИЯ",
+             "movement": "ФАЗА ДВИЖЕНИЯ",
+             "shooting": "ФАЗА СТРЕЛЬБЫ",
+             "charge": "ФАЗА ЧАРДЖА",
+             "fight": "ФАЗА БОЯ",
+         }.get(phase, f"ФАЗА {phase.upper()}")
+         self._log(f"--- {phase_title} ---")
+ 
+     def _log_unit(self, side: str, unit_id: int, unit_idx: int, msg: str):
+         if not self._should_log():
+             return
+         side_label = self._side_label(side)
+         unit_label = self._format_unit_label(side, unit_idx, unit_id=unit_id)
+         self._log(f"[{side_label}] {unit_label}: {msg}")
+ 
+     def _display_side(self, side: str) -> str:
+         if side == "enemy":
+             return "PLAYER"
+         if side == "model":
+             return "MODEL"
+         return side.upper()
+@@ -2316,71 +2346,129 @@ class Warhammer40kEnv(gym.Env):
+                             self.enemyCharged[i] = 1
+                             pos_after = tuple(self.enemy_coords[i])
+                             self._log_unit_phase(
+                                 self._display_side("enemy"),
+                                 "charge",
+                                 i + 21,
+                                 i,
+                                 f"Charge move: from {pos_before} -> {pos_after}, ended_in_engagement={self.enemyInAttack[i][0] == 1}.",
                              )
-                         else:
-                             dmg, modHealth = attack(
-                                 self.unit_health[i],
-                                 self.unit_weapon[i],
-                                 self.unit_data[i],
-                                 self.enemy_health[idOfE],
-                                 self.enemy_data[idOfE],
-                                 effects=effect,
-                                 distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
+                             # 10e: Heroic Intervention доступен защитнику после успешного charge move.
+                             self._resolve_heroic_intervention(
+                                 defender_side="model",
+                                 charging_side="enemy",
+                                 charging_idx=i,
+                                 phase="charge",
+                                 manual=False,
                              )
-                         self.enemy_health[idOfE] = modHealth
-                         damage_dealt = max(0.0, float(target_hp_prev - modHealth))
-                         normalized_damage = damage_dealt / max(1.0, float(self.enemy_hp_max_total))
--                        reward_delta += reward_cfg.SHOOT_REWARD_DAMAGE_SCALE * normalized_damage
-+                        damage_term = reward_cfg.SHOOT_REWARD_DAMAGE_SCALE * normalized_damage
-+                        reward_delta += damage_term
-+                        kill_term = 0.0
-                         if modHealth <= 0:
--                            reward_delta += reward_cfg.SHOOT_REWARD_KILL_BONUS
-+                            kill_term = reward_cfg.SHOOT_REWARD_KILL_BONUS
-+                            reward_delta += kill_term
-                         overkill = max(0.0, float(damage_dealt - target_hp_prev))
-+                        overkill_penalty = 0.0
-                         if target_max_hp > 0 and overkill > 0:
--                            reward_delta -= reward_cfg.SHOOT_REWARD_OVERKILL_PENALTY * (overkill / target_max_hp)
--                        if target_max_hp > 0 and target_hp_prev / target_max_hp <= 0.3:
--                            reward_delta += reward_cfg.SHOOT_REWARD_TARGET_LOW_HP
--                        if any(distance(self.enemy_coords[idOfE], om) <= 5 for om in self.coordsOfOM):
--                            reward_delta += reward_cfg.SHOOT_REWARD_TARGET_ON_OBJ
--                        if self.enemy_data[idOfE].get("OC", 0) >= 2:
--                            reward_delta += reward_cfg.SHOOT_REWARD_TARGET_HIGH_OC
--                        reward_delta += 0.2
-+                            overkill_penalty = reward_cfg.SHOOT_REWARD_OVERKILL_PENALTY * (overkill / target_max_hp)
-+                            reward_delta -= overkill_penalty
-+                        quality_term = 0.0
-+                        if damage_dealt > 0:
-+                            if target_max_hp > 0 and target_hp_prev / target_max_hp <= 0.3:
-+                                quality_term += reward_cfg.SHOOT_REWARD_TARGET_LOW_HP
-+                            if any(distance(self.enemy_coords[idOfE], om) <= 5 for om in self.coordsOfOM):
-+                                quality_term += reward_cfg.SHOOT_REWARD_TARGET_ON_OBJ
-+                            if self.enemy_data[idOfE].get("OC", 0) >= 2:
-+                                quality_term += reward_cfg.SHOOT_REWARD_TARGET_HIGH_OC
-+                        reward_delta += quality_term
-+                        action_bonus = reward_cfg.SHOOT_REWARD_ACTION_BONUS
-+                        reward_delta += action_bonus
-+                        shot_reward = damage_term + kill_term - overkill_penalty + quality_term + action_bonus
-+                        self._log_unit(
-+                            "MODEL",
-+                            modelName,
-+                            i,
-+                            "Reward (стрельба): "
-+                            f"damage={damage_term:.3f} (norm={normalized_damage:.3f}, dealt={damage_dealt:.2f}), "
-+                            f"kill={kill_term:.3f}, overkill=-{overkill_penalty:.3f}, "
-+                            f"quality={quality_term:.3f}, action={action_bonus:.3f}, total={shot_reward:.3f}",
-+                        )
+                         elif self.trunc is False:
+                             self._log(
+                                 f"{self._format_unit_label('enemy', i)} не смог зачарджить {self._format_unit_label('model', idOfM)} (бросок {diceRoll} vs нужно {required:.1f})"
+                             )
+         return None
+ 
+     def fight_phase(self, side: str):
+         self.begin_phase(side, "fight")
++        reward_delta = 0.0
++        engaged_pairs = []
++        pre_enemy_hp_total = None
++        pre_model_hp_total = None
++        pre_enemy_dead = None
++        pre_obj_controlled = None
++        advantage_term = 0.0
++        strength_term = 0.0
+         if side == "model":
+             self._log_phase("MODEL", "fight")
+             engaged_model = [i for i in range(len(self.unit_health)) if self.unit_health[i] > 0 and self.unitInAttack[i][0] == 1]
+             engaged_enemy = [i for i in range(len(self.enemy_health)) if self.enemy_health[i] > 0 and self.enemyInAttack[i][0] == 1]
+             if not engaged_model and not engaged_enemy:
+                 self._log("[MODEL] Ближний бой: нет доступных атак")
+             else:
+                 model_list = self._format_unit_choices("model", engaged_model)
+                 enemy_list = self._format_unit_choices("enemy", engaged_enemy)
+                 self._log(f"[MODEL] Ближний бой: участвуют {model_list}; противники {enemy_list}")
+                 for idx in engaged_model:
+                     def_idx = self.unitInAttack[idx][1]
+                     if 0 <= def_idx < len(self.enemy_health):
                          self._log_unit(
                              "MODEL",
-                             modelName,
-                             i,
-                             f"Итог урона по {self._format_unit_label('enemy', idOfE)}: {float(np.sum(dmg))}",
+                             idx + 21,
+                             idx,
+                             f"В бою с {self._format_unit_label('enemy', def_idx)}",
                          )
-                         if self.trunc is False:
-                             self._log(
-                                 f"{self._format_unit_label('model', i)} стреляет по {self._format_unit_label('enemy', idOfE)}: урон {float(np.sum(dmg))}."
-                             )
-                         else:
-                             self.modelUpdates += "{} стреляет по {} {} раз(а)\n".format(
-                                 self._format_unit_label("model", i),
-                                 self._format_unit_label("enemy", idOfE),
-                                 sum(dmg),
-                             )
-                         if _logger is not None:
-                             _logger.print_shoot_report(
-                                 weapon=self.unit_weapon[i],
-                                 attacker_data=self.unit_data[i],
-                                 defender_data=self.enemy_data[idOfE],
-                                 dmg_list=dmg,
-                                 effect=effect,
-                                 attacker_label=self._format_unit_label("model", i),
-                                 defender_label=self._format_unit_label("enemy", idOfE),
-                             )
-                     else:
--                        reward_delta -= 0.5
--                        reward_delta -= reward_cfg.SHOOT_REWARD_SKIP_PENALTY
-+                        penalty = 0.5 + reward_cfg.SHOOT_REWARD_SKIP_PENALTY
-+                        reward_delta -= penalty
-                         target_list = self._format_unit_choices("enemy", valid_target_ids)
-                         self._log_unit(
-                             "MODEL",
-                             modelName,
-                             i,
-                             f"Цели в дальности: {target_list}, выбрана недоступная цель (raw={raw}). Стрельба пропущена.",
-                         )
-+                        self._log_unit(
-+                            "MODEL",
-+                            modelName,
-+                            i,
-+                            f"Reward (стрельба): штраф за пропуск = -{penalty:.3f}",
-+                        )
-                         if _verbose_logs_enabled():
-                             self._log(
-                                 f"[MODEL][SHOOT] Невалидный выбор цели: raw={raw}, доступные={valid_target_ids} (ожидался индекс 0..{len(valid_target_ids) - 1}). Стрельба пропущена."
-                             )
-                         if self.trunc is False:
-                             self._log(f"{self._format_unit_label('model', i)} не смог стрелять: выбранная цель недоступна.")
-                 else:
-                     self._log_unit("MODEL", modelName, i, "Нет целей в дальности, стрельба пропущена.")
-             return reward_delta
-         elif side == "enemy" and manual:
-             for i in range(len(self.enemy_health)):
-                 playerName = i + 11
-                 unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
-                 advanced = advanced_flags[i] if advanced_flags else False
-                 if self.enemyFellBack[i]:
-                     self._log(f"{unit_label}: отступил в этом ходу — стрельба пропущена.")
-                     continue
-                 if self.enemy_weapon[i] != "None":
-                     if advanced and not weapon_is_assault(self.enemy_weapon[i]):
-                         self._log(f"{unit_label}: был Advance без Assault — стрельба пропущена.")
-                     else:
-                         shootAble = np.array([])
-                         for j in range(len(self.unit_health)):
-                             if distance(self.enemy_coords[i], self.unit_coords[j]) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
-                                 shootAble = np.append(shootAble, j)
-@@ -2399,50 +2432,58 @@ class Warhammer40kEnv(gym.Env):
-         self.phase = "command"
-         self.numTurns = self.battle_round
-         self._round_banner_shown = False
-         self.mission_name = MISSION_NAME
-         self.modelUpdates = ""
++                        engaged_pairs.append((idx, def_idx))
++                if engaged_pairs:
++                    pre_enemy_hp_total = float(sum(self.enemy_health))
++                    pre_model_hp_total = float(sum(self.unit_health))
++                    pre_enemy_dead = sum(1 for hp in self.enemy_health if hp <= 0)
++                    self.refresh_objective_control()
++                    pre_obj_controlled, _ = controlled_objectives(self, "model")
++                    for model_idx, enemy_idx in engaged_pairs:
++                        model_max_hp = self._unit_max_hp("model", model_idx)
++                        enemy_max_hp = self._unit_max_hp("enemy", enemy_idx)
++                        model_hp_frac = float(self.unit_health[model_idx]) / model_max_hp
++                        enemy_hp_frac = float(self.enemy_health[enemy_idx]) / enemy_max_hp
++                        advantage = max(-1.0, min(1.0, model_hp_frac - enemy_hp_frac))
++                        advantage_term += reward_cfg.MELEE_ADVANTAGE_SCALE * advantage
++                        model_power = self._melee_strength_score("model", model_idx)
++                        enemy_power = self._melee_strength_score("enemy", enemy_idx)
++                        if model_power > enemy_power:
++                            strength_term += reward_cfg.MELEE_STRENGTH_SCALE
++                        elif model_power < enemy_power:
++                            strength_term -= reward_cfg.MELEE_STRENGTH_SCALE
+         self.resolve_fight_phase(active_side=side, trunc=self.trunc)
  
-         for i in range(len(self.enemy_data)):
-             self.enemy_coords.append([e[i].showCoords()[0], e[i].showCoords()[1]])
-             self.enemy_health.append(self.enemy_data[i]["W"] * self.enemy_data[i]["#OfModels"])
-             self.enemyInAttack.append([0, 0])
-         self.enemyFellBack = [False] * len(self.enemy_health)
-         self.enemy_hp_max_total = max(
-             1,
-             sum(
-                 unit.get("W", 0) * unit.get("#OfModels", 0)
-                 for unit in self.enemy_data
-                 if isinstance(unit, dict)
-             ),
-         )
++        if side == "model" and engaged_pairs:
++            post_enemy_hp_total = float(sum(self.enemy_health))
++            post_model_hp_total = float(sum(self.unit_health))
++            post_enemy_dead = sum(1 for hp in self.enemy_health if hp <= 0)
++
++            damage_dealt = max(0.0, pre_enemy_hp_total - post_enemy_hp_total)
++            damage_taken = max(0.0, pre_model_hp_total - post_model_hp_total)
++            damage_dealt_norm = damage_dealt / max(1.0, float(self.enemy_hp_max_total))
++            damage_taken_norm = damage_taken / max(1.0, float(self.model_hp_max_total))
++            damage_term = reward_cfg.MELEE_REWARD_DAMAGE_SCALE * damage_dealt_norm
++            taken_term = reward_cfg.MELEE_REWARD_TAKEN_SCALE * damage_taken_norm
++            kill_delta = max(0, post_enemy_dead - pre_enemy_dead)
++            kill_term = reward_cfg.MELEE_REWARD_KILL_BONUS * kill_delta
++
++            self.refresh_objective_control()
++            post_obj_controlled, _ = controlled_objectives(self, "model")
++            obj_delta = post_obj_controlled - (pre_obj_controlled or 0)
++            obj_term = reward_cfg.MELEE_OBJECTIVE_CONTROL_SCALE * obj_delta
++
++            reward_delta += damage_term + kill_term - taken_term + advantage_term + strength_term + obj_term
++            self._log(
++                "Reward (бой): "
++                f"damage={damage_term:.3f} (norm={damage_dealt_norm:.3f}, dealt={damage_dealt:.2f}), "
++                f"kills={kill_term:.3f} (delta={kill_delta}), "
++                f"taken=-{taken_term:.3f} (norm={damage_taken_norm:.3f}, taken={damage_taken:.2f}), "
++                f"advantage={advantage_term:.3f}, strength={strength_term:.3f}, "
++                f"objectives={obj_term:.3f} (delta={obj_delta}), total={reward_delta:.3f}"
++            )
++        return reward_delta
++
+     def refresh_objective_control(self):
+         self.model_obj_oc = np.zeros(len(self.coordsOfOM), dtype=int)
+         self.enemy_obj_oc = np.zeros(len(self.coordsOfOM), dtype=int)
  
-         for i in range(len(self.unit_data)):
-             self.unit_coords.append([m[i].showCoords()[0], m[i].showCoords()[1]])
-             self.unit_health.append(self.unit_data[i]["W"] * self.unit_data[i]["#OfModels"])
-             self.unitInAttack.append([0, 0])
-         self.unitFellBack = [False] * len(self.unit_health)
-+        self.model_hp_max_total = max(
-+            1,
-+            sum(
-+                unit.get("W", 0) * unit.get("#OfModels", 0)
-+                for unit in self.unit_data
-+                if isinstance(unit, dict)
-+            ),
-+        )
+         for i in range(len(self.unit_health)):
+             if self.unit_health[i] <= 0:
+                 continue
+             wounds = self.unit_data[i]["W"]
+             remaining_models = (self.unit_health[i] + wounds - 1) // wounds
+             effective_oc = self.modelOC[i] * remaining_models
+             if effective_oc <= 0:
+                 continue
+             for j in range(len(self.coordsOfOM)):
+                 if distance(self.coordsOfOM[j], self.unit_coords[i]) <= 5:
+                     self.model_obj_oc[j] += effective_oc
  
-         self.game_over = False
-         self.current_action_index = 0
-         info = self.get_info()
- 
-         if Type == "big":
-             self.updateBoard()
- 
-         return self._get_observation(), info
- 
-     def enemyTurn(self, trunc=False):
-         self.unitCharged = [0] * len(self.unit_health)
-         self.enemyCharged = [0] * len(self.enemy_health)
-         if trunc is True:
-             self.trunc = True
- 
-         self.active_side = "enemy"
-         battle_shock = self.command_phase("enemy")
-         advanced_flags = self.movement_phase("enemy", battle_shock=battle_shock)
-         self.shooting_phase("enemy", advanced_flags=advanced_flags)
-         self.charge_phase("enemy", advanced_flags=advanced_flags)
-         self.fight_phase("enemy")
-         apply_end_of_battle(self, log_fn=self._log)
- 
-         if self.modelStrat["overwatch"] != -1:
-@@ -2723,71 +2764,83 @@ class Warhammer40kEnv(gym.Env):
-                         attacker_idx = enemy_left[0]
-                         target_idx = _prompt_enemy_target(attacker_idx)
-                         if target_idx is None:
-                             return
-                         self.enemyInAttack[attacker_idx][1] = target_idx
-                         _do_melee("enemy", attacker_idx)
-                         fought_enemy.add(attacker_idx)
-                     else:
-                         i = enemy_left[0]
-                         _do_melee("enemy", i)
+         for i in range(len(self.enemy_health)):
+             if self.enemy_health[i] <= 0:
+                 continue
+             wounds = self.enemy_data[i]["W"]
+             remaining_models = (self.enemy_health[i] + wounds - 1) // wounds
+             effective_oc = self.enemyOC[i] * remaining_models
+             if effective_oc <= 0:
+                 continue
+             for j in range(len(self.coordsOfOM)):
+@@ -2774,51 +2862,51 @@ class Warhammer40kEnv(gym.Env):
                          fought_enemy.add(i)
                  next_side = "model"
  
@@ -283,7 +275,7 @@ index 0047fc3894ad3de35c76e69703f818ef96d6c282..b4b3f7997bbf9dd22ee623f88f5a014f
      def step(self, action):
          reward = 0
          res = 0
-+        model_hp_start = float(sum(self.unit_health))
+         model_hp_start = float(sum(self.unit_health))
          self.unitCharged = [0] * len(self.unit_health)
          self.enemyCharged = [0] * len(self.enemy_health)
          self.active_side = "model"
@@ -293,7 +285,8 @@ index 0047fc3894ad3de35c76e69703f818ef96d6c282..b4b3f7997bbf9dd22ee623f88f5a014f
          reward += delta
          reward += self.shooting_phase("model", advanced_flags=advanced_flags, action=action) or 0
          reward += self.charge_phase("model", advanced_flags=advanced_flags, action=action) or 0
-         self.fight_phase("model")
+-        self.fight_phase("model")
++        reward += self.fight_phase("model") or 0
          game_over, _, winner = apply_end_of_battle(self, log_fn=self._log)
          self.enemyStrat["overwatch"] = -1
          self.enemyStrat["smokescreen"] = -1
@@ -305,47 +298,25 @@ index 0047fc3894ad3de35c76e69703f818ef96d6c282..b4b3f7997bbf9dd22ee623f88f5a014f
              if self.enemy_health[i] < 0:
                  self.enemy_health[i] = 0
  
-+        model_hp_end = float(sum(self.unit_health))
-+        damage_taken = max(0.0, model_hp_start - model_hp_end)
-+        if damage_taken > 0:
-+            damage_taken_norm = damage_taken / max(1.0, float(self.model_hp_max_total))
-+            penalty = reward_cfg.DAMAGE_TAKEN_SCALE * damage_taken_norm
-+            reward -= penalty
-+            self._log(
-+                "Reward (урон по модели): "
-+                f"damage_taken={damage_taken:.2f}, norm={damage_taken_norm:.3f}, penalty=-{penalty:.3f}"
-+            )
-+
+         model_hp_end = float(sum(self.unit_health))
+         damage_taken = max(0.0, model_hp_start - model_hp_end)
+         if damage_taken > 0:
+             damage_taken_norm = damage_taken / max(1.0, float(self.model_hp_max_total))
+             penalty = reward_cfg.DAMAGE_TAKEN_SCALE * damage_taken_norm
+             reward -= penalty
+             self._log(
+                 "Reward (урон по модели): "
+                 f"damage_taken={damage_taken:.2f}, norm={damage_taken_norm:.3f}, penalty=-{penalty:.3f}"
+             )
+ 
          if game_over:
              res = 4
              if winner == "model":
-                 reward += 2
-             elif winner == "enemy":
-                 reward -= 2
- 
-         self._advance_turn_order()
-         if self.game_over and res == 0:
-             res = 4
- 
-         self.iter += 1
-         info = self.get_info()
-         return self._get_observation(), reward, self.game_over, res, info
- 
-     def player(self):
-         self.active_side = "enemy"
- 
-         info = self.get_info()
-         self._log(str(info))
-         more_info = "Здоровье MODEL: {}, здоровье PLAYER: {}\nCP MODEL: {}, CP PLAYER: {}\nVP MODEL: {}, VP PLAYER: {}\n".format(
-             info["model health"],
-             info["player health"],
-             info["modelCP"],
-             info["playerCP"],
 diff --git a/reward_config.py b/reward_config.py
-index 56c442c8996a3339defddb93f5dcb86701758ed6..04892b5719376d657fab8ec57a526c6c3d296913 100644
+index 04892b5719376d657fab8ec57a526c6c3d296913..d688c9834bd45af055f69c70160602cfe60fda15 100644
 --- a/reward_config.py
 +++ b/reward_config.py
-@@ -1,16 +1,20 @@
+@@ -1,20 +1,31 @@
  """
  Конфигурация reward-шэйпинга.
  Меняйте значения здесь, чтобы не лезть в код среды.
@@ -356,18 +327,25 @@ index 56c442c8996a3339defddb93f5dcb86701758ed6..04892b5719376d657fab8ec57a526c6c
  # =========================
  # Базовые коэффициенты — подбирайте экспериментально.
  SHOOT_REWARD_DAMAGE_SCALE = 0.6
--SHOOT_REWARD_KILL_BONUS = 0.8
-+SHOOT_REWARD_KILL_BONUS = 0.4
+ SHOOT_REWARD_KILL_BONUS = 0.4
  SHOOT_REWARD_OVERKILL_PENALTY = 0.2
  SHOOT_REWARD_SKIP_PENALTY = 0.15
--SHOOT_REWARD_TARGET_LOW_HP = 0.1
--SHOOT_REWARD_TARGET_ON_OBJ = 0.15
--SHOOT_REWARD_TARGET_HIGH_OC = 0.1
-+SHOOT_REWARD_TARGET_LOW_HP = 0.05
-+SHOOT_REWARD_TARGET_ON_OBJ = 0.07
-+SHOOT_REWARD_TARGET_HIGH_OC = 0.05
-+SHOOT_REWARD_ACTION_BONUS = 0.0
+ SHOOT_REWARD_TARGET_LOW_HP = 0.05
+ SHOOT_REWARD_TARGET_ON_OBJ = 0.07
+ SHOOT_REWARD_TARGET_HIGH_OC = 0.05
+ SHOOT_REWARD_ACTION_BONUS = 0.0
+ 
+ # Penalize damage received during the model's step (normalized by model total max HP).
+ DAMAGE_TAKEN_SCALE = 0.5
 +
-+# Penalize damage received during the model's step (normalized by model total max HP).
-+DAMAGE_TAKEN_SCALE = 0.5
++# ======================
++# Reward shaping (fight)
++# ======================
++# Базовые коэффициенты — подбирайте экспериментально.
++MELEE_REWARD_DAMAGE_SCALE = 0.6
++MELEE_REWARD_KILL_BONUS = 0.4
++MELEE_REWARD_TAKEN_SCALE = 0.5
++MELEE_ADVANTAGE_SCALE = 0.15
++MELEE_STRENGTH_SCALE = 0.1
++MELEE_OBJECTIVE_CONTROL_SCALE = 0.2
 
