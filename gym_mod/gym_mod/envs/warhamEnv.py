@@ -1409,6 +1409,46 @@ class Warhammer40kEnv(gym.Env):
             score_end_of_command_phase(self, "model", log_fn=self._log)
             return battle_shock, reward_delta
 
+        if side == "enemy" and action is not None and not manual:
+            self.enemyCP += 1
+            self.modelCP += 1
+            battle_shock = [False] * len(self.enemy_health)
+            cp_on = action.get("cp_on", 0) if isinstance(action, dict) else 0
+            use_cp = action.get("use_cp", 0) if isinstance(action, dict) else 0
+            for i in range(len(self.enemy_health)):
+                unit_label = self._format_unit_label("enemy", i)
+                if self.enemy_health[i] <= 0:
+                    self.enemyOC[i] = 0
+                    battle_shock[i] = False
+                    continue
+                self.enemyOC[i] = self.enemy_data[i]["OC"]
+                if isBelowHalfStr(self.enemy_data[i], self.enemy_health[i]) is True and self.enemy_health[i] > 0:
+                    if self.trunc is False:
+                        self._log(f"{unit_label}: ниже половины состава, тест Battle-shock.")
+                        self._log("Бросок 2D6...", verbose_only=True)
+                    diceRoll = dice(num=2)
+                    if self.trunc is False:
+                        self._log(f"Бросок: {diceRoll[0]} {diceRoll[1]}", verbose_only=True)
+                    if sum(diceRoll) >= self.enemy_data[i]["Ld"]:
+                        if self.trunc is False:
+                            self._log(f"{unit_label}: тест Battle-shock пройден.")
+                        self.enemyOC[i] = self.enemy_data[i]["OC"]
+                    else:
+                        battle_shock[i] = True
+                        self.enemyOC[i] = 0
+                        if self.trunc is False:
+                            self._log(f"{unit_label}: тест Battle-shock провален.")
+                        if use_cp == 1 and cp_on == i and self.enemyCP - 1 >= 0:
+                            battle_shock[i] = False
+                            self.enemyCP -= 1
+                            self.enemyOC[i] = self.enemy_data[i]["OC"]
+                            if self.trunc is False:
+                                self._log(f"{unit_label}: применена Insane Bravery (-1 CP), тест пройден.")
+            dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
+            apply_end_of_command_phase(self, side="enemy", dice_fn=dice_fn, log_fn=self._log)
+            score_end_of_command_phase(self, "enemy", log_fn=self._log)
+            return battle_shock
+
         if side == "enemy" and manual:
             self.enemyCP += 1
             self.modelCP += 1
@@ -1631,6 +1671,128 @@ class Warhammer40kEnv(gym.Env):
                                 f"Остаётся в ближнем бою с {self._format_unit_label('enemy', idOfE)}, движение пропущено.",
                             )
             return advanced_flags, reward_delta
+
+        if side == "enemy" and action is not None and not manual:
+            self._log_phase(self._display_side("enemy"), "movement")
+            advanced_flags = [False] * len(self.enemy_health)
+            move_dir = action.get("move", 4) if isinstance(action, dict) else 4
+            attack_choice = action.get("attack", 1) if isinstance(action, dict) else 1
+            for i in range(len(self.enemy_health)):
+                unit_id = i + 11
+                battleSh = battle_shock[i] if battle_shock else False
+                pos_before = tuple(self.enemy_coords[i])
+                if self.enemy_health[i] <= 0:
+                    self._log_unit("enemy", unit_id, i, f"Юнит мертв, движение пропущено. Позиция: {pos_before}")
+                    continue
+                if self.enemyInAttack[i][0] == 0 and self.enemy_health[i] > 0:
+                    base_m = self.enemy_data[i]["Movement"]
+                    label = "move_num_" + str(i)
+                    want = int(action.get(label, base_m)) if isinstance(action, dict) else base_m
+                    advanced = (move_dir != 4) and (want > base_m)
+                    advance_roll = None
+                    if advanced:
+                        advance_roll = dice()
+                        max_move = base_m + advance_roll
+                    else:
+                        max_move = base_m
+                    movement = min(want, max_move)
+
+                    if move_dir == 0:
+                        self.enemy_coords[i][0] += movement
+                    elif move_dir == 1:
+                        self.enemy_coords[i][0] -= movement
+                    elif move_dir == 2:
+                        self.enemy_coords[i][1] -= movement
+                    elif move_dir == 3:
+                        self.enemy_coords[i][1] += movement
+                    elif move_dir == 4:
+                        for j in range(len(self.coordsOfOM)):
+                            if distance(self.enemy_coords[i], self.coordsOfOM[j]) <= 5:
+                                pass
+
+                    advanced_flags[i] = advanced
+                    direction = {0: "down", 1: "up", 2: "left", 3: "right", 4: "none"}.get(move_dir, "none")
+                    actual_movement = movement if move_dir != 4 else 0
+                    advance_text = "да" if advanced else "нет"
+                    if advance_roll is not None:
+                        advance_detail = f", бросок={advance_roll}, макс={max_move}"
+                    else:
+                        advance_detail = ""
+                    self._log_unit(
+                        "enemy",
+                        unit_id,
+                        i,
+                        f"Позиция до: {pos_before}. Выбор: {direction}, advance={advance_text}{advance_detail}, distance={actual_movement}",
+                    )
+
+                    self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                    for j in range(len(self.unit_health)):
+                        if self.enemy_coords[i] == self.unit_coords[j]:
+                            self.enemy_coords[i][0] -= 1
+                    pos_after = tuple(self.enemy_coords[i])
+                    if move_dir == 4:
+                        self._log_unit("enemy", unit_id, i, f"Движение пропущено (no move). Позиция после: {pos_after}")
+                    else:
+                        self._log_unit("enemy", unit_id, i, f"Позиция после: {pos_after}")
+
+                    if pos_before != pos_after:
+                        self._resolve_overwatch(
+                            defender_side="model",
+                            moving_unit_side="enemy",
+                            moving_idx=i,
+                            phase="movement",
+                            manual=os.getenv("MANUAL_DICE", "0") == "1",
+                        )
+
+                elif self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
+                    idOfM = self.enemyInAttack[i][1]
+                    if self.unit_health[idOfM] <= 0:
+                        self.enemyInAttack[i][0] = 0
+                        self.enemyInAttack[i][1] = 0
+                        self.unitInAttack[idOfM][0] = 0
+                        self.unitInAttack[idOfM][1] = 0
+                        self._log_unit(
+                            "enemy",
+                            unit_id,
+                            i,
+                            f"Цель в ближнем бою мертва ({self._format_unit_label('model', idOfM)}), юнит выходит из боя. Позиция: {pos_before}",
+                        )
+                    else:
+                        if attack_choice == 0:
+                            self._log_unit(
+                                "enemy",
+                                unit_id,
+                                i,
+                                f"Отступление из боя с {self._format_unit_label('model', idOfM)}. Позиция до: {pos_before}",
+                            )
+                            self.enemyFellBack[i] = True
+                            if battleSh is True:
+                                diceRoll = dice()
+                                if diceRoll < 3:
+                                    self.enemy_health[i] -= self.enemy_data[i]["W"]
+                            self.enemy_coords[i][0] -= self.enemy_data[i]["Movement"]
+                            self.enemyInAttack[i][0] = 0
+                            self.enemyInAttack[i][1] = 0
+                            self.unitInAttack[idOfM][0] = 0
+                            self.unitInAttack[idOfM][1] = 0
+                            pos_after = tuple(self.enemy_coords[i])
+                            self._log_unit("enemy", unit_id, i, f"Отступление завершено. Позиция после: {pos_after}")
+                            if pos_before != pos_after:
+                                self._resolve_overwatch(
+                                    defender_side="model",
+                                    moving_unit_side="enemy",
+                                    moving_idx=i,
+                                    phase="movement",
+                                    manual=os.getenv("MANUAL_DICE", "0") == "1",
+                                )
+                        else:
+                            self._log_unit(
+                                "enemy",
+                                unit_id,
+                                i,
+                                f"Остаётся в ближнем бою с {self._format_unit_label('model', idOfM)}, движение пропущено.",
+                            )
+            return advanced_flags
 
         if side == "enemy" and manual:
             direction_map = {"up": "up", "down": "down", "left": "left", "right": "right", "none": "none"}
@@ -1977,6 +2139,120 @@ class Warhammer40kEnv(gym.Env):
                 else:
                     self._log_unit("MODEL", modelName, i, "Нет целей в дальности, стрельба пропущена.")
             return reward_delta
+        elif side == "enemy" and action is not None and not manual:
+            self._log_phase(self._display_side("enemy"), "shooting")
+            for i in range(len(self.enemy_health)):
+                unit_id = i + 11
+                advanced = advanced_flags[i] if advanced_flags else False
+                if self.enemy_health[i] <= 0:
+                    self._log_unit("enemy", unit_id, i, "Юнит мертв, стрельба пропущена.")
+                    continue
+                if self.enemyFellBack[i]:
+                    self._log_unit("enemy", unit_id, i, "Fall Back в этом ходу — стрельба недоступна.")
+                    continue
+                if self.enemyInAttack[i][0] == 1:
+                    self._log_unit("enemy", unit_id, i, "Юнит в ближнем бою, стрельба недоступна.")
+                    continue
+                if self.enemy_weapon[i] == "None":
+                    self._log_unit("enemy", unit_id, i, "Нет дальнобойного оружия, стрельба пропущена.")
+                    continue
+                if advanced and not weapon_is_assault(self.enemy_weapon[i]):
+                    self._log_unit("enemy", unit_id, i, "Advance без Assault — стрельба пропущена.")
+                    continue
+
+                shootAbleUnits = []
+                for j in range(len(self.unit_health)):
+                    if (
+                        distance(self.enemy_coords[i], self.unit_coords[j]) <= self.enemy_weapon[i]["Range"]
+                        and self.unit_health[j] > 0
+                        and self.unitInAttack[j][0] == 0
+                    ):
+                        shootAbleUnits.append(j)
+                if len(shootAbleUnits) > 0:
+                    valid_target_ids = shootAbleUnits
+                    raw = action.get("shoot", 0) if isinstance(action, dict) else 0
+                    if 0 <= raw < len(valid_target_ids):
+                        idOfM = valid_target_ids[raw]
+                        target_list = self._format_unit_choices("model", valid_target_ids)
+                        self._log_unit(
+                            "enemy",
+                            unit_id,
+                            i,
+                            f"Цели в дальности: {target_list}, выбрана: {self._format_unit_label('model', idOfM)} (причина: выбор политики)",
+                        )
+                        effect = self._maybe_use_smokescreen(
+                            defender_side="model",
+                            defender_idx=idOfM,
+                            phase="shooting",
+                            manual=os.getenv("MANUAL_DICE", "0") == "1",
+                        )
+                        _logger = None
+                        if _verbose_logs_enabled():
+                            _logger = RollLogger(auto_dice)
+                            _logger.configure_for_weapon(self.enemy_weapon[i])
+                            dmg, modHealth = attack(
+                                self.enemy_health[i],
+                                self.enemy_weapon[i],
+                                self.enemy_data[i],
+                                self.unit_health[idOfM],
+                                self.unit_data[idOfM],
+                                effects=effect,
+                                distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfM]),
+                                roller=_logger.roll,
+                            )
+                        else:
+                            dmg, modHealth = attack(
+                                self.enemy_health[i],
+                                self.enemy_weapon[i],
+                                self.enemy_data[i],
+                                self.unit_health[idOfM],
+                                self.unit_data[idOfM],
+                                effects=effect,
+                                distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfM]),
+                            )
+                        self.unit_health[idOfM] = modHealth
+                        self._log_unit(
+                            "enemy",
+                            unit_id,
+                            i,
+                            f"Итог урона по {self._format_unit_label('model', idOfM)}: {float(np.sum(dmg))}",
+                        )
+                        if self.trunc is False:
+                            self._log(
+                                f"{self._format_unit_label('enemy', i)} стреляет по {self._format_unit_label('model', idOfM)}: урон {float(np.sum(dmg))}."
+                            )
+                        else:
+                            self.modelUpdates += "{} стреляет по {} {} раз(а)\n".format(
+                                self._format_unit_label("enemy", i),
+                                self._format_unit_label("model", idOfM),
+                                sum(dmg),
+                            )
+                        if _logger is not None:
+                            _logger.print_shoot_report(
+                                weapon=self.enemy_weapon[i],
+                                attacker_data=self.enemy_data[i],
+                                defender_data=self.unit_data[idOfM],
+                                dmg_list=dmg,
+                                effect=effect,
+                                attacker_label=self._format_unit_label("enemy", i),
+                                defender_label=self._format_unit_label("model", idOfM),
+                            )
+                    else:
+                        target_list = self._format_unit_choices("model", valid_target_ids)
+                        self._log_unit(
+                            "enemy",
+                            unit_id,
+                            i,
+                            f"Цели в дальности: {target_list}, выбрана недоступная цель (raw={raw}). Стрельба пропущена.",
+                        )
+                        if _verbose_logs_enabled():
+                            self._log(
+                                f"[PLAYER][SHOOT] Невалидный выбор цели: raw={raw}, доступные={valid_target_ids} (ожидался индекс 0..{len(valid_target_ids) - 1}). Стрельба пропущена."
+                            )
+                        if self.trunc is False:
+                            self._log(f"{self._format_unit_label('enemy', i)} не смог стрелять: выбранная цель недоступна.")
+                else:
+                    self._log_unit("enemy", unit_id, i, "Нет целей в дальности, стрельба пропущена.")
         elif side == "enemy" and manual:
             for i in range(len(self.enemy_health)):
                 playerName = i + 11
@@ -2216,6 +2492,130 @@ class Warhammer40kEnv(gym.Env):
             if not any_charge_targets:
                 self._log("[MODEL] Чардж: нет доступных целей")
             return reward_delta
+        elif side == "enemy" and action is not None and not manual:
+            self._log_phase(self._display_side("enemy"), "charge")
+            any_charge_targets = False
+            for i in range(len(self.enemy_health)):
+                unit_id = i + 11
+                advanced = advanced_flags[i] if advanced_flags else False
+                pos_before = tuple(self.enemy_coords[i])
+                if self.enemy_health[i] <= 0:
+                    self._log_unit("enemy", unit_id, i, "Юнит мертв, чардж пропущен.")
+                    continue
+                if self.enemyFellBack[i]:
+                    self._log_unit("enemy", unit_id, i, "Fall Back в этом ходу — чардж невозможен.")
+                    continue
+                if self.enemyInAttack[i][0] == 1:
+                    self._log_unit("enemy", unit_id, i, "Уже в ближнем бою, чардж невозможен.")
+                    continue
+                if advanced:
+                    self._log_unit("enemy", unit_id, i, "Advance — чардж невозможен.")
+                else:
+                    potential_targets = []
+                    for j in range(len(self.unit_health)):
+                        if distance(self.unit_coords[j], self.enemy_coords[i]) <= 12 and self.unitInAttack[j][0] == 0 and self.unit_health[j] > 0:
+                            potential_targets.append(j)
+                    if potential_targets:
+                        any_charge_targets = True
+                    if action.get("attack", 0) != 1:
+                        if potential_targets:
+                            target_list = self._format_unit_choices("model", potential_targets)
+                            self._log_unit(
+                                "enemy",
+                                unit_id,
+                                i,
+                                f"Доступные цели для чарджа: {target_list}. Решение: пропуск чарджа.",
+                            )
+                        else:
+                            self._log_unit("enemy", unit_id, i, "Нет целей в 12\", чардж пропущен.")
+                        continue
+                    chargeAble = []
+                    dice_vals = dice(num=2)
+                    diceRoll = sum(dice_vals)
+                    for j in range(len(self.unit_health)):
+                        if distance(self.unit_coords[j], self.enemy_coords[i]) <= 12 and self.unitInAttack[j][0] == 0 and self.unit_health[j] > 0:
+                            if distance(self.unit_coords[j], self.enemy_coords[i]) - diceRoll <= 5:
+                                chargeAble.append(j)
+                    if len(chargeAble) > 0:
+                        idOfM = action.get("charge", 0)
+                        target_list = self._format_unit_choices("model", chargeAble)
+                        dist_to_target = distance(self.unit_coords[idOfM], self.enemy_coords[i]) if idOfM in chargeAble else None
+                        if _verbose_logs_enabled():
+                            roll_text = f"бросок: {dice_vals[0]} + {dice_vals[1]} = {diceRoll}"
+                        else:
+                            roll_text = f"бросок total={diceRoll}"
+                        if idOfM in chargeAble:
+                            self._log_unit_phase(
+                                self._display_side("enemy"),
+                                "charge",
+                                unit_id,
+                                i,
+                                f"Charge объявлен по цели {self._format_unit_label('model', idOfM)}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {dice_vals[0]} + {dice_vals[1]} = {diceRoll}.",
+                            )
+                            self._log_unit(
+                                "enemy",
+                                unit_id,
+                                i,
+                                f"Чардж цели: {target_list}, выбрана {self._format_unit_label('model', idOfM)} (dist={dist_to_target:.1f}). {roll_text}. Результат: успех.",
+                            )
+                            self.enemyInAttack[i][0] = 1
+                            self.enemyInAttack[i][1] = idOfM
+                            self.enemy_coords[i][0] = self.unit_coords[idOfM][0] + 1
+                            self.enemy_coords[i][1] = self.unit_coords[idOfM][1] + 1
+                            self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                            self.unitInAttack[idOfM][0] = 1
+                            self.unitInAttack[idOfM][1] = i
+                            self.enemyCharged[i] = 1
+                            pos_after = tuple(self.enemy_coords[i])
+                            self._log_unit_phase(
+                                self._display_side("enemy"),
+                                "charge",
+                                unit_id,
+                                i,
+                                f"Движение чарджа: {pos_before} -> {pos_after}, в контакте={self.enemyInAttack[i][0] == 1}.",
+                            )
+                            self._resolve_heroic_intervention(
+                                defender_side="model",
+                                charging_side="enemy",
+                                charging_idx=i,
+                                phase="charge",
+                                manual=os.getenv("MANUAL_DICE", "0") == "1",
+                            )
+                        else:
+                            reason = "цель вне досягаемости" if idOfM in potential_targets else "цель недоступна"
+                            if idOfM in potential_targets:
+                                dist_to_target = distance(self.unit_coords[idOfM], self.enemy_coords[i])
+                                self._log_unit_phase(
+                                    self._display_side("enemy"),
+                                    "charge",
+                                    unit_id,
+                                    i,
+                                    f"Charge объявлен по цели {self._format_unit_label('model', idOfM)}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {dice_vals[0]} + {dice_vals[1]} = {diceRoll}.",
+                                )
+                            target_list = self._format_unit_choices("model", potential_targets)
+                            self._log_unit(
+                                "enemy",
+                                unit_id,
+                                i,
+                                f"Чардж цели: {target_list}, выбрана {self._format_unit_label('model', idOfM)}. {roll_text}. Результат: провал ({reason}).",
+                            )
+                    else:
+                        if potential_targets:
+                            target_list = self._format_unit_choices("model", potential_targets)
+                            if _verbose_logs_enabled():
+                                roll_text = f"бросок: {dice_vals[0]} + {dice_vals[1]} = {diceRoll}"
+                            else:
+                                roll_text = f"бросок total={diceRoll}"
+                            self._log_unit(
+                                "enemy",
+                                unit_id,
+                                i,
+                                f"Цели в 12\": {target_list}. {roll_text}. Нет достижимых целей.",
+                            )
+                        else:
+                            self._log_unit("enemy", unit_id, i, "Нет целей в 12\", чардж пропущен.")
+            if not any_charge_targets:
+                self._log("[PLAYER] Чардж: нет доступных целей")
         elif side == "enemy" and manual:
             any_chargeable = False
             battle_shock = getattr(self, "_manual_enemy_battle_shock", None)
@@ -2560,17 +2960,21 @@ class Warhammer40kEnv(gym.Env):
 
         return self._get_observation(), info
 
-    def enemyTurn(self, trunc=False):
+    def enemyTurn(self, trunc=False, policy_fn=None):
         self.unitCharged = [0] * len(self.unit_health)
         self.enemyCharged = [0] * len(self.enemy_health)
         if trunc is True:
             self.trunc = True
 
         self.active_side = "enemy"
-        battle_shock = self.command_phase("enemy")
-        advanced_flags = self.movement_phase("enemy", battle_shock=battle_shock)
-        self.shooting_phase("enemy", advanced_flags=advanced_flags)
-        self.charge_phase("enemy", advanced_flags=advanced_flags)
+        action = None
+        if policy_fn is not None:
+            obs = self.get_observation_for_side("enemy")
+            action = policy_fn(obs)
+        battle_shock = self.command_phase("enemy", action=action)
+        advanced_flags = self.movement_phase("enemy", action=action, battle_shock=battle_shock)
+        self.shooting_phase("enemy", advanced_flags=advanced_flags, action=action)
+        self.charge_phase("enemy", advanced_flags=advanced_flags, action=action)
         self.fight_phase("enemy")
         apply_end_of_battle(self, log_fn=self._log)
 
@@ -3084,22 +3488,36 @@ class Warhammer40kEnv(gym.Env):
     def close(self):
         pass
 
-    def _get_observation(self):
+    def get_observation_for_side(self, side: str):
         obs = []
+        if side == "enemy":
+            first_health = self.enemy_health
+            first_coords = self.enemy_coords
+            first_cp = self.enemyCP
+            second_health = self.unit_health
+            second_coords = self.unit_coords
+            second_cp = self.modelCP
+        else:
+            first_health = self.unit_health
+            first_coords = self.unit_coords
+            first_cp = self.modelCP
+            second_health = self.enemy_health
+            second_coords = self.enemy_coords
+            second_cp = self.enemyCP
 
-        for i in range(len(self.unit_health)):
-            obs.append(self.unit_health[i])
-            obs.append(self.unit_coords[i][0])
-            obs.append(self.unit_coords[i][1])
+        for i in range(len(first_health)):
+            obs.append(first_health[i])
+            obs.append(first_coords[i][0])
+            obs.append(first_coords[i][1])
 
-        obs.append(self.modelCP)
+        obs.append(first_cp)
 
-        for i in range(len(self.enemy_health)):
-            obs.append(self.enemy_health[i])
-            obs.append(self.enemy_coords[i][0])
-            obs.append(self.enemy_coords[i][1])
+        for i in range(len(second_health)):
+            obs.append(second_health[i])
+            obs.append(second_coords[i][0])
+            obs.append(second_coords[i][1])
 
-        obs.append(self.enemyCP)
+        obs.append(second_cp)
 
         for OM in self.coordsOfOM:
             obs.append(OM[0])
@@ -3108,3 +3526,6 @@ class Warhammer40kEnv(gym.Env):
         obs.append(int(self.game_over))
 
         return np.array(obs, dtype=np.float32)
+
+    def _get_observation(self):
+        return self.get_observation_for_side("model")

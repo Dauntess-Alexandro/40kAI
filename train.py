@@ -8,6 +8,7 @@ import pickle
 import datetime
 import collections
 import json
+import random
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from gym_mod.envs.warhamEnv import *
@@ -41,6 +42,22 @@ RENDER_EVERY = int(os.getenv("RENDER_EVERY", "20"))  # 0 = выключить р
 UPDATES_PER_STEP = int(os.getenv("UPDATES_PER_STEP", "4"))  
 # ======================
 
+# ===== self-play config =====
+SELF_PLAY_ENABLED = os.getenv("SELF_PLAY_ENABLED", "0") == "1"
+SELF_PLAY_UPDATE_EVERY_EPISODES = int(os.getenv("SELF_PLAY_UPDATE_EVERY_EPISODES", "50"))
+SELF_PLAY_OPPONENT_MODE = os.getenv("SELF_PLAY_OPPONENT_MODE", "snapshot")
+SELF_PLAY_FIXED_PATH = os.getenv("SELF_PLAY_FIXED_PATH", "")
+SELF_PLAY_OPPONENT_EPSILON = float(os.getenv("SELF_PLAY_OPPONENT_EPSILON", "0.0"))
+
+if SELF_PLAY_UPDATE_EVERY_EPISODES < 1:
+    SELF_PLAY_UPDATE_EVERY_EPISODES = 1
+if SELF_PLAY_OPPONENT_MODE not in ("snapshot", "fixed_checkpoint"):
+    raise ValueError(
+        "SELF_PLAY_OPPONENT_MODE должен быть 'snapshot' или 'fixed_checkpoint'. "
+        f"Получено: {SELF_PLAY_OPPONENT_MODE}"
+    )
+# ============================
+
 
 DEFAULT_MISSION_NAME = "only_war"
 
@@ -48,6 +65,45 @@ def to_np_state(s):
     if isinstance(s, (dict, collections.OrderedDict)):
         return np.array(list(s.values()), dtype=np.float32)
     return np.array(s, dtype=np.float32)
+
+def select_action_with_epsilon(env, state, policy_net, epsilon, len_model):
+    sample = random.random()
+    dev = next(policy_net.parameters()).device
+
+    if isinstance(state, collections.OrderedDict):
+        state = np.array(list(state.values()), dtype=np.float32)
+    elif isinstance(state, np.ndarray):
+        state = state.astype(np.float32, copy=False)
+
+    if not torch.is_tensor(state):
+        state = torch.tensor(state, dtype=torch.float32, device=dev)
+    else:
+        state = state.to(dev)
+
+    if state.dim() == 1:
+        state = state.unsqueeze(0)
+
+    if sample > epsilon:
+        with torch.no_grad():
+            decision = policy_net(state)
+            action = []
+            for i in decision:
+                action.append(int(i.argmax(dim=1).item()))
+            return torch.tensor([action], device="cpu")
+    sampled_action = env.action_space.sample()
+    action_list = [
+        sampled_action['move'],
+        sampled_action['attack'],
+        sampled_action['shoot'],
+        sampled_action['charge'],
+        sampled_action['use_cp'],
+        sampled_action['cp_on']
+    ]
+    for i in range(len_model):
+        label = "move_num_"+str(i)
+        action_list.append(sampled_action[label])
+    action = torch.tensor([action_list], device="cpu")
+    return action
 
 def moving_avg(values, window=50):
     if len(values) == 0:
@@ -124,6 +180,12 @@ def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
     plt.close()
 
     print(f"[metrics] saved: {csv_path}")
+
+def append_log_for_agents(message: str, log_path: str = "LOGS_FOR_AGENTS.md"):
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    line = f"{timestamp} | {message}"
+    with open(log_path, "a", encoding="utf-8") as log_file:
+        log_file.write(line + "\n")
 
 TAU = data["tau"]
 LR = data["lr"]
@@ -272,9 +334,42 @@ target_net = DQN(n_observations, n_actions).to(device)
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
 
+opponent_policy_net = None
+if SELF_PLAY_ENABLED:
+    opponent_policy_net = DQN(n_observations, n_actions).to(device)
+    opponent_policy_net.eval()
+    if SELF_PLAY_OPPONENT_MODE == "fixed_checkpoint":
+        if not SELF_PLAY_FIXED_PATH:
+            raise ValueError("SELF_PLAY_FIXED_PATH обязателен для режима fixed_checkpoint.")
+        if not os.path.isfile(SELF_PLAY_FIXED_PATH):
+            raise FileNotFoundError(
+                f"SELF_PLAY_FIXED_PATH не найден: {SELF_PLAY_FIXED_PATH}. Проверь путь."
+            )
+        checkpoint = torch.load(SELF_PLAY_FIXED_PATH, map_location=device)
+        if isinstance(checkpoint, dict) and "policy_net" in checkpoint:
+            opponent_policy_net.load_state_dict(checkpoint["policy_net"])
+        else:
+            opponent_policy_net.load_state_dict(checkpoint)
+        append_log_for_agents(
+            f"[SELFPLAY] fixed_checkpoint path={SELF_PLAY_FIXED_PATH}"
+        )
+    else:
+        opponent_policy_net.load_state_dict(policy_net.state_dict())
 
 optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
 memory = ReplayMemory(10000)
+
+def opponent_policy(obs):
+    if opponent_policy_net is None:
+        return None
+    action = select_action_with_epsilon(
+        env,
+        obs,
+        opponent_policy_net,
+        SELF_PLAY_OPPONENT_EPSILON,
+        len(model),
+    )
+    return convertToDict(action)
 
 inText = []
 
@@ -307,12 +402,21 @@ epLen = 0
 
 while end == False:
     epLen += 1
+    if SELF_PLAY_ENABLED and epLen == 1:
+        append_log_for_agents(
+            f"Старт эпизода {numLifeT + 1}. "
+            f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
+            f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
+        )
     action = select_action(env, state, i, policy_net, len(model))
     action_dict = convertToDict(action)
     if trunc == False:
         print(env.get_info())
 
-    env.enemyTurn(trunc=trunc)
+    if SELF_PLAY_ENABLED:
+        env.enemyTurn(trunc=trunc, policy_fn=opponent_policy)
+    else:
+        env.enemyTurn(trunc=trunc)
     next_observation, reward, done, res, info = env.step(action_dict)
     rewArr.append(float(reward))  
     reward_t = torch.tensor([reward], device=device, dtype=torch.float32)  # тензор для replay
@@ -378,6 +482,12 @@ while end == False:
 
 
     if done == True:
+        if SELF_PLAY_ENABLED:
+            append_log_for_agents(
+                f"Конец эпизода {numLifeT + 1}. "
+                f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
+                f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
+            )
         pbar.update(1)
         metrics.updateRew(sum(rewArr)/len(rewArr))
         metrics.updateEpLen(epLen)
@@ -465,6 +575,13 @@ while end == False:
         if trunc == False:
             print("Restarting...")
         numLifeT+=1
+
+        if SELF_PLAY_ENABLED and SELF_PLAY_OPPONENT_MODE == "snapshot":
+            if numLifeT % SELF_PLAY_UPDATE_EVERY_EPISODES == 0:
+                opponent_policy_net.load_state_dict(policy_net.state_dict())
+                append_log_for_agents(
+                    f"[SELFPLAY] opponent snapshot updated at episode {numLifeT}"
+                )
 
         attacker_side, defender_side = roll_off_attacker_defender(
             manual_roll_allowed=False,

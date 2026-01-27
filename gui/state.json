@@ -23,7 +23,7 @@
       "models": 10,
       "hp": 10.0,
       "x": 34,
-      "y": 32
+      "y": 28
     },
     {
       "side": "player",
@@ -31,8 +31,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 34,
-      "y": 49
+      "x": 39,
+      "y": 51
     },
     {
       "side": "player",
@@ -40,8 +40,8 @@
       "name": "Canoptek Scarab Swarms",
       "models": 3,
       "hp": 12.0,
-      "x": 33,
-      "y": 43
+      "x": 35,
+      "y": 29
     },
     {
       "side": "model",
@@ -50,7 +50,7 @@
       "models": 10,
       "hp": 10.0,
       "x": 0,
-      "y": 51
+      "y": 50
     },
     {
       "side": "model",
@@ -58,8 +58,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 5,
-      "y": 39
+      "x": 7,
+      "y": 51
     },
     {
       "side": "model",
@@ -67,8 +67,8 @@
       "name": "Canoptek Scarab Swarms",
       "models": 3,
       "hp": 12.0,
-      "x": 1,
-      "y": 7
+      "x": 2,
+      "y": 16
     }
   ],
   "objectives": [
@@ -94,7 +94,6 @@
     }
   ],
   "log_tail": [
-    "--- ХОД PLAYER ---",
     "--- ФАЗА КОМАНДОВАНИЯ ---",
     "[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0",
     "--- ФАЗА ДВИЖЕНИЯ ---",
@@ -123,7 +122,8 @@
     "[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0",
     "--- ФАЗА ДВИЖЕНИЯ ---",
     "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])",
     "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])"
   ],
-  "generated_at": "2026-01-26T15:30:37.846334Z"
+  "generated_at": "2026-01-27T08:52:29.375574Z"
 }
