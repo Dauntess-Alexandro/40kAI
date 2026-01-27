@@ -94,9 +94,9 @@ def convertToDict(action):
         action_dict[label] = naction[i+6]
     return action_dict
 
-def optimize_model(policy_net, target_net, optimizer, memory, n_obs):
+def optimize_model(policy_net, target_net, optimizer, memory, n_obs, double_dqn_enabled=True):
     if len(memory) < BATCH_SIZE:
-        return 0
+        return None
 
     # ВАЖНО: берем device прямо от сети (cuda или cpu)
     dev = next(policy_net.parameters()).device
@@ -148,9 +148,19 @@ def optimize_model(policy_net, target_net, optimizer, memory, n_obs):
 
     with torch.no_grad():
         if non_final_next_states is not None:
-            next_decision = target_net(non_final_next_states)  # list of [N, n_i]
-            max_per_head = [h.max(1).values for h in next_decision]  # list of [N]
-            max_per_head = torch.stack(max_per_head, dim=1)  # [N, num_heads]
+            target_next = target_net(non_final_next_states)  # list of [N, n_i]
+            if double_dqn_enabled:
+                policy_next = policy_net(non_final_next_states)
+                next_actions = [h.argmax(1) for h in policy_next]  # list of [N]
+                next_q = [
+                    tgt.gather(1, act.unsqueeze(1)).squeeze(1)
+                    for tgt, act in zip(target_next, next_actions)
+                ]
+                max_per_head = torch.stack(next_q, dim=1)  # [N, num_heads]
+            else:
+                max_per_head = torch.stack(
+                    [h.max(1).values for h in target_next], dim=1
+                )  # [N, num_heads]
             next_state_values[non_final_mask] = max_per_head
 
     expected_state_action_values = reward_batch.unsqueeze(1) + (GAMMA * next_state_values)  # [B, num_heads]
@@ -163,5 +173,8 @@ def optimize_model(policy_net, target_net, optimizer, memory, n_obs):
     torch.nn.utils.clip_grad_value_(policy_net.parameters(), 100)
     optimizer.step()
 
-    return loss.item()
-
+    return {
+        "loss": loss.item(),
+        "td_target_mean": expected_state_action_values.mean().item(),
+        "td_target_max": expected_state_action_values.max().item(),
+    }

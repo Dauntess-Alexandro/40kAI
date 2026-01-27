@@ -37,6 +37,13 @@ warnings.filterwarnings("ignore")
 with open(os.path.abspath("hyperparams.json")) as j:
     data = json.loads(j.read())
 
+# ===== algo flags =====
+DOUBLE_DQN_ENABLED = os.getenv("DOUBLE_DQN_ENABLED", "1") == "1"
+DUELING_ENABLED = os.getenv("DUELING_ENABLED", "0") == "1"
+REWARD_DEBUG = os.getenv("REWARD_DEBUG", "0") == "1"
+REWARD_DEBUG_EVERY = int(os.getenv("REWARD_DEBUG_EVERY", "200"))
+# ======================
+
 # ===== perf knobs =====
 RENDER_EVERY = int(os.getenv("RENDER_EVERY", "20"))  # 0 = выключить рендер полностью
 UPDATES_PER_STEP = int(os.getenv("UPDATES_PER_STEP", "4"))  
@@ -189,12 +196,20 @@ def append_log_for_agents(message: str, log_path: str = "LOGS_FOR_AGENTS.md"):
 
 TAU = data["tau"]
 LR = data["lr"]
+NET_TYPE = "dueling" if DUELING_ENABLED else "basic"
 
 # ============================================================
 # (C) Несколько обучающих апдейтов на один шаг среды
 # ============================================================
 UPDATES_PER_STEP = int(data.get("updates_per_step", 1))  # 1 = как было раньше
 WARMUP_STEPS     = int(data.get("warmup_steps", 0))      # 0 = без прогрева
+
+append_log_for_agents(
+    "[TRAIN] "
+    f"DoubleDQN={int(DOUBLE_DQN_ENABLED)} "
+    f"Dueling={int(DUELING_ENABLED)} "
+    f"LR={LR} GAMMA={data.get('gamma')}"
+)
 
 b_len = 60
 b_hei = 40
@@ -329,14 +344,14 @@ else:
     n_observations = int(np.array(state).shape[0])
 
 
-policy_net = DQN(n_observations, n_actions).to(device)
-target_net = DQN(n_observations, n_actions).to(device)
+policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
+target_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
 
 opponent_policy_net = None
 if SELF_PLAY_ENABLED:
-    opponent_policy_net = DQN(n_observations, n_actions).to(device)
+    opponent_policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
     opponent_policy_net.eval()
     if SELF_PLAY_OPPONENT_MODE == "fixed_checkpoint":
         if not SELF_PLAY_FIXED_PATH:
@@ -347,9 +362,27 @@ if SELF_PLAY_ENABLED:
             )
         checkpoint = torch.load(SELF_PLAY_FIXED_PATH, map_location=device)
         if isinstance(checkpoint, dict) and "policy_net" in checkpoint:
-            opponent_policy_net.load_state_dict(checkpoint["policy_net"])
+            checkpoint_net_type = checkpoint.get("net_type", "basic")
+            if checkpoint_net_type != NET_TYPE:
+                warn_msg = (
+                    "[SELFPLAY] ВНИМАНИЕ: несовпадение типа сети "
+                    f"(checkpoint={checkpoint_net_type}, текущая={NET_TYPE}). "
+                    "Стартуем с новой инициализацией."
+                )
+                print(warn_msg)
+                append_log_for_agents(warn_msg)
+            else:
+                opponent_policy_net.load_state_dict(checkpoint["policy_net"])
         else:
-            opponent_policy_net.load_state_dict(checkpoint)
+            if NET_TYPE != "basic":
+                warn_msg = (
+                    "[SELFPLAY] ВНИМАНИЕ: старый формат чекпойнта без net_type, "
+                    f"а текущая сеть={NET_TYPE}. Стартуем с новой инициализацией."
+                )
+                print(warn_msg)
+                append_log_for_agents(warn_msg)
+            else:
+                opponent_policy_net.load_state_dict(checkpoint)
         append_log_for_agents(
             f"[SELFPLAY] fixed_checkpoint path={SELF_PLAY_FIXED_PATH}"
         )
@@ -466,23 +499,33 @@ while end == False:
 
     dev = next(policy_net.parameters()).device
     state_t = torch.tensor(to_np_state(state), device=dev).unsqueeze(0)
-    next_state_t = torch.tensor(to_np_state(next_observation), device=dev).unsqueeze(0)
+    next_state_t = None
+    if not done:
+        next_state_t = torch.tensor(to_np_state(next_observation), device=dev).unsqueeze(0)
 
-    
     memory.push(state_t, action, next_state_t, reward_t)
     state = next_observation
 
     # =========================
     # ✅ Несколько обучающих апдейтов на 1 шаг среды
     losses = []
+    last_td_stats = None
 
     if i >= WARMUP_STEPS:
         for _ in range(UPDATES_PER_STEP):
-            loss = optimize_model(policy_net, target_net, optimizer, memory, n_observations)
+            result = optimize_model(
+                policy_net,
+                target_net,
+                optimizer,
+                memory,
+                n_observations,
+                double_dqn_enabled=DOUBLE_DQN_ENABLED,
+            )
 
             # optimize_model возвращает 0 если replay ещё маленький — такие пропускаем
-            if loss and loss != 0:
-                losses.append(loss)
+            if result and result["loss"] != 0:
+                losses.append(result["loss"])
+                last_td_stats = result
 
             # ✅ Быстрый soft-update target_net (намного быстрее, чем state_dict)
             with torch.no_grad():
@@ -495,6 +538,13 @@ while end == False:
         metrics.updateLoss(sum(losses) / len(losses))
     else:
         metrics.updateLoss(0)
+    if REWARD_DEBUG and last_td_stats and i % REWARD_DEBUG_EVERY == 0:
+        append_log_for_agents(
+            "[TD] "
+            f"step={i} "
+            f"mean={last_td_stats['td_target_mean']:.6f} "
+            f"max={last_td_stats['td_target_max']:.6f}"
+        )
     # =========================
 
 
@@ -697,6 +747,7 @@ if (os.path.exists("models/{}".format(name)) == False):
 torch.save({
     "policy_net": policy_net.state_dict(),
     "target_net": target_net.state_dict(),
+    "net_type": NET_TYPE,
     'optimizer': optimizer.state_dict(),}
     , ("models/{}/model-{}.pth".format(name, date)))
 
