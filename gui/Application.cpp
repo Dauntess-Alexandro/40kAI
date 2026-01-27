@@ -7,9 +7,14 @@
 #include <thread>
 #include <chrono>
 #include <fstream>
+#include <cstdio>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 #include <filesystem>
 #include <vector>
 #include <algorithm>
+#include <array>
 #include <nlohmann/json.hpp>
 #include "include/Application.h"
 #include "include/popup.h"
@@ -39,6 +44,20 @@ std::string toLowerCopy(std::string data) {
   std::transform(data.begin(), data.end(), data.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   return data;
+}
+
+std::string nowTimestamp() {
+  auto now = std::chrono::system_clock::now();
+  std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+  std::tm local_tm{};
+#if defined(_WIN32)
+  localtime_s(&local_tm, &now_time);
+#else
+  localtime_r(&now_time, &local_tm);
+#endif
+  std::ostringstream oss;
+  oss << std::put_time(&local_tm, "%Y-%m-%d %H:%M:%S");
+  return oss.str();
 }
 
 int findDefaultModelsCount(const std::string& faction, const std::string& name) {
@@ -752,6 +771,10 @@ Form :: Form() {
 
 void Form :: setStatusMessage(const std::string& message) {
   status.set_text(message);
+  appendLogLine(message);
+}
+
+void Form :: appendLogLine(const std::string& message) {
   auto logBuffer = logView.get_buffer();
   if (!logBuffer) {
     return;
@@ -759,6 +782,25 @@ void Form :: setStatusMessage(const std::string& message) {
   logBuffer->insert(logBuffer->end(), message + "\n");
   auto endIter = logBuffer->end();
   logView.scroll_to(endIter);
+}
+
+void Form :: appendTrainingLogToFile(const std::string& message) {
+  fs::path logPath = fs::current_path() / "LOGS_FOR_AGENTS.md";
+  if (!fs::exists(logPath)) {
+    fs::path parentPath = fs::current_path().parent_path() / "LOGS_FOR_AGENTS.md";
+    if (fs::exists(parentPath)) {
+      logPath = parentPath;
+    }
+  }
+  std::ofstream outfile(logPath, std::ios::app);
+  if (!outfile) {
+    Glib::signal_idle().connect_once([this]() {
+      appendLogLine(
+          "Ошибка записи в LOGS_FOR_AGENTS.md (gui/Application.cpp): проверьте путь и права доступа.");
+    });
+    return;
+  }
+  outfile << nowTimestamp() << " | [GUI][TRAIN] " << message << "\n";
 }
 
 bool Form :: loadWindowGeometry() {
@@ -1091,14 +1133,63 @@ void Form :: startTrainInBackground() {
 void Form :: startTrain() {
   training = true;
   system("clear");
+  const std::string perDefaults = "PER_ENABLED=1 N_STEP=3 TRAIN_LOG_TO_CONSOLE=1 ";
   std::string command = "cd .. ; ";
+  command.append(perDefaults);
   command.append(trainEnvPrefix);
-  command.append("./train.sh");
-  system(command.data());
-  setStatusMessage("Completed!");
+  command.append("./train.sh 2>&1");
+
+  Glib::signal_idle().connect_once([this]() {
+    setStatusMessage("Старт обучения: PER=1, N_STEP=3.");
+  });
+  appendTrainingLogToFile("Старт обучения: PER=1, N_STEP=3.");
+
+  FILE* pipe = popen(command.c_str(), "r");
+  if (!pipe) {
+    Glib::signal_idle().connect_once([this]() {
+      setStatusMessage(
+          "Ошибка запуска обучения (gui/Application.cpp): проверьте, что train.sh доступен.");
+    });
+    appendTrainingLogToFile(
+        "Ошибка запуска обучения (gui/Application.cpp): проверьте, что train.sh доступен.");
+    training = false;
+    return;
+  }
+
+  std::array<char, 512> buffer{};
+  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe)) {
+    std::string line(buffer.data());
+    while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+      line.pop_back();
+    }
+    if (line.empty()) {
+      continue;
+    }
+    appendTrainingLogToFile(line);
+    Glib::signal_idle().connect_once([this, line]() {
+      appendLogLine(line);
+    });
+  }
+
+  int exitCode = pclose(pipe);
+  if (exitCode == 0) {
+    Glib::signal_idle().connect_once([this]() {
+      setStatusMessage("Обучение завершено.");
+    });
+    appendTrainingLogToFile("Обучение завершено.");
+  } else {
+    std::string errLine = "Обучение завершено с ошибкой. Код выхода: " + std::to_string(exitCode);
+    Glib::signal_idle().connect_once([this, errLine]() {
+      setStatusMessage(errLine);
+    });
+    appendTrainingLogToFile(errLine);
+  }
+
   training = false;
-  update_picture();
-  update_metrics();
+  Glib::signal_idle().connect_once([this]() {
+    update_picture();
+    update_metrics();
+  });
 }
 
 void Form :: runPlayAgainstModelInBackground() {

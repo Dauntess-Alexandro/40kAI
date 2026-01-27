@@ -45,6 +45,8 @@ public :
   void syncEnemyUnitsFromRoster();
   bool addEnemyUnitFromEntry(const std::string& entryText);
   void resetLayout();
+  void appendLogLine(const std::string& message);
+  void appendTrainingLogToFile(const std::string& message);
 
 private:
   void setStatusMessage(const std::string& message);
