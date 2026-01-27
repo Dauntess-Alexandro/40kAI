@@ -92,6 +92,7 @@ Form :: Form() {
   training = false;
   playing = false;
   loadingRoster = false;
+  trainEnvPrefix = "";
 
   bar.set_show_close_button(true);
   bar.set_title("40kAI GUI");
@@ -229,6 +230,7 @@ Form :: Form() {
     updateInits(modelClass, enemyClass);
     if (exists_test("data.json") && training == false) {
       setStatusMessage("Training...");
+      trainEnvPrefix = "";
       startTrainInBackground();
     }
     return true;
@@ -281,6 +283,19 @@ Form :: Form() {
   button3.signal_button_release_event().connect([&](GdkEventButton*) {
     std::string mess = "Warning: You are about to delete all of the saved models";
     openWarnMenu(mess, 0);
+    return true;
+  });
+
+  buttonSelfPlay.set_label("Самообучение");
+  buttonSelfPlay.signal_button_release_event().connect([&](GdkEventButton*) {
+    saveLastRoster();
+    syncEnemyUnitsFromRoster();
+    updateInits(modelClass, enemyClass);
+    if (exists_test("data.json") && training == false) {
+      setStatusMessage("Самообучение: обучение...");
+      trainEnvPrefix = "SELF_PLAY_ENABLED=1 ";
+      startTrainInBackground();
+    }
     return true;
   });
 
@@ -571,11 +586,13 @@ Form :: Form() {
   fixedTabPage2.add(textbox1);
   fixedTabPage2.move(textbox1, 10, 10);
   fixedTabPage2.add(button1);
-  fixedTabPage2.move(button1, 150, 300);
+  fixedTabPage2.move(button1, 380, 300);
   fixedTabPage2.add(setIters);
   fixedTabPage2.move(setIters, 160, 40);
   fixedTabPage2.add(button3);
   fixedTabPage2.move(button3, 10, 300);
+  fixedTabPage2.add(buttonSelfPlay);
+  fixedTabPage2.move(buttonSelfPlay, 200, 300);
   fixedTabPage2.add(status);
   fixedTabPage2.move(status, 10, 350);
 
@@ -1075,6 +1092,7 @@ void Form :: startTrain() {
   training = true;
   system("clear");
   std::string command = "cd .. ; ";
+  command.append(trainEnvPrefix);
   command.append("./train.sh");
   system(command.data());
   setStatusMessage("Completed!");

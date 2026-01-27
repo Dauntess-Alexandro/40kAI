@@ -102,6 +102,7 @@ Image metricBox6;
   Button button4;
   Button button5;
   Button button6;
+  Button buttonSelfPlay;
   Button showBoard;
   Button showBoardImg;
   Button playGraphicsView;
@@ -171,6 +172,7 @@ Image metricBox6;
   Button chooseMetrics;
   Button playGUI;
   std::string playInGUI;
+  std::string trainEnvPrefix;
 };
 
 #endif
