@@ -13,7 +13,7 @@ import itertools
 import random
 import math
 
-from collections import namedtuple
+from model.memory import Transition
 
 with open(os.path.abspath("hyperparams.json")) as j:
     data = json.loads(j.read())
@@ -25,8 +25,6 @@ BATCH_SIZE = data["batch_size"]
 GAMMA = data["gamma"]
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-Transition = namedtuple('Transition',('state', 'action', 'next_state', 'reward'))
 
 def select_action(env, state, steps_done, policy_net, len_model):
     sample = random.random()
@@ -94,14 +92,31 @@ def convertToDict(action):
         action_dict[label] = naction[i+6]
     return action_dict
 
-def optimize_model(policy_net, target_net, optimizer, memory, n_obs, double_dqn_enabled=True):
+def optimize_model(
+    policy_net,
+    target_net,
+    optimizer,
+    memory,
+    n_obs,
+    double_dqn_enabled=True,
+    per_enabled=False,
+    per_beta=0.4,
+    per_eps=1e-6,
+):
     if len(memory) < BATCH_SIZE:
         return None
 
     # ВАЖНО: берем device прямо от сети (cuda или cpu)
     dev = next(policy_net.parameters()).device
 
-    transitions = memory.sample(BATCH_SIZE)
+    if per_enabled:
+        transitions, indices, weights = memory.sample(BATCH_SIZE, beta=per_beta)
+        if not transitions:
+            return None
+    else:
+        transitions = memory.sample(BATCH_SIZE)
+        indices = None
+        weights = None
     batch = Transition(*zip(*transitions))
 
     desired_shape = (1, n_obs)
@@ -118,6 +133,7 @@ def optimize_model(policy_net, target_net, optimizer, memory, n_obs, double_dqn_
     # ---- action_batch / reward_batch (на тот же dev!) ----
     action_batch = torch.cat(batch.action).to(dev).long()  # индексы ОБЯЗАТЕЛЬНО long и на dev
     reward_batch = torch.cat(batch.reward).to(dev).float().view(-1)  # [B]
+    n_step_batch = torch.tensor(batch.n_step, device=dev, dtype=torch.float32)  # [B]
 
     # ---- next states ----
     non_final_mask = torch.tensor([s is not None for s in batch.next_state], device=dev, dtype=torch.bool)
@@ -163,10 +179,30 @@ def optimize_model(policy_net, target_net, optimizer, memory, n_obs, double_dqn_
                 )  # [N, num_heads]
             next_state_values[non_final_mask] = max_per_head
 
-    expected_state_action_values = reward_batch.unsqueeze(1) + (GAMMA * next_state_values)  # [B, num_heads]
+    gamma_n = GAMMA ** n_step_batch
+    expected_state_action_values = reward_batch.unsqueeze(1) + (gamma_n.unsqueeze(1) * next_state_values)  # [B, num_heads]
 
-    criterion = nn.SmoothL1Loss()
-    loss = criterion(selected_action_values, expected_state_action_values)
+    if per_enabled:
+        loss_per_element = F.smooth_l1_loss(
+            selected_action_values, expected_state_action_values, reduction="none"
+        )
+        per_sample_loss = loss_per_element.mean(dim=1)  # [B]
+        weight_t = torch.tensor(weights, device=dev, dtype=torch.float32)
+        loss = (per_sample_loss * weight_t).mean()
+        td_errors = (selected_action_values - expected_state_action_values).abs().mean(dim=1)
+        new_priorities = td_errors.detach().cpu().numpy() + per_eps
+        memory.update_priorities(indices, new_priorities)
+        per_stats = {
+            "priority_mean": float(new_priorities.mean()),
+            "priority_max": float(new_priorities.max()),
+            "is_weight_mean": float(weight_t.mean().item()),
+            "td_error_mean": float(td_errors.mean().item()),
+            "td_error_max": float(td_errors.max().item()),
+        }
+    else:
+        criterion = nn.SmoothL1Loss()
+        loss = criterion(selected_action_values, expected_state_action_values)
+        per_stats = None
 
     optimizer.zero_grad()
     loss.backward()
@@ -177,4 +213,5 @@ def optimize_model(policy_net, target_net, optimizer, memory, n_obs, double_dqn_
         "loss": loss.item(),
         "td_target_mean": expected_state_action_values.mean().item(),
         "td_target_max": expected_state_action_values.max().item(),
+        "per_stats": per_stats,
     }

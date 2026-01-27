@@ -42,6 +42,15 @@ DOUBLE_DQN_ENABLED = os.getenv("DOUBLE_DQN_ENABLED", "1") == "1"
 DUELING_ENABLED = os.getenv("DUELING_ENABLED", "0") == "1"
 REWARD_DEBUG = os.getenv("REWARD_DEBUG", "0") == "1"
 REWARD_DEBUG_EVERY = int(os.getenv("REWARD_DEBUG_EVERY", "200"))
+# ===== per + n-step =====
+PER_ENABLED = os.getenv("PER_ENABLED", "0") == "1"
+PER_ALPHA = float(os.getenv("PER_ALPHA", "0.6"))
+PER_BETA_START = float(os.getenv("PER_BETA_START", "0.4"))
+PER_BETA_FRAMES = int(os.getenv("PER_BETA_FRAMES", "200000"))
+PER_EPS = float(os.getenv("PER_EPS", "1e-6"))
+N_STEP = int(os.getenv("N_STEP", "1"))
+if N_STEP < 1:
+    N_STEP = 1
 # ======================
 
 # ===== perf knobs =====
@@ -72,6 +81,19 @@ def to_np_state(s):
     if isinstance(s, (dict, collections.OrderedDict)):
         return np.array(list(s.values()), dtype=np.float32)
     return np.array(s, dtype=np.float32)
+
+def build_n_step_transition(buffer, gamma):
+    reward_sum = 0.0
+    next_state = None
+    n_step = 0
+    for idx, (_, _, reward, next_state_candidate, done_flag) in enumerate(buffer):
+        reward_sum += (gamma ** idx) * reward
+        n_step += 1
+        next_state = next_state_candidate
+        if done_flag:
+            next_state = None
+            break
+    return reward_sum, next_state, n_step
 
 def select_action_with_epsilon(env, state, policy_net, epsilon, len_model):
     sample = random.random()
@@ -196,6 +218,7 @@ def append_log_for_agents(message: str, log_path: str = "LOGS_FOR_AGENTS.md"):
 
 TAU = data["tau"]
 LR = data["lr"]
+GAMMA = data["gamma"]
 NET_TYPE = "dueling" if DUELING_ENABLED else "basic"
 
 # ============================================================
@@ -209,6 +232,13 @@ append_log_for_agents(
     f"DoubleDQN={int(DOUBLE_DQN_ENABLED)} "
     f"Dueling={int(DUELING_ENABLED)} "
     f"LR={LR} GAMMA={data.get('gamma')}"
+)
+append_log_for_agents(
+    "[TRAIN] "
+    f"PER={int(PER_ENABLED)} "
+    f"alpha={PER_ALPHA} "
+    f"beta_start={PER_BETA_START} "
+    f"N_STEP={N_STEP}"
 )
 
 b_len = 60
@@ -390,7 +420,10 @@ if SELF_PLAY_ENABLED:
         opponent_policy_net.load_state_dict(policy_net.state_dict())
 
 optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
-memory = ReplayMemory(10000)
+if PER_ENABLED:
+    memory = PrioritizedReplayMemory(10000, alpha=PER_ALPHA, eps=PER_EPS)
+else:
+    memory = ReplayMemory(10000)
 
 def opponent_policy(obs):
     if opponent_policy_net is None:
@@ -432,6 +465,8 @@ rewArr = []
 ep_rows = [] 
 
 epLen = 0
+n_step_buffer = collections.deque(maxlen=N_STEP)
+optimize_steps = 0
 initial_model_hp = float(sum(getattr(env, "unit_health", [])))
 initial_enemy_hp = float(sum(getattr(env, "enemy_health", [])))
 append_log_for_agents(
@@ -469,8 +504,7 @@ while end == False:
     else:
         env.enemyTurn(trunc=trunc)
     next_observation, reward, done, res, info = env.step(action_dict)
-    rewArr.append(float(reward))  
-    reward_t = torch.tensor([reward], device=device, dtype=torch.float32)  # тензор для replay
+    rewArr.append(float(reward))
 
 
     unit_health = info["model health"]
@@ -503,7 +537,24 @@ while end == False:
     if not done:
         next_state_t = torch.tensor(to_np_state(next_observation), device=dev).unsqueeze(0)
 
-    memory.push(state_t, action, next_state_t, reward_t)
+    n_step_buffer.append((state_t, action, float(reward), next_state_t, done))
+    if len(n_step_buffer) >= N_STEP:
+        reward_sum, n_step_next_state, n_step_count = build_n_step_transition(
+            n_step_buffer, GAMMA
+        )
+        reward_sum_t = torch.tensor([reward_sum], device=dev, dtype=torch.float32)
+        head_state, head_action, _, _, _ = n_step_buffer[0]
+        memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count)
+        n_step_buffer.popleft()
+    if done:
+        while n_step_buffer:
+            reward_sum, n_step_next_state, n_step_count = build_n_step_transition(
+                n_step_buffer, GAMMA
+            )
+            reward_sum_t = torch.tensor([reward_sum], device=dev, dtype=torch.float32)
+            head_state, head_action, _, _, _ = n_step_buffer[0]
+            memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count)
+            n_step_buffer.popleft()
     state = next_observation
 
     # =========================
@@ -513,6 +564,14 @@ while end == False:
 
     if i >= WARMUP_STEPS:
         for _ in range(UPDATES_PER_STEP):
+            per_beta = PER_BETA_START
+            if PER_ENABLED and PER_BETA_FRAMES > 0:
+                per_beta = min(
+                    1.0,
+                    PER_BETA_START
+                    + (1.0 - PER_BETA_START)
+                    * (optimize_steps / float(PER_BETA_FRAMES)),
+                )
             result = optimize_model(
                 policy_net,
                 target_net,
@@ -520,12 +579,16 @@ while end == False:
                 memory,
                 n_observations,
                 double_dqn_enabled=DOUBLE_DQN_ENABLED,
+                per_enabled=PER_ENABLED,
+                per_beta=per_beta,
+                per_eps=PER_EPS,
             )
 
             # optimize_model возвращает 0 если replay ещё маленький — такие пропускаем
             if result and result["loss"] != 0:
                 losses.append(result["loss"])
                 last_td_stats = result
+                optimize_steps += 1
 
             # ✅ Быстрый soft-update target_net (намного быстрее, чем state_dict)
             with torch.no_grad():
@@ -538,13 +601,24 @@ while end == False:
         metrics.updateLoss(sum(losses) / len(losses))
     else:
         metrics.updateLoss(0)
-    if REWARD_DEBUG and last_td_stats and i % REWARD_DEBUG_EVERY == 0:
+    if REWARD_DEBUG and last_td_stats and optimize_steps % REWARD_DEBUG_EVERY == 0:
         append_log_for_agents(
             "[TD] "
             f"step={i} "
             f"mean={last_td_stats['td_target_mean']:.6f} "
             f"max={last_td_stats['td_target_max']:.6f}"
         )
+        if PER_ENABLED and last_td_stats.get("per_stats"):
+            per_stats = last_td_stats["per_stats"]
+            append_log_for_agents(
+                "[PER] "
+                f"opt_step={optimize_steps} "
+                f"priority_mean={per_stats['priority_mean']:.6f} "
+                f"priority_max={per_stats['priority_max']:.6f} "
+                f"is_weight_mean={per_stats['is_weight_mean']:.6f} "
+                f"td_error_mean={per_stats['td_error_mean']:.6f} "
+                f"td_error_max={per_stats['td_error_max']:.6f}"
+            )
     # =========================
 
 
