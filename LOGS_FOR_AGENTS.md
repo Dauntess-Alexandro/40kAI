@@ -18161,3 +18161,1535 @@ VP MODEL: 0, VP PLAYER: 0
 2026-01-27 15:56:18 | Конец эпизода 700. [SELFPLAY] enabled=1 mode=snapshot update_every=50 opp_eps=0.0
 2026-01-27 15:56:18 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=32.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
 2026-01-27 15:56:18 | [SELFPLAY] opponent snapshot updated at episode 700
+2026-01-27 16:08:43 | [TRAIN][START] DoubleDQN=1 Dueling=0 PER=0 N_STEP=1 LR=0.0001 clip_reward=off grad_clip=100.0
+2026-01-27 16:08:44 | Старт обучения: model_hp_total=32.0, enemy_hp_total=32.0, battle_round=1, trunc=True
+2026-01-27 16:08:44 | Логи фаз/ходов отключены (trunc=True). Чтобы включить подробные логи: VERBOSE_LOGS=1 или MANUAL_DICE=1.
+2026-01-27 16:08:44 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=13.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:44 | [TRAIN][EP] ep=1 ep_reward=-1.526250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:44 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=20.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:44 | [TRAIN][EP] ep=2 ep_reward=-0.916500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:44 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:44 | [TRAIN][EP] ep=3 ep_reward=-1.596250 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:44 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=15.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:44 | [TRAIN][EP] ep=4 ep_reward=0.371875 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:45 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=10.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:45 | [TRAIN][EP] ep=5 ep_reward=-1.697875 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:45 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=20.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:45 | [TRAIN][EP] ep=6 ep_reward=-0.016000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:45 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:45 | [TRAIN][EP] ep=7 ep_reward=0.287500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:45 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=23.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:45 | [TRAIN][EP] ep=8 ep_reward=-1.072375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:45 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=27.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:45 | [TRAIN][EP] ep=9 ep_reward=-0.511250 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:45 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=29.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:45 | [TRAIN][EP] ep=10 ep_reward=-0.080000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:45 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:45 | [TRAIN][EP] ep=11 ep_reward=-1.696500 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:45 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:45 | [TRAIN][EP] ep=12 ep_reward=-0.144625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:45 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=27.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:45 | [TRAIN][EP] ep=13 ep_reward=-0.972875 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:45 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=16.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:45 | [TRAIN][EP] ep=14 ep_reward=-0.700375 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:45 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:45 | [TRAIN][EP] ep=15 ep_reward=-0.397500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:45 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=9.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:45 | [TRAIN][EP] ep=16 ep_reward=0.442000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:45 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=30.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:45 | [TRAIN][EP] ep=17 ep_reward=-3.218125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:45 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:45 | [TRAIN][EP] ep=18 ep_reward=-0.016000 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:45 | Конец эпизода: reason=unknown winner=None model_hp_total=15.0 enemy_hp_total=26.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:45 | [TRAIN][EP] ep=19 ep_reward=-0.675750 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:45 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=13.0 model_vp=3 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:45 | [TRAIN][EP] ep=20 ep_reward=-0.831750 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:45 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=28.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:45 | [TRAIN][EP] ep=21 ep_reward=-0.055625 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:45 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=21.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:45 | [TRAIN][EP] ep=22 ep_reward=-0.734750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=17.0 enemy_hp_total=14.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=23 ep_reward=-1.973125 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=11.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=24 ep_reward=0.306125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=17.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=25 ep_reward=0.764875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=24.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=26 ep_reward=-1.612250 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=32.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=27 ep_reward=-1.855500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=10.0 enemy_hp_total=28.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=28 ep_reward=-1.449375 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=14.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=29 ep_reward=0.249375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=3.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=30 ep_reward=0.245625 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=18.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=31 ep_reward=-1.638500 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=32 ep_reward=-0.370250 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=28.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=33 ep_reward=0.245250 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=31.0 model_vp=4 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=34 ep_reward=-0.061875 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=16.0 model_vp=4 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=35 ep_reward=-1.583125 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=13.0 enemy_hp_total=29.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=36 ep_reward=-0.327625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=24.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=37 ep_reward=-1.802875 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=5.0 enemy_hp_total=26.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=38 ep_reward=-0.368500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=11.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=39 ep_reward=-2.041875 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=8.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=40 ep_reward=0.315625 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:46 | Конец эпизода: reason=unknown winner=None model_hp_total=9.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:46 | [TRAIN][EP] ep=41 ep_reward=-0.497875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:47 | Конец эпизода: reason=unknown winner=None model_hp_total=15.0 enemy_hp_total=20.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:47 | [TRAIN][EP] ep=42 ep_reward=-0.207500 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:08:47 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=15.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:47 | [TRAIN][EP] ep=43 ep_reward=-0.131250 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:08:47 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=10.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:47 | [TRAIN][EP] ep=44 ep_reward=0.258375 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:47 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:47 | [TRAIN][EP] ep=45 ep_reward=-2.313125 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:47 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=23.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:47 | [TRAIN][EP] ep=46 ep_reward=-0.152875 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:47 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=24.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:47 | [TRAIN][EP] ep=47 ep_reward=-0.133750 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:47 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=26.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:47 | [TRAIN][EP] ep=48 ep_reward=-1.386000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:47 | Конец эпизода: reason=unknown winner=None model_hp_total=17.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:47 | [TRAIN][EP] ep=49 ep_reward=-0.067875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:47 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=19.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:47 | [TRAIN][EP] ep=50 ep_reward=-2.443125 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:47 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=9.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:47 | [TRAIN][EP] ep=51 ep_reward=-1.198000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:47 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:47 | [TRAIN][EP] ep=52 ep_reward=-1.263750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:47 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=19.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:47 | [TRAIN][EP] ep=53 ep_reward=-2.023875 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:47 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=29.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:47 | [TRAIN][EP] ep=54 ep_reward=-1.214750 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:47 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:47 | [TRAIN][EP] ep=55 ep_reward=-0.176250 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:47 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=17.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:47 | [TRAIN][EP] ep=56 ep_reward=0.086250 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:47 | Конец эпизода: reason=unknown winner=None model_hp_total=13.0 enemy_hp_total=23.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:47 | [TRAIN][EP] ep=57 ep_reward=-2.166125 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:08:47 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=19.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:47 | [TRAIN][EP] ep=58 ep_reward=-2.049000 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:47 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=11.0 model_vp=4 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:47 | [TRAIN][EP] ep=59 ep_reward=-0.711625 win=1 vp_diff=4 end_reason=turn_limit_Only War
+2026-01-27 16:08:48 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=10.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:48 | [TRAIN][EP] ep=60 ep_reward=0.296375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:48 | Конец эпизода: reason=wipeout_enemy winner=model model_hp_total=29.0 enemy_hp_total=0.0 model_vp=3 enemy_vp=0 turn=5 battle_round=5
+2026-01-27 16:08:48 | [TRAIN][EP] ep=61 ep_reward=-2.569531 win=1 vp_diff=3 end_reason=wipeout_enemy
+2026-01-27 16:08:48 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=18.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:48 | [TRAIN][EP] ep=62 ep_reward=-0.464875 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:48 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:48 | [TRAIN][EP] ep=63 ep_reward=-1.170000 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:48 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=27.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:48 | [TRAIN][EP] ep=64 ep_reward=-1.053125 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:48 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=22.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:48 | [TRAIN][EP] ep=65 ep_reward=0.088875 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:48 | Конец эпизода: reason=unknown winner=None model_hp_total=17.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:48 | [TRAIN][EP] ep=66 ep_reward=0.088750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:48 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=26.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:48 | [TRAIN][EP] ep=67 ep_reward=-1.109375 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:48 | Конец эпизода: reason=unknown winner=None model_hp_total=14.0 enemy_hp_total=27.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:48 | [TRAIN][EP] ep=68 ep_reward=-2.612750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:48 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:48 | [TRAIN][EP] ep=69 ep_reward=0.319500 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:48 | Конец эпизода: reason=unknown winner=None model_hp_total=13.0 enemy_hp_total=22.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:48 | [TRAIN][EP] ep=70 ep_reward=-1.392000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:48 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:48 | [TRAIN][EP] ep=71 ep_reward=-0.039125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:48 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=19.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:48 | [TRAIN][EP] ep=72 ep_reward=-1.304375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:48 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=28.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:48 | [TRAIN][EP] ep=73 ep_reward=0.110250 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:48 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=30.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:48 | [TRAIN][EP] ep=74 ep_reward=-0.684375 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:48 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=17.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:48 | [TRAIN][EP] ep=75 ep_reward=0.179250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:48 | Конец эпизода: reason=unknown winner=None model_hp_total=9.0 enemy_hp_total=30.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:48 | [TRAIN][EP] ep=76 ep_reward=-0.184000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=16.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=77 ep_reward=0.174875 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=11.0 enemy_hp_total=25.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=78 ep_reward=-0.617375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=15.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=79 ep_reward=-1.466875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=17.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=80 ep_reward=-0.130250 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=17.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=81 ep_reward=0.184375 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=26.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=82 ep_reward=-0.178125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=83 ep_reward=-2.438250 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=4.0 model_vp=4 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=84 ep_reward=-1.782500 win=1 vp_diff=4 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=10.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=85 ep_reward=0.246625 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=20.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=86 ep_reward=0.150000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=13.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=87 ep_reward=-1.481250 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=27.0 model_vp=0 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=88 ep_reward=-0.565625 win=0 vp_diff=-3 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=89 ep_reward=-2.131375 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=90 ep_reward=-0.261875 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=23.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=91 ep_reward=-0.106000 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=22.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=92 ep_reward=-1.398625 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=16.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=93 ep_reward=-0.701375 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=29.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=94 ep_reward=-0.067500 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:49 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=20.0 model_vp=4 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:49 | [TRAIN][EP] ep=95 ep_reward=0.354375 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:08:50 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=23.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:50 | [TRAIN][EP] ep=96 ep_reward=-0.172625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:50 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=16.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:50 | [TRAIN][EP] ep=97 ep_reward=0.266875 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:50 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=25.0 model_vp=3 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:50 | [TRAIN][EP] ep=98 ep_reward=-0.312875 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:50 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=12.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:50 | [TRAIN][EP] ep=99 ep_reward=-0.960500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:50 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=29.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:50 | [TRAIN][EP] ep=100 ep_reward=0.125000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:50 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:08:50 | [TRAIN][EP] ep=101 ep_reward=-1.502500 win=0 vp_diff=-3 end_reason=turn_limit_Only War
+2026-01-27 16:08:50 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=27.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:50 | [TRAIN][EP] ep=102 ep_reward=-2.238125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:50 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=17.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:50 | [TRAIN][EP] ep=103 ep_reward=-0.748125 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:08:50 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=19.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:50 | [TRAIN][EP] ep=104 ep_reward=-0.125750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:50 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:50 | [TRAIN][EP] ep=105 ep_reward=-2.595000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:50 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=28.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:50 | [TRAIN][EP] ep=106 ep_reward=-1.441750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:50 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=25.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:50 | [TRAIN][EP] ep=107 ep_reward=-1.530000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:50 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:50 | [TRAIN][EP] ep=108 ep_reward=0.058750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:50 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=26.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:50 | [TRAIN][EP] ep=109 ep_reward=-2.728750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:50 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:50 | [TRAIN][EP] ep=110 ep_reward=-2.079875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:50 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=30.0 model_vp=0 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:08:50 | [TRAIN][EP] ep=111 ep_reward=-0.087000 win=0 vp_diff=-3 end_reason=turn_limit_Only War
+2026-01-27 16:08:50 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=9.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:50 | [TRAIN][EP] ep=112 ep_reward=-0.074250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:51 | Конец эпизода: reason=unknown winner=None model_hp_total=15.0 enemy_hp_total=26.0 model_vp=1 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:08:51 | [TRAIN][EP] ep=113 ep_reward=-1.092625 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:51 | Конец эпизода: reason=unknown winner=None model_hp_total=6.0 enemy_hp_total=24.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:51 | [TRAIN][EP] ep=114 ep_reward=-0.609750 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:51 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=25.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:51 | [TRAIN][EP] ep=115 ep_reward=0.026875 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:51 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=29.0 model_vp=0 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:08:51 | [TRAIN][EP] ep=116 ep_reward=-3.480750 win=0 vp_diff=-3 end_reason=turn_limit_Only War
+2026-01-27 16:08:51 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=27.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:51 | [TRAIN][EP] ep=117 ep_reward=-2.316250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:51 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=17.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:51 | [TRAIN][EP] ep=118 ep_reward=-0.771250 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:51 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=17.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:51 | [TRAIN][EP] ep=119 ep_reward=-2.990000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:51 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=27.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:51 | [TRAIN][EP] ep=120 ep_reward=0.429375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:51 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=13.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:51 | [TRAIN][EP] ep=121 ep_reward=-1.793375 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:51 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=15.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:51 | [TRAIN][EP] ep=122 ep_reward=-2.697500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:51 | Конец эпизода: reason=unknown winner=None model_hp_total=15.0 enemy_hp_total=14.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:51 | [TRAIN][EP] ep=123 ep_reward=-0.483125 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:51 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:51 | [TRAIN][EP] ep=124 ep_reward=-0.878125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:51 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=30.0 model_vp=5 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:51 | [TRAIN][EP] ep=125 ep_reward=0.091250 win=1 vp_diff=5 end_reason=turn_limit_Only War
+2026-01-27 16:08:51 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=23.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:51 | [TRAIN][EP] ep=126 ep_reward=-0.495625 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:51 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=25.0 model_vp=1 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:08:51 | [TRAIN][EP] ep=127 ep_reward=0.352500 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:52 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=7.0 model_vp=3 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:52 | [TRAIN][EP] ep=128 ep_reward=1.226250 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:52 | Конец эпизода: reason=unknown winner=None model_hp_total=2.0 enemy_hp_total=28.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:52 | [TRAIN][EP] ep=129 ep_reward=0.167125 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:52 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=10.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:52 | [TRAIN][EP] ep=130 ep_reward=-3.470500 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:52 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=18.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:52 | [TRAIN][EP] ep=131 ep_reward=-0.365750 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:52 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=12.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:52 | [TRAIN][EP] ep=132 ep_reward=0.051375 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:52 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=18.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:52 | [TRAIN][EP] ep=133 ep_reward=0.108375 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:52 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:52 | [TRAIN][EP] ep=134 ep_reward=-0.044750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:52 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:52 | [TRAIN][EP] ep=135 ep_reward=-2.019875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:52 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=18.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:52 | [TRAIN][EP] ep=136 ep_reward=-0.313375 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:08:52 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=19.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:52 | [TRAIN][EP] ep=137 ep_reward=-1.177625 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:52 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=20.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:52 | [TRAIN][EP] ep=138 ep_reward=-1.598750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:52 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=26.0 model_vp=4 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:52 | [TRAIN][EP] ep=139 ep_reward=0.370875 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:52 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=14.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:52 | [TRAIN][EP] ep=140 ep_reward=-3.025500 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:52 | Конец эпизода: reason=unknown winner=None model_hp_total=9.0 enemy_hp_total=28.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:52 | [TRAIN][EP] ep=141 ep_reward=-0.205000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:52 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=23.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:52 | [TRAIN][EP] ep=142 ep_reward=-0.987875 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:52 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=15.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:52 | [TRAIN][EP] ep=143 ep_reward=-1.424125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:52 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=26.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:52 | [TRAIN][EP] ep=144 ep_reward=-1.113250 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:52 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=21.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:52 | [TRAIN][EP] ep=145 ep_reward=-2.104000 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:53 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=20.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:53 | [TRAIN][EP] ep=146 ep_reward=-0.106625 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:53 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=21.0 model_vp=5 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:53 | [TRAIN][EP] ep=147 ep_reward=-0.018750 win=1 vp_diff=5 end_reason=turn_limit_Only War
+2026-01-27 16:08:53 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=9.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:53 | [TRAIN][EP] ep=148 ep_reward=-0.499625 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:53 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:53 | [TRAIN][EP] ep=149 ep_reward=-2.230750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:53 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=24.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:53 | [TRAIN][EP] ep=150 ep_reward=0.323125 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:08:53 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=27.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:53 | [TRAIN][EP] ep=151 ep_reward=0.045875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:53 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:53 | [TRAIN][EP] ep=152 ep_reward=-0.500625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:53 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=22.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:53 | [TRAIN][EP] ep=153 ep_reward=-0.064750 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:53 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=15.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:53 | [TRAIN][EP] ep=154 ep_reward=-1.120625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:53 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=18.0 model_vp=2 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:08:53 | [TRAIN][EP] ep=155 ep_reward=-0.845000 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:53 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:53 | [TRAIN][EP] ep=156 ep_reward=0.053375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:53 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:53 | [TRAIN][EP] ep=157 ep_reward=-2.105625 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:53 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=26.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:53 | [TRAIN][EP] ep=158 ep_reward=-0.015000 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:53 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=21.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:53 | [TRAIN][EP] ep=159 ep_reward=0.292500 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:53 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=16.0 model_vp=0 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:08:53 | [TRAIN][EP] ep=160 ep_reward=-1.515000 win=0 vp_diff=-3 end_reason=turn_limit_Only War
+2026-01-27 16:08:53 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:53 | [TRAIN][EP] ep=161 ep_reward=-2.103125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:53 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=19.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:53 | [TRAIN][EP] ep=162 ep_reward=-0.568375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:54 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=19.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:54 | [TRAIN][EP] ep=163 ep_reward=-1.231875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:54 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:54 | [TRAIN][EP] ep=164 ep_reward=-0.675625 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:54 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=17.0 model_vp=3 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:54 | [TRAIN][EP] ep=165 ep_reward=0.293000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:54 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:54 | [TRAIN][EP] ep=166 ep_reward=-0.995000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:54 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=21.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:54 | [TRAIN][EP] ep=167 ep_reward=-0.095000 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:54 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=23.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:54 | [TRAIN][EP] ep=168 ep_reward=-0.031000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:54 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=20.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:54 | [TRAIN][EP] ep=169 ep_reward=-2.109750 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:54 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=25.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:54 | [TRAIN][EP] ep=170 ep_reward=-0.209625 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:54 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:54 | [TRAIN][EP] ep=171 ep_reward=-0.944375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:54 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=16.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:54 | [TRAIN][EP] ep=172 ep_reward=-1.586875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:54 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=17.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:54 | [TRAIN][EP] ep=173 ep_reward=-0.103125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:54 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=22.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:54 | [TRAIN][EP] ep=174 ep_reward=0.061250 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:54 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=29.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:54 | [TRAIN][EP] ep=175 ep_reward=-0.020000 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:54 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=19.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:54 | [TRAIN][EP] ep=176 ep_reward=0.063125 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:54 | Конец эпизода: reason=unknown winner=None model_hp_total=15.0 enemy_hp_total=30.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:54 | [TRAIN][EP] ep=177 ep_reward=-1.006250 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:54 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=28.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:54 | [TRAIN][EP] ep=178 ep_reward=-0.193125 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:54 | Конец эпизода: reason=unknown winner=None model_hp_total=14.0 enemy_hp_total=16.0 model_vp=3 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:54 | [TRAIN][EP] ep=179 ep_reward=0.049500 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:54 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=15.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:54 | [TRAIN][EP] ep=180 ep_reward=-0.308500 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:55 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=24.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:55 | [TRAIN][EP] ep=181 ep_reward=-0.136125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:55 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=26.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:55 | [TRAIN][EP] ep=182 ep_reward=-0.032000 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:55 | Конец эпизода: reason=unknown winner=None model_hp_total=13.0 enemy_hp_total=15.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:55 | [TRAIN][EP] ep=183 ep_reward=0.144625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:55 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=17.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:55 | [TRAIN][EP] ep=184 ep_reward=0.029375 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:55 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=28.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:55 | [TRAIN][EP] ep=185 ep_reward=-0.511875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:55 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=15.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:55 | [TRAIN][EP] ep=186 ep_reward=-0.067750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:55 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=24.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:55 | [TRAIN][EP] ep=187 ep_reward=-0.862500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:55 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=26.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:55 | [TRAIN][EP] ep=188 ep_reward=-0.118125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:55 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=16.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:55 | [TRAIN][EP] ep=189 ep_reward=-1.241875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:55 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=15.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:55 | [TRAIN][EP] ep=190 ep_reward=-1.620625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:55 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:55 | [TRAIN][EP] ep=191 ep_reward=-1.362250 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:55 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=17.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:55 | [TRAIN][EP] ep=192 ep_reward=-2.160875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:55 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=25.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:55 | [TRAIN][EP] ep=193 ep_reward=-0.166500 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:55 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=21.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:55 | [TRAIN][EP] ep=194 ep_reward=0.470375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:55 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=25.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:55 | [TRAIN][EP] ep=195 ep_reward=0.024375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:55 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=28.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:55 | [TRAIN][EP] ep=196 ep_reward=-0.365125 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:55 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=19.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:55 | [TRAIN][EP] ep=197 ep_reward=-1.250500 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:55 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:55 | [TRAIN][EP] ep=198 ep_reward=-1.190500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:56 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=24.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:56 | [TRAIN][EP] ep=199 ep_reward=0.139000 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:56 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=24.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:56 | [TRAIN][EP] ep=200 ep_reward=-0.003125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:56 | Конец эпизода: reason=unknown winner=None model_hp_total=14.0 enemy_hp_total=30.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:56 | [TRAIN][EP] ep=201 ep_reward=-0.443000 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:56 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:08:56 | [TRAIN][EP] ep=202 ep_reward=0.037875 win=0 vp_diff=-3 end_reason=turn_limit_Only War
+2026-01-27 16:08:56 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=22.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:56 | [TRAIN][EP] ep=203 ep_reward=0.317625 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:56 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=19.0 model_vp=7 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:56 | [TRAIN][EP] ep=204 ep_reward=-1.148500 win=1 vp_diff=7 end_reason=turn_limit_Only War
+2026-01-27 16:08:56 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:56 | [TRAIN][EP] ep=205 ep_reward=-1.586125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:56 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:56 | [TRAIN][EP] ep=206 ep_reward=-1.710125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:57 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:57 | [TRAIN][EP] ep=207 ep_reward=0.109250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:57 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=16.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:57 | [TRAIN][EP] ep=208 ep_reward=0.000250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:57 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:57 | [TRAIN][EP] ep=209 ep_reward=-0.458500 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:57 | [TRAIN] ep=210 upd=200 step=1047 loss=0.871683 eps=0.7394 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:08:57 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=11.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:57 | [TRAIN][EP] ep=210 ep_reward=-1.097500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:57 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:57 | [TRAIN][EP] ep=211 ep_reward=-1.617500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:58 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:58 | [TRAIN][EP] ep=212 ep_reward=0.018750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:58 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=8.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:58 | [TRAIN][EP] ep=213 ep_reward=-0.386125 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:08:58 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:58 | [TRAIN][EP] ep=214 ep_reward=-0.206875 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:08:58 | [TRAIN] ep=215 upd=400 step=1072 loss=0.714669 eps=0.7360 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:08:58 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=26.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:58 | [TRAIN][EP] ep=215 ep_reward=-0.196875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:08:59 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=16.0 model_vp=4 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:59 | [TRAIN][EP] ep=216 ep_reward=0.398625 win=1 vp_diff=4 end_reason=turn_limit_Only War
+2026-01-27 16:08:59 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=19.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:08:59 | [TRAIN][EP] ep=217 ep_reward=-1.263500 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:08:59 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=16.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:59 | [TRAIN][EP] ep=218 ep_reward=0.108875 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:59 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=10.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:08:59 | [TRAIN][EP] ep=219 ep_reward=-2.069250 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:08:59 | [TRAIN] ep=220 upd=600 step=1097 loss=0.654138 eps=0.7326 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:08:59 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=12.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:08:59 | [TRAIN][EP] ep=220 ep_reward=-0.988250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:00 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=16.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:00 | [TRAIN][EP] ep=221 ep_reward=0.234375 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:00 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=14.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:00 | [TRAIN][EP] ep=222 ep_reward=-0.623750 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:00 | Конец эпизода: reason=wipeout_model winner=enemy model_hp_total=0.0 enemy_hp_total=32.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:00 | [TRAIN][EP] ep=223 ep_reward=-0.523750 win=0 vp_diff=1 end_reason=wipeout_model
+2026-01-27 16:09:00 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=16.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:00 | [TRAIN][EP] ep=224 ep_reward=0.473000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:01 | [TRAIN] ep=225 upd=800 step=1122 loss=0.614538 eps=0.7291 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:01 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=23.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:01 | [TRAIN][EP] ep=225 ep_reward=-1.318500 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:01 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=24.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:01 | [TRAIN][EP] ep=226 ep_reward=-1.383750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:01 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=12.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:01 | [TRAIN][EP] ep=227 ep_reward=-1.683750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:01 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=24.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:01 | [TRAIN][EP] ep=228 ep_reward=-0.429625 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:02 | Конец эпизода: reason=unknown winner=None model_hp_total=17.0 enemy_hp_total=26.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:02 | [TRAIN][EP] ep=229 ep_reward=-1.458125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:02 | [TRAIN] ep=230 upd=1000 step=1147 loss=0.574224 eps=0.7258 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:02 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=28.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:02 | [TRAIN][EP] ep=230 ep_reward=-0.304625 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:02 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=23.0 model_vp=4 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:02 | [TRAIN][EP] ep=231 ep_reward=-0.878750 win=1 vp_diff=4 end_reason=turn_limit_Only War
+2026-01-27 16:09:02 | Конец эпизода: reason=unknown winner=None model_hp_total=15.0 enemy_hp_total=23.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:02 | [TRAIN][EP] ep=232 ep_reward=0.092750 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:02 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=27.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:02 | [TRAIN][EP] ep=233 ep_reward=-1.474125 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:03 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:03 | [TRAIN][EP] ep=234 ep_reward=-0.668125 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:03 | [TRAIN] ep=235 upd=1200 step=1172 loss=0.514383 eps=0.7224 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:03 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=15.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:03 | [TRAIN][EP] ep=235 ep_reward=0.132000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:03 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=13.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:03 | [TRAIN][EP] ep=236 ep_reward=-0.202375 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:03 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=11.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:03 | [TRAIN][EP] ep=237 ep_reward=-0.781875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:04 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=17.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:04 | [TRAIN][EP] ep=238 ep_reward=-0.991250 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:04 | Конец эпизода: reason=unknown winner=None model_hp_total=13.0 enemy_hp_total=12.0 model_vp=4 enemy_vp=5 turn=6 battle_round=6
+2026-01-27 16:09:04 | [TRAIN][EP] ep=239 ep_reward=-0.420250 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:04 | [TRAIN] ep=240 upd=1400 step=1197 loss=0.514736 eps=0.7190 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:04 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=26.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:04 | [TRAIN][EP] ep=240 ep_reward=-0.008750 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:04 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=11.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:04 | [TRAIN][EP] ep=241 ep_reward=-0.727250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:04 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=16.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:04 | [TRAIN][EP] ep=242 ep_reward=-1.547625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:05 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:05 | [TRAIN][EP] ep=243 ep_reward=-1.377375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:05 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=14.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:05 | [TRAIN][EP] ep=244 ep_reward=-3.856625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:05 | [TRAIN] ep=245 upd=1600 step=1222 loss=0.492086 eps=0.7157 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:05 | Конец эпизода: reason=unknown winner=None model_hp_total=15.0 enemy_hp_total=18.0 model_vp=4 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:05 | [TRAIN][EP] ep=245 ep_reward=0.348625 win=1 vp_diff=4 end_reason=turn_limit_Only War
+2026-01-27 16:09:05 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=28.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:05 | [TRAIN][EP] ep=246 ep_reward=-0.238125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:06 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=17.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:06 | [TRAIN][EP] ep=247 ep_reward=0.131125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:06 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=25.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:06 | [TRAIN][EP] ep=248 ep_reward=-1.599250 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:06 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=18.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:06 | [TRAIN][EP] ep=249 ep_reward=-1.456500 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:06 | [TRAIN] ep=250 upd=1800 step=1247 loss=0.467511 eps=0.7124 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:06 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=14.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:06 | [TRAIN][EP] ep=250 ep_reward=-0.470125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:06 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=30.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:06 | [TRAIN][EP] ep=251 ep_reward=-0.022875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:07 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=28.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:07 | [TRAIN][EP] ep=252 ep_reward=-0.586250 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:07 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=12.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:07 | [TRAIN][EP] ep=253 ep_reward=-1.287875 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:07 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=15.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:07 | [TRAIN][EP] ep=254 ep_reward=-1.271875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:07 | [TRAIN] ep=255 upd=2000 step=1272 loss=0.467716 eps=0.7091 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:07 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=23.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:07 | [TRAIN][EP] ep=255 ep_reward=-1.822500 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:08 | Конец эпизода: reason=unknown winner=None model_hp_total=17.0 enemy_hp_total=21.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:08 | [TRAIN][EP] ep=256 ep_reward=-0.550875 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:08 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:08 | [TRAIN][EP] ep=257 ep_reward=-0.772750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:08 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=14.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:08 | [TRAIN][EP] ep=258 ep_reward=-0.750000 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:08 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=15.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:08 | [TRAIN][EP] ep=259 ep_reward=-0.275625 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:08 | [TRAIN] ep=260 upd=2200 step=1297 loss=0.446801 eps=0.7058 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:08 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:08 | [TRAIN][EP] ep=260 ep_reward=-1.710625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:09 | Конец эпизода: reason=unknown winner=None model_hp_total=17.0 enemy_hp_total=30.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:09 | [TRAIN][EP] ep=261 ep_reward=-0.546125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:09 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:09 | [TRAIN][EP] ep=262 ep_reward=-0.021000 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:09 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=30.0 model_vp=0 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:09:09 | [TRAIN][EP] ep=263 ep_reward=-0.144375 win=0 vp_diff=-3 end_reason=turn_limit_Only War
+2026-01-27 16:09:09 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=13.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:09 | [TRAIN][EP] ep=264 ep_reward=0.250375 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:09 | [TRAIN] ep=265 upd=2400 step=1322 loss=0.445936 eps=0.7025 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:10 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:09:10 | [TRAIN][EP] ep=265 ep_reward=-2.825875 win=0 vp_diff=-3 end_reason=turn_limit_Only War
+2026-01-27 16:09:10 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=8.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:10 | [TRAIN][EP] ep=266 ep_reward=-1.457750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:10 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=25.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:10 | [TRAIN][EP] ep=267 ep_reward=-0.269250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:10 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=24.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:10 | [TRAIN][EP] ep=268 ep_reward=-0.409750 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:10 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=25.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:10 | [TRAIN][EP] ep=269 ep_reward=0.038750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:11 | [TRAIN] ep=270 upd=2600 step=1347 loss=0.419534 eps=0.6993 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:11 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:11 | [TRAIN][EP] ep=270 ep_reward=0.055250 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:11 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:11 | [TRAIN][EP] ep=271 ep_reward=-1.187500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:11 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=10.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:11 | [TRAIN][EP] ep=272 ep_reward=-0.393625 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:11 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=27.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:11 | [TRAIN][EP] ep=273 ep_reward=-0.704375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:12 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=10.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:12 | [TRAIN][EP] ep=274 ep_reward=0.152125 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:12 | [TRAIN] ep=275 upd=2800 step=1372 loss=0.425043 eps=0.6960 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:12 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=15.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:12 | [TRAIN][EP] ep=275 ep_reward=-0.867500 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:12 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=16.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:12 | [TRAIN][EP] ep=276 ep_reward=-2.092625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:12 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=19.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:12 | [TRAIN][EP] ep=277 ep_reward=-0.355375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:12 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=13.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:12 | [TRAIN][EP] ep=278 ep_reward=-1.386875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:13 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=21.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:13 | [TRAIN][EP] ep=279 ep_reward=0.071125 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:13 | [TRAIN] ep=280 upd=3000 step=1397 loss=0.412256 eps=0.6928 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:13 | Конец эпизода: reason=unknown winner=None model_hp_total=15.0 enemy_hp_total=17.0 model_vp=6 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:13 | [TRAIN][EP] ep=280 ep_reward=-0.479750 win=1 vp_diff=5 end_reason=turn_limit_Only War
+2026-01-27 16:09:13 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:13 | [TRAIN][EP] ep=281 ep_reward=-1.351625 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:13 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=15.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:13 | [TRAIN][EP] ep=282 ep_reward=-0.518500 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:14 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=17.0 model_vp=3 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:14 | [TRAIN][EP] ep=283 ep_reward=0.127125 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:14 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=27.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:14 | [TRAIN][EP] ep=284 ep_reward=-0.994000 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:14 | [TRAIN] ep=285 upd=3200 step=1422 loss=0.399020 eps=0.6896 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:14 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=25.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:14 | [TRAIN][EP] ep=285 ep_reward=-2.746250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:14 | Конец эпизода: reason=unknown winner=None model_hp_total=17.0 enemy_hp_total=21.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:14 | [TRAIN][EP] ep=286 ep_reward=0.597000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:14 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=19.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:14 | [TRAIN][EP] ep=287 ep_reward=-0.287500 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:15 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=10.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:15 | [TRAIN][EP] ep=288 ep_reward=0.247625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:15 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:15 | [TRAIN][EP] ep=289 ep_reward=-0.972250 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:15 | [TRAIN] ep=290 upd=3400 step=1447 loss=0.423297 eps=0.6864 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:15 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=24.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:15 | [TRAIN][EP] ep=290 ep_reward=-0.883125 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:15 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=27.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:15 | [TRAIN][EP] ep=291 ep_reward=-1.035125 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:16 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=14.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:16 | [TRAIN][EP] ep=292 ep_reward=-1.767500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:16 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=27.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:16 | [TRAIN][EP] ep=293 ep_reward=-0.978875 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:16 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=17.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:16 | [TRAIN][EP] ep=294 ep_reward=-1.430750 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:16 | [TRAIN] ep=295 upd=3600 step=1472 loss=0.399172 eps=0.6832 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:16 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=21.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:16 | [TRAIN][EP] ep=295 ep_reward=-0.190375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:16 | Конец эпизода: reason=unknown winner=None model_hp_total=15.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:16 | [TRAIN][EP] ep=296 ep_reward=-0.450000 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:17 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=11.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:17 | [TRAIN][EP] ep=297 ep_reward=0.001875 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:17 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=18.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:17 | [TRAIN][EP] ep=298 ep_reward=0.290000 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:17 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=24.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:17 | [TRAIN][EP] ep=299 ep_reward=0.082375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:17 | [TRAIN] ep=300 upd=3800 step=1497 loss=0.403973 eps=0.6801 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:17 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=12.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:17 | [TRAIN][EP] ep=300 ep_reward=-1.020750 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:18 | Конец эпизода: reason=unknown winner=None model_hp_total=14.0 enemy_hp_total=15.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:18 | [TRAIN][EP] ep=301 ep_reward=-0.425625 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:18 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:18 | [TRAIN][EP] ep=302 ep_reward=-1.189375 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:18 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=9.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:18 | [TRAIN][EP] ep=303 ep_reward=-0.835000 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:09:18 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:18 | [TRAIN][EP] ep=304 ep_reward=0.385750 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:18 | [TRAIN] ep=305 upd=4000 step=1522 loss=0.387143 eps=0.6769 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:19 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=18.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:19 | [TRAIN][EP] ep=305 ep_reward=-0.053750 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:19 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:19 | [TRAIN][EP] ep=306 ep_reward=-1.957500 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:19 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=20.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:19 | [TRAIN][EP] ep=307 ep_reward=-0.712875 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:19 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=25.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:19 | [TRAIN][EP] ep=308 ep_reward=-0.303750 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:19 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=13.0 model_vp=0 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:09:19 | [TRAIN][EP] ep=309 ep_reward=-0.854875 win=0 vp_diff=-3 end_reason=turn_limit_Only War
+2026-01-27 16:09:20 | [TRAIN] ep=310 upd=4200 step=1547 loss=0.392624 eps=0.6738 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:20 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=25.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:20 | [TRAIN][EP] ep=310 ep_reward=-1.492000 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:20 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:20 | [TRAIN][EP] ep=311 ep_reward=-0.560625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:20 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=13.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:20 | [TRAIN][EP] ep=312 ep_reward=0.388875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:20 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=13.0 model_vp=1 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:09:20 | [TRAIN][EP] ep=313 ep_reward=0.320875 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:21 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:21 | [TRAIN][EP] ep=314 ep_reward=-0.070750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:21 | [TRAIN] ep=315 upd=4400 step=1572 loss=0.394838 eps=0.6707 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:21 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=23.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:21 | [TRAIN][EP] ep=315 ep_reward=-1.444375 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:21 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=24.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:21 | [TRAIN][EP] ep=316 ep_reward=-0.718125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:21 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=14.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:21 | [TRAIN][EP] ep=317 ep_reward=0.017500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:21 | Конец эпизода: reason=unknown winner=None model_hp_total=11.0 enemy_hp_total=23.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:21 | [TRAIN][EP] ep=318 ep_reward=-0.709875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:22 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=17.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:22 | [TRAIN][EP] ep=319 ep_reward=-1.384250 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:22 | [TRAIN] ep=320 upd=4600 step=1597 loss=0.379397 eps=0.6676 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:22 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=5 turn=6 battle_round=6
+2026-01-27 16:09:22 | [TRAIN][EP] ep=320 ep_reward=-2.651875 win=0 vp_diff=-5 end_reason=turn_limit_Only War
+2026-01-27 16:09:22 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=25.0 model_vp=0 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:09:22 | [TRAIN][EP] ep=321 ep_reward=-1.188750 win=0 vp_diff=-3 end_reason=turn_limit_Only War
+2026-01-27 16:09:22 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:09:22 | [TRAIN][EP] ep=322 ep_reward=-1.486875 win=0 vp_diff=-3 end_reason=turn_limit_Only War
+2026-01-27 16:09:23 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=5.0 model_vp=4 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:23 | [TRAIN][EP] ep=323 ep_reward=-0.148500 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:23 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=29.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:23 | [TRAIN][EP] ep=324 ep_reward=0.399375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:23 | [TRAIN] ep=325 upd=4800 step=1622 loss=0.384117 eps=0.6645 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:23 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=17.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:23 | [TRAIN][EP] ep=325 ep_reward=-1.138250 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:23 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=7.0 model_vp=3 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:23 | [TRAIN][EP] ep=326 ep_reward=-0.681125 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:24 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=16.0 model_vp=4 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:24 | [TRAIN][EP] ep=327 ep_reward=-4.184375 win=1 vp_diff=4 end_reason=turn_limit_Only War
+2026-01-27 16:09:24 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:24 | [TRAIN][EP] ep=328 ep_reward=-1.563125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:24 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=24.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:24 | [TRAIN][EP] ep=329 ep_reward=-0.823750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:24 | [TRAIN] ep=330 upd=5000 step=1647 loss=0.386406 eps=0.6615 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:24 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=23.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:24 | [TRAIN][EP] ep=330 ep_reward=-1.573125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:25 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=27.0 model_vp=3 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:25 | [TRAIN][EP] ep=331 ep_reward=0.017375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:25 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=9.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:25 | [TRAIN][EP] ep=332 ep_reward=0.110750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:25 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=17.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:25 | [TRAIN][EP] ep=333 ep_reward=0.659625 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:09:25 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:25 | [TRAIN][EP] ep=334 ep_reward=-2.611875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:25 | [TRAIN] ep=335 upd=5200 step=1672 loss=0.385300 eps=0.6584 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:25 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=20.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:25 | [TRAIN][EP] ep=335 ep_reward=-1.800625 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:09:26 | Конец эпизода: reason=unknown winner=None model_hp_total=12.0 enemy_hp_total=24.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:26 | [TRAIN][EP] ep=336 ep_reward=-1.335500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:26 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=14.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:26 | [TRAIN][EP] ep=337 ep_reward=-0.587875 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:26 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=17.0 model_vp=5 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:26 | [TRAIN][EP] ep=338 ep_reward=0.400500 win=1 vp_diff=5 end_reason=turn_limit_Only War
+2026-01-27 16:09:26 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=14.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:26 | [TRAIN][EP] ep=339 ep_reward=-0.719000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:26 | [TRAIN] ep=340 upd=5400 step=1697 loss=0.407063 eps=0.6554 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:27 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=17.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:27 | [TRAIN][EP] ep=340 ep_reward=-1.231250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:27 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=15.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:27 | [TRAIN][EP] ep=341 ep_reward=-0.650625 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:27 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=17.0 model_vp=3 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:27 | [TRAIN][EP] ep=342 ep_reward=-0.420500 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:27 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:27 | [TRAIN][EP] ep=343 ep_reward=-1.900375 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:28 | Конец эпизода: reason=unknown winner=None model_hp_total=17.0 enemy_hp_total=24.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:28 | [TRAIN][EP] ep=344 ep_reward=-0.379500 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:28 | [TRAIN] ep=345 upd=5600 step=1722 loss=0.430079 eps=0.6523 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:28 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=13.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:28 | [TRAIN][EP] ep=345 ep_reward=0.360875 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:28 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=17.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:28 | [TRAIN][EP] ep=346 ep_reward=-0.337750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:28 | Конец эпизода: reason=unknown winner=None model_hp_total=17.0 enemy_hp_total=14.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:28 | [TRAIN][EP] ep=347 ep_reward=-2.601500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:28 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=13.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:28 | [TRAIN][EP] ep=348 ep_reward=-0.216250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:29 | Конец эпизода: reason=unknown winner=None model_hp_total=14.0 enemy_hp_total=14.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:29 | [TRAIN][EP] ep=349 ep_reward=-0.070625 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:29 | [TRAIN] ep=350 upd=5800 step=1747 loss=0.391541 eps=0.6493 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:29 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=26.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:29 | [TRAIN][EP] ep=350 ep_reward=-0.049125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:29 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=26.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:29 | [TRAIN][EP] ep=351 ep_reward=-2.032500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:29 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=24.0 model_vp=4 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:29 | [TRAIN][EP] ep=352 ep_reward=-0.111875 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:30 | Конец эпизода: reason=unknown winner=None model_hp_total=13.0 enemy_hp_total=20.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:30 | [TRAIN][EP] ep=353 ep_reward=0.148375 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:30 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=20.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:30 | [TRAIN][EP] ep=354 ep_reward=-2.711125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:30 | [TRAIN] ep=355 upd=6000 step=1772 loss=0.406980 eps=0.6464 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:30 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:30 | [TRAIN][EP] ep=355 ep_reward=-0.106250 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:30 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=15.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:30 | [TRAIN][EP] ep=356 ep_reward=0.135000 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:31 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=16.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:31 | [TRAIN][EP] ep=357 ep_reward=-2.212875 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:09:31 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:31 | [TRAIN][EP] ep=358 ep_reward=-1.768125 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:31 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=30.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:31 | [TRAIN][EP] ep=359 ep_reward=0.074375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:31 | [TRAIN] ep=360 upd=6200 step=1797 loss=0.382515 eps=0.6434 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:31 | Конец эпизода: reason=unknown winner=None model_hp_total=17.0 enemy_hp_total=24.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:31 | [TRAIN][EP] ep=360 ep_reward=-0.538125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:32 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=29.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:32 | [TRAIN][EP] ep=361 ep_reward=-1.199125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:32 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=22.0 model_vp=4 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:32 | [TRAIN][EP] ep=362 ep_reward=0.242500 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:32 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=16.0 model_vp=0 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:09:32 | [TRAIN][EP] ep=363 ep_reward=-0.679125 win=0 vp_diff=-3 end_reason=turn_limit_Only War
+2026-01-27 16:09:32 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=20.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:32 | [TRAIN][EP] ep=364 ep_reward=0.241500 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:32 | [TRAIN] ep=365 upd=6400 step=1822 loss=0.394050 eps=0.6404 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:32 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=15.0 model_vp=4 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:32 | [TRAIN][EP] ep=365 ep_reward=0.110250 win=1 vp_diff=4 end_reason=turn_limit_Only War
+2026-01-27 16:09:33 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:33 | [TRAIN][EP] ep=366 ep_reward=0.088000 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:33 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=16.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:33 | [TRAIN][EP] ep=367 ep_reward=-1.045375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:33 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=24.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:33 | [TRAIN][EP] ep=368 ep_reward=-0.030750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:33 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=20.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:33 | [TRAIN][EP] ep=369 ep_reward=-0.281000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:33 | [TRAIN] ep=370 upd=6600 step=1847 loss=0.379340 eps=0.6375 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:34 | Конец эпизода: reason=unknown winner=None model_hp_total=13.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:34 | [TRAIN][EP] ep=370 ep_reward=0.051750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:34 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=6.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:34 | [TRAIN][EP] ep=371 ep_reward=-3.411625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:34 | Конец эпизода: reason=unknown winner=None model_hp_total=17.0 enemy_hp_total=15.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:34 | [TRAIN][EP] ep=372 ep_reward=-0.559375 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:34 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=30.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:34 | [TRAIN][EP] ep=373 ep_reward=-0.961250 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:34 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=24.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:34 | [TRAIN][EP] ep=374 ep_reward=0.276250 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:35 | [TRAIN] ep=375 upd=6800 step=1872 loss=0.400148 eps=0.6345 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:35 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=8.0 model_vp=4 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:35 | [TRAIN][EP] ep=375 ep_reward=-0.659375 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:09:35 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=20.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:35 | [TRAIN][EP] ep=376 ep_reward=0.100000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:35 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=15.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:35 | [TRAIN][EP] ep=377 ep_reward=0.470625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:35 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:35 | [TRAIN][EP] ep=378 ep_reward=-0.188750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:36 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=14.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:36 | [TRAIN][EP] ep=379 ep_reward=1.074375 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:36 | [TRAIN] ep=380 upd=7000 step=1897 loss=0.403824 eps=0.6316 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:36 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=28.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:36 | [TRAIN][EP] ep=380 ep_reward=-0.150625 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:36 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=29.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:36 | [TRAIN][EP] ep=381 ep_reward=-0.796000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:36 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=21.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:36 | [TRAIN][EP] ep=382 ep_reward=0.203500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:36 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=11.0 model_vp=4 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:36 | [TRAIN][EP] ep=383 ep_reward=-1.719875 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:09:37 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=15.0 model_vp=4 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:37 | [TRAIN][EP] ep=384 ep_reward=-1.105125 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:09:37 | [TRAIN] ep=385 upd=7200 step=1922 loss=0.384667 eps=0.6287 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:37 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=25.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:37 | [TRAIN][EP] ep=385 ep_reward=0.013125 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:37 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=14.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:37 | [TRAIN][EP] ep=386 ep_reward=0.331875 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:37 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=22.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:37 | [TRAIN][EP] ep=387 ep_reward=-2.355000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:38 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=25.0 model_vp=1 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:09:38 | [TRAIN][EP] ep=388 ep_reward=-0.206500 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:38 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=27.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:38 | [TRAIN][EP] ep=389 ep_reward=0.047500 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:38 | [TRAIN] ep=390 upd=7400 step=1947 loss=0.413774 eps=0.6258 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:38 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=17.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:38 | [TRAIN][EP] ep=390 ep_reward=-0.131125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:38 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=24.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:38 | [TRAIN][EP] ep=391 ep_reward=-0.171500 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:38 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=23.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:38 | [TRAIN][EP] ep=392 ep_reward=0.446750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:39 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=14.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:39 | [TRAIN][EP] ep=393 ep_reward=-0.760000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:39 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=13.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:39 | [TRAIN][EP] ep=394 ep_reward=-2.096000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:39 | [TRAIN] ep=395 upd=7600 step=1972 loss=0.387386 eps=0.6230 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:39 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=29.0 model_vp=0 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:09:39 | [TRAIN][EP] ep=395 ep_reward=0.187500 win=0 vp_diff=-3 end_reason=turn_limit_Only War
+2026-01-27 16:09:39 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=27.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:39 | [TRAIN][EP] ep=396 ep_reward=-0.365000 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:40 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=27.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:40 | [TRAIN][EP] ep=397 ep_reward=0.214375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:40 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=23.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:40 | [TRAIN][EP] ep=398 ep_reward=-0.264750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:40 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=25.0 model_vp=2 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:09:40 | [TRAIN][EP] ep=399 ep_reward=0.270875 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:40 | [TRAIN] ep=400 upd=7800 step=1997 loss=0.428214 eps=0.6201 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:40 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=28.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:40 | [TRAIN][EP] ep=400 ep_reward=-0.080000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:41 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:41 | [TRAIN][EP] ep=401 ep_reward=0.252500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:41 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=19.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:41 | [TRAIN][EP] ep=402 ep_reward=0.220625 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:41 | Конец эпизода: reason=unknown winner=None model_hp_total=14.0 enemy_hp_total=26.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:41 | [TRAIN][EP] ep=403 ep_reward=-0.145125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:41 | Конец эпизода: reason=unknown winner=None model_hp_total=11.0 enemy_hp_total=24.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:41 | [TRAIN][EP] ep=404 ep_reward=-0.170000 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:09:41 | [TRAIN] ep=405 upd=8000 step=2022 loss=0.416800 eps=0.6173 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:42 | Конец эпизода: reason=unknown winner=None model_hp_total=17.0 enemy_hp_total=17.0 model_vp=5 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:42 | [TRAIN][EP] ep=405 ep_reward=0.211125 win=1 vp_diff=5 end_reason=turn_limit_Only War
+2026-01-27 16:09:42 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=19.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:42 | [TRAIN][EP] ep=406 ep_reward=-0.234375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:42 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=29.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:42 | [TRAIN][EP] ep=407 ep_reward=-0.811250 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:42 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=26.0 model_vp=1 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:09:42 | [TRAIN][EP] ep=408 ep_reward=-1.285375 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:42 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=13.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:42 | [TRAIN][EP] ep=409 ep_reward=0.354125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:43 | [TRAIN] ep=410 upd=8200 step=2047 loss=0.398319 eps=0.6144 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:43 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=8.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:43 | [TRAIN][EP] ep=410 ep_reward=-0.890750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:43 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=28.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:43 | [TRAIN][EP] ep=411 ep_reward=-0.245625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:43 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=29.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:43 | [TRAIN][EP] ep=412 ep_reward=-0.979750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:43 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:43 | [TRAIN][EP] ep=413 ep_reward=-1.474250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:44 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=9.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:44 | [TRAIN][EP] ep=414 ep_reward=-0.034500 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:44 | [TRAIN] ep=415 upd=8400 step=2072 loss=0.410086 eps=0.6116 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:44 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=29.0 model_vp=3 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:44 | [TRAIN][EP] ep=415 ep_reward=-0.067125 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:44 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=24.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:44 | [TRAIN][EP] ep=416 ep_reward=-2.282125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:44 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=26.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:44 | [TRAIN][EP] ep=417 ep_reward=0.047500 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:44 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=30.0 model_vp=4 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:44 | [TRAIN][EP] ep=418 ep_reward=0.921500 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:09:45 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=31.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:45 | [TRAIN][EP] ep=419 ep_reward=0.133750 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:45 | [TRAIN] ep=420 upd=8600 step=2097 loss=0.399856 eps=0.6088 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:45 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:45 | [TRAIN][EP] ep=420 ep_reward=-1.702500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:45 | Конец эпизода: reason=unknown winner=None model_hp_total=15.0 enemy_hp_total=27.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:45 | [TRAIN][EP] ep=421 ep_reward=0.038000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:45 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=20.0 model_vp=4 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:45 | [TRAIN][EP] ep=422 ep_reward=-0.106375 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:09:46 | Конец эпизода: reason=unknown winner=None model_hp_total=15.0 enemy_hp_total=21.0 model_vp=6 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:46 | [TRAIN][EP] ep=423 ep_reward=-0.243750 win=1 vp_diff=6 end_reason=turn_limit_Only War
+2026-01-27 16:09:46 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:46 | [TRAIN][EP] ep=424 ep_reward=-1.763000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:46 | [TRAIN] ep=425 upd=8800 step=2122 loss=0.401803 eps=0.6060 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:46 | Конец эпизода: reason=unknown winner=None model_hp_total=15.0 enemy_hp_total=24.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:46 | [TRAIN][EP] ep=425 ep_reward=-0.541750 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:46 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=14.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:46 | [TRAIN][EP] ep=426 ep_reward=0.435875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:47 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=28.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:47 | [TRAIN][EP] ep=427 ep_reward=-1.449375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:47 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=32.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:47 | [TRAIN][EP] ep=428 ep_reward=-1.672500 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:47 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:47 | [TRAIN][EP] ep=429 ep_reward=-2.448125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:47 | [TRAIN] ep=430 upd=9000 step=2147 loss=0.424190 eps=0.6033 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:47 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=11.0 model_vp=3 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:47 | [TRAIN][EP] ep=430 ep_reward=-0.697000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:47 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=24.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:47 | [TRAIN][EP] ep=431 ep_reward=-0.712000 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:48 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=7.0 model_vp=4 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:48 | [TRAIN][EP] ep=432 ep_reward=0.103875 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:09:48 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:48 | [TRAIN][EP] ep=433 ep_reward=-0.144875 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:48 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=27.0 model_vp=2 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:09:48 | [TRAIN][EP] ep=434 ep_reward=0.287500 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:48 | [TRAIN] ep=435 upd=9200 step=2172 loss=0.416316 eps=0.6005 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:48 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=18.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:48 | [TRAIN][EP] ep=435 ep_reward=-0.162875 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:49 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=26.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:49 | [TRAIN][EP] ep=436 ep_reward=-0.203750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:49 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=30.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:49 | [TRAIN][EP] ep=437 ep_reward=-0.058750 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:49 | Конец эпизода: reason=unknown winner=None model_hp_total=12.0 enemy_hp_total=31.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:49 | [TRAIN][EP] ep=438 ep_reward=-0.185000 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:09:49 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=27.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:49 | [TRAIN][EP] ep=439 ep_reward=-1.830250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:49 | [TRAIN] ep=440 upd=9400 step=2197 loss=0.438434 eps=0.5978 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:49 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=20.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:49 | [TRAIN][EP] ep=440 ep_reward=-1.251250 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:50 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=15.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:50 | [TRAIN][EP] ep=441 ep_reward=-0.462625 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:50 | Конец эпизода: reason=unknown winner=None model_hp_total=17.0 enemy_hp_total=25.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:50 | [TRAIN][EP] ep=442 ep_reward=0.043750 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:50 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=15.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:50 | [TRAIN][EP] ep=443 ep_reward=-0.005375 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:50 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=32.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:50 | [TRAIN][EP] ep=444 ep_reward=-0.286250 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:51 | [TRAIN] ep=445 upd=9600 step=2222 loss=0.420542 eps=0.5950 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:51 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=23.0 model_vp=4 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:51 | [TRAIN][EP] ep=445 ep_reward=0.429250 win=1 vp_diff=4 end_reason=turn_limit_Only War
+2026-01-27 16:09:51 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=23.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:51 | [TRAIN][EP] ep=446 ep_reward=-0.272500 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:51 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=30.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:51 | [TRAIN][EP] ep=447 ep_reward=0.433750 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:51 | Конец эпизода: reason=unknown winner=None model_hp_total=10.0 enemy_hp_total=32.0 model_vp=1 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:09:51 | [TRAIN][EP] ep=448 ep_reward=0.060625 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:51 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=19.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:51 | [TRAIN][EP] ep=449 ep_reward=-0.276125 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:52 | [TRAIN] ep=450 upd=9800 step=2247 loss=0.449214 eps=0.5923 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:52 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=21.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:52 | [TRAIN][EP] ep=450 ep_reward=-1.481625 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:52 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=7.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:52 | [TRAIN][EP] ep=451 ep_reward=-0.686250 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:52 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=18.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:52 | [TRAIN][EP] ep=452 ep_reward=-0.144375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:53 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=16.0 model_vp=1 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:09:53 | [TRAIN][EP] ep=453 ep_reward=-2.512500 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:53 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=6.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:53 | [TRAIN][EP] ep=454 ep_reward=-0.089500 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:53 | [TRAIN] ep=455 upd=10000 step=2272 loss=0.423491 eps=0.5896 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:53 | Конец эпизода: reason=unknown winner=None model_hp_total=8.0 enemy_hp_total=31.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:53 | [TRAIN][EP] ep=455 ep_reward=-1.349375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:53 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=15.0 model_vp=4 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:53 | [TRAIN][EP] ep=456 ep_reward=-0.305250 win=1 vp_diff=4 end_reason=turn_limit_Only War
+2026-01-27 16:09:53 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=4.0 model_vp=4 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:53 | [TRAIN][EP] ep=457 ep_reward=0.412000 win=1 vp_diff=4 end_reason=turn_limit_Only War
+2026-01-27 16:09:54 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=27.0 model_vp=3 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:54 | [TRAIN][EP] ep=458 ep_reward=0.457000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:54 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:54 | [TRAIN][EP] ep=459 ep_reward=0.199375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:54 | [TRAIN] ep=460 upd=10200 step=2297 loss=0.432395 eps=0.5869 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:54 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:54 | [TRAIN][EP] ep=460 ep_reward=-2.074375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:54 | Конец эпизода: reason=unknown winner=None model_hp_total=7.0 enemy_hp_total=30.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:54 | [TRAIN][EP] ep=461 ep_reward=-0.094000 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:55 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=28.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:55 | [TRAIN][EP] ep=462 ep_reward=-2.289375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:55 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=20.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:55 | [TRAIN][EP] ep=463 ep_reward=-1.385625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:55 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=15.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:55 | [TRAIN][EP] ep=464 ep_reward=-0.776875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:55 | [TRAIN] ep=465 upd=10400 step=2322 loss=0.437323 eps=0.5842 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:56 | Конец эпизода: reason=unknown winner=None model_hp_total=14.0 enemy_hp_total=24.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:56 | [TRAIN][EP] ep=465 ep_reward=0.255750 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:56 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=27.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:56 | [TRAIN][EP] ep=466 ep_reward=0.301875 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:09:56 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=15.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:56 | [TRAIN][EP] ep=467 ep_reward=-0.758625 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:09:56 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:56 | [TRAIN][EP] ep=468 ep_reward=0.046000 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:57 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:57 | [TRAIN][EP] ep=469 ep_reward=-0.068750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:57 | [TRAIN] ep=470 upd=10600 step=2347 loss=0.420405 eps=0.5816 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:57 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=28.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:57 | [TRAIN][EP] ep=470 ep_reward=0.301750 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:57 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=23.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:57 | [TRAIN][EP] ep=471 ep_reward=0.358750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:57 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=20.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:57 | [TRAIN][EP] ep=472 ep_reward=-0.819125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:09:58 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=22.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:58 | [TRAIN][EP] ep=473 ep_reward=-1.562500 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:58 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=16.0 model_vp=4 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:58 | [TRAIN][EP] ep=474 ep_reward=-0.201000 win=1 vp_diff=4 end_reason=turn_limit_Only War
+2026-01-27 16:09:58 | [TRAIN] ep=475 upd=10800 step=2372 loss=0.443115 eps=0.5789 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:58 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=19.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:58 | [TRAIN][EP] ep=475 ep_reward=-1.049375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:09:58 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=29.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:58 | [TRAIN][EP] ep=476 ep_reward=-0.575625 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:59 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:09:59 | [TRAIN][EP] ep=477 ep_reward=-0.858125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:09:59 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=13.0 model_vp=4 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:09:59 | [TRAIN][EP] ep=478 ep_reward=-0.156625 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:09:59 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=15.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:09:59 | [TRAIN][EP] ep=479 ep_reward=0.165125 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:09:59 | [TRAIN] ep=480 upd=11000 step=2397 loss=0.430439 eps=0.5763 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:09:59 | Конец эпизода: reason=unknown winner=None model_hp_total=13.0 enemy_hp_total=20.0 model_vp=2 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:09:59 | [TRAIN][EP] ep=480 ep_reward=0.149750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:00 | Конец эпизода: reason=unknown winner=None model_hp_total=14.0 enemy_hp_total=30.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:00 | [TRAIN][EP] ep=481 ep_reward=-0.031250 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:00 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=7.0 model_vp=1 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:10:00 | [TRAIN][EP] ep=482 ep_reward=-0.688625 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:00 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=8.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:00 | [TRAIN][EP] ep=483 ep_reward=-1.870250 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:00 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=20.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:00 | [TRAIN][EP] ep=484 ep_reward=-0.689125 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:01 | [TRAIN] ep=485 upd=11200 step=2422 loss=0.417783 eps=0.5737 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:01 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:01 | [TRAIN][EP] ep=485 ep_reward=-0.251375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:01 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=14.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:01 | [TRAIN][EP] ep=486 ep_reward=-0.049000 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:01 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=16.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:01 | [TRAIN][EP] ep=487 ep_reward=-0.886000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:02 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=11.0 model_vp=4 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:10:02 | [TRAIN][EP] ep=488 ep_reward=-0.226375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:02 | Конец эпизода: reason=unknown winner=None model_hp_total=17.0 enemy_hp_total=27.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:02 | [TRAIN][EP] ep=489 ep_reward=-0.251875 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:02 | [TRAIN] ep=490 upd=11400 step=2447 loss=0.437622 eps=0.5710 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:02 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=16.0 model_vp=3 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:02 | [TRAIN][EP] ep=490 ep_reward=-0.237250 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:02 | Конец эпизода: reason=unknown winner=None model_hp_total=17.0 enemy_hp_total=16.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:02 | [TRAIN][EP] ep=491 ep_reward=-1.092500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:02 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=11.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:02 | [TRAIN][EP] ep=492 ep_reward=-0.087375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:03 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=24.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:03 | [TRAIN][EP] ep=493 ep_reward=-0.216875 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:03 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=22.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:03 | [TRAIN][EP] ep=494 ep_reward=-1.482500 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:03 | [TRAIN] ep=495 upd=11600 step=2472 loss=0.436197 eps=0.5684 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:03 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=25.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:03 | [TRAIN][EP] ep=495 ep_reward=-0.436125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:04 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=13.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:04 | [TRAIN][EP] ep=496 ep_reward=0.216625 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:04 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=11.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:04 | [TRAIN][EP] ep=497 ep_reward=-0.216625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:04 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=13.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:04 | [TRAIN][EP] ep=498 ep_reward=-0.295625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:04 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=21.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:04 | [TRAIN][EP] ep=499 ep_reward=-1.470000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:04 | [TRAIN] ep=500 upd=11800 step=2497 loss=0.425469 eps=0.5659 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:04 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=24.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:04 | [TRAIN][EP] ep=500 ep_reward=0.229000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:05 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=11.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:05 | [TRAIN][EP] ep=501 ep_reward=-1.008125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:05 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=27.0 model_vp=5 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:05 | [TRAIN][EP] ep=502 ep_reward=0.344000 win=1 vp_diff=5 end_reason=turn_limit_Only War
+2026-01-27 16:10:05 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=15.0 model_vp=5 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:05 | [TRAIN][EP] ep=503 ep_reward=0.181000 win=1 vp_diff=5 end_reason=turn_limit_Only War
+2026-01-27 16:10:06 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=31.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:06 | [TRAIN][EP] ep=504 ep_reward=-0.370625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:06 | [TRAIN] ep=505 upd=12000 step=2522 loss=0.434634 eps=0.5633 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:06 | Конец эпизода: reason=unknown winner=None model_hp_total=17.0 enemy_hp_total=29.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:06 | [TRAIN][EP] ep=505 ep_reward=-1.768125 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:06 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=17.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:06 | [TRAIN][EP] ep=506 ep_reward=0.019375 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:06 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=25.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:06 | [TRAIN][EP] ep=507 ep_reward=-1.483125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:06 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:06 | [TRAIN][EP] ep=508 ep_reward=-1.591250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:07 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=25.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:07 | [TRAIN][EP] ep=509 ep_reward=-0.968750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:07 | [TRAIN] ep=510 upd=12200 step=2547 loss=0.433042 eps=0.5607 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:07 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=4 turn=6 battle_round=6
+2026-01-27 16:10:07 | [TRAIN][EP] ep=510 ep_reward=-1.681250 win=0 vp_diff=-4 end_reason=turn_limit_Only War
+2026-01-27 16:10:07 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=30.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:07 | [TRAIN][EP] ep=511 ep_reward=-0.778750 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:07 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=26.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:07 | [TRAIN][EP] ep=512 ep_reward=-0.434375 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:08 | Конец эпизода: reason=unknown winner=None model_hp_total=14.0 enemy_hp_total=20.0 model_vp=4 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:08 | [TRAIN][EP] ep=513 ep_reward=-0.501125 win=1 vp_diff=4 end_reason=turn_limit_Only War
+2026-01-27 16:10:08 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=13.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:08 | [TRAIN][EP] ep=514 ep_reward=-0.983125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:08 | [TRAIN] ep=515 upd=12400 step=2572 loss=0.441969 eps=0.5582 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:08 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:08 | [TRAIN][EP] ep=515 ep_reward=-0.238125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:08 | Конец эпизода: reason=unknown winner=None model_hp_total=15.0 enemy_hp_total=11.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:08 | [TRAIN][EP] ep=516 ep_reward=-0.298250 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:09 | Конец эпизода: reason=unknown winner=None model_hp_total=12.0 enemy_hp_total=24.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:09 | [TRAIN][EP] ep=517 ep_reward=-0.094000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:09 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=22.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:09 | [TRAIN][EP] ep=518 ep_reward=-3.018125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:09 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=17.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:09 | [TRAIN][EP] ep=519 ep_reward=-0.213125 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:09 | [TRAIN] ep=520 upd=12600 step=2597 loss=0.434635 eps=0.5556 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:09 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=24.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:09 | [TRAIN][EP] ep=520 ep_reward=-0.495875 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:10 | Конец эпизода: reason=unknown winner=None model_hp_total=10.0 enemy_hp_total=27.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:10 | [TRAIN][EP] ep=521 ep_reward=-0.292375 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:10 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:10 | [TRAIN][EP] ep=522 ep_reward=-1.588000 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:10 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=12.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:10 | [TRAIN][EP] ep=523 ep_reward=-1.813750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:11 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:11 | [TRAIN][EP] ep=524 ep_reward=-0.121875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:11 | [TRAIN] ep=525 upd=12800 step=2622 loss=0.421495 eps=0.5531 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:11 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=31.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:11 | [TRAIN][EP] ep=525 ep_reward=-0.482500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:11 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=7.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:11 | [TRAIN][EP] ep=526 ep_reward=-0.508375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:11 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=15.0 model_vp=4 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:11 | [TRAIN][EP] ep=527 ep_reward=-0.739500 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:10:11 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=8.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:11 | [TRAIN][EP] ep=528 ep_reward=-0.737125 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:12 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=23.0 model_vp=6 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:12 | [TRAIN][EP] ep=529 ep_reward=0.272250 win=1 vp_diff=6 end_reason=turn_limit_Only War
+2026-01-27 16:10:12 | [TRAIN] ep=530 upd=13000 step=2647 loss=0.455834 eps=0.5506 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:12 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:12 | [TRAIN][EP] ep=530 ep_reward=-0.435000 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:12 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=29.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:12 | [TRAIN][EP] ep=531 ep_reward=-0.188750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:12 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:12 | [TRAIN][EP] ep=532 ep_reward=-0.080000 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:13 | Конец эпизода: reason=unknown winner=None model_hp_total=16.0 enemy_hp_total=19.0 model_vp=3 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:13 | [TRAIN][EP] ep=533 ep_reward=-0.708000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:13 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=10.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:13 | [TRAIN][EP] ep=534 ep_reward=-1.157375 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:13 | [TRAIN] ep=535 upd=13200 step=2672 loss=0.423721 eps=0.5481 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:13 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:13 | [TRAIN][EP] ep=535 ep_reward=-1.511625 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:13 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=16.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:13 | [TRAIN][EP] ep=536 ep_reward=-0.950375 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:10:14 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=26.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:14 | [TRAIN][EP] ep=537 ep_reward=-1.595625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:14 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=27.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:14 | [TRAIN][EP] ep=538 ep_reward=-0.801625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:14 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=14.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:14 | [TRAIN][EP] ep=539 ep_reward=-1.282625 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:14 | [TRAIN] ep=540 upd=13400 step=2697 loss=0.447070 eps=0.5456 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:14 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:14 | [TRAIN][EP] ep=540 ep_reward=-1.291250 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:15 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=26.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:15 | [TRAIN][EP] ep=541 ep_reward=-1.198750 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:15 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=25.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:15 | [TRAIN][EP] ep=542 ep_reward=-1.108500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:15 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=28.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:15 | [TRAIN][EP] ep=543 ep_reward=-1.665500 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:15 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=13.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:15 | [TRAIN][EP] ep=544 ep_reward=0.395750 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:10:16 | [TRAIN] ep=545 upd=13600 step=2722 loss=0.447842 eps=0.5432 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:16 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=28.0 model_vp=5 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:16 | [TRAIN][EP] ep=545 ep_reward=-0.385750 win=1 vp_diff=5 end_reason=turn_limit_Only War
+2026-01-27 16:10:16 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=17.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:16 | [TRAIN][EP] ep=546 ep_reward=-0.393750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:16 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=18.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:16 | [TRAIN][EP] ep=547 ep_reward=-1.377500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:16 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=17.0 model_vp=3 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:16 | [TRAIN][EP] ep=548 ep_reward=-0.148750 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:17 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=15.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:17 | [TRAIN][EP] ep=549 ep_reward=-0.056750 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:17 | [TRAIN] ep=550 upd=13800 step=2747 loss=0.436333 eps=0.5407 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:17 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=25.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:17 | [TRAIN][EP] ep=550 ep_reward=-0.537375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:17 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=24.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:17 | [TRAIN][EP] ep=551 ep_reward=-1.548125 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:17 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=24.0 model_vp=4 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:17 | [TRAIN][EP] ep=552 ep_reward=-0.269375 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:10:18 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=23.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:18 | [TRAIN][EP] ep=553 ep_reward=-0.621000 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:18 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=26.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:18 | [TRAIN][EP] ep=554 ep_reward=-0.205750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:18 | [TRAIN] ep=555 upd=14000 step=2772 loss=0.434075 eps=0.5383 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:18 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=14.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:18 | [TRAIN][EP] ep=555 ep_reward=-3.387875 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:18 | Конец эпизода: reason=unknown winner=None model_hp_total=15.0 enemy_hp_total=17.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:18 | [TRAIN][EP] ep=556 ep_reward=-0.347625 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:19 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=21.0 model_vp=1 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:10:19 | [TRAIN][EP] ep=557 ep_reward=0.085000 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:19 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:19 | [TRAIN][EP] ep=558 ep_reward=-0.052125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:19 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=24.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:19 | [TRAIN][EP] ep=559 ep_reward=-0.721125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:19 | [TRAIN] ep=560 upd=14200 step=2797 loss=0.444937 eps=0.5358 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:19 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=20.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:19 | [TRAIN][EP] ep=560 ep_reward=-1.359375 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:20 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=24.0 model_vp=3 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:10:20 | [TRAIN][EP] ep=561 ep_reward=-0.442875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:20 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=29.0 model_vp=0 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:10:20 | [TRAIN][EP] ep=562 ep_reward=-1.676875 win=0 vp_diff=-3 end_reason=turn_limit_Only War
+2026-01-27 16:10:20 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=25.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:20 | [TRAIN][EP] ep=563 ep_reward=0.389625 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:20 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=31.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:20 | [TRAIN][EP] ep=564 ep_reward=-0.505625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:21 | [TRAIN] ep=565 upd=14400 step=2822 loss=0.443059 eps=0.5334 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:21 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=12.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:21 | [TRAIN][EP] ep=565 ep_reward=-1.876500 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:21 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:21 | [TRAIN][EP] ep=566 ep_reward=0.003125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:21 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:21 | [TRAIN][EP] ep=567 ep_reward=-0.421875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:21 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=15.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:21 | [TRAIN][EP] ep=568 ep_reward=-1.488625 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:22 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=28.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:22 | [TRAIN][EP] ep=569 ep_reward=-0.131875 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:22 | [TRAIN] ep=570 upd=14600 step=2847 loss=0.465176 eps=0.5310 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:22 | Конец эпизода: reason=unknown winner=None model_hp_total=12.0 enemy_hp_total=26.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:22 | [TRAIN][EP] ep=570 ep_reward=-1.114375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:22 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=11.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:22 | [TRAIN][EP] ep=571 ep_reward=-0.631750 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:22 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=10.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:22 | [TRAIN][EP] ep=572 ep_reward=-0.353125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:23 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=14.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:23 | [TRAIN][EP] ep=573 ep_reward=0.065000 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:23 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=17.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:23 | [TRAIN][EP] ep=574 ep_reward=-1.293000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:23 | [TRAIN] ep=575 upd=14800 step=2872 loss=0.438348 eps=0.5286 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:23 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=17.0 model_vp=5 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:23 | [TRAIN][EP] ep=575 ep_reward=0.332000 win=1 vp_diff=5 end_reason=turn_limit_Only War
+2026-01-27 16:10:23 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=28.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:23 | [TRAIN][EP] ep=576 ep_reward=-2.767000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:24 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=16.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:24 | [TRAIN][EP] ep=577 ep_reward=-0.674875 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:24 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=17.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:24 | [TRAIN][EP] ep=578 ep_reward=-0.789500 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:10:24 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=32.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:24 | [TRAIN][EP] ep=579 ep_reward=-0.278750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:24 | [TRAIN] ep=580 upd=15000 step=2897 loss=0.443999 eps=0.5262 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:24 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=20.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:24 | [TRAIN][EP] ep=580 ep_reward=0.207750 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:25 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=15.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:25 | [TRAIN][EP] ep=581 ep_reward=-0.738125 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:25 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=17.0 model_vp=0 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:10:25 | [TRAIN][EP] ep=582 ep_reward=-0.944750 win=0 vp_diff=-3 end_reason=turn_limit_Only War
+2026-01-27 16:10:25 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=17.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:25 | [TRAIN][EP] ep=583 ep_reward=-0.182125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:25 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=4 turn=6 battle_round=6
+2026-01-27 16:10:25 | [TRAIN][EP] ep=584 ep_reward=-1.563750 win=0 vp_diff=-4 end_reason=turn_limit_Only War
+2026-01-27 16:10:25 | [TRAIN] ep=585 upd=15200 step=2922 loss=0.436711 eps=0.5238 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:25 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=23.0 model_vp=0 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:10:25 | [TRAIN][EP] ep=585 ep_reward=-1.306375 win=0 vp_diff=-3 end_reason=turn_limit_Only War
+2026-01-27 16:10:26 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=17.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:26 | [TRAIN][EP] ep=586 ep_reward=0.100125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:26 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=12.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:26 | [TRAIN][EP] ep=587 ep_reward=-1.080000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:26 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=18.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:26 | [TRAIN][EP] ep=588 ep_reward=0.752500 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:10:26 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=11.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:26 | [TRAIN][EP] ep=589 ep_reward=-0.616375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:27 | [TRAIN] ep=590 upd=15400 step=2947 loss=0.434832 eps=0.5215 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:27 | Конец эпизода: reason=unknown winner=None model_hp_total=5.0 enemy_hp_total=29.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:27 | [TRAIN][EP] ep=590 ep_reward=-1.571125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:27 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=29.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:27 | [TRAIN][EP] ep=591 ep_reward=-0.931250 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:27 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=19.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:27 | [TRAIN][EP] ep=592 ep_reward=-1.210625 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:28 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:28 | [TRAIN][EP] ep=593 ep_reward=0.277500 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:28 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=23.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:28 | [TRAIN][EP] ep=594 ep_reward=-1.928250 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:28 | [TRAIN] ep=595 upd=15600 step=2972 loss=0.463965 eps=0.5191 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:28 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:28 | [TRAIN][EP] ep=595 ep_reward=-2.845625 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:28 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=21.0 model_vp=4 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:28 | [TRAIN][EP] ep=596 ep_reward=0.129375 win=1 vp_diff=4 end_reason=turn_limit_Only War
+2026-01-27 16:10:29 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:29 | [TRAIN][EP] ep=597 ep_reward=-0.082250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:29 | Конец эпизода: reason=unknown winner=None model_hp_total=13.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:29 | [TRAIN][EP] ep=598 ep_reward=-0.064375 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:29 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=29.0 model_vp=2 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:10:29 | [TRAIN][EP] ep=599 ep_reward=-0.685000 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:29 | [TRAIN] ep=600 upd=15800 step=2997 loss=0.455000 eps=0.5168 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:29 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=16.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:29 | [TRAIN][EP] ep=600 ep_reward=-1.068875 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:30 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=25.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:30 | [TRAIN][EP] ep=601 ep_reward=-0.714625 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:30 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=27.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:30 | [TRAIN][EP] ep=602 ep_reward=-0.374875 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:30 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=16.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:30 | [TRAIN][EP] ep=603 ep_reward=0.009125 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:30 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=29.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:30 | [TRAIN][EP] ep=604 ep_reward=-0.573250 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:31 | [TRAIN] ep=605 upd=16000 step=3022 loss=0.438800 eps=0.5144 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:31 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=9.0 model_vp=3 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:31 | [TRAIN][EP] ep=605 ep_reward=0.503625 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:31 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=23.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:31 | [TRAIN][EP] ep=606 ep_reward=0.536375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:31 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=23.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:31 | [TRAIN][EP] ep=607 ep_reward=-0.607375 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:31 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=29.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:31 | [TRAIN][EP] ep=608 ep_reward=-1.517875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:31 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=23.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:31 | [TRAIN][EP] ep=609 ep_reward=-0.420125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:32 | [TRAIN] ep=610 upd=16200 step=3047 loss=0.472167 eps=0.5121 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:32 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:32 | [TRAIN][EP] ep=610 ep_reward=-2.485625 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:32 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=18.0 model_vp=4 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:32 | [TRAIN][EP] ep=611 ep_reward=-2.075625 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:32 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=16.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:32 | [TRAIN][EP] ep=612 ep_reward=-1.262750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:33 | Конец эпизода: reason=unknown winner=None model_hp_total=12.0 enemy_hp_total=27.0 model_vp=0 enemy_vp=4 turn=6 battle_round=6
+2026-01-27 16:10:33 | [TRAIN][EP] ep=613 ep_reward=-2.220750 win=0 vp_diff=-4 end_reason=turn_limit_Only War
+2026-01-27 16:10:33 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=18.0 model_vp=3 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:10:33 | [TRAIN][EP] ep=614 ep_reward=0.610750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:33 | [TRAIN] ep=615 upd=16400 step=3072 loss=0.458580 eps=0.5098 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:33 | Конец эпизода: reason=unknown winner=None model_hp_total=10.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:33 | [TRAIN][EP] ep=615 ep_reward=-0.103250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:33 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=5.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:33 | [TRAIN][EP] ep=616 ep_reward=0.136375 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:33 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=10.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:33 | [TRAIN][EP] ep=617 ep_reward=0.393875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:34 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:34 | [TRAIN][EP] ep=618 ep_reward=-2.024750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:34 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=17.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:34 | [TRAIN][EP] ep=619 ep_reward=-0.060750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:34 | [TRAIN] ep=620 upd=16600 step=3097 loss=0.471998 eps=0.5075 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:34 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=13.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:34 | [TRAIN][EP] ep=620 ep_reward=0.233875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:34 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=17.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:34 | [TRAIN][EP] ep=621 ep_reward=-0.163375 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:10:35 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=21.0 model_vp=1 enemy_vp=5 turn=6 battle_round=6
+2026-01-27 16:10:35 | [TRAIN][EP] ep=622 ep_reward=-0.309375 win=0 vp_diff=-4 end_reason=turn_limit_Only War
+2026-01-27 16:10:35 | Конец эпизода: reason=unknown winner=None model_hp_total=10.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:35 | [TRAIN][EP] ep=623 ep_reward=-0.247000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:35 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=11.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:35 | [TRAIN][EP] ep=624 ep_reward=-1.814375 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:10:35 | [TRAIN] ep=625 upd=16800 step=3122 loss=0.448890 eps=0.5052 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:35 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=23.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:35 | [TRAIN][EP] ep=625 ep_reward=-1.387250 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:36 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:36 | [TRAIN][EP] ep=626 ep_reward=-0.051375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:36 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=20.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:36 | [TRAIN][EP] ep=627 ep_reward=0.234375 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:36 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=28.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:36 | [TRAIN][EP] ep=628 ep_reward=-1.228250 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:36 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=15.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:36 | [TRAIN][EP] ep=629 ep_reward=-1.595000 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:36 | [TRAIN] ep=630 upd=17000 step=3147 loss=0.447697 eps=0.5030 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:37 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=25.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:37 | [TRAIN][EP] ep=630 ep_reward=0.217000 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:37 | Конец эпизода: reason=unknown winner=None model_hp_total=13.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:37 | [TRAIN][EP] ep=631 ep_reward=-0.067875 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:37 | Конец эпизода: reason=unknown winner=None model_hp_total=14.0 enemy_hp_total=27.0 model_vp=3 enemy_vp=4 turn=6 battle_round=6
+2026-01-27 16:10:37 | [TRAIN][EP] ep=632 ep_reward=0.302750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:37 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=13.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:37 | [TRAIN][EP] ep=633 ep_reward=-0.372500 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:37 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=17.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:37 | [TRAIN][EP] ep=634 ep_reward=-1.666250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:38 | [TRAIN] ep=635 upd=17200 step=3172 loss=0.461476 eps=0.5007 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:38 | Конец эпизода: reason=unknown winner=None model_hp_total=15.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:38 | [TRAIN][EP] ep=635 ep_reward=-0.045500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:38 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=15.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:38 | [TRAIN][EP] ep=636 ep_reward=0.262875 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:38 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=29.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:38 | [TRAIN][EP] ep=637 ep_reward=-0.333750 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:38 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=14.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:38 | [TRAIN][EP] ep=638 ep_reward=-1.839125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:39 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:39 | [TRAIN][EP] ep=639 ep_reward=-0.215625 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:39 | [TRAIN] ep=640 upd=17400 step=3197 loss=0.464438 eps=0.4985 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:39 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=17.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:39 | [TRAIN][EP] ep=640 ep_reward=0.100500 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:39 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=15.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:39 | [TRAIN][EP] ep=641 ep_reward=0.246125 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:39 | Конец эпизода: reason=unknown winner=None model_hp_total=15.0 enemy_hp_total=23.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:39 | [TRAIN][EP] ep=642 ep_reward=-0.183750 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:40 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:40 | [TRAIN][EP] ep=643 ep_reward=-0.236250 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:40 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=12.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:40 | [TRAIN][EP] ep=644 ep_reward=-0.713375 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:40 | [TRAIN] ep=645 upd=17600 step=3222 loss=0.434986 eps=0.4962 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:40 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=25.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:40 | [TRAIN][EP] ep=645 ep_reward=-0.051625 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:40 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=17.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:40 | [TRAIN][EP] ep=646 ep_reward=-0.276375 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:41 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=19.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:41 | [TRAIN][EP] ep=647 ep_reward=-1.533000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:41 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=25.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:41 | [TRAIN][EP] ep=648 ep_reward=0.443000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:41 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=16.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:41 | [TRAIN][EP] ep=649 ep_reward=0.227625 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:41 | [TRAIN] ep=650 upd=17800 step=3247 loss=0.487156 eps=0.4940 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:41 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:41 | [TRAIN][EP] ep=650 ep_reward=0.160375 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:42 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=24.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:42 | [TRAIN][EP] ep=651 ep_reward=-1.462875 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:42 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=16.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:42 | [TRAIN][EP] ep=652 ep_reward=-1.195000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:42 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:42 | [TRAIN][EP] ep=653 ep_reward=-0.369000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:42 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=15.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:42 | [TRAIN][EP] ep=654 ep_reward=-0.135625 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:42 | [TRAIN] ep=655 upd=18000 step=3272 loss=0.463969 eps=0.4918 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:43 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=9.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:43 | [TRAIN][EP] ep=655 ep_reward=-0.211875 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:43 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:43 | [TRAIN][EP] ep=656 ep_reward=-0.115500 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:43 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=28.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:43 | [TRAIN][EP] ep=657 ep_reward=-1.547500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:43 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=29.0 model_vp=0 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:10:43 | [TRAIN][EP] ep=658 ep_reward=-0.135000 win=0 vp_diff=-3 end_reason=turn_limit_Only War
+2026-01-27 16:10:43 | Конец эпизода: reason=unknown winner=None model_hp_total=17.0 enemy_hp_total=26.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:43 | [TRAIN][EP] ep=659 ep_reward=-0.970875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:44 | [TRAIN] ep=660 upd=18200 step=3297 loss=0.434635 eps=0.4896 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:44 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=12.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:44 | [TRAIN][EP] ep=660 ep_reward=-0.055500 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:44 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=13.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:44 | [TRAIN][EP] ep=661 ep_reward=0.547500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:44 | Конец эпизода: reason=unknown winner=None model_hp_total=7.0 enemy_hp_total=25.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:44 | [TRAIN][EP] ep=662 ep_reward=-0.113750 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:45 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=21.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:45 | [TRAIN][EP] ep=663 ep_reward=-1.119500 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:45 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=20.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:45 | [TRAIN][EP] ep=664 ep_reward=0.132625 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:45 | [TRAIN] ep=665 upd=18400 step=3322 loss=0.478505 eps=0.4874 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:45 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=21.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:45 | [TRAIN][EP] ep=665 ep_reward=0.073125 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:45 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=13.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:45 | [TRAIN][EP] ep=666 ep_reward=0.172750 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:45 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=4.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:45 | [TRAIN][EP] ep=667 ep_reward=-2.192500 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:10:46 | Конец эпизода: reason=unknown winner=None model_hp_total=30.0 enemy_hp_total=17.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:46 | [TRAIN][EP] ep=668 ep_reward=-0.872250 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:46 | Конец эпизода: reason=unknown winner=None model_hp_total=28.0 enemy_hp_total=25.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:46 | [TRAIN][EP] ep=669 ep_reward=-0.086250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:46 | [TRAIN] ep=670 upd=18600 step=3347 loss=0.431835 eps=0.4852 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:46 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:46 | [TRAIN][EP] ep=670 ep_reward=-0.064500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:46 | Конец эпизода: reason=unknown winner=None model_hp_total=31.0 enemy_hp_total=9.0 model_vp=1 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:46 | [TRAIN][EP] ep=671 ep_reward=0.344125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:47 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:47 | [TRAIN][EP] ep=672 ep_reward=-1.364375 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:47 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=23.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:47 | [TRAIN][EP] ep=673 ep_reward=-0.142500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:47 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=25.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:47 | [TRAIN][EP] ep=674 ep_reward=-0.214750 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:47 | [TRAIN] ep=675 upd=18800 step=3372 loss=0.470351 eps=0.4830 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:47 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=27.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:47 | [TRAIN][EP] ep=675 ep_reward=0.112375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:47 | Конец эпизода: reason=unknown winner=None model_hp_total=22.0 enemy_hp_total=20.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:47 | [TRAIN][EP] ep=676 ep_reward=-0.859500 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:48 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=18.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:48 | [TRAIN][EP] ep=677 ep_reward=0.223250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:48 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=23.0 model_vp=2 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:48 | [TRAIN][EP] ep=678 ep_reward=-0.688125 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:48 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=24.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:48 | [TRAIN][EP] ep=679 ep_reward=-0.313750 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:48 | [TRAIN] ep=680 upd=19000 step=3397 loss=0.469596 eps=0.4809 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:49 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=5.0 model_vp=3 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:49 | [TRAIN][EP] ep=680 ep_reward=0.590875 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:49 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=11.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:49 | [TRAIN][EP] ep=681 ep_reward=-0.144125 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:49 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=27.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:49 | [TRAIN][EP] ep=682 ep_reward=-0.107500 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:49 | Конец эпизода: reason=unknown winner=None model_hp_total=21.0 enemy_hp_total=21.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:49 | [TRAIN][EP] ep=683 ep_reward=-0.914750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:50 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=20.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:50 | [TRAIN][EP] ep=684 ep_reward=0.145000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:50 | [TRAIN] ep=685 upd=19200 step=3422 loss=0.459937 eps=0.4787 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:50 | Конец эпизода: reason=unknown winner=None model_hp_total=10.0 enemy_hp_total=30.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:50 | [TRAIN][EP] ep=685 ep_reward=0.039375 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:50 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:50 | [TRAIN][EP] ep=686 ep_reward=-1.097500 win=0 vp_diff=-1 end_reason=turn_limit_Only War
+2026-01-27 16:10:50 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=22.0 model_vp=2 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:50 | [TRAIN][EP] ep=687 ep_reward=0.193250 win=1 vp_diff=2 end_reason=turn_limit_Only War
+2026-01-27 16:10:50 | Конец эпизода: reason=unknown winner=None model_hp_total=32.0 enemy_hp_total=21.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:50 | [TRAIN][EP] ep=688 ep_reward=-0.149000 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:51 | Конец эпизода: reason=unknown winner=None model_hp_total=26.0 enemy_hp_total=22.0 model_vp=0 enemy_vp=3 turn=6 battle_round=6
+2026-01-27 16:10:51 | [TRAIN][EP] ep=689 ep_reward=-1.486000 win=0 vp_diff=-3 end_reason=turn_limit_Only War
+2026-01-27 16:10:51 | [TRAIN] ep=690 upd=19400 step=3447 loss=0.464418 eps=0.4766 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:51 | Конец эпизода: reason=unknown winner=None model_hp_total=25.0 enemy_hp_total=20.0 model_vp=4 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:51 | [TRAIN][EP] ep=690 ep_reward=0.615875 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:10:51 | Конец эпизода: reason=unknown winner=None model_hp_total=18.0 enemy_hp_total=14.0 model_vp=2 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:51 | [TRAIN][EP] ep=691 ep_reward=-1.090750 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:51 | Конец эпизода: reason=unknown winner=None model_hp_total=20.0 enemy_hp_total=16.0 model_vp=4 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:51 | [TRAIN][EP] ep=692 ep_reward=0.824875 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:10:52 | Конец эпизода: reason=unknown winner=None model_hp_total=10.0 enemy_hp_total=20.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:52 | [TRAIN][EP] ep=693 ep_reward=0.493250 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:52 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=24.0 model_vp=0 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:52 | [TRAIN][EP] ep=694 ep_reward=-0.191875 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:52 | [TRAIN] ep=695 upd=19600 step=3472 loss=0.467638 eps=0.4745 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:52 | Конец эпизода: reason=unknown winner=None model_hp_total=19.0 enemy_hp_total=25.0 model_vp=0 enemy_vp=2 turn=6 battle_round=6
+2026-01-27 16:10:52 | [TRAIN][EP] ep=695 ep_reward=-0.882500 win=0 vp_diff=-2 end_reason=turn_limit_Only War
+2026-01-27 16:10:52 | Конец эпизода: reason=unknown winner=None model_hp_total=29.0 enemy_hp_total=22.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:52 | [TRAIN][EP] ep=696 ep_reward=-0.145000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:53 | Конец эпизода: reason=unknown winner=None model_hp_total=14.0 enemy_hp_total=30.0 model_vp=1 enemy_vp=1 turn=6 battle_round=6
+2026-01-27 16:10:53 | [TRAIN][EP] ep=697 ep_reward=-0.833125 win=0 vp_diff=0 end_reason=turn_limit_Only War
+2026-01-27 16:10:53 | Конец эпизода: reason=unknown winner=None model_hp_total=23.0 enemy_hp_total=25.0 model_vp=1 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:53 | [TRAIN][EP] ep=698 ep_reward=-0.256000 win=1 vp_diff=1 end_reason=turn_limit_Only War
+2026-01-27 16:10:53 | Конец эпизода: reason=unknown winner=None model_hp_total=27.0 enemy_hp_total=14.0 model_vp=4 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:53 | [TRAIN][EP] ep=699 ep_reward=-0.476625 win=1 vp_diff=4 end_reason=turn_limit_Only War
+2026-01-27 16:10:53 | [TRAIN] ep=700 upd=19800 step=3497 loss=0.445071 eps=0.4724 lr=0.0001 gamma=0.99 PER=0 alpha=0.6 beta=0.4 N_STEP=1
+2026-01-27 16:10:53 | Конец эпизода: reason=unknown winner=None model_hp_total=24.0 enemy_hp_total=11.0 model_vp=3 enemy_vp=0 turn=6 battle_round=6
+2026-01-27 16:10:53 | [TRAIN][EP] ep=700 ep_reward=0.154250 win=1 vp_diff=3 end_reason=turn_limit_Only War
+2026-01-27 16:11:27 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+2026-01-27 16:11:27 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+2026-01-27 16:11:27 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+2026-01-27 16:11:27 | Roll-off Attacker/Defender: enemy=1 model=4 -> attacker=model
+2026-01-27 16:11:27 | Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10), ('Canoptek Scarab Swarms', '7', 3)]
+2026-01-27 16:11:27 | [DEPLOY] Order: model first, alternating
+2026-01-27 16:11:27 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (16,1)
+2026-01-27 16:11:27 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (7,33)
+2026-01-27 16:11:27 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (58,0)
+2026-01-27 16:11:27 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (44,33)
+2026-01-27 16:11:27 | [DEPLOY][MODEL] Unit 23 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (48,8)
+2026-01-27 16:11:27 | [DEPLOY][ENEMY] Unit 13 — Necrons Canoptek Scarab Swarms (x3 моделей) -> (15,37)
+2026-01-27 16:11:27 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
+2026-01-27 16:11:27 | 
+2026-01-27 16:11:27 | Инструкции:
+2026-01-27 16:11:27 | Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+2026-01-27 16:11:27 | Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+2026-01-27 16:11:27 | {'model health': [10, 10, 12], 'player health': [10, 10, 12], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command'}
+2026-01-27 16:11:27 | Здоровье MODEL: [10, 10, 12], здоровье PLAYER: [10, 10, 12]
+2026-01-27 16:11:27 | CP MODEL: 0, CP PLAYER: 0
+2026-01-27 16:11:27 | VP MODEL: 0, VP PLAYER: 0
+2026-01-27 16:11:27 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+2026-01-27 16:11:27 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+2026-01-27 16:11:27 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+2026-01-27 16:11:27 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+2026-01-27 16:11:27 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+2026-01-27 16:11:27 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+2026-01-27 16:11:27 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+2026-01-27 16:11:27 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])
+2026-01-27 16:11:27 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])

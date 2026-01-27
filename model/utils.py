@@ -196,6 +196,7 @@ def optimize_model(
             "priority_mean": float(new_priorities.mean()),
             "priority_max": float(new_priorities.max()),
             "is_weight_mean": float(weight_t.mean().item()),
+            "is_weight_max": float(weight_t.max().item()),
             "td_error_mean": float(td_errors.mean().item()),
             "td_error_max": float(td_errors.max().item()),
         }

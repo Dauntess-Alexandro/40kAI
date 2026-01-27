@@ -7,6 +7,7 @@ import gymnasium as gym
 import pickle
 import datetime
 import collections
+import math
 import json
 import random
 import matplotlib.pyplot as plt
@@ -42,6 +43,17 @@ DOUBLE_DQN_ENABLED = os.getenv("DOUBLE_DQN_ENABLED", "1") == "1"
 DUELING_ENABLED = os.getenv("DUELING_ENABLED", "0") == "1"
 REWARD_DEBUG = os.getenv("REWARD_DEBUG", "0") == "1"
 REWARD_DEBUG_EVERY = int(os.getenv("REWARD_DEBUG_EVERY", "200"))
+# ===== train logging =====
+TRAIN_LOG_ENABLED = os.getenv("TRAIN_LOG_ENABLED", "1") == "1"
+TRAIN_LOG_EVERY_UPDATES = int(os.getenv("TRAIN_LOG_EVERY_UPDATES", "200"))
+TRAIN_LOG_TO_FILE = os.getenv("TRAIN_LOG_TO_FILE", "1") == "1"
+TRAIN_LOG_TO_CONSOLE = os.getenv("TRAIN_LOG_TO_CONSOLE", "0") == "1"
+TRAIN_DEBUG = os.getenv("TRAIN_DEBUG", "0") == "1"
+if TRAIN_LOG_EVERY_UPDATES < 1:
+    TRAIN_LOG_EVERY_UPDATES = 1
+if TRAIN_DEBUG:
+    TRAIN_LOG_EVERY_UPDATES = min(TRAIN_LOG_EVERY_UPDATES, 50)
+# =========================
 # ===== per + n-step =====
 PER_ENABLED = os.getenv("PER_ENABLED", "0") == "1"
 PER_ALPHA = float(os.getenv("PER_ALPHA", "0.6"))
@@ -210,16 +222,22 @@ def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
 
     print(f"[metrics] saved: {csv_path}")
 
-def append_log_for_agents(message: str, log_path: str = "LOGS_FOR_AGENTS.md"):
+def append_agent_log(line: str) -> None:
+    log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LOGS_FOR_AGENTS.md")
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    line = f"{timestamp} | {message}"
-    with open(log_path, "a", encoding="utf-8") as log_file:
-        log_file.write(line + "\n")
+    full_line = f"{timestamp} | {line}"
+    try:
+        with open(log_path, "a", encoding="utf-8") as log_file:
+            log_file.write(full_line + "\n")
+    except Exception as exc:
+        print(f"[LOG][WARN] Не удалось записать LOGS_FOR_AGENTS.md: {exc}")
 
 TAU = data["tau"]
 LR = data["lr"]
 GAMMA = data["gamma"]
 NET_TYPE = "dueling" if DUELING_ENABLED else "basic"
+CLIP_REWARD = os.getenv("CLIP_REWARD", "off")
+GRAD_CLIP_VALUE = 100.0
 
 # ============================================================
 # (C) Несколько обучающих апдейтов на один шаг среды
@@ -227,19 +245,21 @@ NET_TYPE = "dueling" if DUELING_ENABLED else "basic"
 UPDATES_PER_STEP = int(data.get("updates_per_step", 1))  # 1 = как было раньше
 WARMUP_STEPS     = int(data.get("warmup_steps", 0))      # 0 = без прогрева
 
-append_log_for_agents(
-    "[TRAIN] "
-    f"DoubleDQN={int(DOUBLE_DQN_ENABLED)} "
-    f"Dueling={int(DUELING_ENABLED)} "
-    f"LR={LR} GAMMA={data.get('gamma')}"
-)
-append_log_for_agents(
-    "[TRAIN] "
-    f"PER={int(PER_ENABLED)} "
-    f"alpha={PER_ALPHA} "
-    f"beta_start={PER_BETA_START} "
-    f"N_STEP={N_STEP}"
-)
+if TRAIN_LOG_ENABLED:
+    train_start_line = (
+        "[TRAIN][START] "
+        f"DoubleDQN={int(DOUBLE_DQN_ENABLED)} "
+        f"Dueling={int(DUELING_ENABLED)} "
+        f"PER={int(PER_ENABLED)} "
+        f"N_STEP={N_STEP} "
+        f"LR={LR} "
+        f"clip_reward={CLIP_REWARD} "
+        f"grad_clip={GRAD_CLIP_VALUE}"
+    )
+    if TRAIN_LOG_TO_FILE:
+        append_agent_log(train_start_line)
+    if TRAIN_LOG_TO_CONSOLE:
+        print(train_start_line)
 
 b_len = 60
 b_hei = 40
@@ -400,7 +420,7 @@ if SELF_PLAY_ENABLED:
                     "Стартуем с новой инициализацией."
                 )
                 print(warn_msg)
-                append_log_for_agents(warn_msg)
+                append_agent_log(warn_msg)
             else:
                 opponent_policy_net.load_state_dict(checkpoint["policy_net"])
         else:
@@ -410,10 +430,10 @@ if SELF_PLAY_ENABLED:
                     f"а текущая сеть={NET_TYPE}. Стартуем с новой инициализацией."
                 )
                 print(warn_msg)
-                append_log_for_agents(warn_msg)
+                append_agent_log(warn_msg)
             else:
                 opponent_policy_net.load_state_dict(checkpoint)
-        append_log_for_agents(
+        append_agent_log(
             f"[SELFPLAY] fixed_checkpoint path={SELF_PLAY_FIXED_PATH}"
         )
     else:
@@ -469,18 +489,18 @@ n_step_buffer = collections.deque(maxlen=N_STEP)
 optimize_steps = 0
 initial_model_hp = float(sum(getattr(env, "unit_health", [])))
 initial_enemy_hp = float(sum(getattr(env, "enemy_health", [])))
-append_log_for_agents(
+append_agent_log(
     "Старт обучения: "
     f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}, "
     f"battle_round={getattr(env, 'battle_round', 'n/a')}, trunc={trunc}"
 )
 if trunc:
-    append_log_for_agents(
+    append_agent_log(
         "Логи фаз/ходов отключены (trunc=True). "
         "Чтобы включить подробные логи: VERBOSE_LOGS=1 или MANUAL_DICE=1."
     )
 if initial_model_hp <= 0 or initial_enemy_hp <= 0:
-    append_log_for_agents(
+    append_agent_log(
         "ВНИМАНИЕ: на старте эпизода обнаружено нулевое здоровье. "
         f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}. "
         "Это может приводить к мгновенному завершению эпизодов."
@@ -489,7 +509,7 @@ if initial_model_hp <= 0 or initial_enemy_hp <= 0:
 while end == False:
     epLen += 1
     if SELF_PLAY_ENABLED and epLen == 1:
-        append_log_for_agents(
+        append_agent_log(
             f"Старт эпизода {numLifeT + 1}. "
             f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
             f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
@@ -561,6 +581,8 @@ while end == False:
     # ✅ Несколько обучающих апдейтов на 1 шаг среды
     losses = []
     last_td_stats = None
+    last_per_beta = PER_BETA_START
+    last_loss_value = None
 
     if i >= WARMUP_STEPS:
         for _ in range(UPDATES_PER_STEP):
@@ -588,7 +610,44 @@ while end == False:
             if result and result["loss"] != 0:
                 losses.append(result["loss"])
                 last_td_stats = result
+                last_per_beta = per_beta
+                last_loss_value = result["loss"]
                 optimize_steps += 1
+                if TRAIN_LOG_ENABLED and optimize_steps % TRAIN_LOG_EVERY_UPDATES == 0:
+                    eps_value = EPS_END + (EPS_START - EPS_END) * math.exp(
+                        -1.0 * i / EPS_DECAY
+                    )
+                    train_line = (
+                        "[TRAIN] "
+                        f"ep={numLifeT + 1} "
+                        f"upd={optimize_steps} "
+                        f"step={i} "
+                        f"loss={last_loss_value:.6f} "
+                        f"eps={eps_value:.4f} "
+                        f"lr={LR:.6g} "
+                        f"gamma={GAMMA:.6g} "
+                        f"PER={int(PER_ENABLED)} "
+                        f"alpha={PER_ALPHA:.4g} "
+                        f"beta={last_per_beta:.4g} "
+                        f"N_STEP={N_STEP}"
+                    )
+                    if N_STEP > 1:
+                        effective_gamma = GAMMA ** N_STEP
+                        train_line += f" effective_gamma={effective_gamma:.6g}"
+                    if PER_ENABLED and last_td_stats.get("per_stats"):
+                        per_stats = last_td_stats["per_stats"]
+                        train_line += (
+                            f" td_abs_mean={per_stats['td_error_mean']:.6f}"
+                            f" td_abs_max={per_stats['td_error_max']:.6f}"
+                            f" prio_mean={per_stats['priority_mean']:.6f}"
+                            f" prio_max={per_stats['priority_max']:.6f}"
+                            f" isw_mean={per_stats['is_weight_mean']:.6f}"
+                            f" isw_max={per_stats['is_weight_max']:.6f}"
+                        )
+                    if TRAIN_LOG_TO_FILE:
+                        append_agent_log(train_line)
+                    if TRAIN_LOG_TO_CONSOLE:
+                        print(train_line)
 
             # ✅ Быстрый soft-update target_net (намного быстрее, чем state_dict)
             with torch.no_grad():
@@ -602,7 +661,7 @@ while end == False:
     else:
         metrics.updateLoss(0)
     if REWARD_DEBUG and last_td_stats and optimize_steps % REWARD_DEBUG_EVERY == 0:
-        append_log_for_agents(
+        append_agent_log(
             "[TD] "
             f"step={i} "
             f"mean={last_td_stats['td_target_mean']:.6f} "
@@ -610,7 +669,7 @@ while end == False:
         )
         if PER_ENABLED and last_td_stats.get("per_stats"):
             per_stats = last_td_stats["per_stats"]
-            append_log_for_agents(
+            append_agent_log(
                 "[PER] "
                 f"opt_step={optimize_steps} "
                 f"priority_mean={per_stats['priority_mean']:.6f} "
@@ -625,7 +684,7 @@ while end == False:
 
     if done == True:
         if SELF_PLAY_ENABLED:
-            append_log_for_agents(
+            append_agent_log(
                 f"Конец эпизода {numLifeT + 1}. "
                 f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
                 f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
@@ -634,7 +693,7 @@ while end == False:
         winner_env = info.get("winner")
         model_hp_total = sum(info.get("model health", [])) if isinstance(info.get("model health"), (list, tuple, np.ndarray)) else info.get("model health")
         enemy_hp_total = sum(info.get("player health", [])) if isinstance(info.get("player health"), (list, tuple, np.ndarray)) else info.get("player health")
-        append_log_for_agents(
+        append_agent_log(
             "Конец эпизода: "
             f"reason={end_reason_env or 'unknown'} "
             f"winner={winner_env} "
@@ -643,7 +702,7 @@ while end == False:
             f"turn={info.get('turn')} battle_round={info.get('battle round')}"
         )
         if epLen == 1:
-            append_log_for_agents(
+            append_agent_log(
                 "ВНИМАНИЕ: эпизод завершился на первом шаге. "
                 "Проверьте reset/условия завершения (нулевое здоровье, лимиты хода, "
                 "ошибки расстановки)."
@@ -724,6 +783,20 @@ while end == False:
             if trunc == False:
                 print("draw!")
 
+        if TRAIN_LOG_ENABLED:
+            win_flag = 1 if result == "win" else 0
+            train_ep_line = (
+                "[TRAIN][EP] "
+                f"ep={numLifeT + 1} "
+                f"ep_reward={ep_reward:.6f} "
+                f"win={win_flag} "
+                f"vp_diff={vp_diff} "
+                f"end_reason={end_reason}"
+            )
+            if TRAIN_LOG_TO_FILE:
+                append_agent_log(train_ep_line)
+            if TRAIN_LOG_TO_CONSOLE:
+                print(train_ep_line)
 
         ep_rows.append({
             "episode": numLifeT + 1,   # lifetimes считаются у тебя через numLifeT
@@ -760,7 +833,7 @@ while end == False:
         if SELF_PLAY_ENABLED and SELF_PLAY_OPPONENT_MODE == "snapshot":
             if numLifeT % SELF_PLAY_UPDATE_EVERY_EPISODES == 0:
                 opponent_policy_net.load_state_dict(policy_net.state_dict())
-                append_log_for_agents(
+                append_agent_log(
                     f"[SELFPLAY] opponent snapshot updated at episode {numLifeT}"
                 )
 
