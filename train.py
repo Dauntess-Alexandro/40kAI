@@ -399,6 +399,24 @@ rewArr = []
 ep_rows = [] 
 
 epLen = 0
+initial_model_hp = float(sum(getattr(env, "unit_health", [])))
+initial_enemy_hp = float(sum(getattr(env, "enemy_health", [])))
+append_log_for_agents(
+    "Старт обучения: "
+    f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}, "
+    f"battle_round={getattr(env, 'battle_round', 'n/a')}, trunc={trunc}"
+)
+if trunc:
+    append_log_for_agents(
+        "Логи фаз/ходов отключены (trunc=True). "
+        "Чтобы включить подробные логи: VERBOSE_LOGS=1 или MANUAL_DICE=1."
+    )
+if initial_model_hp <= 0 or initial_enemy_hp <= 0:
+    append_log_for_agents(
+        "ВНИМАНИЕ: на старте эпизода обнаружено нулевое здоровье. "
+        f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}. "
+        "Это может приводить к мгновенному завершению эпизодов."
+    )
 
 while end == False:
     epLen += 1
@@ -488,6 +506,24 @@ while end == False:
                 f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
                 f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
             )
+        end_reason_env = info.get("end reason", "")
+        winner_env = info.get("winner")
+        model_hp_total = sum(info.get("model health", [])) if isinstance(info.get("model health"), (list, tuple, np.ndarray)) else info.get("model health")
+        enemy_hp_total = sum(info.get("player health", [])) if isinstance(info.get("player health"), (list, tuple, np.ndarray)) else info.get("player health")
+        append_log_for_agents(
+            "Конец эпизода: "
+            f"reason={end_reason_env or 'unknown'} "
+            f"winner={winner_env} "
+            f"model_hp_total={model_hp_total} enemy_hp_total={enemy_hp_total} "
+            f"model_vp={info.get('model VP')} enemy_vp={info.get('player VP')} "
+            f"turn={info.get('turn')} battle_round={info.get('battle round')}"
+        )
+        if epLen == 1:
+            append_log_for_agents(
+                "ВНИМАНИЕ: эпизод завершился на первом шаге. "
+                "Проверьте reset/условия завершения (нулевое здоровье, лимиты хода, "
+                "ошибки расстановки)."
+            )
         pbar.update(1)
         metrics.updateRew(sum(rewArr)/len(rewArr))
         metrics.updateEpLen(epLen)
@@ -512,9 +548,30 @@ while end == False:
         ph = _sum_health(ph_list)
 
         end_code = res  # то, что возвращает env (1..3 миссия или 4)
+        end_reason_env = info.get("end reason", "")
         turn = int(info.get("turn", epLen))  # если turn не добавляли в env — будет epLen
 
-        if ph <= 0 and mh > 0:
+        if end_reason_env:
+            end_reason = end_reason_env
+            if end_reason_env == "wipeout_enemy":
+                result = "win"
+            elif end_reason_env == "wipeout_model":
+                result = "loss"
+            elif end_reason_env == "turn_limit":
+                if vp_diff > 0:
+                    result = "win"
+                elif vp_diff < 0:
+                    result = "loss"
+                else:
+                    result = "draw"
+            else:
+                if vp_diff > 0:
+                    result = "win"
+                elif vp_diff < 0:
+                    result = "loss"
+                else:
+                    result = "draw"
+        elif ph <= 0 and mh > 0:
             result = "win"
             end_reason = "wipe_enemy"
         elif mh <= 0 and ph > 0:

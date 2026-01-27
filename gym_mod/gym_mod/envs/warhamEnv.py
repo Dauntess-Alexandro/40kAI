@@ -833,6 +833,9 @@ class Warhammer40kEnv(gym.Env):
             "battle round": self.battle_round,
             "active side": self.active_side,
             "phase": self.phase,
+            "game over": self.game_over,
+            "end reason": getattr(self, "last_end_reason", ""),
+            "winner": getattr(self, "last_winner", None),
         }
 
     def _should_log(self) -> bool:
@@ -2952,6 +2955,8 @@ class Warhammer40kEnv(gym.Env):
         )
 
         self.game_over = False
+        self.last_end_reason = ""
+        self.last_winner = None
         self.current_action_index = 0
         info = self.get_info()
 
@@ -3289,7 +3294,7 @@ class Warhammer40kEnv(gym.Env):
         reward += self.shooting_phase("model", advanced_flags=advanced_flags, action=action) or 0
         reward += self.charge_phase("model", advanced_flags=advanced_flags, action=action) or 0
         reward += self.fight_phase("model") or 0
-        game_over, _, winner = apply_end_of_battle(self, log_fn=self._log)
+        game_over, end_reason, winner = apply_end_of_battle(self, log_fn=self._log)
         self.enemyStrat["overwatch"] = -1
         self.enemyStrat["smokescreen"] = -1
 
@@ -3313,6 +3318,8 @@ class Warhammer40kEnv(gym.Env):
 
         if game_over:
             res = 4
+            self.last_end_reason = end_reason
+            self.last_winner = winner
             if winner == "model":
                 reward += 2
             elif winner == "enemy":
@@ -3323,6 +3330,9 @@ class Warhammer40kEnv(gym.Env):
             res = 4
 
         self.iter += 1
+        if not self.game_over:
+            self.last_end_reason = ""
+            self.last_winner = None
         info = self.get_info()
         return self._get_observation(), reward, self.game_over, res, info
 

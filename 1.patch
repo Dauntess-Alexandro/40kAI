@@ -1,370 +1,394 @@
-diff --git a/gui/Application.cpp b/gui/Application.cpp
-index 1df3da1c2be4216bbe317b583d480622f4bf82da..47cf9f025efbce1143a861a8fccfab7368812256 100644
---- a/gui/Application.cpp
-+++ b/gui/Application.cpp
-@@ -70,50 +70,51 @@ int findDefaultModelsCount(const std::string& faction, const std::string& name)
-   }
-   return 1;
- }
- }  // namespace
+diff --git a/gym_mod/gym_mod/envs/warhamEnv.py b/gym_mod/gym_mod/envs/warhamEnv.py
+index 806daca403371720f10980253da9ba71bcf62eef..38b1f95b332ae2cdb0fc11553d65ee51c36b3c8a 100644
+--- a/gym_mod/gym_mod/envs/warhamEnv.py
++++ b/gym_mod/gym_mod/envs/warhamEnv.py
+@@ -811,50 +811,53 @@ class Warhammer40kEnv(gym.Env):
+             1,
+             sum(
+                 unit.get("W", 0) * unit.get("#OfModels", 0)
+                 for unit in self.unit_data
+                 if isinstance(unit, dict)
+             ),
+         )
  
- std::string gifpth = "img/model_train.gif";
- std::string rewpth = "img/reward.png";
- std::string losspth = "img/loss.png";
- std::string eplenpth = "img/epLen.png";
- std::string winratepth = "img/winrate.png";
- std::string vpdiffpth = "img/vpdiff.png";
- std::string endreasonpth = "img/endreasons.png";
- std::string imgpth = "img/icon.png";
+         obsSpace = (len(model) * 3) + (len(enemy) * 3) + len(self.coordsOfOM * 2) + 1
+         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obsSpace,), dtype=np.float32)
  
- Form :: Form() {
+     def get_info(self):
+         return {
+             "model health": self.unit_health,
+             "player health": self.enemy_health,
+             "modelCP": self.modelCP,
+             "playerCP": self.enemyCP,
+             "in attack": self.unitInAttack,
+             "model VP": self.modelVP,
+             "player VP": self.enemyVP,
+             "mission": self.mission_name,
+             "turn": self.numTurns,
+             "battle round": self.battle_round,
+             "active side": self.active_side,
+             "phase": self.phase,
++            "game over": self.game_over,
++            "end reason": getattr(self, "last_end_reason", ""),
++            "winner": getattr(self, "last_winner", None),
+         }
  
-   modelClass = " Necrons";
-   enemyClass = " Necrons";
-   path = " ";
-   open = false;
-   x = 60;
-   y = 40;
-   training = false;
-   playing = false;
-   loadingRoster = false;
-+  trainEnvPrefix = "";
+     def _should_log(self) -> bool:
+         if self._is_verbose():
+             return True
+         return self.trunc is False
  
-   bar.set_show_close_button(true);
-   bar.set_title("40kAI GUI");
-   set_titlebar(bar);
+     def _is_verbose(self) -> bool:
+         return os.getenv("VERBOSE_LOGS", "0") == "1" or os.getenv("MANUAL_DICE", "0") == "1"
  
-   set_default_size(kDefaultWidth, kDefaultHeight);
-   set_size_request(kMinimumWidth, kMinimumHeight);
+     def _ensure_io(self):
+         if not hasattr(self, "io") or self.io is None:
+             self.io = get_active_io()
+         return self.io
  
-   rootBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
-   topBarBox.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
-   topBarBox.set_spacing(8);
-   leftBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
-   mainSplit.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
-   rightSplit.set_orientation(Gtk::ORIENTATION_VERTICAL);
+     def _log(self, msg: str, verbose_only: bool = False):
+         if verbose_only and not self._is_verbose():
+             return
+         if not self._should_log():
+             return
+         self._ensure_io().log(msg)
  
-   rootBox.set_hexpand(true);
-   rootBox.set_vexpand(true);
-   topBarBox.set_hexpand(true);
-   leftBox.set_hexpand(true);
-   leftBox.set_vexpand(true);
-   mainSplit.set_hexpand(true);
-   mainSplit.set_vexpand(true);
-   rightSplit.set_hexpand(true);
-   rightSplit.set_vexpand(true);
+     def _unit_max_hp(self, side: str, idx: int) -> float:
+         data_list = self.unit_data if side == "model" else self.enemy_data
+         if not (0 <= idx < len(data_list)):
+@@ -2930,50 +2933,52 @@ class Warhammer40kEnv(gym.Env):
+         self.enemyFellBack = [False] * len(self.enemy_health)
+         self.enemy_hp_max_total = max(
+             1,
+             sum(
+                 unit.get("W", 0) * unit.get("#OfModels", 0)
+                 for unit in self.enemy_data
+                 if isinstance(unit, dict)
+             ),
+         )
  
-@@ -207,50 +208,51 @@ Form :: Form() {
-   fixedTabPage1.move(radioBottom, 10, 130);
-   radioBottom.set_label("Bottom");
-   radioBottom.set_group(radioButtonGroup);
-   radioBottom.signal_toggled().connect([this]() {
-     tabControl1.set_tab_pos(PositionType::POS_BOTTOM);
-   });
+         for i in range(len(self.unit_data)):
+             self.unit_coords.append([m[i].showCoords()[0], m[i].showCoords()[1]])
+             self.unit_health.append(self.unit_data[i]["W"] * self.unit_data[i]["#OfModels"])
+             self.unitInAttack.append([0, 0])
+         self.unitFellBack = [False] * len(self.unit_health)
+         self.model_hp_max_total = max(
+             1,
+             sum(
+                 unit.get("W", 0) * unit.get("#OfModels", 0)
+                 for unit in self.unit_data
+                 if isinstance(unit, dict)
+             ),
+         )
  
-     // train tab
+         self.game_over = False
++        self.last_end_reason = ""
++        self.last_winner = None
+         self.current_action_index = 0
+         info = self.get_info()
  
-   savetoTxt(enemyUnits, modelUnits);
+         if Type == "big":
+             self.updateBoard()
  
-   labelPage2.set_label("Train");
-   tabControl1.set_tab_label(tabPage2, labelPage2);
-   tabPage2.add(fixedTabPage2);
+         return self._get_observation(), info
  
-   textbox1.set_text("Train Model:");
-   setStatusMessage("Press the Train button to train a model");
-     
-   button1.set_label("Train");
-   button1.signal_button_release_event().connect([&](GdkEventButton*) {
-     saveLastRoster();
-     syncEnemyUnitsFromRoster();
-     updateInits(modelClass, enemyClass);
-     if (exists_test("data.json") && training == false) {
-       setStatusMessage("Training...");
-+      trainEnvPrefix = "";
-       startTrainInBackground();
-     }
-     return true;
-   });
+     def enemyTurn(self, trunc=False, policy_fn=None):
+         self.unitCharged = [0] * len(self.unit_health)
+         self.enemyCharged = [0] * len(self.enemy_health)
+         if trunc is True:
+             self.trunc = True
  
-   numOfGames.set_text("# of Games in Training:");
-   setIters.set_text("100");
+         self.active_side = "enemy"
+         action = None
+         if policy_fn is not None:
+             obs = self.get_observation_for_side("enemy")
+             action = policy_fn(obs)
+         battle_shock = self.command_phase("enemy", action=action)
+         advanced_flags = self.movement_phase("enemy", action=action, battle_shock=battle_shock)
+         self.shooting_phase("enemy", advanced_flags=advanced_flags, action=action)
+         self.charge_phase("enemy", advanced_flags=advanced_flags, action=action)
+         self.fight_phase("enemy")
+         apply_end_of_battle(self, log_fn=self._log)
+@@ -3267,84 +3272,89 @@ class Warhammer40kEnv(gym.Env):
+                 next_side = "model"
  
-   modelUnitLabel.set_text("Enter Model Units:");
-   enemyUnitLabel.set_text("Enter Player Units:");
-   openArmyPopup.set_label("Army Viewer");
-   openArmyPopup.signal_button_release_event().connect([&](GdkEventButton*) {
-     openArmyView();
-     return true;
-   });
+         # после Fight Phase — charged сбрасываем (на всякий)
+         self.unitCharged = [0] * len(self.unit_health)
+         self.enemyCharged = [0] * len(self.enemy_health)
  
-   dimens.set_text("Dimensions of Board: ");
- 
-   dimX.set_text("X : ");
-   enterDimensX.set_text(std::to_string(x));
-   upX.set_label("+");
-   upX.signal_button_release_event().connect([&](GdkEventButton*) {
-     x+=10;
-     enterDimensX.set_text(std::to_string(x));
-     return true;
-@@ -262,50 +264,63 @@ Form :: Form() {
-     return true;
-   });
- 
-   dimY.set_text("Y :");
-   enterDimensY.set_text(std::to_string(y));
-   upY.set_label("+");
-   upY.signal_button_release_event().connect([&](GdkEventButton*) {
-     y+=10;
-     enterDimensY.set_text(std::to_string(y));
-     return true;
-   });
-   downY.set_label("-");
-   downY.signal_button_release_event().connect([&](GdkEventButton*) {
-     y-=10;
-     enterDimensY.set_text(std::to_string(y));
-     return true;
-   });
- 
-   button3.set_label("Clear Model Cache");
-   button3.signal_button_release_event().connect([&](GdkEventButton*) {
-     std::string mess = "Warning: You are about to delete all of the saved models";
-     openWarnMenu(mess, 0);
-     return true;
-   });
- 
-+  buttonSelfPlay.set_label("Самообучение");
-+  buttonSelfPlay.signal_button_release_event().connect([&](GdkEventButton*) {
-+    saveLastRoster();
-+    syncEnemyUnitsFromRoster();
-+    updateInits(modelClass, enemyClass);
-+    if (exists_test("data.json") && training == false) {
-+      setStatusMessage("Самообучение: обучение...");
-+      trainEnvPrefix = "SELF_PLAY_ENABLED=1 ";
-+      startTrainInBackground();
-+    }
-+    return true;
-+  });
-+
-   spmModel.set_label("Space Marine");
-   spmModel.set_group(factionModel);
-   spmModel.signal_toggled().connect([this]() {
-     modelUnits.clear();
-     modelClass = " Space_Marine";
-   });
+         if quiet is False:
+             self._log("⚔️ Combat resolution complete.\n")
  
  
-   orksModel.set_label("Orks");
-   orksModel.set_group(factionModel);
-   orksModel.signal_toggled().connect([this]() {
-     modelUnits.clear();
-     modelClass = " Orks";
-   });
  
-   sobModel.set_label("Sisters of Battle");
-   sobModel.set_group(factionModel);
-   sobModel.signal_toggled().connect([this]() {
-     modelUnits.clear();
-     modelClass = " Sisters_of_Battle";
-   });
+     def step(self, action):
+         reward = 0
+         res = 0
+         model_hp_start = float(sum(self.unit_health))
+         self.unitCharged = [0] * len(self.unit_health)
+         self.enemyCharged = [0] * len(self.enemy_health)
+         self.active_side = "model"
+         battle_shock, delta = self.command_phase("model", action=action)
+         reward += delta
+         advanced_flags, delta = self.movement_phase("model", action=action, battle_shock=battle_shock)
+         reward += delta
+         reward += self.shooting_phase("model", advanced_flags=advanced_flags, action=action) or 0
+         reward += self.charge_phase("model", advanced_flags=advanced_flags, action=action) or 0
+         reward += self.fight_phase("model") or 0
+-        game_over, _, winner = apply_end_of_battle(self, log_fn=self._log)
++        game_over, end_reason, winner = apply_end_of_battle(self, log_fn=self._log)
+         self.enemyStrat["overwatch"] = -1
+         self.enemyStrat["smokescreen"] = -1
  
-   adcModel.set_label("Adeptus Custodes");
-   adcModel.set_group(factionModel);
-   adcModel.signal_toggled().connect([this]() {
-@@ -549,55 +564,57 @@ Form :: Form() {
-   fixedTabPage2.add(necEnemy);
-   fixedTabPage2.move(necEnemy, 270, 140);
-   fixedTabPage2.add(modelUnitLabel);
-   fixedTabPage2.move(modelUnitLabel, 10, 163);
-   fixedTabPage2.add(enterModelUnit);
-   fixedTabPage2.move(enterModelUnit, 130, 160);
-   fixedTabPage2.add(modelEnter);
-   fixedTabPage2.move(modelEnter, 300, 160);
-   fixedTabPage2.add(enemyUnitLabel);
-   fixedTabPage2.move(enemyUnitLabel, 10, 203);
-   fixedTabPage2.add(enterEnemyUnit);
-   fixedTabPage2.move(enterEnemyUnit, 130, 200);
-   fixedTabPage2.add(enemyEnter);
-   fixedTabPage2.move(enemyEnter, 300, 200);
-   fixedTabPage2.add(clearAllModel);
-   fixedTabPage2.move(clearAllModel, 340, 160);
-   fixedTabPage2.add(clearAllEnemy);
-   fixedTabPage2.move(clearAllEnemy, 340, 200);
-   fixedTabPage2.add(mirrorRosterButton);
-   fixedTabPage2.move(mirrorRosterButton, 400, 140);
-   fixedTabPage2.add(openArmyPopup);
-   fixedTabPage2.move(openArmyPopup, 400, (160+200)/2);
-   fixedTabPage2.add(textbox1);
-   fixedTabPage2.move(textbox1, 10, 10);
-   fixedTabPage2.add(button1);
--  fixedTabPage2.move(button1, 150, 300);
-+  fixedTabPage2.move(button1, 380, 300);
-   fixedTabPage2.add(setIters);
-   fixedTabPage2.move(setIters, 160, 40);
-   fixedTabPage2.add(button3);
-   fixedTabPage2.move(button3, 10, 300);
-+  fixedTabPage2.add(buttonSelfPlay);
-+  fixedTabPage2.move(buttonSelfPlay, 200, 300);
-   fixedTabPage2.add(status);
-   fixedTabPage2.move(status, 10, 350);
+         for i in range(len(self.unit_health)):
+             if self.unit_health[i] < 0:
+                 self.unit_health[i] = 0
+         for i in range(len(self.enemy_health)):
+             if self.enemy_health[i] < 0:
+                 self.enemy_health[i] = 0
  
-     // show trained model tab
+         model_hp_end = float(sum(self.unit_health))
+         damage_taken = max(0.0, model_hp_start - model_hp_end)
+         if damage_taken > 0:
+             damage_taken_norm = damage_taken / max(1.0, float(self.model_hp_max_total))
+             penalty = reward_cfg.DAMAGE_TAKEN_SCALE * damage_taken_norm
+             reward -= penalty
+             self._log(
+                 "Reward (урон по модели): "
+                 f"damage_taken={damage_taken:.2f}, norm={damage_taken_norm:.3f}, penalty=-{penalty:.3f}"
+             )
  
-   labelPage3.set_label("Show Trained Model");
-   tabControl1.set_tab_label(tabPage3, labelPage3);
-   tabPage3.add(fixedTabPage3);
+         if game_over:
+             res = 4
++            self.last_end_reason = end_reason
++            self.last_winner = winner
+             if winner == "model":
+                 reward += 2
+             elif winner == "enemy":
+                 reward -= 2
  
-   showModelHint.set_text("Preview shown in the right panel.");
-   fixedTabPage3.add(showModelHint);
-   fixedTabPage3.move(showModelHint, 10, 10);
-   pictureBox1.set_size_request(280, 280);
-   update_picture();
+         self._advance_turn_order()
+         if self.game_over and res == 0:
+             res = 4
  
-   // show metrics tab
-   labelPage5.set_label("Model Metrics");
-   tabControl1.set_tab_label(tabPage5, labelPage5);
-   tabPage5.add(fixedTabPage5);
-   
-   chooseMetrics.set_label("Choose");
-   chooseMetrics.signal_button_release_event().connect([&](GdkEventButton * event){
- 	FileChooserDialog folderBrowserDialog("", FILE_CHOOSER_ACTION_OPEN);
-     folderBrowserDialog.add_button("Cancel", RESPONSE_CANCEL);
-     folderBrowserDialog.add_button("Open", RESPONSE_OK);
-@@ -1053,50 +1070,51 @@ void Form :: update_metrics() {
-   if (auto p = load_scaled(endreasonpth)) metricBox6.set(p);
+         self.iter += 1
++        if not self.game_over:
++            self.last_end_reason = ""
++            self.last_winner = None
+         info = self.get_info()
+         return self._get_observation(), reward, self.game_over, res, info
  
- }
+     def player(self):
+         self.active_side = "enemy"
  
- void Form :: updateInits(std::string model, std::string enemy) {
-   std::string command = "cd .. ; ./data.sh ";
-   command.append(setIters.get_text().data());
-   command.append(model);
-   command.append(enemy);
-   command.append(" ");
-   command.append(enterDimensX.get_text().data());
-   command.append(" ");
-   command.append(enterDimensY.get_text().data());
-   system(command.data());
- }
+         info = self.get_info()
+         self._log(str(info))
+         more_info = "Здоровье MODEL: {}, здоровье PLAYER: {}\nCP MODEL: {}, CP PLAYER: {}\nVP MODEL: {}, VP PLAYER: {}\n".format(
+             info["model health"],
+             info["player health"],
+             info["modelCP"],
+             info["playerCP"],
+             info["model VP"],
+             info["player VP"],
+         )
+         if self.modelUpdates:
+             self._log(more_info + self.modelUpdates)
+         else:
+             self._log(more_info)
+         continue_game = self._request_bool("Продолжить? (y/n): ")
+         if continue_game is None or not continue_game:
+             self.game_over = True
+             info = self.get_info()
+             return self.game_over, info
+diff --git a/train.py b/train.py
+index 300cb3790c159df1155b0e5c1c14f2fddcc883c7..17848c51e74d75b0069c20909c566f010f7fc82d 100644
+--- a/train.py
++++ b/train.py
+@@ -377,50 +377,68 @@ inText.append("Model units:")
+ for i in model:
+     inText.append("Name: {}, Army Type: {}".format(i.showUnitData()["Name"], i.showUnitData()["Army"]))
+ inText.append("Enemy units:")
+ for i in enemy:
+     inText.append("Name: {}, Army Type: {}".format(i.showUnitData()["Name"], i.showUnitData()["Army"]))
+ inText.append("Number of Lifetimes ran: {}\n".format(totLifeT))
  
- void Form :: startTrainInBackground() {
-   std::thread t(&Form::startTrain, this);
-   t.detach();
- }
+ i = 0
  
- void Form :: startTrain() {
-   training = true;
-   system("clear");
-   std::string command = "cd .. ; ";
-+  command.append(trainEnvPrefix);
-   command.append("./train.sh");
-   system(command.data());
-   setStatusMessage("Completed!");
-   training = false;
-   update_picture();
-   update_metrics();
- }
+ pbar = tqdm(total=totLifeT)
  
- void Form :: runPlayAgainstModelInBackground() {
-   std::thread t(&Form::playAgainstModel, this);
-   t.detach();
- }
-   
- void Form :: playAgainstModel() {
-   path = setModelFile.get_text();
+ state, info = env.reset(m=model, e=enemy, Type="big", trunc=True)
  
-   std::string envPrefix;
+ current_time = datetime.datetime.now()
+ date = str(current_time.second)+"-"+str(current_time.microsecond)
+ name = "M:"+model[0].showUnitData()["Army"]+"_vs_"+"P:"+enemy[0].showUnitData()["Army"]
+ fold =  "models/"+name
+ fileName = fold+"/model-"+date+".pickle"
+ randNum = np.random.randint(0, 10000000)
+ metrics = metrics(fold, randNum, date)
  
-   std::string command;
+ rewArr = []
+ ep_rows = [] 
  
-   if (playInGUI == "True") {
-     command = "cd .. ; " + envPrefix + "./play.sh ";
-     if (strlen(path.data()) < 2) {
-       command.append("None");
-     } else {
-diff --git a/gui/include/Application.h b/gui/include/Application.h
-index 69adf90b87bda220a4ca8b16d16b015401e5f259..46a13d373383c61b6794474174350649300544d1 100644
---- a/gui/include/Application.h
-+++ b/gui/include/Application.h
-@@ -80,50 +80,51 @@ Image metricBox6;
-   Label labelPage3;
-   Label labelPage4;
-   Label labelPage5;
-   Label label1;
-   Frame tabPage1;
-   Frame tabPage2;
-   Frame tabPage3;
-   Frame tabPage4;
-   Frame tabPage5;
-   RadioButtonGroup radioButtonGroup;
-   RadioButton radioTop;
-   RadioButton radioLeft;
-   RadioButton radioRight;
-   RadioButton radioBottom;
-   Fixed fixedTabPage1;
-   Fixed fixedTabPage2;
-   Fixed fixedTabPage3;
-   Fixed fixedTabPage4;
-   Fixed fixedTabPage5;
-   Button button1;
-   Button button2;
-   Button button3;
-   Button button4;
-   Button button5;
-   Button button6;
-+  Button buttonSelfPlay;
-   Button showBoard;
-   Button showBoardImg;
-   Button playGraphicsView;
-   Label textbox;
-   Label textbox2;
-   Label textbox1;
-   Label enemyFact;
-   Label modelFact;
-   Label status;
-   Entry setIters;
-   Entry setModelFile;
-   RadioButtonGroup factionModel;
-   RadioButton orksModel;
-   RadioButton spmModel;
-   RadioButton sobModel;
-   RadioButton adcModel;
-   RadioButton tyrModel;
-   RadioButton milModel;
-   RadioButton tauModel;
-   RadioButton necModel;
-   RadioButtonGroup factionEnemy;
-   RadioButton orksEnemy;
-   RadioButton spmEnemy;
-   RadioButton sobEnemy;
-   RadioButton adcEnemy;
-@@ -149,28 +150,29 @@ Image metricBox6;
-   Button enemyEnter;
-   Button mirrorRosterButton;
-   Button openArmyPopup;
-   Entry enterModelUnit;
-   Entry enterEnemyUnit;
-   Button clearAllModel;
-   Button clearAllEnemy;
-   int x;
-   int y;
-   bool open;
-   bool training;
-   bool playing;
-   bool loadingRoster;
-   Label error;
-   Label modelUnitLabel;
-   Label enemyUnitLabel;
-   std::vector<RosterEntry> modelUnits;
-   std::vector<RosterEntry> enemyUnits;
-   RosterModel rosterModel;
-   HeaderBar bar;
-   Button help;
-   Button resetLayoutButton;
-   Button chooseMetrics;
-   Button playGUI;
-   std::string playInGUI;
-+  std::string trainEnvPrefix;
- };
+ epLen = 0
++initial_model_hp = float(sum(getattr(env, "unit_health", [])))
++initial_enemy_hp = float(sum(getattr(env, "enemy_health", [])))
++append_log_for_agents(
++    "Старт обучения: "
++    f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}, "
++    f"battle_round={getattr(env, 'battle_round', 'n/a')}, trunc={trunc}"
++)
++if trunc:
++    append_log_for_agents(
++        "Логи фаз/ходов отключены (trunc=True). "
++        "Чтобы включить подробные логи: VERBOSE_LOGS=1 или MANUAL_DICE=1."
++    )
++if initial_model_hp <= 0 or initial_enemy_hp <= 0:
++    append_log_for_agents(
++        "ВНИМАНИЕ: на старте эпизода обнаружено нулевое здоровье. "
++        f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}. "
++        "Это может приводить к мгновенному завершению эпизодов."
++    )
  
- #endif
+ while end == False:
+     epLen += 1
+     if SELF_PLAY_ENABLED and epLen == 1:
+         append_log_for_agents(
+             f"Старт эпизода {numLifeT + 1}. "
+             f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
+             f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
+         )
+     action = select_action(env, state, i, policy_net, len(model))
+     action_dict = convertToDict(action)
+     if trunc == False:
+         print(env.get_info())
+ 
+     if SELF_PLAY_ENABLED:
+         env.enemyTurn(trunc=trunc, policy_fn=opponent_policy)
+     else:
+         env.enemyTurn(trunc=trunc)
+     next_observation, reward, done, res, info = env.step(action_dict)
+     rewArr.append(float(reward))  
+     reward_t = torch.tensor([reward], device=device, dtype=torch.float32)  # тензор для replay
+ 
+ 
+     unit_health = info["model health"]
+     enemy_health = info["player health"]
+@@ -466,77 +484,116 @@ while end == False:
+             if loss and loss != 0:
+                 losses.append(loss)
+ 
+             # ✅ Быстрый soft-update target_net (намного быстрее, чем state_dict)
+             with torch.no_grad():
+                 for p_tgt, p in zip(target_net.parameters(), policy_net.parameters()):
+                     p_tgt.data.mul_(1.0 - TAU)
+                     p_tgt.data.add_(p.data, alpha=TAU)
+ 
+     # чтобы график loss не раздувался в 100 раз — пишем среднее за env-step
+     if len(losses) > 0:
+         metrics.updateLoss(sum(losses) / len(losses))
+     else:
+         metrics.updateLoss(0)
+     # =========================
+ 
+ 
+ 
+     if done == True:
+         if SELF_PLAY_ENABLED:
+             append_log_for_agents(
+                 f"Конец эпизода {numLifeT + 1}. "
+                 f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
+                 f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
+             )
++        end_reason_env = info.get("end reason", "")
++        winner_env = info.get("winner")
++        model_hp_total = sum(info.get("model health", [])) if isinstance(info.get("model health"), (list, tuple, np.ndarray)) else info.get("model health")
++        enemy_hp_total = sum(info.get("player health", [])) if isinstance(info.get("player health"), (list, tuple, np.ndarray)) else info.get("player health")
++        append_log_for_agents(
++            "Конец эпизода: "
++            f"reason={end_reason_env or 'unknown'} "
++            f"winner={winner_env} "
++            f"model_hp_total={model_hp_total} enemy_hp_total={enemy_hp_total} "
++            f"model_vp={info.get('model VP')} enemy_vp={info.get('player VP')} "
++            f"turn={info.get('turn')} battle_round={info.get('battle round')}"
++        )
++        if epLen == 1:
++            append_log_for_agents(
++                "ВНИМАНИЕ: эпизод завершился на первом шаге. "
++                "Проверьте reset/условия завершения (нулевое здоровье, лимиты хода, "
++                "ошибки расстановки)."
++            )
+         pbar.update(1)
+         metrics.updateRew(sum(rewArr)/len(rewArr))
+         metrics.updateEpLen(epLen)
+         # ===== extra metrics (winrate / VP diff / end reason) =====
+         ep_reward = float(sum(rewArr) / len(rewArr)) if len(rewArr) > 0 else 0.0
+         model_vp = int(info.get("model VP", 0))
+         player_vp = int(info.get("player VP", 0))
+         vp_diff = model_vp - player_vp
+ 
+         mh_list = info.get("model health", [])
+         ph_list = info.get("player health", [])
+ 
+         def _sum_health(x):
+             try:
+                 if isinstance(x, (list, tuple, np.ndarray)):
+                     return int(sum(x))
+                 return int(x)
+             except Exception:
+                 return 0
+ 
+         mh = _sum_health(mh_list)
+         ph = _sum_health(ph_list)
+ 
+         end_code = res  # то, что возвращает env (1..3 миссия или 4)
++        end_reason_env = info.get("end reason", "")
+         turn = int(info.get("turn", epLen))  # если turn не добавляли в env — будет epLen
+ 
+-        if ph <= 0 and mh > 0:
++        if end_reason_env:
++            end_reason = end_reason_env
++            if end_reason_env == "wipeout_enemy":
++                result = "win"
++            elif end_reason_env == "wipeout_model":
++                result = "loss"
++            elif end_reason_env == "turn_limit":
++                if vp_diff > 0:
++                    result = "win"
++                elif vp_diff < 0:
++                    result = "loss"
++                else:
++                    result = "draw"
++            else:
++                if vp_diff > 0:
++                    result = "win"
++                elif vp_diff < 0:
++                    result = "loss"
++                else:
++                    result = "draw"
++        elif ph <= 0 and mh > 0:
+             result = "win"
+             end_reason = "wipe_enemy"
+         elif mh <= 0 and ph > 0:
+             result = "loss"
+             end_reason = "wipe_model"
+         else:
+             mission_name = info.get("mission", DEFAULT_MISSION_NAME)
+             end_reason = f"turn_limit_{mission_name}"
+             if vp_diff > 0:
+                 result = "win"
+             elif vp_diff < 0:
+                 result = "loss"
+             else:
+                 result = "draw"
+ 
+         if result == "win":
+             inText.append("model won!")
+             if trunc == False:
+                 print("model won!")
+         elif result == "loss":
+             inText.append("enemy won!")
+             if trunc == False:
+                 print("enemy won!")
+         else:
+             inText.append("draw!")
 
