@@ -1,109 +1,170 @@
 diff --git a/gui/Application.cpp b/gui/Application.cpp
-index 47cf9f025efbce1143a861a8fccfab7368812256..c8e415da73592844de8e815f6285c98ec2fb0bd4 100644
+index c8e415da73592844de8e815f6285c98ec2fb0bd4..6cebbe1acfed46e6f03816c3b14a8cd34a9e011b 100644
 --- a/gui/Application.cpp
 +++ b/gui/Application.cpp
-@@ -1,68 +1,87 @@
- #include <iostream>
- #include <gtkmm.h>
- #include <cstdlib>
- #include <stdlib.h>
- #include <string>
- #include <fstream>
- #include <thread>
- #include <chrono>
- #include <fstream>
-+#include <cstdio>
-+#include <ctime>
-+#include <iomanip>
-+#include <sstream>
- #include <filesystem>
- #include <vector>
- #include <algorithm>
-+#include <array>
- #include <nlohmann/json.hpp>
- #include "include/Application.h"
- #include "include/popup.h"
- #include "include/units.h"
- #include "include/warn.h"
- #include "include/help.h"
- #include "include/play.h"
- 
- using namespace Glib;
- using namespace Gtk;
- namespace fs = std::filesystem;
- using json = nlohmann::json;
- 
- namespace {
- constexpr int kDefaultWidth = 1500;
- constexpr int kDefaultHeight = 900;
- constexpr int kMinimumWidth = 1200;
- constexpr int kMinimumHeight = 800;
- 
- std::string geometryPath() {
-   const char* home = std::getenv("HOME");
-   std::string base = home ? home : ".";
-   return base + "/.config/40kAI/gui_layout.conf";
+@@ -90,50 +90,53 @@ int findDefaultModelsCount(const std::string& faction, const std::string& name)
+   return 1;
  }
+ }  // namespace
  
- std::string toLowerCopy(std::string data) {
-   std::transform(data.begin(), data.end(), data.begin(),
-                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-   return data;
- }
+ std::string gifpth = "img/model_train.gif";
+ std::string rewpth = "img/reward.png";
+ std::string losspth = "img/loss.png";
+ std::string eplenpth = "img/epLen.png";
+ std::string winratepth = "img/winrate.png";
+ std::string vpdiffpth = "img/vpdiff.png";
+ std::string endreasonpth = "img/endreasons.png";
+ std::string imgpth = "img/icon.png";
  
-+std::string nowTimestamp() {
-+  auto now = std::chrono::system_clock::now();
-+  std::time_t now_time = std::chrono::system_clock::to_time_t(now);
-+  std::tm local_tm{};
-+#if defined(_WIN32)
-+  localtime_s(&local_tm, &now_time);
-+#else
-+  localtime_r(&now_time, &local_tm);
-+#endif
-+  std::ostringstream oss;
-+  oss << std::put_time(&local_tm, "%Y-%m-%d %H:%M:%S");
-+  return oss.str();
-+}
-+
- int findDefaultModelsCount(const std::string& faction, const std::string& name) {
-   std::ifstream infile("../gym_mod/gym_mod/engine/unitData.json");
-   if (!infile) {
-     return 1;
-   }
-   json j;
-   infile >> j;
-   if (!j.contains("UnitData") || !j.at("UnitData").is_array()) {
-     return 1;
-   }
-   std::string factionLower = toLowerCopy(faction);
-   std::string nameLower = toLowerCopy(name);
-   for (const auto& unit : j.at("UnitData")) {
-     if (!unit.contains("Name") || !unit.contains("Army")) {
-       continue;
-     }
-     if (toLowerCopy(unit.at("Name").get<std::string>()) != nameLower) {
-       continue;
-     }
-     if (toLowerCopy(unit.at("Army").get<std::string>()) != factionLower) {
-       continue;
-     }
-     if (unit.contains("#OfModels") && unit.at("#OfModels").is_number_integer()) {
-       return unit.at("#OfModels").get<int>();
-     }
-@@ -730,59 +749,82 @@ Form :: Form() {
+ Form :: Form() {
  
-   loadWindowGeometry();
-   loadLastRoster();
-   if (modelUnits.empty()) {
-     modelUnits.push_back({"Apothecary", "Space_Marine", findDefaultModelsCount("Space_Marine", "Apothecary"),
-                           RosterModel::generateInstanceId()});
-     modelUnits.push_back({"Eliminator Squad", "Space_Marine",
-                           findDefaultModelsCount("Space_Marine", "Eliminator Squad"),
-                           RosterModel::generateInstanceId()});
-   }
-   if (enemyUnits.empty()) {
-     rosterModel.addUnit("Apothecary", 1, enemyClass.substr(1));
-     rosterModel.addUnit("Eliminator Squad", 1, enemyClass.substr(1));
+   modelClass = " Necrons";
+   enemyClass = " Necrons";
+   path = " ";
+   open = false;
+   x = 60;
+   y = 40;
+   training = false;
+   playing = false;
+   loadingRoster = false;
+   trainEnvPrefix = "";
++  trainingStartLabel = "обучения";
++  trainingStatusLabel = "Обучение";
++  trainingLogTag = "TRAIN";
+ 
+   bar.set_show_close_button(true);
+   bar.set_title("40kAI GUI");
+   set_titlebar(bar);
+ 
+   set_default_size(kDefaultWidth, kDefaultHeight);
+   set_size_request(kMinimumWidth, kMinimumHeight);
+ 
+   rootBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
+   topBarBox.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+   topBarBox.set_spacing(8);
+   leftBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
+   mainSplit.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+   rightSplit.set_orientation(Gtk::ORIENTATION_VERTICAL);
+ 
+   rootBox.set_hexpand(true);
+   rootBox.set_vexpand(true);
+   topBarBox.set_hexpand(true);
+   leftBox.set_hexpand(true);
+   leftBox.set_vexpand(true);
+   mainSplit.set_hexpand(true);
+   mainSplit.set_vexpand(true);
+   rightSplit.set_hexpand(true);
+   rightSplit.set_vexpand(true);
+ 
+@@ -228,50 +231,53 @@ Form :: Form() {
+   radioBottom.set_label("Bottom");
+   radioBottom.set_group(radioButtonGroup);
+   radioBottom.signal_toggled().connect([this]() {
+     tabControl1.set_tab_pos(PositionType::POS_BOTTOM);
+   });
+ 
+     // train tab
+ 
+   savetoTxt(enemyUnits, modelUnits);
+ 
+   labelPage2.set_label("Train");
+   tabControl1.set_tab_label(tabPage2, labelPage2);
+   tabPage2.add(fixedTabPage2);
+ 
+   textbox1.set_text("Train Model:");
+   setStatusMessage("Press the Train button to train a model");
+     
+   button1.set_label("Train");
+   button1.signal_button_release_event().connect([&](GdkEventButton*) {
+     saveLastRoster();
+     syncEnemyUnitsFromRoster();
+     updateInits(modelClass, enemyClass);
+     if (exists_test("data.json") && training == false) {
+       setStatusMessage("Training...");
+       trainEnvPrefix = "";
++      trainingStartLabel = "обучения";
++      trainingStatusLabel = "Обучение";
++      trainingLogTag = "TRAIN";
+       startTrainInBackground();
+     }
+     return true;
+   });
+ 
+   numOfGames.set_text("# of Games in Training:");
+   setIters.set_text("100");
+ 
+   modelUnitLabel.set_text("Enter Model Units:");
+   enemyUnitLabel.set_text("Enter Player Units:");
+   openArmyPopup.set_label("Army Viewer");
+   openArmyPopup.signal_button_release_event().connect([&](GdkEventButton*) {
+     openArmyView();
+     return true;
+   });
+ 
+   dimens.set_text("Dimensions of Board: ");
+ 
+   dimX.set_text("X : ");
+   enterDimensX.set_text(std::to_string(x));
+   upX.set_label("+");
+   upX.signal_button_release_event().connect([&](GdkEventButton*) {
+     x+=10;
+     enterDimensX.set_text(std::to_string(x));
+     return true;
+@@ -291,50 +297,53 @@ Form :: Form() {
+     enterDimensY.set_text(std::to_string(y));
+     return true;
+   });
+   downY.set_label("-");
+   downY.signal_button_release_event().connect([&](GdkEventButton*) {
+     y-=10;
+     enterDimensY.set_text(std::to_string(y));
+     return true;
+   });
+ 
+   button3.set_label("Clear Model Cache");
+   button3.signal_button_release_event().connect([&](GdkEventButton*) {
+     std::string mess = "Warning: You are about to delete all of the saved models";
+     openWarnMenu(mess, 0);
+     return true;
+   });
+ 
+   buttonSelfPlay.set_label("Самообучение");
+   buttonSelfPlay.signal_button_release_event().connect([&](GdkEventButton*) {
+     saveLastRoster();
+     syncEnemyUnitsFromRoster();
+     updateInits(modelClass, enemyClass);
+     if (exists_test("data.json") && training == false) {
+       setStatusMessage("Самообучение: обучение...");
+       trainEnvPrefix = "SELF_PLAY_ENABLED=1 ";
++      trainingStartLabel = "самообучения";
++      trainingStatusLabel = "Самообучение";
++      trainingLogTag = "SELFPLAY";
+       startTrainInBackground();
+     }
+     return true;
+   });
+ 
+   spmModel.set_label("Space Marine");
+   spmModel.set_group(factionModel);
+   spmModel.signal_toggled().connect([this]() {
+     modelUnits.clear();
+     modelClass = " Space_Marine";
+   });
+ 
+ 
+   orksModel.set_label("Orks");
+   orksModel.set_group(factionModel);
+   orksModel.signal_toggled().connect([this]() {
+     modelUnits.clear();
+     modelClass = " Orks";
+   });
+ 
+   sobModel.set_label("Sisters of Battle");
+   sobModel.set_group(factionModel);
+   sobModel.signal_toggled().connect([this]() {
+     modelUnits.clear();
+     modelClass = " Sisters_of_Battle";
+@@ -762,67 +771,67 @@ Form :: Form() {
      syncEnemyUnitsFromRoster();
      saveLastRoster();
    }
@@ -116,10 +177,10 @@ index 47cf9f025efbce1143a861a8fccfab7368812256..c8e415da73592844de8e815f6285c98e
  
  void Form :: setStatusMessage(const std::string& message) {
    status.set_text(message);
-+  appendLogLine(message);
-+}
-+
-+void Form :: appendLogLine(const std::string& message) {
+   appendLogLine(message);
+ }
+ 
+ void Form :: appendLogLine(const std::string& message) {
    auto logBuffer = logView.get_buffer();
    if (!logBuffer) {
      return;
@@ -129,25 +190,27 @@ index 47cf9f025efbce1143a861a8fccfab7368812256..c8e415da73592844de8e815f6285c98e
    logView.scroll_to(endIter);
  }
  
-+void Form :: appendTrainingLogToFile(const std::string& message) {
-+  fs::path logPath = fs::current_path() / "LOGS_FOR_AGENTS.md";
-+  if (!fs::exists(logPath)) {
-+    fs::path parentPath = fs::current_path().parent_path() / "LOGS_FOR_AGENTS.md";
-+    if (fs::exists(parentPath)) {
-+      logPath = parentPath;
-+    }
-+  }
-+  std::ofstream outfile(logPath, std::ios::app);
-+  if (!outfile) {
-+    Glib::signal_idle().connect_once([this]() {
-+      appendLogLine(
-+          "Ошибка записи в LOGS_FOR_AGENTS.md (gui/Application.cpp): проверьте путь и права доступа.");
-+    });
-+    return;
-+  }
-+  outfile << nowTimestamp() << " | [GUI][TRAIN] " << message << "\n";
-+}
-+
+-void Form :: appendTrainingLogToFile(const std::string& message) {
++void Form :: appendTrainingLogToFile(const std::string& message, const std::string& tag) {
+   fs::path logPath = fs::current_path() / "LOGS_FOR_AGENTS.md";
+   if (!fs::exists(logPath)) {
+     fs::path parentPath = fs::current_path().parent_path() / "LOGS_FOR_AGENTS.md";
+     if (fs::exists(parentPath)) {
+       logPath = parentPath;
+     }
+   }
+   std::ofstream outfile(logPath, std::ios::app);
+   if (!outfile) {
+     Glib::signal_idle().connect_once([this]() {
+       appendLogLine(
+           "Ошибка записи в LOGS_FOR_AGENTS.md (gui/Application.cpp): проверьте путь и права доступа.");
+     });
+     return;
+   }
+-  outfile << nowTimestamp() << " | [GUI][TRAIN] " << message << "\n";
++  outfile << nowTimestamp() << " | [GUI][" << tag << "] " << message << "\n";
+ }
+ 
  bool Form :: loadWindowGeometry() {
    std::ifstream infile(geometryPath());
    if (!infile) {
@@ -171,15 +234,7 @@ index 47cf9f025efbce1143a861a8fccfab7368812256..c8e415da73592844de8e815f6285c98e
    std::ofstream outfile(path);
    if (!outfile) {
      return;
-   }
-   outfile << width << " " << height;
-@@ -1069,58 +1111,107 @@ void Form :: update_metrics() {
-   if (auto p = load_scaled(eplenpth)) metricBox3.set(p);
-   if (auto p = load_scaled(endreasonpth)) metricBox6.set(p);
- 
- }
- 
- void Form :: updateInits(std::string model, std::string enemy) {
+@@ -1117,94 +1126,97 @@ void Form :: updateInits(std::string model, std::string enemy) {
    std::string command = "cd .. ; ./data.sh ";
    command.append(setIters.get_text().data());
    command.append(model);
@@ -199,68 +254,80 @@ index 47cf9f025efbce1143a861a8fccfab7368812256..c8e415da73592844de8e815f6285c98e
  void Form :: startTrain() {
    training = true;
    system("clear");
-+  const std::string perDefaults = "PER_ENABLED=1 N_STEP=3 TRAIN_LOG_TO_CONSOLE=1 ";
+   const std::string perDefaults = "PER_ENABLED=1 N_STEP=3 TRAIN_LOG_TO_CONSOLE=1 ";
    std::string command = "cd .. ; ";
-+  command.append(perDefaults);
+   command.append(perDefaults);
    command.append(trainEnvPrefix);
--  command.append("./train.sh");
--  system(command.data());
--  setStatusMessage("Completed!");
-+  command.append("./train.sh 2>&1");
-+
-+  Glib::signal_idle().connect_once([this]() {
-+    setStatusMessage("Старт обучения: PER=1, N_STEP=3.");
-+  });
-+  appendTrainingLogToFile("Старт обучения: PER=1, N_STEP=3.");
-+
-+  FILE* pipe = popen(command.c_str(), "r");
-+  if (!pipe) {
-+    Glib::signal_idle().connect_once([this]() {
-+      setStatusMessage(
-+          "Ошибка запуска обучения (gui/Application.cpp): проверьте, что train.sh доступен.");
-+    });
-+    appendTrainingLogToFile(
-+        "Ошибка запуска обучения (gui/Application.cpp): проверьте, что train.sh доступен.");
-+    training = false;
-+    return;
-+  }
-+
-+  std::array<char, 512> buffer{};
-+  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe)) {
-+    std::string line(buffer.data());
-+    while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
-+      line.pop_back();
-+    }
-+    if (line.empty()) {
-+      continue;
-+    }
-+    appendTrainingLogToFile(line);
-+    Glib::signal_idle().connect_once([this, line]() {
-+      appendLogLine(line);
-+    });
-+  }
-+
-+  int exitCode = pclose(pipe);
-+  if (exitCode == 0) {
-+    Glib::signal_idle().connect_once([this]() {
-+      setStatusMessage("Обучение завершено.");
-+    });
-+    appendTrainingLogToFile("Обучение завершено.");
-+  } else {
-+    std::string errLine = "Обучение завершено с ошибкой. Код выхода: " + std::to_string(exitCode);
-+    Glib::signal_idle().connect_once([this, errLine]() {
-+      setStatusMessage(errLine);
-+    });
-+    appendTrainingLogToFile(errLine);
-+  }
-+
+   command.append("./train.sh 2>&1");
+ 
+-  Glib::signal_idle().connect_once([this]() {
+-    setStatusMessage("Старт обучения: PER=1, N_STEP=3.");
++  std::string startMessage = "Старт " + trainingStartLabel + ": PER=1, N_STEP=3.";
++  Glib::signal_idle().connect_once([this, startMessage]() {
++    setStatusMessage(startMessage);
+   });
+-  appendTrainingLogToFile("Старт обучения: PER=1, N_STEP=3.");
++  appendTrainingLogToFile(startMessage, trainingLogTag);
+ 
+   FILE* pipe = popen(command.c_str(), "r");
+   if (!pipe) {
+-    Glib::signal_idle().connect_once([this]() {
+-      setStatusMessage(
+-          "Ошибка запуска обучения (gui/Application.cpp): проверьте, что train.sh доступен.");
++    std::string errorMessage = "Ошибка запуска " + trainingStartLabel
++        + " (gui/Application.cpp): проверьте, что train.sh доступен.";
++    Glib::signal_idle().connect_once([this, errorMessage]() {
++      setStatusMessage(errorMessage);
+     });
+-    appendTrainingLogToFile(
+-        "Ошибка запуска обучения (gui/Application.cpp): проверьте, что train.sh доступен.");
++    appendTrainingLogToFile(errorMessage, trainingLogTag);
+     training = false;
+     return;
+   }
+ 
+   std::array<char, 512> buffer{};
+   while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe)) {
+     std::string line(buffer.data());
+     while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+       line.pop_back();
+     }
+     if (line.empty()) {
+       continue;
+     }
+-    appendTrainingLogToFile(line);
++    appendTrainingLogToFile(line, trainingLogTag);
+     Glib::signal_idle().connect_once([this, line]() {
+       appendLogLine(line);
+     });
+   }
+ 
+   int exitCode = pclose(pipe);
+   if (exitCode == 0) {
+-    Glib::signal_idle().connect_once([this]() {
+-      setStatusMessage("Обучение завершено.");
++    std::string doneMessage = trainingStatusLabel + " завершено.";
++    Glib::signal_idle().connect_once([this, doneMessage]() {
++      setStatusMessage(doneMessage);
+     });
+-    appendTrainingLogToFile("Обучение завершено.");
++    appendTrainingLogToFile(doneMessage, trainingLogTag);
+   } else {
+-    std::string errLine = "Обучение завершено с ошибкой. Код выхода: " + std::to_string(exitCode);
++    std::string errLine = trainingStatusLabel + " завершено с ошибкой. Код выхода: "
++        + std::to_string(exitCode);
+     Glib::signal_idle().connect_once([this, errLine]() {
+       setStatusMessage(errLine);
+     });
+-    appendTrainingLogToFile(errLine);
++    appendTrainingLogToFile(errLine, trainingLogTag);
+   }
+ 
    training = false;
--  update_picture();
--  update_metrics();
-+  Glib::signal_idle().connect_once([this]() {
-+    update_picture();
-+    update_metrics();
-+  });
+   Glib::signal_idle().connect_once([this]() {
+     update_picture();
+     update_metrics();
+   });
  }
  
  void Form :: runPlayAgainstModelInBackground() {
@@ -279,19 +346,11 @@ index 47cf9f025efbce1143a861a8fccfab7368812256..c8e415da73592844de8e815f6285c98e
      command = "cd .. ; " + envPrefix + "./play.sh ";
      if (strlen(path.data()) < 2) {
        command.append("None");
-     } else {
-       command.append("\"");
-       command.append(path);
-       command.append("\"");
-     }
-     command.append(" True");
-   } else {
 diff --git a/gui/include/Application.h b/gui/include/Application.h
-index 46a13d373383c61b6794474174350649300544d1..ef548f8cd4bf3963faf027a2b5399b241f3601d0 100644
+index ef548f8cd4bf3963faf027a2b5399b241f3601d0..d0379712d4d9f3415f62f401aca303210133732f 100644
 --- a/gui/include/Application.h
 +++ b/gui/include/Application.h
-@@ -23,50 +23,52 @@ public :
-   int openPopUp(bool textMode);
+@@ -24,51 +24,51 @@ public :
    void update_picture();
    void update_metrics();
    void updateInits(std::string model, std::string enemy);
@@ -316,8 +375,9 @@ index 46a13d373383c61b6794474174350649300544d1..ef548f8cd4bf3963faf027a2b5399b24
    void syncEnemyUnitsFromRoster();
    bool addEnemyUnitFromEntry(const std::string& entryText);
    void resetLayout();
-+  void appendLogLine(const std::string& message);
-+  void appendTrainingLogToFile(const std::string& message);
+   void appendLogLine(const std::string& message);
+-  void appendTrainingLogToFile(const std::string& message);
++  void appendTrainingLogToFile(const std::string& message, const std::string& tag = "TRAIN");
  
  private:
    void setStatusMessage(const std::string& message);
@@ -343,4 +403,36 @@ index 46a13d373383c61b6794474174350649300544d1..ef548f8cd4bf3963faf027a2b5399b24
    Box leftBox;
    Paned mainSplit;
    Paned rightSplit;
+@@ -153,28 +153,31 @@ Image metricBox6;
+   Button mirrorRosterButton;
+   Button openArmyPopup;
+   Entry enterModelUnit;
+   Entry enterEnemyUnit;
+   Button clearAllModel;
+   Button clearAllEnemy;
+   int x;
+   int y;
+   bool open;
+   bool training;
+   bool playing;
+   bool loadingRoster;
+   Label error;
+   Label modelUnitLabel;
+   Label enemyUnitLabel;
+   std::vector<RosterEntry> modelUnits;
+   std::vector<RosterEntry> enemyUnits;
+   RosterModel rosterModel;
+   HeaderBar bar;
+   Button help;
+   Button resetLayoutButton;
+   Button chooseMetrics;
+   Button playGUI;
+   std::string playInGUI;
+   std::string trainEnvPrefix;
++  std::string trainingStartLabel;
++  std::string trainingStatusLabel;
++  std::string trainingLogTag;
+ };
+ 
+ #endif
 

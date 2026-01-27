@@ -6,7 +6,7 @@ from typing import Callable, List, Tuple
 MISSION_NAME = "Only War"
 # TODO(Only War): support post-deploy units ("set up after both armies deployed").
 # Currently no post-deploy units supported.
-MAX_BATTLE_ROUNDS = 5
+MAX_BATTLE_ROUNDS = 10
 START_SCORING_ROUND = 2
 VP_CAP_PER_COMMAND = 3
 

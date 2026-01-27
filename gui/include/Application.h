@@ -46,7 +46,7 @@ public :
   bool addEnemyUnitFromEntry(const std::string& entryText);
   void resetLayout();
   void appendLogLine(const std::string& message);
-  void appendTrainingLogToFile(const std::string& message);
+  void appendTrainingLogToFile(const std::string& message, const std::string& tag = "TRAIN");
 
 private:
   void setStatusMessage(const std::string& message);
@@ -175,6 +175,9 @@ Image metricBox6;
   Button playGUI;
   std::string playInGUI;
   std::string trainEnvPrefix;
+  std::string trainingStartLabel;
+  std::string trainingStatusLabel;
+  std::string trainingLogTag;
 };
 
 #endif

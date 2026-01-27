@@ -112,6 +112,9 @@ Form :: Form() {
   playing = false;
   loadingRoster = false;
   trainEnvPrefix = "";
+  trainingStartLabel = "обучения";
+  trainingStatusLabel = "Обучение";
+  trainingLogTag = "TRAIN";
 
   bar.set_show_close_button(true);
   bar.set_title("40kAI GUI");
@@ -250,6 +253,9 @@ Form :: Form() {
     if (exists_test("data.json") && training == false) {
       setStatusMessage("Training...");
       trainEnvPrefix = "";
+      trainingStartLabel = "обучения";
+      trainingStatusLabel = "Обучение";
+      trainingLogTag = "TRAIN";
       startTrainInBackground();
     }
     return true;
@@ -313,6 +319,9 @@ Form :: Form() {
     if (exists_test("data.json") && training == false) {
       setStatusMessage("Самообучение: обучение...");
       trainEnvPrefix = "SELF_PLAY_ENABLED=1 ";
+      trainingStartLabel = "самообучения";
+      trainingStatusLabel = "Самообучение";
+      trainingLogTag = "SELFPLAY";
       startTrainInBackground();
     }
     return true;
@@ -784,7 +793,7 @@ void Form :: appendLogLine(const std::string& message) {
   logView.scroll_to(endIter);
 }
 
-void Form :: appendTrainingLogToFile(const std::string& message) {
+void Form :: appendTrainingLogToFile(const std::string& message, const std::string& tag) {
   fs::path logPath = fs::current_path() / "LOGS_FOR_AGENTS.md";
   if (!fs::exists(logPath)) {
     fs::path parentPath = fs::current_path().parent_path() / "LOGS_FOR_AGENTS.md";
@@ -800,7 +809,7 @@ void Form :: appendTrainingLogToFile(const std::string& message) {
     });
     return;
   }
-  outfile << nowTimestamp() << " | [GUI][TRAIN] " << message << "\n";
+  outfile << nowTimestamp() << " | [GUI][" << tag << "] " << message << "\n";
 }
 
 bool Form :: loadWindowGeometry() {
@@ -1139,19 +1148,20 @@ void Form :: startTrain() {
   command.append(trainEnvPrefix);
   command.append("./train.sh 2>&1");
 
-  Glib::signal_idle().connect_once([this]() {
-    setStatusMessage("Старт обучения: PER=1, N_STEP=3.");
+  std::string startMessage = "Старт " + trainingStartLabel + ": PER=1, N_STEP=3.";
+  Glib::signal_idle().connect_once([this, startMessage]() {
+    setStatusMessage(startMessage);
   });
-  appendTrainingLogToFile("Старт обучения: PER=1, N_STEP=3.");
+  appendTrainingLogToFile(startMessage, trainingLogTag);
 
   FILE* pipe = popen(command.c_str(), "r");
   if (!pipe) {
-    Glib::signal_idle().connect_once([this]() {
-      setStatusMessage(
-          "Ошибка запуска обучения (gui/Application.cpp): проверьте, что train.sh доступен.");
+    std::string errorMessage = "Ошибка запуска " + trainingStartLabel
+        + " (gui/Application.cpp): проверьте, что train.sh доступен.";
+    Glib::signal_idle().connect_once([this, errorMessage]() {
+      setStatusMessage(errorMessage);
     });
-    appendTrainingLogToFile(
-        "Ошибка запуска обучения (gui/Application.cpp): проверьте, что train.sh доступен.");
+    appendTrainingLogToFile(errorMessage, trainingLogTag);
     training = false;
     return;
   }
@@ -1165,7 +1175,7 @@ void Form :: startTrain() {
     if (line.empty()) {
       continue;
     }
-    appendTrainingLogToFile(line);
+    appendTrainingLogToFile(line, trainingLogTag);
     Glib::signal_idle().connect_once([this, line]() {
       appendLogLine(line);
     });
@@ -1173,16 +1183,18 @@ void Form :: startTrain() {
 
   int exitCode = pclose(pipe);
   if (exitCode == 0) {
-    Glib::signal_idle().connect_once([this]() {
-      setStatusMessage("Обучение завершено.");
+    std::string doneMessage = trainingStatusLabel + " завершено.";
+    Glib::signal_idle().connect_once([this, doneMessage]() {
+      setStatusMessage(doneMessage);
     });
-    appendTrainingLogToFile("Обучение завершено.");
+    appendTrainingLogToFile(doneMessage, trainingLogTag);
   } else {
-    std::string errLine = "Обучение завершено с ошибкой. Код выхода: " + std::to_string(exitCode);
+    std::string errLine = trainingStatusLabel + " завершено с ошибкой. Код выхода: "
+        + std::to_string(exitCode);
     Glib::signal_idle().connect_once([this, errLine]() {
       setStatusMessage(errLine);
     });
-    appendTrainingLogToFile(errLine);
+    appendTrainingLogToFile(errLine, trainingLogTag);
   }
 
   training = false;
