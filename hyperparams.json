@@ -7,5 +7,5 @@
     "batch_size": 1024,
     "gamma": 0.99,
     "updates_per_step": 8,
-    "warmup_steps": 2000
+    "warmup_steps": 0
 }
