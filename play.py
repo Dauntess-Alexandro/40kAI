@@ -162,7 +162,8 @@ io.log("Модель управляет юнитами, начинающимис
 while isdone == False:
     done, info = env.unwrapped.player()
     state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-    action = select_action(env, state, i, policy_net, len(model))
+    shoot_mask = build_shoot_action_mask(env)
+    action = select_action(env, state, i, policy_net, len(model), shoot_mask=shoot_mask)
     action_dict = convertToDict(action)
     if done != True:
         next_observation, reward, done, _, info = env.step(action_dict)

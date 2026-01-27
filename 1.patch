@@ -1,438 +1,745 @@
-diff --git a/gui/Application.cpp b/gui/Application.cpp
-index c8e415da73592844de8e815f6285c98ec2fb0bd4..6cebbe1acfed46e6f03816c3b14a8cd34a9e011b 100644
---- a/gui/Application.cpp
-+++ b/gui/Application.cpp
-@@ -90,50 +90,53 @@ int findDefaultModelsCount(const std::string& faction, const std::string& name)
-   return 1;
- }
- }  // namespace
+diff --git a/gym_mod/gym_mod/engine/game_controller.py b/gym_mod/gym_mod/engine/game_controller.py
+index 37ce3de0b9299e070463b37a98c8d0db2c215d53..7931e842cb38e798f7934f405482b5d5ec0d141f 100644
+--- a/gym_mod/gym_mod/engine/game_controller.py
++++ b/gym_mod/gym_mod/engine/game_controller.py
+@@ -1,39 +1,39 @@
+ from __future__ import annotations
  
- std::string gifpth = "img/model_train.gif";
- std::string rewpth = "img/reward.png";
- std::string losspth = "img/loss.png";
- std::string eplenpth = "img/epLen.png";
- std::string winratepth = "img/winrate.png";
- std::string vpdiffpth = "img/vpdiff.png";
- std::string endreasonpth = "img/endreasons.png";
- std::string imgpth = "img/icon.png";
+ import os
+ import pickle
+ import queue
+ import threading
+ from typing import Optional
  
- Form :: Form() {
+ import torch
  
-   modelClass = " Necrons";
-   enemyClass = " Necrons";
-   path = " ";
-   open = false;
-   x = 60;
-   y = 40;
-   training = false;
-   playing = false;
-   loadingRoster = false;
-   trainEnvPrefix = "";
-+  trainingStartLabel = "обучения";
-+  trainingStatusLabel = "Обучение";
-+  trainingLogTag = "TRAIN";
+ from gym_mod.engine.game_io import GuiIO, set_active_io
+ from gym_mod.engine.state_export import DEFAULT_STATE_PATH
+ from model.DQN import DQN
+-from model.utils import select_action, convertToDict
++from model.utils import select_action, convertToDict, build_shoot_action_mask
+ from gym_mod.envs.warhamEnv import roll_off_attacker_defender
  
-   bar.set_show_close_button(true);
-   bar.set_title("40kAI GUI");
-   set_titlebar(bar);
  
-   set_default_size(kDefaultWidth, kDefaultHeight);
-   set_size_request(kMinimumWidth, kMinimumHeight);
+ class GameController:
+     def __init__(self, model_path: Optional[str] = None, state_path: Optional[str] = None):
+         self.model_path = model_path or "None"
+         self.state_path = state_path or os.getenv("STATE_JSON_PATH", DEFAULT_STATE_PATH)
+         self._request_queue: queue.Queue = queue.Queue()
+         self._answer_queue: queue.Queue = queue.Queue()
+         self._io = GuiIO(self._request_queue, self._answer_queue)
+         self._thread: Optional[threading.Thread] = None
+         self._finished = False
+         self._started = False
  
-   rootBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
-   topBarBox.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
-   topBarBox.set_spacing(8);
-   leftBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
-   mainSplit.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
-   rightSplit.set_orientation(Gtk::ORIENTATION_VERTICAL);
+     @property
+     def is_finished(self) -> bool:
+         return self._finished
  
-   rootBox.set_hexpand(true);
-   rootBox.set_vexpand(true);
-   topBarBox.set_hexpand(true);
-   leftBox.set_hexpand(true);
-   leftBox.set_vexpand(true);
-   mainSplit.set_hexpand(true);
-   mainSplit.set_vexpand(true);
-   rightSplit.set_hexpand(true);
-   rightSplit.set_vexpand(true);
+     def start(self):
+         if self._started:
+             return self._consume_messages(), self._next_request(block=False)
+         self._started = True
+         self._thread = threading.Thread(target=self._run_game_loop, daemon=True)
+         self._thread.start()
+         request = self._next_request(block=True)
+@@ -153,51 +153,52 @@ class GameController:
  
-@@ -228,50 +231,53 @@ Form :: Form() {
-   radioBottom.set_label("Bottom");
-   radioBottom.set_group(radioButtonGroup);
-   radioBottom.signal_toggled().connect([this]() {
-     tabControl1.set_tab_pos(PositionType::POS_BOTTOM);
-   });
+             policy_net = DQN(n_observations, n_actions).to(device)
+             target_net = DQN(n_observations, n_actions).to(device)
+             optimizer = torch.optim.Adam(policy_net.parameters())
  
-     // train tab
+             policy_net.load_state_dict(checkpoint["policy_net"])
+             target_net.load_state_dict(checkpoint["target_net"])
+             optimizer.load_state_dict(checkpoint["optimizer"])
  
-   savetoTxt(enemyUnits, modelUnits);
+             policy_net.eval()
+             target_net.eval()
  
-   labelPage2.set_label("Train");
-   tabControl1.set_tab_label(tabPage2, labelPage2);
-   tabPage2.add(fixedTabPage2);
+             self._io.log(
+                 "\nИнструкции:\nИгрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).\n"
+                 "Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).\n"
+             )
  
-   textbox1.set_text("Train Model:");
-   setStatusMessage("Press the Train button to train a model");
+             is_done = False
+             i = 0
+             reward = 0
+ 
+             while not is_done:
+                 done, info = env.unwrapped.player()
+                 env.updateBoard()
+                 state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+-                action = select_action(env, state_tensor, i, policy_net, len(model))
++                shoot_mask = build_shoot_action_mask(env)
++                action = select_action(env, state_tensor, i, policy_net, len(model), shoot_mask=shoot_mask)
+                 action_dict = convertToDict(action)
+                 if done is not True:
+                     next_observation, reward, done, _, info = env.step(action_dict)
+                     reward_tensor = torch.tensor([reward], device=device)
+                     unit_health = info["model health"]
+                     enemy_health = info["player health"]
+ 
+                     message = (
+                         f"Итерация {i} завершена с наградой {reward_tensor}, "
+                         f"здоровье игрока {enemy_health}, здоровье модели {unit_health}"
+                     )
+                     self._io.log(message)
+                     state = next_observation
+                     env.updateBoard()
+ 
+                 if done is True:
+                     if reward > 0:
+                         self._io.log("Модель победила!")
+                     else:
+                         self._io.log("Вы победили!")
+                     is_done = True
+                 i += 1
+ 
+             self._finished = True
+         except Exception as exc:
+diff --git a/model/memory.py b/model/memory.py
+index 15406996aea7171ea8c6036847a2adb876390f73..bff720fa0ecccb83bf2c1110f64f67617808278a 100644
+--- a/model/memory.py
++++ b/model/memory.py
+@@ -1,30 +1,30 @@
+ from collections import namedtuple, deque
+ import random
+ import numpy as np
+ 
+-Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward', 'n_step'))
++Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward', 'n_step', 'next_shoot_mask'))
+ 
+ class ReplayMemory(object):
+ 
+     def __init__(self, capacity):
+         self.memory = deque([], maxlen=capacity)
+ 
+     def push(self, *args):
+         self.memory.append(Transition(*args))
+ 
+     def sample(self, batch_size):
+         return random.sample(self.memory, batch_size)
+ 
+     def __len__(self):
+         return len(self.memory)
+ 
+ 
+ class PrioritizedReplayMemory(object):
+     def __init__(self, capacity, alpha=0.6, eps=1e-6):
+         self.capacity = capacity
+         self.alpha = alpha
+         self.eps = eps
+         self.memory = []
+         self.priorities = []
+         self.pos = 0
+         self.max_priority = 1.0
+diff --git a/model/utils.py b/model/utils.py
+index d3bc9f073b54ccbc6f0b6e6f426ba2f2514fc2c0..6eb0b39feeb3aa431a06ac43659d80145ff3a3f3 100644
+--- a/model/utils.py
++++ b/model/utils.py
+@@ -1,104 +1,152 @@
+ import torch
+ import torch.nn as nn
+-import torch.optim as optim
+ import torch.nn.functional as F
+ import collections
+ import numpy as np
+-import pandas as pd
+ import os
+ import json
+ 
+-import itertools
+ 
+ import random
+ import math
+ 
+ from model.memory import Transition
++from gym_mod.engine.utils import distance
+ 
+ with open(os.path.abspath("hyperparams.json")) as j:
+     data = json.loads(j.read())
+ 
+ EPS_START = data["eps_start"]
+ EPS_END = data["eps_end"]
+ EPS_DECAY = data["eps_decay"]
+ BATCH_SIZE = data["batch_size"]
+ GAMMA = data["gamma"]
+ 
+ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+ 
+-def select_action(env, state, steps_done, policy_net, len_model):
++def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None):
+     sample = random.random()
+     eps_threshold = EPS_END + (EPS_START - EPS_END) * \
+         math.exp(-1. * steps_done / EPS_DECAY)
+     steps_done += 1
+     dev = next(policy_net.parameters()).device
+ 
      
-   button1.set_label("Train");
-   button1.signal_button_release_event().connect([&](GdkEventButton*) {
-     saveLastRoster();
-     syncEnemyUnitsFromRoster();
-     updateInits(modelClass, enemyClass);
-     if (exists_test("data.json") && training == false) {
-       setStatusMessage("Training...");
-       trainEnvPrefix = "";
-+      trainingStartLabel = "обучения";
-+      trainingStatusLabel = "Обучение";
-+      trainingLogTag = "TRAIN";
-       startTrainInBackground();
+     if isinstance(state, collections.OrderedDict):
+         state = np.array(list(state.values()), dtype=np.float32)
+     elif isinstance(state, np.ndarray):
+         state = state.astype(np.float32, copy=False)
+ 
+     if not torch.is_tensor(state):
+         state = torch.tensor(state, dtype=torch.float32, device=dev)
+     else:
+         state = state.to(dev)
+ 
+     # делаем батч-измерение (batch dimension)
+     if state.dim() == 1:
+         state = state.unsqueeze(0)
+ 
+ 
+     if sample > eps_threshold:
+         with torch.no_grad():
+             decision = policy_net(state)
+             action = []
+-            for i in decision:
+-                larg = i.detach().cpu().numpy().tolist()
+-                if len(list(itertools.chain(*larg))) > 1:
+-                    larg = list(itertools.chain(*larg))
+-                else: 
+-                    larg = list(itertools.chain(*larg))[0]
+-                action.append(pd.Series(larg).idxmax())
++            for head_idx, head in enumerate(decision):
++                head = head.squeeze(0)
++                if head_idx == 2 and shoot_mask is not None:
++                    mask = torch.as_tensor(shoot_mask, dtype=torch.bool, device=head.device)
++                    if mask.numel() == head.numel() and mask.any():
++                        masked_head = head.clone()
++                        masked_head[~mask] = -1e9
++                        action.append(int(masked_head.argmax().item()))
++                        continue
++                action.append(int(head.argmax().item()))
+             return torch.tensor([action], device="cpu")
+     else:
+         sampled_action = env.action_space.sample()
++        shoot_choice = sampled_action["shoot"]
++        if shoot_mask is not None:
++            mask = torch.as_tensor(shoot_mask, dtype=torch.bool)
++            valid_indices = torch.where(mask)[0].tolist()
++            if valid_indices:
++                shoot_choice = random.choice(valid_indices)
+         action_list = [
+-            sampled_action['move'],
+-            sampled_action['attack'],
+-            sampled_action['shoot'],
+-            sampled_action['charge'],
+-            sampled_action['use_cp'],
+-            sampled_action['cp_on']
++            sampled_action["move"],
++            sampled_action["attack"],
++            shoot_choice,
++            sampled_action["charge"],
++            sampled_action["use_cp"],
++            sampled_action["cp_on"],
+         ]
+         for i in range(len_model):
+-            label = "move_num_"+str(i)
++            label = "move_num_" + str(i)
+             action_list.append(sampled_action[label])
+         action = torch.tensor([action_list], device="cpu")
+         return action
+ 
++def build_shoot_action_mask(env, log_fn=None, debug=False):
++    shoot_space = env.action_space.spaces["shoot"].n
++    valid_lengths = []
++    for i in range(len(env.unit_health)):
++        if env.unit_health[i] <= 0:
++            continue
++        if env.unitFellBack[i]:
++            continue
++        if env.unitInAttack[i][0] == 1:
++            continue
++        if env.unit_weapon[i] == "None":
++            continue
++        valid_targets = []
++        for j in range(len(env.enemy_health)):
++            if (
++                distance(env.unit_coords[i], env.enemy_coords[j]) <= env.unit_weapon[i]["Range"]
++                and env.enemy_health[j] > 0
++                and env.enemyInAttack[j][0] == 0
++            ):
++                valid_targets.append(j)
++        if valid_targets:
++            valid_lengths.append(len(valid_targets))
++    if not valid_lengths:
++        if debug and log_fn is not None:
++            log_fn("[MASK][SHOOT] Нет доступных целей для стрельбы (маска не применяется).")
++        return None
++    min_len = min(valid_lengths)
++    if min_len <= 0:
++        if debug and log_fn is not None:
++            log_fn("[MASK][SHOOT] Нулевая длина маски (маска не применяется).")
++        return None
++    mask = torch.zeros(shoot_space, dtype=torch.bool)
++    mask[:min_len] = True
++    if debug and log_fn is not None:
++        log_fn(
++            "[MASK][SHOOT] "
++            f"Доступные индексы: 0..{min_len - 1}, "
++            f"юнитов с целями={len(valid_lengths)}, размер пространства={shoot_space}."
++        )
++    return mask
++
+ def convertToDict(action):
+     naction = action.numpy()[0]
+     action_dict = {
+         'move': naction[0],
+         'attack': naction[1],
+         'shoot': naction[2],
+         'charge': naction[3],
+         'use_cp': naction[4],
+         'cp_on': naction[5]
      }
-     return true;
-   });
+     for i in range(len(naction)-6):
+         label = "move_num_"+str(i)
+         action_dict[label] = naction[i+6]
+     return action_dict
  
-   numOfGames.set_text("# of Games in Training:");
-   setIters.set_text("100");
+ def optimize_model(
+     policy_net,
+     target_net,
+     optimizer,
+     memory,
+     n_obs,
+     double_dqn_enabled=True,
+     per_enabled=False,
+     per_beta=0.4,
+     per_eps=1e-6,
+@@ -117,88 +165,122 @@ def optimize_model(
+         transitions = memory.sample(BATCH_SIZE)
+         indices = None
+         weights = None
+     batch = Transition(*zip(*transitions))
  
-   modelUnitLabel.set_text("Enter Model Units:");
-   enemyUnitLabel.set_text("Enter Player Units:");
-   openArmyPopup.set_label("Army Viewer");
-   openArmyPopup.signal_button_release_event().connect([&](GdkEventButton*) {
-     openArmyView();
-     return true;
-   });
+     desired_shape = (1, n_obs)
  
-   dimens.set_text("Dimensions of Board: ");
+     # ---- state_batch ----
+     state_tensors = []
+     for s in batch.state:
+         if s is None:
+             state_tensors.append(torch.zeros(desired_shape, device=dev, dtype=torch.float32))
+         else:
+             state_tensors.append(s.to(dev).view(desired_shape))
+     state_batch = torch.cat(state_tensors, dim=0)  # [B, n_obs]
  
-   dimX.set_text("X : ");
-   enterDimensX.set_text(std::to_string(x));
-   upX.set_label("+");
-   upX.signal_button_release_event().connect([&](GdkEventButton*) {
-     x+=10;
-     enterDimensX.set_text(std::to_string(x));
-     return true;
-@@ -291,50 +297,53 @@ Form :: Form() {
-     enterDimensY.set_text(std::to_string(y));
-     return true;
-   });
-   downY.set_label("-");
-   downY.signal_button_release_event().connect([&](GdkEventButton*) {
-     y-=10;
-     enterDimensY.set_text(std::to_string(y));
-     return true;
-   });
+     # ---- action_batch / reward_batch (на тот же dev!) ----
+     action_batch = torch.cat(batch.action).to(dev).long()  # индексы ОБЯЗАТЕЛЬНО long и на dev
+     reward_batch = torch.cat(batch.reward).to(dev).float().view(-1)  # [B]
+     n_step_batch = torch.tensor(batch.n_step, device=dev, dtype=torch.float32)  # [B]
  
-   button3.set_label("Clear Model Cache");
-   button3.signal_button_release_event().connect([&](GdkEventButton*) {
-     std::string mess = "Warning: You are about to delete all of the saved models";
-     openWarnMenu(mess, 0);
-     return true;
-   });
+     # ---- next states ----
+     non_final_mask = torch.tensor([s is not None for s in batch.next_state], device=dev, dtype=torch.bool)
  
-   buttonSelfPlay.set_label("Самообучение");
-   buttonSelfPlay.signal_button_release_event().connect([&](GdkEventButton*) {
-     saveLastRoster();
-     syncEnemyUnitsFromRoster();
-     updateInits(modelClass, enemyClass);
-     if (exists_test("data.json") && training == false) {
-       setStatusMessage("Самообучение: обучение...");
-       trainEnvPrefix = "SELF_PLAY_ENABLED=1 ";
-+      trainingStartLabel = "самообучения";
-+      trainingStatusLabel = "Самообучение";
-+      trainingLogTag = "SELFPLAY";
-       startTrainInBackground();
-     }
-     return true;
-   });
+     non_final_next_states = None
++    non_final_next_shoot_masks = None
+     if non_final_mask.any():
+         non_final_next_states = torch.cat([s.to(dev) for s in batch.next_state if s is not None], dim=0)
++        non_final_next_shoot_masks = [
++            m for m, s in zip(batch.next_shoot_mask, batch.next_state) if s is not None
++        ]
  
-   spmModel.set_label("Space Marine");
-   spmModel.set_group(factionModel);
-   spmModel.signal_toggled().connect([this]() {
-     modelUnits.clear();
-     modelClass = " Space_Marine";
-   });
+     # ---- Q(s,a) ----
+     state_action_values = policy_net(state_batch)
+     move_action, attack_action, shoot_action, charge_action, use_cp_action, cp_on_action, *move_actions = state_action_values
+ 
+     arr = [
+         move_action.gather(1, action_batch[:, 0].unsqueeze(1)),
+         attack_action.gather(1, action_batch[:, 1].unsqueeze(1)),
+         shoot_action.gather(1, action_batch[:, 2].unsqueeze(1)),
+         charge_action.gather(1, action_batch[:, 3].unsqueeze(1)),
+         use_cp_action.gather(1, action_batch[:, 4].unsqueeze(1)),
+         cp_on_action.gather(1, action_batch[:, 5].unsqueeze(1)),
+     ]
+     for i in range(len(move_actions)):
+         arr.append(move_actions[i].gather(1, action_batch[:, i + 6].unsqueeze(1)))
+ 
+     selected_action_values = torch.cat(arr, dim=1)  # [B, num_heads]
+ 
+     # ---- max_a' Q_target(s', a') per head ----
+     next_state_values = torch.zeros((BATCH_SIZE, selected_action_values.shape[1]), device=dev, dtype=torch.float32)
+ 
+     with torch.no_grad():
+         if non_final_next_states is not None:
+             target_next = target_net(non_final_next_states)  # list of [N, n_i]
+             if double_dqn_enabled:
+                 policy_next = policy_net(non_final_next_states)
+                 next_actions = [h.argmax(1) for h in policy_next]  # list of [N]
++                if non_final_next_shoot_masks is not None:
++                    mask_list = []
++                    for m in non_final_next_shoot_masks:
++                        if m is None:
++                            mask_list.append(torch.ones(policy_next[2].shape[1], device=dev, dtype=torch.bool))
++                        else:
++                            mask_list.append(torch.as_tensor(m, dtype=torch.bool, device=dev))
++                    shoot_mask = torch.stack(mask_list, dim=0)
++                    if shoot_mask.shape == policy_next[2].shape and shoot_mask.numel() > 0:
++                        valid_any = shoot_mask.any(dim=1)
++                        masked_shoot = policy_next[2].clone()
++                        masked_shoot[~shoot_mask] = -1e9
++                        masked_shoot[~valid_any] = policy_next[2][~valid_any]
++                        next_actions[2] = masked_shoot.argmax(1)
+                 next_q = [
+                     tgt.gather(1, act.unsqueeze(1)).squeeze(1)
+                     for tgt, act in zip(target_next, next_actions)
+                 ]
+                 max_per_head = torch.stack(next_q, dim=1)  # [N, num_heads]
+             else:
+-                max_per_head = torch.stack(
+-                    [h.max(1).values for h in target_next], dim=1
+-                )  # [N, num_heads]
++                masked_targets = []
++                for head_idx, head in enumerate(target_next):
++                    if head_idx == 2 and non_final_next_shoot_masks is not None:
++                        mask_list = []
++                        for m in non_final_next_shoot_masks:
++                            if m is None:
++                                mask_list.append(torch.ones(head.shape[1], device=dev, dtype=torch.bool))
++                            else:
++                                mask_list.append(torch.as_tensor(m, dtype=torch.bool, device=dev))
++                        shoot_mask = torch.stack(mask_list, dim=0)
++                        if shoot_mask.numel() > 0 and shoot_mask.shape == head.shape:
++                            valid_any = shoot_mask.any(dim=1)
++                            masked_head = head.clone()
++                            masked_head[~shoot_mask] = -1e9
++                            masked_head[~valid_any] = head[~valid_any]
++                            masked_targets.append(masked_head.max(1).values)
++                            continue
++                    masked_targets.append(head.max(1).values)
++                max_per_head = torch.stack(masked_targets, dim=1)  # [N, num_heads]
+             next_state_values[non_final_mask] = max_per_head
+ 
+     gamma_n = GAMMA ** n_step_batch
+     expected_state_action_values = reward_batch.unsqueeze(1) + (gamma_n.unsqueeze(1) * next_state_values)  # [B, num_heads]
+ 
+     if per_enabled:
+         loss_per_element = F.smooth_l1_loss(
+             selected_action_values, expected_state_action_values, reduction="none"
+         )
+         per_sample_loss = loss_per_element.mean(dim=1)  # [B]
+         weight_t = torch.tensor(weights, device=dev, dtype=torch.float32)
+         loss = (per_sample_loss * weight_t).mean()
+         td_errors = (selected_action_values - expected_state_action_values).abs().mean(dim=1)
+         new_priorities = td_errors.detach().cpu().numpy() + per_eps
+         memory.update_priorities(indices, new_priorities)
+         per_stats = {
+             "priority_mean": float(new_priorities.mean()),
+             "priority_max": float(new_priorities.max()),
+             "is_weight_mean": float(weight_t.mean().item()),
+             "is_weight_max": float(weight_t.max().item()),
+             "td_error_mean": float(td_errors.mean().item()),
+             "td_error_max": float(td_errors.max().item()),
+         }
+     else:
+         criterion = nn.SmoothL1Loss()
+diff --git a/play.py b/play.py
+index 67cdca9a12a4e451082ffc725b9d5754a85a0ac5..a19e47fc2ef1928ec1fee892969fe5d37332cf59 100644
+--- a/play.py
++++ b/play.py
+@@ -140,46 +140,47 @@ optimizer = torch.optim.Adam(policy_net.parameters())
+ policy_net.load_state_dict(checkpoint['policy_net'])
+ target_net.load_state_dict(checkpoint['target_net'])
+ optimizer.load_state_dict(checkpoint['optimizer'])
+ 
+ policy_net.eval()
+ target_net.eval()
+ 
+ isdone = False
+ i = 0
+ 
+ if playInGUI == True:
+     env.reset(m=model, e=enemy, playType=playInGUI, Type="big", trunc=True)
+ else:
+     env.reset(m=model, e=enemy, playType=playInGUI, Type="big", trunc=False)
+ 
+ env.io = io
+ 
+ reward = 0
+ io.log("\nИнструкции:\n")
+ io.log("Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.)")
+ io.log("Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.)\n")
+ 
+ while isdone == False:
+     done, info = env.unwrapped.player()
+     state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+-    action = select_action(env, state, i, policy_net, len(model))
++    shoot_mask = build_shoot_action_mask(env)
++    action = select_action(env, state, i, policy_net, len(model), shoot_mask=shoot_mask)
+     action_dict = convertToDict(action)
+     if done != True:
+         next_observation, reward, done, _, info = env.step(action_dict)
+         reward = torch.tensor([reward], device=device)
+         unit_health = info["model health"]
+         enemy_health = info["player health"]
+         inAttack = info["in attack"]
+ 
+         board = env.render()
+         message = "Iteration {} ended with reward {}, Player health {}, Model health {}".format(i, reward, enemy_health, unit_health)
+         io.log(message)
+         next_state = torch.tensor(next_observation, dtype=torch.float32, device=device).unsqueeze(0)
+         state = next_state
+     if done == True:
+         if reward > 0:
+             io.log("Модель победила!")
+         else:
+             io.log("Вы победили!")
+         isdone = True
+     i+=1
+diff --git a/train.py b/train.py
+index 6f0787d093a8d8aaffbdb40e16cae8c7db0baf19..89b85cd1e9b9b1c7c256a4c638904d67fe095685 100644
+--- a/train.py
++++ b/train.py
+@@ -75,99 +75,117 @@ SELF_PLAY_ENABLED = os.getenv("SELF_PLAY_ENABLED", "0") == "1"
+ SELF_PLAY_UPDATE_EVERY_EPISODES = int(os.getenv("SELF_PLAY_UPDATE_EVERY_EPISODES", "50"))
+ SELF_PLAY_OPPONENT_MODE = os.getenv("SELF_PLAY_OPPONENT_MODE", "snapshot")
+ SELF_PLAY_FIXED_PATH = os.getenv("SELF_PLAY_FIXED_PATH", "")
+ SELF_PLAY_OPPONENT_EPSILON = float(os.getenv("SELF_PLAY_OPPONENT_EPSILON", "0.0"))
+ 
+ if SELF_PLAY_UPDATE_EVERY_EPISODES < 1:
+     SELF_PLAY_UPDATE_EVERY_EPISODES = 1
+ if SELF_PLAY_OPPONENT_MODE not in ("snapshot", "fixed_checkpoint"):
+     raise ValueError(
+         "SELF_PLAY_OPPONENT_MODE должен быть 'snapshot' или 'fixed_checkpoint'. "
+         f"Получено: {SELF_PLAY_OPPONENT_MODE}"
+     )
+ # ============================
  
  
-   orksModel.set_label("Orks");
-   orksModel.set_group(factionModel);
-   orksModel.signal_toggled().connect([this]() {
-     modelUnits.clear();
-     modelClass = " Orks";
-   });
+ DEFAULT_MISSION_NAME = "only_war"
  
-   sobModel.set_label("Sisters of Battle");
-   sobModel.set_group(factionModel);
-   sobModel.signal_toggled().connect([this]() {
-     modelUnits.clear();
-     modelClass = " Sisters_of_Battle";
-@@ -762,67 +771,67 @@ Form :: Form() {
-     syncEnemyUnitsFromRoster();
-     saveLastRoster();
-   }
-   signal_hide().connect([this]() {
-     saveLastRoster();
-     saveWindowGeometry();
-   });
-   show_all();
- }
+ def to_np_state(s):
+     if isinstance(s, (dict, collections.OrderedDict)):
+         return np.array(list(s.values()), dtype=np.float32)
+     return np.array(s, dtype=np.float32)
  
- void Form :: setStatusMessage(const std::string& message) {
-   status.set_text(message);
-   appendLogLine(message);
- }
+ def build_n_step_transition(buffer, gamma):
+     reward_sum = 0.0
+     next_state = None
++    next_shoot_mask = None
+     n_step = 0
+-    for idx, (_, _, reward, next_state_candidate, done_flag) in enumerate(buffer):
++    for idx, (_, _, reward, next_state_candidate, done_flag, next_shoot_mask_candidate) in enumerate(buffer):
+         reward_sum += (gamma ** idx) * reward
+         n_step += 1
+         next_state = next_state_candidate
++        next_shoot_mask = next_shoot_mask_candidate
+         if done_flag:
+             next_state = None
++            next_shoot_mask = None
+             break
+-    return reward_sum, next_state, n_step
++    return reward_sum, next_state, next_shoot_mask, n_step
  
- void Form :: appendLogLine(const std::string& message) {
-   auto logBuffer = logView.get_buffer();
-   if (!logBuffer) {
-     return;
-   }
-   logBuffer->insert(logBuffer->end(), message + "\n");
-   auto endIter = logBuffer->end();
-   logView.scroll_to(endIter);
- }
+-def select_action_with_epsilon(env, state, policy_net, epsilon, len_model):
++def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, shoot_mask=None):
+     sample = random.random()
+     dev = next(policy_net.parameters()).device
  
--void Form :: appendTrainingLogToFile(const std::string& message) {
-+void Form :: appendTrainingLogToFile(const std::string& message, const std::string& tag) {
-   fs::path logPath = fs::current_path() / "LOGS_FOR_AGENTS.md";
-   if (!fs::exists(logPath)) {
-     fs::path parentPath = fs::current_path().parent_path() / "LOGS_FOR_AGENTS.md";
-     if (fs::exists(parentPath)) {
-       logPath = parentPath;
-     }
-   }
-   std::ofstream outfile(logPath, std::ios::app);
-   if (!outfile) {
-     Glib::signal_idle().connect_once([this]() {
-       appendLogLine(
-           "Ошибка записи в LOGS_FOR_AGENTS.md (gui/Application.cpp): проверьте путь и права доступа.");
-     });
-     return;
-   }
--  outfile << nowTimestamp() << " | [GUI][TRAIN] " << message << "\n";
-+  outfile << nowTimestamp() << " | [GUI][" << tag << "] " << message << "\n";
- }
+     if isinstance(state, collections.OrderedDict):
+         state = np.array(list(state.values()), dtype=np.float32)
+     elif isinstance(state, np.ndarray):
+         state = state.astype(np.float32, copy=False)
  
- bool Form :: loadWindowGeometry() {
-   std::ifstream infile(geometryPath());
-   if (!infile) {
-     return false;
-   }
-   int width = 0;
-   int height = 0;
-   if (!(infile >> width >> height)) {
-     return false;
-   }
-   set_default_size(width, height);
-   return true;
- }
+     if not torch.is_tensor(state):
+         state = torch.tensor(state, dtype=torch.float32, device=dev)
+     else:
+         state = state.to(dev)
  
- void Form :: saveWindowGeometry() {
-   std::string path = geometryPath();
-   fs::create_directories(fs::path(path).parent_path());
-   int width = 0;
-   int height = 0;
-   get_size(width, height);
-   std::ofstream outfile(path);
-   if (!outfile) {
-     return;
-@@ -1117,94 +1126,97 @@ void Form :: updateInits(std::string model, std::string enemy) {
-   std::string command = "cd .. ; ./data.sh ";
-   command.append(setIters.get_text().data());
-   command.append(model);
-   command.append(enemy);
-   command.append(" ");
-   command.append(enterDimensX.get_text().data());
-   command.append(" ");
-   command.append(enterDimensY.get_text().data());
-   system(command.data());
- }
+     if state.dim() == 1:
+         state = state.unsqueeze(0)
  
- void Form :: startTrainInBackground() {
-   std::thread t(&Form::startTrain, this);
-   t.detach();
- }
+     if sample > epsilon:
+         with torch.no_grad():
+             decision = policy_net(state)
+             action = []
+-            for i in decision:
+-                action.append(int(i.argmax(dim=1).item()))
++            for head_idx, head in enumerate(decision):
++                head = head.squeeze(0)
++                if head_idx == 2 and shoot_mask is not None:
++                    mask = torch.as_tensor(shoot_mask, dtype=torch.bool, device=head.device)
++                    if mask.numel() == head.numel() and mask.any():
++                        masked_head = head.clone()
++                        masked_head[~mask] = -1e9
++                        action.append(int(masked_head.argmax().item()))
++                        continue
++                action.append(int(head.argmax().item()))
+             return torch.tensor([action], device="cpu")
+     sampled_action = env.action_space.sample()
++    shoot_choice = sampled_action["shoot"]
++    if shoot_mask is not None:
++        mask = torch.as_tensor(shoot_mask, dtype=torch.bool)
++        valid_indices = torch.where(mask)[0].tolist()
++        if valid_indices:
++            shoot_choice = random.choice(valid_indices)
+     action_list = [
+-        sampled_action['move'],
+-        sampled_action['attack'],
+-        sampled_action['shoot'],
+-        sampled_action['charge'],
+-        sampled_action['use_cp'],
+-        sampled_action['cp_on']
++        sampled_action["move"],
++        sampled_action["attack"],
++        shoot_choice,
++        sampled_action["charge"],
++        sampled_action["use_cp"],
++        sampled_action["cp_on"],
+     ]
+     for i in range(len_model):
+         label = "move_num_"+str(i)
+         action_list.append(sampled_action[label])
+     action = torch.tensor([action_list], device="cpu")
+     return action
  
- void Form :: startTrain() {
-   training = true;
-   system("clear");
-   const std::string perDefaults = "PER_ENABLED=1 N_STEP=3 TRAIN_LOG_TO_CONSOLE=1 ";
-   std::string command = "cd .. ; ";
-   command.append(perDefaults);
-   command.append(trainEnvPrefix);
-   command.append("./train.sh 2>&1");
++
+ def moving_avg(values, window=50):
+     if len(values) == 0:
+         return []
+     w = max(1, int(window))
+     out = []
+     for i in range(len(values)):
+         j0 = max(0, i - w + 1)
+         chunk = values[j0:i+1]
+         out.append(sum(chunk) / len(chunk))
+     return out
  
--  Glib::signal_idle().connect_once([this]() {
--    setStatusMessage("Старт обучения: PER=1, N_STEP=3.");
-+  std::string startMessage = "Старт " + trainingStartLabel + ": PER=1, N_STEP=3.";
-+  Glib::signal_idle().connect_once([this, startMessage]() {
-+    setStatusMessage(startMessage);
-   });
--  appendTrainingLogToFile("Старт обучения: PER=1, N_STEP=3.");
-+  appendTrainingLogToFile(startMessage, trainingLogTag);
+ def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
+     os.makedirs(metrics_dir, exist_ok=True)
+     os.makedirs("gui/img", exist_ok=True)
  
-   FILE* pipe = popen(command.c_str(), "r");
-   if (!pipe) {
--    Glib::signal_idle().connect_once([this]() {
--      setStatusMessage(
--          "Ошибка запуска обучения (gui/Application.cpp): проверьте, что train.sh доступен.");
-+    std::string errorMessage = "Ошибка запуска " + trainingStartLabel
-+        + " (gui/Application.cpp): проверьте, что train.sh доступен.";
-+    Glib::signal_idle().connect_once([this, errorMessage]() {
-+      setStatusMessage(errorMessage);
-     });
--    appendTrainingLogToFile(
--        "Ошибка запуска обучения (gui/Application.cpp): проверьте, что train.sh доступен.");
-+    appendTrainingLogToFile(errorMessage, trainingLogTag);
-     training = false;
-     return;
-   }
+     # --- CSV ---
+     csv_path = os.path.join(metrics_dir, f"stats_{run_id}.csv")
+     cols = ["episode", "ep_reward", "ep_len", "turn", "model_vp", "player_vp", "vp_diff", "result", "end_reason", "end_code"]
+     with open(csv_path, "w", newline="", encoding="utf-8") as f:
+         w = csv.DictWriter(f, fieldnames=cols)
+         w.writeheader()
+         for r in ep_rows:
+             w.writerow({k: r.get(k, "") for k in cols})
  
-   std::array<char, 512> buffer{};
-   while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe)) {
-     std::string line(buffer.data());
-     while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
-       line.pop_back();
-     }
-     if (line.empty()) {
-       continue;
-     }
--    appendTrainingLogToFile(line);
-+    appendTrainingLogToFile(line, trainingLogTag);
-     Glib::signal_idle().connect_once([this, line]() {
-       appendLogLine(line);
-     });
-   }
+     wins01 = [1 if r["result"] == "win" else 0 for r in ep_rows]
+@@ -492,110 +510,113 @@ initial_enemy_hp = float(sum(getattr(env, "enemy_health", [])))
+ append_agent_log(
+     "Старт обучения: "
+     f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}, "
+     f"battle_round={getattr(env, 'battle_round', 'n/a')}, trunc={trunc}"
+ )
+ if trunc:
+     append_agent_log(
+         "Логи фаз/ходов отключены (trunc=True). "
+         "Чтобы включить подробные логи: VERBOSE_LOGS=1 или MANUAL_DICE=1."
+     )
+ if initial_model_hp <= 0 or initial_enemy_hp <= 0:
+     append_agent_log(
+         "ВНИМАНИЕ: на старте эпизода обнаружено нулевое здоровье. "
+         f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}. "
+         "Это может приводить к мгновенному завершению эпизодов."
+     )
  
-   int exitCode = pclose(pipe);
-   if (exitCode == 0) {
--    Glib::signal_idle().connect_once([this]() {
--      setStatusMessage("Обучение завершено.");
-+    std::string doneMessage = trainingStatusLabel + " завершено.";
-+    Glib::signal_idle().connect_once([this, doneMessage]() {
-+      setStatusMessage(doneMessage);
-     });
--    appendTrainingLogToFile("Обучение завершено.");
-+    appendTrainingLogToFile(doneMessage, trainingLogTag);
-   } else {
--    std::string errLine = "Обучение завершено с ошибкой. Код выхода: " + std::to_string(exitCode);
-+    std::string errLine = trainingStatusLabel + " завершено с ошибкой. Код выхода: "
-+        + std::to_string(exitCode);
-     Glib::signal_idle().connect_once([this, errLine]() {
-       setStatusMessage(errLine);
-     });
--    appendTrainingLogToFile(errLine);
-+    appendTrainingLogToFile(errLine, trainingLogTag);
-   }
+ while end == False:
+     epLen += 1
+     if SELF_PLAY_ENABLED and epLen == 1:
+         append_agent_log(
+             f"Старт эпизода {numLifeT + 1}. "
+             f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
+             f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
+         )
+-    action = select_action(env, state, i, policy_net, len(model))
++    shoot_mask = build_shoot_action_mask(env, log_fn=append_agent_log, debug=TRAIN_DEBUG)
++    action = select_action(env, state, i, policy_net, len(model), shoot_mask=shoot_mask)
+     action_dict = convertToDict(action)
+     if trunc == False:
+         print(env.get_info())
  
-   training = false;
-   Glib::signal_idle().connect_once([this]() {
-     update_picture();
-     update_metrics();
-   });
- }
+     if SELF_PLAY_ENABLED:
+         env.enemyTurn(trunc=trunc, policy_fn=opponent_policy)
+     else:
+         env.enemyTurn(trunc=trunc)
+     next_observation, reward, done, res, info = env.step(action_dict)
+     rewArr.append(float(reward))
  
- void Form :: runPlayAgainstModelInBackground() {
-   std::thread t(&Form::playAgainstModel, this);
-   t.detach();
- }
-   
- void Form :: playAgainstModel() {
-   path = setModelFile.get_text();
  
-   std::string envPrefix;
+     unit_health = info["model health"]
+     enemy_health = info["player health"]
+     inAttack = info["in attack"]
  
-   std::string command;
+     if inAttack == 1:
+         if trunc == False:
+             print("The units are fighting")
  
-   if (playInGUI == "True") {
-     command = "cd .. ; " + envPrefix + "./play.sh ";
-     if (strlen(path.data()) < 2) {
-       command.append("None");
-diff --git a/gui/include/Application.h b/gui/include/Application.h
-index ef548f8cd4bf3963faf027a2b5399b241f3601d0..d0379712d4d9f3415f62f401aca303210133732f 100644
---- a/gui/include/Application.h
-+++ b/gui/include/Application.h
-@@ -24,51 +24,51 @@ public :
-   void update_picture();
-   void update_metrics();
-   void updateInits(std::string model, std::string enemy);
-   void startTrainInBackground();
-   void startTrain();
-   void runPlayAgainstModelInBackground();
-   void playAgainstModel();
-   inline bool exists_test (const std::string& name);
-   void on_dropdown_changed();
-   void savetoTxt(const std::vector<RosterEntry>& enemyUnits, const std::vector<RosterEntry>& modelUnits);
-   bool isValidUnit(int id, std::string name);
-   int openArmyView();
-   int openWarnMenu(std::string mess, int comm);
-   int openHelpMenu();
-   int openPlayGUI();
-   void changeMetrics(std::string path);
-   void recentMetrics();
-   std::string toLower(std::string data);
-   void mirrorRoster();
-   void saveLastRoster();
-   void loadLastRoster();
-   void syncEnemyUnitsFromRoster();
-   bool addEnemyUnitFromEntry(const std::string& entryText);
-   void resetLayout();
-   void appendLogLine(const std::string& message);
--  void appendTrainingLogToFile(const std::string& message);
-+  void appendTrainingLogToFile(const std::string& message, const std::string& tag = "TRAIN");
+     if RENDER_EVERY > 0 and (i % RENDER_EVERY == 0 or done):
+         env.render()
+     mission_name = info.get("mission", DEFAULT_MISSION_NAME)
+     message = "Iteration {} ended with reward {}, enemy health {}, model health {}, model VP {}, enemy VP {}, mission {}".format(
+         i,
+         reward,
+         enemy_health,
+         unit_health,
+         info["model VP"],
+         info["player VP"],
+         mission_name,
+     )
+     if trunc == False:
+         print(message)
+     inText.append(message)
  
- private:
-   void setStatusMessage(const std::string& message);
-   void applyFactionToModel(const std::string& faction);
-   void applyFactionToEnemy(const std::string& faction);
-   bool loadWindowGeometry();
-   void saveWindowGeometry();
-   void ensureMinimumSize();
-   Window* boardShow;
-   Window* armyView;
-   Window* warn;
-   Window* play;
-   Window* helpMenu;
-   Image pictureBox1;
-   Image metricBox;
-   Image metricBox2;
-   Image metricBox3;
- Image metricBox4;
- Image metricBox5;
- Image metricBox6;
-   Box rootBox;
-   Box topBarBox;
-   Box leftBox;
-   Paned mainSplit;
-   Paned rightSplit;
-@@ -153,28 +153,31 @@ Image metricBox6;
-   Button mirrorRosterButton;
-   Button openArmyPopup;
-   Entry enterModelUnit;
-   Entry enterEnemyUnit;
-   Button clearAllModel;
-   Button clearAllEnemy;
-   int x;
-   int y;
-   bool open;
-   bool training;
-   bool playing;
-   bool loadingRoster;
-   Label error;
-   Label modelUnitLabel;
-   Label enemyUnitLabel;
-   std::vector<RosterEntry> modelUnits;
-   std::vector<RosterEntry> enemyUnits;
-   RosterModel rosterModel;
-   HeaderBar bar;
-   Button help;
-   Button resetLayoutButton;
-   Button chooseMetrics;
-   Button playGUI;
-   std::string playInGUI;
-   std::string trainEnvPrefix;
-+  std::string trainingStartLabel;
-+  std::string trainingStatusLabel;
-+  std::string trainingLogTag;
- };
+     dev = next(policy_net.parameters()).device
+     state_t = torch.tensor(to_np_state(state), device=dev).unsqueeze(0)
+     next_state_t = None
++    next_shoot_mask = None
+     if not done:
+         next_state_t = torch.tensor(to_np_state(next_observation), device=dev).unsqueeze(0)
++        next_shoot_mask = build_shoot_action_mask(env, log_fn=append_agent_log, debug=TRAIN_DEBUG)
  
- #endif
+-    n_step_buffer.append((state_t, action, float(reward), next_state_t, done))
++    n_step_buffer.append((state_t, action, float(reward), next_state_t, done, next_shoot_mask))
+     if len(n_step_buffer) >= N_STEP:
+-        reward_sum, n_step_next_state, n_step_count = build_n_step_transition(
++        reward_sum, n_step_next_state, n_step_next_mask, n_step_count = build_n_step_transition(
+             n_step_buffer, GAMMA
+         )
+         reward_sum_t = torch.tensor([reward_sum], device=dev, dtype=torch.float32)
+-        head_state, head_action, _, _, _ = n_step_buffer[0]
+-        memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count)
++        head_state, head_action, _, _, _, _ = n_step_buffer[0]
++        memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count, n_step_next_mask)
+         n_step_buffer.popleft()
+     if done:
+         while n_step_buffer:
+-            reward_sum, n_step_next_state, n_step_count = build_n_step_transition(
++            reward_sum, n_step_next_state, n_step_next_mask, n_step_count = build_n_step_transition(
+                 n_step_buffer, GAMMA
+             )
+             reward_sum_t = torch.tensor([reward_sum], device=dev, dtype=torch.float32)
+-            head_state, head_action, _, _, _ = n_step_buffer[0]
+-            memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count)
++            head_state, head_action, _, _, _, _ = n_step_buffer[0]
++            memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count, n_step_next_mask)
+             n_step_buffer.popleft()
+     state = next_observation
+ 
+     # =========================
+     # ✅ Несколько обучающих апдейтов на 1 шаг среды
+     losses = []
+     last_td_stats = None
+     last_per_beta = PER_BETA_START
+     last_loss_value = None
+ 
+     if i >= WARMUP_STEPS:
+         for _ in range(UPDATES_PER_STEP):
+             per_beta = PER_BETA_START
+             if PER_ENABLED and PER_BETA_FRAMES > 0:
+                 per_beta = min(
+                     1.0,
+                     PER_BETA_START
+                     + (1.0 - PER_BETA_START)
+                     * (optimize_steps / float(PER_BETA_FRAMES)),
+                 )
+             result = optimize_model(
+                 policy_net,
+                 target_net,
+                 optimizer,
+                 memory,
 

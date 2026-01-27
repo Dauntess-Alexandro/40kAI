@@ -97,17 +97,20 @@ def to_np_state(s):
 def build_n_step_transition(buffer, gamma):
     reward_sum = 0.0
     next_state = None
+    next_shoot_mask = None
     n_step = 0
-    for idx, (_, _, reward, next_state_candidate, done_flag) in enumerate(buffer):
+    for idx, (_, _, reward, next_state_candidate, done_flag, next_shoot_mask_candidate) in enumerate(buffer):
         reward_sum += (gamma ** idx) * reward
         n_step += 1
         next_state = next_state_candidate
+        next_shoot_mask = next_shoot_mask_candidate
         if done_flag:
             next_state = None
+            next_shoot_mask = None
             break
-    return reward_sum, next_state, n_step
+    return reward_sum, next_state, next_shoot_mask, n_step
 
-def select_action_with_epsilon(env, state, policy_net, epsilon, len_model):
+def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, shoot_mask=None):
     sample = random.random()
     dev = next(policy_net.parameters()).device
 
@@ -128,23 +131,38 @@ def select_action_with_epsilon(env, state, policy_net, epsilon, len_model):
         with torch.no_grad():
             decision = policy_net(state)
             action = []
-            for i in decision:
-                action.append(int(i.argmax(dim=1).item()))
+            for head_idx, head in enumerate(decision):
+                head = head.squeeze(0)
+                if head_idx == 2 and shoot_mask is not None:
+                    mask = torch.as_tensor(shoot_mask, dtype=torch.bool, device=head.device)
+                    if mask.numel() == head.numel() and mask.any():
+                        masked_head = head.clone()
+                        masked_head[~mask] = -1e9
+                        action.append(int(masked_head.argmax().item()))
+                        continue
+                action.append(int(head.argmax().item()))
             return torch.tensor([action], device="cpu")
     sampled_action = env.action_space.sample()
+    shoot_choice = sampled_action["shoot"]
+    if shoot_mask is not None:
+        mask = torch.as_tensor(shoot_mask, dtype=torch.bool)
+        valid_indices = torch.where(mask)[0].tolist()
+        if valid_indices:
+            shoot_choice = random.choice(valid_indices)
     action_list = [
-        sampled_action['move'],
-        sampled_action['attack'],
-        sampled_action['shoot'],
-        sampled_action['charge'],
-        sampled_action['use_cp'],
-        sampled_action['cp_on']
+        sampled_action["move"],
+        sampled_action["attack"],
+        shoot_choice,
+        sampled_action["charge"],
+        sampled_action["use_cp"],
+        sampled_action["cp_on"],
     ]
     for i in range(len_model):
         label = "move_num_"+str(i)
         action_list.append(sampled_action[label])
     action = torch.tensor([action_list], device="cpu")
     return action
+
 
 def moving_avg(values, window=50):
     if len(values) == 0:
@@ -514,7 +532,8 @@ while end == False:
             f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
             f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
         )
-    action = select_action(env, state, i, policy_net, len(model))
+    shoot_mask = build_shoot_action_mask(env, log_fn=append_agent_log, debug=TRAIN_DEBUG)
+    action = select_action(env, state, i, policy_net, len(model), shoot_mask=shoot_mask)
     action_dict = convertToDict(action)
     if trunc == False:
         print(env.get_info())
@@ -554,26 +573,28 @@ while end == False:
     dev = next(policy_net.parameters()).device
     state_t = torch.tensor(to_np_state(state), device=dev).unsqueeze(0)
     next_state_t = None
+    next_shoot_mask = None
     if not done:
         next_state_t = torch.tensor(to_np_state(next_observation), device=dev).unsqueeze(0)
+        next_shoot_mask = build_shoot_action_mask(env, log_fn=append_agent_log, debug=TRAIN_DEBUG)
 
-    n_step_buffer.append((state_t, action, float(reward), next_state_t, done))
+    n_step_buffer.append((state_t, action, float(reward), next_state_t, done, next_shoot_mask))
     if len(n_step_buffer) >= N_STEP:
-        reward_sum, n_step_next_state, n_step_count = build_n_step_transition(
+        reward_sum, n_step_next_state, n_step_next_mask, n_step_count = build_n_step_transition(
             n_step_buffer, GAMMA
         )
         reward_sum_t = torch.tensor([reward_sum], device=dev, dtype=torch.float32)
-        head_state, head_action, _, _, _ = n_step_buffer[0]
-        memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count)
+        head_state, head_action, _, _, _, _ = n_step_buffer[0]
+        memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count, n_step_next_mask)
         n_step_buffer.popleft()
     if done:
         while n_step_buffer:
-            reward_sum, n_step_next_state, n_step_count = build_n_step_transition(
+            reward_sum, n_step_next_state, n_step_next_mask, n_step_count = build_n_step_transition(
                 n_step_buffer, GAMMA
             )
             reward_sum_t = torch.tensor([reward_sum], device=dev, dtype=torch.float32)
-            head_state, head_action, _, _, _ = n_step_buffer[0]
-            memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count)
+            head_state, head_action, _, _, _, _ = n_step_buffer[0]
+            memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count, n_step_next_mask)
             n_step_buffer.popleft()
     state = next_observation
 
