@@ -1235,6 +1235,7 @@ void Form :: playAgainstModel() {
   std::string command;
 
   if (playInGUI == "True") {
+    envPrefix = "PLAY_NO_EXPLORATION=1 ";
     command = "cd .. ; " + envPrefix + "./play.sh ";
     if (strlen(path.data()) < 2) {
       command.append("None");
