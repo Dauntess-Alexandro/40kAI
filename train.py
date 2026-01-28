@@ -40,7 +40,7 @@ with open(os.path.abspath("hyperparams.json")) as j:
 
 # ===== algo flags =====
 DOUBLE_DQN_ENABLED = os.getenv("DOUBLE_DQN_ENABLED", "1") == "1"
-DUELING_ENABLED = os.getenv("DUELING_ENABLED", "0") == "1"
+DUELING_ENABLED = os.getenv("DUELING_ENABLED", "1") == "1"
 REWARD_DEBUG = os.getenv("REWARD_DEBUG", "0") == "1"
 REWARD_DEBUG_EVERY = int(os.getenv("REWARD_DEBUG_EVERY", "200"))
 # ===== train logging =====
@@ -55,12 +55,12 @@ if TRAIN_DEBUG:
     TRAIN_LOG_EVERY_UPDATES = min(TRAIN_LOG_EVERY_UPDATES, 50)
 # =========================
 # ===== per + n-step =====
-PER_ENABLED = os.getenv("PER_ENABLED", "0") == "1"
+PER_ENABLED = os.getenv("PER_ENABLED", "1") == "1"
 PER_ALPHA = float(os.getenv("PER_ALPHA", "0.6"))
 PER_BETA_START = float(os.getenv("PER_BETA_START", "0.4"))
 PER_BETA_FRAMES = int(os.getenv("PER_BETA_FRAMES", "200000"))
 PER_EPS = float(os.getenv("PER_EPS", "1e-6"))
-N_STEP = int(os.getenv("N_STEP", "1"))
+N_STEP = int(os.getenv("N_STEP", "3"))
 if N_STEP < 1:
     N_STEP = 1
 # ======================
