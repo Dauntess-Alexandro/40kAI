@@ -1,60 +1,67 @@
-diff --git a/gui/Application.cpp b/gui/Application.cpp
-index f767e5ce2ba5d26e59cdbbc1e0099686e9ee3562..5fe7c625292708f520123962744ed638c568b66f 100644
---- a/gui/Application.cpp
-+++ b/gui/Application.cpp
-@@ -884,51 +884,53 @@ void Form :: appendTrainingLogToFile(const std::string& message, const std::stri
-     return;
-   }
-   outfile << nowTimestamp() << " | [GUI][" << tag << "] " << message << "\n";
- }
+diff --git a/eval.py b/eval.py
+index 8174794f63c4a284f988ae88c07ad0d3072cf3ed..80f696f770fdc52eb74bb4f28ac4a89b3cf4addd 100644
+--- a/eval.py
++++ b/eval.py
+@@ -174,52 +174,59 @@ def main():
  
- void Form :: startEvalInBackground() {
-   if (evaluating) {
-     appendEvalLogLine("Симуляция уже запущена. Дождитесь завершения.");
-     return;
-   }
-   int games = static_cast<int>(evalGamesSpin.get_value());
-   if (games < 1 || games > 10000) {
-     appendEvalLogLine("Некорректное значение N. Укажите число от 1 до 10000.");
-     return;
-   }
-   std::thread t(&Form::startEval, this, games);
-   t.detach();
- }
+     attacker_side, defender_side = roll_off_attacker_defender(
+         manual_roll_allowed=False,
+         log_fn=None,
+     )
+     deploy_only_war(
+         model_units=model_units,
+         enemy_units=enemy_units,
+         b_len=env.unwrapped.b_len,
+         b_hei=env.unwrapped.b_hei,
+         attacker_side=attacker_side,
+         log_fn=None,
+     )
+     post_deploy_setup(log_fn=None)
+     env.attacker_side = attacker_side
+     env.defender_side = defender_side
  
- void Form :: startEval(int games) {
-   evaluating = true;
-   Glib::signal_idle().connect_once([this, games]() {
-     appendEvalLogLine("Старт симуляции: игр=" + std::to_string(games));
-   });
+     state, info = env.reset(m=model_units, e=enemy_units, Type="big", trunc=True)
+     n_actions = [5, 2, len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
+     for _ in range(len(model_units)):
+         n_actions.append(12)
+     n_observations = len(state)
  
--  std::string command = "cd .. ; FORCE_GREEDY=1 EVAL_EPSILON=0 python3 -u eval.py --games ";
-+  std::string command =
-+      "cd .. ; PYTHONPATH=\"$(pwd)/gym_mod:${PYTHONPATH:-}\" FORCE_GREEDY=1 "
-+      "EVAL_EPSILON=0 .venv/bin/python -u eval.py --games ";
-   command.append(std::to_string(games));
-   command.append(" 2>&1");
+     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
  
-   FILE* pipe = popen(command.c_str(), "r");
-   if (!pipe) {
-     std::string errorMessage = "Ошибка запуска симуляции (gui/Application.cpp): "
-         "проверьте, что eval.py доступен.";
-     Glib::signal_idle().connect_once([this, errorMessage]() {
-       appendEvalLogLine(errorMessage);
-     });
-     evaluating = false;
-     return;
-   }
+-    policy_net = DQN(n_observations, n_actions).to(device)
+-    target_net = DQN(n_observations, n_actions).to(device)
++    net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
++    dueling = net_type == "dueling"
++    if not dueling and isinstance(checkpoint, dict):
++        policy_state = checkpoint.get("policy_net", {})
++        if any(key.startswith("value_heads.") for key in policy_state):
++            dueling = True
++
++    policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
++    target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+     optimizer = torch.optim.Adam(policy_net.parameters())
  
-   std::array<char, 512> buffer{};
-   while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe)) {
-     std::string line(buffer.data());
-     while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
-       line.pop_back();
-     }
-     if (line.empty()) {
-       continue;
-     }
-     Glib::signal_idle().connect_once([this, line]() {
-       appendEvalLogLine(line);
+     policy_net.load_state_dict(checkpoint["policy_net"])
+     target_net.load_state_dict(checkpoint["target_net"])
+     optimizer.load_state_dict(checkpoint["optimizer"])
+ 
+     policy_net.eval()
+     target_net.eval()
+ 
+     log(f"Старт оценки: игр={games}, epsilon={epsilon:.3f}.")
+ 
+     wins = 0
+     vp_diffs = []
+     end_reasons = Counter()
+ 
+     for idx in range(1, games + 1):
+         winner, end_reason, vp_diff = run_episode(
+             env, model_units, enemy_units, policy_net, epsilon, device
+         )
+         vp_diffs.append(vp_diff)
+         end_reasons[end_reason] += 1
+         if winner == "model":
+             wins += 1
+         log(f"Игра {idx}/{games}: winner={winner} vp_diff={vp_diff} end_reason={end_reason}")
+ 
 
