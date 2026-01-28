@@ -19,6 +19,11 @@ import torch.optim as optim
 import torch.nn.functional as F
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+PLAY_EPS = float(os.getenv("PLAY_EPS", "")) if os.getenv("PLAY_EPS") is not None and os.getenv("PLAY_EPS") != "" else None
+PLAY_NO_EXPLORATION = os.getenv("PLAY_NO_EXPLORATION", "0") == "1"
+if PLAY_NO_EXPLORATION:
+    PLAY_EPS = 0.0
+
 if sys.argv[1] == "None":
     savePath = "models/"
 
@@ -163,7 +168,17 @@ while isdone == False:
     done, info = env.unwrapped.player()
     state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
     shoot_mask = build_shoot_action_mask(env)
-    action = select_action(env, state, i, policy_net, len(model), shoot_mask=shoot_mask)
+    if PLAY_EPS is not None:
+        action = select_action_with_epsilon(
+            env,
+            state,
+            policy_net,
+            PLAY_EPS,
+            len(model),
+            shoot_mask=shoot_mask,
+        )
+    else:
+        action = select_action(env, state, i, policy_net, len(model), shoot_mask=shoot_mask)
     action_dict = convertToDict(action)
     if done != True:
         next_observation, reward, done, _, info = env.step(action_dict)

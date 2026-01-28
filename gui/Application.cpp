@@ -261,6 +261,22 @@ Form :: Form() {
     return true;
   });
 
+  buttonTrain6.set_label("Тренировать 6x");
+  buttonTrain6.signal_button_release_event().connect([&](GdkEventButton*) {
+    saveLastRoster();
+    syncEnemyUnitsFromRoster();
+    updateInits(modelClass, enemyClass);
+    if (exists_test("data.json") && training == false) {
+      setStatusMessage("Обучение 6x...");
+      trainEnvPrefix = "VEC_ENV_COUNT=6 ";
+      trainingStartLabel = "обучения 6x";
+      trainingStatusLabel = "Обучение 6x";
+      trainingLogTag = "TRAIN6";
+      startTrainInBackground();
+    }
+    return true;
+  });
+
   numOfGames.set_text("# of Games in Training:");
   setIters.set_text("100");
 
@@ -615,6 +631,8 @@ Form :: Form() {
   fixedTabPage2.move(textbox1, 10, 10);
   fixedTabPage2.add(button1);
   fixedTabPage2.move(button1, 380, 300);
+  fixedTabPage2.add(buttonTrain6);
+  fixedTabPage2.move(buttonTrain6, 470, 300);
   fixedTabPage2.add(setIters);
   fixedTabPage2.move(setIters, 160, 40);
   fixedTabPage2.add(button3);

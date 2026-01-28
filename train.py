@@ -250,6 +250,176 @@ def append_agent_log(line: str) -> None:
     except Exception as exc:
         print(f"[LOG][WARN] Не удалось записать LOGS_FOR_AGENTS.md: {exc}")
 
+def _load_roster_config():
+    config = {
+        "totLifeT": 10,
+        "b_len": 60,
+        "b_hei": 40,
+        "enemy_faction": "Space_Marine",
+        "model_faction": "Space_Marine",
+        "enemy_units": [
+            {
+                "name": "Eliminator Squad",
+                "weapons": ("Bolt Pistol", "Close combat weapon"),
+                "count": None,
+                "instance_id": None,
+            },
+            {
+                "name": "Apothecary",
+                "weapons": ("Absolver Bolt Pistol", "Close combat weapon"),
+                "count": None,
+                "instance_id": None,
+            },
+        ],
+        "model_units": [
+            {
+                "name": "Eliminator Squad",
+                "weapons": ("Bolt Pistol", "Close combat weapon"),
+                "count": None,
+                "instance_id": None,
+            },
+            {
+                "name": "Apothecary",
+                "weapons": ("Absolver Bolt Pistol", "Close combat weapon"),
+                "count": None,
+                "instance_id": None,
+            },
+        ],
+    }
+
+    if os.path.isfile("gui/data.json"):
+        config["totLifeT"] = initFile.getNumLife()
+        config["b_len"] = initFile.getBoardX()
+        config["b_hei"] = initFile.getBoardY()
+        config["enemy_faction"] = initFile.getEnemyFaction()
+        config["model_faction"] = initFile.getModelFaction()
+        enemy_counts = initFile.getEnemyUnitCounts()
+        model_counts = initFile.getModelUnitCounts()
+        enemy_instance_ids = initFile.getEnemyUnitInstanceIds()
+        model_instance_ids = initFile.getModelUnitInstanceIds()
+
+        enemy_units = []
+        for i in range(len(initFile.getEnemyUnits())):
+            count = enemy_counts[i] if i < len(enemy_counts) and enemy_counts[i] > 0 else None
+            instance_id = enemy_instance_ids[i] if i < len(enemy_instance_ids) else None
+            enemy_units.append(
+                {
+                    "name": initFile.getEnemyUnits()[i],
+                    "weapons": (initFile.getEnemyW()[i][0], initFile.getEnemyW()[i][1]),
+                    "count": count,
+                    "instance_id": instance_id,
+                }
+            )
+
+        model_units = []
+        for i in range(len(initFile.getModelUnits())):
+            count = model_counts[i] if i < len(model_counts) and model_counts[i] > 0 else None
+            instance_id = model_instance_ids[i] if i < len(model_instance_ids) else None
+            model_units.append(
+                {
+                    "name": initFile.getModelUnits()[i],
+                    "weapons": (initFile.getModelW()[i][0], initFile.getModelW()[i][1]),
+                    "count": count,
+                    "instance_id": instance_id,
+                }
+            )
+
+        config["enemy_units"] = enemy_units
+        config["model_units"] = model_units
+
+    return config
+
+def _build_units_from_config(config, b_len, b_hei):
+    enemy = []
+    model = []
+    for spec in config["enemy_units"]:
+        unit_data = unitData(config["enemy_faction"], spec["name"])
+        if spec["count"]:
+            unit_data["#OfModels"] = spec["count"]
+        enemy.append(
+            Unit(
+                unit_data,
+                weaponData(spec["weapons"][0]),
+                weaponData(spec["weapons"][1]),
+                b_len,
+                b_hei,
+                instance_id=spec["instance_id"],
+            )
+        )
+    for spec in config["model_units"]:
+        unit_data = unitData(config["model_faction"], spec["name"])
+        if spec["count"]:
+            unit_data["#OfModels"] = spec["count"]
+        model.append(
+            Unit(
+                unit_data,
+                weaponData(spec["weapons"][0]),
+                weaponData(spec["weapons"][1]),
+                b_len,
+                b_hei,
+                instance_id=spec["instance_id"],
+            )
+        )
+    return enemy, model
+
+def _select_actions_batch(env_contexts, states, steps_done, policy_net, shoot_masks=None):
+    decay_steps = max(1.0, float(EPS_DECAY))
+    progress = min(float(steps_done) / decay_steps, 1.0)
+    eps_threshold = EPS_START + (EPS_END - EPS_START) * progress
+
+    dev = next(policy_net.parameters()).device
+    state_tensors = []
+    for state in states:
+        if isinstance(state, (dict, collections.OrderedDict)):
+            arr = np.array(list(state.values()), dtype=np.float32)
+        else:
+            arr = np.array(state, dtype=np.float32)
+        state_tensors.append(torch.tensor(arr, dtype=torch.float32, device=dev))
+    state_batch = torch.stack(state_tensors, dim=0)
+
+    actions = []
+    with torch.no_grad():
+        decision = policy_net(state_batch)
+
+    for env_idx, ctx in enumerate(env_contexts):
+        env = ctx["env"]
+        len_model = ctx["len_model"]
+        use_random = random.random() <= eps_threshold
+        if use_random:
+            sampled_action = env.action_space.sample()
+            shoot_choice = sampled_action["shoot"]
+            if shoot_masks and shoot_masks[env_idx] is not None:
+                mask = torch.as_tensor(shoot_masks[env_idx], dtype=torch.bool)
+                valid_indices = torch.where(mask)[0].tolist()
+                if valid_indices:
+                    shoot_choice = random.choice(valid_indices)
+            action_list = [
+                sampled_action["move"],
+                sampled_action["attack"],
+                shoot_choice,
+                sampled_action["charge"],
+                sampled_action["use_cp"],
+                sampled_action["cp_on"],
+            ]
+            for i in range(len_model):
+                label = "move_num_" + str(i)
+                action_list.append(sampled_action[label])
+            actions.append(torch.tensor([action_list], device="cpu"))
+        else:
+            action = []
+            for head_idx, head in enumerate(decision):
+                head_row = head[env_idx]
+                if head_idx == 2 and shoot_masks and shoot_masks[env_idx] is not None:
+                    mask = torch.as_tensor(shoot_masks[env_idx], dtype=torch.bool, device=head_row.device)
+                    if mask.numel() == head_row.numel() and mask.any():
+                        masked_head = head_row.clone()
+                        masked_head[~mask] = -1e9
+                        action.append(int(masked_head.argmax().item()))
+                        continue
+                action.append(int(head_row.argmax().item()))
+            actions.append(torch.tensor([action], device="cpu"))
+    return actions, eps_threshold
+
 TAU = data["tau"]
 LR = data["lr"]
 GAMMA = data["gamma"]
@@ -279,93 +449,89 @@ if TRAIN_LOG_ENABLED:
     if TRAIN_LOG_TO_CONSOLE:
         print(train_start_line)
 
-b_len = 60
-b_hei = 40
-
 print("\nTraining...\n")
-
-enemy1 = Unit(unitData("Space_Marine", "Eliminator Squad"), weaponData("Bolt Pistol"), weaponData("Close combat weapon"), b_len, b_hei)
-model1 = Unit(unitData("Space_Marine", "Eliminator Squad"), weaponData("Bolt Pistol"), weaponData("Close combat weapon"), b_len, b_hei)
-
-enemy2 = Unit(unitData("Space_Marine", "Apothecary"), weaponData("Absolver Bolt Pistol"), weaponData("Close combat weapon"), b_len, b_hei)
-model2 = Unit(unitData("Space_Marine", "Apothecary"), weaponData("Absolver Bolt Pistol"), weaponData("Close combat weapon"), b_len, b_hei)
-
-enemy = [enemy1, enemy2]
-model = [model1, model2]
 
 end = False
 trunc = True
-totLifeT = 10
-steps_done = 0
 
-if os.path.isfile("gui/data.json"):
+roster_config = _load_roster_config()
+totLifeT = roster_config["totLifeT"]
+b_len = roster_config["b_len"]
+b_hei = roster_config["b_hei"]
 
-    totLifeT = initFile.getNumLife()
-    b_len = initFile.getBoardX()
-    b_hei = initFile.getBoardY()
-    enemy_counts = initFile.getEnemyUnitCounts()
-    model_counts = initFile.getModelUnitCounts()
-    enemy_instance_ids = initFile.getEnemyUnitInstanceIds()
-    model_instance_ids = initFile.getModelUnitInstanceIds()
-    print("Model Units:\n")
-    if len(initFile.getEnemyUnits()) > 0:
-        enemy = []
-        for i in range(len(initFile.getEnemyUnits())):
-            unit_data = unitData(initFile.getEnemyFaction(), initFile.getEnemyUnits()[i])
-            if i < len(enemy_counts) and enemy_counts[i] > 0:
-                unit_data["#OfModels"] = enemy_counts[i]
-            instance_id = enemy_instance_ids[i] if i < len(enemy_instance_ids) else ""
-            enemy.append(Unit(unit_data, weaponData(initFile.getEnemyW()[i][0]), weaponData(initFile.getEnemyW()[i][1]),
-                              b_len, b_hei, instance_id=instance_id))
-            print("Name:", initFile.getEnemyUnits()[i], "Weapons: ", initFile.getEnemyW()[i][0], initFile.getEnemyW()[i][1])
-    print("Enemy Units:\n")
-    if len(initFile.getModelUnits()) > 0:
-        model = []
-        for i in range(len(initFile.getModelUnits())):
-            unit_data = unitData(initFile.getModelFaction(), initFile.getModelUnits()[i])
-            if i < len(model_counts) and model_counts[i] > 0:
-                unit_data["#OfModels"] = model_counts[i]
-            instance_id = model_instance_ids[i] if i < len(model_instance_ids) else ""
-            model.append(Unit(unit_data, weaponData(initFile.getModelW()[i][0]), weaponData(initFile.getModelW()[i][1]),
-                              b_len, b_hei, instance_id=instance_id))
-            print("Name:", initFile.getModelUnits()[i], "Weapons: ", initFile.getModelW()[i][0], initFile.getModelW()[i][1])
+vec_env_count = int(os.getenv("VEC_ENV_COUNT", "1"))
+if vec_env_count < 1:
+    vec_env_count = 1
+
+env_contexts = []
 
 numLifeT = 0
 
 verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
 log_fn = print if verbose else None
-attacker_side, defender_side = roll_off_attacker_defender(
-    manual_roll_allowed=False,
-    log_fn=print,
-)
-if verbose:
-    print(f"[roster] model_units={len(model)} enemy_units={len(enemy)}")
-    for idx, unit in enumerate(model):
-        unit_data = unit.showUnitData()
-        unit_name = unit_data.get("Name", "Unknown")
-        unit_models = unit_data.get("#OfModels", 1)
-        print(f"[roster] model[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
-    for idx, unit in enumerate(enemy):
-        unit_data = unit.showUnitData()
-        unit_name = unit_data.get("Name", "Unknown")
-        unit_models = unit_data.get("#OfModels", 1)
-        print(f"[roster] enemy[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
-    print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
-print("Units:", [(u.name, u.instance_id, u.models_count) for u in model])
 
-deploy_only_war(
-    model_units=model,
-    enemy_units=enemy,
-    b_len=b_len,
-    b_hei=b_hei,
-    attacker_side=attacker_side,
-    log_fn=log_fn,
-)
-post_deploy_setup(log_fn=log_fn)
+if os.path.isfile("gui/data.json"):
+    print("Model Units:\n")
+    for spec in roster_config["model_units"]:
+        print("Name:", spec["name"], "Weapons: ", spec["weapons"][0], spec["weapons"][1])
+    print("Enemy Units:\n")
+    for spec in roster_config["enemy_units"]:
+        print("Name:", spec["name"], "Weapons: ", spec["weapons"][0], spec["weapons"][1])
 
-env = gym.make("40kAI-v0", disable_env_checker=True, enemy = enemy, model = model, b_len = b_len, b_hei = b_hei)
-env.attacker_side = attacker_side
-env.defender_side = defender_side
+for env_idx in range(vec_env_count):
+    enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+    env_log_fn = log_fn if env_idx == 0 else None
+    attacker_side, defender_side = roll_off_attacker_defender(
+        manual_roll_allowed=False,
+        log_fn=print if env_idx == 0 else None,
+    )
+    if verbose and env_idx == 0:
+        print(f"[roster] model_units={len(model)} enemy_units={len(enemy)}")
+        for idx, unit in enumerate(model):
+            unit_data = unit.showUnitData()
+            unit_name = unit_data.get("Name", "Unknown")
+            unit_models = unit_data.get("#OfModels", 1)
+            print(f"[roster] model[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
+        for idx, unit in enumerate(enemy):
+            unit_data = unit.showUnitData()
+            unit_name = unit_data.get("Name", "Unknown")
+            unit_models = unit_data.get("#OfModels", 1)
+            print(f"[roster] enemy[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
+        print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
+        print("Units:", [(u.name, u.instance_id, u.models_count) for u in model])
+
+    deploy_only_war(
+        model_units=model,
+        enemy_units=enemy,
+        b_len=b_len,
+        b_hei=b_hei,
+        attacker_side=attacker_side,
+        log_fn=env_log_fn,
+    )
+    post_deploy_setup(log_fn=env_log_fn)
+
+    env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
+    env.attacker_side = attacker_side
+    env.defender_side = defender_side
+
+    state, info = env.reset(m=model, e=enemy, trunc=True)
+    env_contexts.append(
+        {
+            "env": env,
+            "model": model,
+            "enemy": enemy,
+            "state": state,
+            "info": info,
+            "attacker_side": attacker_side,
+            "defender_side": defender_side,
+            "len_model": len(model),
+        }
+    )
+
+primary_ctx = env_contexts[0]
+model = primary_ctx["model"]
+enemy = primary_ctx["enemy"]
+env = primary_ctx["env"]
 
 ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
 for i_u in range(len(model)):
@@ -387,7 +553,8 @@ for k in ordered_keys:
         raise TypeError(f"Unsupported action space for {k}: {type(sp)}")
 
 
-state, info = env.reset(m=model, e=enemy, trunc=True)
+state = primary_ctx["state"]
+info = primary_ctx["info"]
 if verbose:
     squads_for_actions_count = len(model)
     print(f"[action_space] squads_for_actions_count={squads_for_actions_count}")
@@ -464,7 +631,7 @@ if PER_ENABLED:
 else:
     memory = ReplayMemory(replay_capacity)
 
-def opponent_policy(obs):
+def opponent_policy(obs, env, len_model):
     if opponent_policy_net is None:
         return None
     action = select_action_with_epsilon(
@@ -472,7 +639,7 @@ def opponent_policy(obs):
         obs,
         opponent_policy_net,
         SELF_PLAY_OPPONENT_EPSILON,
-        len(model),
+        len_model,
     )
     return convertToDict(action)
 
@@ -486,11 +653,16 @@ for i in enemy:
     inText.append("Name: {}, Army Type: {}".format(i.showUnitData()["Name"], i.showUnitData()["Army"]))
 inText.append("Number of Lifetimes ran: {}\n".format(totLifeT))
 
-i = 0
-
 pbar = tqdm(total=totLifeT)
 
-state, info = env.reset(m=model, e=enemy, Type="big", trunc=True)
+for ctx in env_contexts:
+    ctx["state"], ctx["info"] = ctx["env"].reset(m=ctx["model"], e=ctx["enemy"], Type="big", trunc=True)
+    ctx["ep_len"] = 0
+    ctx["rew_arr"] = []
+    ctx["n_step_buffer"] = collections.deque(maxlen=N_STEP)
+
+state = primary_ctx["state"]
+info = primary_ctx["info"]
 
 current_time = datetime.datetime.now()
 date = str(current_time.second)+"-"+str(current_time.microsecond)
@@ -499,19 +671,16 @@ fold =  "models/"+name
 fileName = fold+"/model-"+date+".pickle"
 randNum = np.random.randint(0, 10000000)
 metrics = metrics(fold, randNum, date)
-
-rewArr = []
 ep_rows = [] 
 
-epLen = 0
-n_step_buffer = collections.deque(maxlen=N_STEP)
+global_step = 0
 optimize_steps = 0
-initial_model_hp = float(sum(getattr(env, "unit_health", [])))
-initial_enemy_hp = float(sum(getattr(env, "enemy_health", [])))
+initial_model_hp = float(sum(getattr(primary_ctx["env"], "unit_health", [])))
+initial_enemy_hp = float(sum(getattr(primary_ctx["env"], "enemy_health", [])))
 append_agent_log(
     "Старт обучения: "
     f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}, "
-    f"battle_round={getattr(env, 'battle_round', 'n/a')}, trunc={trunc}"
+    f"battle_round={getattr(primary_ctx['env'], 'battle_round', 'n/a')}, trunc={trunc}"
 )
 if trunc:
     append_agent_log(
@@ -525,88 +694,277 @@ if initial_model_hp <= 0 or initial_enemy_hp <= 0:
         "Это может приводить к мгновенному завершению эпизодов."
     )
 
-while end == False:
-    epLen += 1
-    if SELF_PLAY_ENABLED and epLen == 1:
-        append_agent_log(
-            f"Старт эпизода {numLifeT + 1}. "
-            f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
-            f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
-        )
-    shoot_mask = build_shoot_action_mask(env, log_fn=append_agent_log, debug=TRAIN_DEBUG)
-    action = select_action(env, state, i, policy_net, len(model), shoot_mask=shoot_mask)
-    action_dict = convertToDict(action)
-    if trunc == False:
-        print(env.get_info())
+while end is False:
+    shoot_masks = []
+    for idx, ctx in enumerate(env_contexts):
+        mask_log_fn = append_agent_log if idx == 0 else None
+        shoot_masks.append(build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG))
 
-    if SELF_PLAY_ENABLED:
-        env.enemyTurn(trunc=trunc, policy_fn=opponent_policy)
-    else:
-        env.enemyTurn(trunc=trunc)
-    next_observation, reward, done, res, info = env.step(action_dict)
-    rewArr.append(float(reward))
+    states = [ctx["state"] for ctx in env_contexts]
+    actions, eps_threshold = _select_actions_batch(env_contexts, states, global_step, policy_net, shoot_masks)
 
-
-    unit_health = info["model health"]
-    enemy_health = info["player health"]
-    inAttack = info["in attack"]
-
-    if inAttack == 1:
-        if trunc == False:
-            print("The units are fighting")
-
-    if RENDER_EVERY > 0 and (i % RENDER_EVERY == 0 or done):
-        env.render()
-    mission_name = info.get("mission", DEFAULT_MISSION_NAME)
-    message = "Iteration {} ended with reward {}, enemy health {}, model health {}, model VP {}, enemy VP {}, mission {}".format(
-        i,
-        reward,
-        enemy_health,
-        unit_health,
-        info["model VP"],
-        info["player VP"],
-        mission_name,
-    )
-    if trunc == False:
-        print(message)
-    inText.append(message)
-
-    dev = next(policy_net.parameters()).device
-    state_t = torch.tensor(to_np_state(state), device=dev).unsqueeze(0)
-    next_state_t = None
-    next_shoot_mask = None
-    if not done:
-        next_state_t = torch.tensor(to_np_state(next_observation), device=dev).unsqueeze(0)
-        next_shoot_mask = build_shoot_action_mask(env, log_fn=append_agent_log, debug=TRAIN_DEBUG)
-
-    n_step_buffer.append((state_t, action, float(reward), next_state_t, done, next_shoot_mask))
-    if len(n_step_buffer) >= N_STEP:
-        reward_sum, n_step_next_state, n_step_next_mask, n_step_count = build_n_step_transition(
-            n_step_buffer, GAMMA
-        )
-        reward_sum_t = torch.tensor([reward_sum], device=dev, dtype=torch.float32)
-        head_state, head_action, _, _, _, _ = n_step_buffer[0]
-        memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count, n_step_next_mask)
-        n_step_buffer.popleft()
-    if done:
-        while n_step_buffer:
-            reward_sum, n_step_next_state, n_step_next_mask, n_step_count = build_n_step_transition(
-                n_step_buffer, GAMMA
+    for idx, ctx in enumerate(env_contexts):
+        if SELF_PLAY_ENABLED:
+            ctx["env"].enemyTurn(
+                trunc=trunc,
+                policy_fn=lambda obs, env=ctx["env"], lm=ctx["len_model"]: opponent_policy(obs, env, lm),
             )
-            reward_sum_t = torch.tensor([reward_sum], device=dev, dtype=torch.float32)
-            head_state, head_action, _, _, _, _ = n_step_buffer[0]
-            memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count, n_step_next_mask)
-            n_step_buffer.popleft()
-    state = next_observation
+        else:
+            ctx["env"].enemyTurn(trunc=trunc)
 
-    # =========================
-    # ✅ Несколько обучающих апдейтов на 1 шаг среды
     losses = []
     last_td_stats = None
     last_per_beta = PER_BETA_START
     last_loss_value = None
 
-    if i >= WARMUP_STEPS:
+    dev = next(policy_net.parameters()).device
+
+    for idx, ctx in enumerate(env_contexts):
+        ctx["ep_len"] += 1
+        action_dict = convertToDict(actions[idx])
+        next_observation, reward, done, res, info = ctx["env"].step(action_dict)
+        ctx["rew_arr"].append(float(reward))
+
+        unit_health = info["model health"]
+        enemy_health = info["player health"]
+        inAttack = info["in attack"]
+
+        if inAttack == 1 and trunc is False:
+            print("The units are fighting")
+
+        if RENDER_EVERY > 0 and vec_env_count == 1 and (global_step % RENDER_EVERY == 0 or done):
+            ctx["env"].render()
+
+        mission_name = info.get("mission", DEFAULT_MISSION_NAME)
+        message = (
+            "Iteration {} ended with reward {}, enemy health {}, model health {}, model VP {}, enemy VP {}, mission {}".format(
+                global_step,
+                reward,
+                enemy_health,
+                unit_health,
+                info["model VP"],
+                info["player VP"],
+                mission_name,
+            )
+        )
+        if trunc is False:
+            print(message)
+        inText.append(message)
+
+        state_t = torch.tensor(to_np_state(ctx["state"]), device=dev).unsqueeze(0)
+        next_state_t = None
+        next_shoot_mask = None
+        if not done:
+            next_state_t = torch.tensor(to_np_state(next_observation), device=dev).unsqueeze(0)
+            mask_log_fn = append_agent_log if idx == 0 else None
+            next_shoot_mask = build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG)
+
+        ctx["n_step_buffer"].append((state_t, actions[idx], float(reward), next_state_t, done, next_shoot_mask))
+        if len(ctx["n_step_buffer"]) >= N_STEP:
+            reward_sum, n_step_next_state, n_step_next_mask, n_step_count = build_n_step_transition(
+                ctx["n_step_buffer"], GAMMA
+            )
+            reward_sum_t = torch.tensor([reward_sum], device=dev, dtype=torch.float32)
+            head_state, head_action, _, _, _, _ = ctx["n_step_buffer"][0]
+            memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count, n_step_next_mask)
+            ctx["n_step_buffer"].popleft()
+        if done:
+            while ctx["n_step_buffer"]:
+                reward_sum, n_step_next_state, n_step_next_mask, n_step_count = build_n_step_transition(
+                    ctx["n_step_buffer"], GAMMA
+                )
+                reward_sum_t = torch.tensor([reward_sum], device=dev, dtype=torch.float32)
+                head_state, head_action, _, _, _, _ = ctx["n_step_buffer"][0]
+                memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count, n_step_next_mask)
+                ctx["n_step_buffer"].popleft()
+        ctx["state"] = next_observation
+
+        if done is True:
+            if SELF_PLAY_ENABLED:
+                append_agent_log(
+                    f"Конец эпизода {numLifeT + 1}. "
+                    f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
+                    f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
+                )
+            end_reason_env = info.get("end reason", "")
+            winner_env = info.get("winner")
+            model_hp_total = sum(info.get("model health", [])) if isinstance(info.get("model health"), (list, tuple, np.ndarray)) else info.get("model health")
+            enemy_hp_total = sum(info.get("player health", [])) if isinstance(info.get("player health"), (list, tuple, np.ndarray)) else info.get("player health")
+            append_agent_log(
+                "Конец эпизода: "
+                f"reason={end_reason_env or 'unknown'} "
+                f"winner={winner_env} "
+                f"model_hp_total={model_hp_total} enemy_hp_total={enemy_hp_total} "
+                f"model_vp={info.get('model VP')} enemy_vp={info.get('player VP')} "
+                f"turn={info.get('turn')} battle_round={info.get('battle round')}"
+            )
+            if ctx["ep_len"] == 1:
+                append_agent_log(
+                    "ВНИМАНИЕ: эпизод завершился на первом шаге. "
+                    "Проверьте reset/условия завершения (нулевое здоровье, лимиты хода, "
+                    "ошибки расстановки)."
+                )
+            pbar.update(1)
+            metrics.updateRew(sum(ctx["rew_arr"]) / len(ctx["rew_arr"]))
+            metrics.updateEpLen(ctx["ep_len"])
+            # ===== extra metrics (winrate / VP diff / end reason) =====
+            ep_reward = float(sum(ctx["rew_arr"]) / len(ctx["rew_arr"])) if len(ctx["rew_arr"]) > 0 else 0.0
+            model_vp = int(info.get("model VP", 0))
+            player_vp = int(info.get("player VP", 0))
+            vp_diff = model_vp - player_vp
+
+            mh_list = info.get("model health", [])
+            ph_list = info.get("player health", [])
+
+            def _sum_health(x):
+                try:
+                    if isinstance(x, (list, tuple, np.ndarray)):
+                        return int(sum(x))
+                    return int(x)
+                except Exception:
+                    return 0
+
+            mh = _sum_health(mh_list)
+            ph = _sum_health(ph_list)
+
+            end_code = res  # то, что возвращает env (1..3 миссия или 4)
+            end_reason_env = info.get("end reason", "")
+            turn = int(info.get("turn", ctx["ep_len"]))  # если turn не добавляли в env — будет epLen
+
+            if end_reason_env:
+                end_reason = end_reason_env
+                if end_reason_env == "wipeout_enemy":
+                    result = "win"
+                elif end_reason_env == "wipeout_model":
+                    result = "loss"
+                elif end_reason_env == "turn_limit":
+                    if vp_diff > 0:
+                        result = "win"
+                    elif vp_diff < 0:
+                        result = "loss"
+                    else:
+                        result = "draw"
+                else:
+                    if vp_diff > 0:
+                        result = "win"
+                    elif vp_diff < 0:
+                        result = "loss"
+                    else:
+                        result = "draw"
+            elif ph <= 0 and mh > 0:
+                result = "win"
+                end_reason = "wipe_enemy"
+            elif mh <= 0 and ph > 0:
+                result = "loss"
+                end_reason = "wipe_model"
+            else:
+                mission_name = info.get("mission", DEFAULT_MISSION_NAME)
+                end_reason = f"turn_limit_{mission_name}"
+                if vp_diff > 0:
+                    result = "win"
+                elif vp_diff < 0:
+                    result = "loss"
+                else:
+                    result = "draw"
+
+            if result == "win":
+                inText.append("model won!")
+                if trunc is False:
+                    print("model won!")
+            elif result == "loss":
+                inText.append("enemy won!")
+                if trunc is False:
+                    print("enemy won!")
+            else:
+                inText.append("draw!")
+                if trunc is False:
+                    print("draw!")
+
+            if TRAIN_LOG_ENABLED:
+                win_flag = 1 if result == "win" else 0
+                train_ep_line = (
+                    "[TRAIN][EP] "
+                    f"ep={numLifeT + 1} "
+                    f"ep_reward={ep_reward:.6f} "
+                    f"win={win_flag} "
+                    f"vp_diff={vp_diff} "
+                    f"end_reason={end_reason}"
+                )
+                if TRAIN_LOG_TO_FILE:
+                    append_agent_log(train_ep_line)
+                if TRAIN_LOG_TO_CONSOLE:
+                    print(train_ep_line)
+
+            ep_rows.append(
+                {
+                    "episode": numLifeT + 1,  # lifetimes считаются у тебя через numLifeT
+                    "ep_reward": ep_reward,
+                    "ep_len": ctx["ep_len"],
+                    "turn": turn,
+                    "model_vp": model_vp,
+                    "player_vp": player_vp,
+                    "vp_diff": vp_diff,
+                    "result": result,
+                    "end_reason": end_reason,
+                    "end_code": end_code,
+                }
+            )
+            # ==========================================================
+
+            if res == 4:
+                inText.append("Major Victory")
+
+            if float(reward) > 0:
+                inText.append("model won!")
+                if trunc is False:
+                    print("model won!")
+            else:
+                inText.append("enemy won!")
+                if trunc is False:
+                    print("enemy won!")
+            if trunc is False:
+                print("Restarting...")
+            numLifeT += 1
+
+            if SELF_PLAY_ENABLED and SELF_PLAY_OPPONENT_MODE == "snapshot":
+                if numLifeT % SELF_PLAY_UPDATE_EVERY_EPISODES == 0:
+                    opponent_policy_net.load_state_dict(policy_net.state_dict())
+                    append_agent_log(
+                        f"[SELFPLAY] opponent snapshot updated at episode {numLifeT}"
+                    )
+
+            attacker_side, defender_side = roll_off_attacker_defender(
+                manual_roll_allowed=False,
+                log_fn=print if idx == 0 else None,
+            )
+            if verbose and idx == 0:
+                print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
+
+            deploy_only_war(
+                model_units=ctx["model"],
+                enemy_units=ctx["enemy"],
+                b_len=b_len,
+                b_hei=b_hei,
+                attacker_side=attacker_side,
+                log_fn=log_fn if idx == 0 else None,
+            )
+            post_deploy_setup(log_fn=log_fn if idx == 0 else None)
+            ctx["env"].attacker_side = attacker_side
+            ctx["env"].defender_side = defender_side
+
+            ctx["state"], ctx["info"] = ctx["env"].reset(m=ctx["model"], e=ctx["enemy"], Type="small", trunc=True)
+            ctx["ep_len"] = 0
+            ctx["rew_arr"] = []
+
+        if numLifeT == totLifeT:
+            end = True
+            pbar.close()
+            break
+
+    if end:
+        break
+
+    if global_step >= WARMUP_STEPS:
         for _ in range(UPDATES_PER_STEP):
             per_beta = PER_BETA_START
             if PER_ENABLED and PER_BETA_FRAMES > 0:
@@ -636,16 +994,13 @@ while end == False:
                 last_loss_value = result["loss"]
                 optimize_steps += 1
                 if TRAIN_LOG_ENABLED and optimize_steps % TRAIN_LOG_EVERY_UPDATES == 0:
-                    eps_value = EPS_END + (EPS_START - EPS_END) * math.exp(
-                        -1.0 * i / EPS_DECAY
-                    )
                     train_line = (
                         "[TRAIN] "
                         f"ep={numLifeT + 1} "
                         f"upd={optimize_steps} "
-                        f"step={i} "
+                        f"step={global_step} "
                         f"loss={last_loss_value:.6f} "
-                        f"eps={eps_value:.4f} "
+                        f"eps={eps_threshold:.4f} "
                         f"lr={LR:.6g} "
                         f"gamma={GAMMA:.6g} "
                         f"PER={int(PER_ENABLED)} "
@@ -685,7 +1040,7 @@ while end == False:
     if REWARD_DEBUG and last_td_stats and optimize_steps % REWARD_DEBUG_EVERY == 0:
         append_agent_log(
             "[TD] "
-            f"step={i} "
+            f"step={global_step} "
             f"mean={last_td_stats['td_target_mean']:.6f} "
             f"max={last_td_stats['td_target_max']:.6f}"
         )
@@ -702,190 +1057,10 @@ while end == False:
             )
     # =========================
 
+    global_step += vec_env_count
 
-
-    if done == True:
-        if SELF_PLAY_ENABLED:
-            append_agent_log(
-                f"Конец эпизода {numLifeT + 1}. "
-                f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
-                f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
-            )
-        end_reason_env = info.get("end reason", "")
-        winner_env = info.get("winner")
-        model_hp_total = sum(info.get("model health", [])) if isinstance(info.get("model health"), (list, tuple, np.ndarray)) else info.get("model health")
-        enemy_hp_total = sum(info.get("player health", [])) if isinstance(info.get("player health"), (list, tuple, np.ndarray)) else info.get("player health")
-        append_agent_log(
-            "Конец эпизода: "
-            f"reason={end_reason_env or 'unknown'} "
-            f"winner={winner_env} "
-            f"model_hp_total={model_hp_total} enemy_hp_total={enemy_hp_total} "
-            f"model_vp={info.get('model VP')} enemy_vp={info.get('player VP')} "
-            f"turn={info.get('turn')} battle_round={info.get('battle round')}"
-        )
-        if epLen == 1:
-            append_agent_log(
-                "ВНИМАНИЕ: эпизод завершился на первом шаге. "
-                "Проверьте reset/условия завершения (нулевое здоровье, лимиты хода, "
-                "ошибки расстановки)."
-            )
-        pbar.update(1)
-        metrics.updateRew(sum(rewArr)/len(rewArr))
-        metrics.updateEpLen(epLen)
-        # ===== extra metrics (winrate / VP diff / end reason) =====
-        ep_reward = float(sum(rewArr) / len(rewArr)) if len(rewArr) > 0 else 0.0
-        model_vp = int(info.get("model VP", 0))
-        player_vp = int(info.get("player VP", 0))
-        vp_diff = model_vp - player_vp
-
-        mh_list = info.get("model health", [])
-        ph_list = info.get("player health", [])
-
-        def _sum_health(x):
-            try:
-                if isinstance(x, (list, tuple, np.ndarray)):
-                    return int(sum(x))
-                return int(x)
-            except Exception:
-                return 0
-
-        mh = _sum_health(mh_list)
-        ph = _sum_health(ph_list)
-
-        end_code = res  # то, что возвращает env (1..3 миссия или 4)
-        end_reason_env = info.get("end reason", "")
-        turn = int(info.get("turn", epLen))  # если turn не добавляли в env — будет epLen
-
-        if end_reason_env:
-            end_reason = end_reason_env
-            if end_reason_env == "wipeout_enemy":
-                result = "win"
-            elif end_reason_env == "wipeout_model":
-                result = "loss"
-            elif end_reason_env == "turn_limit":
-                if vp_diff > 0:
-                    result = "win"
-                elif vp_diff < 0:
-                    result = "loss"
-                else:
-                    result = "draw"
-            else:
-                if vp_diff > 0:
-                    result = "win"
-                elif vp_diff < 0:
-                    result = "loss"
-                else:
-                    result = "draw"
-        elif ph <= 0 and mh > 0:
-            result = "win"
-            end_reason = "wipe_enemy"
-        elif mh <= 0 and ph > 0:
-            result = "loss"
-            end_reason = "wipe_model"
-        else:
-            mission_name = info.get("mission", DEFAULT_MISSION_NAME)
-            end_reason = f"turn_limit_{mission_name}"
-            if vp_diff > 0:
-                result = "win"
-            elif vp_diff < 0:
-                result = "loss"
-            else:
-                result = "draw"
-
-        if result == "win":
-            inText.append("model won!")
-            if trunc == False:
-                print("model won!")
-        elif result == "loss":
-            inText.append("enemy won!")
-            if trunc == False:
-                print("enemy won!")
-        else:
-            inText.append("draw!")
-            if trunc == False:
-                print("draw!")
-
-        if TRAIN_LOG_ENABLED:
-            win_flag = 1 if result == "win" else 0
-            train_ep_line = (
-                "[TRAIN][EP] "
-                f"ep={numLifeT + 1} "
-                f"ep_reward={ep_reward:.6f} "
-                f"win={win_flag} "
-                f"vp_diff={vp_diff} "
-                f"end_reason={end_reason}"
-            )
-            if TRAIN_LOG_TO_FILE:
-                append_agent_log(train_ep_line)
-            if TRAIN_LOG_TO_CONSOLE:
-                print(train_ep_line)
-
-        ep_rows.append({
-            "episode": numLifeT + 1,   # lifetimes считаются у тебя через numLifeT
-            "ep_reward": ep_reward,
-            "ep_len": epLen,
-            "turn": turn,
-            "model_vp": model_vp,
-            "player_vp": player_vp,
-            "vp_diff": vp_diff,
-            "result": result,
-            "end_reason": end_reason,
-            "end_code": end_code,
-        })
-        # ==========================================================
-
-        epLen = 0
-        rewArr = []
-
-        if res == 4:
-            inText.append("Major Victory")
-
-        if float(reward) > 0:
-            inText.append("model won!")
-            if trunc == False:
-                print("model won!")
-        else:
-            inText.append("enemy won!")
-            if trunc == False:
-                print("enemy won!")
-        if trunc == False:
-            print("Restarting...")
-        numLifeT+=1
-
-        if SELF_PLAY_ENABLED and SELF_PLAY_OPPONENT_MODE == "snapshot":
-            if numLifeT % SELF_PLAY_UPDATE_EVERY_EPISODES == 0:
-                opponent_policy_net.load_state_dict(policy_net.state_dict())
-                append_agent_log(
-                    f"[SELFPLAY] opponent snapshot updated at episode {numLifeT}"
-                )
-
-        attacker_side, defender_side = roll_off_attacker_defender(
-            manual_roll_allowed=False,
-            log_fn=print,
-        )
-        if verbose:
-            print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
-
-        deploy_only_war(
-            model_units=model,
-            enemy_units=enemy,
-            b_len=b_len,
-            b_hei=b_hei,
-            attacker_side=attacker_side,
-            log_fn=log_fn,
-        )
-        post_deploy_setup(log_fn=log_fn)
-        env.attacker_side = attacker_side
-        env.defender_side = defender_side
-
-        state, info = env.reset(m=model, e=enemy, Type="small", trunc=True)
-
-    if numLifeT == totLifeT:
-        end = True
-        pbar.close()
-    i+=1
-
-env.close()
+for ctx in env_contexts:
+    ctx["env"].close()
 
 with open('trainRes.txt', 'w') as f:
     for i in range(len(inText)):
@@ -920,7 +1095,7 @@ torch.save({
     'optimizer': optimizer.state_dict(),}
     , ("models/{}/model-{}.pth".format(name, date)))
 
-toSave = [env, model, enemy]
+toSave = [primary_ctx["env"], primary_ctx["model"], primary_ctx["enemy"]]
 
 with open(fileName, "wb") as file:
     pickle.dump(toSave, file)

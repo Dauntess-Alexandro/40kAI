@@ -99,6 +99,7 @@ Image metricBox6;
   Fixed fixedTabPage4;
   Fixed fixedTabPage5;
   Button button1;
+  Button buttonTrain6;
   Button button2;
   Button button3;
   Button button4;
