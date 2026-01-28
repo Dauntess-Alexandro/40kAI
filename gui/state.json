@@ -22,8 +22,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 34,
-      "y": 15
+      "x": 38,
+      "y": 49
     },
     {
       "side": "player",
@@ -31,8 +31,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 36,
-      "y": 22
+      "x": 35,
+      "y": 52
     },
     {
       "side": "player",
@@ -40,8 +40,8 @@
       "name": "Canoptek Scarab Swarms",
       "models": 3,
       "hp": 12.0,
-      "x": 34,
-      "y": 9
+      "x": 38,
+      "y": 0
     },
     {
       "side": "model",
@@ -49,8 +49,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 1,
-      "y": 47
+      "x": 2,
+      "y": 25
     },
     {
       "side": "model",
@@ -58,7 +58,7 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 5,
+      "x": 6,
       "y": 30
     },
     {
@@ -67,8 +67,8 @@
       "name": "Canoptek Scarab Swarms",
       "models": 3,
       "hp": 12.0,
-      "x": 1,
-      "y": 28
+      "x": 8,
+      "y": 45
     }
   ],
   "objectives": [
@@ -125,5 +125,5 @@
     "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])",
     "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])"
   ],
-  "generated_at": "2026-01-28T14:50:02.256886Z"
+  "generated_at": "2026-01-28T15:19:22.802657Z"
 }

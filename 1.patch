@@ -1,72 +1,60 @@
-diff --git a/gym_mod/gym_mod/engine/genDisplay.py b/gym_mod/gym_mod/engine/genDisplay.py
-index 766baabe2c813e905e9f28856b466b91508cfb9d..2279975f4748ca38811db0f34f03ca72e9f79fe0 100644
---- a/gym_mod/gym_mod/engine/genDisplay.py
-+++ b/gym_mod/gym_mod/engine/genDisplay.py
-@@ -1,46 +1,64 @@
- import imageio
- import os
- from tqdm import tqdm
- import numpy as np
+diff --git a/gui/Application.cpp b/gui/Application.cpp
+index f767e5ce2ba5d26e59cdbbc1e0099686e9ee3562..5fe7c625292708f520123962744ed638c568b66f 100644
+--- a/gui/Application.cpp
++++ b/gui/Application.cpp
+@@ -884,51 +884,53 @@ void Form :: appendTrainingLogToFile(const std::string& message, const std::stri
+     return;
+   }
+   outfile << nowTimestamp() << " | [GUI][" << tag << "] " << message << "\n";
+ }
  
- def makeGif(numOfLife, name="", Type = "train", trunc = False):
-     print("\nForging model_train.gif...\n")
-     images = []
+ void Form :: startEvalInBackground() {
+   if (evaluating) {
+     appendEvalLogLine("Симуляция уже запущена. Дождитесь завершения.");
+     return;
+   }
+   int games = static_cast<int>(evalGamesSpin.get_value());
+   if (games < 1 || games > 10000) {
+     appendEvalLogLine("Некорректное значение N. Укажите число от 1 до 10000.");
+     return;
+   }
+   std::thread t(&Form::startEval, this, games);
+   t.detach();
+ }
  
-     savePath = "display/"
+ void Form :: startEval(int games) {
+   evaluating = true;
+   Glib::signal_idle().connect_once([this, games]() {
+     appendEvalLogLine("Старт симуляции: игр=" + std::to_string(games));
+   });
  
-     files = os.listdir(savePath)
-     files = [os.path.join(savePath, f) for f in files]
-     files.sort(key=lambda x: os.path.getmtime(x))
+-  std::string command = "cd .. ; FORCE_GREEDY=1 EVAL_EPSILON=0 python3 -u eval.py --games ";
++  std::string command =
++      "cd .. ; PYTHONPATH=\"$(pwd)/gym_mod:${PYTHONPATH:-}\" FORCE_GREEDY=1 "
++      "EVAL_EPSILON=0 .venv/bin/python -u eval.py --games ";
+   command.append(std::to_string(games));
+   command.append(" 2>&1");
  
-     if trunc == True:
--        its = np.arange(numOfLife)
--        itsChosen = np.random.choice(its-1, 30, replace=False)+1
-+        if numOfLife > 1:
-+            its = np.arange(1, numOfLife)
-+            sample_size = min(30, len(its))
-+            itsChosen = np.random.choice(its, sample_size, replace=False)
-+        else:
-+            itsChosen = np.array([], dtype=int)
-         newFiles = []
-         print(itsChosen)
+   FILE* pipe = popen(command.c_str(), "r");
+   if (!pipe) {
+     std::string errorMessage = "Ошибка запуска симуляции (gui/Application.cpp): "
+         "проверьте, что eval.py доступен.";
+     Glib::signal_idle().connect_once([this, errorMessage]() {
+       appendEvalLogLine(errorMessage);
+     });
+     evaluating = false;
+     return;
+   }
  
-         for i in files:
-             for j in itsChosen:
-                 digits = len(str(j))
-                 print()
-                 if i[:9+digits] == "display/{}_".format(j):
-                     newFiles.append(i)
-         files = newFiles
-         print(files)
- 
-+    if not files:
-+        print(
-+            "genDisplay.makeGif: нет кадров для гифки в display/. "
-+            "Причина: папка пуста или фильтр trunc отсеял все файлы. "
-+            "Что делать: убедитесь, что в display/ есть кадры и numOfLife > 1."
-+        )
-+        return
-+
- 
-     for fil in tqdm(files):
-         images.append(imageio.imread(fil))
-+    if not images:
-+        print(
-+            "genDisplay.makeGif: не удалось собрать кадры для гифки. "
-+            "Что делать: проверьте читаемость файлов в display/."
-+        )
-+        return
-     if Type == "train":
-         os.makedirs("metrics", exist_ok=True)
-         os.makedirs("gui/img", exist_ok=True)
-         os.makedirs("gui/build/img", exist_ok=True)
-         os.makedirs("gui/build/Debug/img", exist_ok=True)
-         imageio.mimsave('metrics/model_train{}.gif'.format(name), images)
-         imageio.mimsave('gui/img/model_train{}.gif'.format(name), images)
-         imageio.mimsave('gui/build/img/model_train{}.gif'.format(name), images)
-         imageio.mimsave('gui/build/Debug/img/model_train{}.gif'.format(name), images)
-     elif Type == "val":
-         os.makedirs("val", exist_ok=True)
-         imageio.mimsave('val/model_val.gif', images)
-     print("Generated gif")
+   std::array<char, 512> buffer{};
+   while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe)) {
+     std::string line(buffer.data());
+     while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+       line.pop_back();
+     }
+     if (line.empty()) {
+       continue;
+     }
+     Glib::signal_idle().connect_once([this, line]() {
+       appendEvalLogLine(line);
 

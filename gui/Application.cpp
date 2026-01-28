@@ -906,7 +906,9 @@ void Form :: startEval(int games) {
     appendEvalLogLine("Старт симуляции: игр=" + std::to_string(games));
   });
 
-  std::string command = "cd .. ; FORCE_GREEDY=1 EVAL_EPSILON=0 python3 -u eval.py --games ";
+  std::string command =
+      "cd .. ; PYTHONPATH=\"$(pwd)/gym_mod:${PYTHONPATH:-}\" FORCE_GREEDY=1 "
+      "EVAL_EPSILON=0 .venv/bin/python -u eval.py --games ";
   command.append(std::to_string(games));
   command.append(" 2>&1");
 
