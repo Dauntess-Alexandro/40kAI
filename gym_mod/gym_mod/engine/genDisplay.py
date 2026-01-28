@@ -14,8 +14,12 @@ def makeGif(numOfLife, name="", Type = "train", trunc = False):
     files.sort(key=lambda x: os.path.getmtime(x))
 
     if trunc == True:
-        its = np.arange(numOfLife)
-        itsChosen = np.random.choice(its-1, 30, replace=False)+1
+        if numOfLife > 1:
+            its = np.arange(1, numOfLife)
+            sample_size = min(30, len(its))
+            itsChosen = np.random.choice(its, sample_size, replace=False)
+        else:
+            itsChosen = np.array([], dtype=int)
         newFiles = []
         print(itsChosen)
 
@@ -28,9 +32,23 @@ def makeGif(numOfLife, name="", Type = "train", trunc = False):
         files = newFiles
         print(files)
 
+    if not files:
+        print(
+            "genDisplay.makeGif: нет кадров для гифки в display/. "
+            "Причина: папка пуста или фильтр trunc отсеял все файлы. "
+            "Что делать: убедитесь, что в display/ есть кадры и numOfLife > 1."
+        )
+        return
+
 
     for fil in tqdm(files):
         images.append(imageio.imread(fil))
+    if not images:
+        print(
+            "genDisplay.makeGif: не удалось собрать кадры для гифки. "
+            "Что делать: проверьте читаемость файлов в display/."
+        )
+        return
     if Type == "train":
         os.makedirs("metrics", exist_ok=True)
         os.makedirs("gui/img", exist_ok=True)
