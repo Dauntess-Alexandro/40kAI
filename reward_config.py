@@ -3,6 +3,22 @@
 Меняйте значения здесь, чтобы не лезть в код среды.
 """
 
+# ==========================
+# Reward shaping (win / VP)
+# ==========================
+# Бонус/штраф за результат боя.
+WIN_BONUS = 3.0
+LOSS_PENALTY = 2.0
+
+# Настройки начисления VP (миссия Only War).
+VP_START_SCORING_ROUND = 2
+VP_CAP_PER_COMMAND = 3
+
+# Награды, связанные с целями/объектами (VP-компоненты).
+VP_OBJECTIVE_HOLD_REWARD = 0.5
+VP_OBJECTIVE_HOLD_PENALTY = 0.5
+VP_OBJECTIVE_PROXIMITY_REWARD = 0.5
+
 # =========================
 # Reward shaping (shooting)
 # =========================

@@ -1548,6 +1548,8 @@ class Warhammer40kEnv(gym.Env):
             self._log_phase("MODEL", "movement")
             advanced_flags = [False] * len(self.unit_health)
             reward_delta = 0
+            objective_hold_delta = 0.0
+            objective_proximity_delta = 0.0
             for i in range(len(self.unit_health)):
                 modelName = i + 21
                 battleSh = battle_shock[i] if battle_shock else False
@@ -1579,9 +1581,11 @@ class Warhammer40kEnv(gym.Env):
                     elif action["move"] == 4:
                         for j in range(len(self.coordsOfOM)):
                             if distance(self.unit_coords[i], self.coordsOfOM[j]) <= 5:
-                                reward_delta += 0.5
+                                reward_delta += reward_cfg.VP_OBJECTIVE_HOLD_REWARD
+                                objective_hold_delta += reward_cfg.VP_OBJECTIVE_HOLD_REWARD
                             else:
-                                reward_delta -= 0.5
+                                reward_delta -= reward_cfg.VP_OBJECTIVE_HOLD_PENALTY
+                                objective_hold_delta -= reward_cfg.VP_OBJECTIVE_HOLD_PENALTY
 
                     advanced_flags[i] = advanced
                     direction = {0: "down", 1: "up", 2: "left", 3: "right", 4: "none"}.get(action["move"], "none")
@@ -1619,7 +1623,8 @@ class Warhammer40kEnv(gym.Env):
 
                     for j in range(len(self.coordsOfOM)):
                         if distance(self.coordsOfOM[j], self.unit_coords[i]) <= 5:
-                            reward_delta += 0.5
+                            reward_delta += reward_cfg.VP_OBJECTIVE_PROXIMITY_REWARD
+                            objective_proximity_delta += reward_cfg.VP_OBJECTIVE_PROXIMITY_REWARD
 
                 elif self.unitInAttack[i][0] == 1 and self.unit_health[i] > 0:
                     idOfE = self.unitInAttack[i][1]
@@ -1667,12 +1672,18 @@ class Warhammer40kEnv(gym.Env):
                                 )
                         else:
                             reward_delta += 0.2
-                            self._log_unit(
-                                "MODEL",
-                                modelName,
-                                i,
-                                f"Остаётся в ближнем бою с {self._format_unit_label('enemy', idOfE)}, движение пропущено.",
-                            )
+                        self._log_unit(
+                            "MODEL",
+                            modelName,
+                            i,
+                            f"Остаётся в ближнем бою с {self._format_unit_label('enemy', idOfE)}, движение пропущено.",
+                        )
+            if objective_hold_delta != 0 or objective_proximity_delta != 0:
+                total_obj_delta = objective_hold_delta + objective_proximity_delta
+                self._log(
+                    "Reward (VP/объекты, движение): "
+                    f"hold={objective_hold_delta:.3f}, proximity={objective_proximity_delta:.3f}, total={total_obj_delta:.3f}"
+                )
             return advanced_flags, reward_delta
 
         if side == "enemy" and action is not None and not manual:
@@ -2840,6 +2851,11 @@ class Warhammer40kEnv(gym.Env):
             obj_term = reward_cfg.MELEE_OBJECTIVE_CONTROL_SCALE * obj_delta
 
             reward_delta += damage_term + kill_term - taken_term + advantage_term + strength_term + obj_term
+            if obj_term != 0:
+                self._log(
+                    "Reward (VP/объекты, бой): "
+                    f"delta={obj_delta}, term={obj_term:.3f}"
+                )
             self._log(
                 "Reward (бой): "
                 f"damage={damage_term:.3f} (norm={damage_dealt_norm:.3f}, dealt={damage_dealt:.2f}), "
@@ -3321,9 +3337,11 @@ class Warhammer40kEnv(gym.Env):
             self.last_end_reason = end_reason
             self.last_winner = winner
             if winner == "model":
-                reward += 2
+                reward += reward_cfg.WIN_BONUS
+                self._log(f"Reward (победа): bonus=+{reward_cfg.WIN_BONUS:.3f}")
             elif winner == "enemy":
-                reward -= 2
+                reward -= reward_cfg.LOSS_PENALTY
+                self._log(f"Reward (поражение): penalty=-{reward_cfg.LOSS_PENALTY:.3f}")
 
         self._advance_turn_order()
         if self.game_over and res == 0:

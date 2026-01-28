@@ -3,12 +3,14 @@ from __future__ import annotations
 
 from typing import Callable, List, Tuple
 
+import reward_config as reward_cfg
+
 MISSION_NAME = "Only War"
 # TODO(Only War): support post-deploy units ("set up after both armies deployed").
 # Currently no post-deploy units supported.
 MAX_BATTLE_ROUNDS = 10
-START_SCORING_ROUND = 2
-VP_CAP_PER_COMMAND = 3
+START_SCORING_ROUND = reward_cfg.VP_START_SCORING_ROUND
+VP_CAP_PER_COMMAND = reward_cfg.VP_CAP_PER_COMMAND
 
 
 def controlled_objectives(env, side: str) -> Tuple[int, List[int]]:
