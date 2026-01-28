@@ -458,10 +458,11 @@ if SELF_PLAY_ENABLED:
         opponent_policy_net.load_state_dict(policy_net.state_dict())
 
 optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
+replay_capacity = int(os.getenv("REPLAY_CAPACITY", "100000"))
 if PER_ENABLED:
-    memory = PrioritizedReplayMemory(10000, alpha=PER_ALPHA, eps=PER_EPS)
+    memory = PrioritizedReplayMemory(replay_capacity, alpha=PER_ALPHA, eps=PER_EPS)
 else:
-    memory = ReplayMemory(10000)
+    memory = ReplayMemory(replay_capacity)
 
 def opponent_policy(obs):
     if opponent_policy_net is None:

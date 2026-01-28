@@ -6,20 +6,20 @@ import torch.nn.functional as F
 class DQN(nn.Module):
     def __init__(self, n_observations, n_actions, dueling=False):
         super(DQN, self).__init__()
-        self.layer1 = nn.Linear(n_observations, 128)
-        self.layer2 = nn.Linear(128, 128)
+        self.layer1 = nn.Linear(n_observations, 256)
+        self.layer2 = nn.Linear(256, 256)
         self.dueling = dueling
         self.action_sizes = list(n_actions)
         if self.dueling:
             self.value_heads = nn.ModuleList(
-                [nn.Linear(128, 1) for _ in self.action_sizes]
+                [nn.Linear(256, 1) for _ in self.action_sizes]
             )
             self.advantage_heads = nn.ModuleList(
-                [nn.Linear(128, size) for size in self.action_sizes]
+                [nn.Linear(256, size) for size in self.action_sizes]
             )
         else:
             self.q_heads = nn.ModuleList(
-                [nn.Linear(128, size) for size in self.action_sizes]
+                [nn.Linear(256, size) for size in self.action_sizes]
             )
 
     def forward(self, x):
