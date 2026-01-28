@@ -7,7 +7,7 @@
 # Reward shaping (win / VP)
 # ==========================
 # Бонус/штраф за результат боя.
-WIN_BONUS = 3.0
+WIN_BONUS = 2.0
 LOSS_PENALTY = 2.0
 
 # Настройки начисления VP (миссия Only War).
