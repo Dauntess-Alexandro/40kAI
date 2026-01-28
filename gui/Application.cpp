@@ -115,6 +115,7 @@ Form :: Form() {
   trainingStartLabel = "обучения";
   trainingStatusLabel = "Обучение";
   trainingLogTag = "TRAIN";
+  evaluating = false;
 
   bar.set_show_close_button(true);
   bar.set_title("40kAI GUI");
@@ -191,6 +192,7 @@ Form :: Form() {
   tabControl1.insert_page(tabPage5, "Metrics", 2);
   tabControl1.insert_page(tabPage4, "Play", 3);
   tabControl1.insert_page(tabPage1, "Settings", 4);
+  tabControl1.insert_page(tabPage6, "Оценка", 5);
 
     // settings tab
 
@@ -233,6 +235,50 @@ Form :: Form() {
   radioBottom.signal_toggled().connect([this]() {
     tabControl1.set_tab_pos(PositionType::POS_BOTTOM);
   });
+
+    // eval tab
+
+  labelPage6.set_label("Оценка");
+  tabControl1.set_tab_label(tabPage6, labelPage6);
+  tabPage6.add(fixedTabPage6);
+
+  evalTitle.set_text("Симуляция: модель против эвристики");
+  fixedTabPage6.add(evalTitle);
+  fixedTabPage6.move(evalTitle, 10, 10);
+
+  evalGamesLabel.set_text("Количество игр:");
+  fixedTabPage6.add(evalGamesLabel);
+  fixedTabPage6.move(evalGamesLabel, 10, 45);
+
+  evalGamesAdjustment = Gtk::Adjustment::create(50, 1, 10000, 1, 10, 0);
+  evalGamesSpin.set_adjustment(evalGamesAdjustment);
+  evalGamesSpin.set_numeric(true);
+  evalGamesSpin.set_digits(0);
+  evalGamesSpin.set_value(50);
+  evalGamesSpin.set_size_request(120, -1);
+  fixedTabPage6.add(evalGamesSpin);
+  fixedTabPage6.move(evalGamesSpin, 150, 40);
+
+  evalRunButton.set_label("Запустить симуляцию");
+  evalRunButton.signal_button_release_event().connect([this](GdkEventButton*) {
+    startEvalInBackground();
+    return true;
+  });
+  fixedTabPage6.add(evalRunButton);
+  fixedTabPage6.move(evalRunButton, 300, 40);
+
+  evalLogView.set_editable(false);
+  evalLogView.set_wrap_mode(Gtk::WRAP_WORD_CHAR);
+  auto evalBuffer = Gtk::TextBuffer::create();
+  evalLogView.set_buffer(evalBuffer);
+
+  evalLogScroll.set_hexpand(true);
+  evalLogScroll.set_vexpand(true);
+  evalLogScroll.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
+  evalLogScroll.set_size_request(900, 600);
+  evalLogScroll.add(evalLogView);
+  fixedTabPage6.add(evalLogScroll);
+  fixedTabPage6.move(evalLogScroll, 10, 90);
 
     // train tab
 
@@ -811,6 +857,16 @@ void Form :: appendLogLine(const std::string& message) {
   logView.scroll_to(endIter);
 }
 
+void Form :: appendEvalLogLine(const std::string& message) {
+  auto logBuffer = evalLogView.get_buffer();
+  if (!logBuffer) {
+    return;
+  }
+  logBuffer->insert(logBuffer->end(), message + "\n");
+  auto endIter = logBuffer->end();
+  evalLogView.scroll_to(endIter);
+}
+
 void Form :: appendTrainingLogToFile(const std::string& message, const std::string& tag) {
   fs::path logPath = fs::current_path() / "LOGS_FOR_AGENTS.md";
   if (!fs::exists(logPath)) {
@@ -828,6 +884,70 @@ void Form :: appendTrainingLogToFile(const std::string& message, const std::stri
     return;
   }
   outfile << nowTimestamp() << " | [GUI][" << tag << "] " << message << "\n";
+}
+
+void Form :: startEvalInBackground() {
+  if (evaluating) {
+    appendEvalLogLine("Симуляция уже запущена. Дождитесь завершения.");
+    return;
+  }
+  int games = static_cast<int>(evalGamesSpin.get_value());
+  if (games < 1 || games > 10000) {
+    appendEvalLogLine("Некорректное значение N. Укажите число от 1 до 10000.");
+    return;
+  }
+  std::thread t(&Form::startEval, this, games);
+  t.detach();
+}
+
+void Form :: startEval(int games) {
+  evaluating = true;
+  Glib::signal_idle().connect_once([this, games]() {
+    appendEvalLogLine("Старт симуляции: игр=" + std::to_string(games));
+  });
+
+  std::string command = "cd .. ; FORCE_GREEDY=1 EVAL_EPSILON=0 python3 -u eval.py --games ";
+  command.append(std::to_string(games));
+  command.append(" 2>&1");
+
+  FILE* pipe = popen(command.c_str(), "r");
+  if (!pipe) {
+    std::string errorMessage = "Ошибка запуска симуляции (gui/Application.cpp): "
+        "проверьте, что eval.py доступен.";
+    Glib::signal_idle().connect_once([this, errorMessage]() {
+      appendEvalLogLine(errorMessage);
+    });
+    evaluating = false;
+    return;
+  }
+
+  std::array<char, 512> buffer{};
+  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe)) {
+    std::string line(buffer.data());
+    while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+      line.pop_back();
+    }
+    if (line.empty()) {
+      continue;
+    }
+    Glib::signal_idle().connect_once([this, line]() {
+      appendEvalLogLine(line);
+    });
+  }
+
+  int exitCode = pclose(pipe);
+  if (exitCode == 0) {
+    Glib::signal_idle().connect_once([this]() {
+      appendEvalLogLine("Симуляция завершена.");
+    });
+  } else {
+    std::string errLine = "Симуляция завершена с ошибкой. Код выхода: "
+        + std::to_string(exitCode);
+    Glib::signal_idle().connect_once([this, errLine]() {
+      appendEvalLogLine(errLine);
+    });
+  }
+  evaluating = false;
 }
 
 bool Form :: loadWindowGeometry() {

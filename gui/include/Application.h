@@ -46,7 +46,10 @@ public :
   bool addEnemyUnitFromEntry(const std::string& entryText);
   void resetLayout();
   void appendLogLine(const std::string& message);
+  void appendEvalLogLine(const std::string& message);
   void appendTrainingLogToFile(const std::string& message, const std::string& tag = "TRAIN");
+  void startEvalInBackground();
+  void startEval(int games);
 
 private:
   void setStatusMessage(const std::string& message);
@@ -82,12 +85,14 @@ Image metricBox6;
   Label labelPage3;
   Label labelPage4;
   Label labelPage5;
+  Label labelPage6;
   Label label1;
   Frame tabPage1;
   Frame tabPage2;
   Frame tabPage3;
   Frame tabPage4;
   Frame tabPage5;
+  Frame tabPage6;
   RadioButtonGroup radioButtonGroup;
   RadioButton radioTop;
   RadioButton radioLeft;
@@ -98,6 +103,7 @@ Image metricBox6;
   Fixed fixedTabPage3;
   Fixed fixedTabPage4;
   Fixed fixedTabPage5;
+  Fixed fixedTabPage6;
   Button button1;
   Button buttonTrain6;
   Button button2;
@@ -179,6 +185,14 @@ Image metricBox6;
   std::string trainingStartLabel;
   std::string trainingStatusLabel;
   std::string trainingLogTag;
+  Label evalTitle;
+  Label evalGamesLabel;
+  Glib::RefPtr<Gtk::Adjustment> evalGamesAdjustment;
+  SpinButton evalGamesSpin;
+  Button evalRunButton;
+  ScrolledWindow evalLogScroll;
+  TextView evalLogView;
+  bool evaluating;
 };
 
 #endif
