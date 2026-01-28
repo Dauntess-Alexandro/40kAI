@@ -24,6 +24,9 @@ GAMMA = data["gamma"]
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+def unwrap_env(env):
+    return getattr(env, "unwrapped", env)
+
 def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None):
     sample = random.random()
     decay_steps = max(1.0, float(EPS_DECAY))
@@ -86,6 +89,8 @@ def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None
         return action
 
 def build_shoot_action_mask(env, log_fn=None, debug=False):
+    env_unwrapped = unwrap_env(env)
+
     def maybe_log_mask_state(state_key, message):
         if log_fn is None:
             return
@@ -94,23 +99,24 @@ def build_shoot_action_mask(env, log_fn=None, debug=False):
             env._last_shoot_mask_log_state = state_key
             log_fn(message)
 
-    shoot_space = env.action_space.spaces["shoot"].n
+    shoot_space = env_unwrapped.action_space.spaces["shoot"].n
     valid_lengths = []
-    for i in range(len(env.unit_health)):
-        if env.unit_health[i] <= 0:
+    for i in range(len(env_unwrapped.unit_health)):
+        if env_unwrapped.unit_health[i] <= 0:
             continue
-        if env.unitFellBack[i]:
+        if env_unwrapped.unitFellBack[i]:
             continue
-        if env.unitInAttack[i][0] == 1:
+        if env_unwrapped.unitInAttack[i][0] == 1:
             continue
-        if env.unit_weapon[i] == "None":
+        if env_unwrapped.unit_weapon[i] == "None":
             continue
         valid_targets = []
-        for j in range(len(env.enemy_health)):
+        for j in range(len(env_unwrapped.enemy_health)):
             if (
-                distance(env.unit_coords[i], env.enemy_coords[j]) <= env.unit_weapon[i]["Range"]
-                and env.enemy_health[j] > 0
-                and env.enemyInAttack[j][0] == 0
+                distance(env_unwrapped.unit_coords[i], env_unwrapped.enemy_coords[j])
+                <= env_unwrapped.unit_weapon[i]["Range"]
+                and env_unwrapped.enemy_health[j] > 0
+                and env_unwrapped.enemyInAttack[j][0] == 0
             ):
                 valid_targets.append(j)
         if valid_targets:

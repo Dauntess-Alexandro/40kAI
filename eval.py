@@ -11,7 +11,7 @@ from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
 from gym_mod.engine.mission import check_end_of_battle
 from gym_mod.envs.warhamEnv import roll_off_attacker_defender
 from model.DQN import DQN
-from model.utils import build_shoot_action_mask, convertToDict
+from model.utils import build_shoot_action_mask, convertToDict, unwrap_env
 
 
 def log(message: str) -> None:
@@ -95,6 +95,7 @@ def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, shoot
 
 
 def run_episode(env, model_units, enemy_units, policy_net, epsilon, device):
+    env_unwrapped = unwrap_env(env)
     attacker_side, defender_side = roll_off_attacker_defender(
         manual_roll_allowed=False,
         log_fn=None,
@@ -103,23 +104,23 @@ def run_episode(env, model_units, enemy_units, policy_net, epsilon, device):
     deploy_only_war(
         model_units=model_units,
         enemy_units=enemy_units,
-        b_len=env.unwrapped.b_len,
-        b_hei=env.unwrapped.b_hei,
+        b_len=env_unwrapped.b_len,
+        b_hei=env_unwrapped.b_hei,
         attacker_side=attacker_side,
         log_fn=None,
     )
     post_deploy_setup(log_fn=None)
 
-    env.attacker_side = attacker_side
-    env.defender_side = defender_side
+    env_unwrapped.attacker_side = attacker_side
+    env_unwrapped.defender_side = defender_side
 
     state, info = env.reset(m=model_units, e=enemy_units, Type="big", trunc=True)
 
     done = False
     while not done:
-        env.enemyTurn(trunc=True)
-        if env.game_over:
-            info = env.get_info()
+        env_unwrapped.enemyTurn(trunc=True)
+        if env_unwrapped.game_over:
+            info = env_unwrapped.get_info()
             break
 
         state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
@@ -139,7 +140,7 @@ def run_episode(env, model_units, enemy_units, policy_net, epsilon, device):
     end_reason = info.get("end reason", "")
     winner = info.get("winner")
     if not end_reason or winner is None:
-        _, fallback_reason, fallback_winner = check_end_of_battle(env)
+        _, fallback_reason, fallback_winner = check_end_of_battle(env_unwrapped)
         if not end_reason:
             end_reason = fallback_reason
         if winner is None:
@@ -176,17 +177,18 @@ def main():
         manual_roll_allowed=False,
         log_fn=None,
     )
+    env_unwrapped = unwrap_env(env)
     deploy_only_war(
         model_units=model_units,
         enemy_units=enemy_units,
-        b_len=env.unwrapped.b_len,
-        b_hei=env.unwrapped.b_hei,
+        b_len=env_unwrapped.b_len,
+        b_hei=env_unwrapped.b_hei,
         attacker_side=attacker_side,
         log_fn=None,
     )
     post_deploy_setup(log_fn=None)
-    env.attacker_side = attacker_side
-    env.defender_side = defender_side
+    env_unwrapped.attacker_side = attacker_side
+    env_unwrapped.defender_side = defender_side
 
     state, info = env.reset(m=model_units, e=enemy_units, Type="big", trunc=True)
     n_actions = [5, 2, len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]

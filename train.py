@@ -675,12 +675,13 @@ ep_rows = []
 
 global_step = 0
 optimize_steps = 0
-initial_model_hp = float(sum(getattr(primary_ctx["env"], "unit_health", [])))
-initial_enemy_hp = float(sum(getattr(primary_ctx["env"], "enemy_health", [])))
+primary_env_unwrapped = unwrap_env(primary_ctx["env"])
+initial_model_hp = float(sum(getattr(primary_env_unwrapped, "unit_health", [])))
+initial_enemy_hp = float(sum(getattr(primary_env_unwrapped, "enemy_health", [])))
 append_agent_log(
     "Старт обучения: "
     f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}, "
-    f"battle_round={getattr(primary_ctx['env'], 'battle_round', 'n/a')}, trunc={trunc}"
+    f"battle_round={getattr(primary_env_unwrapped, 'battle_round', 'n/a')}, trunc={trunc}"
 )
 if trunc:
     append_agent_log(
@@ -704,13 +705,14 @@ while end is False:
     actions, eps_threshold = _select_actions_batch(env_contexts, states, global_step, policy_net, shoot_masks)
 
     for idx, ctx in enumerate(env_contexts):
+        env_unwrapped = unwrap_env(ctx["env"])
         if SELF_PLAY_ENABLED:
-            ctx["env"].enemyTurn(
+            env_unwrapped.enemyTurn(
                 trunc=trunc,
                 policy_fn=lambda obs, env=ctx["env"], lm=ctx["len_model"]: opponent_policy(obs, env, lm),
             )
         else:
-            ctx["env"].enemyTurn(trunc=trunc)
+            env_unwrapped.enemyTurn(trunc=trunc)
 
     losses = []
     last_td_stats = None
