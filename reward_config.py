@@ -18,6 +18,21 @@ VP_CAP_PER_COMMAND = 3
 VP_OBJECTIVE_HOLD_REWARD = 0.5
 VP_OBJECTIVE_HOLD_PENALTY = 0.5
 VP_OBJECTIVE_PROXIMITY_REWARD = 0.5
+VP_DIFF_REWARD_SCALE = 0.05
+VP_DIFF_PENALTY_SCALE = 0.05
+VP_OBJECTIVE_STREAK_LEN = 2
+VP_OBJECTIVE_STREAK_BONUS = 0.2
+
+# ============================
+# Reward shaping (misc phases)
+# ============================
+COMMAND_INSANE_BRAVERY_REWARD = 0.5
+COMMAND_INSANE_BRAVERY_PENALTY = 0.5
+MOVEMENT_MELEE_TARGET_DEAD_BONUS = 0.3
+MOVEMENT_MELEE_RETREAT_PENALTY = 0.5
+MOVEMENT_MELEE_STAY_BONUS = 0.2
+CHARGE_SUCCESS_REWARD = 0.5
+CHARGE_FAIL_PENALTY = 0.5
 
 # =========================
 # Reward shaping (shooting)
@@ -34,6 +49,13 @@ SHOOT_REWARD_ACTION_BONUS = 0.0
 
 # Penalize damage received during the model's step (normalized by model total max HP).
 DAMAGE_TAKEN_SCALE = 0.5
+
+# ====================================
+# Reward shaping (objectives/utility)
+# ====================================
+IDLE_OUT_OF_OBJECTIVE_PENALTY = 0.05
+KILL_ON_OBJECTIVE_BONUS = 0.2
+DAMAGE_ON_OBJECTIVE_SCALE = 0.05
 
 # ======================
 # Reward shaping (fight)

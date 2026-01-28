@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import datetime
 import os
 import random
 import re
@@ -775,6 +776,11 @@ class Warhammer40kEnv(gym.Env):
         ])
         self.model_obj_oc = np.array([0, 0, 0, 0])
         self.enemy_obj_oc = np.array([0, 0, 0, 0])
+        self._prev_vp_diff = 0
+        self._objective_hold_streaks = [0] * len(self.coordsOfOM)
+        self._agent_log_path = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "..", "LOGS_FOR_AGENTS.md")
+        )
 
         self.modelOC = []
         self.enemyOC = []
@@ -857,6 +863,67 @@ class Warhammer40kEnv(gym.Env):
         if not self._should_log():
             return
         self._ensure_io().log(msg)
+
+    def _append_agent_log(self, msg: str) -> None:
+        if msg is None:
+            return
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        full_line = f"{timestamp} | {msg}"
+        try:
+            with open(self._agent_log_path, "a", encoding="utf-8") as log_file:
+                log_file.write(full_line + "\n")
+        except Exception:
+            return
+
+    def _log_reward(self, msg: str) -> None:
+        self._log(msg)
+        self._append_agent_log(msg)
+
+    def _log_reward_unit(self, side: str, unit_id: int, unit_idx: int, msg: str) -> None:
+        side_label = self._side_label(side)
+        unit_label = self._format_unit_label(side, unit_idx, unit_id=unit_id)
+        self._log_reward(f"[{side_label}] {unit_label}: {msg}")
+
+    def _log_reward_warning(self, msg: str) -> None:
+        if os.getenv("REWARD_DEBUG", "0") != "1":
+            return
+        self._log_reward(msg)
+
+    def _objective_positions_available(self) -> bool:
+        return isinstance(getattr(self, "coordsOfOM", None), (list, np.ndarray)) and len(self.coordsOfOM) > 0
+
+    def _is_position_near_objective(self, pos, radius: float = 5.0) -> bool:
+        if not self._objective_positions_available():
+            self._log_reward_warning(
+                "Reward (объекты): нет координат целей, бонусы за урон/килл у цели отключены. "
+                "Где: Warhammer40kEnv._is_position_near_objective. "
+                "Что сделать: проверьте заполнение coordsOfOM."
+            )
+            return False
+        return any(distance(pos, om) <= radius for om in self.coordsOfOM)
+
+    def _min_model_obj_distance(self) -> Optional[float]:
+        if not self._objective_positions_available():
+            return None
+        distances = []
+        for i in range(len(self.unit_health)):
+            if self.unit_health[i] <= 0:
+                continue
+            for om in self.coordsOfOM:
+                distances.append(distance(self.unit_coords[i], om))
+        if not distances:
+            return None
+        return float(min(distances))
+
+    def _any_model_near_objective(self, radius: float = 5.0) -> bool:
+        if not self._objective_positions_available():
+            return False
+        for i in range(len(self.unit_health)):
+            if self.unit_health[i] <= 0:
+                continue
+            if self._is_position_near_objective(self.unit_coords[i], radius=radius):
+                return True
+        return False
 
     def _unit_max_hp(self, side: str, idx: int) -> float:
         data_list = self.unit_data if side == "model" else self.enemy_data
@@ -1401,12 +1468,27 @@ class Warhammer40kEnv(gym.Env):
                         if action and action.get("use_cp") == 1 and action.get("cp_on") == i:
                             if self.modelCP - 1 >= 0:
                                 battle_shock[i] = False
-                                reward_delta += 0.5
+                                reward_delta += reward_cfg.COMMAND_INSANE_BRAVERY_REWARD
+                                self._log_reward_unit(
+                                    "model",
+                                    i + 21,
+                                    i,
+                                    "Reward (командование): "
+                                    f"Insane Bravery bonus=+{reward_cfg.COMMAND_INSANE_BRAVERY_REWARD:.3f}",
+                                )
                                 self.modelCP -= 1
                                 if self.trunc is False:
                                     self._log(f"{unit_label}: применена Insane Bravery (-1 CP), тест пройден.")
                             else:
-                                reward_delta -= 0.5
+                                reward_delta -= reward_cfg.COMMAND_INSANE_BRAVERY_PENALTY
+                                self._log_reward_unit(
+                                    "model",
+                                    i + 21,
+                                    i,
+                                    "Reward (командование): "
+                                    f"Insane Bravery penalty=-{reward_cfg.COMMAND_INSANE_BRAVERY_PENALTY:.3f} "
+                                    "(нет CP)",
+                                )
             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
             apply_end_of_command_phase(self, side="model", dice_fn=dice_fn, log_fn=self._log)
             score_end_of_command_phase(self, "model", log_fn=self._log)
@@ -1583,9 +1665,23 @@ class Warhammer40kEnv(gym.Env):
                             if distance(self.unit_coords[i], self.coordsOfOM[j]) <= 5:
                                 reward_delta += reward_cfg.VP_OBJECTIVE_HOLD_REWARD
                                 objective_hold_delta += reward_cfg.VP_OBJECTIVE_HOLD_REWARD
+                                self._log_reward_unit(
+                                    "model",
+                                    modelName,
+                                    i,
+                                    "Reward (VP/объекты): "
+                                    f"hold=+{reward_cfg.VP_OBJECTIVE_HOLD_REWARD:.3f} (obj={j})",
+                                )
                             else:
                                 reward_delta -= reward_cfg.VP_OBJECTIVE_HOLD_PENALTY
                                 objective_hold_delta -= reward_cfg.VP_OBJECTIVE_HOLD_PENALTY
+                                self._log_reward_unit(
+                                    "model",
+                                    modelName,
+                                    i,
+                                    "Reward (VP/объекты): "
+                                    f"hold_penalty=-{reward_cfg.VP_OBJECTIVE_HOLD_PENALTY:.3f} (obj={j})",
+                                )
 
                     advanced_flags[i] = advanced
                     direction = {0: "down", 1: "up", 2: "left", 3: "right", 4: "none"}.get(action["move"], "none")
@@ -1625,11 +1721,25 @@ class Warhammer40kEnv(gym.Env):
                         if distance(self.coordsOfOM[j], self.unit_coords[i]) <= 5:
                             reward_delta += reward_cfg.VP_OBJECTIVE_PROXIMITY_REWARD
                             objective_proximity_delta += reward_cfg.VP_OBJECTIVE_PROXIMITY_REWARD
+                            self._log_reward_unit(
+                                "model",
+                                modelName,
+                                i,
+                                "Reward (VP/объекты): "
+                                f"proximity=+{reward_cfg.VP_OBJECTIVE_PROXIMITY_REWARD:.3f} (obj={j})",
+                            )
 
                 elif self.unitInAttack[i][0] == 1 and self.unit_health[i] > 0:
                     idOfE = self.unitInAttack[i][1]
                     if self.enemy_health[idOfE] <= 0:
-                        reward_delta += 0.3
+                        reward_delta += reward_cfg.MOVEMENT_MELEE_TARGET_DEAD_BONUS
+                        self._log_reward_unit(
+                            "model",
+                            modelName,
+                            i,
+                            "Reward (движение): "
+                            f"цель мертва, выход из боя bonus=+{reward_cfg.MOVEMENT_MELEE_TARGET_DEAD_BONUS:.3f}",
+                        )
                         self.unitInAttack[i][0] = 0
                         self.unitInAttack[i][1] = 0
                         self.enemyInAttack[idOfE][0] = 0
@@ -1643,7 +1753,14 @@ class Warhammer40kEnv(gym.Env):
                     else:
                         if action["attack"] == 0:
                             if self.unit_health[i] * 2 >= self.enemy_health[idOfE]:
-                                reward_delta -= 0.5
+                                reward_delta -= reward_cfg.MOVEMENT_MELEE_RETREAT_PENALTY
+                                self._log_reward_unit(
+                                    "model",
+                                    modelName,
+                                    i,
+                                    "Reward (движение): "
+                                    f"отступление из боя penalty=-{reward_cfg.MOVEMENT_MELEE_RETREAT_PENALTY:.3f}",
+                                )
                             self._log_unit(
                                 "MODEL",
                                 modelName,
@@ -1671,7 +1788,14 @@ class Warhammer40kEnv(gym.Env):
                                     manual=os.getenv("MANUAL_DICE", "0") == "1",
                                 )
                         else:
-                            reward_delta += 0.2
+                            reward_delta += reward_cfg.MOVEMENT_MELEE_STAY_BONUS
+                            self._log_reward_unit(
+                                "model",
+                                modelName,
+                                i,
+                                "Reward (движение): "
+                                f"остался в бою bonus=+{reward_cfg.MOVEMENT_MELEE_STAY_BONUS:.3f}",
+                            )
                         self._log_unit(
                             "MODEL",
                             modelName,
@@ -1680,7 +1804,7 @@ class Warhammer40kEnv(gym.Env):
                         )
             if objective_hold_delta != 0 or objective_proximity_delta != 0:
                 total_obj_delta = objective_hold_delta + objective_proximity_delta
-                self._log(
+                self._log_reward(
                     "Reward (VP/объекты, движение): "
                     f"hold={objective_hold_delta:.3f}, proximity={objective_proximity_delta:.3f}, total={total_obj_delta:.3f}"
                 )
@@ -2072,35 +2196,107 @@ class Warhammer40kEnv(gym.Env):
                         normalized_damage = damage_dealt / max(1.0, float(self.enemy_hp_max_total))
                         damage_term = reward_cfg.SHOOT_REWARD_DAMAGE_SCALE * normalized_damage
                         reward_delta += damage_term
+                        if damage_term != 0:
+                            self._log_reward_unit(
+                                "model",
+                                modelName,
+                                i,
+                                "Reward (стрельба): "
+                                f"damage_term=+{damage_term:.3f} (norm={normalized_damage:.3f}, dealt={damage_dealt:.2f})",
+                            )
                         kill_term = 0.0
                         if modHealth <= 0:
                             kill_term = reward_cfg.SHOOT_REWARD_KILL_BONUS
                             reward_delta += kill_term
+                            self._log_reward_unit(
+                                "model",
+                                modelName,
+                                i,
+                                "Reward (стрельба): "
+                                f"kill_bonus=+{kill_term:.3f}",
+                            )
                         overkill = max(0.0, float(damage_dealt - target_hp_prev))
                         overkill_penalty = 0.0
                         if target_max_hp > 0 and overkill > 0:
                             overkill_penalty = reward_cfg.SHOOT_REWARD_OVERKILL_PENALTY * (overkill / target_max_hp)
                             reward_delta -= overkill_penalty
+                            self._log_reward_unit(
+                                "model",
+                                modelName,
+                                i,
+                                "Reward (стрельба): "
+                                f"overkill_penalty=-{overkill_penalty:.3f} (overkill={overkill:.2f})",
+                            )
                         quality_term = 0.0
+                        target_on_objective = self._is_position_near_objective(self.enemy_coords[idOfE])
                         if damage_dealt > 0:
                             if target_max_hp > 0 and target_hp_prev / target_max_hp <= 0.3:
                                 quality_term += reward_cfg.SHOOT_REWARD_TARGET_LOW_HP
-                            if any(distance(self.enemy_coords[idOfE], om) <= 5 for om in self.coordsOfOM):
+                            if target_on_objective:
                                 quality_term += reward_cfg.SHOOT_REWARD_TARGET_ON_OBJ
                             if self.enemy_data[idOfE].get("OC", 0) >= 2:
                                 quality_term += reward_cfg.SHOOT_REWARD_TARGET_HIGH_OC
                         reward_delta += quality_term
+                        if quality_term != 0:
+                            self._log_reward_unit(
+                                "model",
+                                modelName,
+                                i,
+                                "Reward (стрельба): "
+                                f"quality_bonus=+{quality_term:.3f}",
+                            )
+                        objective_damage_term = 0.0
+                        objective_kill_term = 0.0
+                        if target_on_objective and damage_dealt > 0:
+                            objective_damage_term = reward_cfg.DAMAGE_ON_OBJECTIVE_SCALE * damage_dealt
+                            reward_delta += objective_damage_term
+                            if objective_damage_term != 0:
+                                self._log_reward_unit(
+                                    "model",
+                                    modelName,
+                                    i,
+                                    "Reward (стрельба/у цели): "
+                                    f"damage_bonus=+{objective_damage_term:.3f} (dealt={damage_dealt:.2f})",
+                                )
+                            if modHealth <= 0:
+                                objective_kill_term = reward_cfg.KILL_ON_OBJECTIVE_BONUS
+                                reward_delta += objective_kill_term
+                                self._log_reward_unit(
+                                    "model",
+                                    modelName,
+                                    i,
+                                    "Reward (стрельба/у цели): "
+                                    f"kill_bonus=+{objective_kill_term:.3f}",
+                                )
                         action_bonus = reward_cfg.SHOOT_REWARD_ACTION_BONUS
                         reward_delta += action_bonus
-                        shot_reward = damage_term + kill_term - overkill_penalty + quality_term + action_bonus
-                        self._log_unit(
-                            "MODEL",
+                        if action_bonus != 0:
+                            self._log_reward_unit(
+                                "model",
+                                modelName,
+                                i,
+                                "Reward (стрельба): "
+                                f"action_bonus=+{action_bonus:.3f}",
+                            )
+                        shot_reward = (
+                            damage_term
+                            + kill_term
+                            - overkill_penalty
+                            + quality_term
+                            + objective_damage_term
+                            + objective_kill_term
+                            + action_bonus
+                        )
+                        self._log_reward_unit(
+                            "model",
                             modelName,
                             i,
                             "Reward (стрельба): "
                             f"damage={damage_term:.3f} (norm={normalized_damage:.3f}, dealt={damage_dealt:.2f}), "
                             f"kill={kill_term:.3f}, overkill=-{overkill_penalty:.3f}, "
-                            f"quality={quality_term:.3f}, action={action_bonus:.3f}, total={shot_reward:.3f}",
+                            f"quality={quality_term:.3f}, "
+                            f"obj_damage={objective_damage_term:.3f}, obj_kill={objective_kill_term:.3f}, "
+                            f"action={action_bonus:.3f}, total={shot_reward:.3f}",
                         )
                         self._log_unit(
                             "MODEL",
@@ -2138,8 +2334,8 @@ class Warhammer40kEnv(gym.Env):
                             i,
                             f"Цели в дальности: {target_list}, выбрана недоступная цель (raw={raw}). Стрельба пропущена.",
                         )
-                        self._log_unit(
-                            "MODEL",
+                        self._log_reward_unit(
+                            "model",
                             modelName,
                             i,
                             f"Reward (стрельба): штраф за пропуск = -{penalty:.3f}",
@@ -2468,7 +2664,14 @@ class Warhammer40kEnv(gym.Env):
                                 phase="charge",
                                 manual=os.getenv("MANUAL_DICE", "0") == "1",
                             )
-                            reward_delta += 0.5
+                            reward_delta += reward_cfg.CHARGE_SUCCESS_REWARD
+                            self._log_reward_unit(
+                                "model",
+                                modelName,
+                                i,
+                                "Reward (чардж): "
+                                f"success_bonus=+{reward_cfg.CHARGE_SUCCESS_REWARD:.3f}",
+                            )
                         else:
                             reason = "цель вне досягаемости" if idOfE in potential_targets else "цель недоступна"
                             if idOfE in potential_targets:
@@ -2487,7 +2690,14 @@ class Warhammer40kEnv(gym.Env):
                                 i,
                                 f"Чардж цели: {target_list}, выбрана {self._format_unit_label('enemy', idOfE)}. {roll_text}. Результат: провал ({reason}).",
                             )
-                            reward_delta -= 0.5
+                            reward_delta -= reward_cfg.CHARGE_FAIL_PENALTY
+                            self._log_reward_unit(
+                                "model",
+                                modelName,
+                                i,
+                                "Reward (чардж): "
+                                f"fail_penalty=-{reward_cfg.CHARGE_FAIL_PENALTY:.3f}",
+                            )
                     else:
                         if potential_targets:
                             target_list = self._format_unit_choices("enemy", potential_targets)
@@ -2814,9 +3024,16 @@ class Warhammer40kEnv(gym.Env):
                     pre_enemy_hp_total = float(sum(self.enemy_health))
                     pre_model_hp_total = float(sum(self.unit_health))
                     pre_enemy_dead = sum(1 for hp in self.enemy_health if hp <= 0)
+                    pre_enemy_hp_by_idx = {}
+                    pre_enemy_on_obj = {}
                     self.refresh_objective_control()
                     pre_obj_controlled, _ = controlled_objectives(self, "model")
                     for model_idx, enemy_idx in engaged_pairs:
+                        if enemy_idx not in pre_enemy_hp_by_idx:
+                            pre_enemy_hp_by_idx[enemy_idx] = float(self.enemy_health[enemy_idx])
+                            pre_enemy_on_obj[enemy_idx] = self._is_position_near_objective(
+                                self.enemy_coords[enemy_idx]
+                            )
                         model_max_hp = self._unit_max_hp("model", model_idx)
                         enemy_max_hp = self._unit_max_hp("enemy", enemy_idx)
                         model_hp_frac = float(self.unit_health[model_idx]) / model_max_hp
@@ -2845,18 +3062,83 @@ class Warhammer40kEnv(gym.Env):
             kill_delta = max(0, post_enemy_dead - pre_enemy_dead)
             kill_term = reward_cfg.MELEE_REWARD_KILL_BONUS * kill_delta
 
+            objective_damage = 0.0
+            objective_kills = 0
+            for enemy_idx, pre_hp in pre_enemy_hp_by_idx.items():
+                if not pre_enemy_on_obj.get(enemy_idx, False):
+                    continue
+                post_hp = float(self.enemy_health[enemy_idx])
+                objective_damage += max(0.0, pre_hp - post_hp)
+                if pre_hp > 0 and post_hp <= 0:
+                    objective_kills += 1
+            objective_damage_term = reward_cfg.DAMAGE_ON_OBJECTIVE_SCALE * objective_damage
+            objective_kill_term = reward_cfg.KILL_ON_OBJECTIVE_BONUS * objective_kills
+
             self.refresh_objective_control()
             post_obj_controlled, _ = controlled_objectives(self, "model")
             obj_delta = post_obj_controlled - (pre_obj_controlled or 0)
             obj_term = reward_cfg.MELEE_OBJECTIVE_CONTROL_SCALE * obj_delta
 
-            reward_delta += damage_term + kill_term - taken_term + advantage_term + strength_term + obj_term
+            if damage_term != 0:
+                reward_delta += damage_term
+                self._log_reward(
+                    "Reward (бой): "
+                    f"damage_term=+{damage_term:.3f} (norm={damage_dealt_norm:.3f})"
+                )
+            if kill_term != 0:
+                reward_delta += kill_term
+                self._log_reward(
+                    "Reward (бой): "
+                    f"kill_term=+{kill_term:.3f} (delta={kill_delta})"
+                )
+            if taken_term != 0:
+                reward_delta -= taken_term
+                self._log_reward(
+                    "Reward (бой): "
+                    f"taken_penalty=-{taken_term:.3f} (norm={damage_taken_norm:.3f})"
+                )
+            if advantage_term != 0:
+                reward_delta += advantage_term
+                self._log_reward(
+                    "Reward (бой): "
+                    f"advantage_term={advantage_term:+.3f}"
+                )
+            if strength_term != 0:
+                reward_delta += strength_term
+                self._log_reward(
+                    "Reward (бой): "
+                    f"strength_term={strength_term:+.3f}"
+                )
             if obj_term != 0:
-                self._log(
+                reward_delta += obj_term
+                self._log_reward(
+                    "Reward (бой): "
+                    f"objective_term={obj_term:+.3f} (delta={obj_delta})"
+                )
+            if objective_damage_term != 0:
+                reward_delta += objective_damage_term
+                self._log_reward(
+                    "Reward (бой/у цели): "
+                    f"damage_term=+{objective_damage_term:.3f} (raw={objective_damage:.2f})"
+                )
+            if objective_kill_term != 0:
+                reward_delta += objective_kill_term
+                self._log_reward(
+                    "Reward (бой/у цели): "
+                    f"kill_term=+{objective_kill_term:.3f} (count={objective_kills})"
+                )
+            if obj_term != 0:
+                self._log_reward(
                     "Reward (VP/объекты, бой): "
                     f"delta={obj_delta}, term={obj_term:.3f}"
                 )
-            self._log(
+            if objective_damage_term != 0 or objective_kill_term != 0:
+                self._log_reward(
+                    "Reward (объекты, бой): "
+                    f"damage={objective_damage_term:.3f} (raw={objective_damage:.2f}), "
+                    f"kills={objective_kill_term:.3f} (count={objective_kills})"
+                )
+            self._log_reward(
                 "Reward (бой): "
                 f"damage={damage_term:.3f} (norm={damage_dealt_norm:.3f}, dealt={damage_dealt:.2f}), "
                 f"kills={kill_term:.3f} (delta={kill_delta}), "
@@ -2941,6 +3223,8 @@ class Warhammer40kEnv(gym.Env):
         self._round_banner_shown = False
         self.mission_name = MISSION_NAME
         self.modelUpdates = ""
+        self._prev_vp_diff = 0
+        self._objective_hold_streaks = [0] * len(self.coordsOfOM)
 
         for i in range(len(self.enemy_data)):
             self.enemy_coords.append([e[i].showCoords()[0], e[i].showCoords()[1]])
@@ -3300,16 +3584,38 @@ class Warhammer40kEnv(gym.Env):
         reward = 0
         res = 0
         model_hp_start = float(sum(self.unit_health))
+        enemy_hp_start = float(sum(self.enemy_health))
+        enemy_dead_start = sum(1 for hp in self.enemy_health if hp <= 0)
+        pre_model_vp = self.modelVP
+        pre_enemy_vp = self.enemyVP
+        self.refresh_objective_control()
+        _, pre_controlled = controlled_objectives(self, "model")
+        pre_controlled_set = set(pre_controlled)
+        min_obj_dist_start = self._min_model_obj_distance()
+        prev_vp_diff = self._prev_vp_diff
         self.unitCharged = [0] * len(self.unit_health)
         self.enemyCharged = [0] * len(self.enemy_health)
         self.active_side = "model"
         battle_shock, delta = self.command_phase("model", action=action)
         reward += delta
+        if delta != 0:
+            self._log_reward(f"Reward (шаг): командование delta={delta:+.3f}")
         advanced_flags, delta = self.movement_phase("model", action=action, battle_shock=battle_shock)
         reward += delta
-        reward += self.shooting_phase("model", advanced_flags=advanced_flags, action=action) or 0
-        reward += self.charge_phase("model", advanced_flags=advanced_flags, action=action) or 0
-        reward += self.fight_phase("model") or 0
+        if delta != 0:
+            self._log_reward(f"Reward (шаг): движение delta={delta:+.3f}")
+        shoot_delta = self.shooting_phase("model", advanced_flags=advanced_flags, action=action) or 0
+        reward += shoot_delta
+        if shoot_delta != 0:
+            self._log_reward(f"Reward (шаг): стрельба delta={shoot_delta:+.3f}")
+        charge_delta = self.charge_phase("model", advanced_flags=advanced_flags, action=action) or 0
+        reward += charge_delta
+        if charge_delta != 0:
+            self._log_reward(f"Reward (шаг): чардж delta={charge_delta:+.3f}")
+        fight_delta = self.fight_phase("model") or 0
+        reward += fight_delta
+        if fight_delta != 0:
+            self._log_reward(f"Reward (шаг): бой delta={fight_delta:+.3f}")
         game_over, end_reason, winner = apply_end_of_battle(self, log_fn=self._log)
         self.enemyStrat["overwatch"] = -1
         self.enemyStrat["smokescreen"] = -1
@@ -3327,7 +3633,7 @@ class Warhammer40kEnv(gym.Env):
             damage_taken_norm = damage_taken / max(1.0, float(self.model_hp_max_total))
             penalty = reward_cfg.DAMAGE_TAKEN_SCALE * damage_taken_norm
             reward -= penalty
-            self._log(
+            self._log_reward(
                 "Reward (урон по модели): "
                 f"damage_taken={damage_taken:.2f}, norm={damage_taken_norm:.3f}, penalty=-{penalty:.3f}"
             )
@@ -3338,10 +3644,74 @@ class Warhammer40kEnv(gym.Env):
             self.last_winner = winner
             if winner == "model":
                 reward += reward_cfg.WIN_BONUS
-                self._log(f"Reward (победа): bonus=+{reward_cfg.WIN_BONUS:.3f}")
+                self._log_reward(f"Reward (победа): bonus=+{reward_cfg.WIN_BONUS:.3f}")
             elif winner == "enemy":
                 reward -= reward_cfg.LOSS_PENALTY
-                self._log(f"Reward (поражение): penalty=-{reward_cfg.LOSS_PENALTY:.3f}")
+                self._log_reward(f"Reward (поражение): penalty=-{reward_cfg.LOSS_PENALTY:.3f}")
+
+        self.refresh_objective_control()
+        _, post_controlled = controlled_objectives(self, "model")
+        post_controlled_set = set(post_controlled)
+        curr_vp_diff = self.modelVP - self.enemyVP
+        vp_delta = curr_vp_diff - prev_vp_diff
+        vp_reward = reward_cfg.VP_DIFF_REWARD_SCALE * max(vp_delta, 0)
+        vp_penalty = reward_cfg.VP_DIFF_PENALTY_SCALE * max(-vp_delta, 0)
+        if vp_reward != 0 or vp_penalty != 0:
+            reward += vp_reward - vp_penalty
+            self._log_reward(
+                "Reward (VP diff): "
+                f"prev={prev_vp_diff}, curr={curr_vp_diff}, "
+                f"delta={vp_delta}, reward=+{vp_reward:.3f}, penalty=-{vp_penalty:.3f}"
+            )
+        self._prev_vp_diff = curr_vp_diff
+
+        streak_bonus = 0.0
+        streak_len = reward_cfg.VP_OBJECTIVE_STREAK_LEN
+        if streak_len > 0:
+            for idx in range(len(self._objective_hold_streaks)):
+                if idx in post_controlled_set:
+                    self._objective_hold_streaks[idx] += 1
+                else:
+                    self._objective_hold_streaks[idx] = 0
+                if self._objective_hold_streaks[idx] >= streak_len:
+                    streak_bonus += reward_cfg.VP_OBJECTIVE_STREAK_BONUS
+        if streak_bonus != 0:
+            reward += streak_bonus
+            self._log_reward(
+                "Reward (стрик удержания): "
+                f"streaks={self._objective_hold_streaks}, "
+                f"len={streak_len}, bonus=+{streak_bonus:.3f}"
+            )
+
+        enemy_hp_end = float(sum(self.enemy_health))
+        enemy_dead_end = sum(1 for hp in self.enemy_health if hp <= 0)
+        damage_dealt = max(0.0, enemy_hp_start - enemy_hp_end)
+        kills_dealt = max(0, enemy_dead_end - enemy_dead_start)
+        vp_changed = (self.modelVP != pre_model_vp) or (self.enemyVP != pre_enemy_vp)
+        control_changed = pre_controlled_set != post_controlled_set
+        near_objective = self._any_model_near_objective()
+        min_obj_dist_end = self._min_model_obj_distance()
+        moved_closer = False
+        can_measure_move = min_obj_dist_start is not None and min_obj_dist_end is not None
+        if can_measure_move:
+            moved_closer = min_obj_dist_end < min_obj_dist_start
+        if (
+            not near_objective
+            and not vp_changed
+            and not control_changed
+            and damage_dealt <= 0
+            and kills_dealt <= 0
+            and (not moved_closer or not can_measure_move)
+        ):
+            reward -= reward_cfg.IDLE_OUT_OF_OBJECTIVE_PENALTY
+            self._log_reward(
+                "Reward (idle вне цели): "
+                f"penalty=-{reward_cfg.IDLE_OUT_OF_OBJECTIVE_PENALTY:.3f}, "
+                f"near_obj={int(near_objective)}, vp_changed={int(vp_changed)}, "
+                f"control_changed={int(control_changed)}, damage={damage_dealt:.2f}, "
+                f"kills={kills_dealt}, moved_closer={int(moved_closer)}, "
+                f"min_dist={min_obj_dist_start}->{min_obj_dist_end}"
+            )
 
         self._advance_turn_order()
         if self.game_over and res == 0:
