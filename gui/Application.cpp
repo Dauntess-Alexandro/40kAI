@@ -261,17 +261,17 @@ Form :: Form() {
     return true;
   });
 
-  buttonTrain6.set_label("Тренировать 6x");
+  buttonTrain6.set_label("Тренировать 8x");
   buttonTrain6.signal_button_release_event().connect([&](GdkEventButton*) {
     saveLastRoster();
     syncEnemyUnitsFromRoster();
     updateInits(modelClass, enemyClass);
     if (exists_test("data.json") && training == false) {
-      setStatusMessage("Обучение 6x...");
-      trainEnvPrefix = "VEC_ENV_COUNT=6 ";
-      trainingStartLabel = "обучения 6x";
-      trainingStatusLabel = "Обучение 6x";
-      trainingLogTag = "TRAIN6";
+      setStatusMessage("Обучение 8x...");
+      trainEnvPrefix = "VEC_ENV_COUNT=8 ";
+      trainingStartLabel = "обучения 8x";
+      trainingStatusLabel = "Обучение 8x";
+      trainingLogTag = "TRAIN8";
       startTrainInBackground();
     }
     return true;
