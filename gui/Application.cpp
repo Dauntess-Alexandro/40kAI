@@ -7,9 +7,14 @@
 #include <thread>
 #include <chrono>
 #include <fstream>
+#include <cstdio>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 #include <filesystem>
 #include <vector>
 #include <algorithm>
+#include <array>
 #include <nlohmann/json.hpp>
 #include "include/Application.h"
 #include "include/popup.h"
@@ -39,6 +44,20 @@ std::string toLowerCopy(std::string data) {
   std::transform(data.begin(), data.end(), data.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   return data;
+}
+
+std::string nowTimestamp() {
+  auto now = std::chrono::system_clock::now();
+  std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+  std::tm local_tm{};
+#if defined(_WIN32)
+  localtime_s(&local_tm, &now_time);
+#else
+  localtime_r(&now_time, &local_tm);
+#endif
+  std::ostringstream oss;
+  oss << std::put_time(&local_tm, "%Y-%m-%d %H:%M:%S");
+  return oss.str();
 }
 
 int findDefaultModelsCount(const std::string& faction, const std::string& name) {
@@ -92,6 +111,10 @@ Form :: Form() {
   training = false;
   playing = false;
   loadingRoster = false;
+  trainEnvPrefix = "";
+  trainingStartLabel = "обучения";
+  trainingStatusLabel = "Обучение";
+  trainingLogTag = "TRAIN";
 
   bar.set_show_close_button(true);
   bar.set_title("40kAI GUI");
@@ -229,6 +252,26 @@ Form :: Form() {
     updateInits(modelClass, enemyClass);
     if (exists_test("data.json") && training == false) {
       setStatusMessage("Training...");
+      trainEnvPrefix = "";
+      trainingStartLabel = "обучения";
+      trainingStatusLabel = "Обучение";
+      trainingLogTag = "TRAIN";
+      startTrainInBackground();
+    }
+    return true;
+  });
+
+  buttonTrain6.set_label("Тренировать 8x");
+  buttonTrain6.signal_button_release_event().connect([&](GdkEventButton*) {
+    saveLastRoster();
+    syncEnemyUnitsFromRoster();
+    updateInits(modelClass, enemyClass);
+    if (exists_test("data.json") && training == false) {
+      setStatusMessage("Обучение 8x...");
+      trainEnvPrefix = "VEC_ENV_COUNT=8 ";
+      trainingStartLabel = "обучения 8x";
+      trainingStatusLabel = "Обучение 8x";
+      trainingLogTag = "TRAIN8";
       startTrainInBackground();
     }
     return true;
@@ -281,6 +324,22 @@ Form :: Form() {
   button3.signal_button_release_event().connect([&](GdkEventButton*) {
     std::string mess = "Warning: You are about to delete all of the saved models";
     openWarnMenu(mess, 0);
+    return true;
+  });
+
+  buttonSelfPlay.set_label("Самообучение");
+  buttonSelfPlay.signal_button_release_event().connect([&](GdkEventButton*) {
+    saveLastRoster();
+    syncEnemyUnitsFromRoster();
+    updateInits(modelClass, enemyClass);
+    if (exists_test("data.json") && training == false) {
+      setStatusMessage("Самообучение: обучение...");
+      trainEnvPrefix = "SELF_PLAY_ENABLED=1 ";
+      trainingStartLabel = "самообучения";
+      trainingStatusLabel = "Самообучение";
+      trainingLogTag = "SELFPLAY";
+      startTrainInBackground();
+    }
     return true;
   });
 
@@ -571,11 +630,15 @@ Form :: Form() {
   fixedTabPage2.add(textbox1);
   fixedTabPage2.move(textbox1, 10, 10);
   fixedTabPage2.add(button1);
-  fixedTabPage2.move(button1, 150, 300);
+  fixedTabPage2.move(button1, 380, 300);
+  fixedTabPage2.add(buttonTrain6);
+  fixedTabPage2.move(buttonTrain6, 470, 300);
   fixedTabPage2.add(setIters);
   fixedTabPage2.move(setIters, 160, 40);
   fixedTabPage2.add(button3);
   fixedTabPage2.move(button3, 10, 300);
+  fixedTabPage2.add(buttonSelfPlay);
+  fixedTabPage2.move(buttonSelfPlay, 200, 300);
   fixedTabPage2.add(status);
   fixedTabPage2.move(status, 10, 350);
 
@@ -735,6 +798,10 @@ Form :: Form() {
 
 void Form :: setStatusMessage(const std::string& message) {
   status.set_text(message);
+  appendLogLine(message);
+}
+
+void Form :: appendLogLine(const std::string& message) {
   auto logBuffer = logView.get_buffer();
   if (!logBuffer) {
     return;
@@ -742,6 +809,25 @@ void Form :: setStatusMessage(const std::string& message) {
   logBuffer->insert(logBuffer->end(), message + "\n");
   auto endIter = logBuffer->end();
   logView.scroll_to(endIter);
+}
+
+void Form :: appendTrainingLogToFile(const std::string& message, const std::string& tag) {
+  fs::path logPath = fs::current_path() / "LOGS_FOR_AGENTS.md";
+  if (!fs::exists(logPath)) {
+    fs::path parentPath = fs::current_path().parent_path() / "LOGS_FOR_AGENTS.md";
+    if (fs::exists(parentPath)) {
+      logPath = parentPath;
+    }
+  }
+  std::ofstream outfile(logPath, std::ios::app);
+  if (!outfile) {
+    Glib::signal_idle().connect_once([this]() {
+      appendLogLine(
+          "Ошибка записи в LOGS_FOR_AGENTS.md (gui/Application.cpp): проверьте путь и права доступа.");
+    });
+    return;
+  }
+  outfile << nowTimestamp() << " | [GUI][" << tag << "] " << message << "\n";
 }
 
 bool Form :: loadWindowGeometry() {
@@ -1074,13 +1160,66 @@ void Form :: startTrainInBackground() {
 void Form :: startTrain() {
   training = true;
   system("clear");
+  const std::string perDefaults = "PER_ENABLED=1 N_STEP=3 TRAIN_LOG_TO_CONSOLE=1 ";
   std::string command = "cd .. ; ";
-  command.append("./train.sh");
-  system(command.data());
-  setStatusMessage("Completed!");
+  command.append(perDefaults);
+  command.append(trainEnvPrefix);
+  command.append("./train.sh 2>&1");
+
+  std::string startMessage = "Старт " + trainingStartLabel + ": PER=1, N_STEP=3.";
+  Glib::signal_idle().connect_once([this, startMessage]() {
+    setStatusMessage(startMessage);
+  });
+  appendTrainingLogToFile(startMessage, trainingLogTag);
+
+  FILE* pipe = popen(command.c_str(), "r");
+  if (!pipe) {
+    std::string errorMessage = "Ошибка запуска " + trainingStartLabel
+        + " (gui/Application.cpp): проверьте, что train.sh доступен.";
+    Glib::signal_idle().connect_once([this, errorMessage]() {
+      setStatusMessage(errorMessage);
+    });
+    appendTrainingLogToFile(errorMessage, trainingLogTag);
+    training = false;
+    return;
+  }
+
+  std::array<char, 512> buffer{};
+  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe)) {
+    std::string line(buffer.data());
+    while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+      line.pop_back();
+    }
+    if (line.empty()) {
+      continue;
+    }
+    appendTrainingLogToFile(line, trainingLogTag);
+    Glib::signal_idle().connect_once([this, line]() {
+      appendLogLine(line);
+    });
+  }
+
+  int exitCode = pclose(pipe);
+  if (exitCode == 0) {
+    std::string doneMessage = trainingStatusLabel + " завершено.";
+    Glib::signal_idle().connect_once([this, doneMessage]() {
+      setStatusMessage(doneMessage);
+    });
+    appendTrainingLogToFile(doneMessage, trainingLogTag);
+  } else {
+    std::string errLine = trainingStatusLabel + " завершено с ошибкой. Код выхода: "
+        + std::to_string(exitCode);
+    Glib::signal_idle().connect_once([this, errLine]() {
+      setStatusMessage(errLine);
+    });
+    appendTrainingLogToFile(errLine, trainingLogTag);
+  }
+
   training = false;
-  update_picture();
-  update_metrics();
+  Glib::signal_idle().connect_once([this]() {
+    update_picture();
+    update_metrics();
+  });
 }
 
 void Form :: runPlayAgainstModelInBackground() {
@@ -1096,6 +1235,7 @@ void Form :: playAgainstModel() {
   std::string command;
 
   if (playInGUI == "True") {
+    envPrefix = "PLAY_NO_EXPLORATION=1 ";
     command = "cd .. ; " + envPrefix + "./play.sh ";
     if (strlen(path.data()) < 2) {
       command.append("None");

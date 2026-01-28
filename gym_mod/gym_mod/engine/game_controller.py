@@ -11,7 +11,7 @@ import torch
 from gym_mod.engine.game_io import GuiIO, set_active_io
 from gym_mod.engine.state_export import DEFAULT_STATE_PATH
 from model.DQN import DQN
-from model.utils import select_action, convertToDict
+from model.utils import select_action, convertToDict, build_shoot_action_mask
 from gym_mod.envs.warhamEnv import roll_off_attacker_defender
 
 
@@ -175,7 +175,8 @@ class GameController:
                 done, info = env.unwrapped.player()
                 env.updateBoard()
                 state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-                action = select_action(env, state_tensor, i, policy_net, len(model))
+                shoot_mask = build_shoot_action_mask(env)
+                action = select_action(env, state_tensor, i, policy_net, len(model), shoot_mask=shoot_mask)
                 action_dict = convertToDict(action)
                 if done is not True:
                     next_observation, reward, done, _, info = env.step(action_dict)

@@ -45,6 +45,8 @@ public :
   void syncEnemyUnitsFromRoster();
   bool addEnemyUnitFromEntry(const std::string& entryText);
   void resetLayout();
+  void appendLogLine(const std::string& message);
+  void appendTrainingLogToFile(const std::string& message, const std::string& tag = "TRAIN");
 
 private:
   void setStatusMessage(const std::string& message);
@@ -97,11 +99,13 @@ Image metricBox6;
   Fixed fixedTabPage4;
   Fixed fixedTabPage5;
   Button button1;
+  Button buttonTrain6;
   Button button2;
   Button button3;
   Button button4;
   Button button5;
   Button button6;
+  Button buttonSelfPlay;
   Button showBoard;
   Button showBoardImg;
   Button playGraphicsView;
@@ -171,6 +175,10 @@ Image metricBox6;
   Button chooseMetrics;
   Button playGUI;
   std::string playInGUI;
+  std::string trainEnvPrefix;
+  std::string trainingStartLabel;
+  std::string trainingStatusLabel;
+  std::string trainingLogTag;
 };
 
 #endif
