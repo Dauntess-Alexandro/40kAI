@@ -6,6 +6,6 @@
     "eps_decay": 30000,
     "batch_size": 512,
     "gamma": 0.99,
-    "updates_per_step": 8,
-    "warmup_steps": 2000
+    "updates_per_step": 4,
+    "warmup_steps": 5000
 }
