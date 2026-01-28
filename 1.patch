@@ -1,288 +1,97 @@
-diff --git a/gym_mod/gym_mod/engine/game_controller.py b/gym_mod/gym_mod/engine/game_controller.py
-index 37ce3de0b9299e070463b37a98c8d0db2c215d53..7931e842cb38e798f7934f405482b5d5ec0d141f 100644
---- a/gym_mod/gym_mod/engine/game_controller.py
-+++ b/gym_mod/gym_mod/engine/game_controller.py
-@@ -1,39 +1,39 @@
- from __future__ import annotations
- 
- import os
- import pickle
- import queue
- import threading
- from typing import Optional
- 
- import torch
- 
- from gym_mod.engine.game_io import GuiIO, set_active_io
- from gym_mod.engine.state_export import DEFAULT_STATE_PATH
- from model.DQN import DQN
--from model.utils import select_action, convertToDict
-+from model.utils import select_action, convertToDict, build_shoot_action_mask
- from gym_mod.envs.warhamEnv import roll_off_attacker_defender
- 
- 
- class GameController:
-     def __init__(self, model_path: Optional[str] = None, state_path: Optional[str] = None):
-         self.model_path = model_path or "None"
-         self.state_path = state_path or os.getenv("STATE_JSON_PATH", DEFAULT_STATE_PATH)
-         self._request_queue: queue.Queue = queue.Queue()
-         self._answer_queue: queue.Queue = queue.Queue()
-         self._io = GuiIO(self._request_queue, self._answer_queue)
-         self._thread: Optional[threading.Thread] = None
-         self._finished = False
-         self._started = False
- 
-     @property
-     def is_finished(self) -> bool:
-         return self._finished
- 
-     def start(self):
-         if self._started:
-             return self._consume_messages(), self._next_request(block=False)
-         self._started = True
-         self._thread = threading.Thread(target=self._run_game_loop, daemon=True)
-         self._thread.start()
-         request = self._next_request(block=True)
-@@ -153,51 +153,52 @@ class GameController:
- 
-             policy_net = DQN(n_observations, n_actions).to(device)
-             target_net = DQN(n_observations, n_actions).to(device)
-             optimizer = torch.optim.Adam(policy_net.parameters())
- 
-             policy_net.load_state_dict(checkpoint["policy_net"])
-             target_net.load_state_dict(checkpoint["target_net"])
-             optimizer.load_state_dict(checkpoint["optimizer"])
- 
-             policy_net.eval()
-             target_net.eval()
- 
-             self._io.log(
-                 "\nИнструкции:\nИгрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).\n"
-                 "Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).\n"
-             )
- 
-             is_done = False
-             i = 0
-             reward = 0
- 
-             while not is_done:
-                 done, info = env.unwrapped.player()
-                 env.updateBoard()
-                 state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
--                action = select_action(env, state_tensor, i, policy_net, len(model))
-+                shoot_mask = build_shoot_action_mask(env)
-+                action = select_action(env, state_tensor, i, policy_net, len(model), shoot_mask=shoot_mask)
-                 action_dict = convertToDict(action)
-                 if done is not True:
-                     next_observation, reward, done, _, info = env.step(action_dict)
-                     reward_tensor = torch.tensor([reward], device=device)
-                     unit_health = info["model health"]
-                     enemy_health = info["player health"]
- 
-                     message = (
-                         f"Итерация {i} завершена с наградой {reward_tensor}, "
-                         f"здоровье игрока {enemy_health}, здоровье модели {unit_health}"
-                     )
-                     self._io.log(message)
-                     state = next_observation
-                     env.updateBoard()
- 
-                 if done is True:
-                     if reward > 0:
-                         self._io.log("Модель победила!")
-                     else:
-                         self._io.log("Вы победили!")
-                     is_done = True
-                 i += 1
- 
-             self._finished = True
-         except Exception as exc:
-diff --git a/model/memory.py b/model/memory.py
-index 15406996aea7171ea8c6036847a2adb876390f73..bff720fa0ecccb83bf2c1110f64f67617808278a 100644
---- a/model/memory.py
-+++ b/model/memory.py
-@@ -1,30 +1,30 @@
- from collections import namedtuple, deque
- import random
- import numpy as np
- 
--Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward', 'n_step'))
-+Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward', 'n_step', 'next_shoot_mask'))
- 
- class ReplayMemory(object):
- 
-     def __init__(self, capacity):
-         self.memory = deque([], maxlen=capacity)
- 
-     def push(self, *args):
-         self.memory.append(Transition(*args))
- 
-     def sample(self, batch_size):
-         return random.sample(self.memory, batch_size)
- 
-     def __len__(self):
-         return len(self.memory)
- 
- 
- class PrioritizedReplayMemory(object):
-     def __init__(self, capacity, alpha=0.6, eps=1e-6):
-         self.capacity = capacity
-         self.alpha = alpha
-         self.eps = eps
-         self.memory = []
-         self.priorities = []
-         self.pos = 0
-         self.max_priority = 1.0
 diff --git a/model/utils.py b/model/utils.py
-index d3bc9f073b54ccbc6f0b6e6f426ba2f2514fc2c0..6eb0b39feeb3aa431a06ac43659d80145ff3a3f3 100644
+index 6eb0b39feeb3aa431a06ac43659d80145ff3a3f3..5b8407f6ad784f8100e2ff415764a2a851be9c57 100644
 --- a/model/utils.py
 +++ b/model/utils.py
-@@ -1,104 +1,152 @@
- import torch
- import torch.nn as nn
--import torch.optim as optim
- import torch.nn.functional as F
- import collections
- import numpy as np
--import pandas as pd
- import os
- import json
- 
--import itertools
- 
- import random
- import math
- 
- from model.memory import Transition
-+from gym_mod.engine.utils import distance
- 
- with open(os.path.abspath("hyperparams.json")) as j:
-     data = json.loads(j.read())
- 
- EPS_START = data["eps_start"]
- EPS_END = data["eps_end"]
- EPS_DECAY = data["eps_decay"]
- BATCH_SIZE = data["batch_size"]
- GAMMA = data["gamma"]
- 
- device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
- 
--def select_action(env, state, steps_done, policy_net, len_model):
-+def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None):
-     sample = random.random()
-     eps_threshold = EPS_END + (EPS_START - EPS_END) * \
-         math.exp(-1. * steps_done / EPS_DECAY)
-     steps_done += 1
-     dev = next(policy_net.parameters()).device
- 
-     
-     if isinstance(state, collections.OrderedDict):
-         state = np.array(list(state.values()), dtype=np.float32)
-     elif isinstance(state, np.ndarray):
-         state = state.astype(np.float32, copy=False)
- 
-     if not torch.is_tensor(state):
-         state = torch.tensor(state, dtype=torch.float32, device=dev)
-     else:
-         state = state.to(dev)
- 
-     # делаем батч-измерение (batch dimension)
-     if state.dim() == 1:
-         state = state.unsqueeze(0)
- 
- 
-     if sample > eps_threshold:
-         with torch.no_grad():
-             decision = policy_net(state)
-             action = []
--            for i in decision:
--                larg = i.detach().cpu().numpy().tolist()
--                if len(list(itertools.chain(*larg))) > 1:
--                    larg = list(itertools.chain(*larg))
--                else: 
--                    larg = list(itertools.chain(*larg))[0]
--                action.append(pd.Series(larg).idxmax())
-+            for head_idx, head in enumerate(decision):
-+                head = head.squeeze(0)
-+                if head_idx == 2 and shoot_mask is not None:
-+                    mask = torch.as_tensor(shoot_mask, dtype=torch.bool, device=head.device)
-+                    if mask.numel() == head.numel() and mask.any():
-+                        masked_head = head.clone()
-+                        masked_head[~mask] = -1e9
-+                        action.append(int(masked_head.argmax().item()))
-+                        continue
-+                action.append(int(head.argmax().item()))
+@@ -63,88 +63,103 @@ def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None
+                 action.append(int(head.argmax().item()))
              return torch.tensor([action], device="cpu")
      else:
          sampled_action = env.action_space.sample()
-+        shoot_choice = sampled_action["shoot"]
-+        if shoot_mask is not None:
-+            mask = torch.as_tensor(shoot_mask, dtype=torch.bool)
-+            valid_indices = torch.where(mask)[0].tolist()
-+            if valid_indices:
-+                shoot_choice = random.choice(valid_indices)
+         shoot_choice = sampled_action["shoot"]
+         if shoot_mask is not None:
+             mask = torch.as_tensor(shoot_mask, dtype=torch.bool)
+             valid_indices = torch.where(mask)[0].tolist()
+             if valid_indices:
+                 shoot_choice = random.choice(valid_indices)
          action_list = [
--            sampled_action['move'],
--            sampled_action['attack'],
--            sampled_action['shoot'],
--            sampled_action['charge'],
--            sampled_action['use_cp'],
--            sampled_action['cp_on']
-+            sampled_action["move"],
-+            sampled_action["attack"],
-+            shoot_choice,
-+            sampled_action["charge"],
-+            sampled_action["use_cp"],
-+            sampled_action["cp_on"],
+             sampled_action["move"],
+             sampled_action["attack"],
+             shoot_choice,
+             sampled_action["charge"],
+             sampled_action["use_cp"],
+             sampled_action["cp_on"],
          ]
          for i in range(len_model):
--            label = "move_num_"+str(i)
-+            label = "move_num_" + str(i)
+             label = "move_num_" + str(i)
              action_list.append(sampled_action[label])
          action = torch.tensor([action_list], device="cpu")
          return action
  
-+def build_shoot_action_mask(env, log_fn=None, debug=False):
-+    shoot_space = env.action_space.spaces["shoot"].n
-+    valid_lengths = []
-+    for i in range(len(env.unit_health)):
-+        if env.unit_health[i] <= 0:
-+            continue
-+        if env.unitFellBack[i]:
-+            continue
-+        if env.unitInAttack[i][0] == 1:
-+            continue
-+        if env.unit_weapon[i] == "None":
-+            continue
-+        valid_targets = []
-+        for j in range(len(env.enemy_health)):
-+            if (
-+                distance(env.unit_coords[i], env.enemy_coords[j]) <= env.unit_weapon[i]["Range"]
-+                and env.enemy_health[j] > 0
-+                and env.enemyInAttack[j][0] == 0
-+            ):
-+                valid_targets.append(j)
-+        if valid_targets:
-+            valid_lengths.append(len(valid_targets))
-+    if not valid_lengths:
-+        if debug and log_fn is not None:
-+            log_fn("[MASK][SHOOT] Нет доступных целей для стрельбы (маска не применяется).")
-+        return None
-+    min_len = min(valid_lengths)
-+    if min_len <= 0:
-+        if debug and log_fn is not None:
-+            log_fn("[MASK][SHOOT] Нулевая длина маски (маска не применяется).")
-+        return None
-+    mask = torch.zeros(shoot_space, dtype=torch.bool)
-+    mask[:min_len] = True
-+    if debug and log_fn is not None:
-+        log_fn(
-+            "[MASK][SHOOT] "
-+            f"Доступные индексы: 0..{min_len - 1}, "
-+            f"юнитов с целями={len(valid_lengths)}, размер пространства={shoot_space}."
-+        )
-+    return mask
+ def build_shoot_action_mask(env, log_fn=None, debug=False):
++    def maybe_log_mask_state(state_key, message):
++        if log_fn is None:
++            return
++        last_state = getattr(env, "_last_shoot_mask_log_state", None)
++        if last_state != state_key:
++            env._last_shoot_mask_log_state = state_key
++            log_fn(message)
 +
+     shoot_space = env.action_space.spaces["shoot"].n
+     valid_lengths = []
+     for i in range(len(env.unit_health)):
+         if env.unit_health[i] <= 0:
+             continue
+         if env.unitFellBack[i]:
+             continue
+         if env.unitInAttack[i][0] == 1:
+             continue
+         if env.unit_weapon[i] == "None":
+             continue
+         valid_targets = []
+         for j in range(len(env.enemy_health)):
+             if (
+                 distance(env.unit_coords[i], env.enemy_coords[j]) <= env.unit_weapon[i]["Range"]
+                 and env.enemy_health[j] > 0
+                 and env.enemyInAttack[j][0] == 0
+             ):
+                 valid_targets.append(j)
+         if valid_targets:
+             valid_lengths.append(len(valid_targets))
+     if not valid_lengths:
+-        if debug and log_fn is not None:
+-            log_fn("[MASK][SHOOT] Нет доступных целей для стрельбы (маска не применяется).")
++        maybe_log_mask_state(
++            ("none", "no_targets"),
++            "[MASK][SHOOT] Нет доступных целей для стрельбы (маска не применяется).",
++        )
+         return None
+     min_len = min(valid_lengths)
+     if min_len <= 0:
+-        if debug and log_fn is not None:
+-            log_fn("[MASK][SHOOT] Нулевая длина маски (маска не применяется).")
++        maybe_log_mask_state(
++            ("none", "zero_len"),
++            "[MASK][SHOOT] Нулевая длина маски (маска не применяется).",
++        )
+         return None
+     mask = torch.zeros(shoot_space, dtype=torch.bool)
+     mask[:min_len] = True
++    mask_state = ("mask", min_len, len(valid_lengths), shoot_space)
++    maybe_log_mask_state(
++        mask_state,
++        "[MASK][SHOOT] "
++        f"Доступные индексы: 0..{min_len - 1}, "
++        f"юнитов с целями={len(valid_lengths)}, размер пространства={shoot_space}.",
++    )
+     if debug and log_fn is not None:
+-        log_fn(
+-            "[MASK][SHOOT] "
+-            f"Доступные индексы: 0..{min_len - 1}, "
+-            f"юнитов с целями={len(valid_lengths)}, размер пространства={shoot_space}."
+-        )
++        log_fn(f"[MASK][SHOOT][DEBUG] Полная маска: {mask.tolist()}")
+     return mask
+ 
  def convertToDict(action):
      naction = action.numpy()[0]
      action_dict = {
@@ -306,440 +115,4 @@ index d3bc9f073b54ccbc6f0b6e6f426ba2f2514fc2c0..6eb0b39feeb3aa431a06ac43659d8014
      n_obs,
      double_dqn_enabled=True,
      per_enabled=False,
-     per_beta=0.4,
-     per_eps=1e-6,
-@@ -117,88 +165,122 @@ def optimize_model(
-         transitions = memory.sample(BATCH_SIZE)
-         indices = None
-         weights = None
-     batch = Transition(*zip(*transitions))
- 
-     desired_shape = (1, n_obs)
- 
-     # ---- state_batch ----
-     state_tensors = []
-     for s in batch.state:
-         if s is None:
-             state_tensors.append(torch.zeros(desired_shape, device=dev, dtype=torch.float32))
-         else:
-             state_tensors.append(s.to(dev).view(desired_shape))
-     state_batch = torch.cat(state_tensors, dim=0)  # [B, n_obs]
- 
-     # ---- action_batch / reward_batch (на тот же dev!) ----
-     action_batch = torch.cat(batch.action).to(dev).long()  # индексы ОБЯЗАТЕЛЬНО long и на dev
-     reward_batch = torch.cat(batch.reward).to(dev).float().view(-1)  # [B]
-     n_step_batch = torch.tensor(batch.n_step, device=dev, dtype=torch.float32)  # [B]
- 
-     # ---- next states ----
-     non_final_mask = torch.tensor([s is not None for s in batch.next_state], device=dev, dtype=torch.bool)
- 
-     non_final_next_states = None
-+    non_final_next_shoot_masks = None
-     if non_final_mask.any():
-         non_final_next_states = torch.cat([s.to(dev) for s in batch.next_state if s is not None], dim=0)
-+        non_final_next_shoot_masks = [
-+            m for m, s in zip(batch.next_shoot_mask, batch.next_state) if s is not None
-+        ]
- 
-     # ---- Q(s,a) ----
-     state_action_values = policy_net(state_batch)
-     move_action, attack_action, shoot_action, charge_action, use_cp_action, cp_on_action, *move_actions = state_action_values
- 
-     arr = [
-         move_action.gather(1, action_batch[:, 0].unsqueeze(1)),
-         attack_action.gather(1, action_batch[:, 1].unsqueeze(1)),
-         shoot_action.gather(1, action_batch[:, 2].unsqueeze(1)),
-         charge_action.gather(1, action_batch[:, 3].unsqueeze(1)),
-         use_cp_action.gather(1, action_batch[:, 4].unsqueeze(1)),
-         cp_on_action.gather(1, action_batch[:, 5].unsqueeze(1)),
-     ]
-     for i in range(len(move_actions)):
-         arr.append(move_actions[i].gather(1, action_batch[:, i + 6].unsqueeze(1)))
- 
-     selected_action_values = torch.cat(arr, dim=1)  # [B, num_heads]
- 
-     # ---- max_a' Q_target(s', a') per head ----
-     next_state_values = torch.zeros((BATCH_SIZE, selected_action_values.shape[1]), device=dev, dtype=torch.float32)
- 
-     with torch.no_grad():
-         if non_final_next_states is not None:
-             target_next = target_net(non_final_next_states)  # list of [N, n_i]
-             if double_dqn_enabled:
-                 policy_next = policy_net(non_final_next_states)
-                 next_actions = [h.argmax(1) for h in policy_next]  # list of [N]
-+                if non_final_next_shoot_masks is not None:
-+                    mask_list = []
-+                    for m in non_final_next_shoot_masks:
-+                        if m is None:
-+                            mask_list.append(torch.ones(policy_next[2].shape[1], device=dev, dtype=torch.bool))
-+                        else:
-+                            mask_list.append(torch.as_tensor(m, dtype=torch.bool, device=dev))
-+                    shoot_mask = torch.stack(mask_list, dim=0)
-+                    if shoot_mask.shape == policy_next[2].shape and shoot_mask.numel() > 0:
-+                        valid_any = shoot_mask.any(dim=1)
-+                        masked_shoot = policy_next[2].clone()
-+                        masked_shoot[~shoot_mask] = -1e9
-+                        masked_shoot[~valid_any] = policy_next[2][~valid_any]
-+                        next_actions[2] = masked_shoot.argmax(1)
-                 next_q = [
-                     tgt.gather(1, act.unsqueeze(1)).squeeze(1)
-                     for tgt, act in zip(target_next, next_actions)
-                 ]
-                 max_per_head = torch.stack(next_q, dim=1)  # [N, num_heads]
-             else:
--                max_per_head = torch.stack(
--                    [h.max(1).values for h in target_next], dim=1
--                )  # [N, num_heads]
-+                masked_targets = []
-+                for head_idx, head in enumerate(target_next):
-+                    if head_idx == 2 and non_final_next_shoot_masks is not None:
-+                        mask_list = []
-+                        for m in non_final_next_shoot_masks:
-+                            if m is None:
-+                                mask_list.append(torch.ones(head.shape[1], device=dev, dtype=torch.bool))
-+                            else:
-+                                mask_list.append(torch.as_tensor(m, dtype=torch.bool, device=dev))
-+                        shoot_mask = torch.stack(mask_list, dim=0)
-+                        if shoot_mask.numel() > 0 and shoot_mask.shape == head.shape:
-+                            valid_any = shoot_mask.any(dim=1)
-+                            masked_head = head.clone()
-+                            masked_head[~shoot_mask] = -1e9
-+                            masked_head[~valid_any] = head[~valid_any]
-+                            masked_targets.append(masked_head.max(1).values)
-+                            continue
-+                    masked_targets.append(head.max(1).values)
-+                max_per_head = torch.stack(masked_targets, dim=1)  # [N, num_heads]
-             next_state_values[non_final_mask] = max_per_head
- 
-     gamma_n = GAMMA ** n_step_batch
-     expected_state_action_values = reward_batch.unsqueeze(1) + (gamma_n.unsqueeze(1) * next_state_values)  # [B, num_heads]
- 
-     if per_enabled:
-         loss_per_element = F.smooth_l1_loss(
-             selected_action_values, expected_state_action_values, reduction="none"
-         )
-         per_sample_loss = loss_per_element.mean(dim=1)  # [B]
-         weight_t = torch.tensor(weights, device=dev, dtype=torch.float32)
-         loss = (per_sample_loss * weight_t).mean()
-         td_errors = (selected_action_values - expected_state_action_values).abs().mean(dim=1)
-         new_priorities = td_errors.detach().cpu().numpy() + per_eps
-         memory.update_priorities(indices, new_priorities)
-         per_stats = {
-             "priority_mean": float(new_priorities.mean()),
-             "priority_max": float(new_priorities.max()),
-             "is_weight_mean": float(weight_t.mean().item()),
-             "is_weight_max": float(weight_t.max().item()),
-             "td_error_mean": float(td_errors.mean().item()),
-             "td_error_max": float(td_errors.max().item()),
-         }
-     else:
-         criterion = nn.SmoothL1Loss()
-diff --git a/play.py b/play.py
-index 67cdca9a12a4e451082ffc725b9d5754a85a0ac5..a19e47fc2ef1928ec1fee892969fe5d37332cf59 100644
---- a/play.py
-+++ b/play.py
-@@ -140,46 +140,47 @@ optimizer = torch.optim.Adam(policy_net.parameters())
- policy_net.load_state_dict(checkpoint['policy_net'])
- target_net.load_state_dict(checkpoint['target_net'])
- optimizer.load_state_dict(checkpoint['optimizer'])
- 
- policy_net.eval()
- target_net.eval()
- 
- isdone = False
- i = 0
- 
- if playInGUI == True:
-     env.reset(m=model, e=enemy, playType=playInGUI, Type="big", trunc=True)
- else:
-     env.reset(m=model, e=enemy, playType=playInGUI, Type="big", trunc=False)
- 
- env.io = io
- 
- reward = 0
- io.log("\nИнструкции:\n")
- io.log("Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.)")
- io.log("Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.)\n")
- 
- while isdone == False:
-     done, info = env.unwrapped.player()
-     state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
--    action = select_action(env, state, i, policy_net, len(model))
-+    shoot_mask = build_shoot_action_mask(env)
-+    action = select_action(env, state, i, policy_net, len(model), shoot_mask=shoot_mask)
-     action_dict = convertToDict(action)
-     if done != True:
-         next_observation, reward, done, _, info = env.step(action_dict)
-         reward = torch.tensor([reward], device=device)
-         unit_health = info["model health"]
-         enemy_health = info["player health"]
-         inAttack = info["in attack"]
- 
-         board = env.render()
-         message = "Iteration {} ended with reward {}, Player health {}, Model health {}".format(i, reward, enemy_health, unit_health)
-         io.log(message)
-         next_state = torch.tensor(next_observation, dtype=torch.float32, device=device).unsqueeze(0)
-         state = next_state
-     if done == True:
-         if reward > 0:
-             io.log("Модель победила!")
-         else:
-             io.log("Вы победили!")
-         isdone = True
-     i+=1
-diff --git a/train.py b/train.py
-index 6f0787d093a8d8aaffbdb40e16cae8c7db0baf19..89b85cd1e9b9b1c7c256a4c638904d67fe095685 100644
---- a/train.py
-+++ b/train.py
-@@ -75,99 +75,117 @@ SELF_PLAY_ENABLED = os.getenv("SELF_PLAY_ENABLED", "0") == "1"
- SELF_PLAY_UPDATE_EVERY_EPISODES = int(os.getenv("SELF_PLAY_UPDATE_EVERY_EPISODES", "50"))
- SELF_PLAY_OPPONENT_MODE = os.getenv("SELF_PLAY_OPPONENT_MODE", "snapshot")
- SELF_PLAY_FIXED_PATH = os.getenv("SELF_PLAY_FIXED_PATH", "")
- SELF_PLAY_OPPONENT_EPSILON = float(os.getenv("SELF_PLAY_OPPONENT_EPSILON", "0.0"))
- 
- if SELF_PLAY_UPDATE_EVERY_EPISODES < 1:
-     SELF_PLAY_UPDATE_EVERY_EPISODES = 1
- if SELF_PLAY_OPPONENT_MODE not in ("snapshot", "fixed_checkpoint"):
-     raise ValueError(
-         "SELF_PLAY_OPPONENT_MODE должен быть 'snapshot' или 'fixed_checkpoint'. "
-         f"Получено: {SELF_PLAY_OPPONENT_MODE}"
-     )
- # ============================
- 
- 
- DEFAULT_MISSION_NAME = "only_war"
- 
- def to_np_state(s):
-     if isinstance(s, (dict, collections.OrderedDict)):
-         return np.array(list(s.values()), dtype=np.float32)
-     return np.array(s, dtype=np.float32)
- 
- def build_n_step_transition(buffer, gamma):
-     reward_sum = 0.0
-     next_state = None
-+    next_shoot_mask = None
-     n_step = 0
--    for idx, (_, _, reward, next_state_candidate, done_flag) in enumerate(buffer):
-+    for idx, (_, _, reward, next_state_candidate, done_flag, next_shoot_mask_candidate) in enumerate(buffer):
-         reward_sum += (gamma ** idx) * reward
-         n_step += 1
-         next_state = next_state_candidate
-+        next_shoot_mask = next_shoot_mask_candidate
-         if done_flag:
-             next_state = None
-+            next_shoot_mask = None
-             break
--    return reward_sum, next_state, n_step
-+    return reward_sum, next_state, next_shoot_mask, n_step
- 
--def select_action_with_epsilon(env, state, policy_net, epsilon, len_model):
-+def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, shoot_mask=None):
-     sample = random.random()
-     dev = next(policy_net.parameters()).device
- 
-     if isinstance(state, collections.OrderedDict):
-         state = np.array(list(state.values()), dtype=np.float32)
-     elif isinstance(state, np.ndarray):
-         state = state.astype(np.float32, copy=False)
- 
-     if not torch.is_tensor(state):
-         state = torch.tensor(state, dtype=torch.float32, device=dev)
-     else:
-         state = state.to(dev)
- 
-     if state.dim() == 1:
-         state = state.unsqueeze(0)
- 
-     if sample > epsilon:
-         with torch.no_grad():
-             decision = policy_net(state)
-             action = []
--            for i in decision:
--                action.append(int(i.argmax(dim=1).item()))
-+            for head_idx, head in enumerate(decision):
-+                head = head.squeeze(0)
-+                if head_idx == 2 and shoot_mask is not None:
-+                    mask = torch.as_tensor(shoot_mask, dtype=torch.bool, device=head.device)
-+                    if mask.numel() == head.numel() and mask.any():
-+                        masked_head = head.clone()
-+                        masked_head[~mask] = -1e9
-+                        action.append(int(masked_head.argmax().item()))
-+                        continue
-+                action.append(int(head.argmax().item()))
-             return torch.tensor([action], device="cpu")
-     sampled_action = env.action_space.sample()
-+    shoot_choice = sampled_action["shoot"]
-+    if shoot_mask is not None:
-+        mask = torch.as_tensor(shoot_mask, dtype=torch.bool)
-+        valid_indices = torch.where(mask)[0].tolist()
-+        if valid_indices:
-+            shoot_choice = random.choice(valid_indices)
-     action_list = [
--        sampled_action['move'],
--        sampled_action['attack'],
--        sampled_action['shoot'],
--        sampled_action['charge'],
--        sampled_action['use_cp'],
--        sampled_action['cp_on']
-+        sampled_action["move"],
-+        sampled_action["attack"],
-+        shoot_choice,
-+        sampled_action["charge"],
-+        sampled_action["use_cp"],
-+        sampled_action["cp_on"],
-     ]
-     for i in range(len_model):
-         label = "move_num_"+str(i)
-         action_list.append(sampled_action[label])
-     action = torch.tensor([action_list], device="cpu")
-     return action
- 
-+
- def moving_avg(values, window=50):
-     if len(values) == 0:
-         return []
-     w = max(1, int(window))
-     out = []
-     for i in range(len(values)):
-         j0 = max(0, i - w + 1)
-         chunk = values[j0:i+1]
-         out.append(sum(chunk) / len(chunk))
-     return out
- 
- def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
-     os.makedirs(metrics_dir, exist_ok=True)
-     os.makedirs("gui/img", exist_ok=True)
- 
-     # --- CSV ---
-     csv_path = os.path.join(metrics_dir, f"stats_{run_id}.csv")
-     cols = ["episode", "ep_reward", "ep_len", "turn", "model_vp", "player_vp", "vp_diff", "result", "end_reason", "end_code"]
-     with open(csv_path, "w", newline="", encoding="utf-8") as f:
-         w = csv.DictWriter(f, fieldnames=cols)
-         w.writeheader()
-         for r in ep_rows:
-             w.writerow({k: r.get(k, "") for k in cols})
- 
-     wins01 = [1 if r["result"] == "win" else 0 for r in ep_rows]
-@@ -492,110 +510,113 @@ initial_enemy_hp = float(sum(getattr(env, "enemy_health", [])))
- append_agent_log(
-     "Старт обучения: "
-     f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}, "
-     f"battle_round={getattr(env, 'battle_round', 'n/a')}, trunc={trunc}"
- )
- if trunc:
-     append_agent_log(
-         "Логи фаз/ходов отключены (trunc=True). "
-         "Чтобы включить подробные логи: VERBOSE_LOGS=1 или MANUAL_DICE=1."
-     )
- if initial_model_hp <= 0 or initial_enemy_hp <= 0:
-     append_agent_log(
-         "ВНИМАНИЕ: на старте эпизода обнаружено нулевое здоровье. "
-         f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}. "
-         "Это может приводить к мгновенному завершению эпизодов."
-     )
- 
- while end == False:
-     epLen += 1
-     if SELF_PLAY_ENABLED and epLen == 1:
-         append_agent_log(
-             f"Старт эпизода {numLifeT + 1}. "
-             f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
-             f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
-         )
--    action = select_action(env, state, i, policy_net, len(model))
-+    shoot_mask = build_shoot_action_mask(env, log_fn=append_agent_log, debug=TRAIN_DEBUG)
-+    action = select_action(env, state, i, policy_net, len(model), shoot_mask=shoot_mask)
-     action_dict = convertToDict(action)
-     if trunc == False:
-         print(env.get_info())
- 
-     if SELF_PLAY_ENABLED:
-         env.enemyTurn(trunc=trunc, policy_fn=opponent_policy)
-     else:
-         env.enemyTurn(trunc=trunc)
-     next_observation, reward, done, res, info = env.step(action_dict)
-     rewArr.append(float(reward))
- 
- 
-     unit_health = info["model health"]
-     enemy_health = info["player health"]
-     inAttack = info["in attack"]
- 
-     if inAttack == 1:
-         if trunc == False:
-             print("The units are fighting")
- 
-     if RENDER_EVERY > 0 and (i % RENDER_EVERY == 0 or done):
-         env.render()
-     mission_name = info.get("mission", DEFAULT_MISSION_NAME)
-     message = "Iteration {} ended with reward {}, enemy health {}, model health {}, model VP {}, enemy VP {}, mission {}".format(
-         i,
-         reward,
-         enemy_health,
-         unit_health,
-         info["model VP"],
-         info["player VP"],
-         mission_name,
-     )
-     if trunc == False:
-         print(message)
-     inText.append(message)
- 
-     dev = next(policy_net.parameters()).device
-     state_t = torch.tensor(to_np_state(state), device=dev).unsqueeze(0)
-     next_state_t = None
-+    next_shoot_mask = None
-     if not done:
-         next_state_t = torch.tensor(to_np_state(next_observation), device=dev).unsqueeze(0)
-+        next_shoot_mask = build_shoot_action_mask(env, log_fn=append_agent_log, debug=TRAIN_DEBUG)
- 
--    n_step_buffer.append((state_t, action, float(reward), next_state_t, done))
-+    n_step_buffer.append((state_t, action, float(reward), next_state_t, done, next_shoot_mask))
-     if len(n_step_buffer) >= N_STEP:
--        reward_sum, n_step_next_state, n_step_count = build_n_step_transition(
-+        reward_sum, n_step_next_state, n_step_next_mask, n_step_count = build_n_step_transition(
-             n_step_buffer, GAMMA
-         )
-         reward_sum_t = torch.tensor([reward_sum], device=dev, dtype=torch.float32)
--        head_state, head_action, _, _, _ = n_step_buffer[0]
--        memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count)
-+        head_state, head_action, _, _, _, _ = n_step_buffer[0]
-+        memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count, n_step_next_mask)
-         n_step_buffer.popleft()
-     if done:
-         while n_step_buffer:
--            reward_sum, n_step_next_state, n_step_count = build_n_step_transition(
-+            reward_sum, n_step_next_state, n_step_next_mask, n_step_count = build_n_step_transition(
-                 n_step_buffer, GAMMA
-             )
-             reward_sum_t = torch.tensor([reward_sum], device=dev, dtype=torch.float32)
--            head_state, head_action, _, _, _ = n_step_buffer[0]
--            memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count)
-+            head_state, head_action, _, _, _, _ = n_step_buffer[0]
-+            memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count, n_step_next_mask)
-             n_step_buffer.popleft()
-     state = next_observation
- 
-     # =========================
-     # ✅ Несколько обучающих апдейтов на 1 шаг среды
-     losses = []
-     last_td_stats = None
-     last_per_beta = PER_BETA_START
-     last_loss_value = None
- 
-     if i >= WARMUP_STEPS:
-         for _ in range(UPDATES_PER_STEP):
-             per_beta = PER_BETA_START
-             if PER_ENABLED and PER_BETA_FRAMES > 0:
-                 per_beta = min(
-                     1.0,
-                     PER_BETA_START
-                     + (1.0 - PER_BETA_START)
-                     * (optimize_steps / float(PER_BETA_FRAMES)),
-                 )
-             result = optimize_model(
-                 policy_net,
-                 target_net,
-                 optimizer,
-                 memory,
 

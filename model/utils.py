@@ -85,6 +85,14 @@ def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None
         return action
 
 def build_shoot_action_mask(env, log_fn=None, debug=False):
+    def maybe_log_mask_state(state_key, message):
+        if log_fn is None:
+            return
+        last_state = getattr(env, "_last_shoot_mask_log_state", None)
+        if last_state != state_key:
+            env._last_shoot_mask_log_state = state_key
+            log_fn(message)
+
     shoot_space = env.action_space.spaces["shoot"].n
     valid_lengths = []
     for i in range(len(env.unit_health)):
@@ -107,22 +115,29 @@ def build_shoot_action_mask(env, log_fn=None, debug=False):
         if valid_targets:
             valid_lengths.append(len(valid_targets))
     if not valid_lengths:
-        if debug and log_fn is not None:
-            log_fn("[MASK][SHOOT] Нет доступных целей для стрельбы (маска не применяется).")
+        maybe_log_mask_state(
+            ("none", "no_targets"),
+            "[MASK][SHOOT] Нет доступных целей для стрельбы (маска не применяется).",
+        )
         return None
     min_len = min(valid_lengths)
     if min_len <= 0:
-        if debug and log_fn is not None:
-            log_fn("[MASK][SHOOT] Нулевая длина маски (маска не применяется).")
+        maybe_log_mask_state(
+            ("none", "zero_len"),
+            "[MASK][SHOOT] Нулевая длина маски (маска не применяется).",
+        )
         return None
     mask = torch.zeros(shoot_space, dtype=torch.bool)
     mask[:min_len] = True
+    mask_state = ("mask", min_len, len(valid_lengths), shoot_space)
+    maybe_log_mask_state(
+        mask_state,
+        "[MASK][SHOOT] "
+        f"Доступные индексы: 0..{min_len - 1}, "
+        f"юнитов с целями={len(valid_lengths)}, размер пространства={shoot_space}.",
+    )
     if debug and log_fn is not None:
-        log_fn(
-            "[MASK][SHOOT] "
-            f"Доступные индексы: 0..{min_len - 1}, "
-            f"юнитов с целями={len(valid_lengths)}, размер пространства={shoot_space}."
-        )
+        log_fn(f"[MASK][SHOOT][DEBUG] Полная маска: {mask.tolist()}")
     return mask
 
 def convertToDict(action):
