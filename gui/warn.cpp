@@ -3,10 +3,64 @@
 #include <cstdlib>
 #include <stdlib.h>
 #include <string>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include "include/warn.h"
 
 using namespace Glib;
 using namespace Gtk;
+namespace fs = std::filesystem;
+
+namespace {
+fs::path resolveSourceDir() {
+    fs::path source = fs::path(__FILE__);
+    std::error_code ec;
+    if (!source.is_absolute()) {
+        source = fs::absolute(source, ec);
+    }
+    if (ec || source.empty()) {
+        return fs::current_path();
+    }
+    return source.parent_path();
+}
+
+fs::path findProjectRoot() {
+    fs::path current = resolveSourceDir();
+    fs::path last = current;
+    std::error_code ec;
+    while (!current.empty()) {
+        if (fs::exists(current / "LOGS_FOR_AGENTS.md", ec) || fs::exists(current / ".git", ec)) {
+            return current;
+        }
+        if (current == current.root_path()) {
+            break;
+        }
+        last = current;
+        current = current.parent_path();
+    }
+    return last;
+}
+
+bool truncateAgentLogs(std::string* error_message, fs::path* log_path_out) {
+    fs::path root = findProjectRoot();
+    fs::path log_path = root / "LOGS_FOR_AGENTS.md";
+    if (log_path_out) {
+        *log_path_out = log_path;
+    }
+    std::ofstream log_file(log_path, std::ios::out | std::ios::trunc);
+    if (!log_file) {
+        if (error_message) {
+            std::ostringstream message;
+            message << "Не удалось очистить LOGS_FOR_AGENTS.md по пути: " << log_path.string()
+                    << ". Проверьте права доступа или занятость файла и повторите.";
+            *error_message = message.str();
+        }
+        return false;
+    }
+    return true;
+}
+}  // namespace
 
 Warn :: Warn(std::string message, int comm) {
     bar.set_show_close_button(true);
@@ -27,6 +81,26 @@ Warn :: Warn(std::string message, int comm) {
             system("cd .. ; rm -r models/*");
             system("cd .. ; rm -r metrics/*");
             system("cd .. ; find gui/img/ -type f ! -name 'epLen.png' ! -name 'reward.png' ! -name 'loss.png' ! -name 'icon.png' -delete");
+            std::string error_message;
+            fs::path log_path;
+            bool cleared = truncateAgentLogs(&error_message, &log_path);
+            if (cleared) {
+                Gtk::MessageDialog dialog(*this,
+                                          "Кэш моделей и LOGS_FOR_AGENTS.md очищены.",
+                                          false,
+                                          Gtk::MESSAGE_INFO,
+                                          Gtk::BUTTONS_OK,
+                                          true);
+                dialog.run();
+            } else {
+                Gtk::MessageDialog dialog(*this,
+                                          error_message,
+                                          false,
+                                          Gtk::MESSAGE_ERROR,
+                                          Gtk::BUTTONS_OK,
+                                          true);
+                dialog.run();
+            }
 		}
         this->hide();
         return true;
