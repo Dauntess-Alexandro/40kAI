@@ -843,10 +843,8 @@ Form :: Form() {
     folderBrowserDialog.add_button("Cancel", RESPONSE_CANCEL);
     folderBrowserDialog.add_button("Open", RESPONSE_OK);
 	system("clear");
-    char resolved_path[PATH_MAX];
-    realpath("../../40kAI", resolved_path);
-    strcat(resolved_path, "/models");
-    folderBrowserDialog.set_current_folder(resolved_path);
+    std::string resolvedPath = fs::absolute("../../40kAI/models").string();
+    folderBrowserDialog.set_current_folder(resolvedPath);
     folderBrowserDialog.set_transient_for(*this);
 
     auto filter_text = Gtk::FileFilter::create();
@@ -901,10 +899,8 @@ Form :: Form() {
     folderBrowserDialog.add_button("Cancel", RESPONSE_CANCEL);
     folderBrowserDialog.add_button("Open", RESPONSE_OK);
     system("clear");
-    char resolved_path[PATH_MAX];
-    realpath("../../40kAI", resolved_path);
-    strcat(resolved_path, "/models");
-    folderBrowserDialog.set_current_folder(resolved_path);
+    std::string resolvedPath = fs::absolute("../../40kAI/models").string();
+    folderBrowserDialog.set_current_folder(resolvedPath);
     folderBrowserDialog.set_transient_for(*this);
 
     auto filter_text = Gtk::FileFilter::create();
