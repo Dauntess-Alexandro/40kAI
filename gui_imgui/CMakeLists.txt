@@ -28,6 +28,8 @@ find_package(OpenGL REQUIRED)
 
 add_executable(imgui_minimal
   main.cpp
+  app_state.cpp
+  ui_panels.cpp
   ${imgui_SOURCE_DIR}/imgui.cpp
   ${imgui_SOURCE_DIR}/imgui_demo.cpp
   ${imgui_SOURCE_DIR}/imgui_draw.cpp

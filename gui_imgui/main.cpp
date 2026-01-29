@@ -5,6 +5,9 @@
 
 #include <cstdio>
 
+#include "app_state.h"
+#include "ui_panels.h"
+
 namespace {
 void ApplyWarhammerStyle() {
   ImGuiStyle& style = ImGui::GetStyle();
@@ -38,13 +41,13 @@ void ApplyWarhammerStyle() {
 
 int main() {
   if (!glfwInit()) {
-    std::fprintf(stderr, "Не удалось инициализировать GLFW.\\n");
+    std::fprintf(stderr, "Не удалось инициализировать GLFW.\n");
     return 1;
   }
 
   GLFWwindow* window = glfwCreateWindow(1280, 720, "40kAI: ImGui минимальный GUI", nullptr, nullptr);
   if (!window) {
-    std::fprintf(stderr, "Не удалось создать окно GLFW.\\n");
+    std::fprintf(stderr, "Не удалось создать окно GLFW.\n");
     glfwTerminate();
     return 1;
   }
@@ -63,8 +66,7 @@ int main() {
   ImGui_ImplGlfw_InitForOpenGL(window, true);
   ImGui_ImplOpenGL2_Init();
 
-  bool show_demo = false;
-  int clicks = 0;
+  AppState state;
 
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
@@ -73,18 +75,15 @@ int main() {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    ImGui::Begin("Командный пункт");
-    ImGui::Text("Минимальный ImGui GUI. Дальше будем переносить окна.");
-    if (ImGui::Button("Боевой клич")) {
-      ++clicks;
-    }
-    ImGui::SameLine();
-    ImGui::Text("Нажатий: %d", clicks);
-    ImGui::Checkbox("Показать демо-окно", &show_demo);
-    ImGui::End();
+    RenderCommandPanel(state);
+    RenderSettingsPanel(state);
 
+    bool show_demo = state.show_demo();
     if (show_demo) {
       ImGui::ShowDemoWindow(&show_demo);
+      if (!show_demo) {
+        state.set_show_demo(false);
+      }
     }
 
     ImGui::Render();
