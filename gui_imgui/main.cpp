@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "app_state.h"
+#include "play_state.h"
 #include "train_state.h"
 #include "ui_panels.h"
 
@@ -120,6 +121,7 @@ int main() {
   ImGui_ImplOpenGL2_Init();
 
   AppState state;
+  PlayState play_state;
   TrainState train_state;
 
   while (!glfwWindowShouldClose(window)) {
@@ -131,6 +133,7 @@ int main() {
 
     RenderCommandPanel(state);
     RenderSettingsPanel(state);
+    RenderPlayPanel(play_state);
     RenderTrainPanel(train_state);
 
     bool show_demo = state.show_demo();

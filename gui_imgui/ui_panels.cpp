@@ -55,6 +55,66 @@ void RenderSettingsPanel(AppState& state) {
   ImGui::End();
 }
 
+void RenderPlayPanel(PlayState& state) {
+  ImGui::Begin("Игра");
+
+  ImGui::Text("Путь к модели:");
+  if (ImGui::InputText("##play_model_path", state.model_path_buffer(),
+                       static_cast<int>(state.model_path_buffer_size()))) {
+    state.UpdateModelPathFromBuffer();
+  }
+  if (ImGui::Button("Выбрать (заглушка)")) {
+    state.SelectModelStub();
+  }
+
+  if (ImGui::Button("Играть")) {
+    state.StartGame();
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Остановить")) {
+    state.StopGame();
+  }
+
+  ImGui::Separator();
+  ImGui::Text("Ответ игрока:");
+  if (ImGui::InputText("##play_response", state.response_buffer(),
+                       static_cast<int>(state.response_buffer_size()))) {
+    state.UpdateResponseFromBuffer();
+  }
+  if (ImGui::Button("Отправить")) {
+    state.SendResponse();
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Очистить лог")) {
+    state.ClearLogs();
+  }
+
+  bool auto_scroll = state.auto_scroll();
+  if (ImGui::Checkbox("Автопрокрутка логов", &auto_scroll)) {
+    state.set_auto_scroll(auto_scroll);
+  }
+
+  ImGui::Separator();
+  ImGui::Text("Статус: %s", state.status_message().c_str());
+
+  ImGui::Separator();
+  ImGui::Text("Лог:");
+  ImGui::BeginChild("play_log", ImVec2(0.0f, 160.0f), true);
+  ImGui::TextUnformatted(state.log_text().c_str());
+  if (state.auto_scroll()) {
+    ImGui::SetScrollHereY(1.0f);
+  }
+  ImGui::EndChild();
+
+  ImGui::Separator();
+  ImGui::Text("Поле боя:");
+  ImGui::BeginChild("play_board", ImVec2(0.0f, 160.0f), true);
+  ImGui::TextUnformatted(state.board_text().c_str());
+  ImGui::EndChild();
+
+  ImGui::End();
+}
+
 void RenderTrainPanel(TrainState& state) {
   ImGui::Begin("Train");
 
