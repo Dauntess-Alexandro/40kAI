@@ -18,7 +18,7 @@ class Play : public Gtk::Window {
         void keepUpdating();
         void backgroundUpdate();
         void update_text_view();
-        bool file_exists(char * fileName);
+        bool file_exists(const char * fileName);
         std::string openBoardFile(const std::string& board);
     private:
         Box rootBox;
