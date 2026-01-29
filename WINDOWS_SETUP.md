@@ -37,8 +37,42 @@
    pip install -r requirements.txt
    ```
 
-### GTKmm через vcpkg (рекомендуемый путь)
-Ниже — максимально подробный путь установки.
+### Важно: текущий GUI написан под GTKmm 3
+Код GUI использует API GTKmm 3 (GTK3). Если поставить GTKmm 4 (как в vcpkg), компиляция ломается
+ошибками вида `ORIENTATION_HORIZONTAL не является членом Gtk`, `pack_start не найден`, `set_title не найден`.
+
+**Рекомендуемый путь на Windows — MSYS2 + GTKmm 3.** Vcpkg сейчас ставит GTKmm 4, и это несовместимо.
+
+### GTKmm 3 через MSYS2 (рекомендуемый путь)
+Ниже — подробный сценарий установки.
+
+1. **Установите MSYS2**:
+   - Откройте страницу: https://www.msys2.org/
+   - Скачайте установщик и установите MSYS2 (по умолчанию: `C:\msys64`).
+
+2. **Обновите MSYS2 и установите пакеты GTKmm 3** (запускайте *MSYS2 MinGW x64*):
+   ```bash
+   pacman -Syu
+   pacman -S --needed mingw-w64-x86_64-toolchain mingw-w64-x86_64-pkgconf mingw-w64-x86_64-gtkmm3 mingw-w64-x86_64-nlohmann-json
+   ```
+
+3. **Сборка GUI из MSYS2 MinGW x64**:
+   ```bash
+   cd /c/путь/к/репозиторию/40kAI/gui
+   mkdir -p build
+   cd build
+   cmake .. -G "MinGW Makefiles"
+   cmake --build .
+   ```
+
+4. **Запуск GUI**:
+   ```bash
+   /c/путь/к/репозиторию/40kAI/gui/build/Application.exe
+   ```
+
+### GTKmm через vcpkg (НЕ рекомендуется для текущего кода)
+vcpkg ставит GTKmm 4, а код проекта написан под GTKmm 3. Поэтому при использовании vcpkg возникнут ошибки
+компиляции API‑несовместимости. Переход на GTKmm 4 возможен, но требует отдельного рефакторинга GUI.
 
 1. **Скачайте и установите Visual Studio Build Tools** (обязательно нужен компилятор MSVC и Windows SDK):
    - Откройте страницу: https://visualstudio.microsoft.com/visual-cpp-build-tools/

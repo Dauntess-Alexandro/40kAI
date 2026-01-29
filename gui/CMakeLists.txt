@@ -25,12 +25,7 @@ add_executable(Application WIN32 main.cpp Application.cpp popup.cpp units.cpp wa
 
 find_package(PkgConfig REQUIRED)
 
-if (VCPKG_TOOLCHAIN)
-  set(GTKMM_PKG_NAMES gtkmm-4.0 gtkmm-3.0)
-else ()
-  set(GTKMM_PKG_NAMES gtkmm-3.0)
-endif ()
-
+set(GTKMM_PKG_NAMES gtkmm-3.0)
 foreach(GTKMM_PKG ${GTKMM_PKG_NAMES})
   if (NOT GTKMM_FOUND)
     pkg_check_modules(GTKMM QUIET ${GTKMM_PKG})
@@ -38,7 +33,11 @@ foreach(GTKMM_PKG ${GTKMM_PKG_NAMES})
 endforeach()
 
 if (NOT GTKMM_FOUND)
-  message(FATAL_ERROR "Не найден pkg-config пакет gtkmm (пробовали: ${GTKMM_PKG_NAMES}). Проверьте, что gtkmm установлен.")
+  message(FATAL_ERROR "Не найден pkg-config пакет gtkmm-3.0. Текущий GUI использует API GTKmm 3 (gtkmm-4 не поддержан).")
+endif ()
+
+if (GTKMM_VERSION AND GTKMM_VERSION VERSION_GREATER_EQUAL 4.0)
+  message(FATAL_ERROR "Обнаружен GTKmm ${GTKMM_VERSION}, но код рассчитан на GTKmm 3. Установите gtkmm-3.0 и pkg-config.")
 endif ()
 
 target_include_directories(Application PRIVATE ${GTKMM_INCLUDE_DIRS})
