@@ -20,6 +20,8 @@ class PlayState {
   void StartGame();
   void StopGame();
   bool playing() const;
+  void PlayInTerminal();
+  void PlayInGui();
 
   void SendResponse();
   void ClearLogs();

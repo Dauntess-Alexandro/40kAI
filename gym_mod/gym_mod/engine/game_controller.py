@@ -98,6 +98,14 @@ class GameController:
         checkpoint = torch.load(checkpoint_path)
         return env, model, enemy, checkpoint
 
+    @staticmethod
+    def _uses_dueling(checkpoint):
+        policy_state = checkpoint.get("policy_net", checkpoint)
+        return any(
+            key.startswith("value_heads.") or key.startswith("advantage_heads.")
+            for key in policy_state.keys()
+        )
+
     def _run_game_loop(self):
         os.environ["STATE_JSON_PATH"] = self.state_path
         if "MANUAL_DICE" not in os.environ:
@@ -151,8 +159,14 @@ class GameController:
                 n_actions.append(12)
             n_observations = len(state)
 
-            policy_net = DQN(n_observations, n_actions).to(device)
-            target_net = DQN(n_observations, n_actions).to(device)
+            dueling = self._uses_dueling(checkpoint)
+            if dueling:
+                self._io.log("Модель обучена в dueling-режиме — запускаем dueling-сеть.")
+            else:
+                self._io.log("Модель обучена в обычном режиме — запускаем обычную сеть.")
+
+            policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+            target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
             optimizer = torch.optim.Adam(policy_net.parameters())
 
             policy_net.load_state_dict(checkpoint["policy_net"])

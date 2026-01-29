@@ -63,16 +63,16 @@ void RenderPlayPanel(PlayState& state) {
                        static_cast<int>(state.model_path_buffer_size()))) {
     state.UpdateModelPathFromBuffer();
   }
-  if (ImGui::Button("Выбрать (заглушка)")) {
+  if (ImGui::Button("Choose")) {
     state.SelectModelStub();
   }
 
-  if (ImGui::Button("Играть")) {
-    state.StartGame();
+  if (ImGui::Button("Play in Terminal")) {
+    state.PlayInTerminal();
   }
   ImGui::SameLine();
-  if (ImGui::Button("Остановить")) {
-    state.StopGame();
+  if (ImGui::Button("Играть в GUI")) {
+    state.PlayInGui();
   }
 
   ImGui::Separator();
@@ -87,6 +87,10 @@ void RenderPlayPanel(PlayState& state) {
   ImGui::SameLine();
   if (ImGui::Button("Очистить лог")) {
     state.ClearLogs();
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Остановить")) {
+    state.StopGame();
   }
 
   bool auto_scroll = state.auto_scroll();
