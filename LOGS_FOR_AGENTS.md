@@ -622,25 +622,162 @@ VP MODEL: 0, VP PLAYER: 0
 2026-01-29 19:47:48 | --- ФАЗА КОМАНДОВАНИЯ ---
 2026-01-29 19:47:48 | [PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
 
-========================
-Как включить подробный отчёт ближнего боя
-========================
-Установи переменную окружения:
-FIGHT_REPORT=1
+2026-01-29 21:46:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (23, 4)
+2026-01-29 21:46:35 | [PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+2026-01-29 21:46:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): proximity=+0.500 (obj=3)
+2026-01-29 21:46:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (движение): остался в бою bonus=+0.200
+2026-01-29 21:46:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Остаётся в ближнем бою с Unit 11 — Necrons Necron Warriors (x10 моделей), движение пропущено.
+2026-01-29 21:46:35 | Reward (VP/объекты, движение): hold=0.000, proximity=0.500, total=0.500
+2026-01-29 21:46:35 | Reward (шаг): движение delta=+0.700
+2026-01-29 21:46:35 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-01-29 21:46:35 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-01-29 21:46:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.
+2026-01-29 21:46:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Юнит в ближнем бою, стрельба недоступна.
+2026-01-29 21:46:35 | --- ФАЗА ЧАРДЖА ---
+2026-01-29 21:46:35 | --- ФАЗА ЧАРДЖА ---
+2026-01-29 21:46:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+2026-01-29 21:46:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Уже в ближнем бою, чардж невозможен.
+2026-01-29 21:46:35 | [MODEL] Чардж: нет доступных целей
+2026-01-29 21:46:35 | --- ФАЗА БОЯ ---
+2026-01-29 21:46:35 | --- ФАЗА БОЯ ---
+2026-01-29 21:46:35 | [MODEL] Ближний бой: участвуют Unit 22 — Necrons Necron Warriors (x10 моделей); противники Unit 11 — Necrons Necron Warriors (x10 моделей)
+2026-01-29 21:46:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): В бою с Unit 11 — Necrons Necron Warriors (x10 моделей)
+2026-01-29 21:46:35 | [MODEL][FIGHT] Начало Fight phase. Первым выбирает активный игрок. Eligible MODEL: [22], Eligible PLAYER: [11].
+2026-01-29 21:46:35 | [PLAYER][FIGHT] Unit 11 — Necrons Necron Warriors (x10 моделей): Выбран для атаки. Цель: Unit 22 — Necrons Necron Warriors (x10 моделей).
+2026-01-29 21:46:35 | [PLAYER][FIGHT] Unit 11 — Necrons Necron Warriors (x10 моделей): Итог атаки: урон 0.0, HP цели 8.0 -> 8.0.
+2026-01-29 21:46:35 | [MODEL][FIGHT] Unit 22 — Necrons Necron Warriors (x10 моделей): Выбран для атаки. Цель: Unit 11 — Necrons Necron Warriors (x10 моделей).
+2026-01-29 21:46:35 | [MODEL][FIGHT] Unit 22 — Necrons Necron Warriors (x10 моделей): Итог атаки: урон 1.0, HP цели 8.0 -> 7.0.
+2026-01-29 21:46:35 | Reward (бой): damage_term=+0.030 (norm=0.050)
+2026-01-29 21:46:35 | Reward (бой): damage=0.030 (norm=0.050, dealt=1.00), kills=0.000 (delta=0), taken=-0.000 (norm=0.000, taken=0.00), advantage=0.000, strength=0.000, objectives=0.000 (delta=0), total=0.030
+2026-01-29 21:46:35 | Reward (шаг): бой delta=+0.030
+2026-01-29 21:46:35 | === КОНЕЦ БОЕВОГО РАУНДА 3 ===
+2026-01-29 21:46:35 | Итерация 2 завершена с наградой tensor([0.7300], device='cuda:0'), здоровье игрока [7.0, 5.0], здоровье модели [10.0, 8.0]
+2026-01-29 21:46:35 | [MODEL] pickle=models/M:Necrons_vs_P:Necrons/model-23-220078.pickle
+2026-01-29 21:46:35 | [MODEL] checkpoint=models/M:Necrons_vs_P:Necrons/model-23-220078.pth
+2026-01-29 21:46:42 | Roll-off Attacker/Defender: enemy=1 model=3 -> attacker=model
+2026-01-29 21:46:42 | Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10)]
+2026-01-29 21:46:42 | [DEPLOY] Order: model first, alternating
+2026-01-29 21:46:42 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (20,5)
+2026-01-29 21:46:42 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (13,31)
+2026-01-29 21:46:42 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (22,5)
+2026-01-29 21:46:42 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (32,36)
+2026-01-29 21:46:42 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
+2026-01-29 21:46:42 | [MODEL] Архитектура сети: dueling (источник: net_type)
+2026-01-29 21:46:42 | 
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
 
-Пример запуска:
-FIGHT_REPORT=1 python -u play.py
-или
-FIGHT_REPORT=1 ./run_gui_manual.sh
+2026-01-29 21:46:42 | {'model health': [10, 10], 'player health': [10, 10], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+2026-01-29 21:46:42 | Здоровье MODEL: [10, 10], здоровье PLAYER: [10, 10]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
 
-Пример строк отчёта:
-📌 --- ОТЧЁТ ПО БЛИЖНЕМУ БОЮ ---
-Атакует: Unit 11 — Necrons Necron Warriors (x10 моделей); цель: Unit 22 — Necrons Necron Warriors (x10 моделей)
-Оружие: Gauss flayer
-WS: 4+
-S vs T: 4 vs 4  -> базово ранение на 4+
-Save цели: 4+ (invul: нет)
-Правила: Lethal Hits (крит-хиты авто-ранят)
-Hit rolls:    [1, 4, 6]  -> hits: 2, crits: 1
-✅ Итог по движку: прошло урона = 1.0
-📌 -------------------------
+2026-01-29 21:46:43 | === БОЕВОЙ РАУНД 1 ===
+2026-01-29 21:46:43 | Ошибка игры: 'Warhammer40kEnv' object has no attribute '_fight_env_logged'. Место: запуск GameController. Проверьте путь к модели и наличие файлов .pickle/.pth.
+2026-01-29 21:46:56 | [MODEL] Ближний бой: участвуют Unit 22 — Necrons Necron Warriors (x10 моделей); противники Unit 11 — Necrons Necron Warriors (x10 моделей)
+2026-01-29 21:46:56 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): В бою с Unit 11 — Necrons Necron Warriors (x10 моделей)
+2026-01-29 21:46:56 | [MODEL][FIGHT] Начало Fight phase. Первым выбирает активный игрок. Eligible MODEL: [22], Eligible PLAYER: [11].
+2026-01-29 21:46:56 | [PLAYER][FIGHT] Unit 11 — Necrons Necron Warriors (x10 моделей): Выбран для атаки. Цель: Unit 22 — Necrons Necron Warriors (x10 моделей).
+2026-01-29 21:46:56 | [PLAYER][FIGHT] Unit 11 — Necrons Necron Warriors (x10 моделей): Итог атаки: урон 0.0, HP цели 8.0 -> 8.0.
+2026-01-29 21:46:56 | [MODEL][FIGHT] Unit 22 — Necrons Necron Warriors (x10 моделей): Выбран для атаки. Цель: Unit 11 — Necrons Necron Warriors (x10 моделей).
+2026-01-29 21:46:56 | [MODEL][FIGHT] Unit 22 — Necrons Necron Warriors (x10 моделей): Итог атаки: урон 1.0, HP цели 8.0 -> 7.0.
+2026-01-29 21:46:56 | Reward (бой): damage_term=+0.030 (norm=0.050)
+2026-01-29 21:46:56 | Reward (бой): damage=0.030 (norm=0.050, dealt=1.00), kills=0.000 (delta=0), taken=-0.000 (norm=0.000, taken=0.00), advantage=0.000, strength=0.000, objectives=0.000 (delta=0), total=0.030
+2026-01-29 21:46:56 | Reward (шаг): бой delta=+0.030
+2026-01-29 21:46:56 | === КОНЕЦ БОЕВОГО РАУНДА 3 ===
+2026-01-29 21:46:56 | Итерация 2 завершена с наградой tensor([0.7300], device='cuda:0'), здоровье игрока [7.0, 5.0], здоровье модели [10.0, 8.0]
+2026-01-29 21:46:56 | {'model health': [10.0, 8.0], 'player health': [7.0, 5.0], 'modelCP': 1, 'playerCP': 6, 'in attack': [[0, 0], [1, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 4, 'battle round': 4, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+2026-01-29 21:46:56 | Здоровье MODEL: [10.0, 8.0], здоровье PLAYER: [7.0, 5.0]
+2026-01-29 21:46:56 | CP MODEL: 1, CP PLAYER: 6
+2026-01-29 21:46:56 | VP MODEL: 0, VP PLAYER: 0
+2026-01-29 21:46:56 | === БОЕВОЙ РАУНД 4 ===
+2026-01-29 21:46:56 | --- ХОД PLAYER ---
+2026-01-29 21:46:56 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-01-29 21:46:56 | [PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
+2026-01-29 21:46:56 | [MODEL] pickle=models/M:Necrons_vs_P:Necrons/model-23-220078.pickle
+2026-01-29 21:46:56 | [MODEL] checkpoint=models/M:Necrons_vs_P:Necrons/model-23-220078.pth
+2026-01-29 21:46:56 | Roll-off Attacker/Defender: enemy=1 model=3 -> attacker=model
+2026-01-29 21:46:56 | Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10)]
+2026-01-29 21:46:56 | [DEPLOY] Order: model first, alternating
+2026-01-29 21:46:56 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (20,5)
+2026-01-29 21:46:56 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (13,31)
+2026-01-29 21:46:56 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (22,5)
+2026-01-29 21:46:56 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (32,36)
+2026-01-29 21:46:56 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
+2026-01-29 21:46:56 | [MODEL] pickle=models/M:Necrons_vs_P:Necrons/model-23-220078.pickle
+2026-01-29 21:46:56 | [MODEL] checkpoint=models/M:Necrons_vs_P:Necrons/model-23-220078.pth
+2026-01-29 21:47:04 | Roll-off Attacker/Defender: enemy=1 model=5 -> attacker=model
+2026-01-29 21:47:04 | Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10)]
+2026-01-29 21:47:04 | [DEPLOY] Order: model first, alternating
+2026-01-29 21:47:04 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (51,1)
+2026-01-29 21:47:04 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (45,39)
+2026-01-29 21:47:04 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (44,0)
+2026-01-29 21:47:04 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (0,39)
+2026-01-29 21:47:04 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
+2026-01-29 21:47:04 | [MODEL] Архитектура сети: dueling (источник: net_type)
+2026-01-29 21:47:04 | 
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+
+2026-01-29 21:47:04 | {'model health': [10, 10], 'player health': [10, 10], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+2026-01-29 21:47:04 | Здоровье MODEL: [10, 10], здоровье PLAYER: [10, 10]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+
+2026-01-29 21:47:05 | === БОЕВОЙ РАУНД 1 ===
+2026-01-29 21:47:05 | Ошибка игры: 'Warhammer40kEnv' object has no attribute '_fight_env_logged'. Место: запуск GameController. Проверьте путь к модели и наличие файлов .pickle/.pth.
+2026-01-29 21:48:01 | [MODEL] checkpoint=models/M:Necrons_vs_P:Necrons/model-23-220078.pth
+2026-01-29 21:48:01 | Roll-off Attacker/Defender: enemy=1 model=3 -> attacker=model
+2026-01-29 21:48:01 | Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10)]
+2026-01-29 21:48:01 | [DEPLOY] Order: model first, alternating
+2026-01-29 21:48:01 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (20,5)
+2026-01-29 21:48:01 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (13,31)
+2026-01-29 21:48:01 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (22,5)
+2026-01-29 21:48:01 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (32,36)
+2026-01-29 21:48:01 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
+2026-01-29 21:48:01 | [MODEL] Архитектура сети: dueling (источник: net_type)
+2026-01-29 21:48:01 | 
+2026-01-29 21:48:01 | Инструкции:
+2026-01-29 21:48:01 | Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+2026-01-29 21:48:01 | Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+2026-01-29 21:48:01 | {'model health': [10, 10], 'player health': [10, 10], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+2026-01-29 21:48:01 | Здоровье MODEL: [10, 10], здоровье PLAYER: [10, 10]
+2026-01-29 21:48:01 | CP MODEL: 0, CP PLAYER: 0
+2026-01-29 21:48:01 | VP MODEL: 0, VP PLAYER: 0
+2026-01-29 21:48:01 | === БОЕВОЙ РАУНД 1 ===
+2026-01-29 21:48:01 | Ошибка игры: 'Warhammer40kEnv' object has no attribute '_fight_env_logged'. Место: запуск GameController. Проверьте путь к модели и наличие файлов .pickle/.pth.
+2026-01-29 21:48:01 | [MODEL] pickle=models/M:Necrons_vs_P:Necrons/model-23-220078.pickle
+2026-01-29 21:48:01 | [MODEL] checkpoint=models/M:Necrons_vs_P:Necrons/model-23-220078.pth
+2026-01-29 21:48:01 | Roll-off Attacker/Defender: enemy=1 model=5 -> attacker=model
+2026-01-29 21:48:01 | Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10)]
+2026-01-29 21:48:01 | [DEPLOY] Order: model first, alternating
+2026-01-29 21:48:01 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (51,1)
+2026-01-29 21:48:01 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (45,39)
+2026-01-29 21:48:01 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (44,0)
+2026-01-29 21:48:01 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (0,39)
+2026-01-29 21:48:01 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
+2026-01-29 21:48:01 | [MODEL] pickle=models/M:Necrons_vs_P:Necrons/model-23-220078.pickle
+2026-01-29 21:48:01 | [MODEL] checkpoint=models/M:Necrons_vs_P:Necrons/model-23-220078.pth
+2026-01-29 21:48:09 | Roll-off Attacker/Defender: enemy=1 model=4 -> attacker=model
+2026-01-29 21:48:09 | Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10)]
+2026-01-29 21:48:09 | [DEPLOY] Order: model first, alternating
+2026-01-29 21:48:09 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (45,1)
+2026-01-29 21:48:09 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (33,34)
+2026-01-29 21:48:09 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (29,3)
+2026-01-29 21:48:09 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (50,33)
+2026-01-29 21:48:09 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
+2026-01-29 21:48:09 | [MODEL] Архитектура сети: dueling (источник: net_type)
+2026-01-29 21:48:09 | 
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+
+2026-01-29 21:48:09 | {'model health': [10, 10], 'player health': [10, 10], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+2026-01-29 21:48:09 | Здоровье MODEL: [10, 10], здоровье PLAYER: [10, 10]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+
+2026-01-29 21:48:11 | === БОЕВОЙ РАУНД 1 ===
+2026-01-29 21:48:11 | Ошибка игры: 'Warhammer40kEnv' object has no attribute '_fight_env_logged'. Место: запуск GameController. Проверьте путь к модели и наличие файлов .pickle/.pth.
