@@ -23,7 +23,7 @@ bool is_board_num(char num) {
 }
 }
 
-bool Play :: file_exists(char * fileName) {
+bool Play :: file_exists(const char *fileName) {
 	ifstream infile(fileName);
 	return infile.good();
 }
@@ -68,7 +68,7 @@ void Play :: update_text_view() {
 	if (boardBuffer) {
 		boardBuffer->set_text(boardText);
 	}
-	char responseFile[] = "response.txt";
+	const char *responseFile = "response.txt";
 	if (file_exists(responseFile)) {
 		system("rm response.txt");
 	}
