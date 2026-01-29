@@ -514,7 +514,13 @@ for env_idx in range(vec_env_count):
     env.attacker_side = attacker_side
     env.defender_side = defender_side
 
-    state, info = env.reset(m=model, e=enemy, trunc=True)
+    try:
+        state, info = env.reset(m=model, e=enemy, trunc=True)
+    except TypeError:
+        if hasattr(env, "unwrapped") and hasattr(env.unwrapped, "reset"):
+            state, info = env.unwrapped.reset(m=model, e=enemy, trunc=True)
+        else:
+            state, info = env.reset()
     env_contexts.append(
         {
             "env": env,
