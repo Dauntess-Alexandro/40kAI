@@ -23,6 +23,9 @@ ImFont* LoadRussianFont(ImGuiIO& io) {
   candidates.emplace_back((cwd / "fonts/Roboto-Regular.ttf").string());
   candidates.emplace_back((cwd / "fonts/NotoSans-Regular.ttf").string());
   candidates.emplace_back((cwd / "fonts/DejaVuSans.ttf").string());
+  candidates.emplace_back((cwd / "../fonts/Roboto-Regular.ttf").string());
+  candidates.emplace_back((cwd / "../fonts/NotoSans-Regular.ttf").string());
+  candidates.emplace_back((cwd / "../fonts/DejaVuSans.ttf").string());
   candidates.emplace_back((cwd / "gui_imgui/fonts/Roboto-Regular.ttf").string());
   candidates.emplace_back((cwd / "gui_imgui/fonts/NotoSans-Regular.ttf").string());
   candidates.emplace_back((cwd / "gui_imgui/fonts/DejaVuSans.ttf").string());
@@ -41,6 +44,7 @@ ImFont* LoadRussianFont(ImGuiIO& io) {
       ImFont* font = io.Fonts->AddFontFromFileTTF(path.c_str(), 18.0f, nullptr,
                                                   io.Fonts->GetGlyphRangesCyrillic());
       if (font) {
+        std::fprintf(stderr, "Загружен шрифт для кириллицы: %s\n", path.c_str());
         return font;
       }
     }
