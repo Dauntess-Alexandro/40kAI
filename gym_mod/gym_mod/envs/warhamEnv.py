@@ -359,8 +359,20 @@ class RollLogger:
         vals = [res] if isinstance(res, int) else list(res)
         self.calls.append({"label": label, "num": num, "max": max, "vals": vals})
         return res
-    def print_melee_report(self, weapon: dict, attacker_data: dict, defender_data: dict, dmg_list, effect=None):
-        self._log("\n📌 --- ОТЧЁТ ПО БОЮ (MELEE) ---")
+    def print_melee_report(
+        self,
+        weapon: dict,
+        attacker_data: dict,
+        defender_data: dict,
+        dmg_list,
+        effect=None,
+        report_title: Optional[str] = None,
+        attacker_label: Optional[str] = None,
+        defender_label: Optional[str] = None,
+        extra_rules: Optional[list[str]] = None,
+    ):
+        title = report_title or "ОТЧЁТ ПО БОЮ"
+        self._log(f"\n📌 --- {title} ---")
 
         # В движке WS/BS обычно берём из профиля оружия (как в 10e)
         ws = _get_int(weapon, ["WS", "Ws", "WeaponSkill", "WS+"], default=None)
@@ -393,9 +405,16 @@ class RollLogger:
             lethal = False
 
         wname = weapon.get("Name", weapon) if isinstance(weapon, dict) else weapon
+        if attacker_label or defender_label:
+            parts = []
+            if attacker_label:
+                parts.append(f"Атакует: {attacker_label}")
+            if defender_label:
+                parts.append(f"цель: {defender_label}")
+            self._log("; ".join(parts))
         self._log(f"Оружие: {wname}")
         if ws is not None:
-            self._log(f"WS бойца: {ws}+")
+            self._log(f"WS оружия: {ws}+")
         if s is not None and t is not None:
             self._log(f"S vs T: {s} vs {t}  -> базово ранение на {_wound_target(s, t)}+")
         if sv is not None:
@@ -404,7 +423,10 @@ class RollLogger:
         if ap_val != 0:
             self._log(f"AP: {ap_val}")
         if lethal:
-            self._log("Абилка: Lethal Hits (6 на попадание = авто-ранение)")
+            self._log("Правило: Lethal Hits (крит-хиты авто-ранят)")
+        if extra_rules:
+            for rule in extra_rules:
+                self._log(f"Правило: {rule}")
         if effect:
             self._log(f"Эффект: {effect}")
 
@@ -3379,6 +3401,8 @@ class Warhammer40kEnv(gym.Env):
                         defender_data=defender_data,
                         dmg_list=dmg,
                         effect=None,
+                        attacker_label=self._format_unit_label("model", att_idx),
+                        defender_label=self._format_unit_label("enemy", def_idx),
                     )
 
                 # если цель умерла — снимаем “в бою” с обеих сторон
@@ -3456,6 +3480,8 @@ class Warhammer40kEnv(gym.Env):
                         defender_data=defender_data,
                         dmg_list=dmg,
                         effect=None,
+                        attacker_label=self._format_unit_label("enemy", att_idx),
+                        defender_label=self._format_unit_label("model", def_idx),
                     )
 
                 if self.unit_health[def_idx] <= 0:
