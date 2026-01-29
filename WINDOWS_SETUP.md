@@ -5,13 +5,37 @@
 ## 1) Зависимости
 
 ### Python
-Установите Python 3.10+ и создайте виртуальное окружение в корне проекта:
+Ниже — подробный сценарий установки Python и зависимостей проекта.
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
+1. **Скачайте Python 3.10+**:
+   - Откройте страницу: https://www.python.org/downloads/windows/
+   - Скачайте **Windows installer (64-bit)**.
+   - В установщике обязательно включите галочку **Add Python to PATH**.
+
+2. **Проверьте, что Python доступен в терминале**:
+   ```powershell
+   python --version
+   ```
+
+3. **Создайте виртуальное окружение в корне проекта**:
+   ```powershell
+   cd путь\к\репозиторию\40kAI
+   python -m venv .venv
+   ```
+
+4. **Активируйте виртуальное окружение**:
+   ```powershell
+   .\.venv\Scripts\Activate.ps1
+   ```
+   Если PowerShell ругается на политику выполнения, выполните (один раз в текущем терминале):
+   ```powershell
+   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+   ```
+
+5. **Установите зависимости Python**:
+   ```powershell
+   pip install -r requirements.txt
+   ```
 
 ### GTKmm через vcpkg (рекомендуемый путь)
 Ниже — максимально подробный путь установки.
@@ -32,30 +56,51 @@ pip install -r requirements.txt
      ```
    - После этого vcpkg готов к использованию.
 
-3. **Задайте переменную окружения `VCPKG_ROOT`** на путь к папке vcpkg:
+3. **Задайте переменную окружения `VCPKG_ROOT`** на путь к папке vcpkg.
+   Это нужно, чтобы скрипт сборки автоматически подхватил toolchain.
    ```powershell
    setx VCPKG_ROOT "C:\tools\vcpkg"
    ```
-   Закройте и заново откройте PowerShell, чтобы переменная подтянулась.
+   После этого **закройте и заново откройте PowerShell**.
+   Проверка, что переменная видна:
+   ```powershell
+   echo $env:VCPKG_ROOT
+   ```
+   Ожидаемый вывод: `C:\tools\vcpkg`.
 
 4. **Установите GTKmm через vcpkg** (пример для x64 Windows):
-   ```powershell
-   vcpkg install gtkmm:x64-windows
-   ```
+   - Убедитесь, что PowerShell открыт **после** установки `VCPKG_ROOT`.
+   - Перейдите в папку vcpkg (или используйте полный путь к vcpkg.exe):
+     ```powershell
+     cd C:\tools\vcpkg
+     ```
+   - Выполните установку:
+     ```powershell
+     .\vcpkg install gtkmm:x64-windows
+     ```
+   - Для проверки списка установленных пакетов:
+     ```powershell
+     .\vcpkg list
+     ```
 
 ## 2) Сборка GUI
 
 Запуск из корня репозитория:
 
 ```powershell
+cd путь\к\репозиторию\40kAI
 .\build_gui.ps1 -Configuration Release
 ```
 
-Если `VCPKG_ROOT` задан, скрипт автоматически подключит toolchain.
+Что делает скрипт:
+- создаёт папку `gui\build`, если её нет;
+- вызывает CMake с `-DCMAKE_TOOLCHAIN_FILE` от vcpkg (если задан `VCPKG_ROOT`);
+- запускает сборку в указанной конфигурации.
 
 ## 3) Запуск GUI
 
 ```powershell
+cd путь\к\репозиторию\40kAI
 .\run_gui_manual.ps1
 ```
 
@@ -64,11 +109,13 @@ pip install -r requirements.txt
 ## 4) Запуск консольной игры
 
 ```powershell
+cd путь\к\репозиторию\40kAI
 .\play.ps1
 ```
 
 ## 5) Сбор данных (scrapy)
 
 ```powershell
+cd путь\к\репозиторию\40kAI
 .\data_collector\unit_data\scrape.ps1
 ```
