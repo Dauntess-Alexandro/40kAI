@@ -1,0 +1,3 @@
+C:/40kAI/gui/build-mingw/CMakeFiles/Application.dir
+C:/40kAI/gui/build-mingw/CMakeFiles/edit_cache.dir
+C:/40kAI/gui/build-mingw/CMakeFiles/rebuild_cache.dir

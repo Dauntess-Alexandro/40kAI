@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/40kAI/gui/build-mingw/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

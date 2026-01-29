@@ -58,7 +58,7 @@
 
 3. **Сборка GUI из MSYS2 MinGW x64**:
    ```bash
-   cd /c/путь/к/репозиторию/40kAI/gui
+   cd /с/40kAI/gui
    mkdir -p build-mingw
    cd build-mingw
    cmake .. -G "MinGW Makefiles"
@@ -67,7 +67,7 @@
 
 4. **Запуск GUI**:
    ```bash
-   /c/путь/к/репозиторию/40kAI/gui/build-mingw/Application.exe
+   /c/40kAI/gui/build-mingw/Application.exe
    ```
 
 5. **Важно про папку сборки**:
