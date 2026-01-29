@@ -514,7 +514,13 @@ for env_idx in range(vec_env_count):
     env.attacker_side = attacker_side
     env.defender_side = defender_side
 
-    state, info = env.reset(m=model, e=enemy, trunc=True)
+    try:
+        state, info = env.reset(m=model, e=enemy, trunc=True)
+    except TypeError:
+        if hasattr(env, "unwrapped") and hasattr(env.unwrapped, "reset"):
+            state, info = env.unwrapped.reset(m=model, e=enemy, trunc=True)
+        else:
+            state, info = env.reset()
     env_contexts.append(
         {
             "env": env,
@@ -656,7 +662,23 @@ inText.append("Number of Lifetimes ran: {}\n".format(totLifeT))
 pbar = tqdm(total=totLifeT)
 
 for ctx in env_contexts:
-    ctx["state"], ctx["info"] = ctx["env"].reset(m=ctx["model"], e=ctx["enemy"], Type="big", trunc=True)
+        try:
+            ctx["state"], ctx["info"] = ctx["env"].reset(
+                m=ctx["model"],
+                e=ctx["enemy"],
+                Type="big",
+                trunc=True,
+            )
+        except TypeError:
+            if hasattr(ctx["env"], "unwrapped") and hasattr(ctx["env"].unwrapped, "reset"):
+                ctx["state"], ctx["info"] = ctx["env"].unwrapped.reset(
+                    m=ctx["model"],
+                    e=ctx["enemy"],
+                    Type="big",
+                    trunc=True,
+                )
+            else:
+                ctx["state"], ctx["info"] = ctx["env"].reset()
     ctx["ep_len"] = 0
     ctx["rew_arr"] = []
     ctx["n_step_buffer"] = collections.deque(maxlen=N_STEP)

@@ -18,21 +18,25 @@ namespace {
 ImFont* LoadRussianFont(ImGuiIO& io) {
   const std::filesystem::path cwd = std::filesystem::current_path();
   std::vector<std::string> candidates;
+  auto add_font_candidates = [&](const std::filesystem::path& base) {
+    candidates.emplace_back((base / "fonts/Roboto-Regular.ttf").string());
+    candidates.emplace_back((base / "fonts/NotoSans-Regular.ttf").string());
+    candidates.emplace_back((base / "fonts/DejaVuSans.ttf").string());
+    candidates.emplace_back((base / "gui_imgui/fonts/Roboto-Regular.ttf").string());
+    candidates.emplace_back((base / "gui_imgui/fonts/NotoSans-Regular.ttf").string());
+    candidates.emplace_back((base / "gui_imgui/fonts/DejaVuSans.ttf").string());
+  };
   if (const char* env_path = std::getenv("IMGUI_FONT_PATH")) {
     candidates.emplace_back(env_path);
   }
-  candidates.emplace_back((cwd / "fonts/Roboto-Regular.ttf").string());
-  candidates.emplace_back((cwd / "fonts/NotoSans-Regular.ttf").string());
-  candidates.emplace_back((cwd / "fonts/DejaVuSans.ttf").string());
-  candidates.emplace_back((cwd / "../fonts/Roboto-Regular.ttf").string());
-  candidates.emplace_back((cwd / "../fonts/NotoSans-Regular.ttf").string());
-  candidates.emplace_back((cwd / "../fonts/DejaVuSans.ttf").string());
-  candidates.emplace_back((cwd / "gui_imgui/fonts/Roboto-Regular.ttf").string());
-  candidates.emplace_back((cwd / "gui_imgui/fonts/NotoSans-Regular.ttf").string());
-  candidates.emplace_back((cwd / "gui_imgui/fonts/DejaVuSans.ttf").string());
-  candidates.emplace_back((cwd / "../gui_imgui/fonts/Roboto-Regular.ttf").string());
-  candidates.emplace_back((cwd / "../gui_imgui/fonts/NotoSans-Regular.ttf").string());
-  candidates.emplace_back((cwd / "../gui_imgui/fonts/DejaVuSans.ttf").string());
+  std::filesystem::path current = cwd;
+  for (int depth = 0; depth < 5; ++depth) {
+    add_font_candidates(current);
+    if (!current.has_parent_path()) {
+      break;
+    }
+    current = current.parent_path();
+  }
   candidates.emplace_back("gui_imgui/fonts/Roboto-Regular.ttf");
   candidates.emplace_back("gui_imgui/fonts/NotoSans-Regular.ttf");
   candidates.emplace_back("gui_imgui/fonts/DejaVuSans.ttf");

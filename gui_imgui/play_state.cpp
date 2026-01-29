@@ -11,7 +11,11 @@ std::optional<std::filesystem::path> FindRepoRoot() {
   const std::filesystem::path cwd = std::filesystem::current_path();
   std::filesystem::path current = cwd;
   for (int depth = 0; depth < 3; ++depth) {
+#if defined(_WIN32)
+    if (std::filesystem::exists(current / "scripts" / "viewer.ps1")) {
+#else
     if (std::filesystem::exists(current / "scripts" / "viewer.sh")) {
+#endif
       return current;
     }
     if (!current.has_parent_path()) {
@@ -23,9 +27,17 @@ std::optional<std::filesystem::path> FindRepoRoot() {
 }
 
 bool LaunchViewerFromRoot(const std::filesystem::path& root) {
+#if defined(_WIN32)
+  std::string command = "cd /d \"";
+  command += root.string();
+  command += "\" && powershell -ExecutionPolicy Bypass -File \"";
+  command += (root / "scripts" / "viewer.ps1").string();
+  command += "\"";
+#else
   std::string command = "cd \"";
   command += root.string();
   command += "\" && scripts/viewer.sh &";
+#endif
   return std::system(command.c_str()) == 0;
 }
 }  // namespace
