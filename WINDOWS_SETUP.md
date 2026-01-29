@@ -53,7 +53,7 @@
 2. **Обновите MSYS2 и установите пакеты GTKmm 3** (запускайте *MSYS2 MinGW x64*):
    ```bash
    pacman -Syu
-   pacman -S --needed mingw-w64-x86_64-toolchain mingw-w64-x86_64-pkgconf mingw-w64-x86_64-gtkmm3 mingw-w64-x86_64-nlohmann-json
+   pacman -S --needed mingw-w64-x86_64-toolchain mingw-w64-x86_64-pkgconf mingw-w64-x86_64-gtkmm3 mingw-w64-x86_64-nlohmann-json mingw-w64-x86_64-cmake
    ```
 
 3. **Сборка GUI из MSYS2 MinGW x64**:
