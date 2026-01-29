@@ -15,13 +15,26 @@
 
 namespace {
 ImFont* LoadRussianFont(ImGuiIO& io) {
+  const std::filesystem::path cwd = std::filesystem::current_path();
   std::vector<std::string> candidates;
   if (const char* env_path = std::getenv("IMGUI_FONT_PATH")) {
     candidates.emplace_back(env_path);
   }
+  candidates.emplace_back((cwd / "fonts/Roboto-Regular.ttf").string());
+  candidates.emplace_back((cwd / "fonts/NotoSans-Regular.ttf").string());
+  candidates.emplace_back((cwd / "fonts/DejaVuSans.ttf").string());
+  candidates.emplace_back((cwd / "gui_imgui/fonts/Roboto-Regular.ttf").string());
+  candidates.emplace_back((cwd / "gui_imgui/fonts/NotoSans-Regular.ttf").string());
+  candidates.emplace_back((cwd / "gui_imgui/fonts/DejaVuSans.ttf").string());
+  candidates.emplace_back((cwd / "../gui_imgui/fonts/Roboto-Regular.ttf").string());
+  candidates.emplace_back((cwd / "../gui_imgui/fonts/NotoSans-Regular.ttf").string());
+  candidates.emplace_back((cwd / "../gui_imgui/fonts/DejaVuSans.ttf").string());
   candidates.emplace_back("gui_imgui/fonts/Roboto-Regular.ttf");
   candidates.emplace_back("gui_imgui/fonts/NotoSans-Regular.ttf");
   candidates.emplace_back("gui_imgui/fonts/DejaVuSans.ttf");
+  candidates.emplace_back("fonts/Roboto-Regular.ttf");
+  candidates.emplace_back("fonts/NotoSans-Regular.ttf");
+  candidates.emplace_back("fonts/DejaVuSans.ttf");
 
   for (const auto& path : candidates) {
     if (!path.empty() && std::filesystem::exists(path)) {
@@ -36,7 +49,9 @@ ImFont* LoadRussianFont(ImGuiIO& io) {
   std::fprintf(stderr,
                "Не удалось загрузить шрифт с кириллицей. "
                "Укажите путь через переменную IMGUI_FONT_PATH "
-               "или положите файл в gui_imgui/fonts/.\n");
+               "или положите файл в gui_imgui/fonts/. "
+               "Текущая директория: %s\n",
+               cwd.string().c_str());
   return nullptr;
 }
 
