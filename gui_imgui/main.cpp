@@ -6,6 +6,7 @@
 #include <cstdio>
 
 #include "app_state.h"
+#include "train_state.h"
 #include "ui_panels.h"
 
 namespace {
@@ -67,6 +68,7 @@ int main() {
   ImGui_ImplOpenGL2_Init();
 
   AppState state;
+  TrainState train_state;
 
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
@@ -77,6 +79,7 @@ int main() {
 
     RenderCommandPanel(state);
     RenderSettingsPanel(state);
+    RenderTrainPanel(train_state);
 
     bool show_demo = state.show_demo();
     if (show_demo) {
