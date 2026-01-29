@@ -68,29 +68,40 @@ class GameController:
         if self.model_path == "None":
             save_path = "models/"
             folders = os.listdir(save_path) if os.path.isdir(save_path) else []
-            envs = []
-            modelpth = []
+            paired_models = []
 
             for folder in folders:
                 full = os.path.join(save_path, folder)
                 if os.path.isdir(full):
                     files = os.listdir(full)
                     for filename in files:
-                        if filename.endswith(".pickle"):
-                            envs.append(os.path.join(full, filename))
-                        elif filename.endswith(".pth"):
-                            modelpth.append(os.path.join(full, filename))
+                        if not filename.endswith(".pickle"):
+                            continue
+                        pickle_path = os.path.join(full, filename)
+                        checkpoint_path = os.path.splitext(pickle_path)[0] + ".pth"
+                        if os.path.isfile(checkpoint_path):
+                            paired_models.append((os.path.getmtime(pickle_path), pickle_path, checkpoint_path))
 
-            if not envs or not modelpth:
-                raise FileNotFoundError("Не найдены файлы моделей в папке models/.")
+            if not paired_models:
+                raise FileNotFoundError(
+                    "Не найдены пары файлов моделей (.pickle/.pth) в папке models/."
+                )
 
-            envs.sort(key=lambda x: os.path.getmtime(x))
-            modelpth.sort()
-            model_path = envs[-1]
-            checkpoint_path = modelpth[-1]
+            paired_models.sort(key=lambda item: item[0])
+            _, model_path, checkpoint_path = paired_models[-1]
         else:
             model_path = self.model_path
-            checkpoint_path = model_path[:-len("pickle")] + "pth"
+            checkpoint_path = os.path.splitext(model_path)[0] + ".pth"
+            if not os.path.isfile(model_path):
+                raise FileNotFoundError(f"Не найден файл модели: {model_path}")
+            if not os.path.isfile(checkpoint_path):
+                raise FileNotFoundError(
+                    f"Не найден checkpoint для модели: {checkpoint_path}. "
+                    "Проверьте, что рядом есть .pth файл."
+                )
+
+        self._io.log(f"[MODEL] pickle={model_path}")
+        self._io.log(f"[MODEL] checkpoint={checkpoint_path}")
 
         with open(model_path, "rb") as handle:
             env, model, enemy = pickle.load(handle)
@@ -151,8 +162,19 @@ class GameController:
                 n_actions.append(12)
             n_observations = len(state)
 
-            policy_net = DQN(n_observations, n_actions).to(device)
-            target_net = DQN(n_observations, n_actions).to(device)
+            net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
+            dueling = net_type == "dueling"
+            if not dueling and isinstance(checkpoint, dict):
+                policy_state = checkpoint.get("policy_net", {})
+                if any(key.startswith("advantage_heads.") for key in policy_state.keys()):
+                    dueling = True
+
+            net_label = "dueling" if dueling else "basic"
+            net_source = "net_type" if net_type else "state_dict"
+            self._io.log(f"[MODEL] Архитектура сети: {net_label} (источник: {net_source})")
+
+            policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+            target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
             optimizer = torch.optim.Adam(policy_net.parameters())
 
             policy_net.load_state_dict(checkpoint["policy_net"])

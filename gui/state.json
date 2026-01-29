@@ -3,8 +3,8 @@
     "width": 40,
     "height": 60
   },
-  "turn": 1,
-  "round": 1,
+  "turn": 4,
+  "round": 4,
   "phase": "command",
   "active": "player",
   "vp": {
@@ -12,8 +12,8 @@
     "model": 0
   },
   "cp": {
-    "player": 0,
-    "model": 0
+    "player": 6,
+    "model": 1
   },
   "units": [
     {
@@ -21,18 +21,18 @@
       "id": 11,
       "name": "Necron Warriors",
       "models": 10,
-      "hp": 10.0,
-      "x": 39,
-      "y": 28
+      "hp": 7.0,
+      "x": 4,
+      "y": 51
     },
     {
       "side": "player",
       "id": 12,
       "name": "Necron Warriors",
       "models": 10,
-      "hp": 10.0,
-      "x": 30,
-      "y": 27
+      "hp": 5.0,
+      "x": 7,
+      "y": 49
     },
     {
       "side": "model",
@@ -41,16 +41,16 @@
       "models": 10,
       "hp": 10.0,
       "x": 4,
-      "y": 44
+      "y": 23
     },
     {
       "side": "model",
       "id": 22,
       "name": "Necron Warriors",
       "models": 10,
-      "hp": 10.0,
-      "x": 6,
-      "y": 4
+      "hp": 8.0,
+      "x": 3,
+      "y": 50
     }
   ],
   "objectives": [
@@ -76,36 +76,36 @@
     }
   ],
   "log_tail": [
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Roll-off Attacker/Defender: enemy=1 model=6 -> attacker=model",
-    "Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10)]",
-    "[DEPLOY] Order: model first, alternating",
-    "[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (44,4)",
-    "[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (28,39)",
-    "[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (4,6)",
-    "[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (27,30)",
-    "[MISSION Only War] Post-deploy: currently no post-deploy units supported"
+    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (23, 4)",
+    "[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.",
+    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): proximity=+0.500 (obj=3)",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (движение): остался в бою bonus=+0.200",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Остаётся в ближнем бою с Unit 11 — Necrons Necron Warriors (x10 моделей), движение пропущено.",
+    "Reward (VP/объекты, движение): hold=0.000, proximity=0.500, total=0.500",
+    "Reward (шаг): движение delta=+0.700",
+    "--- ФАЗА СТРЕЛЬБЫ ---",
+    "--- ФАЗА СТРЕЛЬБЫ ---",
+    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Юнит в ближнем бою, стрельба недоступна.",
+    "--- ФАЗА ЧАРДЖА ---",
+    "--- ФАЗА ЧАРДЖА ---",
+    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12\", чардж пропущен.",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Уже в ближнем бою, чардж невозможен.",
+    "[MODEL] Чардж: нет доступных целей",
+    "--- ФАЗА БОЯ ---",
+    "--- ФАЗА БОЯ ---",
+    "[MODEL] Ближний бой: участвуют Unit 22 — Necrons Necron Warriors (x10 моделей); противники Unit 11 — Necrons Necron Warriors (x10 моделей)",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): В бою с Unit 11 — Necrons Necron Warriors (x10 моделей)",
+    "[MODEL][FIGHT] Начало Fight phase. Первым выбирает активный игрок. Eligible MODEL: [22], Eligible PLAYER: [11].",
+    "[PLAYER][FIGHT] Unit 11 — Necrons Necron Warriors (x10 моделей): Выбран для атаки. Цель: Unit 22 — Necrons Necron Warriors (x10 моделей).",
+    "[PLAYER][FIGHT] Unit 11 — Necrons Necron Warriors (x10 моделей): Итог атаки: урон 0.0, HP цели 8.0 -> 8.0.",
+    "[MODEL][FIGHT] Unit 22 — Necrons Necron Warriors (x10 моделей): Выбран для атаки. Цель: Unit 11 — Necrons Necron Warriors (x10 моделей).",
+    "[MODEL][FIGHT] Unit 22 — Necrons Necron Warriors (x10 моделей): Итог атаки: урон 1.0, HP цели 8.0 -> 7.0.",
+    "Reward (бой): damage_term=+0.030 (norm=0.050)",
+    "Reward (бой): damage=0.030 (norm=0.050, dealt=1.00), kills=0.000 (delta=0), taken=-0.000 (norm=0.000, taken=0.00), advantage=0.000, strength=0.000, objectives=0.000 (delta=0), total=0.030",
+    "Reward (шаг): бой delta=+0.030",
+    "=== КОНЕЦ БОЕВОГО РАУНДА 3 ===",
+    "Итерация 2 завершена с наградой tensor([0.7300], device='cuda:0'), здоровье игрока [7.0, 5.0], здоровье модели [10.0, 8.0]"
   ],
-  "generated_at": "2026-01-29T16:35:30.073843Z"
+  "generated_at": "2026-01-29T16:47:20.499010Z"
 }
