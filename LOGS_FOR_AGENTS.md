@@ -1,0 +1,41 @@
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:26 | Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-01-29 19:35:32 | Roll-off Attacker/Defender: enemy=1 model=6 -> attacker=model
+2026-01-29 19:35:32 | Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10)]
+2026-01-29 19:35:32 | [DEPLOY] Order: model first, alternating
+2026-01-29 19:35:32 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (44,4)
+2026-01-29 19:35:32 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (28,39)
+2026-01-29 19:35:32 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (4,6)
+2026-01-29 19:35:32 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (27,30)
+2026-01-29 19:35:32 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
+2026-01-29 19:35:32 | Ошибка игры: Error(s) in loading state_dict for DQN:
+	Missing key(s) in state_dict: "q_heads.0.weight", "q_heads.0.bias", "q_heads.1.weight", "q_heads.1.bias", "q_heads.2.weight", "q_heads.2.bias", "q_heads.3.weight", "q_heads.3.bias", "q_heads.4.weight", "q_heads.4.bias", "q_heads.5.weight", "q_heads.5.bias", "q_heads.6.weight", "q_heads.6.bias", "q_heads.7.weight", "q_heads.7.bias". 
+	Unexpected key(s) in state_dict: "value_heads.0.weight", "value_heads.0.bias", "value_heads.1.weight", "value_heads.1.bias", "value_heads.2.weight", "value_heads.2.bias", "value_heads.3.weight", "value_heads.3.bias", "value_heads.4.weight", "value_heads.4.bias", "value_heads.5.weight", "value_heads.5.bias", "value_heads.6.weight", "value_heads.6.bias", "value_heads.7.weight", "value_heads.7.bias", "advantage_heads.0.weight", "advantage_heads.0.bias", "advantage_heads.1.weight", "advantage_heads.1.bias", "advantage_heads.2.weight", "advantage_heads.2.bias", "advantage_heads.3.weight", "advantage_heads.3.bias", "advantage_heads.4.weight", "advantage_heads.4.bias", "advantage_heads.5.weight", "advantage_heads.5.bias", "advantage_heads.6.weight", "advantage_heads.6.bias", "advantage_heads.7.weight", "advantage_heads.7.bias". . Место: запуск GameController. Проверьте путь к модели и наличие файлов .pickle/.pth.
