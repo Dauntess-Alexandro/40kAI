@@ -2,7 +2,7 @@ import json
 import os
 
 def unitData(army, unitName):
-    with open(os.path.abspath("gym_mod/gym_mod/engine/unitData.json")) as j:
+    with open(os.path.abspath("gym_mod/gym_mod/engine/unitData.json"), encoding="utf-8") as j:
         data = json.loads(j.read())
     for i in data["UnitData"]:
         if i["Army"].lower() == army.lower() and i["Name"].lower() == unitName.lower():
@@ -13,7 +13,7 @@ def unitData(army, unitName):
 def weaponData(name):
     if name == "None":
         return "None"
-    with open(os.path.abspath("gym_mod/gym_mod/engine/unitData.json")) as j:
+    with open(os.path.abspath("gym_mod/gym_mod/engine/unitData.json"), encoding="utf-8") as j:
         data = json.loads(j.read())
     for i in data["WeaponData"]:
         if i["Name"][0:len(name)].lower() == name.lower():
