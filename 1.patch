@@ -1,13 +1,14 @@
 diff --git a/eval.py b/eval.py
-index 80f696f770fdc52eb74bb4f28ac4a89b3cf4addd..85fb0706596ee635257e815505e45f2f908775e3 100644
+index 85fb0706596ee635257e815505e45f2f908775e3..7b8efb6729eb0cee2f4e3d02167dd3571ea3314c 100644
 --- a/eval.py
 +++ b/eval.py
-@@ -1,39 +1,39 @@
+@@ -1,30 +1,31 @@
  import argparse
  import os
  import pickle
  import sys
  from collections import Counter
++from statistics import median
  from typing import Optional
  
  import torch
@@ -16,8 +17,7 @@ index 80f696f770fdc52eb74bb4f28ac4a89b3cf4addd..85fb0706596ee635257e815505e45f2f
  from gym_mod.engine.mission import check_end_of_battle
  from gym_mod.envs.warhamEnv import roll_off_attacker_defender
  from model.DQN import DQN
--from model.utils import build_shoot_action_mask, convertToDict
-+from model.utils import build_shoot_action_mask, convertToDict, unwrap_env
+ from model.utils import build_shoot_action_mask, convertToDict, unwrap_env
  
  
  def log(message: str) -> None:
@@ -34,74 +34,8 @@ index 80f696f770fdc52eb74bb4f28ac4a89b3cf4addd..85fb0706596ee635257e815505e45f2f
      else:
          save_path = "models/"
          folders = os.listdir(save_path) if os.path.isdir(save_path) else []
-         envs = []
-         modelpth = []
- 
-         for folder in folders:
-             full = os.path.join(save_path, folder)
-             if os.path.isdir(full):
-                 files = os.listdir(full)
-                 for filename in files:
-                     if filename.endswith(".pickle"):
-@@ -73,142 +73,144 @@ def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, shoot
-                 action.append(int(head.argmax().item()))
-             return torch.tensor([action], device="cpu")
- 
-     sampled_action = env.action_space.sample()
-     shoot_choice = sampled_action["shoot"]
-     if shoot_mask is not None:
-         mask = torch.as_tensor(shoot_mask, dtype=torch.bool)
-         valid_indices = torch.where(mask)[0].tolist()
-         if valid_indices:
-             shoot_choice = valid_indices[torch.randint(0, len(valid_indices), (1,)).item()]
-     action_list = [
-         sampled_action["move"],
-         sampled_action["attack"],
-         shoot_choice,
-         sampled_action["charge"],
-         sampled_action["use_cp"],
-         sampled_action["cp_on"],
-     ]
-     for i in range(len_model):
-         label = "move_num_" + str(i)
-         action_list.append(sampled_action[label])
-     return torch.tensor([action_list], device="cpu")
- 
- 
- def run_episode(env, model_units, enemy_units, policy_net, epsilon, device):
-+    env_unwrapped = unwrap_env(env)
-     attacker_side, defender_side = roll_off_attacker_defender(
-         manual_roll_allowed=False,
-         log_fn=None,
-     )
- 
-     deploy_only_war(
-         model_units=model_units,
-         enemy_units=enemy_units,
--        b_len=env.unwrapped.b_len,
--        b_hei=env.unwrapped.b_hei,
-+        b_len=env_unwrapped.b_len,
-+        b_hei=env_unwrapped.b_hei,
-         attacker_side=attacker_side,
-         log_fn=None,
-     )
-     post_deploy_setup(log_fn=None)
- 
--    env.attacker_side = attacker_side
--    env.defender_side = defender_side
-+    env_unwrapped.attacker_side = attacker_side
-+    env_unwrapped.defender_side = defender_side
- 
-     state, info = env.reset(m=model_units, e=enemy_units, Type="big", trunc=True)
- 
-     done = False
-     while not done:
--        env.enemyTurn(trunc=True)
--        if env.game_over:
--            info = env.get_info()
-+        env_unwrapped.enemyTurn(trunc=True)
-+        if env_unwrapped.game_over:
-+            info = env_unwrapped.get_info()
+@@ -123,52 +124,54 @@ def run_episode(env, model_units, enemy_units, policy_net, epsilon, device):
+             info = env_unwrapped.get_info()
              break
  
          state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
@@ -121,14 +55,17 @@ index 80f696f770fdc52eb74bb4f28ac4a89b3cf4addd..85fb0706596ee635257e815505e45f2f
      end_reason = info.get("end reason", "")
      winner = info.get("winner")
      if not end_reason or winner is None:
--        _, fallback_reason, fallback_winner = check_end_of_battle(env)
-+        _, fallback_reason, fallback_winner = check_end_of_battle(env_unwrapped)
+         _, fallback_reason, fallback_winner = check_end_of_battle(env_unwrapped)
          if not end_reason:
              end_reason = fallback_reason
          if winner is None:
              winner = fallback_winner
-     vp_diff = info.get("model VP", 0) - info.get("player VP", 0)
-     return winner, end_reason or "unknown", vp_diff
+-    vp_diff = info.get("model VP", 0) - info.get("player VP", 0)
+-    return winner, end_reason or "unknown", vp_diff
++    model_vp = info.get("model VP", 0)
++    enemy_vp = info.get("player VP", 0)
++    vp_diff = model_vp - enemy_vp
++    return winner, end_reason or "unknown", vp_diff, model_vp, enemy_vp
  
  
  def main():
@@ -154,32 +91,7 @@ index 80f696f770fdc52eb74bb4f28ac4a89b3cf4addd..85fb0706596ee635257e815505e45f2f
      if env is None:
          log("Модель не найдена. Проверьте папку models/ и наличие файлов .pickle/.pth.")
          return 0
- 
-     attacker_side, defender_side = roll_off_attacker_defender(
-         manual_roll_allowed=False,
-         log_fn=None,
-     )
-+    env_unwrapped = unwrap_env(env)
-     deploy_only_war(
-         model_units=model_units,
-         enemy_units=enemy_units,
--        b_len=env.unwrapped.b_len,
--        b_hei=env.unwrapped.b_hei,
-+        b_len=env_unwrapped.b_len,
-+        b_hei=env_unwrapped.b_hei,
-         attacker_side=attacker_side,
-         log_fn=None,
-     )
-     post_deploy_setup(log_fn=None)
--    env.attacker_side = attacker_side
--    env.defender_side = defender_side
-+    env_unwrapped.attacker_side = attacker_side
-+    env_unwrapped.defender_side = defender_side
- 
-     state, info = env.reset(m=model_units, e=enemy_units, Type="big", trunc=True)
-     n_actions = [5, 2, len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
-     for _ in range(len(model_units)):
-         n_actions.append(12)
+@@ -197,50 +200,70 @@ def main():
      n_observations = len(state)
  
      device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -200,249 +112,58 @@ index 80f696f770fdc52eb74bb4f28ac4a89b3cf4addd..85fb0706596ee635257e815505e45f2f
      optimizer.load_state_dict(checkpoint["optimizer"])
  
      policy_net.eval()
-diff --git a/model/utils.py b/model/utils.py
-index e25c990aba753de9d16eb1ef0cf81039147c729d..342a9f016cc09d2347b7919b920f5c5f1b1039e0 100644
---- a/model/utils.py
-+++ b/model/utils.py
-@@ -2,50 +2,53 @@ import torch
- import torch.nn as nn
- import torch.nn.functional as F
- import collections
- import numpy as np
- import os
- import json
+     target_net.eval()
  
+     log(f"Старт оценки: игр={games}, epsilon={epsilon:.3f}.")
  
- import random
- import math
+     wins = 0
++    losses = 0
++    draws = 0
+     vp_diffs = []
+     end_reasons = Counter()
  
- from model.memory import Transition
- from gym_mod.engine.utils import distance
- 
- with open(os.path.abspath("hyperparams.json")) as j:
-     data = json.loads(j.read())
- 
- EPS_START = data["eps_start"]
- EPS_END = data["eps_end"]
- EPS_DECAY = data["eps_decay"]
- BATCH_SIZE = data["batch_size"]
- GAMMA = data["gamma"]
- 
- device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
- 
-+def unwrap_env(env):
-+    return getattr(env, "unwrapped", env)
-+
- def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None):
-     sample = random.random()
-     decay_steps = max(1.0, float(EPS_DECAY))
-     progress = min(float(steps_done) / decay_steps, 1.0)
-     eps_threshold = EPS_START + (EPS_END - EPS_START) * progress
-     steps_done += 1
-     dev = next(policy_net.parameters()).device
- 
-     
-     if isinstance(state, collections.OrderedDict):
-         state = np.array(list(state.values()), dtype=np.float32)
-     elif isinstance(state, np.ndarray):
-         state = state.astype(np.float32, copy=False)
- 
-     if not torch.is_tensor(state):
-         state = torch.tensor(state, dtype=torch.float32, device=dev)
-     else:
-         state = state.to(dev)
- 
-     # делаем батч-измерение (batch dimension)
-     if state.dim() == 1:
-         state = state.unsqueeze(0)
- 
- 
-     if sample > eps_threshold:
-@@ -64,75 +67,78 @@ def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None
-                 action.append(int(head.argmax().item()))
-             return torch.tensor([action], device="cpu")
-     else:
-         sampled_action = env.action_space.sample()
-         shoot_choice = sampled_action["shoot"]
-         if shoot_mask is not None:
-             mask = torch.as_tensor(shoot_mask, dtype=torch.bool)
-             valid_indices = torch.where(mask)[0].tolist()
-             if valid_indices:
-                 shoot_choice = random.choice(valid_indices)
-         action_list = [
-             sampled_action["move"],
-             sampled_action["attack"],
-             shoot_choice,
-             sampled_action["charge"],
-             sampled_action["use_cp"],
-             sampled_action["cp_on"],
-         ]
-         for i in range(len_model):
-             label = "move_num_" + str(i)
-             action_list.append(sampled_action[label])
-         action = torch.tensor([action_list], device="cpu")
-         return action
- 
- def build_shoot_action_mask(env, log_fn=None, debug=False):
-+    env_unwrapped = unwrap_env(env)
-+
-     def maybe_log_mask_state(state_key, message):
-         if log_fn is None:
-             return
-         last_state = getattr(env, "_last_shoot_mask_log_state", None)
-         if last_state != state_key:
-             env._last_shoot_mask_log_state = state_key
-             log_fn(message)
- 
--    shoot_space = env.action_space.spaces["shoot"].n
-+    shoot_space = env_unwrapped.action_space.spaces["shoot"].n
-     valid_lengths = []
--    for i in range(len(env.unit_health)):
--        if env.unit_health[i] <= 0:
-+    for i in range(len(env_unwrapped.unit_health)):
-+        if env_unwrapped.unit_health[i] <= 0:
-             continue
--        if env.unitFellBack[i]:
-+        if env_unwrapped.unitFellBack[i]:
-             continue
--        if env.unitInAttack[i][0] == 1:
-+        if env_unwrapped.unitInAttack[i][0] == 1:
-             continue
--        if env.unit_weapon[i] == "None":
-+        if env_unwrapped.unit_weapon[i] == "None":
-             continue
-         valid_targets = []
--        for j in range(len(env.enemy_health)):
-+        for j in range(len(env_unwrapped.enemy_health)):
-             if (
--                distance(env.unit_coords[i], env.enemy_coords[j]) <= env.unit_weapon[i]["Range"]
--                and env.enemy_health[j] > 0
--                and env.enemyInAttack[j][0] == 0
-+                distance(env_unwrapped.unit_coords[i], env_unwrapped.enemy_coords[j])
-+                <= env_unwrapped.unit_weapon[i]["Range"]
-+                and env_unwrapped.enemy_health[j] > 0
-+                and env_unwrapped.enemyInAttack[j][0] == 0
-             ):
-                 valid_targets.append(j)
-         if valid_targets:
-             valid_lengths.append(len(valid_targets))
-     if not valid_lengths:
-         maybe_log_mask_state(
-             ("none", "no_targets"),
-             "[MASK][SHOOT] Нет доступных целей для стрельбы (маска не применяется).",
+     for idx in range(1, games + 1):
+-        winner, end_reason, vp_diff = run_episode(
++        winner, end_reason, vp_diff, model_vp, enemy_vp = run_episode(
+             env, model_units, enemy_units, policy_net, epsilon, device
          )
-         return None
-     min_len = min(valid_lengths)
-     if min_len <= 0:
-         maybe_log_mask_state(
-             ("none", "zero_len"),
-             "[MASK][SHOOT] Нулевая длина маски (маска не применяется).",
-         )
-         return None
-     mask = torch.zeros(shoot_space, dtype=torch.bool)
-     mask[:min_len] = True
-     mask_state = ("mask", min_len, len(valid_lengths), shoot_space)
-     maybe_log_mask_state(
-         mask_state,
-         "[MASK][SHOOT] "
-         f"Доступные индексы: 0..{min_len - 1}, "
-         f"юнитов с целями={len(valid_lengths)}, размер пространства={shoot_space}.",
-diff --git a/train.py b/train.py
-index 4454318761c5dd01fcb54cee80fe5a35c7841a8d..d6f76adcfa9fde2cadc31edd935c26b646df5a45 100644
---- a/train.py
-+++ b/train.py
-@@ -653,86 +653,88 @@ for i in enemy:
-     inText.append("Name: {}, Army Type: {}".format(i.showUnitData()["Name"], i.showUnitData()["Army"]))
- inText.append("Number of Lifetimes ran: {}\n".format(totLifeT))
+         vp_diffs.append(vp_diff)
+         end_reasons[end_reason] += 1
+         if winner == "model":
+             wins += 1
+-        log(f"Игра {idx}/{games}: winner={winner} vp_diff={vp_diff} end_reason={end_reason}")
++        elif winner == "enemy":
++            losses += 1
++        else:
++            draws += 1
++        log(
++            "Игра "
++            f"{idx}/{games}: "
++            f"winner={winner} "
++            f"model_vp={model_vp} "
++            f"enemy_vp={enemy_vp} "
++            f"vp_diff_model_minus_enemy={vp_diff} "
++            f"end_reason={end_reason}"
++        )
  
- pbar = tqdm(total=totLifeT)
- 
- for ctx in env_contexts:
-     ctx["state"], ctx["info"] = ctx["env"].reset(m=ctx["model"], e=ctx["enemy"], Type="big", trunc=True)
-     ctx["ep_len"] = 0
-     ctx["rew_arr"] = []
-     ctx["n_step_buffer"] = collections.deque(maxlen=N_STEP)
- 
- state = primary_ctx["state"]
- info = primary_ctx["info"]
- 
- current_time = datetime.datetime.now()
- date = str(current_time.second)+"-"+str(current_time.microsecond)
- name = "M:"+model[0].showUnitData()["Army"]+"_vs_"+"P:"+enemy[0].showUnitData()["Army"]
- fold =  "models/"+name
- fileName = fold+"/model-"+date+".pickle"
- randNum = np.random.randint(0, 10000000)
- metrics = metrics(fold, randNum, date)
- ep_rows = [] 
- 
- global_step = 0
- optimize_steps = 0
--initial_model_hp = float(sum(getattr(primary_ctx["env"], "unit_health", [])))
--initial_enemy_hp = float(sum(getattr(primary_ctx["env"], "enemy_health", [])))
-+primary_env_unwrapped = unwrap_env(primary_ctx["env"])
-+initial_model_hp = float(sum(getattr(primary_env_unwrapped, "unit_health", [])))
-+initial_enemy_hp = float(sum(getattr(primary_env_unwrapped, "enemy_health", [])))
- append_agent_log(
-     "Старт обучения: "
-     f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}, "
--    f"battle_round={getattr(primary_ctx['env'], 'battle_round', 'n/a')}, trunc={trunc}"
-+    f"battle_round={getattr(primary_env_unwrapped, 'battle_round', 'n/a')}, trunc={trunc}"
- )
- if trunc:
-     append_agent_log(
-         "Логи фаз/ходов отключены (trunc=True). "
-         "Чтобы включить подробные логи: VERBOSE_LOGS=1 или MANUAL_DICE=1."
+-    winrate = wins / games if games else 0.0
++    winrate_all = wins / games if games else 0.0
++    winrate_no_draw = wins / (wins + losses) if (wins + losses) else 0.0
+     avg_vp_diff = sum(vp_diffs) / len(vp_diffs) if vp_diffs else 0.0
++    median_vp_diff = median(vp_diffs) if vp_diffs else 0.0
+     log(
+         "[SUMMARY] "
+-        f"winrate={winrate:.3f} avg_vp_diff={avg_vp_diff:.3f} "
++        f"wins={wins} losses={losses} draws={draws} "
++        f"winrate_all={winrate_all:.3f} "
++        f"winrate_no_draw={winrate_no_draw:.3f} "
++        f"avg_vp_diff={avg_vp_diff:.3f} "
++        f"median_vp_diff={median_vp_diff:.3f} "
+         f"end_reasons={dict(end_reasons)}"
      )
- if initial_model_hp <= 0 or initial_enemy_hp <= 0:
-     append_agent_log(
-         "ВНИМАНИЕ: на старте эпизода обнаружено нулевое здоровье. "
-         f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}. "
-         "Это может приводить к мгновенному завершению эпизодов."
-     )
+     return 0
  
- while end is False:
-     shoot_masks = []
-     for idx, ctx in enumerate(env_contexts):
-         mask_log_fn = append_agent_log if idx == 0 else None
-         shoot_masks.append(build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG))
  
-     states = [ctx["state"] for ctx in env_contexts]
-     actions, eps_threshold = _select_actions_batch(env_contexts, states, global_step, policy_net, shoot_masks)
- 
-     for idx, ctx in enumerate(env_contexts):
-+        env_unwrapped = unwrap_env(ctx["env"])
-         if SELF_PLAY_ENABLED:
--            ctx["env"].enemyTurn(
-+            env_unwrapped.enemyTurn(
-                 trunc=trunc,
-                 policy_fn=lambda obs, env=ctx["env"], lm=ctx["len_model"]: opponent_policy(obs, env, lm),
-             )
-         else:
--            ctx["env"].enemyTurn(trunc=trunc)
-+            env_unwrapped.enemyTurn(trunc=trunc)
- 
-     losses = []
-     last_td_stats = None
-     last_per_beta = PER_BETA_START
-     last_loss_value = None
- 
-     dev = next(policy_net.parameters()).device
- 
-     for idx, ctx in enumerate(env_contexts):
-         ctx["ep_len"] += 1
-         action_dict = convertToDict(actions[idx])
-         next_observation, reward, done, res, info = ctx["env"].step(action_dict)
-         ctx["rew_arr"].append(float(reward))
- 
-         unit_health = info["model health"]
-         enemy_health = info["player health"]
-         inAttack = info["in attack"]
- 
-         if inAttack == 1 and trunc is False:
-             print("The units are fighting")
- 
-         if RENDER_EVERY > 0 and vec_env_count == 1 and (global_step % RENDER_EVERY == 0 or done):
-             ctx["env"].render()
- 
-         mission_name = info.get("mission", DEFAULT_MISSION_NAME)
+ if __name__ == "__main__":
+     sys.exit(main())
 

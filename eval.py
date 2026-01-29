@@ -3,6 +3,7 @@ import os
 import pickle
 import sys
 from collections import Counter
+from statistics import median
 from typing import Optional
 
 import torch
@@ -145,8 +146,10 @@ def run_episode(env, model_units, enemy_units, policy_net, epsilon, device):
             end_reason = fallback_reason
         if winner is None:
             winner = fallback_winner
-    vp_diff = info.get("model VP", 0) - info.get("player VP", 0)
-    return winner, end_reason or "unknown", vp_diff
+    model_vp = info.get("model VP", 0)
+    enemy_vp = info.get("player VP", 0)
+    vp_diff = model_vp - enemy_vp
+    return winner, end_reason or "unknown", vp_diff, model_vp, enemy_vp
 
 
 def main():
@@ -219,24 +222,44 @@ def main():
     log(f"Старт оценки: игр={games}, epsilon={epsilon:.3f}.")
 
     wins = 0
+    losses = 0
+    draws = 0
     vp_diffs = []
     end_reasons = Counter()
 
     for idx in range(1, games + 1):
-        winner, end_reason, vp_diff = run_episode(
+        winner, end_reason, vp_diff, model_vp, enemy_vp = run_episode(
             env, model_units, enemy_units, policy_net, epsilon, device
         )
         vp_diffs.append(vp_diff)
         end_reasons[end_reason] += 1
         if winner == "model":
             wins += 1
-        log(f"Игра {idx}/{games}: winner={winner} vp_diff={vp_diff} end_reason={end_reason}")
+        elif winner == "enemy":
+            losses += 1
+        else:
+            draws += 1
+        log(
+            "Игра "
+            f"{idx}/{games}: "
+            f"winner={winner} "
+            f"model_vp={model_vp} "
+            f"enemy_vp={enemy_vp} "
+            f"vp_diff_model_minus_enemy={vp_diff} "
+            f"end_reason={end_reason}"
+        )
 
-    winrate = wins / games if games else 0.0
+    winrate_all = wins / games if games else 0.0
+    winrate_no_draw = wins / (wins + losses) if (wins + losses) else 0.0
     avg_vp_diff = sum(vp_diffs) / len(vp_diffs) if vp_diffs else 0.0
+    median_vp_diff = median(vp_diffs) if vp_diffs else 0.0
     log(
         "[SUMMARY] "
-        f"winrate={winrate:.3f} avg_vp_diff={avg_vp_diff:.3f} "
+        f"wins={wins} losses={losses} draws={draws} "
+        f"winrate_all={winrate_all:.3f} "
+        f"winrate_no_draw={winrate_no_draw:.3f} "
+        f"avg_vp_diff={avg_vp_diff:.3f} "
+        f"median_vp_diff={median_vp_diff:.3f} "
         f"end_reasons={dict(end_reasons)}"
     )
     return 0

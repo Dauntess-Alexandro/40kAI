@@ -23,7 +23,7 @@
       "models": 10,
       "hp": 10.0,
       "x": 34,
-      "y": 13
+      "y": 45
     },
     {
       "side": "player",
@@ -31,17 +31,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 30,
-      "y": 55
-    },
-    {
-      "side": "player",
-      "id": 13,
-      "name": "Canoptek Scarab Swarms",
-      "models": 3,
-      "hp": 12.0,
-      "x": 38,
-      "y": 29
+      "x": 34,
+      "y": 3
     },
     {
       "side": "model",
@@ -49,8 +40,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 2,
-      "y": 32
+      "x": 3,
+      "y": 26
     },
     {
       "side": "model",
@@ -58,17 +49,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 3,
-      "y": 54
-    },
-    {
-      "side": "model",
-      "id": 23,
-      "name": "Canoptek Scarab Swarms",
-      "models": 3,
-      "hp": 12.0,
       "x": 9,
-      "y": 42
+      "y": 37
     }
   ],
   "objectives": [
@@ -116,14 +98,14 @@
     "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])",
     "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])",
     "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'move_num_2', 'shoot', 'use_cp'])"
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])"
   ],
-  "generated_at": "2026-01-28T15:30:49.123196Z"
+  "generated_at": "2026-01-29T08:01:32.089762Z"
 }
