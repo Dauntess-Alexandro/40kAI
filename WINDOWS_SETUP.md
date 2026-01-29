@@ -14,7 +14,8 @@ pip install -r requirements.txt
 ```
 
 ### GTKmm через vcpkg (рекомендуемый путь)
-1. Установите [vcpkg](https://github.com/microsoft/vcpkg) и задайте переменную окружения `VCPKG_ROOT`.
+1. Установите [vcpkg](https://github.com/microsoft/vcpkg) отдельно от проекта (это **не** Python-venv). Проще всего — в `C:\tools\vcpkg` или любую папку без пробелов в пути.
+   Затем задайте переменную окружения `VCPKG_ROOT` на путь к этой папке.
 2. Установите пакеты GTKmm (пример для x64 Windows):
 
 ```powershell
