@@ -8,6 +8,7 @@ import datetime
 import os
 import random
 import re
+import sys
 from typing import Optional
 
 import reward_config as reward_cfg
@@ -174,6 +175,13 @@ def _verbose_logs_enabled() -> bool:
     Можно принудительно включить: VERBOSE_LOGS=1.
     """
     return os.getenv("MANUAL_DICE", "0") == "1" or os.getenv("VERBOSE_LOGS", "0") == "1"
+
+def _fight_report_enabled() -> bool:
+    """
+    Подробный отчёт ближнего боя. По умолчанию выключен.
+    Включаем: FIGHT_REPORT=1.
+    """
+    return os.getenv("FIGHT_REPORT", "0") == "1"
 
 def auto_dice(num=1, max=6):
     """RNG-роллер с такой же сигнатурой, как player_dice (для логов бота)."""
@@ -370,8 +378,12 @@ class RollLogger:
         attacker_label: Optional[str] = None,
         defender_label: Optional[str] = None,
         extra_rules: Optional[list[str]] = None,
+        hp_before: Optional[float] = None,
+        hp_after: Optional[float] = None,
+        models_before: Optional[int] = None,
+        models_after: Optional[int] = None,
     ):
-        title = report_title or "ОТЧЁТ ПО БОЮ"
+        title = report_title or "ОТЧЁТ ПО БЛИЖНЕМУ БОЮ"
         self._log(f"\n📌 --- {title} ---")
 
         # В движке WS/BS обычно берём из профиля оружия (как в 10e)
@@ -404,6 +416,25 @@ class RollLogger:
         except Exception:
             lethal = False
 
+        attack_raw = None
+        if isinstance(weapon, dict):
+            for k in ("A", "Attacks", "#Attacks", "Shots"):
+                if k in weapon:
+                    attack_raw = weapon.get(k)
+                    break
+        if attack_raw is None and isinstance(attacker_data, dict):
+            for k in ("A", "Attacks"):
+                if k in attacker_data:
+                    attack_raw = attacker_data.get(k)
+                    break
+
+        damage_raw = None
+        if isinstance(weapon, dict):
+            for k in ("Damage", "D"):
+                if k in weapon:
+                    damage_raw = weapon.get(k)
+                    break
+
         wname = weapon.get("Name", weapon) if isinstance(weapon, dict) else weapon
         if attacker_label or defender_label:
             parts = []
@@ -414,19 +445,27 @@ class RollLogger:
             self._log("; ".join(parts))
         self._log(f"Оружие: {wname}")
         if ws is not None:
-            self._log(f"WS оружия: {ws}+")
+            self._log(f"WS: {ws}+")
+        if attack_raw is not None:
+            self._log(f"A: {attack_raw}")
         if s is not None and t is not None:
             self._log(f"S vs T: {s} vs {t}  -> базово ранение на {_wound_target(s, t)}+")
         if sv is not None:
             inv_txt = f"{inv}+" if inv is not None else "нет"
             self._log(f"Save цели: {sv}+ (invul: {inv_txt})")
-        if ap_val != 0:
-            self._log(f"AP: {ap_val}")
+        if ap_val != 0 or damage_raw is not None:
+            damage_text = damage_raw if damage_raw is not None else "?"
+            self._log(f"AP: {ap_val}  Damage: {damage_text}")
+
+        rules = []
         if lethal:
-            self._log("Правило: Lethal Hits (крит-хиты авто-ранят)")
+            rules.append("Lethal Hits (крит-хиты авто-ранят)")
         if extra_rules:
-            for rule in extra_rules:
-                self._log(f"Правило: {rule}")
+            rules.extend(extra_rules)
+        if rules:
+            self._log(f"Правила: {', '.join(rules)}")
+        else:
+            self._log("Правила: нет")
         if effect:
             self._log(f"Эффект: {effect}")
 
@@ -492,24 +531,34 @@ class RollLogger:
             if hits is not None:
                 extra.append(f"hits: {hits}")
             if lethal and crit_hits is not None:
-                extra.append(f"crit(6s): {crit_hits} -> авто ран: {auto_wounds}")
+                extra.append(f"crits: {crit_hits}")
             suf = ("  -> " + ", ".join(extra)) if extra else ""
             self._log(f"Hit rolls:    {hit_rolls}{suf}")
 
         if wound_rolls:
             if wt is not None:
-                self._log(f"Wound rolls:  {wound_rolls}  (цель {wt}+) -> wounds: {rolled_wounds}")
+                if lethal and auto_wounds:
+                    self._log(
+                        f"Wound rolls:  {wound_rolls}  (цель {wt}+) -> rolled wounds: {rolled_wounds} + auto(w/LETHAL): {auto_wounds} = {total_wounds}"
+                    )
+                else:
+                    self._log(f"Wound rolls:  {wound_rolls}  (цель {wt}+) -> wounds: {rolled_wounds}")
             else:
                 self._log(f"Wound rolls:  {wound_rolls}")
 
         if save_rolls:
             if save_target is not None:
                 fs = failed_saves if failed_saves is not None else "??"
-                self._log(f"Save rolls:   {save_rolls}  (цель {save_target}+) -> failed saves: {fs}")
+                self._log(f"Save rolls:   {save_rolls}  (цель {save_target}+) -> failed: {fs}")
             else:
                 self._log(f"Save rolls:   {save_rolls}")
 
         self._log(f"\n✅ Итог по движку: прошло урона = {total_damage}")
+        if hp_before is not None and hp_after is not None:
+            models_text = ""
+            if models_before is not None and models_after is not None:
+                models_text = f" ; модели цели: {models_before} -> {models_after}"
+            self._log(f"HP цели: {hp_before} -> {hp_after}{models_text}")
         self._log("📌 -------------------------\n")
 
 
@@ -788,6 +837,7 @@ class Warhammer40kEnv(gym.Env):
         self.numTurns = self.battle_round
         self.turn_order = ["enemy", "model"]
         self._round_banner_shown = False
+        self._fight_env_logged = False
         self.mission_name = MISSION_NAME
 
         self.coordsOfOM = np.array([
@@ -1433,6 +1483,14 @@ class Warhammer40kEnv(gym.Env):
         if not self._round_banner_shown:
             self._log(f"=== БОЕВОЙ РАУНД {self.battle_round} ===")
             self._round_banner_shown = True
+            if not self._fight_env_logged:
+                self._log(
+                    "[FIGHT][ENV] "
+                    f"file={__file__} exe={sys.executable} cwd={os.getcwd()} "
+                    f"FIGHT_REPORT={int(_fight_report_enabled())} "
+                    f"TRAIN_DEBUG={os.getenv('TRAIN_DEBUG', '0')}"
+                )
+                self._fight_env_logged = True
         if phase == "command":
             self._log(f"--- ХОД {self._side_label(side)} ---")
             if side == "model":
@@ -3316,11 +3374,13 @@ class Warhammer40kEnv(gym.Env):
         """
         10e simplified Fight Phase:
         1) Chargers (charged this turn) fight first (active side only in this simplified model)
-        2) Then alternate fights starting with the NON-active side
+        2) Then alternate fights starting with the active side
         Only units within Engagement (unitInAttack/enemyInAttack) can fight.
         No pile-in/consolidate here (упрощение).
         """
         quiet = self.trunc if trunc is None else trunc
+        fight_report = _fight_report_enabled()
+        use_roll_logger = fight_report or _verbose_logs_enabled()
 
         # кто кидает кубы (если MANUAL_DICE=1 — спрашиваем руками)
         dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" else auto_dice
@@ -3328,6 +3388,21 @@ class Warhammer40kEnv(gym.Env):
         def _log(msg: str):
             if quiet is False:
                 self._log(msg)
+
+        def _remaining_models(side: str, idx: int, hp_value: Optional[float]) -> Optional[int]:
+            data_list = self.unit_data if side == "model" else self.enemy_data
+            if not (0 <= idx < len(data_list)) or not isinstance(data_list[idx], dict):
+                return None
+            wounds = data_list[idx].get("W")
+            try:
+                wounds = float(wounds)
+            except Exception:
+                return None
+            if wounds <= 0 or hp_value is None:
+                return None
+            if hp_value <= 0:
+                return 0
+            return int((hp_value + wounds - 1) // wounds)
 
         def _do_melee(att_side: str, att_idx: int):
             """
@@ -3355,9 +3430,10 @@ class Warhammer40kEnv(gym.Env):
                 attacker_data = self.unit_data[att_idx]
                 defender_data = self.enemy_data[def_idx]
                 hp_before = self.enemy_health[def_idx]
+                models_before = _remaining_models("enemy", def_idx, hp_before)
 
                 _logger = None
-                if quiet is False and _verbose_logs_enabled():
+                if quiet is False and use_roll_logger:
                     _logger = RollLogger(auto_dice)
                     _logger.configure_for_weapon(weapon)
                     dmg, modHealth = attack(
@@ -3380,6 +3456,7 @@ class Warhammer40kEnv(gym.Env):
                     )
 
                 self.enemy_health[def_idx] = modHealth
+                models_after = _remaining_models("enemy", def_idx, modHealth)
 
                 wname = weapon.get("Name", "Melee") if isinstance(weapon, dict) else str(weapon)
                 _log(
@@ -3403,6 +3480,10 @@ class Warhammer40kEnv(gym.Env):
                         effect=None,
                         attacker_label=self._format_unit_label("model", att_idx),
                         defender_label=self._format_unit_label("enemy", def_idx),
+                        hp_before=hp_before,
+                        hp_after=modHealth,
+                        models_before=models_before,
+                        models_after=models_after,
                     )
 
                 # если цель умерла — снимаем “в бою” с обеих сторон
@@ -3432,10 +3513,11 @@ class Warhammer40kEnv(gym.Env):
                 attacker_data = self.enemy_data[att_idx]
                 defender_data = self.unit_data[def_idx]
                 hp_before = self.unit_health[def_idx]
+                models_before = _remaining_models("model", def_idx, hp_before)
 
                 _logger = None
                 manual_dice = os.getenv("MANUAL_DICE", "0") == "1"
-                if quiet is False and _verbose_logs_enabled():
+                if quiet is False and use_roll_logger:
                     _logger = RollLogger(dice_fn)
                     _logger.configure_for_weapon(weapon)
                     dmg, modHealth = attack(
@@ -3460,6 +3542,7 @@ class Warhammer40kEnv(gym.Env):
                     )
 
                 self.unit_health[def_idx] = modHealth
+                models_after = _remaining_models("model", def_idx, modHealth)
 
                 wname = weapon.get("Name", "Melee") if isinstance(weapon, dict) else str(weapon)
                 _log(
@@ -3482,6 +3565,10 @@ class Warhammer40kEnv(gym.Env):
                         effect=None,
                         attacker_label=self._format_unit_label("enemy", att_idx),
                         defender_label=self._format_unit_label("model", def_idx),
+                        hp_before=hp_before,
+                        hp_after=modHealth,
+                        models_before=models_before,
+                        models_after=models_after,
                     )
 
                 if self.unit_health[def_idx] <= 0:
@@ -3532,6 +3619,25 @@ class Warhammer40kEnv(gym.Env):
             f"Eligible {self._display_side('enemy')}: {[i + 11 for i in enemy_eligible]}.",
         )
 
+        if fight_report:
+            chargers_model = [
+                i for i in range(len(self.unit_health))
+                if self.unitCharged[i] == 1 and self.unitInAttack[i][0] == 1 and self.unit_health[i] > 0
+            ]
+            chargers_enemy = [
+                i for i in range(len(self.enemy_health))
+                if self.enemyCharged[i] == 1 and self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0
+            ]
+            self._log("📌 --- FIGHT PHASE (DEBUG) ---")
+            self._log(f"active_side={self._display_side(active_side)}")
+            self._log(f"eligible_player={[i + 11 for i in enemy_eligible]}")
+            self._log(f"eligible_model={[i + 21 for i in model_eligible]}")
+            self._log(f"fights_first_player={[i + 11 for i in chargers_enemy]}")
+            self._log(f"fights_first_model={[i + 21 for i in chargers_model]}")
+            self._log("computed_first_picker=ACTIVE")
+            self._log("reason=чередование начинается с активной стороны")
+            self._log("📌 ---------------------------")
+
         fought_model = set()
         fought_enemy = set()
 
@@ -3541,6 +3647,15 @@ class Warhammer40kEnv(gym.Env):
                         if self.unitCharged[i] == 1 and self.unitInAttack[i][0] == 1 and self.unit_health[i] > 0]
             for i in chargers:
                 if i not in fought_model:
+                    if fight_report:
+                        remaining_model = [idx + 21 for idx in chargers if idx not in fought_model and idx != i]
+                        remaining_enemy = [idx + 11 for idx in enemy_eligible if idx not in fought_enemy]
+                        self._log(
+                            "[FIGHT][ORDER] "
+                            f"active_side={self._display_side(active_side)} bucket=first picker=MODEL "
+                            f"picked_unit={i + 21} remaining_player={remaining_enemy} "
+                            f"remaining_model={remaining_model}"
+                        )
                     if _do_melee("model", i):
                         fought_model.add(i)
         else:
@@ -3554,17 +3669,35 @@ class Warhammer40kEnv(gym.Env):
                     if target_idx is None:
                         return
                     self.enemyInAttack[attacker_idx][1] = target_idx
+                    if fight_report:
+                        remaining_enemy = [idx + 11 for idx in chargers if idx not in fought_enemy and idx != attacker_idx]
+                        remaining_model = [idx + 21 for idx in model_eligible if idx not in fought_model]
+                        self._log(
+                            "[FIGHT][ORDER] "
+                            f"active_side={self._display_side(active_side)} bucket=first picker=PLAYER "
+                            f"picked_unit={attacker_idx + 11} remaining_player={remaining_enemy} "
+                            f"remaining_model={remaining_model}"
+                        )
                     if _do_melee("enemy", attacker_idx):
                         fought_enemy.add(attacker_idx)
                     remaining = [i for i in chargers if i not in fought_enemy]
             else:
                 for i in chargers:
                     if i not in fought_enemy:
+                        if fight_report:
+                            remaining_enemy = [idx + 11 for idx in chargers if idx not in fought_enemy and idx != i]
+                            remaining_model = [idx + 21 for idx in model_eligible if idx not in fought_model]
+                            self._log(
+                                "[FIGHT][ORDER] "
+                                f"active_side={self._display_side(active_side)} bucket=first picker=PLAYER "
+                                f"picked_unit={i + 11} remaining_player={remaining_enemy} "
+                                f"remaining_model={remaining_model}"
+                            )
                         if _do_melee("enemy", i):
                             fought_enemy.add(i)
 
-        # 2) then alternate, starting with NON-active side
-        next_side = "enemy" if active_side == "model" else "model"
+        # 2) then alternate, starting with active side (упрощение)
+        next_side = active_side
 
         while True:
             model_left = [i for i in range(len(self.unit_health))
@@ -3578,6 +3711,15 @@ class Warhammer40kEnv(gym.Env):
             if next_side == "model":
                 if model_left:
                     i = model_left[0]
+                    if fight_report:
+                        remaining_enemy = [idx + 11 for idx in enemy_left]
+                        remaining_model = [idx + 21 for idx in model_left if idx != i]
+                        self._log(
+                            "[FIGHT][ORDER] "
+                            f"active_side={self._display_side(active_side)} bucket=normal picker=MODEL "
+                            f"picked_unit={i + 21} remaining_player={remaining_enemy} "
+                            f"remaining_model={remaining_model}"
+                        )
                     _do_melee("model", i)
                     fought_model.add(i)
                 next_side = "enemy"
@@ -3589,10 +3731,28 @@ class Warhammer40kEnv(gym.Env):
                         if target_idx is None:
                             return
                         self.enemyInAttack[attacker_idx][1] = target_idx
+                        if fight_report:
+                            remaining_enemy = [idx + 11 for idx in enemy_left if idx != attacker_idx]
+                            remaining_model = [idx + 21 for idx in model_left]
+                            self._log(
+                                "[FIGHT][ORDER] "
+                                f"active_side={self._display_side(active_side)} bucket=normal picker=PLAYER "
+                                f"picked_unit={attacker_idx + 11} remaining_player={remaining_enemy} "
+                                f"remaining_model={remaining_model}"
+                            )
                         _do_melee("enemy", attacker_idx)
                         fought_enemy.add(attacker_idx)
                     else:
                         i = enemy_left[0]
+                        if fight_report:
+                            remaining_enemy = [idx + 11 for idx in enemy_left if idx != i]
+                            remaining_model = [idx + 21 for idx in model_left]
+                            self._log(
+                                "[FIGHT][ORDER] "
+                                f"active_side={self._display_side(active_side)} bucket=normal picker=PLAYER "
+                                f"picked_unit={i + 11} remaining_player={remaining_enemy} "
+                                f"remaining_model={remaining_model}"
+                            )
                         _do_melee("enemy", i)
                         fought_enemy.add(i)
                 next_side = "model"
