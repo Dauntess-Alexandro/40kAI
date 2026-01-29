@@ -44,7 +44,6 @@ ImFont* LoadRussianFont(ImGuiIO& io) {
       ImFont* font = io.Fonts->AddFontFromFileTTF(path.c_str(), 18.0f, nullptr,
                                                   io.Fonts->GetGlyphRangesCyrillic());
       if (font) {
-        std::fprintf(stderr, "Загружен шрифт для кириллицы: %s\n", path.c_str());
         return font;
       }
     }
