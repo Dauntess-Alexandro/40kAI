@@ -35,11 +35,64 @@ constexpr int kDefaultHeight = 900;
 constexpr int kMinimumWidth = 1200;
 constexpr int kMinimumHeight = 800;
 
+#if defined(_WIN32)
+constexpr const char* kShellChain = " && ";
+#else
+constexpr const char* kShellChain = " ; ";
+#endif
+
 std::string geometryPath() {
   const char* home = std::getenv("HOME");
   std::string base = home ? home : ".";
   return base + "/.config/40kAI/gui_layout.conf";
 }
+
+std::string buildEnvPrefix(const std::string& envs) {
+#if defined(_WIN32)
+  std::istringstream iss(envs);
+  std::string token;
+  std::string result;
+  while (iss >> token) {
+    if (token.find('=') == std::string::npos) {
+      continue;
+    }
+    result += "set " + token + " && ";
+  }
+  return result;
+#else
+  return envs;
+#endif
+}
+
+std::string buildScriptCommand(const std::string& base, const std::string& args = "") {
+#if defined(_WIN32)
+  std::string command = "powershell -ExecutionPolicy Bypass -File \"";
+  command += base + ".ps1\"";
+#else
+  std::string command = "./" + base + ".sh";
+#endif
+  if (!args.empty()) {
+    command += " ";
+    command += args;
+  }
+  return command;
+}
+
+void clearConsole() {
+#if defined(_WIN32)
+  system("cls");
+#else
+  system("clear");
+#endif
+}
+
+#if defined(_WIN32)
+#define POPEN _popen
+#define PCLOSE _pclose
+#else
+#define POPEN popen
+#define PCLOSE pclose
+#endif
 
 std::string toLowerCopy(std::string data) {
   std::transform(data.begin(), data.end(), data.begin(),
@@ -1455,7 +1508,10 @@ void Form :: update_metrics() {
 }
 
 void Form :: updateInits(std::string model, std::string enemy) {
-  std::string command = "cd .. ; ./data.sh ";
+  std::string command = "cd ..";
+  command.append(kShellChain);
+  command.append(buildScriptCommand("data"));
+  command.append(" ");
   command.append(setIters.get_text().data());
   command.append(model);
   command.append(enemy);
@@ -1473,12 +1529,13 @@ void Form :: startTrainInBackground() {
 
 void Form :: startTrain() {
   training = true;
-  system("clear");
+  clearConsole();
   const std::string perDefaults = "PER_ENABLED=1 N_STEP=3 TRAIN_LOG_TO_CONSOLE=1 ";
-  std::string command = "cd .. ; ";
-  command.append(perDefaults);
-  command.append(trainEnvPrefix);
-  command.append("./train.sh 2>&1");
+  std::string command = "cd ..";
+  command.append(kShellChain);
+  command.append(buildEnvPrefix(perDefaults + trainEnvPrefix));
+  command.append(buildScriptCommand("train"));
+  command.append(" 2>&1");
 
   trainingTotalEpisodes = parsePositiveInt(setIters.get_text());
   int totalEpisodes = trainingTotalEpisodes;
@@ -1498,10 +1555,10 @@ void Form :: startTrain() {
   });
   appendTrainingLogToFile(startMessage, trainingLogTag);
 
-  FILE* pipe = popen(command.c_str(), "r");
+  FILE* pipe = POPEN(command.c_str(), "r");
   if (!pipe) {
     std::string errorMessage = "Ошибка запуска " + trainingStartLabel
-        + " (gui/Application.cpp): проверьте, что train.sh доступен.";
+        + " (gui/Application.cpp): проверьте, что train.sh/train.ps1 доступен.";
     Glib::signal_idle().connect_once([this, errorMessage]() {
       setStatusMessage(errorMessage);
     });
@@ -1557,7 +1614,7 @@ void Form :: startTrain() {
     }
   }
 
-  int exitCode = pclose(pipe);
+  int exitCode = PCLOSE(pipe);
   training = false;
   if (lastTotal > 0 && lastEpisode > 0) {
     int finalEpisode = std::min(lastEpisode, lastTotal);
@@ -1618,7 +1675,11 @@ void Form :: playAgainstModel() {
 
   if (playInGUI == "True") {
     envPrefix = "PLAY_NO_EXPLORATION=1 ";
-    command = "cd .. ; " + envPrefix + "./play.sh ";
+    command = "cd ..";
+    command.append(kShellChain);
+    command.append(buildEnvPrefix(envPrefix));
+    command.append(buildScriptCommand("play"));
+    command.append(" ");
     if (strlen(path.data()) < 2) {
       command.append("None");
     } else {
@@ -1629,7 +1690,11 @@ void Form :: playAgainstModel() {
     command.append(" True");
   } else {
     // ВАЖНО: "Play in Terminal" теперь откроет новое окно терминала
-    command = "cd .. ; " + envPrefix + "./launch_terminal_manual.sh ";
+    command = "cd ..";
+    command.append(kShellChain);
+    command.append(buildEnvPrefix(envPrefix));
+    command.append(buildScriptCommand("launch_terminal_manual"));
+    command.append(" ");
     if (strlen(path.data()) < 2) {
       command.append("None");
     } else {
@@ -1640,7 +1705,7 @@ void Form :: playAgainstModel() {
   }
 
   playing = true;
-  system("clear");
+  clearConsole();
   system(command.data());
   playing = false;
 }
