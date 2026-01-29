@@ -5,16 +5,40 @@
 #include <string>
 #include <fstream>
 #include <unordered_map>
+#include <filesystem>
+#include <optional>
 #include <nlohmann/json.hpp>
 #include "include/units.h"
 
 using namespace Glib;
 using namespace Gtk;
 using json = nlohmann::json;
+namespace fs = std::filesystem;
+
+namespace {
+std::optional<fs::path> findUnitDataPath() {
+  fs::path current = fs::current_path();
+  for (int depth = 0; depth < 6; ++depth) {
+    fs::path candidate = current / "gym_mod" / "gym_mod" / "engine" / "unitData.json";
+    if (fs::exists(candidate)) {
+      return candidate;
+    }
+    if (!current.has_parent_path()) {
+      break;
+    }
+    current = current.parent_path();
+  }
+  return std::nullopt;
+}
+}  // namespace
 
 void Units::loadAvailableUnits() {
   availableStore->clear();
-  std::ifstream infile("../gym_mod/gym_mod/engine/unitData.json");
+  auto unitDataPath = findUnitDataPath();
+  if (!unitDataPath) {
+    return;
+  }
+  std::ifstream infile(*unitDataPath);
   if (!infile) {
     return;
   }
