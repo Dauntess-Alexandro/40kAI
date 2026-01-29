@@ -14,13 +14,34 @@ pip install -r requirements.txt
 ```
 
 ### GTKmm через vcpkg (рекомендуемый путь)
-1. Установите [vcpkg](https://github.com/microsoft/vcpkg) отдельно от проекта (это **не** Python-venv). Проще всего — в `C:\tools\vcpkg` или любую папку без пробелов в пути.
-   Затем задайте переменную окружения `VCPKG_ROOT` на путь к этой папке.
-2. Установите пакеты GTKmm (пример для x64 Windows):
+Ниже — максимально подробный путь установки.
 
-```powershell
-vcpkg install gtkmm:x64-windows
-```
+1. **Скачайте и установите Visual Studio Build Tools** (обязательно нужен компилятор MSVC и Windows SDK):
+   - Откройте страницу: https://visualstudio.microsoft.com/visual-cpp-build-tools/
+   - Скачайте установщик **Build Tools for Visual Studio**.
+   - В установщике отметьте workload **Desktop development with C++**.
+   - Убедитесь, что отмечены компоненты: **MSVC v143** (или новее) и **Windows 10/11 SDK**.
+
+2. **Установите vcpkg отдельно от проекта** (это **не** Python-venv).
+   - Откройте PowerShell и выполните:
+     ```powershell
+     cd C:\tools
+     git clone https://github.com/microsoft/vcpkg.git
+     cd vcpkg
+     .\bootstrap-vcpkg.bat
+     ```
+   - После этого vcpkg готов к использованию.
+
+3. **Задайте переменную окружения `VCPKG_ROOT`** на путь к папке vcpkg:
+   ```powershell
+   setx VCPKG_ROOT "C:\tools\vcpkg"
+   ```
+   Закройте и заново откройте PowerShell, чтобы переменная подтянулась.
+
+4. **Установите GTKmm через vcpkg** (пример для x64 Windows):
+   ```powershell
+   vcpkg install gtkmm:x64-windows
+   ```
 
 ## 2) Сборка GUI
 
