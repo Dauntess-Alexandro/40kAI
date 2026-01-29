@@ -59,16 +59,22 @@
 3. **Сборка GUI из MSYS2 MinGW x64**:
    ```bash
    cd /c/путь/к/репозиторию/40kAI/gui
-   mkdir -p build
-   cd build
+   mkdir -p build-mingw
+   cd build-mingw
    cmake .. -G "MinGW Makefiles"
    cmake --build .
    ```
 
 4. **Запуск GUI**:
    ```bash
-   /c/путь/к/репозиторию/40kAI/gui/build/Application.exe
+   /c/путь/к/репозиторию/40kAI/gui/build-mingw/Application.exe
    ```
+
+5. **Важно про папку сборки**:
+   - **Не смешивайте генераторы**. Если один раз собрали через Visual Studio, нельзя
+     переиспользовать ту же папку для MinGW.
+   - Если видите ошибку про *generator does not match*, удалите старую папку сборки
+     (`build`/`build-mingw`) или используйте новую.
 
 ### GTKmm через vcpkg (НЕ рекомендуется для текущего кода)
 vcpkg ставит GTKmm 4, а код проекта написан под GTKmm 3. Поэтому при использовании vcpkg возникнут ошибки
