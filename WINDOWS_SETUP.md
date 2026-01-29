@@ -68,7 +68,7 @@
    ```
    Ожидаемый вывод: `C:\tools\vcpkg`.
 
-4. **Установите GTKmm через vcpkg** (пример для x64 Windows):
+4. **Установите GTKmm и nlohmann-json через vcpkg** (пример для x64 Windows):
    - Убедитесь, что PowerShell открыт **после** установки `VCPKG_ROOT`.
    - Перейдите в папку vcpkg (или используйте полный путь к vcpkg.exe):
      ```powershell
@@ -76,12 +76,13 @@
      ```
    - Выполните установку:
      ```powershell
-     .\vcpkg install gtkmm:x64-windows
+     .\vcpkg install gtkmm:x64-windows nlohmann-json:x64-windows
      ```
    - Для проверки списка установленных пакетов:
      ```powershell
      .\vcpkg list
      ```
+   - Если пакеты установлены, но сборка всё равно не видит заголовки, убедитесь, что `VCPKG_ROOT` задан и вы запускаете `build_gui.ps1` в **новом** окне PowerShell.
 
 ## 2) Сборка GUI
 
@@ -96,6 +97,19 @@ cd путь\к\репозиторию\40kAI
 - создаёт папку `gui\build`, если её нет;
 - вызывает CMake с `-DCMAKE_TOOLCHAIN_FILE` от vcpkg (если задан `VCPKG_ROOT`);
 - запускает сборку в указанной конфигурации.
+
+### Если сборка падает с ошибками `GTKMM_INCLUDE_DIRS-NOTFOUND` или `gtkmm.h: No such file`
+1. Проверьте, что vcpkg действительно установил пакеты:
+   ```powershell
+   cd C:\tools\vcpkg
+   .\vcpkg list | Select-String -Pattern "gtkmm|nlohmann"
+   ```
+2. Проверьте переменную окружения:
+   ```powershell
+   echo $env:VCPKG_ROOT
+   ```
+   Должно быть: `C:\tools\vcpkg`.
+3. Закройте PowerShell и откройте заново (чтобы подтянулась `VCPKG_ROOT`), затем выполните сборку ещё раз.
 
 ## 3) Запуск GUI
 
