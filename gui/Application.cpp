@@ -204,7 +204,6 @@ std::string buildTrainingStatsLine(double itPerSec,
 }
 }  // namespace
 
-std::string gifpth = "img/model_train.gif";
 std::string rewpth = "img/reward.png";
 std::string losspth = "img/loss.png";
 std::string eplenpth = "img/epLen.png";
@@ -243,18 +242,12 @@ Form :: Form() {
   topBarBox.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
   topBarBox.set_spacing(8);
   leftBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
-  mainSplit.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
-  rightSplit.set_orientation(Gtk::ORIENTATION_VERTICAL);
 
   rootBox.set_hexpand(true);
   rootBox.set_vexpand(true);
   topBarBox.set_hexpand(true);
   leftBox.set_hexpand(true);
   leftBox.set_vexpand(true);
-  mainSplit.set_hexpand(true);
-  mainSplit.set_vexpand(true);
-  rightSplit.set_hexpand(true);
-  rightSplit.set_vexpand(true);
 
   help.set_image_from_icon_name("help-about");
   help.signal_button_release_event().connect([&](GdkEventButton*){
@@ -271,21 +264,11 @@ Form :: Form() {
 
   add(rootBox);
   rootBox.pack_start(topBarBox, Gtk::PACK_SHRINK);
-  rootBox.pack_start(mainSplit, Gtk::PACK_EXPAND_WIDGET);
+  rootBox.pack_start(leftBox, Gtk::PACK_EXPAND_WIDGET);
 
   tabControl1.set_hexpand(true);
   tabControl1.set_vexpand(true);
   leftBox.pack_start(tabControl1, Gtk::PACK_EXPAND_WIDGET);
-
-  mainSplit.add1(leftBox);
-  mainSplit.add2(rightSplit);
-
-  boardFrame.set_label("Board / Preview");
-  boardFrame.set_hexpand(true);
-  boardFrame.set_vexpand(true);
-  pictureBox1.set_hexpand(true);
-  pictureBox1.set_vexpand(true);
-  boardFrame.add(pictureBox1);
 
   logView.set_hexpand(true);
   logView.set_vexpand(true);
@@ -299,15 +282,13 @@ Form :: Form() {
   logScroll.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
   logScroll.add(logView);
 
-  rightSplit.add1(boardFrame);
-  rightSplit.add2(logScroll);
+  leftBox.pack_start(logScroll, Gtk::PACK_EXPAND_WIDGET);
 
   tabControl1.insert_page(tabPage2, "Train", 0);
-  tabControl1.insert_page(tabPage3, "Show Trained Model", 1);
-  tabControl1.insert_page(tabPage5, "Metrics", 2);
-  tabControl1.insert_page(tabPage4, "Play", 3);
-  tabControl1.insert_page(tabPage1, "Settings", 4);
-  tabControl1.insert_page(tabPage6, "Оценка", 5);
+  tabControl1.insert_page(tabPage5, "Metrics", 1);
+  tabControl1.insert_page(tabPage4, "Play", 2);
+  tabControl1.insert_page(tabPage1, "Settings", 3);
+  tabControl1.insert_page(tabPage6, "Оценка", 4);
 
     // settings tab
 
@@ -820,18 +801,6 @@ Form :: Form() {
   fixedTabPage2.add(trainingProgressStatsLabel);
   fixedTabPage2.move(trainingProgressStatsLabel, 10, 430);
 
-    // show trained model tab
-
-  labelPage3.set_label("Show Trained Model");
-  tabControl1.set_tab_label(tabPage3, labelPage3);
-  tabPage3.add(fixedTabPage3);
-
-  showModelHint.set_text("Preview shown in the right panel.");
-  fixedTabPage3.add(showModelHint);
-  fixedTabPage3.move(showModelHint, 10, 10);
-  pictureBox1.set_size_request(280, 280);
-  update_picture();
-
   // show metrics tab
   labelPage5.set_label("Model Metrics");
   tabControl1.set_tab_label(tabPage5, labelPage5);
@@ -925,12 +894,6 @@ Form :: Form() {
     return true;
   });
 
-  showBoardImg.set_label("Show Board (Image Mode)");
-  showBoardImg.signal_button_release_event().connect([&](GdkEventButton* event) {
-	openPopUp(false);
-	return true;
-  });
-
   playGraphicsView.set_label("Играть в GUI");
   playGraphicsView.signal_button_release_event().connect([&](GdkEventButton* event) {
     system("cd .. && scripts/viewer.sh &");
@@ -940,14 +903,12 @@ Form :: Form() {
   fixedTabPage4.add(textbox2);
   fixedTabPage4.add(button2);
   fixedTabPage4.add(showBoard);
-  fixedTabPage4.add(showBoardImg);
   fixedTabPage4.add(playGraphicsView);
   fixedTabPage4.add(button5);
   fixedTabPage4.add(setModelFile);
   fixedTabPage4.move(textbox2, 10, 10);
   fixedTabPage4.move(playGraphicsView, 130, 80);
   fixedTabPage4.move(showBoard, 395, 80);
-  fixedTabPage4.move(showBoardImg, 570, 80);
   fixedTabPage4.move(button2, 10, 80);
   fixedTabPage4.move(button5, 10, 40);
   fixedTabPage4.move(setModelFile, 80, 40);
@@ -1427,10 +1388,6 @@ void Form :: savetoTxt(const std::vector<RosterEntry>& enemyUnits, const std::ve
   outfile.close();
 }
 
-void Form :: update_picture() {
-  pictureBox1.set(gifpth);
-}
-
 void Form :: update_metrics() {
 
   const int IMG_W = 330;
@@ -1599,7 +1556,6 @@ void Form :: startTrain() {
     });
   }
   Glib::signal_idle().connect_once([this]() {
-    update_picture();
     update_metrics();
   });
 }
