@@ -1,6 +1,7 @@
 param(
     [ValidateSet("Debug", "Release", "RelWithDebInfo", "MinSizeRel")]
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    [string]$Triplet = "x64-windows"
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,9 +21,17 @@ if ($env:VCPKG_ROOT) {
     }
 }
 
+$pkgConfigPaths = @()
+if ($env:VCPKG_ROOT) {
+    $pkgConfigPaths += Join-Path $env:VCPKG_ROOT "installed\$Triplet\lib\pkgconfig"
+    $pkgConfigPaths += Join-Path $env:VCPKG_ROOT "installed\$Triplet\share\pkgconfig"
+    $env:PKG_CONFIG_PATH = ($pkgConfigPaths -join ";")
+}
+
 $cmakeArgs = @("-DCMAKE_BUILD_TYPE=$Configuration")
 if ($toolchain) {
     $cmakeArgs += "-DCMAKE_TOOLCHAIN_FILE=$toolchain"
+    $cmakeArgs += "-DVCPKG_TARGET_TRIPLET=$Triplet"
 }
 
 cmake .. @cmakeArgs
