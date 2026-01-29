@@ -1488,6 +1488,9 @@ class Warhammer40kEnv(gym.Env):
                     "[FIGHT][ENV] "
                     f"file={__file__} exe={sys.executable} cwd={os.getcwd()} "
                     f"FIGHT_REPORT={int(_fight_report_enabled())} "
+                    f"VERBOSE_LOGS={os.getenv('VERBOSE_LOGS', '0')} "
+                    f"MANUAL_DICE={os.getenv('MANUAL_DICE', '0')} "
+                    f"PLAY_NO_EXPLORATION={os.getenv('PLAY_NO_EXPLORATION', '0')} "
                     f"TRAIN_DEBUG={os.getenv('TRAIN_DEBUG', '0')}"
                 )
                 self._fight_env_logged = True
