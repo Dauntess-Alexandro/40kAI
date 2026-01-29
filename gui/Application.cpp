@@ -15,6 +15,7 @@
 #include <vector>
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <nlohmann/json.hpp>
 #include "include/Application.h"
 #include "include/popup.h"
@@ -89,6 +90,84 @@ int findDefaultModelsCount(const std::string& faction, const std::string& name) 
   }
   return 1;
 }
+
+int parsePositiveInt(const std::string& text) {
+  const char* raw = text.c_str();
+  char* end = nullptr;
+  long value = std::strtol(raw, &end, 10);
+  if (end == raw || value < 0) {
+    return 0;
+  }
+  return static_cast<int>(value);
+}
+
+bool parseTrainEpisode(const std::string& line, int& current) {
+  const std::string key = "ep=";
+  size_t pos = line.find(key);
+  if (pos == std::string::npos) {
+    return false;
+  }
+  pos += key.size();
+  if (pos >= line.size() || !std::isdigit(static_cast<unsigned char>(line[pos]))) {
+    return false;
+  }
+  int value = 0;
+  while (pos < line.size() && std::isdigit(static_cast<unsigned char>(line[pos]))) {
+    value = value * 10 + (line[pos] - '0');
+    ++pos;
+  }
+  current = value;
+  return true;
+}
+
+bool parseTqdmProgress(const std::string& line, int& current, int& total) {
+  size_t i = 0;
+  while (i < line.size()) {
+    if (!std::isdigit(static_cast<unsigned char>(line[i]))) {
+      ++i;
+      continue;
+    }
+    size_t start = i;
+    while (i < line.size() && std::isdigit(static_cast<unsigned char>(line[i]))) {
+      ++i;
+    }
+    if (i < line.size() && line[i] == '/' && i + 1 < line.size()
+        && std::isdigit(static_cast<unsigned char>(line[i + 1]))) {
+      int left = std::stoi(line.substr(start, i - start));
+      size_t rightStart = i + 1;
+      size_t rightEnd = rightStart;
+      while (rightEnd < line.size()
+             && std::isdigit(static_cast<unsigned char>(line[rightEnd]))) {
+        ++rightEnd;
+      }
+      int right = std::stoi(line.substr(rightStart, rightEnd - rightStart));
+      if (right > 0) {
+        current = left;
+        total = right;
+        return true;
+      }
+    }
+    ++i;
+  }
+  return false;
+}
+
+bool parseTrainingProgress(const std::string& line, int fallbackTotal, int& current, int& total) {
+  int tqdmCurrent = 0;
+  int tqdmTotal = 0;
+  if (parseTqdmProgress(line, tqdmCurrent, tqdmTotal)) {
+    current = tqdmCurrent;
+    total = tqdmTotal;
+    return true;
+  }
+  int trainCurrent = 0;
+  if (parseTrainEpisode(line, trainCurrent)) {
+    current = trainCurrent;
+    total = fallbackTotal;
+    return true;
+  }
+  return false;
+}
 }  // namespace
 
 std::string gifpth = "img/model_train.gif";
@@ -111,6 +190,8 @@ Form :: Form() {
   training = false;
   playing = false;
   loadingRoster = false;
+  hideTrainingLogs = true;
+  trainingTotalEpisodes = 0;
   trainEnvPrefix = "";
   trainingStartLabel = "обучения";
   trainingStatusLabel = "Обучение";
@@ -290,6 +371,11 @@ Form :: Form() {
 
   textbox1.set_text("Train Model:");
   setStatusMessage("Press the Train button to train a model");
+  trainingProgressLabel.set_text("ep=0/0 (0%)");
+  trainingProgress.set_fraction(0.0);
+  trainingProgress.set_show_text(true);
+  trainingProgress.set_text("0%");
+  trainingProgress.set_size_request(360, 24);
     
   button1.set_label("Train");
   button1.signal_button_release_event().connect([&](GdkEventButton*) {
@@ -297,6 +383,7 @@ Form :: Form() {
     syncEnemyUnitsFromRoster();
     updateInits(modelClass, enemyClass);
     if (exists_test("data.json") && training == false) {
+      training = true;
       setStatusMessage("Training...");
       trainEnvPrefix = "";
       trainingStartLabel = "обучения";
@@ -313,6 +400,7 @@ Form :: Form() {
     syncEnemyUnitsFromRoster();
     updateInits(modelClass, enemyClass);
     if (exists_test("data.json") && training == false) {
+      training = true;
       setStatusMessage("Обучение 8x...");
       trainEnvPrefix = "VEC_ENV_COUNT=8 ";
       trainingStartLabel = "обучения 8x";
@@ -379,6 +467,7 @@ Form :: Form() {
     syncEnemyUnitsFromRoster();
     updateInits(modelClass, enemyClass);
     if (exists_test("data.json") && training == false) {
+      training = true;
       setStatusMessage("Самообучение: обучение...");
       trainEnvPrefix = "SELF_PLAY_ENABLED=1 ";
       trainingStartLabel = "самообучения";
@@ -687,6 +776,10 @@ Form :: Form() {
   fixedTabPage2.move(buttonSelfPlay, 200, 300);
   fixedTabPage2.add(status);
   fixedTabPage2.move(status, 10, 350);
+  fixedTabPage2.add(trainingProgressLabel);
+  fixedTabPage2.move(trainingProgressLabel, 10, 380);
+  fixedTabPage2.add(trainingProgress);
+  fixedTabPage2.move(trainingProgress, 10, 400);
 
     // show trained model tab
 
@@ -844,7 +937,26 @@ Form :: Form() {
 
 void Form :: setStatusMessage(const std::string& message) {
   status.set_text(message);
-  appendLogLine(message);
+  if (!training || !hideTrainingLogs) {
+    appendLogLine(message);
+  }
+}
+
+void Form :: updateTrainingProgress(int current, int total) {
+  if (total <= 0) {
+    trainingProgress.set_fraction(0.0);
+    trainingProgress.set_text("0%");
+    trainingProgressLabel.set_text("ep=" + std::to_string(current) + "/?");
+    return;
+  }
+  double fraction = static_cast<double>(current) / static_cast<double>(total);
+  fraction = std::max(0.0, std::min(1.0, fraction));
+  int percent = static_cast<int>(fraction * 100.0 + 0.5);
+  trainingProgress.set_fraction(fraction);
+  trainingProgress.set_text(std::to_string(percent) + "%");
+  trainingProgressLabel.set_text(
+      "ep=" + std::to_string(current) + "/" + std::to_string(total)
+      + " (" + std::to_string(percent) + "%)");
 }
 
 void Form :: appendLogLine(const std::string& message) {
@@ -1288,6 +1400,12 @@ void Form :: startTrain() {
   command.append(trainEnvPrefix);
   command.append("./train.sh 2>&1");
 
+  trainingTotalEpisodes = parsePositiveInt(setIters.get_text());
+  int totalEpisodes = trainingTotalEpisodes;
+  Glib::signal_idle().connect_once([this, totalEpisodes]() {
+    updateTrainingProgress(0, totalEpisodes);
+  });
+
   std::string startMessage = "Старт " + trainingStartLabel + ": PER=1, N_STEP=3.";
   Glib::signal_idle().connect_once([this, startMessage]() {
     setStatusMessage(startMessage);
@@ -1307,6 +1425,8 @@ void Form :: startTrain() {
   }
 
   std::array<char, 512> buffer{};
+  int lastEpisode = 0;
+  int lastTotal = totalEpisodes;
   while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe)) {
     std::string line(buffer.data());
     while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
@@ -1316,12 +1436,33 @@ void Form :: startTrain() {
       continue;
     }
     appendTrainingLogToFile(line, trainingLogTag);
-    Glib::signal_idle().connect_once([this, line]() {
-      appendLogLine(line);
-    });
+    int currentEpisode = 0;
+    int totalFromLine = lastTotal;
+    if (parseTrainingProgress(line, lastTotal, currentEpisode, totalFromLine)) {
+      if (totalFromLine > 0) {
+        lastTotal = totalFromLine;
+      }
+      if (currentEpisode > 0) {
+        lastEpisode = currentEpisode;
+      }
+      Glib::signal_idle().connect_once([this, currentEpisode, totalFromLine]() {
+        updateTrainingProgress(currentEpisode, totalFromLine);
+      });
+    } else if (!hideTrainingLogs) {
+      Glib::signal_idle().connect_once([this, line]() {
+        appendLogLine(line);
+      });
+    }
   }
 
   int exitCode = pclose(pipe);
+  training = false;
+  if (lastTotal > 0 && lastEpisode > 0) {
+    int finalEpisode = std::min(lastEpisode, lastTotal);
+    Glib::signal_idle().connect_once([this, finalEpisode, lastTotal]() {
+      updateTrainingProgress(finalEpisode, lastTotal);
+    });
+  }
   if (exitCode == 0) {
     std::string doneMessage = trainingStatusLabel + " завершено.";
     Glib::signal_idle().connect_once([this, doneMessage]() {
@@ -1336,8 +1477,6 @@ void Form :: startTrain() {
     });
     appendTrainingLogToFile(errLine, trainingLogTag);
   }
-
-  training = false;
   Glib::signal_idle().connect_once([this]() {
     update_picture();
     update_metrics();

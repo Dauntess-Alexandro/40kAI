@@ -53,6 +53,7 @@ public :
 
 private:
   void setStatusMessage(const std::string& message);
+  void updateTrainingProgress(int current, int total);
   void applyFactionToModel(const std::string& faction);
   void applyFactionToEnemy(const std::string& faction);
   bool loadWindowGeometry();
@@ -121,6 +122,8 @@ Image metricBox6;
   Label enemyFact;
   Label modelFact;
   Label status;
+  Label trainingProgressLabel;
+  ProgressBar trainingProgress;
   Entry setIters;
   Entry setModelFile;
   RadioButtonGroup factionModel;
@@ -167,6 +170,8 @@ Image metricBox6;
   int y;
   bool open;
   bool training;
+  bool hideTrainingLogs;
+  int trainingTotalEpisodes;
   bool playing;
   bool loadingRoster;
   Label error;
