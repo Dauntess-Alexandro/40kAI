@@ -662,7 +662,23 @@ inText.append("Number of Lifetimes ran: {}\n".format(totLifeT))
 pbar = tqdm(total=totLifeT)
 
 for ctx in env_contexts:
-    ctx["state"], ctx["info"] = ctx["env"].reset(m=ctx["model"], e=ctx["enemy"], Type="big", trunc=True)
+        try:
+            ctx["state"], ctx["info"] = ctx["env"].reset(
+                m=ctx["model"],
+                e=ctx["enemy"],
+                Type="big",
+                trunc=True,
+            )
+        except TypeError:
+            if hasattr(ctx["env"], "unwrapped") and hasattr(ctx["env"].unwrapped, "reset"):
+                ctx["state"], ctx["info"] = ctx["env"].unwrapped.reset(
+                    m=ctx["model"],
+                    e=ctx["enemy"],
+                    Type="big",
+                    trunc=True,
+                )
+            else:
+                ctx["state"], ctx["info"] = ctx["env"].reset()
     ctx["ep_len"] = 0
     ctx["rew_arr"] = []
     ctx["n_step_buffer"] = collections.deque(maxlen=N_STEP)
