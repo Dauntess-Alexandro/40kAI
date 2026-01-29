@@ -1,171 +1,544 @@
-diff --git a/gym_mod/gym_mod/engine/game_controller.py b/gym_mod/gym_mod/engine/game_controller.py
-index 7931e842cb38e798f7934f405482b5d5ec0d141f..a482e1b166ba8b590dfaa02c028d921619b037a5 100644
---- a/gym_mod/gym_mod/engine/game_controller.py
-+++ b/gym_mod/gym_mod/engine/game_controller.py
-@@ -46,73 +46,84 @@ class GameController:
-         request = self._next_request(block=True)
-         return self._consume_messages(), request
+diff --git a/gui/Application.cpp b/gui/Application.cpp
+index e7d03436191b7e6da7e1b6770b3a937abd98554b..5f21efd4ef19cfac42c0c54ab471e1b59d498344 100644
+--- a/gui/Application.cpp
++++ b/gui/Application.cpp
+@@ -182,147 +182,129 @@ std::string formatDuration(std::chrono::seconds duration) {
+   } else {
+     oss << std::setfill('0') << std::setw(2) << minutes << ":"
+         << std::setw(2) << seconds;
+   }
+   return oss.str();
+ }
  
-     def _consume_messages(self):
-         return self._io.consume_messages()
+ std::string buildTrainingStatsLine(double itPerSec,
+                                    std::chrono::seconds elapsed,
+                                    bool showEta,
+                                    std::chrono::seconds eta) {
+   std::ostringstream oss;
+   if (itPerSec > 0.0) {
+     oss << std::fixed << std::setprecision(1) << itPerSec << " it/s";
+   } else {
+     oss << "— it/s";
+   }
+   oss << " • elapsed " << formatDuration(elapsed);
+   if (showEta) {
+     oss << " • ETA " << formatDuration(eta);
+   }
+   return oss.str();
+ }
+ }  // namespace
  
-     def _next_request(self, block: bool):
-         if self._finished and self._request_queue.empty():
-             return None
-         if not block:
-             try:
-                 return self._request_queue.get_nowait()
-             except queue.Empty:
-                 return None
-         while True:
-             try:
-                 return self._request_queue.get(timeout=0.1)
-             except queue.Empty:
-                 if self._finished:
-                     return None
+-std::string gifpth = "img/model_train.gif";
+ std::string rewpth = "img/reward.png";
+ std::string losspth = "img/loss.png";
+ std::string eplenpth = "img/epLen.png";
+ std::string winratepth = "img/winrate.png";
+ std::string vpdiffpth = "img/vpdiff.png";
+ std::string endreasonpth = "img/endreasons.png";
+ std::string imgpth = "img/icon.png";
  
-     def _load_game(self):
-         if self.model_path == "None":
-             save_path = "models/"
-             folders = os.listdir(save_path) if os.path.isdir(save_path) else []
--            envs = []
--            modelpth = []
-+            paired_models = []
+ Form :: Form() {
  
-             for folder in folders:
-                 full = os.path.join(save_path, folder)
-                 if os.path.isdir(full):
-                     files = os.listdir(full)
-                     for filename in files:
--                        if filename.endswith(".pickle"):
--                            envs.append(os.path.join(full, filename))
--                        elif filename.endswith(".pth"):
--                            modelpth.append(os.path.join(full, filename))
+   modelClass = " Necrons";
+   enemyClass = " Necrons";
+   path = " ";
+   open = false;
+   x = 60;
+   y = 40;
+   training = false;
+   playing = false;
+   loadingRoster = false;
+   hideTrainingLogs = true;
+   trainingTotalEpisodes = 0;
+   trainEnvPrefix = "";
+   trainingStartLabel = "обучения";
+   trainingStatusLabel = "Обучение";
+   trainingLogTag = "TRAIN";
+   evaluating = false;
+ 
+   bar.set_show_close_button(true);
+   bar.set_title("40kAI GUI");
+   set_titlebar(bar);
+ 
+   set_default_size(kDefaultWidth, kDefaultHeight);
+   set_size_request(kMinimumWidth, kMinimumHeight);
+ 
+   rootBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
+   topBarBox.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+   topBarBox.set_spacing(8);
+   leftBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
+-  mainSplit.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+-  rightSplit.set_orientation(Gtk::ORIENTATION_VERTICAL);
+ 
+   rootBox.set_hexpand(true);
+   rootBox.set_vexpand(true);
+   topBarBox.set_hexpand(true);
+   leftBox.set_hexpand(true);
+   leftBox.set_vexpand(true);
+-  mainSplit.set_hexpand(true);
+-  mainSplit.set_vexpand(true);
+-  rightSplit.set_hexpand(true);
+-  rightSplit.set_vexpand(true);
+ 
+   help.set_image_from_icon_name("help-about");
+   help.signal_button_release_event().connect([&](GdkEventButton*){
+     openHelpMenu();
+     return true;
+   });
+   resetLayoutButton.set_label("Reset Layout");
+   resetLayoutButton.signal_button_release_event().connect([&](GdkEventButton*) {
+     resetLayout();
+     return true;
+   });
+   topBarBox.pack_start(resetLayoutButton, Gtk::PACK_SHRINK);
+   topBarBox.pack_start(help, Gtk::PACK_SHRINK);
+ 
+   add(rootBox);
+   rootBox.pack_start(topBarBox, Gtk::PACK_SHRINK);
+-  rootBox.pack_start(mainSplit, Gtk::PACK_EXPAND_WIDGET);
++  rootBox.pack_start(leftBox, Gtk::PACK_EXPAND_WIDGET);
+ 
+   tabControl1.set_hexpand(true);
+   tabControl1.set_vexpand(true);
+   leftBox.pack_start(tabControl1, Gtk::PACK_EXPAND_WIDGET);
+ 
+-  mainSplit.add1(leftBox);
+-  mainSplit.add2(rightSplit);
 -
--            if not envs or not modelpth:
--                raise FileNotFoundError("Не найдены файлы моделей в папке models/.")
+-  boardFrame.set_label("Board / Preview");
+-  boardFrame.set_hexpand(true);
+-  boardFrame.set_vexpand(true);
+-  pictureBox1.set_hexpand(true);
+-  pictureBox1.set_vexpand(true);
+-  boardFrame.add(pictureBox1);
 -
--            envs.sort(key=lambda x: os.path.getmtime(x))
--            modelpth.sort()
--            model_path = envs[-1]
--            checkpoint_path = modelpth[-1]
-+                        if not filename.endswith(".pickle"):
-+                            continue
-+                        pickle_path = os.path.join(full, filename)
-+                        checkpoint_path = os.path.splitext(pickle_path)[0] + ".pth"
-+                        if os.path.isfile(checkpoint_path):
-+                            paired_models.append((os.path.getmtime(pickle_path), pickle_path, checkpoint_path))
-+
-+            if not paired_models:
-+                raise FileNotFoundError(
-+                    "Не найдены пары файлов моделей (.pickle/.pth) в папке models/."
-+                )
-+
-+            paired_models.sort(key=lambda item: item[0])
-+            _, model_path, checkpoint_path = paired_models[-1]
-         else:
-             model_path = self.model_path
--            checkpoint_path = model_path[:-len("pickle")] + "pth"
-+            checkpoint_path = os.path.splitext(model_path)[0] + ".pth"
-+            if not os.path.isfile(model_path):
-+                raise FileNotFoundError(f"Не найден файл модели: {model_path}")
-+            if not os.path.isfile(checkpoint_path):
-+                raise FileNotFoundError(
-+                    f"Не найден checkpoint для модели: {checkpoint_path}. "
-+                    "Проверьте, что рядом есть .pth файл."
-+                )
-+
-+        self._io.log(f"[MODEL] pickle={model_path}")
-+        self._io.log(f"[MODEL] checkpoint={checkpoint_path}")
+   logView.set_hexpand(true);
+   logView.set_vexpand(true);
+   logView.set_editable(false);
+   logView.set_wrap_mode(Gtk::WRAP_WORD_CHAR);
+   auto logBuffer = Gtk::TextBuffer::create();
+   logView.set_buffer(logBuffer);
  
-         with open(model_path, "rb") as handle:
-             env, model, enemy = pickle.load(handle)
+   logScroll.set_hexpand(true);
+   logScroll.set_vexpand(true);
+   logScroll.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
+   logScroll.add(logView);
  
-         checkpoint = torch.load(checkpoint_path)
-         return env, model, enemy, checkpoint
+-  rightSplit.add1(boardFrame);
+-  rightSplit.add2(logScroll);
++  leftBox.pack_start(logScroll, Gtk::PACK_EXPAND_WIDGET);
  
-     def _run_game_loop(self):
-         os.environ["STATE_JSON_PATH"] = self.state_path
-         if "MANUAL_DICE" not in os.environ:
-             os.environ["MANUAL_DICE"] = "1"
-         if "VERBOSE_LOGS" not in os.environ and os.environ.get("MANUAL_DICE") == "1":
-             os.environ["VERBOSE_LOGS"] = "1"
-         set_active_io(self._io)
+   tabControl1.insert_page(tabPage2, "Train", 0);
+   tabControl1.insert_page(tabPage3, "Show Trained Model", 1);
+   tabControl1.insert_page(tabPage5, "Metrics", 2);
+   tabControl1.insert_page(tabPage4, "Play", 3);
+   tabControl1.insert_page(tabPage1, "Settings", 4);
+   tabControl1.insert_page(tabPage6, "Оценка", 5);
  
-         try:
-             env, model, enemy, checkpoint = self._load_game()
+     // settings tab
  
-             env.io = self._io
-             env.playType = True
+   labelPage1.set_label("Settings");
+   tabControl1.set_tab_label(tabPage1, labelPage1);
+   tabPage1.add(fixedTabPage1);
  
-             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+   textbox.set_text("Change Tab Location:");
+   fixedTabPage1.add(textbox);
+   fixedTabPage1.move(textbox, 10, 10);
  
-             attacker_side, defender_side = roll_off_attacker_defender(
-                 manual_roll_allowed=True,
-@@ -129,52 +140,63 @@ class GameController:
-                 )
-             )
+   fixedTabPage1.add(radioTop);
+   fixedTabPage1.move(radioTop, 10, 40);
+   radioTop.set_label("Top");
+   radioTop.set_group(radioButtonGroup);
+   radioTop.signal_toggled().connect([this]() {
+     tabControl1.set_tab_pos(PositionType::POS_TOP);
+   });
+@@ -804,55 +786,51 @@ Form :: Form() {
+   fixedTabPage2.add(button1);
+   fixedTabPage2.move(button1, 380, 300);
+   fixedTabPage2.add(buttonTrain6);
+   fixedTabPage2.move(buttonTrain6, 470, 300);
+   fixedTabPage2.add(setIters);
+   fixedTabPage2.move(setIters, 160, 40);
+   fixedTabPage2.add(button3);
+   fixedTabPage2.move(button3, 10, 300);
+   fixedTabPage2.add(buttonSelfPlay);
+   fixedTabPage2.move(buttonSelfPlay, 200, 300);
+   fixedTabPage2.add(status);
+   fixedTabPage2.move(status, 10, 350);
+   fixedTabPage2.add(trainingProgressLabel);
+   fixedTabPage2.move(trainingProgressLabel, 10, 380);
+   fixedTabPage2.add(trainingProgress);
+   fixedTabPage2.move(trainingProgress, 10, 400);
+   fixedTabPage2.add(trainingProgressStatsLabel);
+   fixedTabPage2.move(trainingProgressStatsLabel, 10, 430);
  
-             from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
+     // show trained model tab
  
-             deploy_only_war(
-                 model_units=model,
-                 enemy_units=enemy,
-                 b_len=env.unwrapped.b_len,
-                 b_hei=env.unwrapped.b_hei,
-                 attacker_side=attacker_side,
-                 log_fn=self._io.log,
-             )
-             post_deploy_setup(log_fn=self._io.log)
+   labelPage3.set_label("Show Trained Model");
+   tabControl1.set_tab_label(tabPage3, labelPage3);
+   tabPage3.add(fixedTabPage3);
  
-             env.attacker_side = attacker_side
-             env.defender_side = defender_side
+-  showModelHint.set_text("Preview shown in the right panel.");
+-  fixedTabPage3.add(showModelHint);
+-  fixedTabPage3.move(showModelHint, 10, 10);
+-  pictureBox1.set_size_request(280, 280);
+-  update_picture();
++  // no preview panel
  
-             state, info = env.reset(m=model, e=enemy, playType=True, Type="big", trunc=True)
+   // show metrics tab
+   labelPage5.set_label("Model Metrics");
+   tabControl1.set_tab_label(tabPage5, labelPage5);
+   tabPage5.add(fixedTabPage5);
+   
+   chooseMetrics.set_label("Choose");
+   chooseMetrics.signal_button_release_event().connect([&](GdkEventButton * event){
+ 	FileChooserDialog folderBrowserDialog("", FILE_CHOOSER_ACTION_OPEN);
+     folderBrowserDialog.add_button("Cancel", RESPONSE_CANCEL);
+     folderBrowserDialog.add_button("Open", RESPONSE_OK);
+ 	system("clear");
+     char resolved_path[PATH_MAX];
+     realpath("../../40kAI", resolved_path);
+     strcat(resolved_path, "/models");
+     folderBrowserDialog.set_current_folder(resolved_path);
+     folderBrowserDialog.set_transient_for(*this);
  
-             n_actions = [5, 2, len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
-             for _ in range(len(model)):
-                 n_actions.append(12)
-             n_observations = len(state)
+     auto filter_text = Gtk::FileFilter::create();
+     filter_text->set_name("Pickle Files");
+     filter_text->add_pattern("*.pickle");
+     folderBrowserDialog.add_filter(filter_text);
  
--            policy_net = DQN(n_observations, n_actions).to(device)
--            target_net = DQN(n_observations, n_actions).to(device)
-+            net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
-+            dueling = net_type == "dueling"
-+            if not dueling and isinstance(checkpoint, dict):
-+                policy_state = checkpoint.get("policy_net", {})
-+                if any(key.startswith("advantage_heads.") for key in policy_state.keys()):
-+                    dueling = True
-+
-+            net_label = "dueling" if dueling else "basic"
-+            net_source = "net_type" if net_type else "state_dict"
-+            self._io.log(f"[MODEL] Архитектура сети: {net_label} (источник: {net_source})")
-+
-+            policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
-+            target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
-             optimizer = torch.optim.Adam(policy_net.parameters())
+     if (folderBrowserDialog.run() == RESPONSE_OK) {
+       path = folderBrowserDialog.get_file()->get_path();
+@@ -903,73 +881,65 @@ Form :: Form() {
+     system("clear");
+     char resolved_path[PATH_MAX];
+     realpath("../../40kAI", resolved_path);
+     strcat(resolved_path, "/models");
+     folderBrowserDialog.set_current_folder(resolved_path);
+     folderBrowserDialog.set_transient_for(*this);
  
-             policy_net.load_state_dict(checkpoint["policy_net"])
-             target_net.load_state_dict(checkpoint["target_net"])
-             optimizer.load_state_dict(checkpoint["optimizer"])
+     auto filter_text = Gtk::FileFilter::create();
+     filter_text->set_name("Pickle Files");
+     filter_text->add_pattern("*.pickle");
+     folderBrowserDialog.add_filter(filter_text);
  
-             policy_net.eval()
-             target_net.eval()
+     if (folderBrowserDialog.run() == RESPONSE_OK) {
+       path = folderBrowserDialog.get_file()->get_path();
+       setModelFile.set_text(path);
+     }
+     return true;
+   });
+   
+   showBoard.set_label("Show Board (Ascii Mode)");
+   showBoard.signal_button_release_event().connect([&](GdkEventButton* event) {
+     openPopUp(true);
+     return true;
+   });
  
-             self._io.log(
-                 "\nИнструкции:\nИгрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).\n"
-                 "Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).\n"
-             )
+-  showBoardImg.set_label("Show Board (Image Mode)");
+-  showBoardImg.signal_button_release_event().connect([&](GdkEventButton* event) {
+-	openPopUp(false);
+-	return true;
+-  });
+-
+   playGraphicsView.set_label("Играть в GUI");
+   playGraphicsView.signal_button_release_event().connect([&](GdkEventButton* event) {
+     system("cd .. && scripts/viewer.sh &");
+     return true;
+   });
  
-             is_done = False
-             i = 0
-             reward = 0
+   fixedTabPage4.add(textbox2);
+   fixedTabPage4.add(button2);
+   fixedTabPage4.add(showBoard);
+-  fixedTabPage4.add(showBoardImg);
+   fixedTabPage4.add(playGraphicsView);
+   fixedTabPage4.add(button5);
+   fixedTabPage4.add(setModelFile);
+   fixedTabPage4.move(textbox2, 10, 10);
+   fixedTabPage4.move(playGraphicsView, 130, 80);
+   fixedTabPage4.move(showBoard, 395, 80);
+-  fixedTabPage4.move(showBoardImg, 570, 80);
+   fixedTabPage4.move(button2, 10, 80);
+   fixedTabPage4.move(button5, 10, 40);
+   fixedTabPage4.move(setModelFile, 80, 40);
  
-             while not is_done:
-                 done, info = env.unwrapped.player()
-                 env.updateBoard()
-                 state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-                 shoot_mask = build_shoot_action_mask(env)
-                 action = select_action(env, state_tensor, i, policy_net, len(model), shoot_mask=shoot_mask)
-                 action_dict = convertToDict(action)
+   loadWindowGeometry();
+   loadLastRoster();
+   if (modelUnits.empty()) {
+     modelUnits.push_back({"Apothecary", "Space_Marine", findDefaultModelsCount("Space_Marine", "Apothecary"),
+                           RosterModel::generateInstanceId()});
+     modelUnits.push_back({"Eliminator Squad", "Space_Marine",
+                           findDefaultModelsCount("Space_Marine", "Eliminator Squad"),
+                           RosterModel::generateInstanceId()});
+   }
+   if (enemyUnits.empty()) {
+     rosterModel.addUnit("Apothecary", 1, enemyClass.substr(1));
+     rosterModel.addUnit("Eliminator Squad", 1, enemyClass.substr(1));
+     syncEnemyUnitsFromRoster();
+     saveLastRoster();
+   }
+   signal_hide().connect([this]() {
+     saveLastRoster();
+     saveWindowGeometry();
+   });
+   show_all();
+ }
+@@ -1405,54 +1375,50 @@ bool Form :: isValidUnit(int id, std::string name) {
+   return false;
+ }
+ 
+ void Form :: savetoTxt(const std::vector<RosterEntry>& enemyUnits, const std::vector<RosterEntry>& modelUnits) {
+ 
+   std::ofstream outfile("units.txt");
+   outfile << "Player Units\n";
+   for (const auto& entry : enemyUnits) {
+     outfile << entry.name << "|" << entry.modelsCount;
+     if (!entry.instanceId.empty()) {
+       outfile << "|" << entry.instanceId;
+     }
+     outfile << std::endl;
+   }
+   outfile << "Model Units\n";
+   for (const auto& entry : modelUnits) {
+     outfile << entry.name << "|" << entry.modelsCount;
+     if (!entry.instanceId.empty()) {
+       outfile << "|" << entry.instanceId;
+     }
+     outfile << std::endl;
+   }
+   outfile.close();
+ }
+ 
+-void Form :: update_picture() {
+-  pictureBox1.set(gifpth);
+-}
+-
+ void Form :: update_metrics() {
+ 
+   const int IMG_W = 330;
+   const int IMG_H = 160;
+ 
+   auto load_scaled = [&](const std::string& rel) -> Glib::RefPtr<Gdk::Pixbuf> {
+     std::string path = "../gui/" + rel;
+     if (!fs::exists(path)) {
+       return Glib::RefPtr<Gdk::Pixbuf>();
+     }
+     auto pix = Gdk::Pixbuf::create_from_file(path);
+     return pix->scale_simple(IMG_W, IMG_H, Gdk::INTERP_BILINEAR);
+   };
+ 
+   if (auto p = load_scaled(rewpth)) metricBox.set(p);
+   if (auto p = load_scaled(losspth)) metricBox2.set(p);
+   if (auto p = load_scaled(winratepth)) metricBox4.set(p);
+   if (auto p = load_scaled(vpdiffpth)) metricBox5.set(p);
+   if (auto p = load_scaled(eplenpth)) metricBox3.set(p);
+   if (auto p = load_scaled(endreasonpth)) metricBox6.set(p);
+ 
+ }
+ 
+ void Form :: updateInits(std::string model, std::string enemy) {
+   std::string command = "cd .. ; ./data.sh ";
+@@ -1577,51 +1543,50 @@ void Form :: startTrain() {
+     });
+     appendTrainingLogToFile(doneMessage, trainingLogTag);
+     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+         std::chrono::steady_clock::now() - trainingStartTime);
+     std::string finalStats = trainingStatusLabel + " завершено • elapsed "
+         + formatDuration(elapsed);
+     Glib::signal_idle().connect_once([this, finalStats]() {
+       trainingProgressStatsLabel.set_text(finalStats);
+     });
+   } else {
+     std::string errLine = trainingStatusLabel + " завершено с ошибкой. Код выхода: "
+         + std::to_string(exitCode);
+     Glib::signal_idle().connect_once([this, errLine]() {
+       setStatusMessage(errLine);
+     });
+     appendTrainingLogToFile(errLine, trainingLogTag);
+     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+         std::chrono::steady_clock::now() - trainingStartTime);
+     std::string finalStats = trainingStatusLabel + " завершено с ошибкой • elapsed "
+         + formatDuration(elapsed);
+     Glib::signal_idle().connect_once([this, finalStats]() {
+       trainingProgressStatsLabel.set_text(finalStats);
+     });
+   }
+   Glib::signal_idle().connect_once([this]() {
+-    update_picture();
+     update_metrics();
+   });
+ }
+ 
+ void Form :: runPlayAgainstModelInBackground() {
+   std::thread t(&Form::playAgainstModel, this);
+   t.detach();
+ }
+   
+ void Form :: playAgainstModel() {
+   path = setModelFile.get_text();
+ 
+   std::string envPrefix;
+ 
+   std::string command;
+ 
+   if (playInGUI == "True") {
+     envPrefix = "PLAY_NO_EXPLORATION=1 FIGHT_REPORT=1 ";
+     command = "cd .. ; " + envPrefix + "./play.sh ";
+     if (strlen(path.data()) < 2) {
+       command.append("None");
+     } else {
+       command.append("\"");
+       command.append(path);
+       command.append("\"");
+diff --git a/gui/include/Application.h b/gui/include/Application.h
+index a970b605e49e1c917c85de5ad57e530a3086a0b8..0cd6afea1ceb9ca18178407786f23a32a94c7147 100644
+--- a/gui/include/Application.h
++++ b/gui/include/Application.h
+@@ -1,146 +1,139 @@
+ #ifndef APP_H
+ #define APP_H
+ 
+ #include <iostream>
+ #include <gtkmm.h>
+ #include <cstdlib>
+ #include <stdlib.h>
+ #include <string>
+ #include <fstream>
+ #include <thread>
+ #include <chrono>
+ #include <filesystem>
+ #include <deque>
+ #include "RosterModel.h"
+ #include "popup.h"
+ #include "units.h"
+ #include "warn.h"
+ #include "help.h"
+ 
+ class Form : public Window {
+ 
+ public : 
+   Form();
+   int openPopUp(bool textMode);
+-  void update_picture();
+   void update_metrics();
+   void updateInits(std::string model, std::string enemy);
+   void startTrainInBackground();
+   void startTrain();
+   void runPlayAgainstModelInBackground();
+   void playAgainstModel();
+   inline bool exists_test (const std::string& name);
+   void on_dropdown_changed();
+   void savetoTxt(const std::vector<RosterEntry>& enemyUnits, const std::vector<RosterEntry>& modelUnits);
+   bool isValidUnit(int id, std::string name);
+   int openArmyView();
+   int openWarnMenu(std::string mess, int comm);
+   int openHelpMenu();
+   int openPlayGUI();
+   void changeMetrics(std::string path);
+   void recentMetrics();
+   std::string toLower(std::string data);
+   void mirrorRoster();
+   void saveLastRoster();
+   void loadLastRoster();
+   void syncEnemyUnitsFromRoster();
+   bool addEnemyUnitFromEntry(const std::string& entryText);
+   void resetLayout();
+   void appendLogLine(const std::string& message);
+   void appendEvalLogLine(const std::string& message);
+   void appendTrainingLogToFile(const std::string& message, const std::string& tag = "TRAIN");
+   void startEvalInBackground();
+   void startEval(int games);
+ 
+ private:
+   void setStatusMessage(const std::string& message);
+   void updateTrainingProgress(int current, int total);
+   void resetTrainingProgressStats();
+   void recordTrainingSample(int episode, std::chrono::steady_clock::time_point now);
+   double calculateTrainingRate() const;
+   void applyFactionToModel(const std::string& faction);
+   void applyFactionToEnemy(const std::string& faction);
+   bool loadWindowGeometry();
+   void saveWindowGeometry();
+   void ensureMinimumSize();
+   Window* boardShow;
+   Window* armyView;
+   Window* warn;
+   Window* play;
+   Window* helpMenu;
+-  Image pictureBox1;
+   Image metricBox;
+   Image metricBox2;
+   Image metricBox3;
+ Image metricBox4;
+ Image metricBox5;
+ Image metricBox6;
+   Box rootBox;
+   Box topBarBox;
+   Box leftBox;
+-  Paned mainSplit;
+-  Paned rightSplit;
+-  Frame boardFrame;
+   ScrolledWindow logScroll;
+   TextView logView;
+-  Label showModelHint;
+   Notebook tabControl1;
+   Label labelPage1;
+   Label labelPage2;
+   Label labelPage3;
+   Label labelPage4;
+   Label labelPage5;
+   Label labelPage6;
+   Label label1;
+   Frame tabPage1;
+   Frame tabPage2;
+   Frame tabPage3;
+   Frame tabPage4;
+   Frame tabPage5;
+   Frame tabPage6;
+   RadioButtonGroup radioButtonGroup;
+   RadioButton radioTop;
+   RadioButton radioLeft;
+   RadioButton radioRight;
+   RadioButton radioBottom;
+   Fixed fixedTabPage1;
+   Fixed fixedTabPage2;
+   Fixed fixedTabPage3;
+   Fixed fixedTabPage4;
+   Fixed fixedTabPage5;
+   Fixed fixedTabPage6;
+   Button button1;
+   Button buttonTrain6;
+   Button button2;
+   Button button3;
+   Button button4;
+   Button button5;
+   Button button6;
+   Button buttonSelfPlay;
+   Button showBoard;
+-  Button showBoardImg;
+   Button playGraphicsView;
+   Label textbox;
+   Label textbox2;
+   Label textbox1;
+   Label enemyFact;
+   Label modelFact;
+   Label status;
+   Label trainingProgressLabel;
+   Label trainingProgressStatsLabel;
+   ProgressBar trainingProgress;
+   Entry setIters;
+   Entry setModelFile;
+   RadioButtonGroup factionModel;
+   RadioButton orksModel;
+   RadioButton spmModel;
+   RadioButton sobModel;
+   RadioButton adcModel;
+   RadioButton tyrModel;
+   RadioButton milModel;
+   RadioButton tauModel;
+   RadioButton necModel;
+   RadioButtonGroup factionEnemy;
+   RadioButton orksEnemy;
+   RadioButton spmEnemy;
+   RadioButton sobEnemy;
 

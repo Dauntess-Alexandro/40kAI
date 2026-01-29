@@ -5,15 +5,15 @@
   },
   "turn": 1,
   "round": 1,
-  "phase": "movement",
+  "phase": "command",
   "active": "player",
   "vp": {
     "player": 0,
     "model": 0
   },
   "cp": {
-    "player": 1,
-    "model": 1
+    "player": 0,
+    "model": 0
   },
   "units": [
     {
@@ -22,8 +22,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 30,
-      "y": 17
+      "x": 39,
+      "y": 18
     },
     {
       "side": "player",
@@ -31,8 +31,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 36,
-      "y": 6
+      "x": 37,
+      "y": 28
     },
     {
       "side": "model",
@@ -40,8 +40,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 9,
-      "y": 30
+      "x": 6,
+      "y": 17
     },
     {
       "side": "model",
@@ -49,8 +49,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 9,
-      "y": 40
+      "x": 1,
+      "y": 44
     }
   ],
   "objectives": [
@@ -76,15 +76,6 @@
     }
   ],
   "log_tail": [
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "[MODEL] pickle=models/M:Necrons_vs_P:Necrons/model-41-943391.pickle",
-    "[MODEL] checkpoint=models/M:Necrons_vs_P:Necrons/model-41-943391.pth",
-    "Roll-off Attacker/Defender: enemy=1 model=5 -> attacker=model",
     "Юниты: [('Necron Warriors', '5', 10), ('Necron Warriors', '6', 10)]",
     "[DEPLOY] Order: model first, alternating",
     "[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (30,9)",
@@ -105,7 +96,16 @@
     "--- ХОД PLAYER ---",
     "--- ФАЗА КОМАНДОВАНИЯ ---",
     "[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0",
-    "--- ФАЗА ДВИЖЕНИЯ ---"
+    "--- ФАЗА ДВИЖЕНИЯ ---",
+    "Бросок 1D6 на Advance...",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])"
   ],
-  "generated_at": "2026-01-29T18:53:28.782828Z"
+  "generated_at": "2026-01-29T19:07:34.294824Z"
 }

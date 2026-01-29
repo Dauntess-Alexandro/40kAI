@@ -22,7 +22,6 @@ class Form : public Window {
 public : 
   Form();
   int openPopUp(bool textMode);
-  void update_picture();
   void update_metrics();
   void updateInits(std::string model, std::string enemy);
   void startTrainInBackground();
@@ -68,7 +67,6 @@ private:
   Window* warn;
   Window* play;
   Window* helpMenu;
-  Image pictureBox1;
   Image metricBox;
   Image metricBox2;
   Image metricBox3;
@@ -78,12 +76,8 @@ Image metricBox6;
   Box rootBox;
   Box topBarBox;
   Box leftBox;
-  Paned mainSplit;
-  Paned rightSplit;
-  Frame boardFrame;
   ScrolledWindow logScroll;
   TextView logView;
-  Label showModelHint;
   Notebook tabControl1;
   Label labelPage1;
   Label labelPage2;
@@ -118,7 +112,6 @@ Image metricBox6;
   Button button6;
   Button buttonSelfPlay;
   Button showBoard;
-  Button showBoardImg;
   Button playGraphicsView;
   Label textbox;
   Label textbox2;
