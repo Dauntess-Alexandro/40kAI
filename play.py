@@ -70,6 +70,14 @@ def _log(msg: str):
     io.log(msg)
 
 
+def _uses_dueling(checkpoint_state):
+    policy_state = checkpoint_state.get("policy_net", checkpoint_state)
+    return any(
+        key.startswith("value_heads.") or key.startswith("advantage_heads.")
+        for key in policy_state.keys()
+    )
+
+
 verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
 log_fn = _log if verbose else None
 
@@ -138,8 +146,14 @@ for i in range(len(model)):
     n_actions.append(12)
 n_observations = len(state)
 
-policy_net = DQN(n_observations, n_actions).to(device)
-target_net = DQN(n_observations, n_actions).to(device)
+dueling = _uses_dueling(checkpoint)
+if dueling:
+    io.log("Модель обучена в dueling-режиме — запускаем dueling-сеть.")
+else:
+    io.log("Модель обучена в обычном режиме — запускаем обычную сеть.")
+
+policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
 optimizer = torch.optim.Adam(policy_net.parameters())
 
 policy_net.load_state_dict(checkpoint['policy_net'])
