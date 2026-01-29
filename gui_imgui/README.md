@@ -34,3 +34,5 @@ cmake --build . --config Release
 ## Примечания
 - Проект использует FetchContent и скачивает ImGui + GLFW при конфигурации.
 - Если нужен более современный рендер (OpenGL3/DirectX), можно заменить backend на `imgui_impl_opengl3.cpp`.
+- Для кириллицы положи TTF-шрифт с поддержкой русского языка в `gui_imgui/fonts/`
+  (например `Roboto-Regular.ttf`) или укажи путь через переменную `IMGUI_FONT_PATH`.

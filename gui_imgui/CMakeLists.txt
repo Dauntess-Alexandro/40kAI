@@ -46,3 +46,8 @@ target_include_directories(imgui_minimal PRIVATE
 )
 
 target_link_libraries(imgui_minimal PRIVATE glfw OpenGL::GL)
+
+target_compile_options(imgui_minimal PRIVATE
+  $<$<CXX_COMPILER_ID:MSVC>:/utf-8>
+  $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-finput-charset=UTF-8 -fexec-charset=UTF-8>
+)

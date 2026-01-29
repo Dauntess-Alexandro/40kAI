@@ -4,12 +4,60 @@
 #include <imgui_impl_opengl2.h>
 
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <string>
+#include <vector>
 
 #include "app_state.h"
 #include "train_state.h"
 #include "ui_panels.h"
 
 namespace {
+ImFont* LoadRussianFont(ImGuiIO& io) {
+  const std::filesystem::path cwd = std::filesystem::current_path();
+  std::vector<std::string> candidates;
+  if (const char* env_path = std::getenv("IMGUI_FONT_PATH")) {
+    candidates.emplace_back(env_path);
+  }
+  candidates.emplace_back((cwd / "fonts/Roboto-Regular.ttf").string());
+  candidates.emplace_back((cwd / "fonts/NotoSans-Regular.ttf").string());
+  candidates.emplace_back((cwd / "fonts/DejaVuSans.ttf").string());
+  candidates.emplace_back((cwd / "../fonts/Roboto-Regular.ttf").string());
+  candidates.emplace_back((cwd / "../fonts/NotoSans-Regular.ttf").string());
+  candidates.emplace_back((cwd / "../fonts/DejaVuSans.ttf").string());
+  candidates.emplace_back((cwd / "gui_imgui/fonts/Roboto-Regular.ttf").string());
+  candidates.emplace_back((cwd / "gui_imgui/fonts/NotoSans-Regular.ttf").string());
+  candidates.emplace_back((cwd / "gui_imgui/fonts/DejaVuSans.ttf").string());
+  candidates.emplace_back((cwd / "../gui_imgui/fonts/Roboto-Regular.ttf").string());
+  candidates.emplace_back((cwd / "../gui_imgui/fonts/NotoSans-Regular.ttf").string());
+  candidates.emplace_back((cwd / "../gui_imgui/fonts/DejaVuSans.ttf").string());
+  candidates.emplace_back("gui_imgui/fonts/Roboto-Regular.ttf");
+  candidates.emplace_back("gui_imgui/fonts/NotoSans-Regular.ttf");
+  candidates.emplace_back("gui_imgui/fonts/DejaVuSans.ttf");
+  candidates.emplace_back("fonts/Roboto-Regular.ttf");
+  candidates.emplace_back("fonts/NotoSans-Regular.ttf");
+  candidates.emplace_back("fonts/DejaVuSans.ttf");
+
+  for (const auto& path : candidates) {
+    if (!path.empty() && std::filesystem::exists(path)) {
+      ImFont* font = io.Fonts->AddFontFromFileTTF(path.c_str(), 18.0f, nullptr,
+                                                  io.Fonts->GetGlyphRangesCyrillic());
+      if (font) {
+        return font;
+      }
+    }
+  }
+
+  std::fprintf(stderr,
+               "Не удалось загрузить шрифт с кириллицей. "
+               "Укажите путь через переменную IMGUI_FONT_PATH "
+               "или положите файл в gui_imgui/fonts/. "
+               "Текущая директория: %s\n",
+               cwd.string().c_str());
+  return nullptr;
+}
+
 void ApplyWarhammerStyle() {
   ImGuiStyle& style = ImGui::GetStyle();
   style.WindowRounding = 4.0f;
@@ -60,6 +108,10 @@ int main() {
   ImGui::CreateContext();
   ImGuiIO& io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+  ImFont* russian_font = LoadRussianFont(io);
+  if (russian_font) {
+    io.FontDefault = russian_font;
+  }
 
   ImGui::StyleColorsDark();
   ApplyWarhammerStyle();
