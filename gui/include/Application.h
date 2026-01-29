@@ -10,6 +10,7 @@
 #include <thread>
 #include <chrono>
 #include <filesystem>
+#include <deque>
 #include "RosterModel.h"
 #include "popup.h"
 #include "units.h"
@@ -54,6 +55,9 @@ public :
 private:
   void setStatusMessage(const std::string& message);
   void updateTrainingProgress(int current, int total);
+  void resetTrainingProgressStats();
+  void recordTrainingSample(int episode, std::chrono::steady_clock::time_point now);
+  double calculateTrainingRate() const;
   void applyFactionToModel(const std::string& faction);
   void applyFactionToEnemy(const std::string& faction);
   bool loadWindowGeometry();
@@ -123,6 +127,7 @@ Image metricBox6;
   Label modelFact;
   Label status;
   Label trainingProgressLabel;
+  Label trainingProgressStatsLabel;
   ProgressBar trainingProgress;
   Entry setIters;
   Entry setModelFile;
@@ -172,6 +177,9 @@ Image metricBox6;
   bool training;
   bool hideTrainingLogs;
   int trainingTotalEpisodes;
+  std::chrono::steady_clock::time_point trainingStartTime;
+  std::chrono::steady_clock::time_point trainingLastUiUpdate;
+  std::deque<std::pair<std::chrono::steady_clock::time_point, int>> trainingSamples;
   bool playing;
   bool loadingRoster;
   Label error;

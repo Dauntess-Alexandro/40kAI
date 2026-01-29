@@ -2,3 +2,5 @@ Player Units
 Necron Warriors|10|5
 Necron Warriors|10|6
 Model Units
+Necron Warriors|10|5
+Necron Warriors|10|6

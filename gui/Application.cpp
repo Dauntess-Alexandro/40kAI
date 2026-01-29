@@ -168,6 +168,40 @@ bool parseTrainingProgress(const std::string& line, int fallbackTotal, int& curr
   }
   return false;
 }
+
+std::string formatDuration(std::chrono::seconds duration) {
+  auto totalSeconds = duration.count();
+  int hours = static_cast<int>(totalSeconds / 3600);
+  int minutes = static_cast<int>((totalSeconds % 3600) / 60);
+  int seconds = static_cast<int>(totalSeconds % 60);
+  std::ostringstream oss;
+  if (hours > 0) {
+    oss << std::setfill('0') << std::setw(2) << hours << ":"
+        << std::setw(2) << minutes << ":"
+        << std::setw(2) << seconds;
+  } else {
+    oss << std::setfill('0') << std::setw(2) << minutes << ":"
+        << std::setw(2) << seconds;
+  }
+  return oss.str();
+}
+
+std::string buildTrainingStatsLine(double itPerSec,
+                                   std::chrono::seconds elapsed,
+                                   bool showEta,
+                                   std::chrono::seconds eta) {
+  std::ostringstream oss;
+  if (itPerSec > 0.0) {
+    oss << std::fixed << std::setprecision(1) << itPerSec << " it/s";
+  } else {
+    oss << "— it/s";
+  }
+  oss << " • elapsed " << formatDuration(elapsed);
+  if (showEta) {
+    oss << " • ETA " << formatDuration(eta);
+  }
+  return oss.str();
+}
 }  // namespace
 
 std::string gifpth = "img/model_train.gif";
@@ -372,10 +406,13 @@ Form :: Form() {
   textbox1.set_text("Train Model:");
   setStatusMessage("Press the Train button to train a model");
   trainingProgressLabel.set_text("ep=0/0 (0%)");
+  trainingProgressStatsLabel.set_text("— it/s • elapsed 00:00");
   trainingProgress.set_fraction(0.0);
   trainingProgress.set_show_text(true);
   trainingProgress.set_text("0%");
   trainingProgress.set_size_request(360, 24);
+  trainingProgressStatsLabel.set_xalign(0.0);
+  trainingProgressStatsLabel.set_size_request(520, -1);
     
   button1.set_label("Train");
   button1.signal_button_release_event().connect([&](GdkEventButton*) {
@@ -780,6 +817,8 @@ Form :: Form() {
   fixedTabPage2.move(trainingProgressLabel, 10, 380);
   fixedTabPage2.add(trainingProgress);
   fixedTabPage2.move(trainingProgress, 10, 400);
+  fixedTabPage2.add(trainingProgressStatsLabel);
+  fixedTabPage2.move(trainingProgressStatsLabel, 10, 430);
 
     // show trained model tab
 
@@ -940,6 +979,47 @@ void Form :: setStatusMessage(const std::string& message) {
   if (!training || !hideTrainingLogs) {
     appendLogLine(message);
   }
+}
+
+void Form :: resetTrainingProgressStats() {
+  trainingSamples.clear();
+  trainingStartTime = std::chrono::steady_clock::now();
+  trainingLastUiUpdate = trainingStartTime - std::chrono::milliseconds(500);
+}
+
+void Form :: recordTrainingSample(int episode, std::chrono::steady_clock::time_point now) {
+  if (episode <= 0) {
+    return;
+  }
+  if (!trainingSamples.empty() && trainingSamples.back().second == episode) {
+    return;
+  }
+  trainingSamples.emplace_back(now, episode);
+  constexpr size_t kMaxSamples = 80;
+  while (trainingSamples.size() > kMaxSamples) {
+    trainingSamples.pop_front();
+  }
+  auto cutoff = now - std::chrono::seconds(10);
+  while (trainingSamples.size() > 2 && trainingSamples.front().first < cutoff) {
+    trainingSamples.pop_front();
+  }
+}
+
+double Form :: calculateTrainingRate() const {
+  if (trainingSamples.size() < 2) {
+    return 0.0;
+  }
+  const auto& first = trainingSamples.front();
+  const auto& last = trainingSamples.back();
+  auto seconds = std::chrono::duration_cast<std::chrono::duration<double>>(last.first - first.first).count();
+  if (seconds <= 0.0) {
+    return 0.0;
+  }
+  int delta = last.second - first.second;
+  if (delta <= 0) {
+    return 0.0;
+  }
+  return static_cast<double>(delta) / seconds;
 }
 
 void Form :: updateTrainingProgress(int current, int total) {
@@ -1402,8 +1482,14 @@ void Form :: startTrain() {
 
   trainingTotalEpisodes = parsePositiveInt(setIters.get_text());
   int totalEpisodes = trainingTotalEpisodes;
+  resetTrainingProgressStats();
+  std::string initialStats = buildTrainingStatsLine(0.0, std::chrono::seconds(0), false,
+                                                    std::chrono::seconds(0));
   Glib::signal_idle().connect_once([this, totalEpisodes]() {
     updateTrainingProgress(0, totalEpisodes);
+  });
+  Glib::signal_idle().connect_once([this, initialStats]() {
+    trainingProgressStatsLabel.set_text(initialStats);
   });
 
   std::string startMessage = "Старт " + trainingStartLabel + ": PER=1, N_STEP=3.";
@@ -1445,9 +1531,25 @@ void Form :: startTrain() {
       if (currentEpisode > 0) {
         lastEpisode = currentEpisode;
       }
-      Glib::signal_idle().connect_once([this, currentEpisode, totalFromLine]() {
-        updateTrainingProgress(currentEpisode, totalFromLine);
-      });
+      auto now = std::chrono::steady_clock::now();
+      recordTrainingSample(currentEpisode, now);
+      double rate = calculateTrainingRate();
+      auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - trainingStartTime);
+      bool showEta = (totalFromLine > 0 && rate > 0.0);
+      std::chrono::seconds eta(0);
+      if (showEta) {
+        int remaining = std::max(0, totalFromLine - currentEpisode);
+        eta = std::chrono::seconds(static_cast<long long>(remaining / rate));
+      }
+      std::string statsLine = buildTrainingStatsLine(rate, elapsed, showEta, eta);
+      bool shouldUpdate = (now - trainingLastUiUpdate) >= std::chrono::milliseconds(250);
+      if (shouldUpdate || (totalFromLine > 0 && currentEpisode >= totalFromLine)) {
+        trainingLastUiUpdate = now;
+        Glib::signal_idle().connect_once([this, currentEpisode, totalFromLine, statsLine]() {
+          updateTrainingProgress(currentEpisode, totalFromLine);
+          trainingProgressStatsLabel.set_text(statsLine);
+        });
+      }
     } else if (!hideTrainingLogs) {
       Glib::signal_idle().connect_once([this, line]() {
         appendLogLine(line);
@@ -1459,8 +1561,13 @@ void Form :: startTrain() {
   training = false;
   if (lastTotal > 0 && lastEpisode > 0) {
     int finalEpisode = std::min(lastEpisode, lastTotal);
-    Glib::signal_idle().connect_once([this, finalEpisode, lastTotal]() {
+    auto doneElapsed = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - trainingStartTime);
+    std::string finalStats = buildTrainingStatsLine(calculateTrainingRate(), doneElapsed, false,
+                                                    std::chrono::seconds(0));
+    Glib::signal_idle().connect_once([this, finalEpisode, lastTotal, finalStats]() {
       updateTrainingProgress(finalEpisode, lastTotal);
+      trainingProgressStatsLabel.set_text(finalStats);
     });
   }
   if (exitCode == 0) {
@@ -1469,6 +1576,13 @@ void Form :: startTrain() {
       setStatusMessage(doneMessage);
     });
     appendTrainingLogToFile(doneMessage, trainingLogTag);
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - trainingStartTime);
+    std::string finalStats = trainingStatusLabel + " завершено • elapsed "
+        + formatDuration(elapsed);
+    Glib::signal_idle().connect_once([this, finalStats]() {
+      trainingProgressStatsLabel.set_text(finalStats);
+    });
   } else {
     std::string errLine = trainingStatusLabel + " завершено с ошибкой. Код выхода: "
         + std::to_string(exitCode);
@@ -1476,6 +1590,13 @@ void Form :: startTrain() {
       setStatusMessage(errLine);
     });
     appendTrainingLogToFile(errLine, trainingLogTag);
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - trainingStartTime);
+    std::string finalStats = trainingStatusLabel + " завершено с ошибкой • elapsed "
+        + formatDuration(elapsed);
+    Glib::signal_idle().connect_once([this, finalStats]() {
+      trainingProgressStatsLabel.set_text(finalStats);
+    });
   }
   Glib::signal_idle().connect_once([this]() {
     update_picture();
