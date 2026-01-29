@@ -1,6 +1,34 @@
 #include "play_state.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <filesystem>
+#include <optional>
+#include <string>
+
+namespace {
+std::optional<std::filesystem::path> FindRepoRoot() {
+  const std::filesystem::path cwd = std::filesystem::current_path();
+  std::filesystem::path current = cwd;
+  for (int depth = 0; depth < 3; ++depth) {
+    if (std::filesystem::exists(current / "scripts" / "viewer.sh")) {
+      return current;
+    }
+    if (!current.has_parent_path()) {
+      break;
+    }
+    current = current.parent_path();
+  }
+  return std::nullopt;
+}
+
+bool LaunchViewerFromRoot(const std::filesystem::path& root) {
+  std::string command = "cd \"";
+  command += root.string();
+  command += "\" && scripts/viewer.sh &";
+  return std::system(command.c_str()) == 0;
+}
+}  // namespace
 
 PlayState::PlayState()
     : model_path_buffer_{},
@@ -62,6 +90,39 @@ void PlayState::StopGame() {
 
 bool PlayState::playing() const {
   return playing_;
+}
+
+void PlayState::PlayInTerminal() {
+  UpdateModelPathFromBuffer();
+  status_message_ = "Запуск игры в терминале пока не подключён.";
+  if (model_path_.empty()) {
+    AppendLogLine("Терминал: модель не указана.");
+  } else {
+    AppendLogLine("Терминал: выбранная модель: " + model_path_);
+  }
+}
+
+void PlayState::PlayInGui() {
+  UpdateModelPathFromBuffer();
+  const auto repo_root = FindRepoRoot();
+  if (!repo_root) {
+    status_message_ =
+        "Не найден scripts/viewer.sh (PlayState::PlayInGui). Запустите GUI из корня репозитория.";
+    AppendLogLine("GUI: не найден scripts/viewer.sh. Проверьте текущую папку.");
+    return;
+  }
+  if (!LaunchViewerFromRoot(*repo_root)) {
+    status_message_ =
+        "Не удалось запустить viewer (PlayState::PlayInGui). Проверьте права и зависимости.";
+    AppendLogLine("GUI: запуск viewer завершился с ошибкой.");
+    return;
+  }
+  status_message_ = "Viewer запущен.";
+  if (model_path_.empty()) {
+    AppendLogLine("GUI: модель не указана.");
+  } else {
+    AppendLogLine("GUI: выбранная модель: " + model_path_);
+  }
 }
 
 void PlayState::SendResponse() {
