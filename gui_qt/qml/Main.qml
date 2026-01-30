@@ -11,66 +11,70 @@ ApplicationWindow {
 
     property string statusText: "Готово к запуску."
 
-    ColumnLayout {
+    Item {
         anchors.fill: parent
-        spacing: 12
-        padding: 16
+        anchors.margins: 16
 
-        Text {
-            text: "40kAI: запуск тренировки и оценки"
-            font.pixelSize: 22
-            font.bold: true
-        }
-
-        RowLayout {
+        ColumnLayout {
+            anchors.fill: parent
             spacing: 12
 
-            Button {
-                text: "Запуск Train"
-                enabled: !controller.running
-                onClicked: controller.start_train()
+            Text {
+                text: "40kAI: запуск тренировки и оценки"
+                font.pixelSize: 22
+                font.bold: true
             }
 
-            Button {
-                text: "Запуск Eval"
-                enabled: !controller.running
-                onClicked: controller.start_eval()
-            }
+            RowLayout {
+                spacing: 12
 
-            Button {
-                text: "Остановить"
-                enabled: controller.running
-                onClicked: controller.stop_process()
-            }
-        }
+                Button {
+                    text: "Запуск Train"
+                    enabled: !controller.running
+                    onClicked: controller.start_train()
+                }
 
-        GroupBox {
-            title: "Логи"
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+                Button {
+                    text: "Запуск Eval"
+                    enabled: !controller.running
+                    onClicked: controller.start_eval()
+                }
 
-            ScrollView {
-                anchors.fill: parent
-
-                TextArea {
-                    id: logArea
-                    readOnly: true
-                    wrapMode: TextArea.Wrap
-                    text: ""
+                Button {
+                    text: "Остановить"
+                    enabled: controller.running
+                    onClicked: controller.stop_process()
                 }
             }
-        }
 
-        Rectangle {
-            color: "#1f1f1f"
-            radius: 6
-            Layout.fillWidth: true
-            height: 36
+            GroupBox {
+                title: "Логи"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
 
-            Text {
-                anchors.centerIn: parent
-                color: "#ffffff"
-                text: root.statusText
+                ScrollView {
+                    anchors.fill: parent
+
+                    TextArea {
+                        id: logArea
+                        readOnly: true
+                        wrapMode: TextArea.Wrap
+                        text: ""
+                    }
+                }
+            }
+
+            Rectangle {
+                color: "#1f1f1f"
+                radius: 6
+                Layout.fillWidth: true
+                height: 36
+
+                Text {
+                    anchors.centerIn: parent
+                    color: "#ffffff"
+                    text: root.statusText
+                }
             }
         }
     }
