@@ -213,7 +213,6 @@ std::string endreasonpth = "img/endreasons.png";
 std::string imgpth = "img/icon.png";
 
 namespace {
-constexpr bool kEnableDarkTheme = false;
 constexpr auto kDarkThemePath = "style-dark.css";
 }  // namespace
 
@@ -243,7 +242,14 @@ Form :: Form() {
   set_default_size(kDefaultWidth, kDefaultHeight);
   set_size_request(kMinimumWidth, kMinimumHeight);
 
-  if (kEnableDarkTheme) {
+  auto settings = Gtk::Settings::get_default();
+  if (settings) {
+    settings->property_gtk_application_prefer_dark_theme() = true;
+  }
+
+  const char* enableCustomCss = std::getenv("GUI_CUSTOM_CSS");
+  const bool useCustomCss = enableCustomCss && std::string(enableCustomCss) == "1";
+  if (useCustomCss) {
     cssProvider = Gtk::CssProvider::create();
     try {
       cssProvider->load_from_path(kDarkThemePath);
@@ -265,9 +271,6 @@ Form :: Form() {
   topBarBox.set_hexpand(true);
   leftBox.set_hexpand(true);
   leftBox.set_vexpand(true);
-  rootBox.get_style_context()->add_class("app-root");
-  tabControl1.get_style_context()->add_class("panel");
-  logView.get_style_context()->add_class("mono");
 
   help.set_image_from_icon_name("help-about");
   help.signal_button_release_event().connect([&](GdkEventButton*){
@@ -412,7 +415,6 @@ Form :: Form() {
   trainGrid.set_column_spacing(12);
   trainGrid.set_hexpand(true);
   trainGrid.set_vexpand(true);
-  trainGrid.get_style_context()->add_class("panel");
 
   textbox1.set_text("Train Model:");
   textbox1.set_halign(Gtk::ALIGN_START);
@@ -580,7 +582,6 @@ Form :: Form() {
   trainSettingsGrid.attach(necEnemy, 1, 2, 1, 1);
 
   rosterFrame.set_label("Ростер");
-  rosterFrame.get_style_context()->add_class("card");
   rosterFrame.set_hexpand(true);
   rosterFrame.set_vexpand(false);
   rosterGrid.set_margin_top(8);
@@ -594,7 +595,6 @@ Form :: Form() {
   rosterFrame.add(rosterGrid);
 
   boardFrame.set_label("Размеры поля");
-  boardFrame.get_style_context()->add_class("card");
   boardFrame.set_hexpand(true);
   boardGrid.set_margin_top(8);
   boardGrid.set_margin_bottom(8);

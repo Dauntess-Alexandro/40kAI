@@ -1,9 +1,8 @@
 diff --git a/gui/Application.cpp b/gui/Application.cpp
-index 1891fe93c89fed4dfdd0ce6f331e32ea69770d38..c9f5ee3987f247da5642043badca5c4e2de0aeb3 100644
+index 1947b3271bc41dfc0141a69154a32316fe68ac09..6470d78611a09f3526be8bb9635adc55ba4e0a5b 100644
 --- a/gui/Application.cpp
 +++ b/gui/Application.cpp
-@@ -190,86 +190,106 @@ std::string buildTrainingStatsLine(double itPerSec,
-                                    std::chrono::seconds elapsed,
+@@ -191,105 +191,108 @@ std::string buildTrainingStatsLine(double itPerSec,
                                     bool showEta,
                                     std::chrono::seconds eta) {
    std::ostringstream oss;
@@ -28,11 +27,11 @@ index 1891fe93c89fed4dfdd0ce6f331e32ea69770d38..c9f5ee3987f247da5642043badca5c4e
  std::string endreasonpth = "img/endreasons.png";
  std::string imgpth = "img/icon.png";
  
-+namespace {
-+constexpr bool kEnableDarkTheme = true;
-+constexpr auto kDarkThemePath = "gui/style-dark.css";
-+}  // namespace
-+
+ namespace {
+-constexpr bool kEnableDarkTheme = false;
+ constexpr auto kDarkThemePath = "style-dark.css";
+ }  // namespace
+ 
  Form :: Form() {
  
    modelClass = " Necrons";
@@ -59,18 +58,26 @@ index 1891fe93c89fed4dfdd0ce6f331e32ea69770d38..c9f5ee3987f247da5642043badca5c4e
    set_default_size(kDefaultWidth, kDefaultHeight);
    set_size_request(kMinimumWidth, kMinimumHeight);
  
-+  if (kEnableDarkTheme) {
-+    cssProvider = Gtk::CssProvider::create();
-+    try {
-+      cssProvider->load_from_path(kDarkThemePath);
-+      Gtk::StyleContext::add_provider_for_screen(
-+          Gdk::Screen::get_default(), cssProvider,
-+          GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-+    } catch (const Glib::Error& error) {
-+      std::cerr << "Не удалось загрузить тему: " << error.what() << std::endl;
-+    }
+-  if (kEnableDarkTheme) {
++  auto settings = Gtk::Settings::get_default();
++  if (settings) {
++    settings->property_gtk_application_prefer_dark_theme() = true;
 +  }
 +
++  const char* enableCustomCss = std::getenv("GUI_CUSTOM_CSS");
++  const bool useCustomCss = enableCustomCss && std::string(enableCustomCss) == "1";
++  if (useCustomCss) {
+     cssProvider = Gtk::CssProvider::create();
+     try {
+       cssProvider->load_from_path(kDarkThemePath);
+       Gtk::StyleContext::add_provider_for_screen(
+           Gdk::Screen::get_default(), cssProvider,
+           GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+     } catch (const Glib::Error& error) {
+       std::cerr << "Не удалось загрузить тему: " << error.what() << std::endl;
+     }
+   }
+ 
    rootBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
    topBarBox.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
    topBarBox.set_spacing(8);
@@ -81,9 +88,9 @@ index 1891fe93c89fed4dfdd0ce6f331e32ea69770d38..c9f5ee3987f247da5642043badca5c4e
    topBarBox.set_hexpand(true);
    leftBox.set_hexpand(true);
    leftBox.set_vexpand(true);
-+  rootBox.get_style_context()->add_class("app-root");
-+  tabControl1.get_style_context()->add_class("panel");
-+  logView.get_style_context()->add_class("mono");
+-  rootBox.get_style_context()->add_class("app-root");
+-  tabControl1.get_style_context()->add_class("panel");
+-  logView.get_style_context()->add_class("mono");
  
    help.set_image_from_icon_name("help-about");
    help.signal_button_release_event().connect([&](GdkEventButton*){
@@ -109,17 +116,7 @@ index 1891fe93c89fed4dfdd0ce6f331e32ea69770d38..c9f5ee3987f247da5642043badca5c4e
    logView.set_hexpand(true);
    logView.set_vexpand(true);
    logView.set_editable(false);
-@@ -360,125 +380,152 @@ Form :: Form() {
-     startEvalInBackground();
-     return true;
-   });
-   fixedTabPage6.add(evalRunButton);
-   fixedTabPage6.move(evalRunButton, 300, 40);
- 
-   evalLogView.set_editable(false);
-   evalLogView.set_wrap_mode(Gtk::WRAP_WORD_CHAR);
-   auto evalBuffer = Gtk::TextBuffer::create();
-   evalLogView.set_buffer(evalBuffer);
+@@ -390,51 +393,50 @@ Form :: Form() {
  
    evalLogScroll.set_hexpand(true);
    evalLogScroll.set_vexpand(true);
@@ -135,21 +132,20 @@ index 1891fe93c89fed4dfdd0ce6f331e32ea69770d38..c9f5ee3987f247da5642043badca5c4e
  
    labelPage2.set_label("Train");
    tabControl1.set_tab_label(tabPage2, labelPage2);
--  tabPage2.add(fixedTabPage2);
-+  tabPage2.add(trainGrid);
-+
-+  trainGrid.set_margin_top(12);
-+  trainGrid.set_margin_bottom(12);
-+  trainGrid.set_margin_start(12);
-+  trainGrid.set_margin_end(12);
-+  trainGrid.set_row_spacing(8);
-+  trainGrid.set_column_spacing(12);
-+  trainGrid.set_hexpand(true);
-+  trainGrid.set_vexpand(true);
-+  trainGrid.get_style_context()->add_class("panel");
+   tabPage2.add(trainGrid);
+ 
+   trainGrid.set_margin_top(12);
+   trainGrid.set_margin_bottom(12);
+   trainGrid.set_margin_start(12);
+   trainGrid.set_margin_end(12);
+   trainGrid.set_row_spacing(8);
+   trainGrid.set_column_spacing(12);
+   trainGrid.set_hexpand(true);
+   trainGrid.set_vexpand(true);
+-  trainGrid.get_style_context()->add_class("panel");
  
    textbox1.set_text("Train Model:");
-+  textbox1.set_halign(Gtk::ALIGN_START);
+   textbox1.set_halign(Gtk::ALIGN_START);
    setStatusMessage("Press the Train button to train a model");
    trainingProgressLabel.set_text("ep=0/0 (0%)");
    trainingProgressStatsLabel.set_text("— it/s • elapsed 00:00");
@@ -159,11 +155,11 @@ index 1891fe93c89fed4dfdd0ce6f331e32ea69770d38..c9f5ee3987f247da5642043badca5c4e
    trainingProgress.set_size_request(360, 24);
    trainingProgressStatsLabel.set_xalign(0.0);
    trainingProgressStatsLabel.set_size_request(520, -1);
-+  status.set_halign(Gtk::ALIGN_START);
-+  trainingProgressLabel.set_halign(Gtk::ALIGN_START);
-+  trainingProgress.set_hexpand(true);
-+  trainingProgressStatsLabel.set_halign(Gtk::ALIGN_START);
-+  trainingProgressStatsLabel.set_hexpand(true);
+   status.set_halign(Gtk::ALIGN_START);
+   trainingProgressLabel.set_halign(Gtk::ALIGN_START);
+   trainingProgress.set_hexpand(true);
+   trainingProgressStatsLabel.set_halign(Gtk::ALIGN_START);
+   trainingProgressStatsLabel.set_hexpand(true);
      
    button1.set_label("Train");
    button1.signal_button_release_event().connect([&](GdkEventButton*) {
@@ -172,113 +168,7 @@ index 1891fe93c89fed4dfdd0ce6f331e32ea69770d38..c9f5ee3987f247da5642043badca5c4e
      updateInits(modelClass, enemyClass);
      if (exists_test("data.json") && training == false) {
        training = true;
-       setStatusMessage("Training...");
-       trainEnvPrefix = "";
-       trainingStartLabel = "обучения";
-       trainingStatusLabel = "Обучение";
-       trainingLogTag = "TRAIN";
-       startTrainInBackground();
-     }
-     return true;
-   });
- 
-   buttonTrain6.set_label("Тренировать 8x");
-   buttonTrain6.signal_button_release_event().connect([&](GdkEventButton*) {
-     saveLastRoster();
-     syncEnemyUnitsFromRoster();
-     updateInits(modelClass, enemyClass);
-     if (exists_test("data.json") && training == false) {
-       training = true;
-       setStatusMessage("Обучение 8x...");
-       trainEnvPrefix = "VEC_ENV_COUNT=8 ";
-       trainingStartLabel = "обучения 8x";
-       trainingStatusLabel = "Обучение 8x";
-       trainingLogTag = "TRAIN8";
-       startTrainInBackground();
-     }
-     return true;
-   });
- 
-   numOfGames.set_text("# of Games in Training:");
-   setIters.set_text("100");
-+  numOfGames.set_halign(Gtk::ALIGN_START);
-+  setIters.set_width_chars(8);
-+  setIters.set_hexpand(false);
-+  setIters.set_halign(Gtk::ALIGN_START);
- 
-   openArmyPopup.set_label("Army Viewer");
-+  openArmyPopup.set_halign(Gtk::ALIGN_START);
-+  openArmyPopup.set_hexpand(false);
-   openArmyPopup.signal_button_release_event().connect([&](GdkEventButton*) {
-     openArmyView();
-     return true;
-   });
- 
--  dimens.set_text("Dimensions of Board: ");
-+  dimens.set_text("Размер поля:");
-+  dimens.set_halign(Gtk::ALIGN_START);
- 
-   dimX.set_text("X : ");
-   enterDimensX.set_text(std::to_string(x));
-+  enterDimensX.set_width_chars(6);
-+  enterDimensX.set_hexpand(false);
-   upX.set_label("+");
-   upX.signal_button_release_event().connect([&](GdkEventButton*) {
-     x+=10;
-     enterDimensX.set_text(std::to_string(x));
-     return true;
-   });
-   downX.set_label("-");
-   downX.signal_button_release_event().connect([&](GdkEventButton*) {
-     x-=10;
-     enterDimensX.set_text(std::to_string(x));
-     return true;
-   });
- 
-   dimY.set_text("Y :");
-   enterDimensY.set_text(std::to_string(y));
-+  enterDimensY.set_width_chars(6);
-+  enterDimensY.set_hexpand(false);
-   upY.set_label("+");
-   upY.signal_button_release_event().connect([&](GdkEventButton*) {
-     y+=10;
-     enterDimensY.set_text(std::to_string(y));
-     return true;
-   });
-   downY.set_label("-");
-   downY.signal_button_release_event().connect([&](GdkEventButton*) {
-     y-=10;
-     enterDimensY.set_text(std::to_string(y));
-     return true;
-   });
- 
-   button3.set_label("Clear Model Cache");
-   button3.signal_button_release_event().connect([&](GdkEventButton*) {
-     std::string mess = "Warning: You are about to delete all of the saved models";
-     openWarnMenu(mess, 0);
-     return true;
-   });
- 
-   buttonSelfPlay.set_label("Самообучение");
-   buttonSelfPlay.signal_button_release_event().connect([&](GdkEventButton*) {
-     saveLastRoster();
-     syncEnemyUnitsFromRoster();
-     updateInits(modelClass, enemyClass);
-@@ -497,102 +544,113 @@ Form :: Form() {
-   necModel.set_label("Necrons");
-   necModel.set_group(factionModel);
-   necModel.signal_toggled().connect([this]() {
-     modelUnits.clear();
-     modelClass = " Necrons";
-   });
-   necModel.set_active(true);
- 
-   necEnemy.set_label("Necrons");
-   necEnemy.set_group(factionEnemy);
-   necEnemy.signal_toggled().connect([this]() {
-     enemyClass = " Necrons";
-     if (!loadingRoster) {
-       enemyUnits.clear();
+@@ -558,65 +560,63 @@ Form :: Form() {
        rosterModel.clear();
      }
      rosterModel.setFaction("Necrons");
@@ -290,414 +180,58 @@ index 1891fe93c89fed4dfdd0ce6f331e32ea69770d38..c9f5ee3987f247da5642043badca5c4e
  
    enemyFact.set_text("Player Faction: ");
    modelFact.set_text("Model Faction: ");
--  fixedTabPage2.add(dimX);
--  fixedTabPage2.move(dimX, 10, 265);
--  fixedTabPage2.add(dimens);
--  fixedTabPage2.move(dimens, 10, 240);
--  fixedTabPage2.add(enterDimensX);
--  fixedTabPage2.move(enterDimensX, 30, 260);
--  fixedTabPage2.add(upX);
--  fixedTabPage2.move(upX, 200, 260);
--  fixedTabPage2.add(downX);
--  fixedTabPage2.move(downX, 220, 260);
--
--  fixedTabPage2.add(dimY);
--  fixedTabPage2.move(dimY, 260, 265);
--  fixedTabPage2.add(enterDimensY);
--  fixedTabPage2.move(enterDimensY, 260+30, 260);
--  fixedTabPage2.add(upY);
--  fixedTabPage2.move(upY, 250+200, 260);
--  fixedTabPage2.add(downY);
--  fixedTabPage2.move(downY, 250+220, 260);
--
--  fixedTabPage2.add(numOfGames);
--  fixedTabPage2.move(numOfGames, 10, 45);
--  fixedTabPage2.add(enemyFact);
--  fixedTabPage2.move(enemyFact, 10, 120);
--  fixedTabPage2.add(modelFact);
--  fixedTabPage2.move(modelFact, 10, 80);
--  fixedTabPage2.add(necModel);
--  fixedTabPage2.move(necModel, 100, 80);
--  fixedTabPage2.add(necEnemy);
--  fixedTabPage2.move(necEnemy, 100, 120);
--  fixedTabPage2.add(openArmyPopup);
--  fixedTabPage2.move(openArmyPopup, 400, 140);
--  fixedTabPage2.add(textbox1);
--  fixedTabPage2.move(textbox1, 10, 10);
--  fixedTabPage2.add(button1);
--  fixedTabPage2.move(button1, 380, 300);
--  fixedTabPage2.add(buttonTrain6);
--  fixedTabPage2.move(buttonTrain6, 470, 300);
--  fixedTabPage2.add(setIters);
--  fixedTabPage2.move(setIters, 160, 40);
--  fixedTabPage2.add(button3);
--  fixedTabPage2.move(button3, 10, 300);
--  fixedTabPage2.add(buttonSelfPlay);
--  fixedTabPage2.move(buttonSelfPlay, 200, 300);
--  fixedTabPage2.add(status);
--  fixedTabPage2.move(status, 10, 350);
--  fixedTabPage2.add(trainingProgressLabel);
--  fixedTabPage2.move(trainingProgressLabel, 10, 380);
--  fixedTabPage2.add(trainingProgress);
--  fixedTabPage2.move(trainingProgress, 10, 400);
--  fixedTabPage2.add(trainingProgressStatsLabel);
--  fixedTabPage2.move(trainingProgressStatsLabel, 10, 430);
-+  enemyFact.set_halign(Gtk::ALIGN_START);
-+  modelFact.set_halign(Gtk::ALIGN_START);
-+
-+  trainSettingsGrid.set_row_spacing(6);
-+  trainSettingsGrid.set_column_spacing(8);
-+  trainSettingsGrid.set_hexpand(true);
-+  trainSettingsGrid.attach(numOfGames, 0, 0, 1, 1);
-+  trainSettingsGrid.attach(setIters, 1, 0, 1, 1);
-+  trainSettingsGrid.attach(modelFact, 0, 1, 1, 1);
-+  trainSettingsGrid.attach(necModel, 1, 1, 1, 1);
-+  trainSettingsGrid.attach(enemyFact, 0, 2, 1, 1);
-+  trainSettingsGrid.attach(necEnemy, 1, 2, 1, 1);
-+
-+  rosterFrame.set_label("Ростер");
-+  rosterFrame.get_style_context()->add_class("card");
-+  rosterFrame.set_hexpand(true);
-+  rosterFrame.set_vexpand(false);
-+  rosterGrid.set_margin_top(8);
-+  rosterGrid.set_margin_bottom(8);
-+  rosterGrid.set_margin_start(10);
-+  rosterGrid.set_margin_end(10);
-+  rosterGrid.set_row_spacing(6);
-+  rosterSummaryLabel.set_xalign(0.0);
-+  rosterGrid.attach(openArmyPopup, 0, 0, 1, 1);
-+  rosterGrid.attach(rosterSummaryLabel, 0, 1, 1, 1);
-+  rosterFrame.add(rosterGrid);
-+
-+  boardFrame.set_label("Размеры поля");
-+  boardFrame.get_style_context()->add_class("card");
-+  boardFrame.set_hexpand(true);
-+  boardGrid.set_margin_top(8);
-+  boardGrid.set_margin_bottom(8);
-+  boardGrid.set_margin_start(10);
-+  boardGrid.set_margin_end(10);
-+  boardGrid.set_row_spacing(6);
-+  boardGrid.set_column_spacing(8);
-+  boardGrid.attach(dimens, 0, 0, 4, 1);
-+  boardGrid.attach(dimX, 0, 1, 1, 1);
-+  boardGrid.attach(enterDimensX, 1, 1, 1, 1);
-+  boardGrid.attach(upX, 2, 1, 1, 1);
-+  boardGrid.attach(downX, 3, 1, 1, 1);
-+  boardGrid.attach(dimY, 0, 2, 1, 1);
-+  boardGrid.attach(enterDimensY, 1, 2, 1, 1);
-+  boardGrid.attach(upY, 2, 2, 1, 1);
-+  boardGrid.attach(downY, 3, 2, 1, 1);
-+  boardFrame.add(boardGrid);
-+
-+  trainActionGrid.set_row_spacing(6);
-+  trainActionGrid.set_column_spacing(8);
-+  trainActionGrid.attach(button3, 0, 0, 1, 1);
-+  trainActionGrid.attach(buttonSelfPlay, 1, 0, 1, 1);
-+  trainActionGrid.attach(button1, 0, 1, 1, 1);
-+  trainActionGrid.attach(buttonTrain6, 1, 1, 1, 1);
-+
-+  trainGrid.attach(textbox1, 0, 0, 2, 1);
-+  trainGrid.attach(trainSettingsGrid, 0, 1, 1, 1);
-+  trainGrid.attach(rosterFrame, 1, 1, 1, 1);
-+  trainGrid.attach(boardFrame, 0, 2, 1, 1);
-+  trainGrid.attach(trainActionGrid, 1, 2, 1, 1);
-+  trainGrid.attach(status, 0, 3, 2, 1);
-+  trainGrid.attach(trainingProgressLabel, 0, 4, 2, 1);
-+  trainGrid.attach(trainingProgress, 0, 5, 2, 1);
-+  trainGrid.attach(trainingProgressStatsLabel, 0, 6, 2, 1);
+   enemyFact.set_halign(Gtk::ALIGN_START);
+   modelFact.set_halign(Gtk::ALIGN_START);
  
-   // show metrics tab
-   labelPage5.set_label("Model Metrics");
-   tabControl1.set_tab_label(tabPage5, labelPage5);
-   tabPage5.add(fixedTabPage5);
-   
-   chooseMetrics.set_label("Choose");
-   chooseMetrics.signal_button_release_event().connect([&](GdkEventButton * event){
- 	FileChooserDialog folderBrowserDialog("", FILE_CHOOSER_ACTION_OPEN);
-     folderBrowserDialog.add_button("Cancel", RESPONSE_CANCEL);
-     folderBrowserDialog.add_button("Open", RESPONSE_OK);
- 	system("clear");
-     char resolved_path[PATH_MAX];
-     realpath("../../40kAI", resolved_path);
-     strcat(resolved_path, "/models");
-     folderBrowserDialog.set_current_folder(resolved_path);
-     folderBrowserDialog.set_transient_for(*this);
+   trainSettingsGrid.set_row_spacing(6);
+   trainSettingsGrid.set_column_spacing(8);
+   trainSettingsGrid.set_hexpand(true);
+   trainSettingsGrid.attach(numOfGames, 0, 0, 1, 1);
+   trainSettingsGrid.attach(setIters, 1, 0, 1, 1);
+   trainSettingsGrid.attach(modelFact, 0, 1, 1, 1);
+   trainSettingsGrid.attach(necModel, 1, 1, 1, 1);
+   trainSettingsGrid.attach(enemyFact, 0, 2, 1, 1);
+   trainSettingsGrid.attach(necEnemy, 1, 2, 1, 1);
  
-     auto filter_text = Gtk::FileFilter::create();
-     filter_text->set_name("Pickle Files");
-     filter_text->add_pattern("*.pickle");
-     folderBrowserDialog.add_filter(filter_text);
+   rosterFrame.set_label("Ростер");
+-  rosterFrame.get_style_context()->add_class("card");
+   rosterFrame.set_hexpand(true);
+   rosterFrame.set_vexpand(false);
+   rosterGrid.set_margin_top(8);
+   rosterGrid.set_margin_bottom(8);
+   rosterGrid.set_margin_start(10);
+   rosterGrid.set_margin_end(10);
+   rosterGrid.set_row_spacing(6);
+   rosterSummaryLabel.set_xalign(0.0);
+   rosterGrid.attach(openArmyPopup, 0, 0, 1, 1);
+   rosterGrid.attach(rosterSummaryLabel, 0, 1, 1, 1);
+   rosterFrame.add(rosterGrid);
  
-     if (folderBrowserDialog.run() == RESPONSE_OK) {
-       path = folderBrowserDialog.get_file()->get_path();
-@@ -677,50 +735,52 @@ Form :: Form() {
-   fixedTabPage4.add(playGraphicsView);
-   fixedTabPage4.add(button5);
-   fixedTabPage4.add(setModelFile);
-   fixedTabPage4.move(textbox2, 10, 10);
-   fixedTabPage4.move(playGraphicsView, 130, 80);
-   fixedTabPage4.move(showBoard, 395, 80);
-   fixedTabPage4.move(button2, 10, 80);
-   fixedTabPage4.move(button5, 10, 40);
-   fixedTabPage4.move(setModelFile, 80, 40);
+   boardFrame.set_label("Размеры поля");
+-  boardFrame.get_style_context()->add_class("card");
+   boardFrame.set_hexpand(true);
+   boardGrid.set_margin_top(8);
+   boardGrid.set_margin_bottom(8);
+   boardGrid.set_margin_start(10);
+   boardGrid.set_margin_end(10);
+   boardGrid.set_row_spacing(6);
+   boardGrid.set_column_spacing(8);
+   boardGrid.attach(dimens, 0, 0, 4, 1);
+   boardGrid.attach(dimX, 0, 1, 1, 1);
+   boardGrid.attach(enterDimensX, 1, 1, 1, 1);
+   boardGrid.attach(upX, 2, 1, 1, 1);
+   boardGrid.attach(downX, 3, 1, 1, 1);
+   boardGrid.attach(dimY, 0, 2, 1, 1);
+   boardGrid.attach(enterDimensY, 1, 2, 1, 1);
+   boardGrid.attach(upY, 2, 2, 1, 1);
+   boardGrid.attach(downY, 3, 2, 1, 1);
+   boardFrame.add(boardGrid);
  
-   loadWindowGeometry();
-   loadLastRoster();
-   if (modelUnits.empty()) {
-     modelUnits.push_back({"Necron Warriors", "Necrons", findDefaultModelsCount("Necrons", "Necron Warriors"),
-                           RosterModel::generateInstanceId()});
-     modelUnits.push_back({"Royal Warden", "Necrons",
-                           findDefaultModelsCount("Necrons", "Royal Warden"),
-                           RosterModel::generateInstanceId()});
-   }
-   if (enemyUnits.empty()) {
-     rosterModel.addUnit("Necron Warriors", 10, enemyClass.substr(1));
-     rosterModel.addUnit("Canoptek Scarab Swarms", 3, enemyClass.substr(1));
-     syncEnemyUnitsFromRoster();
-     saveLastRoster();
-   }
-+  rosterSummaryLabel.set_text("Юниты игрока: " + std::to_string(enemyUnits.size()) +
-+                              " | Юниты модели: " + std::to_string(modelUnits.size()));
-   signal_hide().connect([this]() {
-     saveLastRoster();
-     saveWindowGeometry();
-   });
-   show_all();
- }
+   trainActionGrid.set_row_spacing(6);
+   trainActionGrid.set_column_spacing(8);
+   trainActionGrid.attach(button3, 0, 0, 1, 1);
+   trainActionGrid.attach(buttonSelfPlay, 1, 0, 1, 1);
+   trainActionGrid.attach(button1, 0, 1, 1, 1);
+   trainActionGrid.attach(buttonTrain6, 1, 1, 1, 1);
  
- void Form :: setStatusMessage(const std::string& message) {
-   status.set_text(message);
-   if (!training || !hideTrainingLogs) {
-     appendLogLine(message);
-   }
- }
- 
- void Form :: resetTrainingProgressStats() {
-   trainingSamples.clear();
-   trainingStartTime = std::chrono::steady_clock::now();
-   trainingLastUiUpdate = trainingStartTime - std::chrono::milliseconds(500);
- }
- 
- void Form :: recordTrainingSample(int episode, std::chrono::steady_clock::time_point now) {
-   if (episode <= 0) {
-     return;
-   }
-   if (!trainingSamples.empty() && trainingSamples.back().second == episode) {
-@@ -976,50 +1036,53 @@ int Form :: openHelpMenu() {
-   return 0;
- }
- 
- std::string Form :: toLower(std::string data) {
-   std::transform(data.begin(), data.end(), data.begin(),[](unsigned char c){ return std::tolower(c); });
-   return data;
- }
- 
- void Form :: mirrorRoster() {
-   syncEnemyUnitsFromRoster();
-   if (rosterModel.empty()) {
-     setStatusMessage("Ростер игрока пуст — нечего копировать.");
-     return;
-   }
- 
-   if (!enemyClass.empty()) {
-     applyFactionToModel(enemyClass.substr(1));
-   }
- 
-   modelUnits = rosterModel.expandedUnits();
-   savetoTxt(enemyUnits, modelUnits);
-   setStatusMessage("Ростер модели обновлён из ростера игрока.");
- }
- 
- void Form :: updateRosterSummary() {
-+  std::string summary = "Юниты игрока: " + std::to_string(enemyUnits.size()) +
-+                        " | Юниты модели: " + std::to_string(modelUnits.size());
-+  rosterSummaryLabel.set_text(summary);
-   std::string message = "Ростер загружен: игрок=" + std::to_string(enemyUnits.size()) +
-                         ", модель=" + std::to_string(modelUnits.size());
-   setStatusMessage(message);
- }
- 
- void Form :: applyFactionToModel(const std::string& faction) {
-   if (faction.empty()) {
-     return;
-   }
- 
-   std::string normalized = toLower(faction);
-   std::replace(normalized.begin(), normalized.end(), ' ', '_');
-   if (normalized == "necrons") {
-     necModel.set_active(true);
-   }
- }
- 
- void Form :: applyFactionToEnemy(const std::string& faction) {
-   if (faction.empty()) {
-     return;
-   }
- 
-   std::string normalized = toLower(faction);
-   std::replace(normalized.begin(), normalized.end(), ' ', '_');
-   if (normalized == "necrons") {
-diff --git a/gui/include/Application.h b/gui/include/Application.h
-index d797b2440809acd2f95a3c510c4732daff3ce287..9460a9573f042bc89eeb7da776826d0c0b260d76 100644
---- a/gui/include/Application.h
-+++ b/gui/include/Application.h
-@@ -41,85 +41,93 @@ public :
-   std::string toLower(std::string data);
-   void mirrorRoster();
-   void saveLastRoster();
-   void loadLastRoster();
-   void syncEnemyUnitsFromRoster();
-   bool addEnemyUnitFromEntry(const std::string& entryText);
-   void resetLayout();
-   void appendLogLine(const std::string& message);
-   void appendEvalLogLine(const std::string& message);
-   void appendTrainingLogToFile(const std::string& message, const std::string& tag = "TRAIN");
-   void startEvalInBackground();
-   void startEval(int games);
- 
- private:
-   void setStatusMessage(const std::string& message);
-   void updateTrainingProgress(int current, int total);
-   void resetTrainingProgressStats();
-   void recordTrainingSample(int episode, std::chrono::steady_clock::time_point now);
-   double calculateTrainingRate() const;
-   void applyFactionToModel(const std::string& faction);
-   void applyFactionToEnemy(const std::string& faction);
-   void updateRosterSummary();
-   bool loadWindowGeometry();
-   void saveWindowGeometry();
-   void ensureMinimumSize();
-+  Glib::RefPtr<Gtk::CssProvider> cssProvider;
-   Window* boardShow;
-   Window* armyView;
-   Window* warn;
-   Window* play;
-   Window* helpMenu;
-   Image metricBox;
-   Image metricBox2;
-   Image metricBox3;
- Image metricBox4;
- Image metricBox5;
- Image metricBox6;
-   Box rootBox;
-   Box topBarBox;
-   Box leftBox;
-   ScrolledWindow logScroll;
-   TextView logView;
-   Notebook tabControl1;
-   Label labelPage1;
-   Label labelPage2;
-   Label labelPage4;
-   Label labelPage5;
-   Label labelPage6;
-   Label label1;
-   Frame tabPage1;
-   Frame tabPage2;
-   Frame tabPage4;
-   Frame tabPage5;
-   Frame tabPage6;
-   RadioButtonGroup radioButtonGroup;
-   RadioButton radioTop;
-   RadioButton radioLeft;
-   RadioButton radioRight;
-   RadioButton radioBottom;
-   Fixed fixedTabPage1;
--  Fixed fixedTabPage2;
-+  Grid trainGrid;
-+  Grid trainSettingsGrid;
-+  Grid rosterGrid;
-+  Grid boardGrid;
-+  Grid trainActionGrid;
-+  Frame rosterFrame;
-+  Frame boardFrame;
-+  Label rosterSummaryLabel;
-   Fixed fixedTabPage4;
-   Fixed fixedTabPage5;
-   Fixed fixedTabPage6;
-   Button button1;
-   Button buttonTrain6;
-   Button button2;
-   Button button3;
-   Button button4;
-   Button button5;
-   Button button6;
-   Button buttonSelfPlay;
-   Button showBoard;
-   Button playGraphicsView;
-   Label textbox;
-   Label textbox2;
-   Label textbox1;
-   Label enemyFact;
-   Label modelFact;
-   Label status;
-   Label trainingProgressLabel;
-   Label trainingProgressStatsLabel;
-   ProgressBar trainingProgress;
-   Entry setIters;
-   Entry setModelFile;
-   RadioButtonGroup factionModel;
-diff --git a/gui/style-dark.css b/gui/style-dark.css
-new file mode 100644
-index 0000000000000000000000000000000000000000..f625c4f0d8098c4d59ebf87acf45c029089d0a04
---- /dev/null
-+++ b/gui/style-dark.css
-@@ -0,0 +1,58 @@
-+.app-root {
-+  background-color: #1e1e1e;
-+  color: #e6e6e6;
-+}
-+
-+.app-root label {
-+  color: #e6e6e6;
-+}
-+
-+.app-root .panel {
-+  background-color: transparent;
-+}
-+
-+.app-root .card {
-+  background-color: #252525;
-+  border: 1px solid #3a3a3a;
-+  border-radius: 10px;
-+  padding: 10px;
-+}
-+
-+.app-root entry {
-+  background-color: #2a2a2a;
-+  color: #e6e6e6;
-+  border: 1px solid #3a3a3a;
-+  border-radius: 6px;
-+}
-+
-+.app-root button {
-+  background-color: #303030;
-+  color: #e6e6e6;
-+  border: 1px solid #444444;
-+  border-radius: 6px;
-+}
-+
-+.app-root button:hover {
-+  background-color: #383838;
-+}
-+
-+.app-root notebook > header {
-+  background-color: #1e1e1e;
-+}
-+
-+.app-root notebook tab {
-+  background-color: #242424;
-+  color: #cfcfcf;
-+  border-radius: 6px 6px 0 0;
-+}
-+
-+.app-root notebook tab:checked {
-+  background-color: #2f2f2f;
-+  color: #ffffff;
-+}
-+
-+.app-root .mono textview,
-+.app-root textview {
-+  background-color: #1a1a1a;
-+  color: #e6e6e6;
-+}
 
