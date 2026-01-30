@@ -59,6 +59,7 @@ private:
   double calculateTrainingRate() const;
   void applyFactionToModel(const std::string& faction);
   void applyFactionToEnemy(const std::string& faction);
+  void updateRosterSummary();
   bool loadWindowGeometry();
   void saveWindowGeometry();
   void ensureMinimumSize();

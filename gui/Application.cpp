@@ -432,8 +432,6 @@ Form :: Form() {
   numOfGames.set_text("# of Games in Training:");
   setIters.set_text("100");
 
-  modelUnitLabel.set_text("Enter Model Units:");
-  enemyUnitLabel.set_text("Enter Player Units:");
   openArmyPopup.set_label("Army Viewer");
   openArmyPopup.signal_button_release_event().connect([&](GdkEventButton*) {
     openArmyView();
@@ -521,40 +519,6 @@ Form :: Form() {
 
   enemyFact.set_text("Player Faction: ");
   modelFact.set_text("Model Faction: ");
-  clearAllModel.set_label("Clear");
-  clearAllModel.signal_button_release_event().connect([&](GdkEventButton*) {
-    modelUnits.clear();
-    savetoTxt(enemyUnits, modelUnits);
-    return true;
-  });
-  clearAllEnemy.set_label("Clear");
-  clearAllEnemy.signal_button_release_event().connect([&](GdkEventButton*) {
-    rosterModel.clear();
-    syncEnemyUnitsFromRoster();
-    saveLastRoster();
-    return true;
-  });
-  enemyEnter.set_label("Add");
-  enemyEnter.signal_button_release_event().connect([&](GdkEventButton*) {
-    if (addEnemyUnitFromEntry(enterEnemyUnit.get_text())) {
-      syncEnemyUnitsFromRoster();
-      saveLastRoster();
-    }
-    return true;
-  });
-  modelEnter.set_label("Add");
-  modelEnter.signal_button_release_event().connect([&](GdkEventButton*) {
-    if (isValidUnit(0, enterModelUnit.get_text()) == true) {
-      savetoTxt(enemyUnits, modelUnits);
-    }
-    return true;
-  });
-  mirrorRosterButton.set_label("Mirror roster");
-  mirrorRosterButton.signal_button_release_event().connect([&](GdkEventButton*) {
-    mirrorRoster();
-    return true;
-  });
-
   fixedTabPage2.add(dimX);
   fixedTabPage2.move(dimX, 10, 265);
   fixedTabPage2.add(dimens);
@@ -585,26 +549,8 @@ Form :: Form() {
   fixedTabPage2.move(necModel, 100, 80);
   fixedTabPage2.add(necEnemy);
   fixedTabPage2.move(necEnemy, 100, 120);
-  fixedTabPage2.add(modelUnitLabel);
-  fixedTabPage2.move(modelUnitLabel, 10, 163);
-  fixedTabPage2.add(enterModelUnit);
-  fixedTabPage2.move(enterModelUnit, 130, 160);
-  fixedTabPage2.add(modelEnter);
-  fixedTabPage2.move(modelEnter, 300, 160);
-  fixedTabPage2.add(enemyUnitLabel);
-  fixedTabPage2.move(enemyUnitLabel, 10, 203);
-  fixedTabPage2.add(enterEnemyUnit);
-  fixedTabPage2.move(enterEnemyUnit, 130, 200);
-  fixedTabPage2.add(enemyEnter);
-  fixedTabPage2.move(enemyEnter, 300, 200);
-  fixedTabPage2.add(clearAllModel);
-  fixedTabPage2.move(clearAllModel, 340, 160);
-  fixedTabPage2.add(clearAllEnemy);
-  fixedTabPage2.move(clearAllEnemy, 340, 200);
-  fixedTabPage2.add(mirrorRosterButton);
-  fixedTabPage2.move(mirrorRosterButton, 400, 140);
   fixedTabPage2.add(openArmyPopup);
-  fixedTabPage2.move(openArmyPopup, 400, (160+200)/2);
+  fixedTabPage2.move(openArmyPopup, 400, 140);
   fixedTabPage2.add(textbox1);
   fixedTabPage2.move(textbox1, 10, 10);
   fixedTabPage2.add(button1);
@@ -1009,7 +955,11 @@ int Form :: openPlayGUI() {
 }
 
 int Form :: openArmyView() {
-  armyView = new Units(&rosterModel);
+  armyView = new Units(&rosterModel, &modelUnits, [this]() {
+    syncEnemyUnitsFromRoster();
+    saveLastRoster();
+    updateRosterSummary();
+  });
   armyView->show();
   return 0;
 }
@@ -1032,15 +982,10 @@ std::string Form :: toLower(std::string data) {
 }
 
 void Form :: mirrorRoster() {
-  auto playerEntry = enterEnemyUnit.get_text();
   syncEnemyUnitsFromRoster();
-  if (rosterModel.empty() && playerEntry.empty()) {
-    setStatusMessage("Player roster is empty, nothing to mirror.");
+  if (rosterModel.empty()) {
+    setStatusMessage("Ростер игрока пуст — нечего копировать.");
     return;
-  }
-
-  if (!playerEntry.empty()) {
-    enterModelUnit.set_text(playerEntry);
   }
 
   if (!enemyClass.empty()) {
@@ -1049,7 +994,13 @@ void Form :: mirrorRoster() {
 
   modelUnits = rosterModel.expandedUnits();
   savetoTxt(enemyUnits, modelUnits);
-  setStatusMessage("Mirrored Player roster to Model.");
+  setStatusMessage("Ростер модели обновлён из ростера игрока.");
+}
+
+void Form :: updateRosterSummary() {
+  std::string message = "Ростер загружен: игрок=" + std::to_string(enemyUnits.size()) +
+                        ", модель=" + std::to_string(modelUnits.size());
+  setStatusMessage(message);
 }
 
 void Form :: applyFactionToModel(const std::string& faction) {
