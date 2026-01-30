@@ -176,10 +176,20 @@ ApplicationWindow {
                                         Layout.preferredHeight: 180
                                         model: controller.availableUnitsModel
                                         clip: true
-                                        delegate: ItemDelegate {
-                                            text: modelData
+                                        delegate: Rectangle {
                                             width: ListView.view ? ListView.view.width : 0
-                                            highlighted: ListView.isCurrentItem
+                                            height: unitNameInline.implicitHeight + 10
+                                            color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
+
+                                            Text {
+                                                id: unitNameInline
+                                                text: modelData
+                                                color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
+                                                elide: Text.ElideRight
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                anchors.left: parent.left
+                                                anchors.leftMargin: 8
+                                            }
                                         }
                                     }
 
@@ -621,10 +631,20 @@ ApplicationWindow {
                             Layout.fillHeight: true
                             model: controller.availableUnitsModel
                             clip: true
-                            delegate: ItemDelegate {
-                                text: modelData
+                            delegate: Rectangle {
                                 width: ListView.view ? ListView.view.width : 0
-                                highlighted: ListView.isCurrentItem
+                                height: unitNameAvailable.implicitHeight + 10
+                                color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
+
+                                Text {
+                                    id: unitNameAvailable
+                                    text: modelData
+                                    color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
+                                    elide: Text.ElideRight
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 8
+                                }
                             }
                         }
 
@@ -657,10 +677,20 @@ ApplicationWindow {
                             Layout.fillHeight: true
                             model: controller.playerRosterModel
                             clip: true
-                            delegate: ItemDelegate {
-                                text: modelData
+                            delegate: Rectangle {
                                 width: ListView.view ? ListView.view.width : 0
-                                highlighted: ListView.isCurrentItem
+                                height: unitNamePlayer.implicitHeight + 10
+                                color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
+
+                                Text {
+                                    id: unitNamePlayer
+                                    text: modelData
+                                    color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
+                                    elide: Text.ElideRight
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 8
+                                }
                             }
                         }
 
@@ -693,10 +723,20 @@ ApplicationWindow {
                             Layout.fillHeight: true
                             model: controller.modelRosterModel
                             clip: true
-                            delegate: ItemDelegate {
-                                text: modelData
+                            delegate: Rectangle {
                                 width: ListView.view ? ListView.view.width : 0
-                                highlighted: ListView.isCurrentItem
+                                height: unitNameModel.implicitHeight + 10
+                                color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
+
+                                Text {
+                                    id: unitNameModel
+                                    text: modelData
+                                    color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
+                                    elide: Text.ElideRight
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 8
+                                }
                             }
                         }
 
