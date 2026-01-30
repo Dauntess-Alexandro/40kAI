@@ -1,62 +1,16 @@
 diff --git a/gui_qt/qml/Main.qml b/gui_qt/qml/Main.qml
-index 4b57da85e6b8eb1074e8f9b1993c50714d736416..0204de5778b429ab6575078d30c6aebf9524fd74 100644
+index 0204de5778b429ab6575078d30c6aebf9524fd74..7874e627999a9f1b7f00737245716aea75e0e4dc 100644
 --- a/gui_qt/qml/Main.qml
 +++ b/gui_qt/qml/Main.qml
-@@ -12,51 +12,52 @@ ApplicationWindow {
- 
-     property string statusText: "Готово к запуску."
- 
-     ColumnLayout {
-         anchors.fill: parent
-         spacing: 0
- 
-         TabBar {
-             id: mainTabs
-             Layout.fillWidth: true
- 
-             TabButton { text: "Train" }
-             TabButton { text: "Model Metrics" }
-             TabButton { text: "Play" }
-             TabButton { text: "Settings" }
-             TabButton { text: "Оценка" }
-         }
- 
-         StackLayout {
-             id: mainStack
-             currentIndex: mainTabs.currentIndex
-             Layout.fillWidth: true
-             Layout.fillHeight: true
- 
-             Item {
--                anchors.fill: parent
-+                Layout.fillWidth: true
-+                Layout.fillHeight: true
- 
-                 Item {
-                     anchors.fill: parent
-                     anchors.margins: 16
- 
-                     ColumnLayout {
-                         anchors.fill: parent
-                         spacing: 12
- 
-                     Text {
-                         text: "Train Model:"
-                         font.pixelSize: 20
-                         font.bold: true
-                     }
- 
-                     GridLayout {
-                         columns: 2
-                         columnSpacing: 16
-                         rowSpacing: 12
-                         Layout.fillWidth: true
+@@ -148,62 +148,69 @@ ApplicationWindow {
+                                 }
+                             }
+                         }
  
                          ColumnLayout {
                              spacing: 10
                              Layout.fillWidth: true
  
-@@ -155,51 +156,51 @@ ApplicationWindow {
                              GroupBox {
                                  title: "Ростер"
                                  Layout.fillWidth: true
@@ -74,19 +28,36 @@ index 4b57da85e6b8eb1074e8f9b1993c50714d736416..0204de5778b429ab6575078d30c6aebf
                                          text: "Доступные юниты (Necrons)"
                                      }
  
-                                     ListView {
-                                         id: availableUnitsInline
-                                         Layout.fillWidth: true
-                                         Layout.preferredHeight: 180
-                                         model: controller.availableUnitsModel
-                                         clip: true
-                                         delegate: ItemDelegate {
-                                             text: modelData
--                                            width: parent.width
-+                                            width: ListView.view ? ListView.view.width : 0
-                                             highlighted: ListView.isCurrentItem
+-                                    ListView {
+-                                        id: availableUnitsInline
+-                                        Layout.fillWidth: true
+-                                        Layout.preferredHeight: 180
+-                                        model: controller.availableUnitsModel
+-                                        clip: true
+-                                        delegate: ItemDelegate {
+-                                            text: modelData
+-                                            width: ListView.view ? ListView.view.width : 0
+-                                            highlighted: ListView.isCurrentItem
++                                        ListView {
++                                            id: availableUnitsInline
++                                            Layout.fillWidth: true
++                                            Layout.preferredHeight: 180
++                                            model: controller.availableUnitsModel
++                                            clip: true
++                                            delegate: ItemDelegate {
++                                                id: availableInlineDelegate
++                                                text: modelData
++                                                width: ListView.view ? ListView.view.width : 0
++                                                highlighted: ListView.isCurrentItem
++                                                contentItem: Text {
++                                                    text: availableInlineDelegate.text
++                                                    color: availableInlineDelegate.highlighted ? "#ffffff" : "#1f1f1f"
++                                                    elide: Text.ElideRight
++                                                    verticalAlignment: Text.AlignVCenter
++                                                }
++                                            }
                                          }
-                                     }
+-                                    }
  
                                      RowLayout {
                                          spacing: 8
@@ -109,140 +80,10 @@ index 4b57da85e6b8eb1074e8f9b1993c50714d736416..0204de5778b429ab6575078d30c6aebf
  
                              GroupBox {
                                  title: "Действия"
-@@ -267,51 +268,52 @@ ApplicationWindow {
-                     Label {
-                         text: controller.progressStats
-                     }
+                                 Layout.fillWidth: true
  
-                     GroupBox {
-                         title: "Логи"
-                         Layout.fillWidth: true
-                         Layout.fillHeight: true
- 
-                         ScrollView {
-                             anchors.fill: parent
- 
-                             TextArea {
-                                 id: logArea
-                                 readOnly: true
-                                 wrapMode: TextArea.Wrap
-                                 text: ""
-                             }
-                         }
-                     }
-                     }
-                 }
-             }
- 
-             Item {
--                anchors.fill: parent
-+                Layout.fillWidth: true
-+                Layout.fillHeight: true
- 
-                 ColumnLayout {
-                     anchors.fill: parent
-                     anchors.margins: 16
-                     spacing: 12
- 
-                     Text {
-                         text: "Model Metrics"
-                         font.pixelSize: 20
-                         font.bold: true
-                     }
- 
-                     RowLayout {
-                         spacing: 12
-                         Layout.fillWidth: true
- 
-                         Button {
-                             text: "Выбрать модель"
-                             onClicked: metricsFileDialog.open()
-                         }
- 
-                         Label {
-                             text: controller.metricsLabel
-                             Layout.fillWidth: true
-                             elide: Label.ElideRight
-@@ -523,196 +525,199 @@ ApplicationWindow {
-                                         anchors.fill: parent
-                                         source: controller.metricsEndReasonPath
-                                         fillMode: Image.PreserveAspectFit
-                                         smooth: true
-                                     }
- 
-                                     Text {
-                                         anchors.centerIn: parent
-                                         text: "Нет данных по причинам завершения."
-                                         color: "#777777"
-                                         visible: endReasonChart.status !== Image.Ready
-                                     }
-                                 }
- 
-                                 Label {
-                                     text: "Почему эпизоды завершались."
-                                     wrapMode: Text.WordWrap
-                                 }
-                             }
-                         }
-                     }
-                 }
-             }
- 
-             Item {
--                anchors.fill: parent
-+                Layout.fillWidth: true
-+                Layout.fillHeight: true
-                 Label {
-                     anchors.centerIn: parent
-                     text: "Скоро"
-                 }
-             }
- 
-             Item {
--                anchors.fill: parent
-+                Layout.fillWidth: true
-+                Layout.fillHeight: true
-                 Label {
-                     anchors.centerIn: parent
-                     text: "Скоро"
-                 }
-             }
- 
-             Item {
--                anchors.fill: parent
-+                Layout.fillWidth: true
-+                Layout.fillHeight: true
-                 Label {
-                     anchors.centerIn: parent
-                     text: "Скоро"
-                 }
-             }
-         }
-     }
- 
-     Dialog {
-         id: clearCacheDialog
-         title: "Очистка кэша"
-         modal: true
-         standardButtons: Dialog.Ok | Dialog.Cancel
-+        implicitWidth: 420
-         onAccepted: controller.clear_model_cache()
- 
-         contentItem: Text {
-             text: "Вы действительно хотите удалить все сохранённые модели и метрики?"
-             wrapMode: Text.WordWrap
--            width: 360
-         }
-     }
- 
-     Dialog {
-         id: armyViewerDialog
-         title: "Army Viewer"
-         modal: true
-         standardButtons: Dialog.Close
-         width: 900
-         height: 500
- 
+                                 GridLayout {
+@@ -600,125 +607,146 @@ ApplicationWindow {
          ColumnLayout {
              anchors.fill: parent
              spacing: 12
@@ -268,10 +109,16 @@ index 4b57da85e6b8eb1074e8f9b1993c50714d736416..0204de5778b429ab6575078d30c6aebf
                              model: controller.availableUnitsModel
                              clip: true
                              delegate: ItemDelegate {
++                                id: availableUnitsDelegate
                                  text: modelData
--                                width: parent.width
-+                                width: ListView.view ? ListView.view.width : 0
+                                 width: ListView.view ? ListView.view.width : 0
                                  highlighted: ListView.isCurrentItem
++                                contentItem: Text {
++                                    text: availableUnitsDelegate.text
++                                    color: availableUnitsDelegate.highlighted ? "#ffffff" : "#1f1f1f"
++                                    elide: Text.ElideRight
++                                    verticalAlignment: Text.AlignVCenter
++                                }
                              }
                          }
  
@@ -305,10 +152,16 @@ index 4b57da85e6b8eb1074e8f9b1993c50714d736416..0204de5778b429ab6575078d30c6aebf
                              model: controller.playerRosterModel
                              clip: true
                              delegate: ItemDelegate {
++                                id: playerRosterDelegate
                                  text: modelData
--                                width: parent.width
-+                                width: ListView.view ? ListView.view.width : 0
+                                 width: ListView.view ? ListView.view.width : 0
                                  highlighted: ListView.isCurrentItem
++                                contentItem: Text {
++                                    text: playerRosterDelegate.text
++                                    color: playerRosterDelegate.highlighted ? "#ffffff" : "#1f1f1f"
++                                    elide: Text.ElideRight
++                                    verticalAlignment: Text.AlignVCenter
++                                }
                              }
                          }
  
@@ -342,10 +195,16 @@ index 4b57da85e6b8eb1074e8f9b1993c50714d736416..0204de5778b429ab6575078d30c6aebf
                              model: controller.modelRosterModel
                              clip: true
                              delegate: ItemDelegate {
++                                id: modelRosterDelegate
                                  text: modelData
--                                width: parent.width
-+                                width: ListView.view ? ListView.view.width : 0
+                                 width: ListView.view ? ListView.view.width : 0
                                  highlighted: ListView.isCurrentItem
++                                contentItem: Text {
++                                    text: modelRosterDelegate.text
++                                    color: modelRosterDelegate.highlighted ? "#ffffff" : "#1f1f1f"
++                                    elide: Text.ElideRight
++                                    verticalAlignment: Text.AlignVCenter
++                                }
                              }
                          }
  
@@ -370,4 +229,5 @@ index 4b57da85e6b8eb1074e8f9b1993c50714d736416..0204de5778b429ab6575078d30c6aebf
          target: controller
          function onLogLine(message) {
              logArea.text += message + "\n"
+             logArea.cursorPosition = logArea.length
 

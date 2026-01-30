@@ -170,18 +170,25 @@ ApplicationWindow {
                                         text: "Доступные юниты (Necrons)"
                                     }
 
-                                    ListView {
-                                        id: availableUnitsInline
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 180
-                                        model: controller.availableUnitsModel
-                                        clip: true
-                                        delegate: ItemDelegate {
-                                            text: modelData
-                                            width: ListView.view ? ListView.view.width : 0
-                                            highlighted: ListView.isCurrentItem
+                                        ListView {
+                                            id: availableUnitsInline
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 180
+                                            model: controller.availableUnitsModel
+                                            clip: true
+                                            delegate: ItemDelegate {
+                                                id: availableInlineDelegate
+                                                text: modelData
+                                                width: ListView.view ? ListView.view.width : 0
+                                                highlighted: ListView.isCurrentItem
+                                                contentItem: Text {
+                                                    text: availableInlineDelegate.text
+                                                    color: availableInlineDelegate.highlighted ? "#ffffff" : "#1f1f1f"
+                                                    elide: Text.ElideRight
+                                                    verticalAlignment: Text.AlignVCenter
+                                                }
+                                            }
                                         }
-                                    }
 
                                     RowLayout {
                                         spacing: 8
@@ -622,9 +629,16 @@ ApplicationWindow {
                             model: controller.availableUnitsModel
                             clip: true
                             delegate: ItemDelegate {
+                                id: availableUnitsDelegate
                                 text: modelData
                                 width: ListView.view ? ListView.view.width : 0
                                 highlighted: ListView.isCurrentItem
+                                contentItem: Text {
+                                    text: availableUnitsDelegate.text
+                                    color: availableUnitsDelegate.highlighted ? "#ffffff" : "#1f1f1f"
+                                    elide: Text.ElideRight
+                                    verticalAlignment: Text.AlignVCenter
+                                }
                             }
                         }
 
@@ -658,9 +672,16 @@ ApplicationWindow {
                             model: controller.playerRosterModel
                             clip: true
                             delegate: ItemDelegate {
+                                id: playerRosterDelegate
                                 text: modelData
                                 width: ListView.view ? ListView.view.width : 0
                                 highlighted: ListView.isCurrentItem
+                                contentItem: Text {
+                                    text: playerRosterDelegate.text
+                                    color: playerRosterDelegate.highlighted ? "#ffffff" : "#1f1f1f"
+                                    elide: Text.ElideRight
+                                    verticalAlignment: Text.AlignVCenter
+                                }
                             }
                         }
 
@@ -694,9 +715,16 @@ ApplicationWindow {
                             model: controller.modelRosterModel
                             clip: true
                             delegate: ItemDelegate {
+                                id: modelRosterDelegate
                                 text: modelData
                                 width: ListView.view ? ListView.view.width : 0
                                 highlighted: ListView.isCurrentItem
+                                contentItem: Text {
+                                    text: modelRosterDelegate.text
+                                    color: modelRosterDelegate.highlighted ? "#ffffff" : "#1f1f1f"
+                                    elide: Text.ElideRight
+                                    verticalAlignment: Text.AlignVCenter
+                                }
                             }
                         }
 
