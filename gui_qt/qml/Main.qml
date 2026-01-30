@@ -1,7 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
-import Qt.labs.platform 1.1
+import Qt.labs.platform 1.1 as Platform
 
 ApplicationWindow {
     id: root
@@ -732,11 +732,11 @@ ApplicationWindow {
         }
     }
 
-    FileDialog {
+    Platform.FileDialog {
         id: metricsFileDialog
         title: "Выберите модель (.pickle)"
         nameFilters: ["Pickle Files (*.pickle)"]
-        folder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
+        folder: Platform.StandardPaths.writableLocation(Platform.StandardPaths.DocumentsLocation)
         onAccepted: controller.select_metrics_file(fileUrl)
     }
 }
