@@ -38,6 +38,8 @@ class GUIController(QtCore.QObject):
     numGamesChanged = QtCore.Signal(int)
     boardXChanged = QtCore.Signal(int)
     boardYChanged = QtCore.Signal(int)
+    metricsChanged = QtCore.Signal()
+    metricsLabelChanged = QtCore.Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -68,12 +70,16 @@ class GUIController(QtCore.QObject):
         self._player_model = QtCore.QStringListModel()
         self._model_model = QtCore.QStringListModel()
 
+        self._metrics_defaults = self._build_default_metrics()
+        self._metrics_paths = dict(self._metrics_defaults)
+        self._metrics_label = "По умолчанию"
+
         self._load_available_units()
         self._load_rosters_from_file()
         self._refresh_models()
         self._update_roster_summary()
 
-        self._emit_status("Press the Train button to train a model")
+        self._emit_status("Нажмите Train, чтобы запустить обучение.")
 
     @QtCore.Property(QtCore.QObject, constant=True)
     def availableUnitsModel(self) -> QtCore.QObject:
@@ -122,6 +128,34 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(int, notify=boardYChanged)
     def boardY(self) -> int:
         return self._board_y
+
+    @QtCore.Property(str, notify=metricsChanged)
+    def metricsRewardPath(self) -> str:
+        return self._metrics_paths["reward"]
+
+    @QtCore.Property(str, notify=metricsChanged)
+    def metricsLossPath(self) -> str:
+        return self._metrics_paths["loss"]
+
+    @QtCore.Property(str, notify=metricsChanged)
+    def metricsEpLenPath(self) -> str:
+        return self._metrics_paths["epLen"]
+
+    @QtCore.Property(str, notify=metricsChanged)
+    def metricsWinratePath(self) -> str:
+        return self._metrics_paths["winrate"]
+
+    @QtCore.Property(str, notify=metricsChanged)
+    def metricsVpDiffPath(self) -> str:
+        return self._metrics_paths["vpdiff"]
+
+    @QtCore.Property(str, notify=metricsChanged)
+    def metricsEndReasonPath(self) -> str:
+        return self._metrics_paths["endreasons"]
+
+    @QtCore.Property(str, notify=metricsLabelChanged)
+    def metricsLabel(self) -> str:
+        return self._metrics_label
 
     @QtCore.Slot(int)
     def set_num_games(self, value: int) -> None:
@@ -267,6 +301,45 @@ class GUIController(QtCore.QObject):
             )
             self._emit_status(message)
             self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
+
+    @QtCore.Slot(str)
+    def select_metrics_file(self, file_url: str) -> None:
+        path = self._to_local_file(file_url)
+        if not path:
+            self._emit_status("Файл метрик не выбран.")
+            return
+        if not os.path.exists(path):
+            self._emit_status("Файл модели не найден. Проверьте путь.")
+            return
+        metrics_id = self._extract_metrics_id(path)
+        if not metrics_id:
+            self._emit_status("Не удалось определить ID метрик из имени файла.")
+            return
+        json_path = os.path.join(self._repo_root, "models", f"data_{metrics_id}.json")
+        if not os.path.exists(json_path):
+            self._emit_status("Файл метрик не найден в models/.")
+            self._emit_log(f"[GUI] metrics json не найден: {json_path}", level="WARN")
+            return
+        try:
+            with open(json_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError) as exc:
+            self._emit_status("Не удалось прочитать метрики. Проверьте файл.")
+            self._emit_log(f"[GUI] Ошибка чтения метрик: {exc}", level="ERROR")
+            return
+
+        updated = {
+            "reward": self._resolve_metric_path(payload.get("reward"), self._metrics_defaults["reward"]),
+            "loss": self._resolve_metric_path(payload.get("loss"), self._metrics_defaults["loss"]),
+            "epLen": self._resolve_metric_path(payload.get("epLen"), self._metrics_defaults["epLen"]),
+            "winrate": self._resolve_metric_path(payload.get("winrate"), self._metrics_defaults["winrate"]),
+            "vpdiff": self._resolve_metric_path(payload.get("vpdiff"), self._metrics_defaults["vpdiff"]),
+            "endreasons": self._resolve_metric_path(payload.get("endreasons"), self._metrics_defaults["endreasons"]),
+        }
+        self._set_metrics_paths(updated)
+        self._metrics_label = f"Файл: {os.path.basename(path)}"
+        self.metricsLabelChanged.emit(self._metrics_label)
+        self._emit_status("Метрики обновлены.")
 
     def _set_running(self, value: bool) -> None:
         if self._running != value:
@@ -498,6 +571,56 @@ class GUIController(QtCore.QObject):
         if hours > 0:
             return f"{hours:02d}:{minutes:02d}:{secs:02d}"
         return f"{minutes:02d}:{secs:02d}"
+
+    def _build_default_metrics(self) -> dict[str, str]:
+        base_dir = os.path.join(self._repo_root, "gui", "img")
+        return {
+            "reward": self._to_file_url(os.path.join(base_dir, "reward.png")),
+            "loss": self._to_file_url(os.path.join(base_dir, "loss.png")),
+            "epLen": self._to_file_url(os.path.join(base_dir, "epLen.png")),
+            "winrate": self._to_file_url(os.path.join(base_dir, "winrate.png")),
+            "vpdiff": self._to_file_url(os.path.join(base_dir, "vpdiff.png")),
+            "endreasons": self._to_file_url(os.path.join(base_dir, "endreasons.png")),
+        }
+
+    def _set_metrics_paths(self, paths: dict[str, str]) -> None:
+        self._metrics_paths = paths
+        self.metricsChanged.emit()
+
+    def _resolve_metric_path(self, raw_path: Optional[str], fallback: str) -> str:
+        if not raw_path:
+            return fallback
+        if os.path.isabs(raw_path):
+            candidate = raw_path
+        else:
+            candidate = os.path.join(self._repo_root, "gui", raw_path)
+        if os.path.exists(candidate):
+            return self._to_file_url(candidate)
+        return fallback
+
+    def _to_file_url(self, path: str) -> str:
+        return QtCore.QUrl.fromLocalFile(path).toString()
+
+    def _to_local_file(self, path_or_url: str) -> str:
+        if not path_or_url:
+            return ""
+        url = QtCore.QUrl(path_or_url)
+        if url.isLocalFile():
+            return url.toLocalFile()
+        return path_or_url
+
+    def _extract_metrics_id(self, path: str) -> str:
+        base = os.path.basename(path)
+        match = re.search(r"model-(\d+-\d+)\.pickle$", base)
+        if match:
+            return match.group(1)
+        match = re.search(r"model-(-?\d+)\.pickle$", base)
+        if match:
+            return match.group(1)
+        tail = path[-16:-7]
+        if tail and tail[0] == "-":
+            return path[-15:-7]
+        return tail
 
     def _create_roster_entry(self, unit: UnitInfo) -> RosterEntry:
         entry = RosterEntry(name=unit.name, count=unit.default_count, instance_id=str(self._instance_counter))
