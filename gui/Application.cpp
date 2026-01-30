@@ -285,11 +285,10 @@ Form :: Form() {
   leftBox.pack_start(logScroll, Gtk::PACK_EXPAND_WIDGET);
 
   tabControl1.insert_page(tabPage2, "Train", 0);
-  tabControl1.insert_page(tabPage3, "Show Trained Model", 1);
-  tabControl1.insert_page(tabPage5, "Metrics", 2);
-  tabControl1.insert_page(tabPage4, "Play", 3);
-  tabControl1.insert_page(tabPage1, "Settings", 4);
-  tabControl1.insert_page(tabPage6, "Оценка", 5);
+  tabControl1.insert_page(tabPage5, "Metrics", 1);
+  tabControl1.insert_page(tabPage4, "Play", 2);
+  tabControl1.insert_page(tabPage1, "Settings", 3);
+  tabControl1.insert_page(tabPage6, "Оценка", 4);
 
     // settings tab
 
@@ -801,14 +800,6 @@ Form :: Form() {
   fixedTabPage2.move(trainingProgress, 10, 400);
   fixedTabPage2.add(trainingProgressStatsLabel);
   fixedTabPage2.move(trainingProgressStatsLabel, 10, 430);
-
-    // show trained model tab
-
-  labelPage3.set_label("Show Trained Model");
-  tabControl1.set_tab_label(tabPage3, labelPage3);
-  tabPage3.add(fixedTabPage3);
-
-  // no preview panel
 
   // show metrics tab
   labelPage5.set_label("Model Metrics");

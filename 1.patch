@@ -1,117 +1,18 @@
 diff --git a/gui/Application.cpp b/gui/Application.cpp
-index e7d03436191b7e6da7e1b6770b3a937abd98554b..5f21efd4ef19cfac42c0c54ab471e1b59d498344 100644
+index 5f21efd4ef19cfac42c0c54ab471e1b59d498344..ba3e5fcc8d5fa4824af890429dc4ecf802bcb6d4 100644
 --- a/gui/Application.cpp
 +++ b/gui/Application.cpp
-@@ -182,147 +182,129 @@ std::string formatDuration(std::chrono::seconds duration) {
-   } else {
-     oss << std::setfill('0') << std::setw(2) << minutes << ":"
-         << std::setw(2) << seconds;
-   }
-   return oss.str();
- }
- 
- std::string buildTrainingStatsLine(double itPerSec,
-                                    std::chrono::seconds elapsed,
-                                    bool showEta,
-                                    std::chrono::seconds eta) {
-   std::ostringstream oss;
-   if (itPerSec > 0.0) {
-     oss << std::fixed << std::setprecision(1) << itPerSec << " it/s";
-   } else {
-     oss << "— it/s";
-   }
-   oss << " • elapsed " << formatDuration(elapsed);
-   if (showEta) {
-     oss << " • ETA " << formatDuration(eta);
-   }
-   return oss.str();
- }
- }  // namespace
- 
--std::string gifpth = "img/model_train.gif";
- std::string rewpth = "img/reward.png";
- std::string losspth = "img/loss.png";
- std::string eplenpth = "img/epLen.png";
- std::string winratepth = "img/winrate.png";
- std::string vpdiffpth = "img/vpdiff.png";
- std::string endreasonpth = "img/endreasons.png";
- std::string imgpth = "img/icon.png";
- 
- Form :: Form() {
- 
-   modelClass = " Necrons";
-   enemyClass = " Necrons";
-   path = " ";
-   open = false;
-   x = 60;
-   y = 40;
-   training = false;
-   playing = false;
-   loadingRoster = false;
-   hideTrainingLogs = true;
-   trainingTotalEpisodes = 0;
-   trainEnvPrefix = "";
-   trainingStartLabel = "обучения";
-   trainingStatusLabel = "Обучение";
-   trainingLogTag = "TRAIN";
-   evaluating = false;
- 
-   bar.set_show_close_button(true);
-   bar.set_title("40kAI GUI");
-   set_titlebar(bar);
- 
-   set_default_size(kDefaultWidth, kDefaultHeight);
-   set_size_request(kMinimumWidth, kMinimumHeight);
- 
-   rootBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
-   topBarBox.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
-   topBarBox.set_spacing(8);
-   leftBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
--  mainSplit.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
--  rightSplit.set_orientation(Gtk::ORIENTATION_VERTICAL);
- 
-   rootBox.set_hexpand(true);
-   rootBox.set_vexpand(true);
-   topBarBox.set_hexpand(true);
-   leftBox.set_hexpand(true);
-   leftBox.set_vexpand(true);
--  mainSplit.set_hexpand(true);
--  mainSplit.set_vexpand(true);
--  rightSplit.set_hexpand(true);
--  rightSplit.set_vexpand(true);
- 
-   help.set_image_from_icon_name("help-about");
-   help.signal_button_release_event().connect([&](GdkEventButton*){
-     openHelpMenu();
-     return true;
-   });
-   resetLayoutButton.set_label("Reset Layout");
-   resetLayoutButton.signal_button_release_event().connect([&](GdkEventButton*) {
-     resetLayout();
-     return true;
-   });
-   topBarBox.pack_start(resetLayoutButton, Gtk::PACK_SHRINK);
+@@ -263,55 +263,54 @@ Form :: Form() {
    topBarBox.pack_start(help, Gtk::PACK_SHRINK);
  
    add(rootBox);
    rootBox.pack_start(topBarBox, Gtk::PACK_SHRINK);
--  rootBox.pack_start(mainSplit, Gtk::PACK_EXPAND_WIDGET);
-+  rootBox.pack_start(leftBox, Gtk::PACK_EXPAND_WIDGET);
+   rootBox.pack_start(leftBox, Gtk::PACK_EXPAND_WIDGET);
  
    tabControl1.set_hexpand(true);
    tabControl1.set_vexpand(true);
    leftBox.pack_start(tabControl1, Gtk::PACK_EXPAND_WIDGET);
  
--  mainSplit.add1(leftBox);
--  mainSplit.add2(rightSplit);
--
--  boardFrame.set_label("Board / Preview");
--  boardFrame.set_hexpand(true);
--  boardFrame.set_vexpand(true);
--  pictureBox1.set_hexpand(true);
--  pictureBox1.set_vexpand(true);
--  boardFrame.add(pictureBox1);
--
    logView.set_hexpand(true);
    logView.set_vexpand(true);
    logView.set_editable(false);
@@ -124,16 +25,18 @@ index e7d03436191b7e6da7e1b6770b3a937abd98554b..5f21efd4ef19cfac42c0c54ab471e1b5
    logScroll.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
    logScroll.add(logView);
  
--  rightSplit.add1(boardFrame);
--  rightSplit.add2(logScroll);
-+  leftBox.pack_start(logScroll, Gtk::PACK_EXPAND_WIDGET);
+   leftBox.pack_start(logScroll, Gtk::PACK_EXPAND_WIDGET);
  
    tabControl1.insert_page(tabPage2, "Train", 0);
-   tabControl1.insert_page(tabPage3, "Show Trained Model", 1);
-   tabControl1.insert_page(tabPage5, "Metrics", 2);
-   tabControl1.insert_page(tabPage4, "Play", 3);
-   tabControl1.insert_page(tabPage1, "Settings", 4);
-   tabControl1.insert_page(tabPage6, "Оценка", 5);
+-  tabControl1.insert_page(tabPage3, "Show Trained Model", 1);
+-  tabControl1.insert_page(tabPage5, "Metrics", 2);
+-  tabControl1.insert_page(tabPage4, "Play", 3);
+-  tabControl1.insert_page(tabPage1, "Settings", 4);
+-  tabControl1.insert_page(tabPage6, "Оценка", 5);
++  tabControl1.insert_page(tabPage5, "Metrics", 1);
++  tabControl1.insert_page(tabPage4, "Play", 2);
++  tabControl1.insert_page(tabPage1, "Settings", 3);
++  tabControl1.insert_page(tabPage6, "Оценка", 4);
  
      // settings tab
  
@@ -152,7 +55,20 @@ index e7d03436191b7e6da7e1b6770b3a937abd98554b..5f21efd4ef19cfac42c0c54ab471e1b5
    radioTop.signal_toggled().connect([this]() {
      tabControl1.set_tab_pos(PositionType::POS_TOP);
    });
-@@ -804,55 +786,51 @@ Form :: Form() {
+ 
+   fixedTabPage1.add(radioLeft);
+   fixedTabPage1.move(radioLeft, 10, 70);
+   radioLeft.set_label("Left");
+   radioLeft.set_group(radioButtonGroup);
+   radioLeft.signal_toggled().connect([this]() {
+     tabControl1.set_tab_pos(PositionType::POS_LEFT);
+@@ -780,58 +779,50 @@ Form :: Form() {
+   fixedTabPage2.add(mirrorRosterButton);
+   fixedTabPage2.move(mirrorRosterButton, 400, 140);
+   fixedTabPage2.add(openArmyPopup);
+   fixedTabPage2.move(openArmyPopup, 400, (160+200)/2);
+   fixedTabPage2.add(textbox1);
+   fixedTabPage2.move(textbox1, 10, 10);
    fixedTabPage2.add(button1);
    fixedTabPage2.move(button1, 380, 300);
    fixedTabPage2.add(buttonTrain6);
@@ -172,19 +88,14 @@ index e7d03436191b7e6da7e1b6770b3a937abd98554b..5f21efd4ef19cfac42c0c54ab471e1b5
    fixedTabPage2.add(trainingProgressStatsLabel);
    fixedTabPage2.move(trainingProgressStatsLabel, 10, 430);
  
-     // show trained model tab
- 
-   labelPage3.set_label("Show Trained Model");
-   tabControl1.set_tab_label(tabPage3, labelPage3);
-   tabPage3.add(fixedTabPage3);
- 
--  showModelHint.set_text("Preview shown in the right panel.");
--  fixedTabPage3.add(showModelHint);
--  fixedTabPage3.move(showModelHint, 10, 10);
--  pictureBox1.set_size_request(280, 280);
--  update_picture();
-+  // no preview panel
- 
+-    // show trained model tab
+-
+-  labelPage3.set_label("Show Trained Model");
+-  tabControl1.set_tab_label(tabPage3, labelPage3);
+-  tabPage3.add(fixedTabPage3);
+-
+-  // no preview panel
+-
    // show metrics tab
    labelPage5.set_label("Model Metrics");
    tabControl1.set_tab_label(tabPage5, labelPage5);
@@ -209,251 +120,83 @@ index e7d03436191b7e6da7e1b6770b3a937abd98554b..5f21efd4ef19cfac42c0c54ab471e1b5
  
      if (folderBrowserDialog.run() == RESPONSE_OK) {
        path = folderBrowserDialog.get_file()->get_path();
-@@ -903,73 +881,65 @@ Form :: Form() {
-     system("clear");
-     char resolved_path[PATH_MAX];
-     realpath("../../40kAI", resolved_path);
-     strcat(resolved_path, "/models");
-     folderBrowserDialog.set_current_folder(resolved_path);
-     folderBrowserDialog.set_transient_for(*this);
+       changeMetrics(path);
+diff --git a/gui/README.md b/gui/README.md
+index 3512743a80b530c5e38d3b2c1ff568bc0089783c..68a80aee044a8b5d844445b5b6584254ec863980 100644
+--- a/gui/README.md
++++ b/gui/README.md
+@@ -1,41 +1,34 @@
+ # Application Guide
  
-     auto filter_text = Gtk::FileFilter::create();
-     filter_text->set_name("Pickle Files");
-     filter_text->add_pattern("*.pickle");
-     folderBrowserDialog.add_filter(filter_text);
+ ## Instructions
  
-     if (folderBrowserDialog.run() == RESPONSE_OK) {
-       path = folderBrowserDialog.get_file()->get_path();
-       setModelFile.set_text(path);
-     }
-     return true;
-   });
-   
-   showBoard.set_label("Show Board (Ascii Mode)");
-   showBoard.signal_button_release_event().connect([&](GdkEventButton* event) {
-     openPopUp(true);
-     return true;
-   });
+ When you open the app you'll be greeted to something like the image below:
+ <p align="center">
+   <img src="../assets/home_app.png" width=400/>
+   <br>Figure 1: App on First Glance
+ </p>
+-The app has 4 tabs that are called "Training", "Show Trained Model", "Play", and "Settings".
++The app has 5 tabs that are called "Training", "Metrics", "Play", "Settings", and "Оценка".
  
--  showBoardImg.set_label("Show Board (Image Mode)");
--  showBoardImg.signal_button_release_event().connect([&](GdkEventButton* event) {
--	openPopUp(false);
--	return true;
--  });
+ In Figure 1 the "Train" tab is open. Its function is to be used to generate models to play against later. In the textbox the user has to input the number of games the model is trained for. Training for at least 100 games is suggested. Below it are some checkboxes. The top ones are for choosing the faction the trained model will have and the bottom ones are for choosing the faction the model will be trained against. Below that the user can add units to the model's and their armies. The Add button adds the unit and the Clear button deletes all of the units from either army. Below that the dimensions of the game board can be entered. Has 60 by 40 by default. The bottom two buttons are for deleting all of the files saved in the /40kAI/models/ directory and to start the training process. 
+ 
+-<p align="center">
+-    <img src="../assets/show_trained_model.png" width=400>
+-    <br>Figure 2: A representation of the "Show Trained Model" tab
+-</p>
 -
-   playGraphicsView.set_label("Играть в GUI");
-   playGraphicsView.signal_button_release_event().connect([&](GdkEventButton* event) {
-     system("cd .. && scripts/viewer.sh &");
-     return true;
-   });
- 
-   fixedTabPage4.add(textbox2);
-   fixedTabPage4.add(button2);
-   fixedTabPage4.add(showBoard);
--  fixedTabPage4.add(showBoardImg);
-   fixedTabPage4.add(playGraphicsView);
-   fixedTabPage4.add(button5);
-   fixedTabPage4.add(setModelFile);
-   fixedTabPage4.move(textbox2, 10, 10);
-   fixedTabPage4.move(playGraphicsView, 130, 80);
-   fixedTabPage4.move(showBoard, 395, 80);
--  fixedTabPage4.move(showBoardImg, 570, 80);
-   fixedTabPage4.move(button2, 10, 80);
-   fixedTabPage4.move(button5, 10, 40);
-   fixedTabPage4.move(setModelFile, 80, 40);
- 
-   loadWindowGeometry();
-   loadLastRoster();
-   if (modelUnits.empty()) {
-     modelUnits.push_back({"Apothecary", "Space_Marine", findDefaultModelsCount("Space_Marine", "Apothecary"),
-                           RosterModel::generateInstanceId()});
-     modelUnits.push_back({"Eliminator Squad", "Space_Marine",
-                           findDefaultModelsCount("Space_Marine", "Eliminator Squad"),
-                           RosterModel::generateInstanceId()});
-   }
-   if (enemyUnits.empty()) {
-     rosterModel.addUnit("Apothecary", 1, enemyClass.substr(1));
-     rosterModel.addUnit("Eliminator Squad", 1, enemyClass.substr(1));
-     syncEnemyUnitsFromRoster();
-     saveLastRoster();
-   }
-   signal_hide().connect([this]() {
-     saveLastRoster();
-     saveWindowGeometry();
-   });
-   show_all();
- }
-@@ -1405,54 +1375,50 @@ bool Form :: isValidUnit(int id, std::string name) {
-   return false;
- }
- 
- void Form :: savetoTxt(const std::vector<RosterEntry>& enemyUnits, const std::vector<RosterEntry>& modelUnits) {
- 
-   std::ofstream outfile("units.txt");
-   outfile << "Player Units\n";
-   for (const auto& entry : enemyUnits) {
-     outfile << entry.name << "|" << entry.modelsCount;
-     if (!entry.instanceId.empty()) {
-       outfile << "|" << entry.instanceId;
-     }
-     outfile << std::endl;
-   }
-   outfile << "Model Units\n";
-   for (const auto& entry : modelUnits) {
-     outfile << entry.name << "|" << entry.modelsCount;
-     if (!entry.instanceId.empty()) {
-       outfile << "|" << entry.instanceId;
-     }
-     outfile << std::endl;
-   }
-   outfile.close();
- }
- 
--void Form :: update_picture() {
--  pictureBox1.set(gifpth);
--}
+-In the second tab called "Show Trained Model" (shown in Figure 2) displays a visualization of games played in the training phase. The purpose of this is to show the progression of the model as training progresses. 
 -
- void Form :: update_metrics() {
+ <p align="center">
+     <img src="../assets/play.png" width=400>
+-    <br>Figure 3: "Play" section in the app
++    <br>Figure 2: "Play" section in the app
+ </p>
  
-   const int IMG_W = 330;
-   const int IMG_H = 160;
+-Figure 3 shows the "Play" tab of the app. The user selects a model file with the "Choose" button and then plays a game against said model with the "Play" button. It will be played in the terminal and the board will be visible from the popup from the "Show Board" button board.txt.
++Figure 2 shows the "Play" tab of the app. The user selects a model file with the "Choose" button and then plays a game against said model with the "Play" button. It will be played in the terminal and the board will be visible from the popup from the "Show Board" button board.txt.
  
-   auto load_scaled = [&](const std::string& rel) -> Glib::RefPtr<Gdk::Pixbuf> {
-     std::string path = "../gui/" + rel;
-     if (!fs::exists(path)) {
-       return Glib::RefPtr<Gdk::Pixbuf>();
-     }
-     auto pix = Gdk::Pixbuf::create_from_file(path);
-     return pix->scale_simple(IMG_W, IMG_H, Gdk::INTERP_BILINEAR);
-   };
+ <p align="center">
+     <img src="../assets/Settings.png" width=400>
+-    <br>Figure 4: Settings page
++    <br>Figure 3: Settings page
+ </p>
  
-   if (auto p = load_scaled(rewpth)) metricBox.set(p);
-   if (auto p = load_scaled(losspth)) metricBox2.set(p);
-   if (auto p = load_scaled(winratepth)) metricBox4.set(p);
-   if (auto p = load_scaled(vpdiffpth)) metricBox5.set(p);
-   if (auto p = load_scaled(eplenpth)) metricBox3.set(p);
-   if (auto p = load_scaled(endreasonpth)) metricBox6.set(p);
+ The "Settings" page shown above does not show much at the moment, but currently it allows the user to change the orientation of the tabs. 
  
- }
+ ## Compile
  
- void Form :: updateInits(std::string model, std::string enemy) {
-   std::string command = "cd .. ; ./data.sh ";
-@@ -1577,51 +1543,50 @@ void Form :: startTrain() {
-     });
-     appendTrainingLogToFile(doneMessage, trainingLogTag);
-     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-         std::chrono::steady_clock::now() - trainingStartTime);
-     std::string finalStats = trainingStatusLabel + " завершено • elapsed "
-         + formatDuration(elapsed);
-     Glib::signal_idle().connect_once([this, finalStats]() {
-       trainingProgressStatsLabel.set_text(finalStats);
-     });
-   } else {
-     std::string errLine = trainingStatusLabel + " завершено с ошибкой. Код выхода: "
-         + std::to_string(exitCode);
-     Glib::signal_idle().connect_once([this, errLine]() {
-       setStatusMessage(errLine);
-     });
-     appendTrainingLogToFile(errLine, trainingLogTag);
-     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-         std::chrono::steady_clock::now() - trainingStartTime);
-     std::string finalStats = trainingStatusLabel + " завершено с ошибкой • elapsed "
-         + formatDuration(elapsed);
-     Glib::signal_idle().connect_once([this, finalStats]() {
-       trainingProgressStatsLabel.set_text(finalStats);
-     });
-   }
-   Glib::signal_idle().connect_once([this]() {
--    update_picture();
-     update_metrics();
-   });
- }
+ ```bash
+ $ cd gui/build
+ $ cmake ..
+ $ cmake --build . --config Debug
+-```
+\ No newline at end of file
++```
+diff --git a/gui/gettingStarted.txt b/gui/gettingStarted.txt
+index 94067f68a41c8ad4ff8d1024579a101e9e4f6dc2..c97ceadf97f5cb499e21730c35f0ae6f5391a9c8 100644
+--- a/gui/gettingStarted.txt
++++ b/gui/gettingStarted.txt
+@@ -1,11 +1,11 @@
+-40kAI is an application where the user can train, evaluate, and play against a machine learning model in the game of Warhammer 40k. It is split into 5 tabs: "Train", "Show Trained Model", "Model Metrics" "Play", and "Settings".
++40kAI is an application where the user can train, evaluate, and play against a machine learning model in the game of Warhammer 40k. It is split into 5 tabs: "Train", "Model Metrics", "Play", "Settings", and "Оценка".
  
- void Form :: runPlayAgainstModelInBackground() {
-   std::thread t(&Form::playAgainstModel, this);
-   t.detach();
- }
-   
- void Form :: playAgainstModel() {
-   path = setModelFile.get_text();
+ The "Train" tab is the one that the user sees upon opening and it's used for configuring and training the model. In the top textbox labeled "# of Games in Training" the user can set the number of iterations. By default it is set to 100. Below that the user can select the Model and Player Faction using the Radio Buttons. If the user changes the faction of either the Model or Player the list of units is cleared for the Model or Player. Below that there are two textboxes labeled "Enter Model Units" and "Enter Player Units", respectivly. They are for entering the names of units the user wants in their army. The "Add" buttons add the entered in units to the army list. To see all available factions/unit names in the "Army Viewer" button. Below that, the user can enter the dimensions of the game board. By default X = 60 and Y = 40. The button called "Clear Model Cache" permanently deletes all models saved. When pressed a warning popup is displayed where the user confirms if this is something they really want to do. The button to the right of that labeled "Train" is for actually starting the training process. When this is finished, the next few tabs will be updated automatically.
  
-   std::string envPrefix;
+-The "Show Trained Model" tab simply shows a gif that displays a representation of the most recently trained model training by playing dummy games. The red dots are the "dummy" bot units that the model trains against and the blue dots are the model units.
+-
+ The "Model Metrics" tab shows varius plots that the user can use to evaluate how effective the trained models are. The top left plot shows the average reward per game in training, the top right shows the loss curve, and the bottom plot shows the episode length per game in training. The button on the bottom labeled "Choose" is used to change the model of the metrics being shown. When in the file explorer, the user must select the .pickle file of the model they want. Whenever a new model is trained or when first opening the application, the most recent model's metrics are shown.
  
-   std::string command;
+ The "Play" tab's function is to allow the user to play against any of their saved trained models. This can be done by clicking the "Choose" button and selecting the .pickle file of the model the user wants. If the user fails to select a .pickle file, the application will select the most recently trained model instead. They then select the "Play" button which opens the game in the command prompt. The "Show Board" button shows the user the game board which updates automatically.
  
-   if (playInGUI == "True") {
-     envPrefix = "PLAY_NO_EXPLORATION=1 FIGHT_REPORT=1 ";
-     command = "cd .. ; " + envPrefix + "./play.sh ";
-     if (strlen(path.data()) < 2) {
-       command.append("None");
-     } else {
-       command.append("\"");
-       command.append(path);
-       command.append("\"");
+ The "Settings" tab allows the user to change the orentation of the app.
++
++The "Оценка" tab runs a batch simulation of the model versus a heuristic opponent and shows the output log.
 diff --git a/gui/include/Application.h b/gui/include/Application.h
-index a970b605e49e1c917c85de5ad57e530a3086a0b8..0cd6afea1ceb9ca18178407786f23a32a94c7147 100644
+index 0cd6afea1ceb9ca18178407786f23a32a94c7147..2c65647f0965ddb01423638f73c7b954020ab726 100644
 --- a/gui/include/Application.h
 +++ b/gui/include/Application.h
-@@ -1,146 +1,139 @@
- #ifndef APP_H
- #define APP_H
- 
- #include <iostream>
- #include <gtkmm.h>
- #include <cstdlib>
- #include <stdlib.h>
- #include <string>
- #include <fstream>
- #include <thread>
- #include <chrono>
- #include <filesystem>
- #include <deque>
- #include "RosterModel.h"
- #include "popup.h"
- #include "units.h"
- #include "warn.h"
- #include "help.h"
- 
- class Form : public Window {
- 
- public : 
-   Form();
-   int openPopUp(bool textMode);
--  void update_picture();
-   void update_metrics();
-   void updateInits(std::string model, std::string enemy);
-   void startTrainInBackground();
-   void startTrain();
-   void runPlayAgainstModelInBackground();
-   void playAgainstModel();
-   inline bool exists_test (const std::string& name);
-   void on_dropdown_changed();
-   void savetoTxt(const std::vector<RosterEntry>& enemyUnits, const std::vector<RosterEntry>& modelUnits);
-   bool isValidUnit(int id, std::string name);
-   int openArmyView();
-   int openWarnMenu(std::string mess, int comm);
-   int openHelpMenu();
-   int openPlayGUI();
-   void changeMetrics(std::string path);
-   void recentMetrics();
-   std::string toLower(std::string data);
-   void mirrorRoster();
-   void saveLastRoster();
-   void loadLastRoster();
-   void syncEnemyUnitsFromRoster();
-   bool addEnemyUnitFromEntry(const std::string& entryText);
-   void resetLayout();
-   void appendLogLine(const std::string& message);
-   void appendEvalLogLine(const std::string& message);
-   void appendTrainingLogToFile(const std::string& message, const std::string& tag = "TRAIN");
-   void startEvalInBackground();
-   void startEval(int games);
- 
- private:
-   void setStatusMessage(const std::string& message);
-   void updateTrainingProgress(int current, int total);
-   void resetTrainingProgressStats();
-   void recordTrainingSample(int episode, std::chrono::steady_clock::time_point now);
+@@ -59,69 +59,66 @@ private:
    double calculateTrainingRate() const;
    void applyFactionToModel(const std::string& faction);
    void applyFactionToEnemy(const std::string& faction);
@@ -465,7 +208,6 @@ index a970b605e49e1c917c85de5ad57e530a3086a0b8..0cd6afea1ceb9ca18178407786f23a32
    Window* warn;
    Window* play;
    Window* helpMenu;
--  Image pictureBox1;
    Image metricBox;
    Image metricBox2;
    Image metricBox3;
@@ -475,23 +217,19 @@ index a970b605e49e1c917c85de5ad57e530a3086a0b8..0cd6afea1ceb9ca18178407786f23a32
    Box rootBox;
    Box topBarBox;
    Box leftBox;
--  Paned mainSplit;
--  Paned rightSplit;
--  Frame boardFrame;
    ScrolledWindow logScroll;
    TextView logView;
--  Label showModelHint;
    Notebook tabControl1;
    Label labelPage1;
    Label labelPage2;
-   Label labelPage3;
+-  Label labelPage3;
    Label labelPage4;
    Label labelPage5;
    Label labelPage6;
    Label label1;
    Frame tabPage1;
    Frame tabPage2;
-   Frame tabPage3;
+-  Frame tabPage3;
    Frame tabPage4;
    Frame tabPage5;
    Frame tabPage6;
@@ -502,7 +240,7 @@ index a970b605e49e1c917c85de5ad57e530a3086a0b8..0cd6afea1ceb9ca18178407786f23a32
    RadioButton radioBottom;
    Fixed fixedTabPage1;
    Fixed fixedTabPage2;
-   Fixed fixedTabPage3;
+-  Fixed fixedTabPage3;
    Fixed fixedTabPage4;
    Fixed fixedTabPage5;
    Fixed fixedTabPage6;
@@ -515,7 +253,6 @@ index a970b605e49e1c917c85de5ad57e530a3086a0b8..0cd6afea1ceb9ca18178407786f23a32
    Button button6;
    Button buttonSelfPlay;
    Button showBoard;
--  Button showBoardImg;
    Button playGraphicsView;
    Label textbox;
    Label textbox2;
@@ -529,16 +266,4 @@ index a970b605e49e1c917c85de5ad57e530a3086a0b8..0cd6afea1ceb9ca18178407786f23a32
    Entry setIters;
    Entry setModelFile;
    RadioButtonGroup factionModel;
-   RadioButton orksModel;
-   RadioButton spmModel;
-   RadioButton sobModel;
-   RadioButton adcModel;
-   RadioButton tyrModel;
-   RadioButton milModel;
-   RadioButton tauModel;
-   RadioButton necModel;
-   RadioButtonGroup factionEnemy;
-   RadioButton orksEnemy;
-   RadioButton spmEnemy;
-   RadioButton sobEnemy;
 
