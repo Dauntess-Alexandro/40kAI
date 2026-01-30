@@ -8,13 +8,7 @@ class DataSpider(scrapy.Spider):
 
     def start_requests(self):
         urls = [
-            "https://www.wahapedia.ru/wh40k10ed/factions/adepta-sororitas/datasheets.html", 
-            "https://wahapedia.ru/wh40k10ed/factions/orks/datasheets.html", 
-            "https://wahapedia.ru/wh40k10ed/factions/adeptus-custodes/datasheets.html",
-            "https://wahapedia.ru/wh40k10ed/factions/tyranids/datasheets.html",
-            "https://wahapedia.ru/wh40k10ed/factions/adeptus-mechanicus/datasheets.html",
-            "https://wahapedia.ru/wh40k10ed/factions/astra-militarum/datasheets.html",
-            "https://wahapedia.ru/wh40k10ed/factions/t-au-empire/datasheets.html"
+            "https://wahapedia.ru/wh40k10ed/factions/necrons/datasheets.html"
         ]
 
         for i in urls:
@@ -33,20 +27,9 @@ class DataSpider(scrapy.Spider):
             return int(toapp)
 
     def def_url(self, url):
-        if url == "https://www.wahapedia.ru/wh40k10ed/factions/adepta-sororitas/datasheets.html":
+        if url == "https://wahapedia.ru/wh40k10ed/factions/necrons/datasheets.html":
             return 0
-        elif url == "https://wahapedia.ru/wh40k10ed/factions/orks/datasheets.html":
-            return 1
-        elif url == "https://wahapedia.ru/wh40k10ed/factions/adeptus-custodes/datasheets.html":
-            return 2
-        elif url == "https://wahapedia.ru/wh40k10ed/factions/tyranids/datasheets.html":
-            return 3
-        elif url == "https://wahapedia.ru/wh40k10ed/factions/adeptus-mechanicus/datasheets.html":
-            return 4
-        elif url == "https://wahapedia.ru/wh40k10ed/factions/astra-militarum/datasheets.html":
-            return 5
-        elif url == "https://wahapedia.ru/wh40k10ed/factions/t-au-empire/datasheets.html":
-            return 6
+        return 0
 
     def parse(self, response):
         name = response.css('.dsH2Header').xpath("string()").extract()    
@@ -256,13 +239,10 @@ class DataSpider(scrapy.Spider):
                     elif curr_url == 3:
                         equ.append(weap)
                         num += 1
-        if curr_url == 1:
-            equ.append(["slugga", "choppa"])
-
         # check lens
         #print(curr_url, len(names), len(numOfModels), len(weapons), len(equ), len(M))
 
-        armies = ["Sisters_of_Battle", "Orks", "Custodes", "Tyranids", "Mechanicus", "Militarum", "Tau"]
+        armies = ["Necrons"]
 
         for i in range(len(M)):
             all_data["UnitData"].append({"Army": armies[curr_url], "Name": names[i], "Movement": M[i], "#OfModels": numOfModels[i],"T": T[i], "Sv": Sv[i], "W": W[i], "Ld": Ld[i], "OC": OC[i], "IVSave": IVSave[i], "Weapons": equ[i]})
