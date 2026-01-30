@@ -56,7 +56,7 @@ class Units : public Gtk::Window {
 
     std::string formatRosterDisplay(const std::string& name, int modelsCount) const;
     void persistPlayerRoster();
-    bool getSelectedAvailableUnit(AvailableUnit& unit) const;
+    bool getSelectedAvailableUnit(AvailableUnit& unit);
     void refreshRosterView(const std::vector<RosterEntry>& entries,
                            const Glib::RefPtr<Gtk::ListStore>& store);
     void setStatusMessage(const std::string& message);

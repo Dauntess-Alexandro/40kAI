@@ -55,7 +55,7 @@ void Units::persistPlayerRoster() {
   playerRosterModel->saveToFile(RosterModel::defaultRosterPath());
 }
 
-bool Units::getSelectedAvailableUnit(AvailableUnit& unit) const {
+bool Units::getSelectedAvailableUnit(AvailableUnit& unit) {
   auto selection = availableView.get_selection();
   if (!selection) {
     return false;
