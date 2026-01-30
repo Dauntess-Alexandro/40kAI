@@ -1,8 +1,101 @@
 diff --git a/gui/Application.cpp b/gui/Application.cpp
-index 5f21efd4ef19cfac42c0c54ab471e1b59d498344..ba3e5fcc8d5fa4824af890429dc4ecf802bcb6d4 100644
+index 1891fe93c89fed4dfdd0ce6f331e32ea69770d38..c9f5ee3987f247da5642043badca5c4e2de0aeb3 100644
 --- a/gui/Application.cpp
 +++ b/gui/Application.cpp
-@@ -263,55 +263,54 @@ Form :: Form() {
+@@ -190,86 +190,106 @@ std::string buildTrainingStatsLine(double itPerSec,
+                                    std::chrono::seconds elapsed,
+                                    bool showEta,
+                                    std::chrono::seconds eta) {
+   std::ostringstream oss;
+   if (itPerSec > 0.0) {
+     oss << std::fixed << std::setprecision(1) << itPerSec << " it/s";
+   } else {
+     oss << "— it/s";
+   }
+   oss << " • elapsed " << formatDuration(elapsed);
+   if (showEta) {
+     oss << " • ETA " << formatDuration(eta);
+   }
+   return oss.str();
+ }
+ }  // namespace
+ 
+ std::string rewpth = "img/reward.png";
+ std::string losspth = "img/loss.png";
+ std::string eplenpth = "img/epLen.png";
+ std::string winratepth = "img/winrate.png";
+ std::string vpdiffpth = "img/vpdiff.png";
+ std::string endreasonpth = "img/endreasons.png";
+ std::string imgpth = "img/icon.png";
+ 
++namespace {
++constexpr bool kEnableDarkTheme = true;
++constexpr auto kDarkThemePath = "gui/style-dark.css";
++}  // namespace
++
+ Form :: Form() {
+ 
+   modelClass = " Necrons";
+   enemyClass = " Necrons";
+   path = " ";
+   open = false;
+   x = 60;
+   y = 40;
+   training = false;
+   playing = false;
+   loadingRoster = false;
+   hideTrainingLogs = true;
+   trainingTotalEpisodes = 0;
+   trainEnvPrefix = "";
+   trainingStartLabel = "обучения";
+   trainingStatusLabel = "Обучение";
+   trainingLogTag = "TRAIN";
+   evaluating = false;
+ 
+   bar.set_show_close_button(true);
+   bar.set_title("40kAI GUI");
+   set_titlebar(bar);
+ 
+   set_default_size(kDefaultWidth, kDefaultHeight);
+   set_size_request(kMinimumWidth, kMinimumHeight);
+ 
++  if (kEnableDarkTheme) {
++    cssProvider = Gtk::CssProvider::create();
++    try {
++      cssProvider->load_from_path(kDarkThemePath);
++      Gtk::StyleContext::add_provider_for_screen(
++          Gdk::Screen::get_default(), cssProvider,
++          GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
++    } catch (const Glib::Error& error) {
++      std::cerr << "Не удалось загрузить тему: " << error.what() << std::endl;
++    }
++  }
++
+   rootBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
+   topBarBox.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+   topBarBox.set_spacing(8);
+   leftBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
+ 
+   rootBox.set_hexpand(true);
+   rootBox.set_vexpand(true);
+   topBarBox.set_hexpand(true);
+   leftBox.set_hexpand(true);
+   leftBox.set_vexpand(true);
++  rootBox.get_style_context()->add_class("app-root");
++  tabControl1.get_style_context()->add_class("panel");
++  logView.get_style_context()->add_class("mono");
+ 
+   help.set_image_from_icon_name("help-about");
+   help.signal_button_release_event().connect([&](GdkEventButton*){
+     openHelpMenu();
+     return true;
+   });
+   resetLayoutButton.set_label("Reset Layout");
+   resetLayoutButton.signal_button_release_event().connect([&](GdkEventButton*) {
+     resetLayout();
+     return true;
+   });
+   topBarBox.pack_start(resetLayoutButton, Gtk::PACK_SHRINK);
    topBarBox.pack_start(help, Gtk::PACK_SHRINK);
  
    add(rootBox);
@@ -16,86 +109,303 @@ index 5f21efd4ef19cfac42c0c54ab471e1b59d498344..ba3e5fcc8d5fa4824af890429dc4ecf8
    logView.set_hexpand(true);
    logView.set_vexpand(true);
    logView.set_editable(false);
-   logView.set_wrap_mode(Gtk::WRAP_WORD_CHAR);
-   auto logBuffer = Gtk::TextBuffer::create();
-   logView.set_buffer(logBuffer);
+@@ -360,125 +380,152 @@ Form :: Form() {
+     startEvalInBackground();
+     return true;
+   });
+   fixedTabPage6.add(evalRunButton);
+   fixedTabPage6.move(evalRunButton, 300, 40);
  
-   logScroll.set_hexpand(true);
-   logScroll.set_vexpand(true);
-   logScroll.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
-   logScroll.add(logView);
+   evalLogView.set_editable(false);
+   evalLogView.set_wrap_mode(Gtk::WRAP_WORD_CHAR);
+   auto evalBuffer = Gtk::TextBuffer::create();
+   evalLogView.set_buffer(evalBuffer);
  
-   leftBox.pack_start(logScroll, Gtk::PACK_EXPAND_WIDGET);
+   evalLogScroll.set_hexpand(true);
+   evalLogScroll.set_vexpand(true);
+   evalLogScroll.set_policy(PolicyType::POLICY_AUTOMATIC, PolicyType::POLICY_AUTOMATIC);
+   evalLogScroll.set_size_request(900, 600);
+   evalLogScroll.add(evalLogView);
+   fixedTabPage6.add(evalLogScroll);
+   fixedTabPage6.move(evalLogScroll, 10, 90);
  
-   tabControl1.insert_page(tabPage2, "Train", 0);
--  tabControl1.insert_page(tabPage3, "Show Trained Model", 1);
--  tabControl1.insert_page(tabPage5, "Metrics", 2);
--  tabControl1.insert_page(tabPage4, "Play", 3);
--  tabControl1.insert_page(tabPage1, "Settings", 4);
--  tabControl1.insert_page(tabPage6, "Оценка", 5);
-+  tabControl1.insert_page(tabPage5, "Metrics", 1);
-+  tabControl1.insert_page(tabPage4, "Play", 2);
-+  tabControl1.insert_page(tabPage1, "Settings", 3);
-+  tabControl1.insert_page(tabPage6, "Оценка", 4);
+     // train tab
  
-     // settings tab
+   savetoTxt(enemyUnits, modelUnits);
  
-   labelPage1.set_label("Settings");
-   tabControl1.set_tab_label(tabPage1, labelPage1);
-   tabPage1.add(fixedTabPage1);
+   labelPage2.set_label("Train");
+   tabControl1.set_tab_label(tabPage2, labelPage2);
+-  tabPage2.add(fixedTabPage2);
++  tabPage2.add(trainGrid);
++
++  trainGrid.set_margin_top(12);
++  trainGrid.set_margin_bottom(12);
++  trainGrid.set_margin_start(12);
++  trainGrid.set_margin_end(12);
++  trainGrid.set_row_spacing(8);
++  trainGrid.set_column_spacing(12);
++  trainGrid.set_hexpand(true);
++  trainGrid.set_vexpand(true);
++  trainGrid.get_style_context()->add_class("panel");
  
-   textbox.set_text("Change Tab Location:");
-   fixedTabPage1.add(textbox);
-   fixedTabPage1.move(textbox, 10, 10);
- 
-   fixedTabPage1.add(radioTop);
-   fixedTabPage1.move(radioTop, 10, 40);
-   radioTop.set_label("Top");
-   radioTop.set_group(radioButtonGroup);
-   radioTop.signal_toggled().connect([this]() {
-     tabControl1.set_tab_pos(PositionType::POS_TOP);
+   textbox1.set_text("Train Model:");
++  textbox1.set_halign(Gtk::ALIGN_START);
+   setStatusMessage("Press the Train button to train a model");
+   trainingProgressLabel.set_text("ep=0/0 (0%)");
+   trainingProgressStatsLabel.set_text("— it/s • elapsed 00:00");
+   trainingProgress.set_fraction(0.0);
+   trainingProgress.set_show_text(true);
+   trainingProgress.set_text("0%");
+   trainingProgress.set_size_request(360, 24);
+   trainingProgressStatsLabel.set_xalign(0.0);
+   trainingProgressStatsLabel.set_size_request(520, -1);
++  status.set_halign(Gtk::ALIGN_START);
++  trainingProgressLabel.set_halign(Gtk::ALIGN_START);
++  trainingProgress.set_hexpand(true);
++  trainingProgressStatsLabel.set_halign(Gtk::ALIGN_START);
++  trainingProgressStatsLabel.set_hexpand(true);
+     
+   button1.set_label("Train");
+   button1.signal_button_release_event().connect([&](GdkEventButton*) {
+     saveLastRoster();
+     syncEnemyUnitsFromRoster();
+     updateInits(modelClass, enemyClass);
+     if (exists_test("data.json") && training == false) {
+       training = true;
+       setStatusMessage("Training...");
+       trainEnvPrefix = "";
+       trainingStartLabel = "обучения";
+       trainingStatusLabel = "Обучение";
+       trainingLogTag = "TRAIN";
+       startTrainInBackground();
+     }
+     return true;
    });
  
-   fixedTabPage1.add(radioLeft);
-   fixedTabPage1.move(radioLeft, 10, 70);
-   radioLeft.set_label("Left");
-   radioLeft.set_group(radioButtonGroup);
-   radioLeft.signal_toggled().connect([this]() {
-     tabControl1.set_tab_pos(PositionType::POS_LEFT);
-@@ -780,58 +779,50 @@ Form :: Form() {
-   fixedTabPage2.add(mirrorRosterButton);
-   fixedTabPage2.move(mirrorRosterButton, 400, 140);
-   fixedTabPage2.add(openArmyPopup);
-   fixedTabPage2.move(openArmyPopup, 400, (160+200)/2);
-   fixedTabPage2.add(textbox1);
-   fixedTabPage2.move(textbox1, 10, 10);
-   fixedTabPage2.add(button1);
-   fixedTabPage2.move(button1, 380, 300);
-   fixedTabPage2.add(buttonTrain6);
-   fixedTabPage2.move(buttonTrain6, 470, 300);
-   fixedTabPage2.add(setIters);
-   fixedTabPage2.move(setIters, 160, 40);
-   fixedTabPage2.add(button3);
-   fixedTabPage2.move(button3, 10, 300);
-   fixedTabPage2.add(buttonSelfPlay);
-   fixedTabPage2.move(buttonSelfPlay, 200, 300);
-   fixedTabPage2.add(status);
-   fixedTabPage2.move(status, 10, 350);
-   fixedTabPage2.add(trainingProgressLabel);
-   fixedTabPage2.move(trainingProgressLabel, 10, 380);
-   fixedTabPage2.add(trainingProgress);
-   fixedTabPage2.move(trainingProgress, 10, 400);
-   fixedTabPage2.add(trainingProgressStatsLabel);
-   fixedTabPage2.move(trainingProgressStatsLabel, 10, 430);
+   buttonTrain6.set_label("Тренировать 8x");
+   buttonTrain6.signal_button_release_event().connect([&](GdkEventButton*) {
+     saveLastRoster();
+     syncEnemyUnitsFromRoster();
+     updateInits(modelClass, enemyClass);
+     if (exists_test("data.json") && training == false) {
+       training = true;
+       setStatusMessage("Обучение 8x...");
+       trainEnvPrefix = "VEC_ENV_COUNT=8 ";
+       trainingStartLabel = "обучения 8x";
+       trainingStatusLabel = "Обучение 8x";
+       trainingLogTag = "TRAIN8";
+       startTrainInBackground();
+     }
+     return true;
+   });
  
--    // show trained model tab
+   numOfGames.set_text("# of Games in Training:");
+   setIters.set_text("100");
++  numOfGames.set_halign(Gtk::ALIGN_START);
++  setIters.set_width_chars(8);
++  setIters.set_hexpand(false);
++  setIters.set_halign(Gtk::ALIGN_START);
+ 
+   openArmyPopup.set_label("Army Viewer");
++  openArmyPopup.set_halign(Gtk::ALIGN_START);
++  openArmyPopup.set_hexpand(false);
+   openArmyPopup.signal_button_release_event().connect([&](GdkEventButton*) {
+     openArmyView();
+     return true;
+   });
+ 
+-  dimens.set_text("Dimensions of Board: ");
++  dimens.set_text("Размер поля:");
++  dimens.set_halign(Gtk::ALIGN_START);
+ 
+   dimX.set_text("X : ");
+   enterDimensX.set_text(std::to_string(x));
++  enterDimensX.set_width_chars(6);
++  enterDimensX.set_hexpand(false);
+   upX.set_label("+");
+   upX.signal_button_release_event().connect([&](GdkEventButton*) {
+     x+=10;
+     enterDimensX.set_text(std::to_string(x));
+     return true;
+   });
+   downX.set_label("-");
+   downX.signal_button_release_event().connect([&](GdkEventButton*) {
+     x-=10;
+     enterDimensX.set_text(std::to_string(x));
+     return true;
+   });
+ 
+   dimY.set_text("Y :");
+   enterDimensY.set_text(std::to_string(y));
++  enterDimensY.set_width_chars(6);
++  enterDimensY.set_hexpand(false);
+   upY.set_label("+");
+   upY.signal_button_release_event().connect([&](GdkEventButton*) {
+     y+=10;
+     enterDimensY.set_text(std::to_string(y));
+     return true;
+   });
+   downY.set_label("-");
+   downY.signal_button_release_event().connect([&](GdkEventButton*) {
+     y-=10;
+     enterDimensY.set_text(std::to_string(y));
+     return true;
+   });
+ 
+   button3.set_label("Clear Model Cache");
+   button3.signal_button_release_event().connect([&](GdkEventButton*) {
+     std::string mess = "Warning: You are about to delete all of the saved models";
+     openWarnMenu(mess, 0);
+     return true;
+   });
+ 
+   buttonSelfPlay.set_label("Самообучение");
+   buttonSelfPlay.signal_button_release_event().connect([&](GdkEventButton*) {
+     saveLastRoster();
+     syncEnemyUnitsFromRoster();
+     updateInits(modelClass, enemyClass);
+@@ -497,102 +544,113 @@ Form :: Form() {
+   necModel.set_label("Necrons");
+   necModel.set_group(factionModel);
+   necModel.signal_toggled().connect([this]() {
+     modelUnits.clear();
+     modelClass = " Necrons";
+   });
+   necModel.set_active(true);
+ 
+   necEnemy.set_label("Necrons");
+   necEnemy.set_group(factionEnemy);
+   necEnemy.signal_toggled().connect([this]() {
+     enemyClass = " Necrons";
+     if (!loadingRoster) {
+       enemyUnits.clear();
+       rosterModel.clear();
+     }
+     rosterModel.setFaction("Necrons");
+     if (!loadingRoster) {
+       syncEnemyUnitsFromRoster();
+     }
+   });
+   necEnemy.set_active(true);
+ 
+   enemyFact.set_text("Player Faction: ");
+   modelFact.set_text("Model Faction: ");
+-  fixedTabPage2.add(dimX);
+-  fixedTabPage2.move(dimX, 10, 265);
+-  fixedTabPage2.add(dimens);
+-  fixedTabPage2.move(dimens, 10, 240);
+-  fixedTabPage2.add(enterDimensX);
+-  fixedTabPage2.move(enterDimensX, 30, 260);
+-  fixedTabPage2.add(upX);
+-  fixedTabPage2.move(upX, 200, 260);
+-  fixedTabPage2.add(downX);
+-  fixedTabPage2.move(downX, 220, 260);
 -
--  labelPage3.set_label("Show Trained Model");
--  tabControl1.set_tab_label(tabPage3, labelPage3);
--  tabPage3.add(fixedTabPage3);
+-  fixedTabPage2.add(dimY);
+-  fixedTabPage2.move(dimY, 260, 265);
+-  fixedTabPage2.add(enterDimensY);
+-  fixedTabPage2.move(enterDimensY, 260+30, 260);
+-  fixedTabPage2.add(upY);
+-  fixedTabPage2.move(upY, 250+200, 260);
+-  fixedTabPage2.add(downY);
+-  fixedTabPage2.move(downY, 250+220, 260);
 -
--  // no preview panel
--
+-  fixedTabPage2.add(numOfGames);
+-  fixedTabPage2.move(numOfGames, 10, 45);
+-  fixedTabPage2.add(enemyFact);
+-  fixedTabPage2.move(enemyFact, 10, 120);
+-  fixedTabPage2.add(modelFact);
+-  fixedTabPage2.move(modelFact, 10, 80);
+-  fixedTabPage2.add(necModel);
+-  fixedTabPage2.move(necModel, 100, 80);
+-  fixedTabPage2.add(necEnemy);
+-  fixedTabPage2.move(necEnemy, 100, 120);
+-  fixedTabPage2.add(openArmyPopup);
+-  fixedTabPage2.move(openArmyPopup, 400, 140);
+-  fixedTabPage2.add(textbox1);
+-  fixedTabPage2.move(textbox1, 10, 10);
+-  fixedTabPage2.add(button1);
+-  fixedTabPage2.move(button1, 380, 300);
+-  fixedTabPage2.add(buttonTrain6);
+-  fixedTabPage2.move(buttonTrain6, 470, 300);
+-  fixedTabPage2.add(setIters);
+-  fixedTabPage2.move(setIters, 160, 40);
+-  fixedTabPage2.add(button3);
+-  fixedTabPage2.move(button3, 10, 300);
+-  fixedTabPage2.add(buttonSelfPlay);
+-  fixedTabPage2.move(buttonSelfPlay, 200, 300);
+-  fixedTabPage2.add(status);
+-  fixedTabPage2.move(status, 10, 350);
+-  fixedTabPage2.add(trainingProgressLabel);
+-  fixedTabPage2.move(trainingProgressLabel, 10, 380);
+-  fixedTabPage2.add(trainingProgress);
+-  fixedTabPage2.move(trainingProgress, 10, 400);
+-  fixedTabPage2.add(trainingProgressStatsLabel);
+-  fixedTabPage2.move(trainingProgressStatsLabel, 10, 430);
++  enemyFact.set_halign(Gtk::ALIGN_START);
++  modelFact.set_halign(Gtk::ALIGN_START);
++
++  trainSettingsGrid.set_row_spacing(6);
++  trainSettingsGrid.set_column_spacing(8);
++  trainSettingsGrid.set_hexpand(true);
++  trainSettingsGrid.attach(numOfGames, 0, 0, 1, 1);
++  trainSettingsGrid.attach(setIters, 1, 0, 1, 1);
++  trainSettingsGrid.attach(modelFact, 0, 1, 1, 1);
++  trainSettingsGrid.attach(necModel, 1, 1, 1, 1);
++  trainSettingsGrid.attach(enemyFact, 0, 2, 1, 1);
++  trainSettingsGrid.attach(necEnemy, 1, 2, 1, 1);
++
++  rosterFrame.set_label("Ростер");
++  rosterFrame.get_style_context()->add_class("card");
++  rosterFrame.set_hexpand(true);
++  rosterFrame.set_vexpand(false);
++  rosterGrid.set_margin_top(8);
++  rosterGrid.set_margin_bottom(8);
++  rosterGrid.set_margin_start(10);
++  rosterGrid.set_margin_end(10);
++  rosterGrid.set_row_spacing(6);
++  rosterSummaryLabel.set_xalign(0.0);
++  rosterGrid.attach(openArmyPopup, 0, 0, 1, 1);
++  rosterGrid.attach(rosterSummaryLabel, 0, 1, 1, 1);
++  rosterFrame.add(rosterGrid);
++
++  boardFrame.set_label("Размеры поля");
++  boardFrame.get_style_context()->add_class("card");
++  boardFrame.set_hexpand(true);
++  boardGrid.set_margin_top(8);
++  boardGrid.set_margin_bottom(8);
++  boardGrid.set_margin_start(10);
++  boardGrid.set_margin_end(10);
++  boardGrid.set_row_spacing(6);
++  boardGrid.set_column_spacing(8);
++  boardGrid.attach(dimens, 0, 0, 4, 1);
++  boardGrid.attach(dimX, 0, 1, 1, 1);
++  boardGrid.attach(enterDimensX, 1, 1, 1, 1);
++  boardGrid.attach(upX, 2, 1, 1, 1);
++  boardGrid.attach(downX, 3, 1, 1, 1);
++  boardGrid.attach(dimY, 0, 2, 1, 1);
++  boardGrid.attach(enterDimensY, 1, 2, 1, 1);
++  boardGrid.attach(upY, 2, 2, 1, 1);
++  boardGrid.attach(downY, 3, 2, 1, 1);
++  boardFrame.add(boardGrid);
++
++  trainActionGrid.set_row_spacing(6);
++  trainActionGrid.set_column_spacing(8);
++  trainActionGrid.attach(button3, 0, 0, 1, 1);
++  trainActionGrid.attach(buttonSelfPlay, 1, 0, 1, 1);
++  trainActionGrid.attach(button1, 0, 1, 1, 1);
++  trainActionGrid.attach(buttonTrain6, 1, 1, 1, 1);
++
++  trainGrid.attach(textbox1, 0, 0, 2, 1);
++  trainGrid.attach(trainSettingsGrid, 0, 1, 1, 1);
++  trainGrid.attach(rosterFrame, 1, 1, 1, 1);
++  trainGrid.attach(boardFrame, 0, 2, 1, 1);
++  trainGrid.attach(trainActionGrid, 1, 2, 1, 1);
++  trainGrid.attach(status, 0, 3, 2, 1);
++  trainGrid.attach(trainingProgressLabel, 0, 4, 2, 1);
++  trainGrid.attach(trainingProgress, 0, 5, 2, 1);
++  trainGrid.attach(trainingProgressStatsLabel, 0, 6, 2, 1);
+ 
    // show metrics tab
    labelPage5.set_label("Model Metrics");
    tabControl1.set_tab_label(tabPage5, labelPage5);
@@ -120,89 +430,144 @@ index 5f21efd4ef19cfac42c0c54ab471e1b59d498344..ba3e5fcc8d5fa4824af890429dc4ecf8
  
      if (folderBrowserDialog.run() == RESPONSE_OK) {
        path = folderBrowserDialog.get_file()->get_path();
-       changeMetrics(path);
-diff --git a/gui/README.md b/gui/README.md
-index 3512743a80b530c5e38d3b2c1ff568bc0089783c..68a80aee044a8b5d844445b5b6584254ec863980 100644
---- a/gui/README.md
-+++ b/gui/README.md
-@@ -1,41 +1,34 @@
- # Application Guide
+@@ -677,50 +735,52 @@ Form :: Form() {
+   fixedTabPage4.add(playGraphicsView);
+   fixedTabPage4.add(button5);
+   fixedTabPage4.add(setModelFile);
+   fixedTabPage4.move(textbox2, 10, 10);
+   fixedTabPage4.move(playGraphicsView, 130, 80);
+   fixedTabPage4.move(showBoard, 395, 80);
+   fixedTabPage4.move(button2, 10, 80);
+   fixedTabPage4.move(button5, 10, 40);
+   fixedTabPage4.move(setModelFile, 80, 40);
  
- ## Instructions
+   loadWindowGeometry();
+   loadLastRoster();
+   if (modelUnits.empty()) {
+     modelUnits.push_back({"Necron Warriors", "Necrons", findDefaultModelsCount("Necrons", "Necron Warriors"),
+                           RosterModel::generateInstanceId()});
+     modelUnits.push_back({"Royal Warden", "Necrons",
+                           findDefaultModelsCount("Necrons", "Royal Warden"),
+                           RosterModel::generateInstanceId()});
+   }
+   if (enemyUnits.empty()) {
+     rosterModel.addUnit("Necron Warriors", 10, enemyClass.substr(1));
+     rosterModel.addUnit("Canoptek Scarab Swarms", 3, enemyClass.substr(1));
+     syncEnemyUnitsFromRoster();
+     saveLastRoster();
+   }
++  rosterSummaryLabel.set_text("Юниты игрока: " + std::to_string(enemyUnits.size()) +
++                              " | Юниты модели: " + std::to_string(modelUnits.size()));
+   signal_hide().connect([this]() {
+     saveLastRoster();
+     saveWindowGeometry();
+   });
+   show_all();
+ }
  
- When you open the app you'll be greeted to something like the image below:
- <p align="center">
-   <img src="../assets/home_app.png" width=400/>
-   <br>Figure 1: App on First Glance
- </p>
--The app has 4 tabs that are called "Training", "Show Trained Model", "Play", and "Settings".
-+The app has 5 tabs that are called "Training", "Metrics", "Play", "Settings", and "Оценка".
+ void Form :: setStatusMessage(const std::string& message) {
+   status.set_text(message);
+   if (!training || !hideTrainingLogs) {
+     appendLogLine(message);
+   }
+ }
  
- In Figure 1 the "Train" tab is open. Its function is to be used to generate models to play against later. In the textbox the user has to input the number of games the model is trained for. Training for at least 100 games is suggested. Below it are some checkboxes. The top ones are for choosing the faction the trained model will have and the bottom ones are for choosing the faction the model will be trained against. Below that the user can add units to the model's and their armies. The Add button adds the unit and the Clear button deletes all of the units from either army. Below that the dimensions of the game board can be entered. Has 60 by 40 by default. The bottom two buttons are for deleting all of the files saved in the /40kAI/models/ directory and to start the training process. 
+ void Form :: resetTrainingProgressStats() {
+   trainingSamples.clear();
+   trainingStartTime = std::chrono::steady_clock::now();
+   trainingLastUiUpdate = trainingStartTime - std::chrono::milliseconds(500);
+ }
  
--<p align="center">
--    <img src="../assets/show_trained_model.png" width=400>
--    <br>Figure 2: A representation of the "Show Trained Model" tab
--</p>
--
--In the second tab called "Show Trained Model" (shown in Figure 2) displays a visualization of games played in the training phase. The purpose of this is to show the progression of the model as training progresses. 
--
- <p align="center">
-     <img src="../assets/play.png" width=400>
--    <br>Figure 3: "Play" section in the app
-+    <br>Figure 2: "Play" section in the app
- </p>
+ void Form :: recordTrainingSample(int episode, std::chrono::steady_clock::time_point now) {
+   if (episode <= 0) {
+     return;
+   }
+   if (!trainingSamples.empty() && trainingSamples.back().second == episode) {
+@@ -976,50 +1036,53 @@ int Form :: openHelpMenu() {
+   return 0;
+ }
  
--Figure 3 shows the "Play" tab of the app. The user selects a model file with the "Choose" button and then plays a game against said model with the "Play" button. It will be played in the terminal and the board will be visible from the popup from the "Show Board" button board.txt.
-+Figure 2 shows the "Play" tab of the app. The user selects a model file with the "Choose" button and then plays a game against said model with the "Play" button. It will be played in the terminal and the board will be visible from the popup from the "Show Board" button board.txt.
+ std::string Form :: toLower(std::string data) {
+   std::transform(data.begin(), data.end(), data.begin(),[](unsigned char c){ return std::tolower(c); });
+   return data;
+ }
  
- <p align="center">
-     <img src="../assets/Settings.png" width=400>
--    <br>Figure 4: Settings page
-+    <br>Figure 3: Settings page
- </p>
+ void Form :: mirrorRoster() {
+   syncEnemyUnitsFromRoster();
+   if (rosterModel.empty()) {
+     setStatusMessage("Ростер игрока пуст — нечего копировать.");
+     return;
+   }
  
- The "Settings" page shown above does not show much at the moment, but currently it allows the user to change the orientation of the tabs. 
+   if (!enemyClass.empty()) {
+     applyFactionToModel(enemyClass.substr(1));
+   }
  
- ## Compile
+   modelUnits = rosterModel.expandedUnits();
+   savetoTxt(enemyUnits, modelUnits);
+   setStatusMessage("Ростер модели обновлён из ростера игрока.");
+ }
  
- ```bash
- $ cd gui/build
- $ cmake ..
- $ cmake --build . --config Debug
--```
-\ No newline at end of file
-+```
-diff --git a/gui/gettingStarted.txt b/gui/gettingStarted.txt
-index 94067f68a41c8ad4ff8d1024579a101e9e4f6dc2..c97ceadf97f5cb499e21730c35f0ae6f5391a9c8 100644
---- a/gui/gettingStarted.txt
-+++ b/gui/gettingStarted.txt
-@@ -1,11 +1,11 @@
--40kAI is an application where the user can train, evaluate, and play against a machine learning model in the game of Warhammer 40k. It is split into 5 tabs: "Train", "Show Trained Model", "Model Metrics" "Play", and "Settings".
-+40kAI is an application where the user can train, evaluate, and play against a machine learning model in the game of Warhammer 40k. It is split into 5 tabs: "Train", "Model Metrics", "Play", "Settings", and "Оценка".
+ void Form :: updateRosterSummary() {
++  std::string summary = "Юниты игрока: " + std::to_string(enemyUnits.size()) +
++                        " | Юниты модели: " + std::to_string(modelUnits.size());
++  rosterSummaryLabel.set_text(summary);
+   std::string message = "Ростер загружен: игрок=" + std::to_string(enemyUnits.size()) +
+                         ", модель=" + std::to_string(modelUnits.size());
+   setStatusMessage(message);
+ }
  
- The "Train" tab is the one that the user sees upon opening and it's used for configuring and training the model. In the top textbox labeled "# of Games in Training" the user can set the number of iterations. By default it is set to 100. Below that the user can select the Model and Player Faction using the Radio Buttons. If the user changes the faction of either the Model or Player the list of units is cleared for the Model or Player. Below that there are two textboxes labeled "Enter Model Units" and "Enter Player Units", respectivly. They are for entering the names of units the user wants in their army. The "Add" buttons add the entered in units to the army list. To see all available factions/unit names in the "Army Viewer" button. Below that, the user can enter the dimensions of the game board. By default X = 60 and Y = 40. The button called "Clear Model Cache" permanently deletes all models saved. When pressed a warning popup is displayed where the user confirms if this is something they really want to do. The button to the right of that labeled "Train" is for actually starting the training process. When this is finished, the next few tabs will be updated automatically.
+ void Form :: applyFactionToModel(const std::string& faction) {
+   if (faction.empty()) {
+     return;
+   }
  
--The "Show Trained Model" tab simply shows a gif that displays a representation of the most recently trained model training by playing dummy games. The red dots are the "dummy" bot units that the model trains against and the blue dots are the model units.
--
- The "Model Metrics" tab shows varius plots that the user can use to evaluate how effective the trained models are. The top left plot shows the average reward per game in training, the top right shows the loss curve, and the bottom plot shows the episode length per game in training. The button on the bottom labeled "Choose" is used to change the model of the metrics being shown. When in the file explorer, the user must select the .pickle file of the model they want. Whenever a new model is trained or when first opening the application, the most recent model's metrics are shown.
+   std::string normalized = toLower(faction);
+   std::replace(normalized.begin(), normalized.end(), ' ', '_');
+   if (normalized == "necrons") {
+     necModel.set_active(true);
+   }
+ }
  
- The "Play" tab's function is to allow the user to play against any of their saved trained models. This can be done by clicking the "Choose" button and selecting the .pickle file of the model the user wants. If the user fails to select a .pickle file, the application will select the most recently trained model instead. They then select the "Play" button which opens the game in the command prompt. The "Show Board" button shows the user the game board which updates automatically.
+ void Form :: applyFactionToEnemy(const std::string& faction) {
+   if (faction.empty()) {
+     return;
+   }
  
- The "Settings" tab allows the user to change the orentation of the app.
-+
-+The "Оценка" tab runs a batch simulation of the model versus a heuristic opponent and shows the output log.
+   std::string normalized = toLower(faction);
+   std::replace(normalized.begin(), normalized.end(), ' ', '_');
+   if (normalized == "necrons") {
 diff --git a/gui/include/Application.h b/gui/include/Application.h
-index 0cd6afea1ceb9ca18178407786f23a32a94c7147..2c65647f0965ddb01423638f73c7b954020ab726 100644
+index d797b2440809acd2f95a3c510c4732daff3ce287..9460a9573f042bc89eeb7da776826d0c0b260d76 100644
 --- a/gui/include/Application.h
 +++ b/gui/include/Application.h
-@@ -59,69 +59,66 @@ private:
+@@ -41,85 +41,93 @@ public :
+   std::string toLower(std::string data);
+   void mirrorRoster();
+   void saveLastRoster();
+   void loadLastRoster();
+   void syncEnemyUnitsFromRoster();
+   bool addEnemyUnitFromEntry(const std::string& entryText);
+   void resetLayout();
+   void appendLogLine(const std::string& message);
+   void appendEvalLogLine(const std::string& message);
+   void appendTrainingLogToFile(const std::string& message, const std::string& tag = "TRAIN");
+   void startEvalInBackground();
+   void startEval(int games);
+ 
+ private:
+   void setStatusMessage(const std::string& message);
+   void updateTrainingProgress(int current, int total);
+   void resetTrainingProgressStats();
+   void recordTrainingSample(int episode, std::chrono::steady_clock::time_point now);
    double calculateTrainingRate() const;
    void applyFactionToModel(const std::string& faction);
    void applyFactionToEnemy(const std::string& faction);
+   void updateRosterSummary();
    bool loadWindowGeometry();
    void saveWindowGeometry();
    void ensureMinimumSize();
++  Glib::RefPtr<Gtk::CssProvider> cssProvider;
    Window* boardShow;
    Window* armyView;
    Window* warn;
@@ -222,14 +587,12 @@ index 0cd6afea1ceb9ca18178407786f23a32a94c7147..2c65647f0965ddb01423638f73c7b954
    Notebook tabControl1;
    Label labelPage1;
    Label labelPage2;
--  Label labelPage3;
    Label labelPage4;
    Label labelPage5;
    Label labelPage6;
    Label label1;
    Frame tabPage1;
    Frame tabPage2;
--  Frame tabPage3;
    Frame tabPage4;
    Frame tabPage5;
    Frame tabPage6;
@@ -239,8 +602,15 @@ index 0cd6afea1ceb9ca18178407786f23a32a94c7147..2c65647f0965ddb01423638f73c7b954
    RadioButton radioRight;
    RadioButton radioBottom;
    Fixed fixedTabPage1;
-   Fixed fixedTabPage2;
--  Fixed fixedTabPage3;
+-  Fixed fixedTabPage2;
++  Grid trainGrid;
++  Grid trainSettingsGrid;
++  Grid rosterGrid;
++  Grid boardGrid;
++  Grid trainActionGrid;
++  Frame rosterFrame;
++  Frame boardFrame;
++  Label rosterSummaryLabel;
    Fixed fixedTabPage4;
    Fixed fixedTabPage5;
    Fixed fixedTabPage6;
@@ -266,4 +636,68 @@ index 0cd6afea1ceb9ca18178407786f23a32a94c7147..2c65647f0965ddb01423638f73c7b954
    Entry setIters;
    Entry setModelFile;
    RadioButtonGroup factionModel;
+diff --git a/gui/style-dark.css b/gui/style-dark.css
+new file mode 100644
+index 0000000000000000000000000000000000000000..f625c4f0d8098c4d59ebf87acf45c029089d0a04
+--- /dev/null
++++ b/gui/style-dark.css
+@@ -0,0 +1,58 @@
++.app-root {
++  background-color: #1e1e1e;
++  color: #e6e6e6;
++}
++
++.app-root label {
++  color: #e6e6e6;
++}
++
++.app-root .panel {
++  background-color: transparent;
++}
++
++.app-root .card {
++  background-color: #252525;
++  border: 1px solid #3a3a3a;
++  border-radius: 10px;
++  padding: 10px;
++}
++
++.app-root entry {
++  background-color: #2a2a2a;
++  color: #e6e6e6;
++  border: 1px solid #3a3a3a;
++  border-radius: 6px;
++}
++
++.app-root button {
++  background-color: #303030;
++  color: #e6e6e6;
++  border: 1px solid #444444;
++  border-radius: 6px;
++}
++
++.app-root button:hover {
++  background-color: #383838;
++}
++
++.app-root notebook > header {
++  background-color: #1e1e1e;
++}
++
++.app-root notebook tab {
++  background-color: #242424;
++  color: #cfcfcf;
++  border-radius: 6px 6px 0 0;
++}
++
++.app-root notebook tab:checked {
++  background-color: #2f2f2f;
++  color: #ffffff;
++}
++
++.app-root .mono textview,
++.app-root textview {
++  background-color: #1a1a1a;
++  color: #e6e6e6;
++}
 

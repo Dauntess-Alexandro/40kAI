@@ -1,0 +1,58 @@
+.app-root {
+  background-color: #1e1e1e;
+  color: #e6e6e6;
+}
+
+.app-root label {
+  color: #e6e6e6;
+}
+
+.app-root .panel {
+  background-color: transparent;
+}
+
+.app-root .card {
+  background-color: #252525;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.app-root entry {
+  background-color: #2a2a2a;
+  color: #e6e6e6;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+}
+
+.app-root button {
+  background-color: #303030;
+  color: #e6e6e6;
+  border: 1px solid #444444;
+  border-radius: 6px;
+}
+
+.app-root button:hover {
+  background-color: #383838;
+}
+
+.app-root notebook > header {
+  background-color: #1e1e1e;
+}
+
+.app-root notebook tab {
+  background-color: #242424;
+  color: #cfcfcf;
+  border-radius: 6px 6px 0 0;
+}
+
+.app-root notebook tab:checked {
+  background-color: #2f2f2f;
+  color: #ffffff;
+}
+
+.app-root .mono textview,
+.app-root textview {
+  background-color: #1a1a1a;
+  color: #e6e6e6;
+}

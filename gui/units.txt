@@ -1,4 +1,4 @@
 Player Units
-Necron Warriors|10|5
-Necron Warriors|10|6
+Necron Warriors|10|10
+Necron Warriors|10|11
 Model Units

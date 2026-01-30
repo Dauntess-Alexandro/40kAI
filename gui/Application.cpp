@@ -212,6 +212,11 @@ std::string vpdiffpth = "img/vpdiff.png";
 std::string endreasonpth = "img/endreasons.png";
 std::string imgpth = "img/icon.png";
 
+namespace {
+constexpr bool kEnableDarkTheme = false;
+constexpr auto kDarkThemePath = "style-dark.css";
+}  // namespace
+
 Form :: Form() {
 
   modelClass = " Necrons";
@@ -238,6 +243,18 @@ Form :: Form() {
   set_default_size(kDefaultWidth, kDefaultHeight);
   set_size_request(kMinimumWidth, kMinimumHeight);
 
+  if (kEnableDarkTheme) {
+    cssProvider = Gtk::CssProvider::create();
+    try {
+      cssProvider->load_from_path(kDarkThemePath);
+      Gtk::StyleContext::add_provider_for_screen(
+          Gdk::Screen::get_default(), cssProvider,
+          GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    } catch (const Glib::Error& error) {
+      std::cerr << "Не удалось загрузить тему: " << error.what() << std::endl;
+    }
+  }
+
   rootBox.set_orientation(Gtk::ORIENTATION_VERTICAL);
   topBarBox.set_orientation(Gtk::ORIENTATION_HORIZONTAL);
   topBarBox.set_spacing(8);
@@ -248,6 +265,9 @@ Form :: Form() {
   topBarBox.set_hexpand(true);
   leftBox.set_hexpand(true);
   leftBox.set_vexpand(true);
+  rootBox.get_style_context()->add_class("app-root");
+  tabControl1.get_style_context()->add_class("panel");
+  logView.get_style_context()->add_class("mono");
 
   help.set_image_from_icon_name("help-about");
   help.signal_button_release_event().connect([&](GdkEventButton*){
@@ -382,9 +402,20 @@ Form :: Form() {
 
   labelPage2.set_label("Train");
   tabControl1.set_tab_label(tabPage2, labelPage2);
-  tabPage2.add(fixedTabPage2);
+  tabPage2.add(trainGrid);
+
+  trainGrid.set_margin_top(12);
+  trainGrid.set_margin_bottom(12);
+  trainGrid.set_margin_start(12);
+  trainGrid.set_margin_end(12);
+  trainGrid.set_row_spacing(8);
+  trainGrid.set_column_spacing(12);
+  trainGrid.set_hexpand(true);
+  trainGrid.set_vexpand(true);
+  trainGrid.get_style_context()->add_class("panel");
 
   textbox1.set_text("Train Model:");
+  textbox1.set_halign(Gtk::ALIGN_START);
   setStatusMessage("Press the Train button to train a model");
   trainingProgressLabel.set_text("ep=0/0 (0%)");
   trainingProgressStatsLabel.set_text("— it/s • elapsed 00:00");
@@ -394,6 +425,11 @@ Form :: Form() {
   trainingProgress.set_size_request(360, 24);
   trainingProgressStatsLabel.set_xalign(0.0);
   trainingProgressStatsLabel.set_size_request(520, -1);
+  status.set_halign(Gtk::ALIGN_START);
+  trainingProgressLabel.set_halign(Gtk::ALIGN_START);
+  trainingProgress.set_hexpand(true);
+  trainingProgressStatsLabel.set_halign(Gtk::ALIGN_START);
+  trainingProgressStatsLabel.set_hexpand(true);
     
   button1.set_label("Train");
   button1.signal_button_release_event().connect([&](GdkEventButton*) {
@@ -431,17 +467,26 @@ Form :: Form() {
 
   numOfGames.set_text("# of Games in Training:");
   setIters.set_text("100");
+  numOfGames.set_halign(Gtk::ALIGN_START);
+  setIters.set_width_chars(8);
+  setIters.set_hexpand(false);
+  setIters.set_halign(Gtk::ALIGN_START);
 
   openArmyPopup.set_label("Army Viewer");
+  openArmyPopup.set_halign(Gtk::ALIGN_START);
+  openArmyPopup.set_hexpand(false);
   openArmyPopup.signal_button_release_event().connect([&](GdkEventButton*) {
     openArmyView();
     return true;
   });
 
-  dimens.set_text("Dimensions of Board: ");
+  dimens.set_text("Размер поля:");
+  dimens.set_halign(Gtk::ALIGN_START);
 
   dimX.set_text("X : ");
   enterDimensX.set_text(std::to_string(x));
+  enterDimensX.set_width_chars(6);
+  enterDimensX.set_hexpand(false);
   upX.set_label("+");
   upX.signal_button_release_event().connect([&](GdkEventButton*) {
     x+=10;
@@ -457,6 +502,8 @@ Form :: Form() {
 
   dimY.set_text("Y :");
   enterDimensY.set_text(std::to_string(y));
+  enterDimensY.set_width_chars(6);
+  enterDimensY.set_hexpand(false);
   upY.set_label("+");
   upY.signal_button_release_event().connect([&](GdkEventButton*) {
     y+=10;
@@ -519,58 +566,69 @@ Form :: Form() {
 
   enemyFact.set_text("Player Faction: ");
   modelFact.set_text("Model Faction: ");
-  fixedTabPage2.add(dimX);
-  fixedTabPage2.move(dimX, 10, 265);
-  fixedTabPage2.add(dimens);
-  fixedTabPage2.move(dimens, 10, 240);
-  fixedTabPage2.add(enterDimensX);
-  fixedTabPage2.move(enterDimensX, 30, 260);
-  fixedTabPage2.add(upX);
-  fixedTabPage2.move(upX, 200, 260);
-  fixedTabPage2.add(downX);
-  fixedTabPage2.move(downX, 220, 260);
+  enemyFact.set_halign(Gtk::ALIGN_START);
+  modelFact.set_halign(Gtk::ALIGN_START);
 
-  fixedTabPage2.add(dimY);
-  fixedTabPage2.move(dimY, 260, 265);
-  fixedTabPage2.add(enterDimensY);
-  fixedTabPage2.move(enterDimensY, 260+30, 260);
-  fixedTabPage2.add(upY);
-  fixedTabPage2.move(upY, 250+200, 260);
-  fixedTabPage2.add(downY);
-  fixedTabPage2.move(downY, 250+220, 260);
+  trainSettingsGrid.set_row_spacing(6);
+  trainSettingsGrid.set_column_spacing(8);
+  trainSettingsGrid.set_hexpand(true);
+  trainSettingsGrid.attach(numOfGames, 0, 0, 1, 1);
+  trainSettingsGrid.attach(setIters, 1, 0, 1, 1);
+  trainSettingsGrid.attach(modelFact, 0, 1, 1, 1);
+  trainSettingsGrid.attach(necModel, 1, 1, 1, 1);
+  trainSettingsGrid.attach(enemyFact, 0, 2, 1, 1);
+  trainSettingsGrid.attach(necEnemy, 1, 2, 1, 1);
 
-  fixedTabPage2.add(numOfGames);
-  fixedTabPage2.move(numOfGames, 10, 45);
-  fixedTabPage2.add(enemyFact);
-  fixedTabPage2.move(enemyFact, 10, 120);
-  fixedTabPage2.add(modelFact);
-  fixedTabPage2.move(modelFact, 10, 80);
-  fixedTabPage2.add(necModel);
-  fixedTabPage2.move(necModel, 100, 80);
-  fixedTabPage2.add(necEnemy);
-  fixedTabPage2.move(necEnemy, 100, 120);
-  fixedTabPage2.add(openArmyPopup);
-  fixedTabPage2.move(openArmyPopup, 400, 140);
-  fixedTabPage2.add(textbox1);
-  fixedTabPage2.move(textbox1, 10, 10);
-  fixedTabPage2.add(button1);
-  fixedTabPage2.move(button1, 380, 300);
-  fixedTabPage2.add(buttonTrain6);
-  fixedTabPage2.move(buttonTrain6, 470, 300);
-  fixedTabPage2.add(setIters);
-  fixedTabPage2.move(setIters, 160, 40);
-  fixedTabPage2.add(button3);
-  fixedTabPage2.move(button3, 10, 300);
-  fixedTabPage2.add(buttonSelfPlay);
-  fixedTabPage2.move(buttonSelfPlay, 200, 300);
-  fixedTabPage2.add(status);
-  fixedTabPage2.move(status, 10, 350);
-  fixedTabPage2.add(trainingProgressLabel);
-  fixedTabPage2.move(trainingProgressLabel, 10, 380);
-  fixedTabPage2.add(trainingProgress);
-  fixedTabPage2.move(trainingProgress, 10, 400);
-  fixedTabPage2.add(trainingProgressStatsLabel);
-  fixedTabPage2.move(trainingProgressStatsLabel, 10, 430);
+  rosterFrame.set_label("Ростер");
+  rosterFrame.get_style_context()->add_class("card");
+  rosterFrame.set_hexpand(true);
+  rosterFrame.set_vexpand(false);
+  rosterGrid.set_margin_top(8);
+  rosterGrid.set_margin_bottom(8);
+  rosterGrid.set_margin_start(10);
+  rosterGrid.set_margin_end(10);
+  rosterGrid.set_row_spacing(6);
+  rosterSummaryLabel.set_xalign(0.0);
+  rosterGrid.attach(openArmyPopup, 0, 0, 1, 1);
+  rosterGrid.attach(rosterSummaryLabel, 0, 1, 1, 1);
+  rosterFrame.add(rosterGrid);
+
+  boardFrame.set_label("Размеры поля");
+  boardFrame.get_style_context()->add_class("card");
+  boardFrame.set_hexpand(true);
+  boardGrid.set_margin_top(8);
+  boardGrid.set_margin_bottom(8);
+  boardGrid.set_margin_start(10);
+  boardGrid.set_margin_end(10);
+  boardGrid.set_row_spacing(6);
+  boardGrid.set_column_spacing(8);
+  boardGrid.attach(dimens, 0, 0, 4, 1);
+  boardGrid.attach(dimX, 0, 1, 1, 1);
+  boardGrid.attach(enterDimensX, 1, 1, 1, 1);
+  boardGrid.attach(upX, 2, 1, 1, 1);
+  boardGrid.attach(downX, 3, 1, 1, 1);
+  boardGrid.attach(dimY, 0, 2, 1, 1);
+  boardGrid.attach(enterDimensY, 1, 2, 1, 1);
+  boardGrid.attach(upY, 2, 2, 1, 1);
+  boardGrid.attach(downY, 3, 2, 1, 1);
+  boardFrame.add(boardGrid);
+
+  trainActionGrid.set_row_spacing(6);
+  trainActionGrid.set_column_spacing(8);
+  trainActionGrid.attach(button3, 0, 0, 1, 1);
+  trainActionGrid.attach(buttonSelfPlay, 1, 0, 1, 1);
+  trainActionGrid.attach(button1, 0, 1, 1, 1);
+  trainActionGrid.attach(buttonTrain6, 1, 1, 1, 1);
+
+  trainGrid.attach(textbox1, 0, 0, 2, 1);
+  trainGrid.attach(trainSettingsGrid, 0, 1, 1, 1);
+  trainGrid.attach(rosterFrame, 1, 1, 1, 1);
+  trainGrid.attach(boardFrame, 0, 2, 1, 1);
+  trainGrid.attach(trainActionGrid, 1, 2, 1, 1);
+  trainGrid.attach(status, 0, 3, 2, 1);
+  trainGrid.attach(trainingProgressLabel, 0, 4, 2, 1);
+  trainGrid.attach(trainingProgress, 0, 5, 2, 1);
+  trainGrid.attach(trainingProgressStatsLabel, 0, 6, 2, 1);
 
   // show metrics tab
   labelPage5.set_label("Model Metrics");
@@ -699,6 +757,8 @@ Form :: Form() {
     syncEnemyUnitsFromRoster();
     saveLastRoster();
   }
+  rosterSummaryLabel.set_text("Юниты игрока: " + std::to_string(enemyUnits.size()) +
+                              " | Юниты модели: " + std::to_string(modelUnits.size()));
   signal_hide().connect([this]() {
     saveLastRoster();
     saveWindowGeometry();
@@ -998,6 +1058,9 @@ void Form :: mirrorRoster() {
 }
 
 void Form :: updateRosterSummary() {
+  std::string summary = "Юниты игрока: " + std::to_string(enemyUnits.size()) +
+                        " | Юниты модели: " + std::to_string(modelUnits.size());
+  rosterSummaryLabel.set_text(summary);
   std::string message = "Ростер загружен: игрок=" + std::to_string(enemyUnits.size()) +
                         ", модель=" + std::to_string(modelUnits.size());
   setStatusMessage(message);
