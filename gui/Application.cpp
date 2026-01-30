@@ -496,147 +496,13 @@ Form :: Form() {
     return true;
   });
 
-  spmModel.set_label("Space Marine");
-  spmModel.set_group(factionModel);
-  spmModel.signal_toggled().connect([this]() {
-    modelUnits.clear();
-    modelClass = " Space_Marine";
-  });
-
-
-  orksModel.set_label("Orks");
-  orksModel.set_group(factionModel);
-  orksModel.signal_toggled().connect([this]() {
-    modelUnits.clear();
-    modelClass = " Orks";
-  });
-
-  sobModel.set_label("Sisters of Battle");
-  sobModel.set_group(factionModel);
-  sobModel.signal_toggled().connect([this]() {
-    modelUnits.clear();
-    modelClass = " Sisters_of_Battle";
-  });
-
-  adcModel.set_label("Adeptus Custodes");
-  adcModel.set_group(factionModel);
-  adcModel.signal_toggled().connect([this]() {
-    modelUnits.clear();
-    modelClass = " Custodes";
-  });
-
-  tyrModel.set_label("Tyrannids");
-  tyrModel.set_group(factionModel);
-  tyrModel.signal_toggled().connect([this]() {
-    modelUnits.clear();
-    modelClass = " Tyrannids";
-  });
-
-  milModel.set_label("Astra Militarum");
-  milModel.set_group(factionModel);
-  milModel.signal_toggled().connect([this]() {
-    modelUnits.clear();
-    modelClass = " Militarum";
-  });
-
-  tauModel.set_label("Tau");
-  tauModel.set_group(factionModel);
-  tauModel.signal_toggled().connect([this]() {
-    modelUnits.clear();
-    modelClass = " Tau";
-  });
-
   necModel.set_label("Necrons");
   necModel.set_group(factionModel);
   necModel.signal_toggled().connect([this]() {
     modelUnits.clear();
     modelClass = " Necrons";
   });
-
-  spmEnemy.set_label("Space Marine");
-  spmEnemy.set_group(factionEnemy);
-  spmEnemy.signal_toggled().connect([this]() {
-    enemyClass = " Space_Marine";
-    if (!loadingRoster) {
-      enemyUnits.clear();
-      rosterModel.clear();
-    }
-    rosterModel.setFaction("Space_Marine");
-    if (!loadingRoster) {
-      syncEnemyUnitsFromRoster();
-    }
-  });
-
-
-  orksEnemy.set_label("Orks");
-  orksEnemy.set_group(factionEnemy);
-  orksEnemy.signal_toggled().connect([this]() {
-    enemyClass = " Orks";
-    if (!loadingRoster) {
-      enemyUnits.clear();
-      rosterModel.clear();
-    }
-    rosterModel.setFaction("Orks");
-    if (!loadingRoster) {
-      syncEnemyUnitsFromRoster();
-    }
-  });
-
-  sobEnemy.set_label("Sisters of Battle");
-  sobEnemy.set_group(factionEnemy);
-  sobEnemy.signal_toggled().connect([this]() {
-    enemyClass = " Sisters_of_Battle";
-    if (!loadingRoster) {
-      enemyUnits.clear();
-      rosterModel.clear();
-    }
-    rosterModel.setFaction("Sisters_of_Battle");
-    if (!loadingRoster) {
-      syncEnemyUnitsFromRoster();
-    }
-  });
-
-  adcEnemy.set_label("Adeptus Custodes");
-  adcEnemy.set_group(factionEnemy);
-  adcEnemy.signal_toggled().connect([this]() {
-    enemyClass = " Custodes";
-    if (!loadingRoster) {
-      enemyUnits.clear();
-      rosterModel.clear();
-    }
-    rosterModel.setFaction("Custodes");
-    if (!loadingRoster) {
-      syncEnemyUnitsFromRoster();
-    }
-  });
-
-  tyrEnemy.set_label("Tyrannids");
-  tyrEnemy.set_group(factionEnemy);
-  tyrEnemy.signal_toggled().connect([this]() {
-    enemyClass = " Tyrannids";
-    if (!loadingRoster) {
-      enemyUnits.clear();
-      rosterModel.clear();
-    }
-    rosterModel.setFaction("Tyrannids");
-    if (!loadingRoster) {
-      syncEnemyUnitsFromRoster();
-    }
-  });
-
-  tauEnemy.set_label("Tau");
-  tauEnemy.set_group(factionEnemy);
-  tauEnemy.signal_toggled().connect([this]() {
-    enemyClass = " Tau";
-    if (!loadingRoster) {
-      enemyUnits.clear();
-      rosterModel.clear();
-    }
-    rosterModel.setFaction("Tau");
-    if (!loadingRoster) {
-      syncEnemyUnitsFromRoster();
-    }
-  });
+  necModel.set_active(true);
 
   necEnemy.set_label("Necrons");
   necEnemy.set_group(factionEnemy);
@@ -651,20 +517,7 @@ Form :: Form() {
       syncEnemyUnitsFromRoster();
     }
   });
-
-  milEnemy.set_label("Astra Militarum");
-  milEnemy.set_group(factionEnemy);
-  milEnemy.signal_toggled().connect([this]() {
-    enemyClass = " Militarum";
-    if (!loadingRoster) {
-      enemyUnits.clear();
-      rosterModel.clear();
-    }
-    rosterModel.setFaction("Militarum");
-    if (!loadingRoster) {
-      syncEnemyUnitsFromRoster();
-    }
-  });
+  necEnemy.set_active(true);
 
   enemyFact.set_text("Player Faction: ");
   modelFact.set_text("Model Faction: ");
@@ -728,38 +581,10 @@ Form :: Form() {
   fixedTabPage2.move(enemyFact, 10, 120);
   fixedTabPage2.add(modelFact);
   fixedTabPage2.move(modelFact, 10, 80);
-  fixedTabPage2.add(orksModel);
-  fixedTabPage2.move(orksModel, 100, 80);
-  fixedTabPage2.add(spmModel);
-  fixedTabPage2.move(spmModel, 160, 80);
-  fixedTabPage2.add(sobModel);
-  fixedTabPage2.move(sobModel, 270, 80);
-  fixedTabPage2.add(adcModel);
-  fixedTabPage2.move(adcModel, 390, 80);
-  fixedTabPage2.add(tyrModel);
-  fixedTabPage2.move(tyrModel, 530, 80);
-  fixedTabPage2.add(milModel);
-  fixedTabPage2.move(milModel, 100, 100);
-  fixedTabPage2.add(tauModel);
-  fixedTabPage2.move(tauModel, 220, 100);
   fixedTabPage2.add(necModel);
-  fixedTabPage2.move(necModel, 270, 100);
-  fixedTabPage2.add(orksEnemy);
-  fixedTabPage2.move(orksEnemy, 100, 120);
-  fixedTabPage2.add(spmEnemy);
-  fixedTabPage2.move(spmEnemy, 160, 120);
-  fixedTabPage2.add(sobEnemy);
-  fixedTabPage2.move(sobEnemy, 270, 120);
-  fixedTabPage2.add(adcEnemy);
-  fixedTabPage2.move(adcEnemy, 390, 120);
-  fixedTabPage2.add(tyrEnemy);
-  fixedTabPage2.move(tyrEnemy, 530, 120);
-  fixedTabPage2.add(milEnemy);
-  fixedTabPage2.move(milEnemy, 100, 140);
-  fixedTabPage2.add(tauEnemy);
-  fixedTabPage2.move(tauEnemy, 220, 140);
+  fixedTabPage2.move(necModel, 100, 80);
   fixedTabPage2.add(necEnemy);
-  fixedTabPage2.move(necEnemy, 270, 140);
+  fixedTabPage2.move(necEnemy, 100, 120);
   fixedTabPage2.add(modelUnitLabel);
   fixedTabPage2.move(modelUnitLabel, 10, 163);
   fixedTabPage2.add(enterModelUnit);
@@ -916,15 +741,15 @@ Form :: Form() {
   loadWindowGeometry();
   loadLastRoster();
   if (modelUnits.empty()) {
-    modelUnits.push_back({"Apothecary", "Space_Marine", findDefaultModelsCount("Space_Marine", "Apothecary"),
+    modelUnits.push_back({"Necron Warriors", "Necrons", findDefaultModelsCount("Necrons", "Necron Warriors"),
                           RosterModel::generateInstanceId()});
-    modelUnits.push_back({"Eliminator Squad", "Space_Marine",
-                          findDefaultModelsCount("Space_Marine", "Eliminator Squad"),
+    modelUnits.push_back({"Royal Warden", "Necrons",
+                          findDefaultModelsCount("Necrons", "Royal Warden"),
                           RosterModel::generateInstanceId()});
   }
   if (enemyUnits.empty()) {
-    rosterModel.addUnit("Apothecary", 1, enemyClass.substr(1));
-    rosterModel.addUnit("Eliminator Squad", 1, enemyClass.substr(1));
+    rosterModel.addUnit("Necron Warriors", 10, enemyClass.substr(1));
+    rosterModel.addUnit("Canoptek Scarab Swarms", 3, enemyClass.substr(1));
     syncEnemyUnitsFromRoster();
     saveLastRoster();
   }
@@ -1234,21 +1059,7 @@ void Form :: applyFactionToModel(const std::string& faction) {
 
   std::string normalized = toLower(faction);
   std::replace(normalized.begin(), normalized.end(), ' ', '_');
-  if (normalized == "orks") {
-    orksModel.set_active(true);
-  } else if (normalized == "space_marine") {
-    spmModel.set_active(true);
-  } else if (normalized == "sisters_of_battle") {
-    sobModel.set_active(true);
-  } else if (normalized == "custodes") {
-    adcModel.set_active(true);
-  } else if (normalized == "tyrannids") {
-    tyrModel.set_active(true);
-  } else if (normalized == "militarum") {
-    milModel.set_active(true);
-  } else if (normalized == "tau") {
-    tauModel.set_active(true);
-  } else if (normalized == "necrons") {
+  if (normalized == "necrons") {
     necModel.set_active(true);
   }
 }
@@ -1260,21 +1071,7 @@ void Form :: applyFactionToEnemy(const std::string& faction) {
 
   std::string normalized = toLower(faction);
   std::replace(normalized.begin(), normalized.end(), ' ', '_');
-  if (normalized == "orks") {
-    orksEnemy.set_active(true);
-  } else if (normalized == "space_marine") {
-    spmEnemy.set_active(true);
-  } else if (normalized == "sisters_of_battle") {
-    sobEnemy.set_active(true);
-  } else if (normalized == "custodes") {
-    adcEnemy.set_active(true);
-  } else if (normalized == "tyrannids") {
-    tyrEnemy.set_active(true);
-  } else if (normalized == "militarum") {
-    milEnemy.set_active(true);
-  } else if (normalized == "tau") {
-    tauEnemy.set_active(true);
-  } else if (normalized == "necrons") {
+  if (normalized == "necrons") {
     necEnemy.set_active(true);
   }
 }
@@ -1288,10 +1085,20 @@ void Form :: loadLastRoster() {
     return;
   }
 
-  if (!rosterModel.faction().empty()) {
-    loadingRoster = true;
-    applyFactionToEnemy(rosterModel.faction());
-    loadingRoster = false;
+  std::string loadedFaction = rosterModel.faction();
+  if (!loadedFaction.empty()) {
+    std::string normalized = toLower(loadedFaction);
+    std::replace(normalized.begin(), normalized.end(), ' ', '_');
+    if (normalized != "necrons") {
+      rosterModel.clear();
+      rosterModel.setFaction("Necrons");
+      enemyClass = " Necrons";
+      setStatusMessage("Фракция ростера не поддерживается, переключено на Necrons.");
+    } else {
+      loadingRoster = true;
+      applyFactionToEnemy(loadedFaction);
+      loadingRoster = false;
+    }
   }
 
   syncEnemyUnitsFromRoster();
