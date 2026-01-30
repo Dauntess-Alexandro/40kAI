@@ -22,8 +22,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 36,
-      "y": 38
+      "x": 39,
+      "y": 55
     },
     {
       "side": "player",
@@ -31,8 +31,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 30,
-      "y": 24
+      "x": 39,
+      "y": 14
     },
     {
       "side": "model",
@@ -40,8 +40,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 2,
-      "y": 3
+      "x": 8,
+      "y": 17
     },
     {
       "side": "model",
@@ -49,8 +49,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 6,
-      "y": 0
+      "x": 4,
+      "y": 16
     }
   ],
   "objectives": [
@@ -76,12 +76,12 @@
     }
   ],
   "log_tail": [
-    "=== БОЕВОЙ РАУНД 1 ===",
-    "--- ХОД PLAYER ---",
-    "--- ФАЗА КОМАНДОВАНИЯ ---",
-    "[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0",
-    "--- ФАЗА ДВИЖЕНИЯ ---",
-    "Бросок 1D6 на Advance...",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
     "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
     "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
     "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
@@ -107,5 +107,5 @@
     "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
     "Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])"
   ],
-  "generated_at": "2026-01-30T11:59:37.218747Z"
+  "generated_at": "2026-01-30T17:08:12.834345Z"
 }

@@ -71,12 +71,15 @@ class GUIController(QtCore.QObject):
         self._model_model = QtCore.QStringListModel()
 
         self._metrics_defaults = self._build_default_metrics()
-        self._metrics_paths = dict(self._metrics_defaults)
+        self._metrics_files = dict(self._metrics_defaults)
+        self._metrics_paths = self._build_metrics_paths(self._metrics_files, cache_token=self._cache_token())
+        self._metrics_mtimes: dict[str, Optional[float]] = {}
         self._metrics_label = "По умолчанию"
 
         self._load_available_units()
         self._load_rosters_from_file()
         self._refresh_models()
+        self._select_latest_metrics()
         self._update_roster_summary()
 
         self._emit_status("Нажмите Train, чтобы запустить обучение.")
@@ -320,26 +323,18 @@ class GUIController(QtCore.QObject):
             self._emit_status("Файл метрик не найден в models/.")
             self._emit_log(f"[GUI] metrics json не найден: {json_path}", level="WARN")
             return
-        try:
-            with open(json_path, "r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-        except (OSError, json.JSONDecodeError) as exc:
-            self._emit_status("Не удалось прочитать метрики. Проверьте файл.")
-            self._emit_log(f"[GUI] Ошибка чтения метрик: {exc}", level="ERROR")
+        if not self._load_metrics_from_json(json_path):
             return
-
-        updated = {
-            "reward": self._resolve_metric_path(payload.get("reward"), self._metrics_defaults["reward"]),
-            "loss": self._resolve_metric_path(payload.get("loss"), self._metrics_defaults["loss"]),
-            "epLen": self._resolve_metric_path(payload.get("epLen"), self._metrics_defaults["epLen"]),
-            "winrate": self._resolve_metric_path(payload.get("winrate"), self._metrics_defaults["winrate"]),
-            "vpdiff": self._resolve_metric_path(payload.get("vpdiff"), self._metrics_defaults["vpdiff"]),
-            "endreasons": self._resolve_metric_path(payload.get("endreasons"), self._metrics_defaults["endreasons"]),
-        }
-        self._set_metrics_paths(updated)
         self._metrics_label = f"Файл: {os.path.basename(path)}"
         self.metricsLabelChanged.emit(self._metrics_label)
         self._emit_status("Метрики обновлены.")
+
+    @QtCore.Slot()
+    def select_latest_metrics(self) -> None:
+        if self._select_latest_metrics():
+            self._emit_status("Подключены метрики последней модели.")
+        else:
+            self._emit_status("Метрики по умолчанию (сохранённые модели не найдены).")
 
     def _set_running(self, value: bool) -> None:
         if self._running != value:
@@ -497,7 +492,8 @@ class GUIController(QtCore.QObject):
         data = self._process.readAllStandardOutput().data().decode("utf-8", errors="replace")
         for line in data.splitlines():
             if line.strip():
-                self._emit_log(line)
+                if self._should_show_train_log(line):
+                    self._emit_log(line)
                 self._handle_progress_line(line)
 
     def _read_stderr(self) -> None:
@@ -506,8 +502,52 @@ class GUIController(QtCore.QObject):
         data = self._process.readAllStandardError().data().decode("utf-8", errors="replace")
         for line in data.splitlines():
             if line.strip():
-                self._emit_log(line, level="ERROR")
+                if not self._is_tqdm_progress_line(line):
+                    self._emit_log(line, level="ERROR")
                 self._handle_progress_line(line)
+
+    def _is_tqdm_progress_line(self, line: str) -> bool:
+        normalized = line.strip()
+        if not normalized:
+            return False
+        return bool(re.search(r"\d+%\|.+\|\s*\d+\s*/\s*\d+", normalized))
+
+    def _should_show_train_log(self, line: str) -> bool:
+        normalized = line.strip()
+        if not normalized:
+            return False
+        if normalized.startswith("[GUI]"):
+            return True
+        if normalized.startswith("[ERROR]") or normalized.startswith("[WARN]"):
+            return True
+        allowed_prefixes = (
+            "[TRAIN8] Старт",
+            "[TRAIN] Старт",
+            "[SELFPLAY] Старт",
+            "[TRAIN][START]",
+            "[DEVICE CHECK]",
+            "[metrics] saved:",
+        )
+        allowed_contains = (
+            "Training...",
+            "Model Units:",
+            "Enemy Units:",
+            "Action keys:",
+            "Generated metrics",
+            "Forging model_train.gif",
+            "genDisplay.makeGif:",
+        )
+        if normalized.startswith(allowed_prefixes):
+            return True
+        if any(token in normalized for token in allowed_contains):
+            return True
+        if normalized.startswith("Name:"):
+            return True
+        if normalized.startswith("[") and re.match(r"^\[\s*\d", normalized):
+            return True
+        if normalized == "[]":
+            return True
+        return False
 
     def _handle_progress_line(self, line: str) -> None:
         current, total = self._parse_training_progress(line, self._train_total_episodes)
@@ -546,6 +586,7 @@ class GUIController(QtCore.QObject):
             self._emit_status("Обучение завершено.")
         else:
             self._emit_status("Обучение завершено с ошибкой.")
+        self._select_latest_metrics()
         self._cleanup_process()
 
     def _cleanup_process(self) -> None:
@@ -575,17 +616,40 @@ class GUIController(QtCore.QObject):
     def _build_default_metrics(self) -> dict[str, str]:
         base_dir = os.path.join(self._repo_root, "gui", "img")
         return {
-            "reward": self._to_file_url(os.path.join(base_dir, "reward.png")),
-            "loss": self._to_file_url(os.path.join(base_dir, "loss.png")),
-            "epLen": self._to_file_url(os.path.join(base_dir, "epLen.png")),
-            "winrate": self._to_file_url(os.path.join(base_dir, "winrate.png")),
-            "vpdiff": self._to_file_url(os.path.join(base_dir, "vpdiff.png")),
-            "endreasons": self._to_file_url(os.path.join(base_dir, "endreasons.png")),
+            "reward": os.path.join(base_dir, "reward.png"),
+            "loss": os.path.join(base_dir, "loss.png"),
+            "epLen": os.path.join(base_dir, "epLen.png"),
+            "winrate": os.path.join(base_dir, "winrate.png"),
+            "vpdiff": os.path.join(base_dir, "vpdiff.png"),
+            "endreasons": os.path.join(base_dir, "endreasons.png"),
         }
 
-    def _set_metrics_paths(self, paths: dict[str, str]) -> None:
-        self._metrics_paths = paths
+    def _set_metrics_files(self, paths: dict[str, str]) -> None:
+        self._metrics_files = paths
+        self._refresh_metrics_paths(force=True)
+
+    def _refresh_metrics_paths(self, force: bool = False) -> None:
+        changed = False
+        for key, path in self._metrics_files.items():
+            mtime = None
+            if os.path.exists(path):
+                try:
+                    mtime = os.path.getmtime(path)
+                except OSError:
+                    mtime = None
+            if force or self._metrics_mtimes.get(key) != mtime:
+                self._metrics_mtimes[key] = mtime
+                changed = True
+        if not changed:
+            return
+        self._metrics_paths = self._build_metrics_paths(self._metrics_files, cache_token=self._cache_token())
         self.metricsChanged.emit()
+
+    def _build_metrics_paths(self, files: dict[str, str], cache_token: str) -> dict[str, str]:
+        return {key: f"{self._to_file_url(path)}?v={cache_token}" for key, path in files.items()}
+
+    def _cache_token(self) -> str:
+        return str(int(time.time() * 1000))
 
     def _resolve_metric_path(self, raw_path: Optional[str], fallback: str) -> str:
         if not raw_path:
@@ -595,7 +659,7 @@ class GUIController(QtCore.QObject):
         else:
             candidate = os.path.join(self._repo_root, "gui", raw_path)
         if os.path.exists(candidate):
-            return self._to_file_url(candidate)
+            return candidate
         return fallback
 
     def _to_file_url(self, path: str) -> str:
@@ -621,6 +685,87 @@ class GUIController(QtCore.QObject):
         if tail and tail[0] == "-":
             return path[-15:-7]
         return tail
+
+    def _load_metrics_from_json(self, json_path: str) -> bool:
+        try:
+            with open(json_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError) as exc:
+            self._emit_status("Не удалось прочитать метрики. Проверьте файл.")
+            self._emit_log(f"[GUI] Ошибка чтения метрик: {exc}", level="ERROR")
+            return False
+
+        updated = {
+            "reward": self._resolve_metric_path(payload.get("reward"), self._metrics_defaults["reward"]),
+            "loss": self._resolve_metric_path(payload.get("loss"), self._metrics_defaults["loss"]),
+            "epLen": self._resolve_metric_path(payload.get("epLen"), self._metrics_defaults["epLen"]),
+            "winrate": self._resolve_metric_path(payload.get("winrate"), self._metrics_defaults["winrate"]),
+            "vpdiff": self._resolve_metric_path(payload.get("vpdiff"), self._metrics_defaults["vpdiff"]),
+            "endreasons": self._resolve_metric_path(payload.get("endreasons"), self._metrics_defaults["endreasons"]),
+        }
+        self._set_metrics_files(updated)
+        return True
+
+    def _select_latest_metrics(self) -> bool:
+        latest_model = self._find_latest_model_file()
+        if latest_model:
+            metrics_id = self._extract_metrics_id(latest_model)
+            if metrics_id:
+                json_path = os.path.join(self._repo_root, "models", f"data_{metrics_id}.json")
+                if os.path.exists(json_path) and self._load_metrics_from_json(json_path):
+                    self._metrics_label = f"Файл: {os.path.basename(latest_model)}"
+                    self.metricsLabelChanged.emit(self._metrics_label)
+                    return True
+        latest_json = self._find_latest_metrics_json()
+        if latest_json and self._load_metrics_from_json(latest_json):
+            self._metrics_label = f"Файл: {os.path.basename(latest_json)}"
+            self.metricsLabelChanged.emit(self._metrics_label)
+            return True
+        self._set_metrics_files(dict(self._metrics_defaults))
+        self._metrics_label = "По умолчанию"
+        self.metricsLabelChanged.emit(self._metrics_label)
+        return False
+
+    def _find_latest_model_file(self) -> Optional[str]:
+        models_path = os.path.join(self._repo_root, "models")
+        if not os.path.isdir(models_path):
+            return None
+        latest_path = None
+        latest_mtime = -1.0
+        for root, _, files in os.walk(models_path):
+            for name in files:
+                if not name.endswith(".pickle"):
+                    continue
+                if "model-" not in name:
+                    continue
+                path = os.path.join(root, name)
+                try:
+                    mtime = os.path.getmtime(path)
+                except OSError:
+                    continue
+                if mtime > latest_mtime:
+                    latest_mtime = mtime
+                    latest_path = path
+        return latest_path
+
+    def _find_latest_metrics_json(self) -> Optional[str]:
+        models_path = os.path.join(self._repo_root, "models")
+        if not os.path.isdir(models_path):
+            return None
+        latest_path = None
+        latest_mtime = -1.0
+        for name in os.listdir(models_path):
+            if not (name.startswith("data_") and name.endswith(".json")):
+                continue
+            path = os.path.join(models_path, name)
+            try:
+                mtime = os.path.getmtime(path)
+            except OSError:
+                continue
+            if mtime > latest_mtime:
+                latest_mtime = mtime
+                latest_path = path
+        return latest_path
 
     def _create_roster_entry(self, unit: UnitInfo) -> RosterEntry:
         entry = RosterEntry(name=unit.name, count=unit.default_count, instance_id=str(self._instance_counter))
