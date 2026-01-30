@@ -11,19 +11,37 @@ ApplicationWindow {
 
     property string statusText: "Готово к запуску."
 
-    TabView {
+    ColumnLayout {
         anchors.fill: parent
+        spacing: 0
 
-        Tab {
-            title: "Train"
+        TabBar {
+            id: mainTabs
+            Layout.fillWidth: true
+
+            TabButton { text: "Train" }
+            TabButton { text: "Model Metrics" }
+            TabButton { text: "Play" }
+            TabButton { text: "Settings" }
+            TabButton { text: "Оценка" }
+        }
+
+        StackLayout {
+            id: mainStack
+            currentIndex: mainTabs.currentIndex
+            Layout.fillWidth: true
+            Layout.fillHeight: true
 
             Item {
                 anchors.fill: parent
-                anchors.margins: 16
 
-                ColumnLayout {
+                Item {
                     anchors.fill: parent
-                    spacing: 12
+                    anchors.margins: 16
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 12
 
                     Text {
                         text: "Train Model:"
@@ -235,39 +253,40 @@ ApplicationWindow {
                             }
                         }
                     }
+                    }
                 }
             }
-        }
 
-        Tab {
-            title: "Model Metrics"
-            Label {
-                anchors.centerIn: parent
-                text: "Скоро"
+            Item {
+                anchors.fill: parent
+                Label {
+                    anchors.centerIn: parent
+                    text: "Скоро"
+                }
             }
-        }
 
-        Tab {
-            title: "Play"
-            Label {
-                anchors.centerIn: parent
-                text: "Скоро"
+            Item {
+                anchors.fill: parent
+                Label {
+                    anchors.centerIn: parent
+                    text: "Скоро"
+                }
             }
-        }
 
-        Tab {
-            title: "Settings"
-            Label {
-                anchors.centerIn: parent
-                text: "Скоро"
+            Item {
+                anchors.fill: parent
+                Label {
+                    anchors.centerIn: parent
+                    text: "Скоро"
+                }
             }
-        }
 
-        Tab {
-            title: "Оценка"
-            Label {
-                anchors.centerIn: parent
-                text: "Скоро"
+            Item {
+                anchors.fill: parent
+                Label {
+                    anchors.centerIn: parent
+                    text: "Скоро"
+                }
             }
         }
     }
