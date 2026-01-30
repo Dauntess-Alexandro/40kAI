@@ -51,6 +51,35 @@
 
 ---
 
+## 🖥 Новый Qt GUI (gui_qt/)
+
+Новая версия интерфейса полностью на Qt6 Widgets. Старый gtkmm GUI остаётся в папке `gui/`,
+но для сборки нового приложения используйте инструкции ниже.
+
+### Linux
+
+```bash
+cmake -S gui_qt -B gui_qt/build
+cmake --build gui_qt/build -j
+./gui_qt/build/40kAI_QtGui
+```
+
+### Windows (Qt 6 + CMake)
+
+```powershell
+cmake -S gui_qt -B gui_qt/build
+cmake --build gui_qt/build --config Release
+gui_qt/build/Release/40kAI_QtGui.exe
+```
+
+Для развертывания зависимостей Qt используйте `windeployqt`:
+
+```powershell
+windeployqt gui_qt/build/Release/40kAI_QtGui.exe
+```
+
+---
+
 ## 🗺 PySide6 Viewer (QGraphicsView)
 
 - Состояние матча экспортируется в `gui/state.json` при каждом обновлении доски.
