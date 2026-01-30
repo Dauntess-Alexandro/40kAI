@@ -23,6 +23,7 @@
 #include "include/warn.h"
 #include "include/help.h"
 #include "include/play.h"
+#include "include/LastRoster.h"
 
 using namespace Glib;
 using namespace Gtk;
@@ -744,19 +745,6 @@ Form :: Form() {
 
   loadWindowGeometry();
   loadLastRoster();
-  if (modelUnits.empty()) {
-    modelUnits.push_back({"Necron Warriors", "Necrons", findDefaultModelsCount("Necrons", "Necron Warriors"),
-                          RosterModel::generateInstanceId()});
-    modelUnits.push_back({"Royal Warden", "Necrons",
-                          findDefaultModelsCount("Necrons", "Royal Warden"),
-                          RosterModel::generateInstanceId()});
-  }
-  if (enemyUnits.empty()) {
-    rosterModel.addUnit("Necron Warriors", 10, enemyClass.substr(1));
-    rosterModel.addUnit("Canoptek Scarab Swarms", 3, enemyClass.substr(1));
-    syncEnemyUnitsFromRoster();
-    saveLastRoster();
-  }
   rosterSummaryLabel.set_text("Юниты игрока: " + std::to_string(enemyUnits.size()) +
                               " | Юниты модели: " + std::to_string(modelUnits.size()));
   signal_hide().connect([this]() {
@@ -1015,6 +1003,7 @@ int Form :: openPlayGUI() {
 }
 
 int Form :: openArmyView() {
+  loadLastRoster();
   armyView = new Units(&rosterModel, &modelUnits, [this]() {
     syncEnemyUnitsFromRoster();
     saveLastRoster();
@@ -1061,7 +1050,7 @@ void Form :: updateRosterSummary() {
   std::string summary = "Юниты игрока: " + std::to_string(enemyUnits.size()) +
                         " | Юниты модели: " + std::to_string(modelUnits.size());
   rosterSummaryLabel.set_text(summary);
-  std::string message = "Ростер загружен: игрок=" + std::to_string(enemyUnits.size()) +
+  std::string message = "Ростер обновлён: игрок=" + std::to_string(enemyUnits.size()) +
                         ", модель=" + std::to_string(modelUnits.size());
   setStatusMessage(message);
 }
@@ -1091,11 +1080,24 @@ void Form :: applyFactionToEnemy(const std::string& faction) {
 }
 
 void Form :: saveLastRoster() {
-  rosterModel.saveToFile(RosterModel::defaultRosterPath());
+  save_last_roster(rosterModel, modelUnits);
 }
 
 void Form :: loadLastRoster() {
-  if (!rosterModel.loadFromFile(RosterModel::defaultRosterPath())) {
+  std::string loadError;
+  auto result = load_last_roster(rosterModel, modelUnits, &loadError);
+  if (result == LastRosterLoadResult::kNotFound) {
+    rosterModel.clear();
+    modelUnits.clear();
+    enemyUnits.clear();
+    appendLogLine("[GUI] last_roster.json не найден, стартуем с пустыми ростерами.");
+    return;
+  }
+  if (result == LastRosterLoadResult::kParseError) {
+    rosterModel.clear();
+    modelUnits.clear();
+    enemyUnits.clear();
+    appendLogLine("[GUI] last_roster.json: ошибка разбора, стартуем с пустыми ростерами.");
     return;
   }
 
@@ -1116,7 +1118,11 @@ void Form :: loadLastRoster() {
   }
 
   syncEnemyUnitsFromRoster();
-  setStatusMessage("Loaded last roster.");
+  rosterSummaryLabel.set_text("Юниты игрока: " + std::to_string(enemyUnits.size()) +
+                              " | Юниты модели: " + std::to_string(modelUnits.size()));
+  std::string message = "Loaded last roster: Player=" + std::to_string(enemyUnits.size()) +
+                        ", Model=" + std::to_string(modelUnits.size());
+  setStatusMessage(message);
 }
 
 void Form :: syncEnemyUnitsFromRoster() {

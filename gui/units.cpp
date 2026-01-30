@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <utility>
 #include "include/units.h"
+#include "include/LastRoster.h"
 
 using namespace Glib;
 using namespace Gtk;
@@ -49,10 +50,10 @@ std::string Units::formatRosterDisplay(const std::string& name, int modelsCount)
 }
 
 void Units::persistPlayerRoster() {
-  if (!playerRosterModel) {
+  if (!playerRosterModel || !modelUnits) {
     return;
   }
-  playerRosterModel->saveToFile(RosterModel::defaultRosterPath());
+  save_last_roster(*playerRosterModel, *modelUnits);
 }
 
 bool Units::getSelectedAvailableUnit(AvailableUnit& unit) {
@@ -144,6 +145,7 @@ void Units::addSelectedToModel() {
   }
   modelUnits->push_back({unit.name, unit.faction, unit.defaultCount, RosterModel::generateInstanceId()});
   refreshRosterViews();
+  persistPlayerRoster();
   notifyRosterUpdated();
   setStatusMessage("Юнит добавлен в ростер модели.");
 }
@@ -195,6 +197,7 @@ void Units::removeSelectedFromActiveRoster() {
       std::string instanceId = instanceValue.raw();
       removeModelUnitByInstanceId(instanceId, static_cast<size_t>(path.front()));
       refreshRosterViews();
+      persistPlayerRoster();
       notifyRosterUpdated();
       setStatusMessage("Юнит удалён из ростера модели.");
       return;
@@ -221,6 +224,7 @@ void Units::clearModelRoster() {
   }
   modelUnits->clear();
   refreshRosterViews();
+  persistPlayerRoster();
   notifyRosterUpdated();
   setStatusMessage("Ростер модели очищен.");
 }
@@ -228,12 +232,12 @@ void Units::clearModelRoster() {
 void Units::clearAllRosters() {
   if (playerRosterModel) {
     playerRosterModel->clear();
-    persistPlayerRoster();
   }
   if (modelUnits) {
     modelUnits->clear();
   }
   refreshRosterViews();
+  persistPlayerRoster();
   notifyRosterUpdated();
   setStatusMessage("Оба ростера очищены.");
 }
@@ -244,6 +248,7 @@ void Units::mirrorPlayerToModel() {
   }
   *modelUnits = playerRosterModel->expandedUnits();
   refreshRosterViews();
+  persistPlayerRoster();
   notifyRosterUpdated();
   setStatusMessage("Ростер модели обновлён из ростера игрока.");
 }
@@ -386,6 +391,10 @@ Units::Units(RosterModel* playerRosterModel,
 
   loadAvailableUnits();
   refreshRosterViews();
+
+  signal_hide().connect([this]() {
+    persistPlayerRoster();
+  });
 
   resize(700, 500);
   show_all();
