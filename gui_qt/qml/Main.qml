@@ -183,7 +183,7 @@ ApplicationWindow {
 
                                             Text {
                                                 id: unitNameInline
-                                                text: modelData
+                                                text: model.display
                                                 color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
                                                 elide: Text.ElideRight
                                                 anchors.verticalCenter: parent.verticalCenter
@@ -638,7 +638,7 @@ ApplicationWindow {
 
                                 Text {
                                     id: unitNameAvailable
-                                    text: modelData
+                                    text: model.display
                                     color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
                                     elide: Text.ElideRight
                                     anchors.verticalCenter: parent.verticalCenter
@@ -684,7 +684,7 @@ ApplicationWindow {
 
                                 Text {
                                     id: unitNamePlayer
-                                    text: modelData
+                                    text: model.display
                                     color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
                                     elide: Text.ElideRight
                                     anchors.verticalCenter: parent.verticalCenter
@@ -730,7 +730,7 @@ ApplicationWindow {
 
                                 Text {
                                     id: unitNameModel
-                                    text: modelData
+                                    text: model.display
                                     color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
                                     elide: Text.ElideRight
                                     anchors.verticalCenter: parent.verticalCenter
