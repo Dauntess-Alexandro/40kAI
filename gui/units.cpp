@@ -65,8 +65,8 @@ bool Units::getSelectedAvailableUnit(AvailableUnit& unit) const {
     return false;
   }
   auto row = *iter;
-  unit.name = row[availableColumns.name].raw();
-  unit.faction = row[availableColumns.faction].raw();
+  unit.name = row[availableColumns.name];
+  unit.faction = row[availableColumns.faction];
   unit.defaultCount = row[availableColumns.defaultCount];
   return true;
 }
@@ -171,7 +171,7 @@ void Units::removeSelectedFromActiveRoster() {
     auto path = playerRosterStore->get_path(playerIter);
     if (!path.empty()) {
       Glib::ustring instanceValue = (*playerIter)[rosterColumns.instanceId];
-      std::string instanceId = instanceValue.raw();
+      std::string instanceId = instanceValue;
       if (!instanceId.empty()) {
         playerRosterModel->removeUnitByInstanceId(instanceId);
       } else {
@@ -190,7 +190,7 @@ void Units::removeSelectedFromActiveRoster() {
     auto path = modelRosterStore->get_path(modelIter);
     if (!path.empty()) {
       Glib::ustring instanceValue = (*modelIter)[rosterColumns.instanceId];
-      std::string instanceId = instanceValue.raw();
+      std::string instanceId = instanceValue;
       removeModelUnitByInstanceId(instanceId, static_cast<size_t>(path.front()));
       refreshRosterViews();
       notifyRosterUpdated();
@@ -370,7 +370,10 @@ Units::Units(RosterModel* playerRosterModel,
   rootBox.pack_start(mainBox, Gtk::PACK_EXPAND_WIDGET);
   rootBox.pack_start(statusLabel, Gtk::PACK_SHRINK);
 
-  rootBox.set_margin(12);
+  rootBox.set_margin_top(12);
+  rootBox.set_margin_bottom(12);
+  rootBox.set_margin_start(12);
+  rootBox.set_margin_end(12);
   rootBox.set_hexpand(true);
   rootBox.set_vexpand(true);
   availableFrame.set_hexpand(true);
