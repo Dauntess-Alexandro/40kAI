@@ -1,20 +1,8 @@
 diff --git a/gui_qt/qml/Main.qml b/gui_qt/qml/Main.qml
-index 3ef4dad24b8530f2c69464cad60b335af679589c..4b57da85e6b8eb1074e8f9b1993c50714d736416 100644
+index 4b57da85e6b8eb1074e8f9b1993c50714d736416..0204de5778b429ab6575078d30c6aebf9524fd74 100644
 --- a/gui_qt/qml/Main.qml
 +++ b/gui_qt/qml/Main.qml
-@@ -1,29 +1,29 @@
- import QtQuick 2.15
- import QtQuick.Controls 2.15
- import QtQuick.Layouts 1.15
--import Qt.labs.platform 1.1
-+import Qt.labs.platform 1.1 as Platform
- 
- ApplicationWindow {
-     id: root
-     width: 1200
-     height: 780
-     visible: true
-     title: "40kAI — второй GUI (Qt)"
+@@ -12,51 +12,52 @@ ApplicationWindow {
  
      property string statusText: "Готово к запуску."
  
@@ -33,7 +21,346 @@ index 3ef4dad24b8530f2c69464cad60b335af679589c..4b57da85e6b8eb1074e8f9b1993c5071
              TabButton { text: "Оценка" }
          }
  
-@@ -710,33 +710,33 @@ ApplicationWindow {
+         StackLayout {
+             id: mainStack
+             currentIndex: mainTabs.currentIndex
+             Layout.fillWidth: true
+             Layout.fillHeight: true
+ 
+             Item {
+-                anchors.fill: parent
++                Layout.fillWidth: true
++                Layout.fillHeight: true
+ 
+                 Item {
+                     anchors.fill: parent
+                     anchors.margins: 16
+ 
+                     ColumnLayout {
+                         anchors.fill: parent
+                         spacing: 12
+ 
+                     Text {
+                         text: "Train Model:"
+                         font.pixelSize: 20
+                         font.bold: true
+                     }
+ 
+                     GridLayout {
+                         columns: 2
+                         columnSpacing: 16
+                         rowSpacing: 12
+                         Layout.fillWidth: true
+ 
+                         ColumnLayout {
+                             spacing: 10
+                             Layout.fillWidth: true
+ 
+@@ -155,51 +156,51 @@ ApplicationWindow {
+                             GroupBox {
+                                 title: "Ростер"
+                                 Layout.fillWidth: true
+ 
+                                 ColumnLayout {
+                                     spacing: 8
+                                     anchors.fill: parent
+ 
+                                     Label {
+                                         text: controller.rosterSummary
+                                         font.bold: true
+                                     }
+ 
+                                     Label {
+                                         text: "Доступные юниты (Necrons)"
+                                     }
+ 
+                                     ListView {
+                                         id: availableUnitsInline
+                                         Layout.fillWidth: true
+                                         Layout.preferredHeight: 180
+                                         model: controller.availableUnitsModel
+                                         clip: true
+                                         delegate: ItemDelegate {
+                                             text: modelData
+-                                            width: parent.width
++                                            width: ListView.view ? ListView.view.width : 0
+                                             highlighted: ListView.isCurrentItem
+                                         }
+                                     }
+ 
+                                     RowLayout {
+                                         spacing: 8
+                                         Button {
+                                             text: "Добавить в игрока"
+                                             onClicked: controller.add_unit_to_player(availableUnitsInline.currentIndex)
+                                         }
+                                         Button {
+                                             text: "Добавить в модель"
+                                             onClicked: controller.add_unit_to_model(availableUnitsInline.currentIndex)
+                                         }
+                                     }
+ 
+                                     Button {
+                                         text: "Army Viewer"
+                                         onClicked: armyViewerDialog.open()
+                                     }
+                                 }
+                             }
+ 
+                             GroupBox {
+                                 title: "Действия"
+@@ -267,51 +268,52 @@ ApplicationWindow {
+                     Label {
+                         text: controller.progressStats
+                     }
+ 
+                     GroupBox {
+                         title: "Логи"
+                         Layout.fillWidth: true
+                         Layout.fillHeight: true
+ 
+                         ScrollView {
+                             anchors.fill: parent
+ 
+                             TextArea {
+                                 id: logArea
+                                 readOnly: true
+                                 wrapMode: TextArea.Wrap
+                                 text: ""
+                             }
+                         }
+                     }
+                     }
+                 }
+             }
+ 
+             Item {
+-                anchors.fill: parent
++                Layout.fillWidth: true
++                Layout.fillHeight: true
+ 
+                 ColumnLayout {
+                     anchors.fill: parent
+                     anchors.margins: 16
+                     spacing: 12
+ 
+                     Text {
+                         text: "Model Metrics"
+                         font.pixelSize: 20
+                         font.bold: true
+                     }
+ 
+                     RowLayout {
+                         spacing: 12
+                         Layout.fillWidth: true
+ 
+                         Button {
+                             text: "Выбрать модель"
+                             onClicked: metricsFileDialog.open()
+                         }
+ 
+                         Label {
+                             text: controller.metricsLabel
+                             Layout.fillWidth: true
+                             elide: Label.ElideRight
+@@ -523,196 +525,199 @@ ApplicationWindow {
+                                         anchors.fill: parent
+                                         source: controller.metricsEndReasonPath
+                                         fillMode: Image.PreserveAspectFit
+                                         smooth: true
+                                     }
+ 
+                                     Text {
+                                         anchors.centerIn: parent
+                                         text: "Нет данных по причинам завершения."
+                                         color: "#777777"
+                                         visible: endReasonChart.status !== Image.Ready
+                                     }
+                                 }
+ 
+                                 Label {
+                                     text: "Почему эпизоды завершались."
+                                     wrapMode: Text.WordWrap
+                                 }
+                             }
+                         }
+                     }
+                 }
+             }
+ 
+             Item {
+-                anchors.fill: parent
++                Layout.fillWidth: true
++                Layout.fillHeight: true
+                 Label {
+                     anchors.centerIn: parent
+                     text: "Скоро"
+                 }
+             }
+ 
+             Item {
+-                anchors.fill: parent
++                Layout.fillWidth: true
++                Layout.fillHeight: true
+                 Label {
+                     anchors.centerIn: parent
+                     text: "Скоро"
+                 }
+             }
+ 
+             Item {
+-                anchors.fill: parent
++                Layout.fillWidth: true
++                Layout.fillHeight: true
+                 Label {
+                     anchors.centerIn: parent
+                     text: "Скоро"
+                 }
+             }
+         }
+     }
+ 
+     Dialog {
+         id: clearCacheDialog
+         title: "Очистка кэша"
+         modal: true
+         standardButtons: Dialog.Ok | Dialog.Cancel
++        implicitWidth: 420
+         onAccepted: controller.clear_model_cache()
+ 
+         contentItem: Text {
+             text: "Вы действительно хотите удалить все сохранённые модели и метрики?"
+             wrapMode: Text.WordWrap
+-            width: 360
+         }
+     }
+ 
+     Dialog {
+         id: armyViewerDialog
+         title: "Army Viewer"
+         modal: true
+         standardButtons: Dialog.Close
+         width: 900
+         height: 500
+ 
+         ColumnLayout {
+             anchors.fill: parent
+             spacing: 12
+ 
+             RowLayout {
+                 spacing: 12
+                 Layout.fillWidth: true
+                 Layout.fillHeight: true
+ 
+                 GroupBox {
+                     title: "Доступные юниты (Necrons)"
+                     Layout.fillWidth: true
+                     Layout.fillHeight: true
+ 
+                     ColumnLayout {
+                         anchors.fill: parent
+                         spacing: 8
+ 
+                         ListView {
+                             id: availableUnitsView
+                             Layout.fillWidth: true
+                             Layout.fillHeight: true
+                             model: controller.availableUnitsModel
+                             clip: true
+                             delegate: ItemDelegate {
+                                 text: modelData
+-                                width: parent.width
++                                width: ListView.view ? ListView.view.width : 0
+                                 highlighted: ListView.isCurrentItem
+                             }
+                         }
+ 
+                         RowLayout {
+                             spacing: 8
+                             Button {
+                                 text: "Добавить в игрока"
+                                 onClicked: controller.add_unit_to_player(availableUnitsView.currentIndex)
+                             }
+                             Button {
+                                 text: "Добавить в модель"
+                                 onClicked: controller.add_unit_to_model(availableUnitsView.currentIndex)
+                             }
+                         }
+                     }
+                 }
+ 
+                 GroupBox {
+                     title: "Ростер игрока"
+                     Layout.fillWidth: true
+                     Layout.fillHeight: true
+ 
+                     ColumnLayout {
+                         anchors.fill: parent
+                         spacing: 8
+ 
+                         ListView {
+                             id: playerRosterView
+                             Layout.fillWidth: true
+                             Layout.fillHeight: true
+                             model: controller.playerRosterModel
+                             clip: true
+                             delegate: ItemDelegate {
+                                 text: modelData
+-                                width: parent.width
++                                width: ListView.view ? ListView.view.width : 0
+                                 highlighted: ListView.isCurrentItem
+                             }
+                         }
+ 
+                         RowLayout {
+                             spacing: 8
+                             Button {
+                                 text: "Удалить"
+                                 onClicked: controller.remove_player_unit(playerRosterView.currentIndex)
+                             }
+                             Button {
+                                 text: "Очистить"
+                                 onClicked: controller.clear_player_roster()
+                             }
+                         }
+                     }
+                 }
+ 
+                 GroupBox {
+                     title: "Ростер модели"
+                     Layout.fillWidth: true
+                     Layout.fillHeight: true
+ 
+                     ColumnLayout {
+                         anchors.fill: parent
+                         spacing: 8
+ 
+                         ListView {
+                             id: modelRosterView
+                             Layout.fillWidth: true
+                             Layout.fillHeight: true
+                             model: controller.modelRosterModel
+                             clip: true
+                             delegate: ItemDelegate {
+                                 text: modelData
+-                                width: parent.width
++                                width: ListView.view ? ListView.view.width : 0
+                                 highlighted: ListView.isCurrentItem
+                             }
+                         }
+ 
+                         RowLayout {
+                             spacing: 8
+                             Button {
+                                 text: "Удалить"
+                                 onClicked: controller.remove_model_unit(modelRosterView.currentIndex)
+                             }
+                             Button {
+                                 text: "Очистить"
+                                 onClicked: controller.clear_model_roster()
+                             }
+                         }
+                     }
                  }
              }
          }
@@ -43,30 +370,4 @@ index 3ef4dad24b8530f2c69464cad60b335af679589c..4b57da85e6b8eb1074e8f9b1993c5071
          target: controller
          function onLogLine(message) {
              logArea.text += message + "\n"
-             logArea.cursorPosition = logArea.length
-         }
-         function onStatusChanged(message) {
-             root.statusText = message
-         }
-         function onNumGamesChanged(value) {
-             numGamesField.text = value.toString()
-         }
-         function onBoardXChanged(value) {
-             boardXField.text = value.toString()
-         }
-         function onBoardYChanged(value) {
-             boardYField.text = value.toString()
-         }
-     }
- 
--    FileDialog {
-+    Platform.FileDialog {
-         id: metricsFileDialog
-         title: "Выберите модель (.pickle)"
-         nameFilters: ["Pickle Files (*.pickle)"]
--        folder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
-+        folder: Platform.StandardPaths.writableLocation(Platform.StandardPaths.DocumentsLocation)
-         onAccepted: controller.select_metrics_file(fileUrl)
-     }
- }
 

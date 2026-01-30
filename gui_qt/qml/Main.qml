@@ -34,7 +34,8 @@ ApplicationWindow {
             Layout.fillHeight: true
 
             Item {
-                anchors.fill: parent
+                Layout.fillWidth: true
+                Layout.fillHeight: true
 
                 Item {
                     anchors.fill: parent
@@ -177,7 +178,7 @@ ApplicationWindow {
                                         clip: true
                                         delegate: ItemDelegate {
                                             text: modelData
-                                            width: parent.width
+                                            width: ListView.view ? ListView.view.width : 0
                                             highlighted: ListView.isCurrentItem
                                         }
                                     }
@@ -289,7 +290,8 @@ ApplicationWindow {
             }
 
             Item {
-                anchors.fill: parent
+                Layout.fillWidth: true
+                Layout.fillHeight: true
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -545,7 +547,8 @@ ApplicationWindow {
             }
 
             Item {
-                anchors.fill: parent
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 Label {
                     anchors.centerIn: parent
                     text: "Скоро"
@@ -553,7 +556,8 @@ ApplicationWindow {
             }
 
             Item {
-                anchors.fill: parent
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 Label {
                     anchors.centerIn: parent
                     text: "Скоро"
@@ -561,7 +565,8 @@ ApplicationWindow {
             }
 
             Item {
-                anchors.fill: parent
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 Label {
                     anchors.centerIn: parent
                     text: "Скоро"
@@ -575,12 +580,12 @@ ApplicationWindow {
         title: "Очистка кэша"
         modal: true
         standardButtons: Dialog.Ok | Dialog.Cancel
+        implicitWidth: 420
         onAccepted: controller.clear_model_cache()
 
         contentItem: Text {
             text: "Вы действительно хотите удалить все сохранённые модели и метрики?"
             wrapMode: Text.WordWrap
-            width: 360
         }
     }
 
@@ -618,7 +623,7 @@ ApplicationWindow {
                             clip: true
                             delegate: ItemDelegate {
                                 text: modelData
-                                width: parent.width
+                                width: ListView.view ? ListView.view.width : 0
                                 highlighted: ListView.isCurrentItem
                             }
                         }
@@ -654,7 +659,7 @@ ApplicationWindow {
                             clip: true
                             delegate: ItemDelegate {
                                 text: modelData
-                                width: parent.width
+                                width: ListView.view ? ListView.view.width : 0
                                 highlighted: ListView.isCurrentItem
                             }
                         }
@@ -690,7 +695,7 @@ ApplicationWindow {
                             clip: true
                             delegate: ItemDelegate {
                                 text: modelData
-                                width: parent.width
+                                width: ListView.view ? ListView.view.width : 0
                                 highlighted: ListView.isCurrentItem
                             }
                         }
