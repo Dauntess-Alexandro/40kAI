@@ -65,8 +65,10 @@ bool Units::getSelectedAvailableUnit(AvailableUnit& unit) const {
     return false;
   }
   auto row = *iter;
-  unit.name = row[availableColumns.name];
-  unit.faction = row[availableColumns.faction];
+  Glib::ustring nameValue = row[availableColumns.name];
+  Glib::ustring factionValue = row[availableColumns.faction];
+  unit.name = nameValue.raw();
+  unit.faction = factionValue.raw();
   unit.defaultCount = row[availableColumns.defaultCount];
   return true;
 }
@@ -171,7 +173,7 @@ void Units::removeSelectedFromActiveRoster() {
     auto path = playerRosterStore->get_path(playerIter);
     if (!path.empty()) {
       Glib::ustring instanceValue = (*playerIter)[rosterColumns.instanceId];
-      std::string instanceId = instanceValue;
+      std::string instanceId = instanceValue.raw();
       if (!instanceId.empty()) {
         playerRosterModel->removeUnitByInstanceId(instanceId);
       } else {
@@ -190,7 +192,7 @@ void Units::removeSelectedFromActiveRoster() {
     auto path = modelRosterStore->get_path(modelIter);
     if (!path.empty()) {
       Glib::ustring instanceValue = (*modelIter)[rosterColumns.instanceId];
-      std::string instanceId = instanceValue;
+      std::string instanceId = instanceValue.raw();
       removeModelUnitByInstanceId(instanceId, static_cast<size_t>(path.front()));
       refreshRosterViews();
       notifyRosterUpdated();
