@@ -514,7 +514,7 @@ for env_idx in range(vec_env_count):
     env.attacker_side = attacker_side
     env.defender_side = defender_side
 
-    state, info = env.reset(m=model, e=enemy, trunc=True)
+    state, info = env.reset(options={"m": model, "e": enemy, "trunc": True})
     env_contexts.append(
         {
             "env": env,
@@ -656,7 +656,9 @@ inText.append("Number of Lifetimes ran: {}\n".format(totLifeT))
 pbar = tqdm(total=totLifeT)
 
 for ctx in env_contexts:
-    ctx["state"], ctx["info"] = ctx["env"].reset(m=ctx["model"], e=ctx["enemy"], Type="big", trunc=True)
+    ctx["state"], ctx["info"] = ctx["env"].reset(
+        options={"m": ctx["model"], "e": ctx["enemy"], "Type": "big", "trunc": True}
+    )
     ctx["ep_len"] = 0
     ctx["rew_arr"] = []
     ctx["n_step_buffer"] = collections.deque(maxlen=N_STEP)
@@ -954,7 +956,9 @@ while end is False:
             ctx["env"].attacker_side = attacker_side
             ctx["env"].defender_side = defender_side
 
-            ctx["state"], ctx["info"] = ctx["env"].reset(m=ctx["model"], e=ctx["enemy"], Type="small", trunc=True)
+            ctx["state"], ctx["info"] = ctx["env"].reset(
+                options={"m": ctx["model"], "e": ctx["enemy"], "Type": "small", "trunc": True}
+            )
             ctx["ep_len"] = 0
             ctx["rew_arr"] = []
 

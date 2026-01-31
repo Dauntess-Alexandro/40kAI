@@ -3259,7 +3259,16 @@ class Warhammer40kEnv(gym.Env):
                 if distance(self.coordsOfOM[j], self.enemy_coords[i]) <= 5:
                     self.enemy_obj_oc[j] += effective_oc
 
-    def reset(self, m, e, playType=False, Type="small", trunc=False):
+    def reset(self, *, seed=None, options=None, **kwargs):
+        super().reset(seed=seed)
+        opts = options or {}
+        opts.update(kwargs)
+        m = opts.get("m", self.model)
+        e = opts.get("e", self.enemy)
+        playType = opts.get("playType", False)
+        Type = opts.get("Type", "small")
+        trunc = opts.get("trunc", False)
+
         # keep original references too
         self.model = m
         self.enemy = e
@@ -3310,7 +3319,7 @@ class Warhammer40kEnv(gym.Env):
         self._objective_hold_streaks = [0] * len(self.coordsOfOM)
 
         for i in range(len(self.enemy_data)):
-            self.enemy_coords.append([e[i].showCoords()[0], e[i].showCoords()[1]])
+            self.enemy_coords.append([self.enemy[i].showCoords()[0], self.enemy[i].showCoords()[1]])
             self.enemy_health.append(self.enemy_data[i]["W"] * self.enemy_data[i]["#OfModels"])
             self.enemyInAttack.append([0, 0])
         self.enemyFellBack = [False] * len(self.enemy_health)
@@ -3324,7 +3333,7 @@ class Warhammer40kEnv(gym.Env):
         )
 
         for i in range(len(self.unit_data)):
-            self.unit_coords.append([m[i].showCoords()[0], m[i].showCoords()[1]])
+            self.unit_coords.append([self.model[i].showCoords()[0], self.model[i].showCoords()[1]])
             self.unit_health.append(self.unit_data[i]["W"] * self.unit_data[i]["#OfModels"])
             self.unitInAttack.append([0, 0])
         self.unitFellBack = [False] * len(self.unit_health)
