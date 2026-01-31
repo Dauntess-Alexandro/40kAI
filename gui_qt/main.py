@@ -388,6 +388,8 @@ class GUIController(QtCore.QObject):
         model_path = self._resolve_play_model_path()
         if model_path == "None":
             self._emit_status("Сохранённые модели не найдены. Запускаю базовый режим.")
+        if not self._check_torch_import():
+            return
         script = self._script_path("launch_terminal_manual")
         if not os.path.exists(script):
             self._emit_status("Не найден скрипт запуска терминала. Проверьте репозиторий.")
@@ -407,6 +409,8 @@ class GUIController(QtCore.QObject):
         model_path = self._resolve_play_model_path()
         if model_path == "None":
             self._emit_status("Сохранённые модели не найдены. Запускаю базовый режим.")
+        if not self._check_torch_import():
+            return
         if self._is_windows:
             script = os.path.join(self._repo_root, "scripts", "viewer.bat")
         else:
@@ -427,6 +431,32 @@ class GUIController(QtCore.QObject):
             start_new_session=True,
         )
         self._emit_status("Запуск игры в GUI через Viewer.")
+
+    def _check_torch_import(self) -> bool:
+        command = [
+            sys.executable,
+            "-c",
+            "import torch; print(torch.__version__)",
+        ]
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            cwd=self._repo_root,
+        )
+        if result.returncode == 0:
+            return True
+        error_text = (result.stderr or result.stdout or "").strip()
+        if error_text:
+            error_text = f" Детали: {error_text}"
+        self._emit_status(
+            "Не удалось загрузить PyTorch (torch) при запуске игры. "
+            "Где: проверка окружения перед запуском Viewer. "
+            "Что делать дальше: переустановите torch под вашу версию Python, "
+            "обновите Microsoft Visual C++ Redistributable и попробуйте снова."
+            f"{error_text}"
+        )
+        return False
 
     @QtCore.Slot()
     def refresh_board_text(self) -> None:
