@@ -653,7 +653,12 @@ for i in enemy:
     inText.append("Name: {}, Army Type: {}".format(i.showUnitData()["Name"], i.showUnitData()["Army"]))
 inText.append("Number of Lifetimes ran: {}\n".format(totLifeT))
 
-pbar = tqdm(total=totLifeT)
+pbar_update_every = int(os.getenv("PBAR_UPDATE_EVERY", "5" if os.name == "nt" else "1"))
+pbar_update_every = max(1, pbar_update_every)
+pbar_mininterval = float(os.getenv("PBAR_MININTERVAL", "1.5" if os.name == "nt" else "0.1"))
+pbar_mininterval = max(0.0, pbar_mininterval)
+pbar = tqdm(total=totLifeT, mininterval=pbar_mininterval, miniters=pbar_update_every)
+pending_pbar_updates = 0
 
 for ctx in env_contexts:
     ctx["state"], ctx["info"] = ctx["env"].reset(
@@ -815,7 +820,10 @@ while end is False:
                     "Проверьте reset/условия завершения (нулевое здоровье, лимиты хода, "
                     "ошибки расстановки)."
                 )
-            pbar.update(1)
+            pending_pbar_updates += 1
+            if pending_pbar_updates >= pbar_update_every or (numLifeT + 1) >= totLifeT:
+                pbar.update(pending_pbar_updates)
+                pending_pbar_updates = 0
             metrics.updateRew(sum(ctx["rew_arr"]) / len(ctx["rew_arr"]))
             metrics.updateEpLen(ctx["ep_len"])
             # ===== extra metrics (winrate / VP diff / end reason) =====
@@ -971,6 +979,9 @@ while end is False:
 
         if numLifeT == totLifeT:
             end = True
+            if pending_pbar_updates:
+                pbar.update(pending_pbar_updates)
+                pending_pbar_updates = 0
             pbar.close()
             break
 
