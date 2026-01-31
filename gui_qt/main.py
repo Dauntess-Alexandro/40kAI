@@ -405,21 +405,20 @@ class GUIController(QtCore.QObject):
         model_path = self._resolve_play_model_path()
         if model_path == "None":
             self._emit_status("Сохранённые модели не найдены. Запускаю базовый режим.")
-        script = os.path.join(self._repo_root, "play.sh")
+        script = os.path.join(self._repo_root, "scripts", "viewer.sh")
         if not os.path.exists(script):
-            self._emit_status("Не найден play.sh. Проверьте репозиторий.")
+            self._emit_status("Не найден scripts/viewer.sh. Проверьте репозиторий.")
             return
         self._persist_rosters()
         env = os.environ.copy()
-        env["PLAY_NO_EXPLORATION"] = "1"
-        env["FIGHT_REPORT"] = "1"
+        env["MODEL_PATH"] = model_path
         subprocess.Popen(
-            [script, model_path, "True"],
+            [script],
             cwd=self._repo_root,
             env=env,
             start_new_session=True,
         )
-        self._emit_status("Запуск игры в GUI.")
+        self._emit_status("Запуск игры в GUI через Viewer.")
 
     @QtCore.Slot()
     def refresh_board_text(self) -> None:

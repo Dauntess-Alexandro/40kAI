@@ -1,67 +1,76 @@
-diff --git a/play.py b/play.py
-index 681f0f4d3b5676d464f477dca1cd2d51e7305938..ceab92ac67b2f3fdc06907b562ba5ab047694fdd 100644
---- a/play.py
-+++ b/play.py
-@@ -116,52 +116,59 @@ env.attacker_side = attacker_side
- env.defender_side = defender_side
+diff --git a/gui_qt/main.py b/gui_qt/main.py
+index ae41de712b1cedc526077593844e6584285e8324..8f59382a6d03f8173c58ede963158642c36d3a95 100644
+--- a/gui_qt/main.py
++++ b/gui_qt/main.py
+@@ -383,65 +383,64 @@ class GUIController(QtCore.QObject):
+             self._emit_status("Сохранённые модели не найдены.")
  
- state, info = env.reset(m=model, e=enemy)
- if verbose:
-     squads_for_actions_count = len(model)
-     _log(f"[action_space] squads_for_actions_count={squads_for_actions_count}")
-     for idx, unit in enumerate(model):
-         unit_data = unit.showUnitData()
-         unit_name = unit_data.get("Name", "Unknown")
-         _log(f"[action_space] squad[{idx}] name={unit_name}")
-     total_models_count = 0
-     for unit in model:
-         unit_data = unit.showUnitData()
-         total_models_count += int(unit_data.get("#OfModels", 1))
-     _log(f"[action_space] total_models_count={total_models_count}")
-     move_num_keys = [
-         key for key in env.action_space.spaces.keys() if key.startswith("move_num_")
-     ]
-     _log(f"[action_space] move_num_keys_count={len(move_num_keys)}")
-     _log(f"[action_space] move_num_keys={sorted(move_num_keys)}")
- n_actions = [5,2,len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
- for i in range(len(model)):
-     n_actions.append(12)
- n_observations = len(state)
+     @QtCore.Slot()
+     def play_in_terminal(self) -> None:
+         model_path = self._resolve_play_model_path()
+         if model_path == "None":
+             self._emit_status("Сохранённые модели не найдены. Запускаю базовый режим.")
+         script = os.path.join(self._repo_root, "launch_terminal_manual.sh")
+         if not os.path.exists(script):
+             self._emit_status("Не найден launch_terminal_manual.sh. Проверьте репозиторий.")
+             return
+         self._persist_rosters()
+         subprocess.Popen(
+             [script, model_path],
+             cwd=self._repo_root,
+             env=os.environ.copy(),
+             start_new_session=True,
+         )
+         self._emit_status("Запуск игры в терминале.")
  
--policy_net = DQN(n_observations, n_actions).to(device)
--target_net = DQN(n_observations, n_actions).to(device)
-+net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
-+dueling = net_type == "dueling"
-+if not dueling and isinstance(checkpoint, dict):
-+    policy_state = checkpoint.get("policy_net", {})
-+    if any(key.startswith("value_heads.") for key in policy_state):
-+        dueling = True
-+
-+policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
-+target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
- optimizer = torch.optim.Adam(policy_net.parameters())
+     @QtCore.Slot()
+     def play_in_gui(self) -> None:
+         model_path = self._resolve_play_model_path()
+         if model_path == "None":
+             self._emit_status("Сохранённые модели не найдены. Запускаю базовый режим.")
+-        script = os.path.join(self._repo_root, "play.sh")
++        script = os.path.join(self._repo_root, "scripts", "viewer.sh")
+         if not os.path.exists(script):
+-            self._emit_status("Не найден play.sh. Проверьте репозиторий.")
++            self._emit_status("Не найден scripts/viewer.sh. Проверьте репозиторий.")
+             return
+         self._persist_rosters()
+         env = os.environ.copy()
+-        env["PLAY_NO_EXPLORATION"] = "1"
+-        env["FIGHT_REPORT"] = "1"
++        env["MODEL_PATH"] = model_path
+         subprocess.Popen(
+-            [script, model_path, "True"],
++            [script],
+             cwd=self._repo_root,
+             env=env,
+             start_new_session=True,
+         )
+-        self._emit_status("Запуск игры в GUI.")
++        self._emit_status("Запуск игры в GUI через Viewer.")
  
- policy_net.load_state_dict(checkpoint['policy_net'])
- target_net.load_state_dict(checkpoint['target_net'])
- optimizer.load_state_dict(checkpoint['optimizer'])
+     @QtCore.Slot()
+     def refresh_board_text(self) -> None:
+         board_path = os.path.join(self._repo_root, "board.txt")
+         self._board_text = self._render_board_ascii(board_path)
+         self.boardTextChanged.emit(self._board_text)
  
- policy_net.eval()
- target_net.eval()
+     def _set_running(self, value: bool) -> None:
+         if self._running != value:
+             self._running = value
+             self.runningChanged.emit(value)
  
- isdone = False
- i = 0
- 
- if playInGUI == True:
-     env.reset(m=model, e=enemy, playType=playInGUI, Type="big", trunc=True)
- else:
-     env.reset(m=model, e=enemy, playType=playInGUI, Type="big", trunc=False)
- 
- env.io = io
- 
- reward = 0
- io.log("\nИнструкции:\n")
- io.log("Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.)")
- io.log("Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.)\n")
- 
- while isdone == False:
+     def _set_progress(self, current: int, total: int) -> None:
+         if total <= 0:
+             self._progress_value = 0.0
+             self._progress_text = "0%"
+             self._progress_label = f"ep={current}/?"
+         else:
+             fraction = max(0.0, min(1.0, current / total))
+             percent = int(round(fraction * 100))
+             self._progress_value = fraction
+             self._progress_text = f"{percent}%"
+             self._progress_label = f"ep={current}/{total} ({percent}%)"
+         self.progressValueChanged.emit(self._progress_value)
+         self.progressTextChanged.emit(self._progress_text)
 
