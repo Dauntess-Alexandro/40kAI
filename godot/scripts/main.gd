@@ -5,12 +5,18 @@ extends Control
 
 @onready var board_view: Control = $HBoxContainer/BoardPanel/BoardView
 @onready var status_label: Label = $HBoxContainer/SidePanel/StatusLabel
+@onready var model_path_line_edit: LineEdit = $HBoxContainer/SidePanel/ModelPathLineEdit
+@onready var gui_check: CheckButton = $HBoxContainer/SidePanel/GuiCheck
+@onready var start_button: Button = $HBoxContainer/SidePanel/ButtonsRow/StartButton
+@onready var stop_button: Button = $HBoxContainer/SidePanel/ButtonsRow/StopButton
+@onready var process_label: Label = $HBoxContainer/SidePanel/ProcessLabel
 @onready var units_label: RichTextLabel = $HBoxContainer/SidePanel/UnitsLabel
 @onready var log_label: RichTextLabel = $HBoxContainer/SidePanel/LogLabel
 
 var _timer: Timer
 var _last_generated_at := ""
 var _last_error := ""
+var _process_id := -1
 
 func _ready() -> void:
     _timer = Timer.new()
@@ -18,10 +24,14 @@ func _ready() -> void:
     _timer.autostart = true
     _timer.timeout.connect(_reload_state)
     add_child(_timer)
+    start_button.pressed.connect(_start_game)
+    stop_button.pressed.connect(_stop_game)
+    _update_process_status()
     _reload_state()
 
 
 func _reload_state() -> void:
+    _update_process_status()
     var state_path = _resolve_state_path()
     var payload = _load_json(state_path)
     if payload.is_empty():
@@ -44,6 +54,76 @@ func _reload_state() -> void:
     if board_view.has_method("apply_state"):
         board_view.call("apply_state", payload)
 
+func _start_game() -> void:
+    if _is_process_running():
+        process_label.text = "Процесс уже запущен."
+        return
+
+    var repo_root = _resolve_repo_root()
+    var python_bin = _resolve_python_bin()
+    var model_path = model_path_line_edit.text.strip_edges()
+    if model_path.is_empty():
+        model_path = "None"
+        model_path_line_edit.text = model_path
+
+    var play_gui = "True" if gui_check.button_pressed else "False"
+    var play_script = repo_root.path_join("play.py")
+
+    var safe_repo_root = _py_escape(repo_root)
+    var safe_model_path = _py_escape(model_path)
+    var safe_play_script = _py_escape(play_script)
+
+    var args = PackedStringArray([
+        "-c",
+        "import os,runpy,sys; os.chdir(r'%s'); sys.argv=['play.py','%s','%s']; runpy.run_path(r'%s', run_name='__main__')"
+            % [safe_repo_root, safe_model_path, play_gui, safe_play_script],
+    ])
+
+    _process_id = OS.create_process(python_bin, args, true)
+    if _process_id <= 0:
+        process_label.text = "Ошибка запуска: проверьте путь к Python и проекту."
+        _process_id = -1
+        return
+
+    process_label.text = "Процесс запущен (pid: %s)." % str(_process_id)
+
+
+func _stop_game() -> void:
+    if not _is_process_running():
+        process_label.text = "Процесс уже остановлен."
+        _process_id = -1
+        return
+
+    OS.kill(_process_id)
+    process_label.text = "Процесс остановлен."
+    _process_id = -1
+
+
+func _update_process_status() -> void:
+    if _is_process_running():
+        process_label.text = "Процесс запущен (pid: %s)." % str(_process_id)
+    else:
+        if _process_id != -1:
+            _process_id = -1
+        if process_label.text.is_empty():
+            process_label.text = "Процесс: не запущен"
+
+
+func _is_process_running() -> bool:
+    return _process_id > 0 and OS.is_process_running(_process_id)
+
+func _resolve_repo_root() -> String:
+    var project_root = ProjectSettings.globalize_path("res://")
+    return project_root.path_join("..").simplify_path()
+
+func _resolve_python_bin() -> String:
+    var env_python = OS.get_environment("PYTHON")
+    if not env_python.is_empty():
+        return env_python
+    return "python"
+
+func _py_escape(value: String) -> String:
+    return value.replace("'", "\\'")
 
 func _resolve_state_path() -> String:
     if not state_path_override.is_empty():
@@ -53,8 +133,7 @@ func _resolve_state_path() -> String:
     if not env_path.is_empty():
         return env_path
 
-    var project_root = ProjectSettings.globalize_path("res://")
-    var repo_root = project_root.path_join("..").simplify_path()
+    var repo_root = _resolve_repo_root()
     return repo_root.path_join("gui").path_join("state.json")
 
 

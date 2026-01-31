@@ -40,6 +40,33 @@ text = "40kAI Viewer (Godot)"
 [node name="StatusLabel" type="Label" parent="HBoxContainer/SidePanel"]
 text = "Ожидание состояния…"
 
+[node name="GameTitle" type="Label" parent="HBoxContainer/SidePanel"]
+text = "Запуск игры"
+
+[node name="ModelPathLabel" type="Label" parent="HBoxContainer/SidePanel"]
+text = "Путь к модели (.pickle) или None"
+
+[node name="ModelPathLineEdit" type="LineEdit" parent="HBoxContainer/SidePanel"]
+placeholder_text = "None"
+text = "None"
+
+[node name="GuiCheck" type="CheckButton" parent="HBoxContainer/SidePanel"]
+text = "Запускать с GUI (play.py)"
+
+[node name="ButtonsRow" type="HBoxContainer" parent="HBoxContainer/SidePanel"]
+theme_override_constants/separation = 8
+
+[node name="StartButton" type="Button" parent="HBoxContainer/SidePanel/ButtonsRow"]
+size_flags_horizontal = 3
+text = "Старт"
+
+[node name="StopButton" type="Button" parent="HBoxContainer/SidePanel/ButtonsRow"]
+size_flags_horizontal = 3
+text = "Стоп"
+
+[node name="ProcessLabel" type="Label" parent="HBoxContainer/SidePanel"]
+text = "Процесс: не запущен"
+
 [node name="UnitsTitle" type="Label" parent="HBoxContainer/SidePanel"]
 text = "Юниты"
 
