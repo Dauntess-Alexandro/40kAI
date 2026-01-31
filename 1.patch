@@ -1,15 +1,9 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
 diff --git a/gui_qt/main.py b/gui_qt/main.py
-index ae41de712b1cedc526077593844e6584285e8324..8f59382a6d03f8173c58ede963158642c36d3a95 100644
+index 8f59382a6d03f8173c58ede963158642c36d3a95..d25c20530f18cd8d9572079d0645933a00aa85b5 100644
 --- a/gui_qt/main.py
 +++ b/gui_qt/main.py
-@@ -383,65 +383,64 @@ class GUIController(QtCore.QObject):
-             self._emit_status("Сохранённые модели не найдены.")
- 
-     @QtCore.Slot()
-     def play_in_terminal(self) -> None:
-         model_path = self._resolve_play_model_path()
-         if model_path == "None":
-             self._emit_status("Сохранённые модели не найдены. Запускаю базовый режим.")
+@@ -390,50 +390,52 @@ class GUIController(QtCore.QObject):
          script = os.path.join(self._repo_root, "launch_terminal_manual.sh")
          if not os.path.exists(script):
              self._emit_status("Не найден launch_terminal_manual.sh. Проверьте репозиторий.")
@@ -28,26 +22,22 @@ index ae41de712b1cedc526077593844e6584285e8324..8f59382a6d03f8173c58ede963158642
          model_path = self._resolve_play_model_path()
          if model_path == "None":
              self._emit_status("Сохранённые модели не найдены. Запускаю базовый режим.")
--        script = os.path.join(self._repo_root, "play.sh")
-+        script = os.path.join(self._repo_root, "scripts", "viewer.sh")
+         script = os.path.join(self._repo_root, "scripts", "viewer.sh")
          if not os.path.exists(script):
--            self._emit_status("Не найден play.sh. Проверьте репозиторий.")
-+            self._emit_status("Не найден scripts/viewer.sh. Проверьте репозиторий.")
+             self._emit_status("Не найден scripts/viewer.sh. Проверьте репозиторий.")
              return
          self._persist_rosters()
          env = os.environ.copy()
--        env["PLAY_NO_EXPLORATION"] = "1"
--        env["FIGHT_REPORT"] = "1"
-+        env["MODEL_PATH"] = model_path
+         env["MODEL_PATH"] = model_path
++        env["FIGHT_REPORT"] = "1"
++        env["PLAY_NO_EXPLORATION"] = "1"
          subprocess.Popen(
--            [script, model_path, "True"],
-+            [script],
+             [script],
              cwd=self._repo_root,
              env=env,
              start_new_session=True,
          )
--        self._emit_status("Запуск игры в GUI.")
-+        self._emit_status("Запуск игры в GUI через Viewer.")
+         self._emit_status("Запуск игры в GUI через Viewer.")
  
      @QtCore.Slot()
      def refresh_board_text(self) -> None:
@@ -66,11 +56,6 @@ index ae41de712b1cedc526077593844e6584285e8324..8f59382a6d03f8173c58ede963158642
              self._progress_text = "0%"
              self._progress_label = f"ep={current}/?"
          else:
-             fraction = max(0.0, min(1.0, current / total))
-             percent = int(round(fraction * 100))
-             self._progress_value = fraction
-             self._progress_text = f"{percent}%"
-             self._progress_label = f"ep={current}/{total} ({percent}%)"
-         self.progressValueChanged.emit(self._progress_value)
-         self.progressTextChanged.emit(self._progress_text)
-
+ 
+EOF
+)

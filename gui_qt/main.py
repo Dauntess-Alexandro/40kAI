@@ -412,6 +412,8 @@ class GUIController(QtCore.QObject):
         self._persist_rosters()
         env = os.environ.copy()
         env["MODEL_PATH"] = model_path
+        env["FIGHT_REPORT"] = "1"
+        env["PLAY_NO_EXPLORATION"] = "1"
         subprocess.Popen(
             [script],
             cwd=self._repo_root,
