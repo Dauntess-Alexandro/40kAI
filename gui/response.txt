@@ -2965,3 +2965,8 @@ Units: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]
 [action_space] total_models_count=20
 [action_space] move_num_keys_count=2
 [action_space] move_num_keys=['move_num_0', 'move_num_1']
+Units: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]
+
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.)
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.)

@@ -138,8 +138,15 @@ for i in range(len(model)):
     n_actions.append(12)
 n_observations = len(state)
 
-policy_net = DQN(n_observations, n_actions).to(device)
-target_net = DQN(n_observations, n_actions).to(device)
+net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
+dueling = net_type == "dueling"
+if not dueling and isinstance(checkpoint, dict):
+    policy_state = checkpoint.get("policy_net", {})
+    if any(key.startswith("value_heads.") for key in policy_state):
+        dueling = True
+
+policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
 optimizer = torch.optim.Adam(policy_net.parameters())
 
 policy_net.load_state_dict(checkpoint['policy_net'])
