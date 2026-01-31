@@ -40,6 +40,9 @@ class GUIController(QtCore.QObject):
     boardYChanged = QtCore.Signal(int)
     metricsChanged = QtCore.Signal()
     metricsLabelChanged = QtCore.Signal(str)
+    playModelPathChanged = QtCore.Signal(str)
+    playModelLabelChanged = QtCore.Signal(str)
+    boardTextChanged = QtCore.Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -76,10 +79,15 @@ class GUIController(QtCore.QObject):
         self._metrics_mtimes: dict[str, Optional[float]] = {}
         self._metrics_label = "По умолчанию"
 
+        self._play_model_path = ""
+        self._play_model_label = "Модель не выбрана"
+        self._board_text = "ASCII карта будет доступна после запуска игры."
+
         self._load_available_units()
         self._load_rosters_from_file()
         self._refresh_models()
         self._select_latest_metrics()
+        self._select_latest_play_model(initial=True)
         self._update_roster_summary()
 
         self._emit_status("Нажмите Train, чтобы запустить обучение.")
@@ -159,6 +167,22 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=metricsLabelChanged)
     def metricsLabel(self) -> str:
         return self._metrics_label
+
+    @QtCore.Property(str, notify=playModelPathChanged)
+    def playModelPath(self) -> str:
+        return self._play_model_path
+
+    @QtCore.Property(str, notify=playModelLabelChanged)
+    def playModelLabel(self) -> str:
+        return self._play_model_label
+
+    @QtCore.Property(str, notify=boardTextChanged)
+    def boardText(self) -> str:
+        return self._board_text
+
+    @QtCore.Property(str, constant=True)
+    def modelsFolderUrl(self) -> str:
+        return self._to_file_url(os.path.join(self._repo_root, "models"))
 
     @QtCore.Slot(int)
     def set_num_games(self, value: int) -> None:
@@ -335,6 +359,73 @@ class GUIController(QtCore.QObject):
             self._emit_status("Подключены метрики последней модели.")
         else:
             self._emit_status("Метрики по умолчанию (сохранённые модели не найдены).")
+
+    @QtCore.Slot(str)
+    def select_play_model(self, file_url: str) -> None:
+        path = self._to_local_file(file_url)
+        if not path:
+            self._emit_status("Модель не выбрана.")
+            return
+        if not os.path.exists(path):
+            self._emit_status("Файл модели не найден. Проверьте путь.")
+            return
+        if not path.endswith(".pickle"):
+            self._emit_status("Выберите файл модели .pickle.")
+            return
+        self._set_play_model(path, source="manual")
+        self._emit_status("Модель для игры обновлена.")
+
+    @QtCore.Slot()
+    def select_latest_play_model(self) -> None:
+        if self._select_latest_play_model(initial=False):
+            self._emit_status("Выбрана последняя сохранённая модель.")
+        else:
+            self._emit_status("Сохранённые модели не найдены.")
+
+    @QtCore.Slot()
+    def play_in_terminal(self) -> None:
+        model_path = self._resolve_play_model_path()
+        if model_path == "None":
+            self._emit_status("Сохранённые модели не найдены. Запускаю базовый режим.")
+        script = os.path.join(self._repo_root, "launch_terminal_manual.sh")
+        if not os.path.exists(script):
+            self._emit_status("Не найден launch_terminal_manual.sh. Проверьте репозиторий.")
+            return
+        self._persist_rosters()
+        subprocess.Popen(
+            [script, model_path],
+            cwd=self._repo_root,
+            env=os.environ.copy(),
+            start_new_session=True,
+        )
+        self._emit_status("Запуск игры в терминале.")
+
+    @QtCore.Slot()
+    def play_in_gui(self) -> None:
+        model_path = self._resolve_play_model_path()
+        if model_path == "None":
+            self._emit_status("Сохранённые модели не найдены. Запускаю базовый режим.")
+        script = os.path.join(self._repo_root, "play.sh")
+        if not os.path.exists(script):
+            self._emit_status("Не найден play.sh. Проверьте репозиторий.")
+            return
+        self._persist_rosters()
+        env = os.environ.copy()
+        env["PLAY_NO_EXPLORATION"] = "1"
+        env["FIGHT_REPORT"] = "1"
+        subprocess.Popen(
+            [script, model_path, "True"],
+            cwd=self._repo_root,
+            env=env,
+            start_new_session=True,
+        )
+        self._emit_status("Запуск игры в GUI.")
+
+    @QtCore.Slot()
+    def refresh_board_text(self) -> None:
+        board_path = os.path.join(self._repo_root, "board.txt")
+        self._board_text = self._render_board_ascii(board_path)
+        self.boardTextChanged.emit(self._board_text)
 
     def _set_running(self, value: bool) -> None:
         if self._running != value:
@@ -627,6 +718,60 @@ class GUIController(QtCore.QObject):
     def _set_metrics_files(self, paths: dict[str, str]) -> None:
         self._metrics_files = paths
         self._refresh_metrics_paths(force=True)
+
+    def _set_play_model(self, path: str, source: str) -> None:
+        self._play_model_path = path
+        label_prefix = "Последняя модель" if source == "latest" else "Выбрана модель"
+        self._play_model_label = f"{label_prefix}: {os.path.basename(path)}"
+        self.playModelPathChanged.emit(self._play_model_path)
+        self.playModelLabelChanged.emit(self._play_model_label)
+
+    def _select_latest_play_model(self, initial: bool) -> bool:
+        latest_model = self._find_latest_model_file()
+        if not latest_model:
+            if initial:
+                self._play_model_path = ""
+                self._play_model_label = "Модель не найдена"
+                self.playModelPathChanged.emit(self._play_model_path)
+                self.playModelLabelChanged.emit(self._play_model_label)
+            return False
+        self._set_play_model(latest_model, source="latest")
+        return True
+
+    def _resolve_play_model_path(self) -> str:
+        if self._play_model_path and os.path.exists(self._play_model_path):
+            return self._play_model_path
+        latest = self._find_latest_model_file()
+        if latest:
+            self._set_play_model(latest, source="latest")
+            return latest
+        return "None"
+
+    def _render_board_ascii(self, board_path: str) -> str:
+        if not os.path.exists(board_path):
+            return "board.txt не найден. Запустите игру, чтобы сформировать карту."
+        try:
+            with open(board_path, "r", encoding="utf-8") as handle:
+                content = handle.read()
+        except OSError as exc:
+            return f"Не удалось прочитать board.txt: {exc}"
+        full = []
+        last = "\0"
+        for ch in content:
+            if ch.isspace():
+                continue
+            if last == "0" and ch != ",":
+                full.append("\n")
+            elif ch == "0" and last.isdigit():
+                full.append("\n")
+            elif ch.isdigit() and ch not in {"0", "3"}:
+                full.append(ch)
+            elif ch.isdigit() and ch == "3":
+                full.append("0 ")
+            else:
+                full.append("_ ")
+            last = ch
+        return "".join(full)
 
     def _refresh_metrics_paths(self, force: bool = False) -> None:
         changed = False

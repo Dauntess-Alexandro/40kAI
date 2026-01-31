@@ -2935,3 +2935,33 @@ Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'mov
 Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
 Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
 Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: odict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Units: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]
+Units: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]
+Roll-off Attacker/Defender: enemy=2 model=6 -> attacker=model
+[MISSION Only War] Attacker=model, Defender=enemy
+[roster] model_units=2 enemy_units=2
+[roster] model[0] name=Necron Warriors instance_id=1 models=10
+[roster] model[1] name=Necron Warriors instance_id=unit-1 models=10
+[roster] enemy[0] name=Necron Warriors instance_id=2 models=10
+[roster] enemy[1] name=Necron Warriors instance_id=3 models=10
+Units: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]
+[DEPLOY] Order: model first, alternating
+[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (31,6)
+[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (25,37)
+[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (13,3)
+[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (17,32)
+[MISSION Only War] Post-deploy: currently no post-deploy units supported
+[action_space] squads_for_actions_count=2
+[action_space] squad[0] name=Necron Warriors
+[action_space] squad[1] name=Necron Warriors
+[action_space] total_models_count=20
+[action_space] move_num_keys_count=2
+[action_space] move_num_keys=['move_num_0', 'move_num_1']

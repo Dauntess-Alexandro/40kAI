@@ -1,115 +1,593 @@
 diff --git a/gui_qt/main.py b/gui_qt/main.py
-index 4ffca7a1a622741ac50b6aa5f345ee257cf282b6..d5ebd7dee2d33be9343e2426874076c3767cb163 100644
+index 20b6debe3a8ea3e3daedace8bde391e119851197..ae41de712b1cedc526077593844e6584285e8324 100644
 --- a/gui_qt/main.py
 +++ b/gui_qt/main.py
-@@ -475,62 +475,107 @@ class GUIController(QtCore.QObject):
-                     "Ошибка подготовки данных (gui_qt/main.py): "
-                     "проверьте data.sh и зависимости."
-                 )
-                 self._emit_status(message)
-                 self._emit_log(
-                     f"[GUI] {message}\nstdout: {result.stdout}\nstderr: {result.stderr}",
-                     level="ERROR",
-                 )
-                 return False
-             return True
-         except OSError as exc:
-             message = (
-                 "Ошибка подготовки данных (gui_qt/main.py): "
-                 "проверьте доступность data.sh."
-             )
-             self._emit_status(message)
-             self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
-             return False
+@@ -18,90 +18,98 @@ class RosterEntry:
+     count: int
+     instance_id: str
  
-     def _read_stdout(self) -> None:
-         if self._process is None:
-             return
-         data = self._process.readAllStandardOutput().data().decode("utf-8", errors="replace")
-         for line in data.splitlines():
-             if line.strip():
--                self._emit_log(line)
-+                if self._should_show_train_log(line):
-+                    self._emit_log(line)
-                 self._handle_progress_line(line)
  
-     def _read_stderr(self) -> None:
-         if self._process is None:
-             return
-         data = self._process.readAllStandardError().data().decode("utf-8", errors="replace")
-         for line in data.splitlines():
-             if line.strip():
--                self._emit_log(line, level="ERROR")
-+                if not self._is_tqdm_progress_line(line):
-+                    self._emit_log(line, level="ERROR")
-                 self._handle_progress_line(line)
+ @dataclass
+ class UnitInfo:
+     name: str
+     faction: str
+     default_count: int
  
-+    def _is_tqdm_progress_line(self, line: str) -> bool:
-+        normalized = line.strip()
-+        if not normalized:
-+            return False
-+        return bool(re.search(r"\d+%\|.+\|\s*\d+\s*/\s*\d+", normalized))
+ 
+ class GUIController(QtCore.QObject):
+     logLine = QtCore.Signal(str)
+     statusChanged = QtCore.Signal(str)
+     runningChanged = QtCore.Signal(bool)
+     progressValueChanged = QtCore.Signal(float)
+     progressLabelChanged = QtCore.Signal(str)
+     progressStatsChanged = QtCore.Signal(str)
+     progressTextChanged = QtCore.Signal(str)
+     rosterSummaryChanged = QtCore.Signal(str)
+     numGamesChanged = QtCore.Signal(int)
+     boardXChanged = QtCore.Signal(int)
+     boardYChanged = QtCore.Signal(int)
+     metricsChanged = QtCore.Signal()
+     metricsLabelChanged = QtCore.Signal(str)
++    playModelPathChanged = QtCore.Signal(str)
++    playModelLabelChanged = QtCore.Signal(str)
++    boardTextChanged = QtCore.Signal(str)
+ 
+     def __init__(self, parent=None):
+         super().__init__(parent)
+         self._process: Optional[QtCore.QProcess] = None
+         self._running = False
+         self._repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+ 
+         self._progress_value = 0.0
+         self._progress_label = "ep=0/0 (0%)"
+         self._progress_stats = "— it/s • elapsed 00:00"
+         self._progress_text = "0%"
+ 
+         self._num_games = 100
+         self._board_x = 60
+         self._board_y = 40
+ 
+         self._train_total_episodes = 0
+         self._training_samples = deque()
+         self._training_start_time = 0.0
+         self._training_last_ui_update = 0.0
+ 
+         self._available_units: list[UnitInfo] = []
+         self._player_roster: list[RosterEntry] = []
+         self._model_roster: list[RosterEntry] = []
+         self._instance_counter = 1
+ 
+         self._available_model = QtCore.QStringListModel()
+         self._player_model = QtCore.QStringListModel()
+         self._model_model = QtCore.QStringListModel()
+ 
+         self._metrics_defaults = self._build_default_metrics()
+         self._metrics_files = dict(self._metrics_defaults)
+         self._metrics_paths = self._build_metrics_paths(self._metrics_files, cache_token=self._cache_token())
+         self._metrics_mtimes: dict[str, Optional[float]] = {}
+         self._metrics_label = "По умолчанию"
+ 
++        self._play_model_path = ""
++        self._play_model_label = "Модель не выбрана"
++        self._board_text = "ASCII карта будет доступна после запуска игры."
 +
-+    def _should_show_train_log(self, line: str) -> bool:
-+        normalized = line.strip()
-+        if not normalized:
-+            return False
-+        if normalized.startswith("[GUI]"):
-+            return True
-+        if normalized.startswith("[ERROR]") or normalized.startswith("[WARN]"):
-+            return True
-+        allowed_prefixes = (
-+            "[TRAIN8] Старт",
-+            "[TRAIN] Старт",
-+            "[SELFPLAY] Старт",
-+            "[TRAIN][START]",
-+            "[DEVICE CHECK]",
-+            "[metrics] saved:",
-+        )
-+        allowed_contains = (
-+            "Training...",
-+            "Model Units:",
-+            "Enemy Units:",
-+            "Action keys:",
-+            "Generated metrics",
-+            "Forging model_train.gif",
-+            "genDisplay.makeGif:",
-+        )
-+        if normalized.startswith(allowed_prefixes):
-+            return True
-+        if any(token in normalized for token in allowed_contains):
-+            return True
-+        if normalized.startswith("Name:"):
-+            return True
-+        if normalized.startswith("[") and re.match(r"^\[\s*\d", normalized):
-+            return True
-+        if normalized == "[]":
-+            return True
-+        return False
+         self._load_available_units()
+         self._load_rosters_from_file()
+         self._refresh_models()
+         self._select_latest_metrics()
++        self._select_latest_play_model(initial=True)
+         self._update_roster_summary()
+ 
+         self._emit_status("Нажмите Train, чтобы запустить обучение.")
+ 
+     @QtCore.Property(QtCore.QObject, constant=True)
+     def availableUnitsModel(self) -> QtCore.QObject:
+         return self._available_model
+ 
+     @QtCore.Property(QtCore.QObject, constant=True)
+     def playerRosterModel(self) -> QtCore.QObject:
+         return self._player_model
+ 
+     @QtCore.Property(QtCore.QObject, constant=True)
+     def modelRosterModel(self) -> QtCore.QObject:
+         return self._model_model
+ 
+     @QtCore.Property(bool, notify=runningChanged)
+     def running(self) -> bool:
+         return self._running
+ 
+     @QtCore.Property(float, notify=progressValueChanged)
+     def progressValue(self) -> float:
+         return self._progress_value
+ 
+     @QtCore.Property(str, notify=progressLabelChanged)
+@@ -138,50 +146,66 @@ class GUIController(QtCore.QObject):
+ 
+     @QtCore.Property(str, notify=metricsChanged)
+     def metricsLossPath(self) -> str:
+         return self._metrics_paths["loss"]
+ 
+     @QtCore.Property(str, notify=metricsChanged)
+     def metricsEpLenPath(self) -> str:
+         return self._metrics_paths["epLen"]
+ 
+     @QtCore.Property(str, notify=metricsChanged)
+     def metricsWinratePath(self) -> str:
+         return self._metrics_paths["winrate"]
+ 
+     @QtCore.Property(str, notify=metricsChanged)
+     def metricsVpDiffPath(self) -> str:
+         return self._metrics_paths["vpdiff"]
+ 
+     @QtCore.Property(str, notify=metricsChanged)
+     def metricsEndReasonPath(self) -> str:
+         return self._metrics_paths["endreasons"]
+ 
+     @QtCore.Property(str, notify=metricsLabelChanged)
+     def metricsLabel(self) -> str:
+         return self._metrics_label
+ 
++    @QtCore.Property(str, notify=playModelPathChanged)
++    def playModelPath(self) -> str:
++        return self._play_model_path
 +
-     def _handle_progress_line(self, line: str) -> None:
-         current, total = self._parse_training_progress(line, self._train_total_episodes)
-         if current is None:
++    @QtCore.Property(str, notify=playModelLabelChanged)
++    def playModelLabel(self) -> str:
++        return self._play_model_label
++
++    @QtCore.Property(str, notify=boardTextChanged)
++    def boardText(self) -> str:
++        return self._board_text
++
++    @QtCore.Property(str, constant=True)
++    def modelsFolderUrl(self) -> str:
++        return self._to_file_url(os.path.join(self._repo_root, "models"))
++
+     @QtCore.Slot(int)
+     def set_num_games(self, value: int) -> None:
+         if value <= 0:
+             self._emit_status("Количество игр должно быть больше нуля.")
              return
-         self._set_progress(current, total)
+         if self._num_games != value:
+             self._num_games = value
+             self.numGamesChanged.emit(value)
+ 
+     @QtCore.Slot(int)
+     def set_board_x(self, value: int) -> None:
+         if value <= 0:
+             self._emit_status("X должен быть больше нуля.")
+             return
+         if self._board_x != value:
+             self._board_x = value
+             self.boardXChanged.emit(value)
+ 
+     @QtCore.Slot(int)
+     def set_board_y(self, value: int) -> None:
+         if value <= 0:
+             self._emit_status("Y должен быть больше нуля.")
+             return
+         if self._board_y != value:
+             self._board_y = value
+@@ -314,50 +338,117 @@ class GUIController(QtCore.QObject):
+         if not os.path.exists(path):
+             self._emit_status("Файл модели не найден. Проверьте путь.")
+             return
+         metrics_id = self._extract_metrics_id(path)
+         if not metrics_id:
+             self._emit_status("Не удалось определить ID метрик из имени файла.")
+             return
+         json_path = os.path.join(self._repo_root, "models", f"data_{metrics_id}.json")
+         if not os.path.exists(json_path):
+             self._emit_status("Файл метрик не найден в models/.")
+             self._emit_log(f"[GUI] metrics json не найден: {json_path}", level="WARN")
+             return
+         if not self._load_metrics_from_json(json_path):
+             return
+         self._metrics_label = f"Файл: {os.path.basename(path)}"
+         self.metricsLabelChanged.emit(self._metrics_label)
+         self._emit_status("Метрики обновлены.")
+ 
+     @QtCore.Slot()
+     def select_latest_metrics(self) -> None:
+         if self._select_latest_metrics():
+             self._emit_status("Подключены метрики последней модели.")
+         else:
+             self._emit_status("Метрики по умолчанию (сохранённые модели не найдены).")
+ 
++    @QtCore.Slot(str)
++    def select_play_model(self, file_url: str) -> None:
++        path = self._to_local_file(file_url)
++        if not path:
++            self._emit_status("Модель не выбрана.")
++            return
++        if not os.path.exists(path):
++            self._emit_status("Файл модели не найден. Проверьте путь.")
++            return
++        if not path.endswith(".pickle"):
++            self._emit_status("Выберите файл модели .pickle.")
++            return
++        self._set_play_model(path, source="manual")
++        self._emit_status("Модель для игры обновлена.")
++
++    @QtCore.Slot()
++    def select_latest_play_model(self) -> None:
++        if self._select_latest_play_model(initial=False):
++            self._emit_status("Выбрана последняя сохранённая модель.")
++        else:
++            self._emit_status("Сохранённые модели не найдены.")
++
++    @QtCore.Slot()
++    def play_in_terminal(self) -> None:
++        model_path = self._resolve_play_model_path()
++        if model_path == "None":
++            self._emit_status("Сохранённые модели не найдены. Запускаю базовый режим.")
++        script = os.path.join(self._repo_root, "launch_terminal_manual.sh")
++        if not os.path.exists(script):
++            self._emit_status("Не найден launch_terminal_manual.sh. Проверьте репозиторий.")
++            return
++        self._persist_rosters()
++        subprocess.Popen(
++            [script, model_path],
++            cwd=self._repo_root,
++            env=os.environ.copy(),
++            start_new_session=True,
++        )
++        self._emit_status("Запуск игры в терминале.")
++
++    @QtCore.Slot()
++    def play_in_gui(self) -> None:
++        model_path = self._resolve_play_model_path()
++        if model_path == "None":
++            self._emit_status("Сохранённые модели не найдены. Запускаю базовый режим.")
++        script = os.path.join(self._repo_root, "play.sh")
++        if not os.path.exists(script):
++            self._emit_status("Не найден play.sh. Проверьте репозиторий.")
++            return
++        self._persist_rosters()
++        env = os.environ.copy()
++        env["PLAY_NO_EXPLORATION"] = "1"
++        env["FIGHT_REPORT"] = "1"
++        subprocess.Popen(
++            [script, model_path, "True"],
++            cwd=self._repo_root,
++            env=env,
++            start_new_session=True,
++        )
++        self._emit_status("Запуск игры в GUI.")
++
++    @QtCore.Slot()
++    def refresh_board_text(self) -> None:
++        board_path = os.path.join(self._repo_root, "board.txt")
++        self._board_text = self._render_board_ascii(board_path)
++        self.boardTextChanged.emit(self._board_text)
++
+     def _set_running(self, value: bool) -> None:
+         if self._running != value:
+             self._running = value
+             self.runningChanged.emit(value)
+ 
+     def _set_progress(self, current: int, total: int) -> None:
+         if total <= 0:
+             self._progress_value = 0.0
+             self._progress_text = "0%"
+             self._progress_label = f"ep={current}/?"
+         else:
+             fraction = max(0.0, min(1.0, current / total))
+             percent = int(round(fraction * 100))
+             self._progress_value = fraction
+             self._progress_text = f"{percent}%"
+             self._progress_label = f"ep={current}/{total} ({percent}%)"
+         self.progressValueChanged.emit(self._progress_value)
+         self.progressTextChanged.emit(self._progress_text)
+         self.progressLabelChanged.emit(self._progress_label)
+ 
+     def _update_progress_stats(self, current_episode: int) -> None:
          now = time.time()
-         if now - self._training_last_ui_update >= 0.25:
-             self._training_last_ui_update = now
-             self._update_progress_stats(current)
+         if self._training_start_time <= 0:
+             return
+         self._training_samples.append((now, current_episode))
+@@ -606,50 +697,104 @@ class GUIController(QtCore.QObject):
+     def _emit_status(self, message: str) -> None:
+         self.statusChanged.emit(message)
  
-     def _parse_training_progress(self, line: str, fallback_total: int) -> tuple[Optional[int], int]:
-         tqdm_match = re.search(r"(\d+)\s*/\s*(\d+)", line)
-         if tqdm_match:
-             return int(tqdm_match.group(1)), int(tqdm_match.group(2))
-         ep_match = re.search(r"\bep=(\d+)", line)
-         if ep_match:
-             return int(ep_match.group(1)), fallback_total
-         return None, fallback_total
+     def _format_duration(self, seconds: int) -> str:
+         minutes, secs = divmod(max(0, seconds), 60)
+         hours, minutes = divmod(minutes, 60)
+         if hours > 0:
+             return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+         return f"{minutes:02d}:{secs:02d}"
  
-     def _reset_training_stats(self) -> None:
-         self._training_samples.clear()
-         now = time.time()
-         self._training_start_time = now
-         self._training_last_ui_update = now - 1
+     def _build_default_metrics(self) -> dict[str, str]:
+         base_dir = os.path.join(self._repo_root, "gui", "img")
+         return {
+             "reward": os.path.join(base_dir, "reward.png"),
+             "loss": os.path.join(base_dir, "loss.png"),
+             "epLen": os.path.join(base_dir, "epLen.png"),
+             "winrate": os.path.join(base_dir, "winrate.png"),
+             "vpdiff": os.path.join(base_dir, "vpdiff.png"),
+             "endreasons": os.path.join(base_dir, "endreasons.png"),
+         }
  
+     def _set_metrics_files(self, paths: dict[str, str]) -> None:
+         self._metrics_files = paths
+         self._refresh_metrics_paths(force=True)
+ 
++    def _set_play_model(self, path: str, source: str) -> None:
++        self._play_model_path = path
++        label_prefix = "Последняя модель" if source == "latest" else "Выбрана модель"
++        self._play_model_label = f"{label_prefix}: {os.path.basename(path)}"
++        self.playModelPathChanged.emit(self._play_model_path)
++        self.playModelLabelChanged.emit(self._play_model_label)
++
++    def _select_latest_play_model(self, initial: bool) -> bool:
++        latest_model = self._find_latest_model_file()
++        if not latest_model:
++            if initial:
++                self._play_model_path = ""
++                self._play_model_label = "Модель не найдена"
++                self.playModelPathChanged.emit(self._play_model_path)
++                self.playModelLabelChanged.emit(self._play_model_label)
++            return False
++        self._set_play_model(latest_model, source="latest")
++        return True
++
++    def _resolve_play_model_path(self) -> str:
++        if self._play_model_path and os.path.exists(self._play_model_path):
++            return self._play_model_path
++        latest = self._find_latest_model_file()
++        if latest:
++            self._set_play_model(latest, source="latest")
++            return latest
++        return "None"
++
++    def _render_board_ascii(self, board_path: str) -> str:
++        if not os.path.exists(board_path):
++            return "board.txt не найден. Запустите игру, чтобы сформировать карту."
++        try:
++            with open(board_path, "r", encoding="utf-8") as handle:
++                content = handle.read()
++        except OSError as exc:
++            return f"Не удалось прочитать board.txt: {exc}"
++        full = []
++        last = "\0"
++        for ch in content:
++            if ch.isspace():
++                continue
++            if last == "0" and ch != ",":
++                full.append("\n")
++            elif ch == "0" and last.isdigit():
++                full.append("\n")
++            elif ch.isdigit() and ch not in {"0", "3"}:
++                full.append(ch)
++            elif ch.isdigit() and ch == "3":
++                full.append("0 ")
++            else:
++                full.append("_ ")
++            last = ch
++        return "".join(full)
++
+     def _refresh_metrics_paths(self, force: bool = False) -> None:
+         changed = False
+         for key, path in self._metrics_files.items():
+             mtime = None
+             if os.path.exists(path):
+                 try:
+                     mtime = os.path.getmtime(path)
+                 except OSError:
+                     mtime = None
+             if force or self._metrics_mtimes.get(key) != mtime:
+                 self._metrics_mtimes[key] = mtime
+                 changed = True
+         if not changed:
+             return
+         self._metrics_paths = self._build_metrics_paths(self._metrics_files, cache_token=self._cache_token())
+         self.metricsChanged.emit()
+ 
+     def _build_metrics_paths(self, files: dict[str, str], cache_token: str) -> dict[str, str]:
+         return {key: f"{self._to_file_url(path)}?v={cache_token}" for key, path in files.items()}
+ 
+     def _cache_token(self) -> str:
+         return str(int(time.time() * 1000))
+ 
+     def _resolve_metric_path(self, raw_path: Optional[str], fallback: str) -> str:
+         if not raw_path:
+diff --git a/gui_qt/qml/Main.qml b/gui_qt/qml/Main.qml
+index 9d98f5d73c66c6016e3b255c993c1bc7d739c139..d0854ccc5781086e2bf2172f7131154eb2f5067a 100644
+--- a/gui_qt/qml/Main.qml
++++ b/gui_qt/qml/Main.qml
+@@ -537,90 +537,191 @@ ApplicationWindow {
+                                         fillMode: Image.PreserveAspectFit
+                                         smooth: true
+                                     }
+ 
+                                     Text {
+                                         anchors.centerIn: parent
+                                         text: "Нет данных по причинам завершения."
+                                         color: "#777777"
+                                         visible: endReasonChart.status !== Image.Ready
+                                     }
+                                 }
+ 
+                                 Label {
+                                     text: "Почему эпизоды завершались."
+                                     wrapMode: Text.WordWrap
+                                 }
+                             }
+                         }
+                     }
+                 }
+             }
+ 
+             Item {
+                 Layout.fillWidth: true
+                 Layout.fillHeight: true
+-                Label {
+-                    anchors.centerIn: parent
+-                    text: "Скоро"
++                Item {
++                    anchors.fill: parent
++                    anchors.margins: 16
++
++                    ColumnLayout {
++                        anchors.fill: parent
++                        spacing: 16
++
++                        Text {
++                            text: "Играть против модели"
++                            font.pixelSize: 20
++                            font.bold: true
++                        }
++
++                        GroupBox {
++                            title: "Модель"
++                            Layout.fillWidth: true
++
++                            ColumnLayout {
++                                spacing: 10
++                                anchors.fill: parent
++
++                                RowLayout {
++                                    spacing: 8
++                                    Label { text: "Выбрать модель:" }
++                                    Button {
++                                        text: "Выбрать"
++                                        onClicked: playModelDialog.open()
++                                    }
++                                    Button {
++                                        text: "Последняя"
++                                        onClicked: controller.select_latest_play_model()
++                                    }
++                                }
++
++                                Label {
++                                    text: controller.playModelLabel
++                                    wrapMode: Text.WordWrap
++                                }
++                            }
++                        }
++
++                        GroupBox {
++                            title: "Запуск"
++                            Layout.fillWidth: true
++
++                            RowLayout {
++                                spacing: 12
++                                anchors.fill: parent
++
++                                Button {
++                                    text: "Играть в терминале"
++                                    onClicked: controller.play_in_terminal()
++                                }
++                                Button {
++                                    text: "Играть в GUI"
++                                    onClicked: controller.play_in_gui()
++                                }
++                                Button {
++                                    text: "Показать ASCII карту"
++                                    onClicked: asciiBoardDialog.open()
++                                }
++                            }
++                        }
++                    }
+                 }
+             }
+ 
+             Item {
+                 Layout.fillWidth: true
+                 Layout.fillHeight: true
+                 Label {
+                     anchors.centerIn: parent
+                     text: "Скоро"
+                 }
+             }
+ 
+             Item {
+                 Layout.fillWidth: true
+                 Layout.fillHeight: true
+                 Label {
+                     anchors.centerIn: parent
+                     text: "Скоро"
+                 }
+             }
+         }
+     }
+ 
+     Dialog {
+         id: clearCacheDialog
+         title: "Очистка кэша"
+         modal: true
+         standardButtons: Dialog.Ok | Dialog.Cancel
+         implicitWidth: 420
+         onAccepted: controller.clear_model_cache()
+ 
+         contentItem: Text {
+             text: "Вы действительно хотите удалить все сохранённые модели и метрики?"
+             wrapMode: Text.WordWrap
+         }
+     }
+ 
++    Platform.FileDialog {
++        id: playModelDialog
++        title: "Выбрать модель"
++        folder: controller.modelsFolderUrl
++        nameFilters: ["Pickle Files (*.pickle)", "All Files (*)"]
++        onAccepted: controller.select_play_model(playModelDialog.fileUrl)
++    }
++
++    Dialog {
++        id: asciiBoardDialog
++        title: "ASCII карта"
++        modal: true
++        standardButtons: Dialog.Close
++        width: 720
++        height: 520
++        onOpened: controller.refresh_board_text()
++
++        ColumnLayout {
++            anchors.fill: parent
++            spacing: 8
++
++            TextArea {
++                text: controller.boardText
++                readOnly: true
++                wrapMode: TextEdit.NoWrap
++                font.family: "monospace"
++                Layout.fillWidth: true
++                Layout.fillHeight: true
++            }
++        }
++
++        Timer {
++            interval: 1000
++            repeat: true
++            running: asciiBoardDialog.visible
++            onTriggered: controller.refresh_board_text()
++        }
++    }
++
+     Dialog {
+         id: armyViewerDialog
+         title: "Army Viewer"
+         modal: true
+         standardButtons: Dialog.Close
+         width: 900
+         height: 500
+ 
+         ColumnLayout {
+             anchors.fill: parent
+             spacing: 12
+ 
+             RowLayout {
+                 spacing: 12
+                 Layout.fillWidth: true
+                 Layout.fillHeight: true
+ 
+                 GroupBox {
+                     title: "Доступные юниты (Necrons)"
+                     Layout.fillWidth: true
+                     Layout.fillHeight: true
+ 
+                     ColumnLayout {
+                         anchors.fill: parent
+                         spacing: 8
 

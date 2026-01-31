@@ -559,9 +559,71 @@ ApplicationWindow {
             Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Label {
-                    anchors.centerIn: parent
-                    text: "Скоро"
+                Item {
+                    anchors.fill: parent
+                    anchors.margins: 16
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 16
+
+                        Text {
+                            text: "Играть против модели"
+                            font.pixelSize: 20
+                            font.bold: true
+                        }
+
+                        GroupBox {
+                            title: "Модель"
+                            Layout.fillWidth: true
+
+                            ColumnLayout {
+                                spacing: 10
+                                anchors.fill: parent
+
+                                RowLayout {
+                                    spacing: 8
+                                    Label { text: "Выбрать модель:" }
+                                    Button {
+                                        text: "Выбрать"
+                                        onClicked: playModelDialog.open()
+                                    }
+                                    Button {
+                                        text: "Последняя"
+                                        onClicked: controller.select_latest_play_model()
+                                    }
+                                }
+
+                                Label {
+                                    text: controller.playModelLabel
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+                        }
+
+                        GroupBox {
+                            title: "Запуск"
+                            Layout.fillWidth: true
+
+                            RowLayout {
+                                spacing: 12
+                                anchors.fill: parent
+
+                                Button {
+                                    text: "Играть в терминале"
+                                    onClicked: controller.play_in_terminal()
+                                }
+                                Button {
+                                    text: "Играть в GUI"
+                                    onClicked: controller.play_in_gui()
+                                }
+                                Button {
+                                    text: "Показать ASCII карту"
+                                    onClicked: asciiBoardDialog.open()
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -596,6 +658,45 @@ ApplicationWindow {
         contentItem: Text {
             text: "Вы действительно хотите удалить все сохранённые модели и метрики?"
             wrapMode: Text.WordWrap
+        }
+    }
+
+    Platform.FileDialog {
+        id: playModelDialog
+        title: "Выбрать модель"
+        folder: controller.modelsFolderUrl
+        nameFilters: ["Pickle Files (*.pickle)", "All Files (*)"]
+        onAccepted: controller.select_play_model(playModelDialog.fileUrl)
+    }
+
+    Dialog {
+        id: asciiBoardDialog
+        title: "ASCII карта"
+        modal: true
+        standardButtons: Dialog.Close
+        width: 720
+        height: 520
+        onOpened: controller.refresh_board_text()
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 8
+
+            TextArea {
+                text: controller.boardText
+                readOnly: true
+                wrapMode: TextEdit.NoWrap
+                font.family: "monospace"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+            }
+        }
+
+        Timer {
+            interval: 1000
+            repeat: true
+            running: asciiBoardDialog.visible
+            onTriggered: controller.refresh_board_text()
         }
     }
 
