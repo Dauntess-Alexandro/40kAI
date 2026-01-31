@@ -669,7 +669,14 @@ info = primary_ctx["info"]
 current_time = datetime.datetime.now()
 date = str(current_time.second)+"-"+str(current_time.microsecond)
 name = "M:"+model[0].showUnitData()["Army"]+"_vs_"+"P:"+enemy[0].showUnitData()["Army"]
-fold =  "models/"+name
+def _sanitize_fs_name(value):
+    forbidden = '<>:"/\\\\|?*'
+    for ch in forbidden:
+        value = value.replace(ch, "_")
+    return value
+
+safe_name = _sanitize_fs_name(name)
+fold = "models/" + safe_name
 fileName = fold+"/model-"+date+".pickle"
 randNum = np.random.randint(0, 10000000)
 metrics = metrics(fold, randNum, date)
@@ -1091,15 +1098,14 @@ save_extra_metrics(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
 metrics.createJson()
 print("Generated metrics")
 
-if (os.path.exists("models/{}".format(name)) == False):
-    os.system("mkdir models/{}".format(name))
+os.makedirs(fold, exist_ok=True)
 
 torch.save({
     "policy_net": policy_net.state_dict(),
     "target_net": target_net.state_dict(),
     "net_type": NET_TYPE,
     'optimizer': optimizer.state_dict(),}
-    , ("models/{}/model-{}.pth".format(name, date)))
+    , ("models/{}/model-{}.pth".format(safe_name, date)))
 
 toSave = [primary_ctx["env"], primary_ctx["model"], primary_ctx["enemy"]]
 
