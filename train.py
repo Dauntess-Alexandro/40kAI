@@ -653,7 +653,10 @@ for i in enemy:
     inText.append("Name: {}, Army Type: {}".format(i.showUnitData()["Name"], i.showUnitData()["Army"]))
 inText.append("Number of Lifetimes ran: {}\n".format(totLifeT))
 
-pbar = tqdm(total=totLifeT)
+pbar_mininterval = float(os.getenv("PBAR_MININTERVAL", "1.0"))
+pbar_update_every = max(1, int(os.getenv("PBAR_UPDATE_EVERY", "1")))
+pbar = tqdm(total=totLifeT, mininterval=pbar_mininterval)
+pbar_pending = 0
 
 for ctx in env_contexts:
     ctx["state"], ctx["info"] = ctx["env"].reset(
@@ -815,7 +818,10 @@ while end is False:
                     "Проверьте reset/условия завершения (нулевое здоровье, лимиты хода, "
                     "ошибки расстановки)."
                 )
-            pbar.update(1)
+            pbar_pending += 1
+            if pbar_pending >= pbar_update_every:
+                pbar.update(pbar_pending)
+                pbar_pending = 0
             metrics.updateRew(sum(ctx["rew_arr"]) / len(ctx["rew_arr"]))
             metrics.updateEpLen(ctx["ep_len"])
             # ===== extra metrics (winrate / VP diff / end reason) =====
@@ -1071,6 +1077,9 @@ while end is False:
     # =========================
 
     global_step += vec_env_count
+
+if pbar_pending:
+    pbar.update(pbar_pending)
 
 for ctx in env_contexts:
     ctx["env"].close()
