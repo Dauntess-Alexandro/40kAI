@@ -8,6 +8,12 @@ def makeGif(numOfLife, name="", Type = "train", trunc = False):
     images = []
 
     savePath = "display/"
+    if not os.path.isdir(savePath):
+        os.makedirs(savePath, exist_ok=True)
+        print(
+            "genDisplay.makeGif: папка display/ не найдена, создана автоматически. "
+            "Что делать: убедитесь, что рендер включён и кадры записываются."
+        )
 
     files = os.listdir(savePath)
     files = [os.path.join(savePath, f) for f in files]

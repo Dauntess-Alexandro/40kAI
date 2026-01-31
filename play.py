@@ -115,7 +115,7 @@ post_deploy_setup(log_fn=log_fn)
 env.attacker_side = attacker_side
 env.defender_side = defender_side
 
-state, info = env.reset(m=model, e=enemy)
+state, info = env.reset(options={"m": model, "e": enemy})
 if verbose:
     squads_for_actions_count = len(model)
     _log(f"[action_space] squads_for_actions_count={squads_for_actions_count}")
@@ -160,9 +160,9 @@ isdone = False
 i = 0
 
 if playInGUI == True:
-    env.reset(m=model, e=enemy, playType=playInGUI, Type="big", trunc=True)
+    env.reset(options={"m": model, "e": enemy, "playType": playInGUI, "Type": "big", "trunc": True})
 else:
-    env.reset(m=model, e=enemy, playType=playInGUI, Type="big", trunc=False)
+    env.reset(options={"m": model, "e": enemy, "playType": playInGUI, "Type": "big", "trunc": False})
 
 env.io = io
 

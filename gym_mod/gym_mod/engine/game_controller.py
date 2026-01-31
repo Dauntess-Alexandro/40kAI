@@ -155,7 +155,9 @@ class GameController:
             env.attacker_side = attacker_side
             env.defender_side = defender_side
 
-            state, info = env.reset(m=model, e=enemy, playType=True, Type="big", trunc=True)
+            state, info = env.reset(
+                options={"m": model, "e": enemy, "playType": True, "Type": "big", "trunc": True}
+            )
 
             n_actions = [5, 2, len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
             for _ in range(len(model)):

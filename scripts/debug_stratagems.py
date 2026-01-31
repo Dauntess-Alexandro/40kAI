@@ -32,7 +32,7 @@ def main(path):
     with open(path, "rb") as f:
         env, model, enemy = pickle.load(f)
 
-    env.reset(m=model, e=enemy, trunc=False)
+    env.reset(options={"m": model, "e": enemy, "trunc": False})
     env.modelCP = 2
     env.enemyCP = 2
 

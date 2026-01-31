@@ -115,7 +115,9 @@ def run_episode(env, model_units, enemy_units, policy_net, epsilon, device):
     env_unwrapped.attacker_side = attacker_side
     env_unwrapped.defender_side = defender_side
 
-    state, info = env.reset(m=model_units, e=enemy_units, Type="big", trunc=True)
+    state, info = env.reset(
+        options={"m": model_units, "e": enemy_units, "Type": "big", "trunc": True}
+    )
 
     done = False
     while not done:
@@ -193,7 +195,9 @@ def main():
     env_unwrapped.attacker_side = attacker_side
     env_unwrapped.defender_side = defender_side
 
-    state, info = env.reset(m=model_units, e=enemy_units, Type="big", trunc=True)
+    state, info = env.reset(
+        options={"m": model_units, "e": enemy_units, "Type": "big", "trunc": True}
+    )
     n_actions = [5, 2, len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
     for _ in range(len(model_units)):
         n_actions.append(12)

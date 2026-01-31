@@ -514,7 +514,7 @@ for env_idx in range(vec_env_count):
     env.attacker_side = attacker_side
     env.defender_side = defender_side
 
-    state, info = env.reset(m=model, e=enemy, trunc=True)
+    state, info = env.reset(options={"m": model, "e": enemy, "trunc": True})
     env_contexts.append(
         {
             "env": env,
@@ -656,7 +656,9 @@ inText.append("Number of Lifetimes ran: {}\n".format(totLifeT))
 pbar = tqdm(total=totLifeT)
 
 for ctx in env_contexts:
-    ctx["state"], ctx["info"] = ctx["env"].reset(m=ctx["model"], e=ctx["enemy"], Type="big", trunc=True)
+    ctx["state"], ctx["info"] = ctx["env"].reset(
+        options={"m": ctx["model"], "e": ctx["enemy"], "Type": "big", "trunc": True}
+    )
     ctx["ep_len"] = 0
     ctx["rew_arr"] = []
     ctx["n_step_buffer"] = collections.deque(maxlen=N_STEP)
@@ -667,7 +669,14 @@ info = primary_ctx["info"]
 current_time = datetime.datetime.now()
 date = str(current_time.second)+"-"+str(current_time.microsecond)
 name = "M:"+model[0].showUnitData()["Army"]+"_vs_"+"P:"+enemy[0].showUnitData()["Army"]
-fold =  "models/"+name
+def _sanitize_fs_name(value):
+    forbidden = '<>:"/\\\\|?*'
+    for ch in forbidden:
+        value = value.replace(ch, "_")
+    return value
+
+safe_name = _sanitize_fs_name(name)
+fold = "models/" + safe_name
 fileName = fold+"/model-"+date+".pickle"
 randNum = np.random.randint(0, 10000000)
 metrics = metrics(fold, randNum, date)
@@ -954,7 +963,9 @@ while end is False:
             ctx["env"].attacker_side = attacker_side
             ctx["env"].defender_side = defender_side
 
-            ctx["state"], ctx["info"] = ctx["env"].reset(m=ctx["model"], e=ctx["enemy"], Type="small", trunc=True)
+            ctx["state"], ctx["info"] = ctx["env"].reset(
+                options={"m": ctx["model"], "e": ctx["enemy"], "Type": "small", "trunc": True}
+            )
             ctx["ep_len"] = 0
             ctx["rew_arr"] = []
 
@@ -1087,15 +1098,14 @@ save_extra_metrics(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
 metrics.createJson()
 print("Generated metrics")
 
-if (os.path.exists("models/{}".format(name)) == False):
-    os.system("mkdir models/{}".format(name))
+os.makedirs(fold, exist_ok=True)
 
 torch.save({
     "policy_net": policy_net.state_dict(),
     "target_net": target_net.state_dict(),
     "net_type": NET_TYPE,
     'optimizer': optimizer.state_dict(),}
-    , ("models/{}/model-{}.pth".format(name, date)))
+    , ("models/{}/model-{}.pth".format(safe_name, date)))
 
 toSave = [primary_ctx["env"], primary_ctx["model"], primary_ctx["enemy"]]
 

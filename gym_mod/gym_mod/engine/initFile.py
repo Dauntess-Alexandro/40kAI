@@ -203,7 +203,15 @@ def getEnemyW():
     return data["enemyWeapons"]
 
 def delFile():
-    os.system("rm gui/data.json")
+    data_path = os.path.abspath("gui/data.json")
+    try:
+        if os.path.isfile(data_path):
+            os.remove(data_path)
+    except OSError as exc:
+        print(
+            f"[ERROR] Не удалось удалить gui/data.json: {exc}. "
+            "Что делать: закройте приложения, которые держат файл, и попробуйте снова."
+        )
 
 if __name__ == "__main__":
     model, enemy, model_counts, enemy_counts, model_instance_ids, enemy_instance_ids = addingUnits()
