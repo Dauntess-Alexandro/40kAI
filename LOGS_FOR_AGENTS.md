@@ -1,478 +1,389 @@
-2026-02-01 15:32:25 | Roll-off Attacker/Defender: enemy=1 model=5 -> attacker=model
-2026-02-01 15:32:25 | Юниты: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]
-2026-02-01 15:32:25 | [DEPLOY] Order: model first, alternating
-2026-02-01 15:32:25 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (21,2)
-2026-02-01 15:32:25 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (37,33)
-2026-02-01 15:32:25 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (30,0)
-2026-02-01 15:32:25 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (7,38)
-2026-02-01 15:32:25 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
-2026-02-01 15:32:25 | [MODEL] Архитектура сети: dueling (источник: net_type)
-2026-02-01 15:32:25 | 
+2026-02-01 16:03:52 | Save цели: 4+ (invul: нет)
+2026-02-01 16:03:52 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+2026-02-01 16:03:52 | Правило: Lethal Hits (крит-хиты авто-ранят)
+2026-02-01 16:03:52 | Правило: Overwatch: попадания только на 6+
+2026-02-01 16:03:52 | Hit rolls:    [5, 3, 6, 3, 1, 3, 5, 5, 4, 6, 4, 4, 4, 2, 5, 3, 6, 3, 3, 1]  -> hits: 11 (crits: 3)
+2026-02-01 16:03:52 | Wound rolls:  [5, 6, 1]  (цель 4+) -> rolled wounds: 2 + auto(w/LETHAL): 3 = 5
+2026-02-01 16:03:52 | 
+2026-02-01 16:03:52 | ✅ Итог по движку: прошло урона = 1.0
+2026-02-01 16:03:52 | 📌 -------------------------
+2026-02-01 16:03:52 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-02-01 16:03:52 | 
+2026-02-01 16:03:52 | 🎲 Бросок на попадание (to hit): 12D6
+2026-02-01 16:03:52 | 
+2026-02-01 16:03:52 | 🎲 Бросок на ранение (to wound): 6D6
+2026-02-01 16:03:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-02-01 16:03:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-02-01 16:03:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-02-01 16:03:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-02-01 16:03:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-02-01 16:03:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-02-01 16:03:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-02-01 16:03:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-02-01 16:03:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-02-01 16:03:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-02-01 16:03:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-02-01 16:03:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-02-01 16:03:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-02-01 16:03:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-02-01 16:03:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-02-01 16:03:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-02-01 16:03:53 | [MODEL] pickle=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-14-207746.pickle
+2026-02-01 16:03:53 | [MODEL] checkpoint=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-14-207746.pth
+2026-02-01 16:03:58 | Roll-off Attacker/Defender: enemy=1 model=2 -> attacker=model
+2026-02-01 16:03:58 | Юниты: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]
+2026-02-01 16:03:58 | [DEPLOY] Order: model first, alternating
+2026-02-01 16:03:58 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (33,9)
+2026-02-01 16:03:58 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (45,36)
+2026-02-01 16:03:58 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (44,1)
+2026-02-01 16:03:58 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (36,35)
+2026-02-01 16:03:58 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
+2026-02-01 16:03:58 | [MODEL] Архитектура сети: dueling (источник: net_type)
+2026-02-01 16:03:58 | 
 Инструкции:
 Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
 Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
 
-2026-02-01 15:32:25 | {'model health': [10, 10], 'player health': [10, 10], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
-2026-02-01 15:32:25 | Здоровье MODEL: [10, 10], здоровье PLAYER: [10, 10]
+2026-02-01 16:03:58 | {'model health': [10, 10], 'player health': [10, 10], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+2026-02-01 16:03:58 | Здоровье MODEL: [10, 10], здоровье PLAYER: [10, 10]
 CP MODEL: 0, CP PLAYER: 0
 VP MODEL: 0, VP PLAYER: 0
 
-2026-02-01 15:32:27 | === БОЕВОЙ РАУНД 1 ===
-2026-02-01 15:32:27 | --- ХОД PLAYER ---
-2026-02-01 15:32:27 | --- ФАЗА КОМАНДОВАНИЯ ---
-2026-02-01 15:32:27 | [ENEMY] Only War: end of Command phase -> controlled=1, gained=0, VP: 0 -> 0, objectives=[0]
-2026-02-01 15:32:27 | --- ФАЗА ДВИЖЕНИЯ ---
-2026-02-01 15:32:35 | Бросок 1D6 на Advance...
-2026-02-01 15:32:36 | Бросок: 6
-2026-02-01 15:32:37 | [MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
-2026-02-01 15:32:37 | --- ФАЗА СТРЕЛЬБЫ ---
-2026-02-01 15:32:37 | Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
-2026-02-01 15:32:37 | --- ФАЗА ЧАРДЖА ---
-2026-02-01 15:32:37 | Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
-2026-02-01 15:32:37 | Нет доступных целей для чарджа.
-2026-02-01 15:32:37 | --- ФАЗА БОЯ ---
-2026-02-01 15:32:37 | Ошибка игры: 'TimeLimit' object has no attribute 'updateBoard'. Место: запуск GameController. Проверьте путь к модели и наличие файлов .pickle/.pth.
-2026-02-01 15:36:44 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
-2026-02-01 15:36:44 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
-2026-02-01 15:36:44 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
-2026-02-01 15:36:44 | [MODEL] pickle=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-55-100768.pickle
-2026-02-01 15:36:44 | [MODEL] checkpoint=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-55-100768.pth
-2026-02-01 15:36:44 | Roll-off Attacker/Defender: enemy=1 model=5 -> attacker=model
-2026-02-01 15:36:44 | Юниты: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]
-2026-02-01 15:36:44 | [DEPLOY] Order: model first, alternating
-2026-02-01 15:36:44 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (21,2)
-2026-02-01 15:36:44 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (37,33)
-2026-02-01 15:36:44 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (30,0)
-2026-02-01 15:36:44 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (7,38)
-2026-02-01 15:36:44 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
-2026-02-01 15:36:44 | [MODEL] Архитектура сети: dueling (источник: net_type)
-2026-02-01 15:36:44 | 
-2026-02-01 15:36:44 | Инструкции:
-2026-02-01 15:36:44 | Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
-2026-02-01 15:36:44 | Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
-2026-02-01 15:36:44 | {'model health': [10, 10], 'player health': [10, 10], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
-2026-02-01 15:36:44 | Здоровье MODEL: [10, 10], здоровье PLAYER: [10, 10]
-2026-02-01 15:36:44 | CP MODEL: 0, CP PLAYER: 0
-2026-02-01 15:36:44 | VP MODEL: 0, VP PLAYER: 0
-2026-02-01 15:36:44 | === БОЕВОЙ РАУНД 1 ===
-2026-02-01 15:36:44 | --- ХОД PLAYER ---
-2026-02-01 15:36:44 | --- ФАЗА КОМАНДОВАНИЯ ---
-2026-02-01 15:36:44 | [ENEMY] Only War: end of Command phase -> controlled=1, gained=0, VP: 0 -> 0, objectives=[0]
-2026-02-01 15:36:44 | --- ФАЗА ДВИЖЕНИЯ ---
-2026-02-01 15:36:44 | Бросок 1D6 на Advance...
-2026-02-01 15:36:44 | Бросок: 6
-2026-02-01 15:36:44 | [MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
-2026-02-01 15:36:44 | [MODEL] pickle=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-55-100768.pickle
-2026-02-01 15:36:44 | [MODEL] checkpoint=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-55-100768.pth
-2026-02-01 15:36:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
-2026-02-01 15:36:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
-2026-02-01 15:36:52 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
-2026-02-01 15:36:52 | [MODEL] pickle=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-55-100768.pickle
-2026-02-01 15:36:52 | [MODEL] checkpoint=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-55-100768.pth
-2026-02-01 15:36:52 | Roll-off Attacker/Defender: enemy=1 model=5 -> attacker=model
-2026-02-01 15:36:52 | Юниты: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]
-2026-02-01 15:36:52 | [DEPLOY] Order: model first, alternating
-2026-02-01 15:36:52 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (21,2)
-2026-02-01 15:36:52 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (37,33)
-2026-02-01 15:36:52 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (30,0)
-2026-02-01 15:36:52 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (7,38)
-2026-02-01 15:36:52 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
-2026-02-01 15:36:52 | [MODEL] Архитектура сети: dueling (источник: net_type)
-2026-02-01 15:36:52 | 
-2026-02-01 15:36:52 | Инструкции:
-2026-02-01 15:36:52 | Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
-2026-02-01 15:36:52 | Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
-2026-02-01 15:36:52 | {'model health': [10, 10], 'player health': [10, 10], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
-2026-02-01 15:36:52 | Здоровье MODEL: [10, 10], здоровье PLAYER: [10, 10]
-2026-02-01 15:36:52 | CP MODEL: 0, CP PLAYER: 0
-2026-02-01 15:36:52 | VP MODEL: 0, VP PLAYER: 0
-2026-02-01 15:36:52 | === БОЕВОЙ РАУНД 1 ===
-2026-02-01 15:36:52 | --- ХОД PLAYER ---
-2026-02-01 15:36:52 | --- ФАЗА КОМАНДОВАНИЯ ---
-2026-02-01 15:36:52 | [ENEMY] Only War: end of Command phase -> controlled=1, gained=0, VP: 0 -> 0, objectives=[0]
-2026-02-01 15:36:52 | --- ФАЗА ДВИЖЕНИЯ ---
-2026-02-01 15:36:52 | Бросок 1D6 на Advance...
-2026-02-01 15:36:52 | Бросок: 6
-2026-02-01 15:36:52 | [MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
-2026-02-01 15:36:52 | [MODEL] pickle=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-55-100768.pickle
-2026-02-01 15:36:52 | [MODEL] checkpoint=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-55-100768.pth
-2026-02-01 15:36:58 | Roll-off Attacker/Defender: enemy=1 model=5 -> attacker=model
-2026-02-01 15:36:58 | Юниты: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]
-2026-02-01 15:36:58 | [DEPLOY] Order: model first, alternating
-2026-02-01 15:36:58 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (46,4)
-2026-02-01 15:36:58 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (40,37)
-2026-02-01 15:36:58 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (57,7)
-2026-02-01 15:36:58 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (28,33)
-2026-02-01 15:36:58 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
-2026-02-01 15:36:58 | [MODEL] Архитектура сети: dueling (источник: net_type)
-2026-02-01 15:36:58 | 
-Инструкции:
-Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
-Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
-
-2026-02-01 15:36:58 | {'model health': [10, 10], 'player health': [10, 10], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
-2026-02-01 15:36:58 | Здоровье MODEL: [10, 10], здоровье PLAYER: [10, 10]
-CP MODEL: 0, CP PLAYER: 0
-VP MODEL: 0, VP PLAYER: 0
-
-2026-02-01 15:36:59 | === БОЕВОЙ РАУНД 1 ===
-2026-02-01 15:36:59 | --- ХОД PLAYER ---
-2026-02-01 15:36:59 | --- ФАЗА КОМАНДОВАНИЯ ---
-2026-02-01 15:36:59 | [ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
-2026-02-01 15:36:59 | --- ФАЗА ДВИЖЕНИЯ ---
-2026-02-01 15:37:03 | Бросок 1D6 на Advance...
-2026-02-01 15:37:04 | Бросок: 1
-2026-02-01 15:37:06 | [MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
-2026-02-01 15:37:16 | Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=8.94427190999916->9.433981132056603
-2026-02-01 15:37:16 | [MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
-2026-02-01 15:37:16 | --- ФАЗА СТРЕЛЬБЫ ---
-2026-02-01 15:37:16 | Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
-2026-02-01 15:37:16 | --- ФАЗА ЧАРДЖА ---
-2026-02-01 15:37:16 | Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
-2026-02-01 15:37:16 | Нет доступных целей для чарджа.
-2026-02-01 15:37:16 | --- ФАЗА БОЯ ---
-2026-02-01 15:37:16 | --- ХОД MODEL ---
-2026-02-01 15:37:16 | --- ФАЗА КОМАНДОВАНИЯ ---
-2026-02-01 15:37:16 | --- ФАЗА КОМАНДОВАНИЯ ---
-2026-02-01 15:37:16 | [MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
-2026-02-01 15:37:16 | --- ФАЗА ДВИЖЕНИЯ ---
-2026-02-01 15:37:16 | --- ФАЗА ДВИЖЕНИЯ ---
-2026-02-01 15:37:16 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (46, 4). Выбор: left, advance=нет, distance=1
-2026-02-01 15:37:16 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (46, 3)
-2026-02-01 15:37:16 | [PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
-2026-02-01 15:37:16 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (57, 7). Выбор: left, advance=да, бросок=6, макс=11, distance=7
-2026-02-01 15:37:16 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (57, 0)
-2026-02-01 15:37:16 | [PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
-2026-02-01 15:37:16 | --- ФАЗА СТРЕЛЬБЫ ---
-2026-02-01 15:37:16 | --- ФАЗА СТРЕЛЬБЫ ---
-2026-02-01 15:37:16 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.
-2026-02-01 15:37:16 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
-2026-02-01 15:37:16 | --- ФАЗА ЧАРДЖА ---
-2026-02-01 15:37:16 | --- ФАЗА ЧАРДЖА ---
-2026-02-01 15:37:16 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
-2026-02-01 15:37:16 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
-2026-02-01 15:37:16 | [MODEL] Чардж: нет доступных целей
-2026-02-01 15:37:16 | --- ФАЗА БОЯ ---
-2026-02-01 15:37:16 | --- ФАЗА БОЯ ---
-2026-02-01 15:37:16 | [MODEL] Ближний бой: нет доступных атак
-2026-02-01 15:37:16 | Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=8.94427190999916->9.433981132056603
-2026-02-01 15:37:16 | === КОНЕЦ БОЕВОГО РАУНДА 1 ===
-2026-02-01 15:37:16 | Итерация 0 завершена с наградой tensor([-0.0500], device='cuda:0'), здоровье игрока [10.0, 10.0], здоровье модели [10.0, 10.0]
-2026-02-01 15:37:16 | {'model health': [10.0, 10.0], 'player health': [10.0, 10.0], 'modelCP': 2, 'playerCP': 2, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
-2026-02-01 15:37:16 | Здоровье MODEL: [10.0, 10.0], здоровье PLAYER: [10.0, 10.0]
+2026-02-01 16:04:02 | === БОЕВОЙ РАУНД 1 ===
+2026-02-01 16:04:02 | --- ХОД PLAYER ---
+2026-02-01 16:04:02 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-02-01 16:04:02 | [ENEMY] Only War: end of Command phase -> controlled=1, gained=0, VP: 0 -> 0, objectives=[0]
+2026-02-01 16:04:02 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-02-01 16:04:12 | [MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+2026-02-01 16:04:18 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=0)
+2026-02-01 16:04:18 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=1)
+2026-02-01 16:04:18 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)
+2026-02-01 16:04:18 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)
+2026-02-01 16:04:18 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=0)
+2026-02-01 16:04:18 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=1)
+2026-02-01 16:04:18 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)
+2026-02-01 16:04:18 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)
+2026-02-01 16:04:18 | Reward (VP/объекты, движение): hold=-4.000, proximity=0.000, total=-4.000
+2026-02-01 16:04:18 | Reward (шаг): движение delta=-4.000
+2026-02-01 16:04:18 | Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=5.0990195135927845->5.0990195135927845
+2026-02-01 16:04:18 | [MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+2026-02-01 16:04:18 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-02-01 16:04:18 | --- ФАЗА ЧАРДЖА ---
+2026-02-01 16:04:18 | Нет доступных целей для чарджа.
+2026-02-01 16:04:18 | --- ФАЗА БОЯ ---
+2026-02-01 16:04:18 | --- ХОД MODEL ---
+2026-02-01 16:04:18 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-02-01 16:04:18 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-02-01 16:04:18 | [MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+2026-02-01 16:04:18 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-02-01 16:04:18 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-02-01 16:04:18 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=0)
+2026-02-01 16:04:18 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=1)
+2026-02-01 16:04:18 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)
+2026-02-01 16:04:18 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)
+2026-02-01 16:04:18 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (33, 9). Выбор: none, advance=нет, distance=0
+2026-02-01 16:04:18 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Движение пропущено (no move). Позиция после: (33, 9)
+2026-02-01 16:04:18 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=0)
+2026-02-01 16:04:18 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=1)
+2026-02-01 16:04:18 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)
+2026-02-01 16:04:18 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)
+2026-02-01 16:04:18 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (44, 1). Выбор: none, advance=нет, distance=0
+2026-02-01 16:04:18 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Движение пропущено (no move). Позиция после: (44, 1)
+2026-02-01 16:04:18 | Reward (VP/объекты, движение): hold=-4.000, proximity=0.000, total=-4.000
+2026-02-01 16:04:18 | Reward (шаг): движение delta=-4.000
+2026-02-01 16:04:18 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-02-01 16:04:18 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-02-01 16:04:18 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.
+2026-02-01 16:04:18 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.
+2026-02-01 16:04:18 | --- ФАЗА ЧАРДЖА ---
+2026-02-01 16:04:18 | --- ФАЗА ЧАРДЖА ---
+2026-02-01 16:04:18 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+2026-02-01 16:04:18 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+2026-02-01 16:04:18 | [MODEL] Чардж: нет доступных целей
+2026-02-01 16:04:18 | --- ФАЗА БОЯ ---
+2026-02-01 16:04:18 | --- ФАЗА БОЯ ---
+2026-02-01 16:04:18 | [MODEL] Ближний бой: нет доступных атак
+2026-02-01 16:04:18 | Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=5.0990195135927845->5.0990195135927845
+2026-02-01 16:04:18 | === КОНЕЦ БОЕВОГО РАУНДА 1 ===
+2026-02-01 16:04:18 | Итерация 0 завершена с наградой tensor([-4.0500], device='cuda:0'), здоровье игрока [10.0, 10.0], здоровье модели [10.0, 10.0]
+2026-02-01 16:04:18 | {'model health': [10.0, 10.0], 'player health': [10.0, 10.0], 'modelCP': 2, 'playerCP': 2, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+2026-02-01 16:04:18 | Здоровье MODEL: [10.0, 10.0], здоровье PLAYER: [10.0, 10.0]
 CP MODEL: 2, CP PLAYER: 2
 VP MODEL: 0, VP PLAYER: 0
 
-2026-02-01 15:37:40 | === БОЕВОЙ РАУНД 2 ===
-2026-02-01 15:37:40 | --- ХОД PLAYER ---
-2026-02-01 15:37:40 | --- ФАЗА КОМАНДОВАНИЯ ---
-2026-02-01 15:37:40 | [ENEMY] Only War: end of Command phase -> controlled=2, gained=2, VP: 0 -> 2, objectives=[0, 1]
-2026-02-01 15:37:40 | --- ФАЗА ДВИЖЕНИЯ ---
-2026-02-01 15:37:45 | Выбрано на карте: unit_id=12, name=Necron Warriors
-2026-02-01 15:37:45 | Выбрано в таблице: row=3 -> unit_id=12
-2026-02-01 15:37:45 | Выбрано на карте: unit_id=12, name=Necron Warriors
-2026-02-01 15:37:54 | Бросок 1D6 на Advance...
-2026-02-01 15:37:55 | Бросок: 6
-2026-02-01 15:37:57 | [MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 11 — Necrons Necron Warriors (x10 моделей).
-2026-02-01 15:37:57 | 
+2026-02-01 16:04:44 | === БОЕВОЙ РАУНД 2 ===
+2026-02-01 16:04:44 | --- ХОД PLAYER ---
+2026-02-01 16:04:44 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-02-01 16:04:44 | [ENEMY] Only War: end of Command phase -> controlled=1, gained=1, VP: 0 -> 1, objectives=[0]
+2026-02-01 16:04:44 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-02-01 16:04:51 | Бросок 1D6 на Advance...
+2026-02-01 16:04:52 | Бросок: 6
+2026-02-01 16:04:53 | [MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 11 — Necrons Necron Warriors (x10 моделей).
+2026-02-01 16:04:53 | 
 🎲 Бросок на попадание (to hit): 10D6
-2026-02-01 15:37:57 | 
-🎲 Бросок на ранение (to wound): 2D6
-2026-02-01 15:37:57 | [MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 11 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 1.0.
-2026-02-01 15:37:57 | 
+2026-02-01 16:04:53 | [MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 11 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 0.0.
+2026-02-01 16:04:53 | 
 📌 --- ОТЧЁТ ПО OVERWATCH ---
-2026-02-01 15:37:57 | Стреляет: Unit 21 — Necrons Necron Warriors (x10 моделей); цель: Unit 11 — Necrons Necron Warriors (x10 моделей)
-2026-02-01 15:37:57 | Оружие: Gauss flayer
-2026-02-01 15:37:57 | BS оружия: 4+
-2026-02-01 15:37:57 | S vs T: 4 vs 4  -> базово ранение на 4+
-2026-02-01 15:37:57 | Save цели: 4+ (invul: нет)
-2026-02-01 15:37:57 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
-2026-02-01 15:37:57 | Правило: Lethal Hits (крит-хиты авто-ранят)
-2026-02-01 15:37:57 | Правило: Overwatch: попадания только на 6+
-2026-02-01 15:37:57 | Hit rolls:    [6, 1, 3, 2, 1, 5, 2, 6, 3, 5]  -> hits: 4 (crits: 2)
-2026-02-01 15:37:57 | Wound rolls:  [2, 5]  (цель 4+) -> rolled wounds: 1 + auto(w/LETHAL): 2 = 3
-2026-02-01 15:37:57 | 
-✅ Итог по движку: прошло урона = 1.0
-2026-02-01 15:37:57 | 📌 -------------------------
-
-2026-02-01 15:38:01 | --- ФАЗА СТРЕЛЬБЫ ---
-2026-02-01 15:38:01 | Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
-2026-02-01 15:38:01 | --- ФАЗА ЧАРДЖА ---
-2026-02-01 15:38:01 | Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
-2026-02-01 15:38:01 | Нет доступных целей для чарджа.
-2026-02-01 15:38:01 | --- ФАЗА БОЯ ---
-2026-02-01 15:38:01 | --- ХОД MODEL ---
-2026-02-01 15:38:01 | --- ФАЗА КОМАНДОВАНИЯ ---
-2026-02-01 15:38:01 | --- ФАЗА КОМАНДОВАНИЯ ---
-2026-02-01 15:38:01 | [MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
-2026-02-01 15:38:01 | --- ФАЗА ДВИЖЕНИЯ ---
-2026-02-01 15:38:01 | --- ФАЗА ДВИЖЕНИЯ ---
-2026-02-01 15:38:01 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (46, 3). Выбор: left, advance=нет, distance=5
-2026-02-01 15:38:01 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (46, 0)
-2026-02-01 15:38:01 | [PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 21 — Necrons Necron Warriors (x10 моделей).
-2026-02-01 15:38:03 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage_term=+0.030 (norm=0.050, dealt=1.00)
-2026-02-01 15:38:03 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): quality_bonus=+0.050
-2026-02-01 15:38:03 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.030 (norm=0.050, dealt=1.00), kill=0.000, overkill=-0.000, quality=0.050, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.080
-2026-02-01 15:38:03 | Reward (шаг): стрельба delta=+0.080
-2026-02-01 15:38:03 | Reward (VP diff): prev=0, curr=-2, delta=-2, reward=+0.000, penalty=-0.100
-2026-02-01 15:38:03 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (57, 0). Выбор: left, advance=да, бросок=6, макс=11, distance=9
-2026-02-01 15:38:03 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (57, 0)
-2026-02-01 15:38:03 | --- ФАЗА СТРЕЛЬБЫ ---
-2026-02-01 15:38:03 | --- ФАЗА СТРЕЛЬБЫ ---
-2026-02-01 15:38:03 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Цели в дальности: Unit 11 — Necrons Necron Warriors (x10 моделей), выбрана: Unit 11 — Necrons Necron Warriors (x10 моделей) (причина: самая близкая)
-2026-02-01 15:38:03 | 
-🎲 Бросок на попадание (to hit): 10D6
-2026-02-01 15:38:03 | 
-🎲 Бросок на ранение (to wound): 3D6
-2026-02-01 15:38:03 | 
-🎲 Бросок сейвы (save): 2D6
-2026-02-01 15:38:03 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage_term=+0.030 (norm=0.050, dealt=1.00)
-2026-02-01 15:38:03 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): quality_bonus=+0.050
-2026-02-01 15:38:03 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.030 (norm=0.050, dealt=1.00), kill=0.000, overkill=-0.000, quality=0.050, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.080
-2026-02-01 15:38:03 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Итог урона по Unit 11 — Necrons Necron Warriors (x10 моделей): 1.0
-2026-02-01 15:38:03 | 
-📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
-2026-02-01 15:38:03 | Стреляет: Unit 21 — Necrons Necron Warriors (x10 моделей); цель: Unit 11 — Necrons Necron Warriors (x10 моделей)
-2026-02-01 15:38:03 | Оружие: Gauss flayer
-2026-02-01 15:38:03 | BS оружия: 4+
-2026-02-01 15:38:03 | S vs T: 4 vs 4  -> базово ранение на 4+
-2026-02-01 15:38:03 | Save цели: 4+ (invul: нет)
-2026-02-01 15:38:03 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
-2026-02-01 15:38:03 | Правило: Lethal Hits (крит-хиты авто-ранят)
-2026-02-01 15:38:03 | Hit rolls:    [3, 4, 1, 5, 2, 2, 2, 4, 6, 2]  -> hits: 4 (crits: 1)
-2026-02-01 15:38:03 | Wound rolls:  [5, 3, 2]  (цель 4+) -> rolled wounds: 1 + auto(w/LETHAL): 1 = 2
-2026-02-01 15:38:03 | Save rolls:   [5, 1]  (цель 4+) -> failed saves: 1
-2026-02-01 15:38:03 | 
-✅ Итог по движку: прошло урона = 1.0
-2026-02-01 15:38:03 | 📌 -------------------------
-
-2026-02-01 15:38:03 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
-2026-02-01 15:38:03 | Reward (шаг): стрельба delta=+0.080
-2026-02-01 15:38:03 | --- ФАЗА ЧАРДЖА ---
-2026-02-01 15:38:03 | --- ФАЗА ЧАРДЖА ---
-2026-02-01 15:38:03 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
-2026-02-01 15:38:03 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
-2026-02-01 15:38:03 | [MODEL] Чардж: нет доступных целей
-2026-02-01 15:38:03 | --- ФАЗА БОЯ ---
-2026-02-01 15:38:03 | --- ФАЗА БОЯ ---
-2026-02-01 15:38:03 | [MODEL] Ближний бой: нет доступных атак
-2026-02-01 15:38:03 | Reward (VP diff): prev=0, curr=-2, delta=-2, reward=+0.000, penalty=-0.100
-2026-02-01 15:38:03 | === КОНЕЦ БОЕВОГО РАУНДА 2 ===
-2026-02-01 15:38:03 | Итерация 1 завершена с наградой tensor([-0.0200], device='cuda:0'), здоровье игрока [8.0, 10.0], здоровье модели [10.0, 10.0]
-2026-02-01 15:38:03 | {'model health': [10.0, 10.0], 'player health': [8.0, 10.0], 'modelCP': 3, 'playerCP': 4, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 2, 'mission': 'Only War', 'turn': 3, 'battle round': 3, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
-2026-02-01 15:38:03 | Здоровье MODEL: [10.0, 10.0], здоровье PLAYER: [8.0, 10.0]
-CP MODEL: 3, CP PLAYER: 4
-VP MODEL: 0, VP PLAYER: 2
-Unit 21 — Necrons Necron Warriors (x10 моделей) стреляет по Unit 11 — Necrons Necron Warriors (x10 моделей) 1.0 раз(а)
-
-2026-02-01 15:38:11 | === БОЕВОЙ РАУНД 3 ===
-2026-02-01 15:38:11 | --- ХОД PLAYER ---
-2026-02-01 15:38:11 | --- ФАЗА КОМАНДОВАНИЯ ---
-2026-02-01 15:38:11 | [PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
-2026-02-01 15:38:14 | [PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 1
-2026-02-01 15:38:14 | [PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) До: моделей=8, раны=[1, 1, 1, 1, 1, 1, 1, 1] всего=8
-2026-02-01 15:38:14 | [PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
-2026-02-01 15:38:14 | [PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) После:  моделей=9, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1] всего=9
-2026-02-01 15:38:14 | [ENEMY] Only War: end of Command phase -> controlled=1, gained=1, VP: 2 -> 3, objectives=[1]
-2026-02-01 15:38:14 | --- ФАЗА ДВИЖЕНИЯ ---
-2026-02-01 15:38:23 | [MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 11 — Necrons Necron Warriors (x10 моделей).
-2026-02-01 15:38:23 | 
-🎲 Бросок на попадание (to hit): 10D6
-2026-02-01 15:38:23 | 
-🎲 Бросок на ранение (to wound): 1D6
-2026-02-01 15:38:23 | [MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 11 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 1.0.
-2026-02-01 15:38:23 | 
-📌 --- ОТЧЁТ ПО OVERWATCH ---
-2026-02-01 15:38:23 | Стреляет: Unit 21 — Necrons Necron Warriors (x10 моделей); цель: Unit 11 — Necrons Necron Warriors (x10 моделей)
-2026-02-01 15:38:23 | Оружие: Gauss flayer
-2026-02-01 15:38:23 | BS оружия: 4+
-2026-02-01 15:38:23 | S vs T: 4 vs 4  -> базово ранение на 4+
-2026-02-01 15:38:23 | Save цели: 4+ (invul: нет)
-2026-02-01 15:38:23 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
-2026-02-01 15:38:23 | Правило: Lethal Hits (крит-хиты авто-ранят)
-2026-02-01 15:38:23 | Правило: Overwatch: попадания только на 6+
-2026-02-01 15:38:23 | Hit rolls:    [4, 5, 6, 5, 4, 1, 5, 5, 5, 5]  -> hits: 9 (crits: 1)
-2026-02-01 15:38:23 | Wound rolls:  [1]  (цель 4+) -> rolled wounds: 0 + auto(w/LETHAL): 1 = 1
-2026-02-01 15:38:23 | 
-✅ Итог по движку: прошло урона = 1.0
-2026-02-01 15:38:23 | 📌 -------------------------
-
-2026-02-01 15:38:27 | --- ФАЗА СТРЕЛЬБЫ ---
-2026-02-01 15:38:30 | 
-🎲 Бросок на попадание (to hit): 8D6
-2026-02-01 15:38:34 | 
-🎲 Бросок на ранение (to wound): 2D6
-2026-02-01 15:38:35 | 
-🎲 Бросок сейвы (save): 1D6
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=0)
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=1)
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=0)
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=1)
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)
-2026-02-01 15:38:35 | Reward (VP/объекты, движение): hold=-4.000, proximity=0.000, total=-4.000
-2026-02-01 15:38:35 | Reward (шаг): движение delta=-4.000
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.000 (norm=0.000, dealt=0.00), kill=0.000, overkill=-0.000, quality=0.000, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.000
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage_term=+0.090 (norm=0.150, dealt=3.00)
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): quality_bonus=+0.050
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.090 (norm=0.150, dealt=3.00), kill=0.000, overkill=-0.000, quality=0.050, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.140
-2026-02-01 15:38:35 | Reward (шаг): стрельба delta=+0.140
-2026-02-01 15:38:35 | Reward (VP diff): prev=-2, curr=-3, delta=-1, reward=+0.000, penalty=-0.050
-2026-02-01 15:38:35 | Unit 11 — Necrons Necron Warriors (x10 моделей) нанёс 1.0 урона по Unit 21 — Necrons Necron Warriors (x10 моделей)
-2026-02-01 15:38:35 | 
-📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
-2026-02-01 15:38:35 | Стреляет: Unit 11 — Necrons Necron Warriors (x10 моделей); цель: Unit 21 — Necrons Necron Warriors (x10 моделей)
-2026-02-01 15:38:35 | Оружие: Gauss flayer
-2026-02-01 15:38:35 | BS оружия: 4+
-2026-02-01 15:38:35 | S vs T: 4 vs 4  -> базово ранение на 4+
-2026-02-01 15:38:35 | Save цели: 4+ (invul: нет)
-2026-02-01 15:38:35 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
-2026-02-01 15:38:35 | Правило: Lethal Hits (крит-хиты авто-ранят)
-2026-02-01 15:38:35 | Hit rolls:    [1, 1, 1, 1, 3, 3, 4, 4]  -> hits: 2
-2026-02-01 15:38:35 | Wound rolls:  [3, 4]  (цель 4+) -> wounds: 1
-2026-02-01 15:38:35 | Save rolls:   [1]  (цель 4+) -> failed saves: 1
-2026-02-01 15:38:35 | 
-✅ Итог по движку: прошло урона = 1.0
-2026-02-01 15:38:35 | 📌 -------------------------
-
-2026-02-01 15:38:35 | --- ФАЗА ЧАРДЖА ---
-2026-02-01 15:38:35 | Нет доступных целей для чарджа.
-2026-02-01 15:38:35 | --- ФАЗА БОЯ ---
-2026-02-01 15:38:35 | --- ХОД MODEL ---
-2026-02-01 15:38:35 | --- ФАЗА КОМАНДОВАНИЯ ---
-2026-02-01 15:38:35 | --- ФАЗА КОМАНДОВАНИЯ ---
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 3
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) До: моделей=9, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1] всего=9
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) После:  моделей=10, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1] всего=10
-2026-02-01 15:38:35 | [MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
-2026-02-01 15:38:35 | --- ФАЗА ДВИЖЕНИЯ ---
-2026-02-01 15:38:35 | --- ФАЗА ДВИЖЕНИЯ ---
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=0)
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=1)
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (46, 0). Выбор: none, advance=нет, distance=0
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Движение пропущено (no move). Позиция после: (46, 0)
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=0)
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=1)
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (57, 0). Выбор: none, advance=нет, distance=0
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Движение пропущено (no move). Позиция после: (57, 0)
-2026-02-01 15:38:35 | Reward (VP/объекты, движение): hold=-4.000, proximity=0.000, total=-4.000
-2026-02-01 15:38:35 | Reward (шаг): движение delta=-4.000
-2026-02-01 15:38:35 | --- ФАЗА СТРЕЛЬБЫ ---
-2026-02-01 15:38:35 | --- ФАЗА СТРЕЛЬБЫ ---
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Цели в дальности: Unit 11 — Necrons Necron Warriors (x10 моделей), выбрана: Unit 11 — Necrons Necron Warriors (x10 моделей) (причина: самая близкая)
-2026-02-01 15:38:35 | 
-🎲 Бросок на попадание (to hit): 10D6
-2026-02-01 15:38:35 | 
-🎲 Бросок на ранение (to wound): 5D6
-2026-02-01 15:38:35 | 
-🎲 Бросок сейвы (save): 4D6
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.000 (norm=0.000, dealt=0.00), kill=0.000, overkill=-0.000, quality=0.000, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.000
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Итог урона по Unit 11 — Necrons Necron Warriors (x10 моделей): 0.0
-2026-02-01 15:38:35 | 
-📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
-2026-02-01 15:38:35 | Стреляет: Unit 21 — Necrons Necron Warriors (x10 моделей); цель: Unit 11 — Necrons Necron Warriors (x10 моделей)
-2026-02-01 15:38:35 | Оружие: Gauss flayer
-2026-02-01 15:38:35 | BS оружия: 4+
-2026-02-01 15:38:35 | S vs T: 4 vs 4  -> базово ранение на 4+
-2026-02-01 15:38:35 | Save цели: 4+ (invul: нет)
-2026-02-01 15:38:35 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
-2026-02-01 15:38:35 | Правило: Lethal Hits (крит-хиты авто-ранят)
-2026-02-01 15:38:35 | Hit rolls:    [3, 5, 5, 4, 2, 6, 5, 4, 1, 1]  -> hits: 6 (crits: 1)
-2026-02-01 15:38:35 | Wound rolls:  [3, 3, 5, 5, 5]  (цель 4+) -> rolled wounds: 3 + auto(w/LETHAL): 1 = 4
-2026-02-01 15:38:35 | Save rolls:   [4, 4, 5, 4]  (цель 4+) -> failed saves: 0
-2026-02-01 15:38:35 | 
+2026-02-01 16:04:53 | Стреляет: Unit 21 — Necrons Necron Warriors (x10 моделей); цель: Unit 11 — Necrons Necron Warriors (x10 моделей)
+2026-02-01 16:04:53 | Оружие: Gauss flayer
+2026-02-01 16:04:53 | BS оружия: 4+
+2026-02-01 16:04:53 | S vs T: 4 vs 4  -> базово ранение на 4+
+2026-02-01 16:04:53 | Save цели: 4+ (invul: нет)
+2026-02-01 16:04:53 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+2026-02-01 16:04:53 | Правило: Lethal Hits (крит-хиты авто-ранят)
+2026-02-01 16:04:53 | Правило: Overwatch: попадания только на 6+
+2026-02-01 16:04:53 | Hit rolls:    [3, 1, 1, 2, 2, 2, 2, 3, 5, 2]  -> hits: 1
+2026-02-01 16:04:53 | 
 ✅ Итог по движку: прошло урона = 0.0
-2026-02-01 15:38:35 | 📌 -------------------------
+2026-02-01 16:04:53 | 📌 -------------------------
 
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Цели в дальности: Unit 11 — Necrons Necron Warriors (x10 моделей), выбрана: Unit 11 — Necrons Necron Warriors (x10 моделей) (причина: самая близкая)
-2026-02-01 15:38:35 | 
+2026-02-01 16:05:03 | Выбрано на карте: unit_id=11, name=Necron Warriors
+2026-02-01 16:05:03 | Выбрано в таблице: row=2 -> unit_id=11
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=0)
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=1)
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=0)
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=1)
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)
+2026-02-01 16:05:07 | Reward (VP/объекты, движение): hold=-4.000, proximity=0.000, total=-4.000
+2026-02-01 16:05:07 | Reward (шаг): движение delta=-4.000
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage_term=+0.060 (norm=0.100, dealt=2.00)
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): quality_bonus=+0.050
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.060 (norm=0.100, dealt=2.00), kill=0.000, overkill=-0.000, quality=0.050, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.110
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage_term=+0.030 (norm=0.050, dealt=1.00)
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): quality_bonus=+0.050
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.030 (norm=0.050, dealt=1.00), kill=0.000, overkill=-0.000, quality=0.050, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.080
+2026-02-01 16:05:07 | Reward (шаг): стрельба delta=+0.190
+2026-02-01 16:05:07 | Reward (VP diff): prev=0, curr=-1, delta=-1, reward=+0.000, penalty=-0.050
+2026-02-01 16:05:07 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-02-01 16:05:07 | Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+2026-02-01 16:05:07 | --- ФАЗА ЧАРДЖА ---
+2026-02-01 16:05:07 | Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+2026-02-01 16:05:07 | Нет доступных целей для чарджа.
+2026-02-01 16:05:07 | --- ФАЗА БОЯ ---
+2026-02-01 16:05:07 | --- ХОД MODEL ---
+2026-02-01 16:05:07 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-02-01 16:05:07 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-02-01 16:05:07 | [MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+2026-02-01 16:05:07 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-02-01 16:05:07 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=0)
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=1)
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (33, 9). Выбор: none, advance=нет, distance=0
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Движение пропущено (no move). Позиция после: (33, 9)
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=0)
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=1)
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (44, 1). Выбор: none, advance=нет, distance=0
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Движение пропущено (no move). Позиция после: (44, 1)
+2026-02-01 16:05:07 | Reward (VP/объекты, движение): hold=-4.000, proximity=0.000, total=-4.000
+2026-02-01 16:05:07 | Reward (шаг): движение delta=-4.000
+2026-02-01 16:05:07 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-02-01 16:05:07 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Цели в дальности: Unit 11 — Necrons Necron Warriors (x10 моделей), выбрана: Unit 11 — Necrons Necron Warriors (x10 моделей) (причина: самая близкая)
+2026-02-01 16:05:07 | 
 🎲 Бросок на попадание (to hit): 10D6
-2026-02-01 15:38:35 | 
-🎲 Бросок на ранение (to wound): 5D6
-2026-02-01 15:38:35 | 
-🎲 Бросок сейвы (save): 5D6
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage_term=+0.090 (norm=0.150, dealt=3.00)
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): quality_bonus=+0.050
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.090 (norm=0.150, dealt=3.00), kill=0.000, overkill=-0.000, quality=0.050, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.140
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Итог урона по Unit 11 — Necrons Necron Warriors (x10 моделей): 3.0
-2026-02-01 15:38:35 | 
+2026-02-01 16:05:07 | 
+🎲 Бросок на ранение (to wound): 1D6
+2026-02-01 16:05:07 | 
+🎲 Бросок сейвы (save): 4D6
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage_term=+0.060 (norm=0.100, dealt=2.00)
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): quality_bonus=+0.050
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.060 (norm=0.100, dealt=2.00), kill=0.000, overkill=-0.000, quality=0.050, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.110
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Итог урона по Unit 11 — Necrons Necron Warriors (x10 моделей): 2.0
+2026-02-01 16:05:07 | 
 📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
-2026-02-01 15:38:35 | Стреляет: Unit 22 — Necrons Necron Warriors (x10 моделей); цель: Unit 11 — Necrons Necron Warriors (x10 моделей)
-2026-02-01 15:38:35 | Оружие: Gauss flayer
-2026-02-01 15:38:35 | BS оружия: 4+
-2026-02-01 15:38:35 | S vs T: 4 vs 4  -> базово ранение на 4+
-2026-02-01 15:38:35 | Save цели: 4+ (invul: нет)
-2026-02-01 15:38:35 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
-2026-02-01 15:38:35 | Правило: Lethal Hits (крит-хиты авто-ранят)
-2026-02-01 15:38:35 | Hit rolls:    [3, 6, 5, 5, 4, 6, 2, 5, 4, 1]  -> hits: 7 (crits: 2)
-2026-02-01 15:38:35 | Wound rolls:  [5, 4, 6, 1, 1]  (цель 4+) -> rolled wounds: 3 + auto(w/LETHAL): 2 = 5
-2026-02-01 15:38:35 | Save rolls:   [1, 5, 5, 2, 1]  (цель 4+) -> failed saves: 3
-2026-02-01 15:38:35 | 
-✅ Итог по движку: прошло урона = 3.0
-2026-02-01 15:38:35 | 📌 -------------------------
+2026-02-01 16:05:07 | Стреляет: Unit 21 — Necrons Necron Warriors (x10 моделей); цель: Unit 11 — Necrons Necron Warriors (x10 моделей)
+2026-02-01 16:05:07 | Оружие: Gauss flayer
+2026-02-01 16:05:07 | BS оружия: 4+
+2026-02-01 16:05:07 | S vs T: 4 vs 4  -> базово ранение на 4+
+2026-02-01 16:05:07 | Save цели: 4+ (invul: нет)
+2026-02-01 16:05:07 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+2026-02-01 16:05:07 | Правило: Lethal Hits (крит-хиты авто-ранят)
+2026-02-01 16:05:07 | Hit rolls:    [3, 1, 4, 1, 6, 6, 3, 6, 1, 6]  -> hits: 5 (crits: 4)
+2026-02-01 16:05:07 | Wound rolls:  [2]  (цель 4+) -> rolled wounds: 0 + auto(w/LETHAL): 4 = 4
+2026-02-01 16:05:07 | Save rolls:   [6, 1, 1, 4]  (цель 4+) -> failed saves: 2
+2026-02-01 16:05:07 | 
+✅ Итог по движку: прошло урона = 2.0
+2026-02-01 16:05:07 | 📌 -------------------------
 
-2026-02-01 15:38:35 | Reward (шаг): стрельба delta=+0.140
-2026-02-01 15:38:35 | --- ФАЗА ЧАРДЖА ---
-2026-02-01 15:38:35 | --- ФАЗА ЧАРДЖА ---
-2026-02-01 15:38:35 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
-2026-02-01 15:38:35 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
-2026-02-01 15:38:35 | [MODEL] Чардж: нет доступных целей
-2026-02-01 15:38:35 | --- ФАЗА БОЯ ---
-2026-02-01 15:38:35 | --- ФАЗА БОЯ ---
-2026-02-01 15:38:35 | [MODEL] Ближний бой: нет доступных атак
-2026-02-01 15:38:35 | Reward (VP diff): prev=-2, curr=-3, delta=-1, reward=+0.000, penalty=-0.050
-2026-02-01 15:38:35 | === КОНЕЦ БОЕВОГО РАУНДА 3 ===
-2026-02-01 15:38:35 | Итерация 2 завершена с наградой tensor([-3.9100], device='cuda:0'), здоровье игрока [5.0, 10.0], здоровье модели [10.0, 10.0]
-2026-02-01 15:38:35 | {'model health': [10.0, 10.0], 'player health': [5.0, 10.0], 'modelCP': 4, 'playerCP': 6, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 3, 'mission': 'Only War', 'turn': 4, 'battle round': 4, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
-2026-02-01 15:38:35 | Здоровье MODEL: [10.0, 10.0], здоровье PLAYER: [5.0, 10.0]
-CP MODEL: 4, CP PLAYER: 6
-VP MODEL: 0, VP PLAYER: 3
-Unit 21 — Necrons Necron Warriors (x10 моделей) стреляет по Unit 11 — Necrons Necron Warriors (x10 моделей) 0.0 раз(а)
-Unit 22 — Necrons Necron Warriors (x10 моделей) стреляет по Unit 11 — Necrons Necron Warriors (x10 моделей) 3.0 раз(а)
-
-2026-02-01 15:38:52 | === БОЕВОЙ РАУНД 4 ===
-2026-02-01 15:38:52 | --- ХОД PLAYER ---
-2026-02-01 15:38:52 | --- ФАЗА КОМАНДОВАНИЯ ---
-2026-02-01 15:38:52 | [PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
-2026-02-01 15:38:53 | [PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 2
-2026-02-01 15:38:53 | [PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) До: моделей=5, раны=[1, 1, 1, 1, 1] всего=5
-2026-02-01 15:38:53 | [PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
-2026-02-01 15:38:53 | [PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
-2026-02-01 15:38:53 | [PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) После:  моделей=7, раны=[1, 1, 1, 1, 1, 1, 1] всего=7
-2026-02-01 15:38:53 | [ENEMY] Only War: end of Command phase -> controlled=1, gained=1, VP: 3 -> 4, objectives=[1]
-2026-02-01 15:38:53 | --- ФАЗА ДВИЖЕНИЯ ---
-2026-02-01 15:38:59 | [MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 11 — Necrons Necron Warriors (x10 моделей).
-2026-02-01 15:38:59 | 
-🎲 Бросок на попадание (to hit): 20D6
-2026-02-01 15:38:59 | 
-🎲 Бросок на ранение (to wound): 3D6
-2026-02-01 15:38:59 | [MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 11 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 1.0.
-2026-02-01 15:38:59 | 
-📌 --- ОТЧЁТ ПО OVERWATCH ---
-2026-02-01 15:38:59 | Стреляет: Unit 21 — Necrons Necron Warriors (x10 моделей); цель: Unit 11 — Necrons Necron Warriors (x10 моделей)
-2026-02-01 15:38:59 | Оружие: Gauss flayer
-2026-02-01 15:38:59 | BS оружия: 4+
-2026-02-01 15:38:59 | S vs T: 4 vs 4  -> базово ранение на 4+
-2026-02-01 15:38:59 | Save цели: 4+ (invul: нет)
-2026-02-01 15:38:59 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
-2026-02-01 15:38:59 | Правило: Lethal Hits (крит-хиты авто-ранят)
-2026-02-01 15:38:59 | Правило: Overwatch: попадания только на 6+
-2026-02-01 15:38:59 | Hit rolls:    [5, 3, 6, 3, 1, 3, 5, 5, 4, 6, 4, 4, 4, 2, 5, 3, 6, 3, 3, 1]  -> hits: 11 (crits: 3)
-2026-02-01 15:38:59 | Wound rolls:  [5, 6, 1]  (цель 4+) -> rolled wounds: 2 + auto(w/LETHAL): 3 = 5
-2026-02-01 15:38:59 | 
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Цели в дальности: Unit 11 — Necrons Necron Warriors (x10 моделей), выбрана: Unit 11 — Necrons Necron Warriors (x10 моделей) (причина: самая близкая)
+2026-02-01 16:05:07 | 
+🎲 Бросок на попадание (to hit): 10D6
+2026-02-01 16:05:07 | 
+🎲 Бросок на ранение (to wound): 4D6
+2026-02-01 16:05:07 | 
+🎲 Бросок сейвы (save): 4D6
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage_term=+0.030 (norm=0.050, dealt=1.00)
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): quality_bonus=+0.050
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.030 (norm=0.050, dealt=1.00), kill=0.000, overkill=-0.000, quality=0.050, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.080
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Итог урона по Unit 11 — Necrons Necron Warriors (x10 моделей): 1.0
+2026-02-01 16:05:07 | 
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+2026-02-01 16:05:07 | Стреляет: Unit 22 — Necrons Necron Warriors (x10 моделей); цель: Unit 11 — Necrons Necron Warriors (x10 моделей)
+2026-02-01 16:05:07 | Оружие: Gauss flayer
+2026-02-01 16:05:07 | BS оружия: 4+
+2026-02-01 16:05:07 | S vs T: 4 vs 4  -> базово ранение на 4+
+2026-02-01 16:05:07 | Save цели: 4+ (invul: нет)
+2026-02-01 16:05:07 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+2026-02-01 16:05:07 | Правило: Lethal Hits (крит-хиты авто-ранят)
+2026-02-01 16:05:07 | Hit rolls:    [5, 6, 4, 3, 3, 5, 5, 1, 6, 3]  -> hits: 6 (crits: 2)
+2026-02-01 16:05:07 | Wound rolls:  [4, 2, 3, 4]  (цель 4+) -> rolled wounds: 2 + auto(w/LETHAL): 2 = 4
+2026-02-01 16:05:07 | Save rolls:   [5, 5, 5, 3]  (цель 4+) -> failed saves: 1
+2026-02-01 16:05:07 | 
 ✅ Итог по движку: прошло урона = 1.0
-2026-02-01 15:38:59 | 📌 -------------------------
+2026-02-01 16:05:07 | 📌 -------------------------
 
-2026-02-01 15:39:03 | --- ФАЗА СТРЕЛЬБЫ ---
-2026-02-01 15:39:05 | 
-🎲 Бросок на попадание (to hit): 12D6
-2026-02-01 15:39:11 | 
-🎲 Бросок на ранение (to wound): 6D6
+2026-02-01 16:05:07 | Reward (шаг): стрельба delta=+0.190
+2026-02-01 16:05:07 | --- ФАЗА ЧАРДЖА ---
+2026-02-01 16:05:07 | --- ФАЗА ЧАРДЖА ---
+2026-02-01 16:05:07 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+2026-02-01 16:05:07 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+2026-02-01 16:05:07 | [MODEL] Чардж: нет доступных целей
+2026-02-01 16:05:07 | --- ФАЗА БОЯ ---
+2026-02-01 16:05:07 | --- ФАЗА БОЯ ---
+2026-02-01 16:05:07 | [MODEL] Ближний бой: нет доступных атак
+2026-02-01 16:05:07 | Reward (VP diff): prev=0, curr=-1, delta=-1, reward=+0.000, penalty=-0.050
+2026-02-01 16:05:07 | === КОНЕЦ БОЕВОГО РАУНДА 2 ===
+2026-02-01 16:05:07 | Итерация 1 завершена с наградой tensor([-3.8600], device='cuda:0'), здоровье игрока [7.0, 10.0], здоровье модели [10.0, 10.0]
+2026-02-01 16:05:07 | {'model health': [10.0, 10.0], 'player health': [7.0, 10.0], 'modelCP': 3, 'playerCP': 4, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 1, 'mission': 'Only War', 'turn': 3, 'battle round': 3, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+2026-02-01 16:05:07 | Здоровье MODEL: [10.0, 10.0], здоровье PLAYER: [7.0, 10.0]
+CP MODEL: 3, CP PLAYER: 4
+VP MODEL: 0, VP PLAYER: 1
+Unit 21 — Necrons Necron Warriors (x10 моделей) стреляет по Unit 11 — Necrons Necron Warriors (x10 моделей) 2.0 раз(а)
+Unit 22 — Necrons Necron Warriors (x10 моделей) стреляет по Unit 11 — Necrons Necron Warriors (x10 моделей) 1.0 раз(а)
+
+2026-02-01 16:05:36 | === БОЕВОЙ РАУНД 3 ===
+2026-02-01 16:05:36 | --- ХОД PLAYER ---
+2026-02-01 16:05:36 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-02-01 16:05:36 | [PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
+2026-02-01 16:05:42 | [PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 1
+2026-02-01 16:05:42 | [PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) До: моделей=7, раны=[1, 1, 1, 1, 1, 1, 1] всего=7
+2026-02-01 16:05:42 | [PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
+2026-02-01 16:05:42 | [PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) После:  моделей=8, раны=[1, 1, 1, 1, 1, 1, 1, 1] всего=8
+2026-02-01 16:05:42 | [ENEMY] Only War: end of Command phase -> controlled=1, gained=1, VP: 1 -> 2, objectives=[0]
+2026-02-01 16:05:42 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-02-01 16:05:55 | [MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 11 — Necrons Necron Warriors (x10 моделей).
+2026-02-01 16:05:55 | 
+🎲 Бросок на попадание (to hit): 10D6
+2026-02-01 16:05:55 | 
+🎲 Бросок на ранение (to wound): 2D6
+2026-02-01 16:05:55 | [MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 11 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 0.0.
+2026-02-01 16:05:55 | 
+📌 --- ОТЧЁТ ПО OVERWATCH ---
+2026-02-01 16:05:55 | Стреляет: Unit 21 — Necrons Necron Warriors (x10 моделей); цель: Unit 11 — Necrons Necron Warriors (x10 моделей)
+2026-02-01 16:05:55 | Оружие: Gauss flayer
+2026-02-01 16:05:55 | BS оружия: 4+
+2026-02-01 16:05:55 | S vs T: 4 vs 4  -> базово ранение на 4+
+2026-02-01 16:05:55 | Save цели: 4+ (invul: нет)
+2026-02-01 16:05:55 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+2026-02-01 16:05:55 | Правило: Lethal Hits (крит-хиты авто-ранят)
+2026-02-01 16:05:55 | Правило: Overwatch: попадания только на 6+
+2026-02-01 16:05:55 | Hit rolls:    [2, 2, 3, 2, 6, 5, 4, 6, 1, 2]  -> hits: 4 (crits: 2)
+2026-02-01 16:05:55 | Wound rolls:  [5, 6]  (цель 4+) -> rolled wounds: 2 + auto(w/LETHAL): 2 = 4
+2026-02-01 16:05:55 | 
+✅ Итог по движку: прошло урона = 0.0
+2026-02-01 16:05:55 | 📌 -------------------------
+
+2026-02-01 16:06:02 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-02-01 16:06:06 | 
+🎲 Бросок на попадание (to hit): 8D6
+2026-02-01 16:06:17 | 
+🎲 Бросок на ранение (to wound): 5D6
+2026-02-01 16:06:19 | 
+🎲 Бросок сейвы (save): 3D6
+2026-02-01 16:06:21 | Unit 11 — Necrons Necron Warriors (x10 моделей) нанёс 1.0 урона по Unit 22 — Necrons Necron Warriors (x10 моделей)
+2026-02-01 16:06:21 | 
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+2026-02-01 16:06:21 | Стреляет: Unit 11 — Necrons Necron Warriors (x10 моделей); цель: Unit 22 — Necrons Necron Warriors (x10 моделей)
+2026-02-01 16:06:21 | Оружие: Gauss flayer
+2026-02-01 16:06:21 | BS оружия: 4+
+2026-02-01 16:06:21 | S vs T: 4 vs 4  -> базово ранение на 4+
+2026-02-01 16:06:21 | Save цели: 4+ (invul: нет)
+2026-02-01 16:06:21 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+2026-02-01 16:06:21 | Правило: Lethal Hits (крит-хиты авто-ранят)
+2026-02-01 16:06:21 | Hit rolls:    [1, 2, 5, 6, 5, 5, 5, 5]  -> hits: 6 (crits: 1)
+2026-02-01 16:06:21 | Wound rolls:  [1, 2, 3, 4, 5]  (цель 4+) -> rolled wounds: 2 + auto(w/LETHAL): 1 = 3
+2026-02-01 16:06:21 | Save rolls:   [1, 4, 5]  (цель 4+) -> failed saves: 1
+2026-02-01 16:06:21 | 
+✅ Итог по движку: прошло урона = 1.0
+2026-02-01 16:06:21 | 📌 -------------------------
+
+2026-02-01 16:06:21 | --- ФАЗА ЧАРДЖА ---
+2026-02-01 16:06:21 | Нет доступных целей для чарджа.
+2026-02-01 16:06:21 | --- ФАЗА БОЯ ---
+2026-02-01 16:06:21 | --- ХОД MODEL ---
+2026-02-01 16:06:21 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-02-01 16:06:21 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-02-01 16:06:21 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
+2026-02-01 16:06:21 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 2
+2026-02-01 16:06:21 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) До: моделей=9, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1] всего=9
+2026-02-01 16:06:21 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
+2026-02-01 16:06:21 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) После:  моделей=10, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1] всего=10
+2026-02-01 16:06:21 | [MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+2026-02-01 16:06:21 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-02-01 16:06:21 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-02-01 16:06:21 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (33, 9). Выбор: up, advance=нет, distance=4
+2026-02-01 16:06:21 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (29, 9)
+2026-02-01 16:06:21 | [PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 21 — Necrons Necron Warriors (x10 моделей).
+2026-02-01 16:06:23 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (44, 1). Выбор: up, advance=да, бросок=5, макс=10, distance=6
+2026-02-01 16:06:23 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (38, 1)
+2026-02-01 16:06:23 | [PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 22 — Necrons Necron Warriors (x10 моделей).
+2026-02-01 16:06:25 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage_term=+0.060 (norm=0.100, dealt=2.00)
+2026-02-01 16:06:25 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): quality_bonus=+0.050
+2026-02-01 16:06:25 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.060 (norm=0.100, dealt=2.00), kill=0.000, overkill=-0.000, quality=0.050, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.110
+2026-02-01 16:06:25 | Reward (шаг): стрельба delta=+0.110
+2026-02-01 16:06:25 | Reward (VP diff): prev=-1, curr=-2, delta=-1, reward=+0.000, penalty=-0.050
+2026-02-01 16:06:25 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-02-01 16:06:25 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-02-01 16:06:25 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Цели в дальности: Unit 11 — Necrons Necron Warriors (x10 моделей), выбрана: Unit 11 — Necrons Necron Warriors (x10 моделей) (причина: самая близкая)
+2026-02-01 16:06:25 | 
+🎲 Бросок на попадание (to hit): 10D6
+2026-02-01 16:06:25 | 
+🎲 Бросок на ранение (to wound): 4D6
+2026-02-01 16:06:25 | 
+🎲 Бросок сейвы (save): 3D6
+2026-02-01 16:06:25 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage_term=+0.060 (norm=0.100, dealt=2.00)
+2026-02-01 16:06:25 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): quality_bonus=+0.050
+2026-02-01 16:06:25 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.060 (norm=0.100, dealt=2.00), kill=0.000, overkill=-0.000, quality=0.050, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.110
+2026-02-01 16:06:25 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Итог урона по Unit 11 — Necrons Necron Warriors (x10 моделей): 2.0
+2026-02-01 16:06:25 | 
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+2026-02-01 16:06:25 | Стреляет: Unit 21 — Necrons Necron Warriors (x10 моделей); цель: Unit 11 — Necrons Necron Warriors (x10 моделей)
+2026-02-01 16:06:25 | Оружие: Gauss flayer
+2026-02-01 16:06:25 | BS оружия: 4+
+2026-02-01 16:06:25 | S vs T: 4 vs 4  -> базово ранение на 4+
+2026-02-01 16:06:25 | Save цели: 4+ (invul: нет)
+2026-02-01 16:06:25 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+2026-02-01 16:06:25 | Правило: Lethal Hits (крит-хиты авто-ранят)
+2026-02-01 16:06:25 | Hit rolls:    [1, 6, 5, 4, 5, 5, 2, 1, 2, 2]  -> hits: 5 (crits: 1)
+2026-02-01 16:06:25 | Wound rolls:  [1, 6, 4, 2]  (цель 4+) -> rolled wounds: 2 + auto(w/LETHAL): 1 = 3
+2026-02-01 16:06:25 | Save rolls:   [1, 6, 3]  (цель 4+) -> failed saves: 2
+2026-02-01 16:06:25 | 
+✅ Итог по движку: прошло урона = 2.0
+2026-02-01 16:06:25 | 📌 -------------------------
+
+2026-02-01 16:06:25 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+2026-02-01 16:06:25 | Reward (шаг): стрельба delta=+0.110
+2026-02-01 16:06:25 | --- ФАЗА ЧАРДЖА ---
+2026-02-01 16:06:25 | --- ФАЗА ЧАРДЖА ---
+2026-02-01 16:06:25 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+2026-02-01 16:06:25 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+2026-02-01 16:06:25 | [MODEL] Чардж: нет доступных целей
+2026-02-01 16:06:25 | --- ФАЗА БОЯ ---
+2026-02-01 16:06:25 | --- ФАЗА БОЯ ---
+2026-02-01 16:06:25 | [MODEL] Ближний бой: нет доступных атак
+2026-02-01 16:06:25 | Reward (VP diff): prev=-1, curr=-2, delta=-1, reward=+0.000, penalty=-0.050
+2026-02-01 16:06:25 | === КОНЕЦ БОЕВОГО РАУНДА 3 ===
+2026-02-01 16:06:25 | Итерация 2 завершена с наградой tensor([0.0600], device='cuda:0'), здоровье игрока [6.0, 10.0], здоровье модели [10.0, 10.0]
+2026-02-01 16:06:25 | {'model health': [10.0, 10.0], 'player health': [6.0, 10.0], 'modelCP': 4, 'playerCP': 6, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 2, 'mission': 'Only War', 'turn': 4, 'battle round': 4, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+2026-02-01 16:06:25 | Здоровье MODEL: [10.0, 10.0], здоровье PLAYER: [6.0, 10.0]
+CP MODEL: 4, CP PLAYER: 6
+VP MODEL: 0, VP PLAYER: 2
+Unit 21 — Necrons Necron Warriors (x10 моделей) стреляет по Unit 11 — Necrons Necron Warriors (x10 моделей) 2.0 раз(а)
+
