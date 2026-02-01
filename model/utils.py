@@ -301,7 +301,7 @@ def optimize_model(
                                 continue
                         masked_targets.append(head.max(1).values)
                     max_per_head = torch.stack(masked_targets, dim=1)  # [N, num_heads]
-                next_state_values[non_final_mask] = max_per_head
+                next_state_values[non_final_mask] = max_per_head.float()
 
     gamma_n = GAMMA ** n_step_batch
     expected_state_action_values = reward_batch.unsqueeze(1) + (gamma_n.unsqueeze(1) * next_state_values)  # [B, num_heads]
