@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import json
+import os
 from scipy.optimize import curve_fit
 
 class metrics(object):
@@ -11,6 +12,9 @@ class metrics(object):
         self.folder = folder
         self.randNum = randNum
         self.modelName = modelName
+        os.makedirs("metrics", exist_ok=True)
+        os.makedirs("gui/img", exist_ok=True)
+        os.makedirs("models", exist_ok=True)
 
     def updateRew(self, add):
         self.avgRew.append(add)

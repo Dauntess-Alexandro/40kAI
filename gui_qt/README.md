@@ -2,6 +2,16 @@
 
 Минимальный Qt/QML GUI для запуска `train.py` и `eval.py` как отдельных процессов с потоковыми логами.
 
+## Быстрый старт (Windows)
+
+```powershell
+python -m venv .venv
+\.venv\Scripts\activate
+python -m pip install -U pip
+pip install -r requirements.txt
+python gui_qt\main.py
+```
+
 ## Быстрый старт (Linux)
 
 ```bash

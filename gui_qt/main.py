@@ -49,6 +49,7 @@ class GUIController(QtCore.QObject):
         self._process: Optional[QtCore.QProcess] = None
         self._running = False
         self._repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        self._is_windows = sys.platform.startswith("win")
 
         self._progress_value = 0.0
         self._progress_label = "ep=0/0 (0%)"
@@ -387,13 +388,16 @@ class GUIController(QtCore.QObject):
         model_path = self._resolve_play_model_path()
         if model_path == "None":
             self._emit_status("Сохранённые модели не найдены. Запускаю базовый режим.")
-        script = os.path.join(self._repo_root, "launch_terminal_manual.sh")
+        if not self._check_torch_import():
+            return
+        script = self._script_path("launch_terminal_manual")
         if not os.path.exists(script):
-            self._emit_status("Не найден launch_terminal_manual.sh. Проверьте репозиторий.")
+            self._emit_status("Не найден скрипт запуска терминала. Проверьте репозиторий.")
             return
         self._persist_rosters()
+        command = self._build_script_command(script, [model_path])
         subprocess.Popen(
-            [script, model_path],
+            command,
             cwd=self._repo_root,
             env=os.environ.copy(),
             start_new_session=True,
@@ -405,22 +409,54 @@ class GUIController(QtCore.QObject):
         model_path = self._resolve_play_model_path()
         if model_path == "None":
             self._emit_status("Сохранённые модели не найдены. Запускаю базовый режим.")
-        script = os.path.join(self._repo_root, "scripts", "viewer.sh")
+        if not self._check_torch_import():
+            return
+        if self._is_windows:
+            script = os.path.join(self._repo_root, "scripts", "viewer.bat")
+        else:
+            script = os.path.join(self._repo_root, "scripts", "viewer.sh")
         if not os.path.exists(script):
-            self._emit_status("Не найден scripts/viewer.sh. Проверьте репозиторий.")
+            self._emit_status("Не найден скрипт Viewer. Проверьте репозиторий.")
             return
         self._persist_rosters()
         env = os.environ.copy()
         env["MODEL_PATH"] = model_path
         env["FIGHT_REPORT"] = "1"
         env["PLAY_NO_EXPLORATION"] = "1"
+        command = self._build_script_command(script, [])
         subprocess.Popen(
-            [script],
+            command,
             cwd=self._repo_root,
             env=env,
             start_new_session=True,
         )
         self._emit_status("Запуск игры в GUI через Viewer.")
+
+    def _check_torch_import(self) -> bool:
+        command = [
+            sys.executable,
+            "-c",
+            "import torch; print(torch.__version__)",
+        ]
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            cwd=self._repo_root,
+        )
+        if result.returncode == 0:
+            return True
+        error_text = (result.stderr or result.stdout or "").strip()
+        if error_text:
+            error_text = f" Детали: {error_text}"
+        self._emit_status(
+            "Не удалось загрузить PyTorch (torch) при запуске игры. "
+            "Где: проверка окружения перед запуском Viewer. "
+            "Что делать дальше: переустановите torch под вашу версию Python, "
+            "обновите Microsoft Visual C++ Redistributable и попробуйте снова."
+            f"{error_text}"
+        )
+        return False
 
     @QtCore.Slot()
     def refresh_board_text(self) -> None:
@@ -528,10 +564,14 @@ class GUIController(QtCore.QObject):
         self._emit_log(f"[{train_label}] {start_message}")
         self._emit_status(start_message)
 
-        self._process.start("./train.sh")
+        script = self._script_path("train")
+        if self._is_windows:
+            self._process.start("cmd", ["/c", script])
+        else:
+            self._process.start(script)
         if not self._process.waitForStarted(3000):
             self._emit_log(
-                "[GUI] Не удалось запустить train.sh. Проверьте, что файл доступен.",
+                "[GUI] Не удалось запустить train-скрипт. Проверьте, что файл доступен.",
                 level="ERROR",
             )
             self._cleanup_process()
@@ -542,16 +582,17 @@ class GUIController(QtCore.QObject):
     def _prepare_training_data(self) -> bool:
         try:
             self._persist_rosters()
+            script = self._script_path("data")
             args = [
-                "./data.sh",
                 str(self._num_games),
                 "Necrons",
                 "Necrons",
                 str(self._board_x),
                 str(self._board_y),
             ]
+            command = self._build_script_command(script, args)
             result = subprocess.run(
-                args,
+                command,
                 cwd=self._repo_root,
                 capture_output=True,
                 text=True,
@@ -560,7 +601,7 @@ class GUIController(QtCore.QObject):
             if result.returncode != 0:
                 message = (
                     "Ошибка подготовки данных (gui_qt/main.py): "
-                    "проверьте data.sh и зависимости."
+                    "проверьте data-скрипт и зависимости."
                 )
                 self._emit_status(message)
                 self._emit_log(
@@ -572,7 +613,7 @@ class GUIController(QtCore.QObject):
         except OSError as exc:
             message = (
                 "Ошибка подготовки данных (gui_qt/main.py): "
-                "проверьте доступность data.sh."
+                "проверьте доступность data-скрипта."
             )
             self._emit_status(message)
             self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
@@ -747,6 +788,15 @@ class GUIController(QtCore.QObject):
             self._set_play_model(latest, source="latest")
             return latest
         return "None"
+
+    def _script_path(self, script_base: str) -> str:
+        ext = "bat" if self._is_windows else "sh"
+        return os.path.join(self._repo_root, f"{script_base}.{ext}")
+
+    def _build_script_command(self, script: str, args: list[str]) -> list[str]:
+        if self._is_windows:
+            return ["cmd", "/c", script, *args]
+        return [script, *args]
 
     def _render_board_ascii(self, board_path: str) -> str:
         if not os.path.exists(board_path):

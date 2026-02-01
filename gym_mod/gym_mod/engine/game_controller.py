@@ -155,7 +155,9 @@ class GameController:
             env.attacker_side = attacker_side
             env.defender_side = defender_side
 
-            state, info = env.reset(m=model, e=enemy, playType=True, Type="big", trunc=True)
+            state, info = env.reset(
+                options={"m": model, "e": enemy, "playType": True, "Type": "big", "trunc": True}
+            )
 
             n_actions = [5, 2, len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
             for _ in range(len(model)):
@@ -193,9 +195,16 @@ class GameController:
             i = 0
             reward = 0
 
+            def update_board(target_env):
+                board_env = target_env
+                if not hasattr(board_env, "updateBoard") and hasattr(board_env, "unwrapped"):
+                    board_env = board_env.unwrapped
+                if hasattr(board_env, "updateBoard"):
+                    board_env.updateBoard()
+
             while not is_done:
                 done, info = env.unwrapped.player()
-                env.updateBoard()
+                update_board(env)
                 state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
                 shoot_mask = build_shoot_action_mask(env)
                 action = select_action(env, state_tensor, i, policy_net, len(model), shoot_mask=shoot_mask)
@@ -212,7 +221,7 @@ class GameController:
                     )
                     self._io.log(message)
                     state = next_observation
-                    env.updateBoard()
+                    update_board(env)
 
                 if done is True:
                     if reward > 0:
