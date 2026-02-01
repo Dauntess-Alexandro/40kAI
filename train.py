@@ -845,7 +845,10 @@ def main():
     
     current_time = datetime.datetime.now()
     date = str(current_time.second)+"-"+str(current_time.microsecond)
-    name = "M:"+model[0].showUnitData()["Army"]+"_vs_"+"P:"+enemy[0].showUnitData()["Army"]
+    if model is not None and enemy is not None:
+        name = "M:"+model[0].showUnitData()["Army"]+"_vs_"+"P:"+enemy[0].showUnitData()["Army"]
+    else:
+        name = f"M:{roster_config['model_faction']}_vs_P:{roster_config['enemy_faction']}"
     def _sanitize_fs_name(value):
         forbidden = '<>:"/\\\\|?*'
         for ch in forbidden:
