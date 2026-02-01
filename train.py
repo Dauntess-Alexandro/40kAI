@@ -1425,10 +1425,15 @@ def main():
         'optimizer': optimizer.state_dict(),}
         , ("models/{}/model-{}.pth".format(safe_name, date)))
     
-    toSave = [primary_ctx["env"], primary_ctx["model"], primary_ctx["enemy"]]
-    
-    with open(fileName, "wb") as file:
-        pickle.dump(toSave, file)
+    if "env" in primary_ctx and "model" in primary_ctx and "enemy" in primary_ctx:
+        toSave = [primary_ctx["env"], primary_ctx["model"], primary_ctx["enemy"]]
+        with open(fileName, "wb") as file:
+            pickle.dump(toSave, file)
+    else:
+        skip_line = "[SAVE] subprocess env: нет локальных env/model/enemy, pickle пропущен."
+        append_agent_log(skip_line)
+        if TRAIN_LOG_TO_CONSOLE:
+            print(skip_line)
     
     if os.path.isfile("gui/data.json"):
         initFile.delFile()
