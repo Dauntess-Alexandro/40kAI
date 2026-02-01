@@ -530,6 +530,7 @@ UPDATES_PER_STEP = int(data.get("updates_per_step", 1))  # 1 = как было �
 WARMUP_STEPS     = int(data.get("warmup_steps", 0))      # 0 = без прогрева
 
 def main():
+    global USE_SUBPROC_ENVS
     print("\nTraining...\n")
     
     end = False
