@@ -177,6 +177,7 @@ def optimize_model(
     scaler=None,
     pin_memory=False,
     prefetch=False,
+    perf_diag=False,
 ):
     if len(memory) < BATCH_SIZE:
         return None
@@ -331,29 +332,47 @@ def optimize_model(
             loss = criterion(selected_action_values, expected_state_action_values)
         per_stats = None
 
+    forward_end = perf_counter()
+
     optimizer.zero_grad()
     backward_start = perf_counter()
     if amp_enabled and scaler is not None:
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_value_(policy_net.parameters(), 100)
+        backward_end = perf_counter()
+        optim_start = perf_counter()
         scaler.step(optimizer)
         scaler.update()
     else:
         loss.backward()
         torch.nn.utils.clip_grad_value_(policy_net.parameters(), 100)
+        backward_end = perf_counter()
+        optim_start = perf_counter()
         optimizer.step()
-    backward_time = perf_counter() - backward_start
-    forward_time = perf_counter() - forward_start
+    optim_end = perf_counter()
+
+    if perf_diag:
+        forward_time = forward_end - forward_start
+        backward_time = backward_end - backward_start
+        optim_time = optim_end - optim_start
+    else:
+        forward_time = optim_end - forward_start
+        backward_time = optim_end - backward_start
+        optim_time = None
+
+    timing = {
+        "sample_s": sample_time,
+        "forward_s": forward_time,
+        "backward_s": backward_time,
+    }
+    if perf_diag:
+        timing["optim_s"] = optim_time
 
     return {
         "loss": loss.item(),
         "td_target_mean": expected_state_action_values.mean().item(),
         "td_target_max": expected_state_action_values.max().item(),
         "per_stats": per_stats,
-        "timing": {
-            "sample_s": sample_time,
-            "forward_s": forward_time,
-            "backward_s": backward_time,
-        },
+        "timing": timing,
     }

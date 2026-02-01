@@ -76,9 +76,136 @@ PIN_MEMORY = os.getenv("PIN_MEMORY", "0") == "1"
 USE_AMP = os.getenv("USE_AMP", "1") == "1"
 USE_COMPILE = os.getenv("USE_COMPILE", "0") == "1"
 SAVE_EVERY = int(os.getenv("SAVE_EVERY", "0"))
+PERF_DIAG = os.getenv("PERF_DIAG", "0") == "1"
+PERF_DIAG_EVERY = int(os.getenv("PERF_DIAG_EVERY", "200"))
+if PERF_DIAG_EVERY < 1:
+    PERF_DIAG_EVERY = 1
 # Рекомендации (включать вручную при наличии GPU/CPU): NUM_ENVS=8..16, BATCH_ACT=1,
 # USE_AMP=1, USE_COMPILE=1, PREFETCH=1, PIN_MEMORY=1, LOG_EVERY=200.
 # ======================
+
+
+class PerfDiag:
+    def __init__(self, enabled: bool):
+        self.enabled = enabled
+        self.reset()
+
+    def reset(self) -> None:
+        self.totals = {}
+        self.maxes = {}
+        self.counts = {}
+        self.io_totals = {}
+        self.io_maxes = {}
+        self.io_counts = {}
+        self.steps = 0
+        self.updates = 0
+        self.steps_since_report = 0
+
+    def _add(self, totals: dict, maxes: dict, counts: dict, key: str, duration_s: float) -> None:
+        if duration_s is None:
+            return
+        totals[key] = totals.get(key, 0.0) + duration_s
+        maxes[key] = max(maxes.get(key, 0.0), duration_s)
+        counts[key] = counts.get(key, 0) + 1
+
+    def add(self, key: str, duration_s: float) -> None:
+        if not self.enabled:
+            return
+        self._add(self.totals, self.maxes, self.counts, key, duration_s)
+
+    def add_io(self, key: str, duration_s: float) -> None:
+        if not self.enabled:
+            return
+        self._add(self.io_totals, self.io_maxes, self.io_counts, key, duration_s)
+
+    def inc_steps(self, count: int = 1) -> None:
+        if not self.enabled:
+            return
+        self.steps += count
+        self.steps_since_report += count
+
+    def inc_updates(self, count: int = 1) -> None:
+        if not self.enabled:
+            return
+        self.updates += count
+
+    def _format_stats(self, totals: dict, maxes: dict, counts: dict) -> list[str]:
+        parts = []
+        for key, total in totals.items():
+            count = max(1, counts.get(key, 0))
+            avg_ms = 1000.0 * total / count
+            max_ms = 1000.0 * maxes.get(key, 0.0)
+            parts.append(f"{key}={avg_ms:.3f}ms(max {max_ms:.3f})")
+        return parts
+
+    def _format_breakdown(self, totals: dict) -> list[str]:
+        total_time = sum(totals.values())
+        if total_time <= 0:
+            return []
+        parts = []
+        for key, total in totals.items():
+            parts.append(f"{key}={100.0 * total / total_time:.1f}%")
+        return parts
+
+    def maybe_report(self, every: int) -> None:
+        if not self.enabled:
+            return
+        if self.steps_since_report < every:
+            return
+        self._report()
+        self.steps_since_report = 0
+        self.totals.clear()
+        self.maxes.clear()
+        self.counts.clear()
+        self.io_totals.clear()
+        self.io_maxes.clear()
+        self.io_counts.clear()
+
+    def final_report(self) -> None:
+        if not self.enabled:
+            return
+        if not self.totals and not self.io_totals:
+            return
+        self._report()
+
+    def _report(self) -> None:
+        step_line = (
+            f"[PERF_DIAG] steps={self.steps} updates={self.updates} "
+            + " ".join(self._format_stats(self.totals, self.maxes, self.counts))
+        )
+        breakdown = self._format_breakdown(self.totals)
+        breakdown_line = "[PERF_DIAG][BREAKDOWN] " + " ".join(breakdown) if breakdown else ""
+        io_line = (
+            f"[IO] total_ms={1000.0 * sum(self.io_totals.values()):.3f} "
+            + " ".join(self._format_stats(self.io_totals, self.io_maxes, self.io_counts))
+        )
+        print(step_line)
+        if breakdown_line:
+            print(breakdown_line)
+        if self.io_totals:
+            print(io_line)
+
+
+perf_diag = PerfDiag(PERF_DIAG)
+
+if PERF_DIAG:
+    device_name = "cpu"
+    if torch.cuda.is_available():
+        try:
+            device_name = torch.cuda.get_device_name(0)
+        except Exception:
+            device_name = "cuda"
+    print(
+        "[PERF_DIAG][SYS] "
+        f"python={sys.version.split()[0]} "
+        f"torch={torch.__version__} "
+        f"numpy={np.__version__} "
+        f"os_cpu_count={os.cpu_count()} "
+        f"torch_threads={torch.get_num_threads()} "
+        f"torch_interop_threads={torch.get_num_interop_threads()} "
+        f"device={device.type} "
+        f"device_name={device_name}"
+    )
 
 # ===== self-play config =====
 SELF_PLAY_ENABLED = os.getenv("SELF_PLAY_ENABLED", "0") == "1"
@@ -185,24 +312,28 @@ def moving_avg(values, window=50):
         out.append(sum(chunk) / len(chunk))
     return out
 
-def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
+def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics", perf_tracker=None):
     os.makedirs(metrics_dir, exist_ok=True)
     os.makedirs("gui/img", exist_ok=True)
 
     # --- CSV ---
     csv_path = os.path.join(metrics_dir, f"stats_{run_id}.csv")
     cols = ["episode", "ep_reward", "ep_len", "turn", "model_vp", "player_vp", "vp_diff", "result", "end_reason", "end_code"]
+    csv_start = time.perf_counter()
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()
         for r in ep_rows:
             w.writerow({k: r.get(k, "") for k in cols})
+    if perf_tracker and perf_tracker.enabled:
+        perf_tracker.add_io("metrics_csv_s", time.perf_counter() - csv_start)
 
     wins01 = [1 if r["result"] == "win" else 0 for r in ep_rows]
     vp_diff = [r["vp_diff"] for r in ep_rows]
     ep_idx = list(range(1, len(ep_rows) + 1))
 
     # --- Winrate plot ---
+    plots_start = time.perf_counter()
     winrate_ma = moving_avg(wins01, window=50)
     plt.figure()
     plt.plot(ep_idx, winrate_ma)
@@ -247,6 +378,8 @@ def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
     plt.savefig(os.path.join("gui/img", f"endreasons_{run_id}.png"))
     plt.savefig(os.path.join("gui/img", "endreasons.png"))
     plt.close()
+    if perf_tracker and perf_tracker.enabled:
+        perf_tracker.add_io("metrics_plots_s", time.perf_counter() - plots_start)
 
     print(f"[metrics] saved: {csv_path}")
 
@@ -254,11 +387,14 @@ def append_agent_log(line: str) -> None:
     log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LOGS_FOR_AGENTS.md")
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     full_line = f"{timestamp} | {line}"
+    log_start = time.perf_counter() if PERF_DIAG else None
     try:
         with open(log_path, "a", encoding="utf-8") as log_file:
             log_file.write(full_line + "\n")
     except Exception as exc:
         print(f"[LOG][WARN] Не удалось записать LOGS_FOR_AGENTS.md: {exc}")
+    if PERF_DIAG and log_start is not None:
+        perf_diag.add_io("logs_for_agents_s", time.perf_counter() - log_start)
 
 def _load_roster_config():
     config = {
@@ -696,9 +832,11 @@ pbar = tqdm(total=totLifeT, mininterval=pbar_mininterval, miniters=pbar_update_e
 pending_pbar_updates = 0
 
 for ctx in env_contexts:
+    reset_start = time.perf_counter()
     ctx["state"], ctx["info"] = ctx["env"].reset(
         options={"m": ctx["model"], "e": ctx["enemy"], "Type": "big", "trunc": True}
     )
+    perf_diag.add("reset_s", time.perf_counter() - reset_start)
     ctx["ep_len"] = 0
     ctx["rew_arr"] = []
     ctx["n_step_buffer"] = collections.deque(maxlen=N_STEP)
@@ -783,7 +921,9 @@ while end is False:
                     shoot_mask=shoot_masks[env_idx],
                 )
             )
-    perf_stats["action_select_s"] += time.perf_counter() - action_start
+    action_elapsed = time.perf_counter() - action_start
+    perf_stats["action_select_s"] += action_elapsed
+    perf_diag.add("action_select_s", action_elapsed)
 
     enemy_turn_start = time.perf_counter()
     for idx, ctx in enumerate(env_contexts):
@@ -795,7 +935,9 @@ while end is False:
             )
         else:
             env_unwrapped.enemyTurn(trunc=trunc)
-    perf_stats["enemy_turn_s"] += time.perf_counter() - enemy_turn_start
+    enemy_turn_elapsed = time.perf_counter() - enemy_turn_start
+    perf_stats["enemy_turn_s"] += enemy_turn_elapsed
+    perf_diag.add("enemy_turn_s", enemy_turn_elapsed)
 
     losses = []
     last_td_stats = None
@@ -809,7 +951,10 @@ while end is False:
         action_dict = convertToDict(actions[idx])
         step_start = time.perf_counter()
         next_observation, reward, done, res, info = ctx["env"].step(action_dict)
-        perf_stats["env_step_s"] += time.perf_counter() - step_start
+        step_elapsed = time.perf_counter() - step_start
+        perf_stats["env_step_s"] += step_elapsed
+        perf_diag.add("env_step_s", step_elapsed)
+        perf_diag.inc_steps()
         perf_counts["env_steps"] += 1
         ctx["rew_arr"].append(float(reward))
 
@@ -821,7 +966,9 @@ while end is False:
             print("The units are fighting")
 
         if RENDER_EVERY > 0 and vec_env_count == 1 and (global_step % RENDER_EVERY == 0 or done):
+            render_start = time.perf_counter()
             ctx["env"].render()
+            perf_diag.add("render_s", time.perf_counter() - render_start)
 
         mission_name = info.get("mission", DEFAULT_MISSION_NAME)
         message = (
@@ -1020,6 +1167,7 @@ while end is False:
             if SAVE_EVERY > 0 and numLifeT % SAVE_EVERY == 0:
                 checkpoint_path = f"models/{safe_name}/checkpoint_ep{numLifeT}.pth"
                 os.makedirs(f"models/{safe_name}", exist_ok=True)
+                checkpoint_start = time.perf_counter()
                 torch.save(
                     {
                         "policy_net": policy_net.state_dict(),
@@ -1029,6 +1177,7 @@ while end is False:
                     },
                     checkpoint_path,
                 )
+                perf_diag.add_io("checkpoint_save_s", time.perf_counter() - checkpoint_start)
                 if TRAIN_LOG_ENABLED:
                     save_line = f"[TRAIN][SAVE] ep={numLifeT} path={checkpoint_path}"
                     if TRAIN_LOG_TO_FILE:
@@ -1062,12 +1211,16 @@ while end is False:
             ctx["env"].attacker_side = attacker_side
             ctx["env"].defender_side = defender_side
 
+            reset_start = time.perf_counter()
             ctx["state"], ctx["info"] = ctx["env"].reset(
                 options={"m": ctx["model"], "e": ctx["enemy"], "Type": "small", "trunc": True}
             )
+            perf_diag.add("reset_s", time.perf_counter() - reset_start)
             ctx["ep_len"] = 0
             ctx["rew_arr"] = []
-            perf_stats["logging_s"] += time.perf_counter() - logging_start
+            logging_elapsed = time.perf_counter() - logging_start
+            perf_stats["logging_s"] += logging_elapsed
+            perf_diag.add("logging_s", logging_elapsed)
 
         if numLifeT == totLifeT:
             end = True
@@ -1104,6 +1257,7 @@ while end is False:
                 scaler=scaler,
                 pin_memory=PIN_MEMORY,
                 prefetch=PREFETCH,
+                perf_diag=PERF_DIAG,
             )
 
             # optimize_model возвращает 0 если replay ещё маленький — такие пропускаем
@@ -1114,10 +1268,16 @@ while end is False:
                 last_loss_value = result["loss"]
                 optimize_steps += 1
                 perf_counts["updates"] += 1
+                perf_diag.inc_updates()
                 timing = result.get("timing", {})
                 perf_stats["replay_sample_s"] += float(timing.get("sample_s", 0.0))
                 perf_stats["train_forward_s"] += float(timing.get("forward_s", 0.0))
                 perf_stats["train_backward_s"] += float(timing.get("backward_s", 0.0))
+                if PERF_DIAG:
+                    perf_diag.add("replay_sample_s", float(timing.get("sample_s", 0.0)))
+                    perf_diag.add("train_forward_s", float(timing.get("forward_s", 0.0)))
+                    perf_diag.add("train_backward_s", float(timing.get("backward_s", 0.0)))
+                    perf_diag.add("optim_step_s", float(timing.get("optim_s", 0.0)))
                 if TRAIN_LOG_ENABLED and optimize_steps % TRAIN_LOG_EVERY_UPDATES == 0:
                     train_line = (
                         "[TRAIN] "
@@ -1204,47 +1364,61 @@ while end is False:
         perf_stats = {k: 0.0 for k in perf_stats}
         perf_counts = {"env_steps": 0, "updates": 0}
 
+    perf_diag.maybe_report(PERF_DIAG_EVERY)
     global_step += vec_env_count
 
 for ctx in env_contexts:
     ctx["env"].close()
 
+train_res_start = time.perf_counter()
 with open('trainRes.txt', 'w') as f:
     for i in range(len(inText)):
         f.write(inText[i])
         f.write('\n')
+perf_diag.add_io("train_results_s", time.perf_counter() - train_res_start)
 
 # Делать gif только если мы реально сохраняли кадры
 if RENDER_EVERY > 0:
+    gif_start = time.perf_counter()
     if totLifeT > 30:
         genDisplay.makeGif(numOfLife=totLifeT, trunc=True)
     else:
         genDisplay.makeGif(numOfLife=totLifeT)
+    perf_diag.add_io("gif_render_s", time.perf_counter() - gif_start)
 else:
     print("[render] RENDER_EVERY=0 -> gif skipped")
 
-
+metrics_start = time.perf_counter()
 metrics.lossCurve()
 metrics.showRew()
 metrics.showEpLen()
+perf_diag.add_io("metrics_curves_s", time.perf_counter() - metrics_start)
 
-save_extra_metrics(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
+save_extra_metrics(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics", perf_tracker=perf_diag)
+json_start = time.perf_counter()
 metrics.createJson()
+perf_diag.add_io("metrics_json_s", time.perf_counter() - json_start)
 print("Generated metrics")
 
 os.makedirs(fold, exist_ok=True)
 
+model_save_start = time.perf_counter()
 torch.save({
     "policy_net": policy_net.state_dict(),
     "target_net": target_net.state_dict(),
     "net_type": NET_TYPE,
     'optimizer': optimizer.state_dict(),}
     , ("models/{}/model-{}.pth".format(safe_name, date)))
+perf_diag.add_io("model_save_s", time.perf_counter() - model_save_start)
 
 toSave = [primary_ctx["env"], primary_ctx["model"], primary_ctx["enemy"]]
 
+pickle_start = time.perf_counter()
 with open(fileName, "wb") as file:
     pickle.dump(toSave, file)
+perf_diag.add_io("pickle_save_s", time.perf_counter() - pickle_start)
 
 if os.path.isfile("gui/data.json"):
     initFile.delFile()
+
+perf_diag.final_report()
