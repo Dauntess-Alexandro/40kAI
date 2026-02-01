@@ -1387,24 +1387,11 @@ def main():
     
         global_step += vec_env_count
     
-    if USE_SUBPROC_ENVS:
-        for ctx in env_contexts:
-            try:
-                ctx["conn"].send(("close", None))
-                ctx["conn"].recv()
-            except Exception:
-                pass
-        for proc in subproc_envs:
-            proc.join(timeout=1.0)
-    else:
-        for ctx in env_contexts:
-            ctx["env"].close()
-    
     with open('trainRes.txt', 'w') as f:
         for i in range(len(inText)):
             f.write(inText[i])
             f.write('\n')
-    
+
     # Делать gif только если мы реально сохраняли кадры
     if RENDER_EVERY > 0 and not USE_SUBPROC_ENVS:
         if totLifeT > 30:
@@ -1413,25 +1400,24 @@ def main():
             genDisplay.makeGif(numOfLife=totLifeT)
     else:
         print("[render] RENDER_EVERY=0 -> gif skipped")
-    
-    
+
     metrics_obj.lossCurve()
     metrics_obj.showRew()
     metrics_obj.showEpLen()
-    
+
     save_extra_metrics(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
     metrics_obj.createJson()
     print("Generated metrics")
-    
+
     os.makedirs(fold, exist_ok=True)
-    
+
     torch.save({
         "policy_net": policy_net.state_dict(),
         "target_net": target_net.state_dict(),
         "net_type": NET_TYPE,
         'optimizer': optimizer.state_dict(),}
         , ("models/{}/model-{}.pth".format(safe_name, date)))
-    
+
     if "env" in primary_ctx and "model" in primary_ctx and "enemy" in primary_ctx:
         toSave = [primary_ctx["env"], primary_ctx["model"], primary_ctx["enemy"]]
         with open(fileName, "wb") as file:
@@ -1446,7 +1432,8 @@ def main():
                     "[SAVE][WARN] subprocess env недоступен: сохранение pickle пропущено. "
                     "Где: train.py main/save_pickle (send/recv). "
                     f"Ошибка: {exc}. "
-                    "Что сделать: проверь логи subprocess/Training и попробуй выключить USE_SUBPROC_ENVS."
+                    "Что сделать: проверь, что subprocess не завершился до сохранения, "
+                    "и смотри логи subprocess/Training."
                 )
                 append_agent_log(err_line)
                 if TRAIN_LOG_TO_CONSOLE:
@@ -1469,6 +1456,19 @@ def main():
             append_agent_log(skip_line)
             if TRAIN_LOG_TO_CONSOLE:
                 print(skip_line)
+
+    if USE_SUBPROC_ENVS:
+        for ctx in env_contexts:
+            try:
+                ctx["conn"].send(("close", None))
+                ctx["conn"].recv()
+            except Exception:
+                pass
+        for proc in subproc_envs:
+            proc.join(timeout=1.0)
+    else:
+        for ctx in env_contexts:
+            ctx["env"].close()
     
     if os.path.isfile("gui/data.json"):
         initFile.delFile()
