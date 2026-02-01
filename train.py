@@ -68,12 +68,12 @@ if N_STEP < 1:
 # ======================
 
 # ===== perf knobs =====
-RENDER_EVERY = int(os.getenv("RENDER_EVERY", "20"))  # 0 = выключить рендер полностью
+RENDER_EVERY = int(os.getenv("RENDER_EVERY", "0"))  # 0 = выключить рендер полностью
 UPDATES_PER_STEP = int(os.getenv("UPDATES_PER_STEP", "4"))  
-BATCH_ACT = os.getenv("BATCH_ACT", "0") == "1"
+BATCH_ACT = os.getenv("BATCH_ACT", "1") == "1"
 PREFETCH = os.getenv("PREFETCH", "0") == "1"
 PIN_MEMORY = os.getenv("PIN_MEMORY", "0") == "1"
-USE_AMP = os.getenv("USE_AMP", "0") == "1"
+USE_AMP = os.getenv("USE_AMP", "1") == "1"
 USE_COMPILE = os.getenv("USE_COMPILE", "0") == "1"
 SAVE_EVERY = int(os.getenv("SAVE_EVERY", "0"))
 # Рекомендации (включать вручную при наличии GPU/CPU): NUM_ENVS=8..16, BATCH_ACT=1,
