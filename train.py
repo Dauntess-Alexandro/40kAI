@@ -1438,20 +1438,32 @@ def main():
             pickle.dump(toSave, file)
     else:
         if USE_SUBPROC_ENVS:
-            primary_ctx["conn"].send(("save_pickle", fileName))
-            save_resp = primary_ctx["conn"].recv()
-            if isinstance(save_resp, dict) and save_resp.get("ok"):
-                ok_line = f"[SAVE] pickle сохранён в subprocess env: {save_resp.get('path')}"
-                append_agent_log(ok_line)
-                if TRAIN_LOG_TO_CONSOLE:
-                    print(ok_line)
-            else:
-                err_line = "[SAVE][WARN] не удалось сохранить pickle в subprocess env."
-                if isinstance(save_resp, dict) and save_resp.get("error"):
-                    err_line += f" Ошибка: {save_resp['error']}"
+            try:
+                primary_ctx["conn"].send(("save_pickle", fileName))
+                save_resp = primary_ctx["conn"].recv()
+            except (BrokenPipeError, EOFError, OSError) as exc:
+                err_line = (
+                    "[SAVE][WARN] subprocess env недоступен: сохранение pickle пропущено. "
+                    "Где: train.py main/save_pickle (send/recv). "
+                    f"Ошибка: {exc}. "
+                    "Что сделать: проверь логи subprocess/Training и попробуй выключить USE_SUBPROC_ENVS."
+                )
                 append_agent_log(err_line)
                 if TRAIN_LOG_TO_CONSOLE:
                     print(err_line)
+            else:
+                if isinstance(save_resp, dict) and save_resp.get("ok"):
+                    ok_line = f"[SAVE] pickle сохранён в subprocess env: {save_resp.get('path')}"
+                    append_agent_log(ok_line)
+                    if TRAIN_LOG_TO_CONSOLE:
+                        print(ok_line)
+                else:
+                    err_line = "[SAVE][WARN] не удалось сохранить pickle в subprocess env."
+                    if isinstance(save_resp, dict) and save_resp.get("error"):
+                        err_line += f" Ошибка: {save_resp['error']}"
+                    append_agent_log(err_line)
+                    if TRAIN_LOG_TO_CONSOLE:
+                        print(err_line)
         else:
             skip_line = "[SAVE] subprocess env: нет локальных env/model/enemy, pickle пропущен."
             append_agent_log(skip_line)
