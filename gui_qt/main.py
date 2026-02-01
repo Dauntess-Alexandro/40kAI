@@ -531,7 +531,8 @@ class GUIController(QtCore.QObject):
         if mode == "train8":
             train_label = "TRAIN8"
             status_prefix = "Обучение 8x"
-            env_overrides["VEC_ENV_COUNT"] = "8"
+            env_overrides["NUM_ENVS"] = "16"
+            env_overrides["USE_SUBPROC_ENVS"] = "1"
         elif mode == "selfplay":
             train_label = "SELFPLAY"
             status_prefix = "Самообучение"
