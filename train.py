@@ -340,6 +340,13 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
             elif cmd == "sample_action":
                 sampled_action = env.action_space.sample()
                 conn.send(sampled_action)
+            elif cmd == "save_pickle":
+                try:
+                    with open(payload, "wb") as file:
+                        pickle.dump([env, model, enemy], file)
+                    conn.send({"ok": True, "path": payload})
+                except Exception as exc:
+                    conn.send({"ok": False, "error": str(exc)})
             elif cmd == "close":
                 conn.send(True)
                 break
@@ -1430,10 +1437,26 @@ def main():
         with open(fileName, "wb") as file:
             pickle.dump(toSave, file)
     else:
-        skip_line = "[SAVE] subprocess env: нет локальных env/model/enemy, pickle пропущен."
-        append_agent_log(skip_line)
-        if TRAIN_LOG_TO_CONSOLE:
-            print(skip_line)
+        if USE_SUBPROC_ENVS:
+            primary_ctx["conn"].send(("save_pickle", fileName))
+            save_resp = primary_ctx["conn"].recv()
+            if isinstance(save_resp, dict) and save_resp.get("ok"):
+                ok_line = f"[SAVE] pickle сохранён в subprocess env: {save_resp.get('path')}"
+                append_agent_log(ok_line)
+                if TRAIN_LOG_TO_CONSOLE:
+                    print(ok_line)
+            else:
+                err_line = "[SAVE][WARN] не удалось сохранить pickle в subprocess env."
+                if isinstance(save_resp, dict) and save_resp.get("error"):
+                    err_line += f" Ошибка: {save_resp['error']}"
+                append_agent_log(err_line)
+                if TRAIN_LOG_TO_CONSOLE:
+                    print(err_line)
+        else:
+            skip_line = "[SAVE] subprocess env: нет локальных env/model/enemy, pickle пропущен."
+            append_agent_log(skip_line)
+            if TRAIN_LOG_TO_CONSOLE:
+                print(skip_line)
     
     if os.path.isfile("gui/data.json"):
         initFile.delFile()
