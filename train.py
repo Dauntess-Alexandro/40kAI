@@ -337,6 +337,9 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                     else:
                         raise TypeError(f"Unsupported action space for {k}: {type(sp)}")
                 conn.send(sizes)
+            elif cmd == "sample_action":
+                sampled_action = env.action_space.sample()
+                conn.send(sampled_action)
             elif cmd == "close":
                 conn.send(True)
                 break
@@ -478,11 +481,15 @@ def _select_actions_batch(env_contexts, states, steps_done, policy_net, shoot_ma
         decision = policy_net(state_batch)
 
     for env_idx, ctx in enumerate(env_contexts):
-        env = ctx["env"]
+        env = ctx.get("env")
         len_model = ctx["len_model"]
         use_random = random.random() <= eps_threshold
         if use_random:
-            sampled_action = env.action_space.sample()
+            if env is None:
+                ctx["conn"].send(("sample_action", None))
+                sampled_action = ctx["conn"].recv()
+            else:
+                sampled_action = env.action_space.sample()
             shoot_choice = sampled_action["shoot"]
             if shoot_masks and shoot_masks[env_idx] is not None:
                 mask = torch.as_tensor(shoot_masks[env_idx], dtype=torch.bool)
