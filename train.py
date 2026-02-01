@@ -11,6 +11,7 @@ import math
 import json
 import random
 import matplotlib.pyplot as plt
+import time
 from tqdm import tqdm
 from gym_mod.envs.warhamEnv import *
 from gym_mod.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
@@ -49,6 +50,7 @@ TRAIN_LOG_EVERY_UPDATES = int(os.getenv("TRAIN_LOG_EVERY_UPDATES", "200"))
 TRAIN_LOG_TO_FILE = os.getenv("TRAIN_LOG_TO_FILE", "1") == "1"
 TRAIN_LOG_TO_CONSOLE = os.getenv("TRAIN_LOG_TO_CONSOLE", "0") == "1"
 TRAIN_DEBUG = os.getenv("TRAIN_DEBUG", "0") == "1"
+LOG_EVERY = int(os.getenv("LOG_EVERY", "200"))
 if TRAIN_LOG_EVERY_UPDATES < 1:
     TRAIN_LOG_EVERY_UPDATES = 1
 if TRAIN_DEBUG:
@@ -68,6 +70,14 @@ if N_STEP < 1:
 # ===== perf knobs =====
 RENDER_EVERY = int(os.getenv("RENDER_EVERY", "20"))  # 0 = выключить рендер полностью
 UPDATES_PER_STEP = int(os.getenv("UPDATES_PER_STEP", "4"))  
+BATCH_ACT = os.getenv("BATCH_ACT", "0") == "1"
+PREFETCH = os.getenv("PREFETCH", "0") == "1"
+PIN_MEMORY = os.getenv("PIN_MEMORY", "0") == "1"
+USE_AMP = os.getenv("USE_AMP", "0") == "1"
+USE_COMPILE = os.getenv("USE_COMPILE", "0") == "1"
+SAVE_EVERY = int(os.getenv("SAVE_EVERY", "0"))
+# Рекомендации (включать вручную при наличии GPU/CPU): NUM_ENVS=8..16, BATCH_ACT=1,
+# USE_AMP=1, USE_COMPILE=1, PREFETCH=1, PIN_MEMORY=1, LOG_EVERY=200.
 # ======================
 
 # ===== self-play config =====
@@ -433,22 +443,6 @@ GRAD_CLIP_VALUE = 100.0
 UPDATES_PER_STEP = int(data.get("updates_per_step", 1))  # 1 = как было раньше
 WARMUP_STEPS     = int(data.get("warmup_steps", 0))      # 0 = без прогрева
 
-if TRAIN_LOG_ENABLED:
-    train_start_line = (
-        "[TRAIN][START] "
-        f"DoubleDQN={int(DOUBLE_DQN_ENABLED)} "
-        f"Dueling={int(DUELING_ENABLED)} "
-        f"PER={int(PER_ENABLED)} "
-        f"N_STEP={N_STEP} "
-        f"LR={LR} "
-        f"clip_reward={CLIP_REWARD} "
-        f"grad_clip={GRAD_CLIP_VALUE}"
-    )
-    if TRAIN_LOG_TO_FILE:
-        append_agent_log(train_start_line)
-    if TRAIN_LOG_TO_CONSOLE:
-        print(train_start_line)
-
 print("\nTraining...\n")
 
 end = False
@@ -459,9 +453,33 @@ totLifeT = roster_config["totLifeT"]
 b_len = roster_config["b_len"]
 b_hei = roster_config["b_hei"]
 
-vec_env_count = int(os.getenv("VEC_ENV_COUNT", "1"))
+vec_env_count = int(os.getenv("NUM_ENVS", os.getenv("VEC_ENV_COUNT", "1")))
 if vec_env_count < 1:
     vec_env_count = 1
+
+if TRAIN_LOG_ENABLED:
+    train_start_line = (
+        "[TRAIN][START] "
+        f"DoubleDQN={int(DOUBLE_DQN_ENABLED)} "
+        f"Dueling={int(DUELING_ENABLED)} "
+        f"PER={int(PER_ENABLED)} "
+        f"N_STEP={N_STEP} "
+        f"LR={LR} "
+        f"clip_reward={CLIP_REWARD} "
+        f"grad_clip={GRAD_CLIP_VALUE} "
+        f"NUM_ENVS={vec_env_count} "
+        f"BATCH_ACT={int(BATCH_ACT)} "
+        f"USE_AMP={int(USE_AMP)} "
+        f"USE_COMPILE={int(USE_COMPILE)} "
+        f"PREFETCH={int(PREFETCH)} "
+        f"PIN_MEMORY={int(PIN_MEMORY)} "
+        f"LOG_EVERY={LOG_EVERY} "
+        f"SAVE_EVERY={SAVE_EVERY}"
+    )
+    if TRAIN_LOG_TO_FILE:
+        append_agent_log(train_start_line)
+    if TRAIN_LOG_TO_CONSOLE:
+        print(train_start_line)
 
 env_contexts = []
 
@@ -578,11 +596,27 @@ if isinstance(state, dict) or "OrderedDict" in str(type(state)):
 else:
     n_observations = int(np.array(state).shape[0])
 
+if USE_COMPILE and torch.cuda.is_available():
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    try:
+        torch.set_float32_matmul_precision("high")
+    except Exception:
+        pass
+
 
 policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
 target_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
+
+if USE_COMPILE and hasattr(torch, "compile"):
+    try:
+        policy_net = torch.compile(policy_net, mode="reduce-overhead")
+        target_net = torch.compile(target_net, mode="reduce-overhead")
+    except Exception as exc:
+        print(f"[WARN] torch.compile недоступен: {exc}")
 
 opponent_policy_net = None
 if SELF_PLAY_ENABLED:
@@ -625,6 +659,7 @@ if SELF_PLAY_ENABLED:
         opponent_policy_net.load_state_dict(policy_net.state_dict())
 
 optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
+scaler = torch.cuda.amp.GradScaler(enabled=USE_AMP)
 replay_capacity = int(os.getenv("REPLAY_CAPACITY", "100000"))
 if PER_ENABLED:
     memory = PrioritizedReplayMemory(replay_capacity, alpha=PER_ALPHA, eps=PER_EPS)
@@ -689,6 +724,19 @@ ep_rows = []
 
 global_step = 0
 optimize_steps = 0
+perf_stats = {
+    "action_select_s": 0.0,
+    "enemy_turn_s": 0.0,
+    "env_step_s": 0.0,
+    "replay_sample_s": 0.0,
+    "train_forward_s": 0.0,
+    "train_backward_s": 0.0,
+    "logging_s": 0.0,
+}
+perf_counts = {
+    "env_steps": 0,
+    "updates": 0,
+}
 primary_env_unwrapped = unwrap_env(primary_ctx["env"])
 initial_model_hp = float(sum(getattr(primary_env_unwrapped, "unit_health", [])))
 initial_enemy_hp = float(sum(getattr(primary_env_unwrapped, "enemy_health", [])))
@@ -716,8 +764,28 @@ while end is False:
         shoot_masks.append(build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG))
 
     states = [ctx["state"] for ctx in env_contexts]
-    actions, eps_threshold = _select_actions_batch(env_contexts, states, global_step, policy_net, shoot_masks)
+    action_start = time.perf_counter()
+    if BATCH_ACT:
+        actions, eps_threshold = _select_actions_batch(env_contexts, states, global_step, policy_net, shoot_masks)
+    else:
+        decay_steps = max(1.0, float(EPS_DECAY))
+        progress = min(float(global_step) / decay_steps, 1.0)
+        eps_threshold = EPS_START + (EPS_END - EPS_START) * progress
+        actions = []
+        for env_idx, ctx in enumerate(env_contexts):
+            actions.append(
+                select_action_with_epsilon(
+                    ctx["env"],
+                    ctx["state"],
+                    policy_net,
+                    eps_threshold,
+                    ctx["len_model"],
+                    shoot_mask=shoot_masks[env_idx],
+                )
+            )
+    perf_stats["action_select_s"] += time.perf_counter() - action_start
 
+    enemy_turn_start = time.perf_counter()
     for idx, ctx in enumerate(env_contexts):
         env_unwrapped = unwrap_env(ctx["env"])
         if SELF_PLAY_ENABLED:
@@ -727,6 +795,7 @@ while end is False:
             )
         else:
             env_unwrapped.enemyTurn(trunc=trunc)
+    perf_stats["enemy_turn_s"] += time.perf_counter() - enemy_turn_start
 
     losses = []
     last_td_stats = None
@@ -738,7 +807,10 @@ while end is False:
     for idx, ctx in enumerate(env_contexts):
         ctx["ep_len"] += 1
         action_dict = convertToDict(actions[idx])
+        step_start = time.perf_counter()
         next_observation, reward, done, res, info = ctx["env"].step(action_dict)
+        perf_stats["env_step_s"] += time.perf_counter() - step_start
+        perf_counts["env_steps"] += 1
         ctx["rew_arr"].append(float(reward))
 
         unit_health = info["model health"]
@@ -796,6 +868,7 @@ while end is False:
         ctx["state"] = next_observation
 
         if done is True:
+            logging_start = time.perf_counter()
             if SELF_PLAY_ENABLED:
                 append_agent_log(
                     f"Конец эпизода {numLifeT + 1}. "
@@ -944,6 +1017,24 @@ while end is False:
             if trunc is False:
                 print("Restarting...")
             numLifeT += 1
+            if SAVE_EVERY > 0 and numLifeT % SAVE_EVERY == 0:
+                checkpoint_path = f"models/{safe_name}/checkpoint_ep{numLifeT}.pth"
+                os.makedirs(f"models/{safe_name}", exist_ok=True)
+                torch.save(
+                    {
+                        "policy_net": policy_net.state_dict(),
+                        "target_net": target_net.state_dict(),
+                        "net_type": NET_TYPE,
+                        "optimizer": optimizer.state_dict(),
+                    },
+                    checkpoint_path,
+                )
+                if TRAIN_LOG_ENABLED:
+                    save_line = f"[TRAIN][SAVE] ep={numLifeT} path={checkpoint_path}"
+                    if TRAIN_LOG_TO_FILE:
+                        append_agent_log(save_line)
+                    if TRAIN_LOG_TO_CONSOLE:
+                        print(save_line)
 
             if SELF_PLAY_ENABLED and SELF_PLAY_OPPONENT_MODE == "snapshot":
                 if numLifeT % SELF_PLAY_UPDATE_EVERY_EPISODES == 0:
@@ -976,6 +1067,7 @@ while end is False:
             )
             ctx["ep_len"] = 0
             ctx["rew_arr"] = []
+            perf_stats["logging_s"] += time.perf_counter() - logging_start
 
         if numLifeT == totLifeT:
             end = True
@@ -1008,6 +1100,10 @@ while end is False:
                 per_enabled=PER_ENABLED,
                 per_beta=per_beta,
                 per_eps=PER_EPS,
+                use_amp=USE_AMP,
+                scaler=scaler,
+                pin_memory=PIN_MEMORY,
+                prefetch=PREFETCH,
             )
 
             # optimize_model возвращает 0 если replay ещё маленький — такие пропускаем
@@ -1017,6 +1113,11 @@ while end is False:
                 last_per_beta = per_beta
                 last_loss_value = result["loss"]
                 optimize_steps += 1
+                perf_counts["updates"] += 1
+                timing = result.get("timing", {})
+                perf_stats["replay_sample_s"] += float(timing.get("sample_s", 0.0))
+                perf_stats["train_forward_s"] += float(timing.get("forward_s", 0.0))
+                perf_stats["train_backward_s"] += float(timing.get("backward_s", 0.0))
                 if TRAIN_LOG_ENABLED and optimize_steps % TRAIN_LOG_EVERY_UPDATES == 0:
                     train_line = (
                         "[TRAIN] "
@@ -1080,6 +1181,28 @@ while end is False:
                 f"td_error_max={per_stats['td_error_max']:.6f}"
             )
     # =========================
+
+    if LOG_EVERY > 0 and global_step > 0 and global_step % LOG_EVERY == 0:
+        steps = max(1, perf_counts["env_steps"])
+        updates = max(1, perf_counts["updates"])
+        perf_line = (
+            "[PERF] "
+            f"steps={perf_counts['env_steps']} "
+            f"updates={perf_counts['updates']} "
+            f"action_ms={1000.0 * perf_stats['action_select_s'] / steps:.3f} "
+            f"enemy_turn_ms={1000.0 * perf_stats['enemy_turn_s'] / steps:.3f} "
+            f"env_step_ms={1000.0 * perf_stats['env_step_s'] / steps:.3f} "
+            f"replay_sample_ms={1000.0 * perf_stats['replay_sample_s'] / updates:.3f} "
+            f"train_fwd_ms={1000.0 * perf_stats['train_forward_s'] / updates:.3f} "
+            f"train_bwd_ms={1000.0 * perf_stats['train_backward_s'] / updates:.3f} "
+            f"log_ms={1000.0 * perf_stats['logging_s'] / steps:.3f}"
+        )
+        if TRAIN_LOG_TO_FILE:
+            append_agent_log(perf_line)
+        if TRAIN_LOG_TO_CONSOLE:
+            print(perf_line)
+        perf_stats = {k: 0.0 for k in perf_stats}
+        perf_counts = {"env_steps": 0, "updates": 0}
 
     global_step += vec_env_count
 
