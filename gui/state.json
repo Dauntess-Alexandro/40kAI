@@ -3,17 +3,17 @@
     "width": 40,
     "height": 60
   },
-  "turn": 4,
-  "round": 4,
-  "phase": "movement",
+  "turn": 1,
+  "round": 1,
+  "phase": "command",
   "active": "player",
   "vp": {
-    "player": 4,
+    "player": 0,
     "model": 0
   },
   "cp": {
-    "player": 7,
-    "model": 4
+    "player": 0,
+    "model": 0
   },
   "units": [
     {
@@ -21,9 +21,9 @@
       "id": 11,
       "name": "Necron Warriors",
       "models": 10,
-      "hp": 6.0,
-      "x": 10,
-      "y": 40
+      "hp": 10.0,
+      "x": 34,
+      "y": 18
     },
     {
       "side": "player",
@@ -32,7 +32,7 @@
       "models": 10,
       "hp": 10.0,
       "x": 33,
-      "y": 23
+      "y": 58
     },
     {
       "side": "model",
@@ -41,7 +41,7 @@
       "models": 10,
       "hp": 10.0,
       "x": 0,
-      "y": 46
+      "y": 29
     },
     {
       "side": "model",
@@ -49,8 +49,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 0,
-      "y": 57
+      "x": 2,
+      "y": 23
     }
   ],
   "objectives": [
@@ -76,36 +76,36 @@
     }
   ],
   "log_tail": [
-    "--- ФАЗА КОМАНДОВАНИЯ ---",
-    "[PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols",
-    "[PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 2",
-    "[PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) До: моделей=5, раны=[1, 1, 1, 1, 1] всего=5",
-    "[PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной",
-    "[PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной",
-    "[PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) После:  моделей=7, раны=[1, 1, 1, 1, 1, 1, 1] всего=7",
-    "[ENEMY] Only War: end of Command phase -> controlled=1, gained=1, VP: 3 -> 4, objectives=[1]",
-    "--- ФАЗА ДВИЖЕНИЯ ---",
-    "[MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 11 — Necrons Necron Warriors (x10 моделей).",
-    "",
-    "🎲 Бросок на попадание (to hit): 20D6",
-    "",
-    "🎲 Бросок на ранение (to wound): 3D6",
-    "[MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 11 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 1.0.",
-    "",
-    "📌 --- ОТЧЁТ ПО OVERWATCH ---",
-    "Стреляет: Unit 21 — Necrons Necron Warriors (x10 моделей); цель: Unit 11 — Necrons Necron Warriors (x10 моделей)",
-    "Оружие: Gauss flayer",
-    "BS оружия: 4+",
-    "S vs T: 4 vs 4  -> базово ранение на 4+",
-    "Save цели: 4+ (invul: нет)",
-    "Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)",
-    "Правило: Lethal Hits (крит-хиты авто-ранят)",
-    "Правило: Overwatch: попадания только на 6+",
-    "Hit rolls:    [5, 3, 6, 3, 1, 3, 5, 5, 4, 6, 4, 4, 4, 2, 5, 3, 6, 3, 3, 1]  -> hits: 11 (crits: 3)",
-    "Wound rolls:  [5, 6, 1]  (цель 4+) -> rolled wounds: 2 + auto(w/LETHAL): 3 = 5",
-    "",
-    "✅ Итог по движку: прошло урона = 1.0",
-    "📌 -------------------------"
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])"
   ],
-  "generated_at": "2026-02-01T12:39:03.368475Z"
+  "generated_at": "2026-02-01T15:48:48.769154Z"
 }

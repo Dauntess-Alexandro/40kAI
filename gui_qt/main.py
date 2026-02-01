@@ -91,7 +91,7 @@ class GUIController(QtCore.QObject):
         self._select_latest_play_model(initial=True)
         self._update_roster_summary()
 
-        self._emit_status("Нажмите Train, чтобы запустить обучение.")
+        self._emit_status("Нажмите «Тренировка 8х» или «Самообучение 8х», чтобы запустить обучение.")
 
     @QtCore.Property(QtCore.QObject, constant=True)
     def availableUnitsModel(self) -> QtCore.QObject:
@@ -303,6 +303,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Slot()
     def start_self_play(self) -> None:
         self._start_training(mode="selfplay")
+
+    @QtCore.Slot()
+    def start_self_play_8x(self) -> None:
+        self._start_training(mode="selfplay8")
 
     @QtCore.Slot()
     def stop_process(self) -> None:
@@ -527,10 +531,16 @@ class GUIController(QtCore.QObject):
         if mode == "train8":
             train_label = "TRAIN8"
             status_prefix = "Обучение 8x"
-            env_overrides["VEC_ENV_COUNT"] = "8"
+            env_overrides["NUM_ENVS"] = "16"
+            env_overrides["USE_SUBPROC_ENVS"] = "1"
         elif mode == "selfplay":
             train_label = "SELFPLAY"
             status_prefix = "Самообучение"
+            env_overrides["SELF_PLAY_ENABLED"] = "1"
+        elif mode == "selfplay8":
+            train_label = "SELFPLAY8"
+            status_prefix = "Самообучение 8x"
+            env_overrides["VEC_ENV_COUNT"] = "8"
             env_overrides["SELF_PLAY_ENABLED"] = "1"
 
         self._emit_log(f"[GUI] Запуск {status_prefix.lower()}...", level="INFO")
@@ -657,6 +667,7 @@ class GUIController(QtCore.QObject):
             "[TRAIN8] Старт",
             "[TRAIN] Старт",
             "[SELFPLAY] Старт",
+            "[SELFPLAY8] Старт",
             "[TRAIN][START]",
             "[DEVICE CHECK]",
             "[metrics] saved:",

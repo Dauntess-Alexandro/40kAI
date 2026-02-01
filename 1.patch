@@ -1,61 +1,198 @@
- (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
-diff --git a/gui_qt/main.py b/gui_qt/main.py
-index 8f59382a6d03f8173c58ede963158642c36d3a95..d25c20530f18cd8d9572079d0645933a00aa85b5 100644
---- a/gui_qt/main.py
-+++ b/gui_qt/main.py
-@@ -390,50 +390,52 @@ class GUIController(QtCore.QObject):
-         script = os.path.join(self._repo_root, "launch_terminal_manual.sh")
-         if not os.path.exists(script):
-             self._emit_status("Не найден launch_terminal_manual.sh. Проверьте репозиторий.")
-             return
-         self._persist_rosters()
-         subprocess.Popen(
-             [script, model_path],
-             cwd=self._repo_root,
-             env=os.environ.copy(),
-             start_new_session=True,
+diff --git a/train.py b/train.py
+index 927c0a81caaadf928927e97d6f105e0af2e9d0c5..0ce915386482e064697fb0ed5e575b67785e3f88 100644
+--- a/train.py
++++ b/train.py
+@@ -231,50 +231,82 @@ def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
+     plt.savefig(os.path.join(metrics_dir, f"vpdiff_{run_id}.png"))
+     plt.savefig(os.path.join("gui/img", f"vpdiff_{run_id}.png"))
+     plt.savefig(os.path.join("gui/img", "vpdiff.png"))
+     plt.close()
+ 
+     # --- End reasons bar ---
+     reasons = [r["end_reason"] for r in ep_rows]
+     c = Counter(reasons)
+     keys = sorted(c.keys())
+     vals = [c[k] for k in keys]
+ 
+     plt.figure()
+     plt.bar(keys, vals)
+     plt.xticks(rotation=30, ha="right")
+     plt.ylabel("Count")
+     plt.title("End reasons")
+     plt.tight_layout()
+ 
+     plt.savefig(os.path.join(metrics_dir, f"endreasons_{run_id}.png"))
+     plt.savefig(os.path.join("gui/img", f"endreasons_{run_id}.png"))
+     plt.savefig(os.path.join("gui/img", "endreasons.png"))
+     plt.close()
+ 
+     print(f"[metrics] saved: {csv_path}")
+ 
++def save_training_summary(run_id: str, model_tag: str, ep_rows: list[dict], elapsed_s: float, results_path: str = "results.txt") -> None:
++    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
++    ep_count = len(ep_rows)
++    if ep_count > 0:
++        winrate_mean = sum(1 for r in ep_rows if r.get("result") == "win") / ep_count
++        vp_diff_mean = sum(r.get("vp_diff", 0) for r in ep_rows) / ep_count
++        reward_mean = sum(r.get("ep_reward", 0.0) for r in ep_rows) / ep_count
++        ep_len_mean = sum(r.get("ep_len", 0) for r in ep_rows) / ep_count
++        turn_mean = sum(r.get("turn", 0) for r in ep_rows) / ep_count
++    else:
++        winrate_mean = 0.0
++        vp_diff_mean = 0.0
++        reward_mean = 0.0
++        ep_len_mean = 0.0
++        turn_mean = 0.0
++
++    summary_line = (
++        f"время={timestamp} "
++        f"длительность_с={elapsed_s:.2f} "
++        f"модель={model_tag} "
++        f"run_id={run_id} "
++        f"эпизоды={ep_count} "
++        f"winrate_mean={winrate_mean:.4f} "
++        f"vp_diff_mean={vp_diff_mean:.4f} "
++        f"reward_mean={reward_mean:.6f} "
++        f"ep_len_mean={ep_len_mean:.2f} "
++        f"turn_mean={turn_mean:.2f}"
++    )
++    with open(results_path, "a", encoding="utf-8") as f:
++        f.write(summary_line + "\n")
++    print(f"[results] запись в {results_path}: {summary_line}")
++
+ def append_agent_log(line: str) -> None:
+     log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LOGS_FOR_AGENTS.md")
+     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+     full_line = f"{timestamp} | {line}"
+     try:
+         with open(log_path, "a", encoding="utf-8") as log_file:
+             log_file.write(full_line + "\n")
+     except Exception as exc:
+         print(f"[LOG][WARN] Не удалось записать LOGS_FOR_AGENTS.md: {exc}")
+ 
+ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
+     try:
+         enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+         attacker_side, defender_side = roll_off_attacker_defender(
+             manual_roll_allowed=False,
+             log_fn=None,
          )
-         self._emit_status("Запуск игры в терминале.")
- 
-     @QtCore.Slot()
-     def play_in_gui(self) -> None:
-         model_path = self._resolve_play_model_path()
-         if model_path == "None":
-             self._emit_status("Сохранённые модели не найдены. Запускаю базовый режим.")
-         script = os.path.join(self._repo_root, "scripts", "viewer.sh")
-         if not os.path.exists(script):
-             self._emit_status("Не найден scripts/viewer.sh. Проверьте репозиторий.")
-             return
-         self._persist_rosters()
-         env = os.environ.copy()
-         env["MODEL_PATH"] = model_path
-+        env["FIGHT_REPORT"] = "1"
-+        env["PLAY_NO_EXPLORATION"] = "1"
-         subprocess.Popen(
-             [script],
-             cwd=self._repo_root,
-             env=env,
-             start_new_session=True,
+         deploy_only_war(
+             model_units=model,
+             enemy_units=enemy,
+             b_len=b_len,
+             b_hei=b_hei,
+             attacker_side=attacker_side,
+             log_fn=None,
          )
-         self._emit_status("Запуск игры в GUI через Viewer.")
+@@ -524,50 +556,51 @@ def _select_actions_batch(env_contexts, states, steps_done, policy_net, shoot_ma
+                     if mask.numel() == head_row.numel() and mask.any():
+                         masked_head = head_row.clone()
+                         masked_head[~mask] = -1e9
+                         action.append(int(masked_head.argmax().item()))
+                         continue
+                 action.append(int(head_row.argmax().item()))
+             actions.append(torch.tensor([action], device="cpu"))
+     return actions, eps_threshold
  
-     @QtCore.Slot()
-     def refresh_board_text(self) -> None:
-         board_path = os.path.join(self._repo_root, "board.txt")
-         self._board_text = self._render_board_ascii(board_path)
-         self.boardTextChanged.emit(self._board_text)
+ TAU = data["tau"]
+ LR = data["lr"]
+ GAMMA = data["gamma"]
+ NET_TYPE = "dueling" if DUELING_ENABLED else "basic"
+ CLIP_REWARD = os.getenv("CLIP_REWARD", "off")
+ GRAD_CLIP_VALUE = 100.0
  
-     def _set_running(self, value: bool) -> None:
-         if self._running != value:
-             self._running = value
-             self.runningChanged.emit(value)
+ # ============================================================
+ # (C) Несколько обучающих апдейтов на один шаг среды
+ # ============================================================
+ UPDATES_PER_STEP = int(data.get("updates_per_step", 1))  # 1 = как было раньше
+ WARMUP_STEPS     = int(data.get("warmup_steps", 0))      # 0 = без прогрева
  
-     def _set_progress(self, current: int, total: int) -> None:
-         if total <= 0:
-             self._progress_value = 0.0
-             self._progress_text = "0%"
-             self._progress_label = f"ep={current}/?"
+ def main():
+     global USE_SUBPROC_ENVS
+     print("\nTraining...\n")
++    train_start_time = time.perf_counter()
+     
+     end = False
+     trunc = True
+     
+     roster_config = _load_roster_config()
+     totLifeT = roster_config["totLifeT"]
+     b_len = roster_config["b_len"]
+     b_hei = roster_config["b_hei"]
+     
+     vec_env_count = int(os.getenv("NUM_ENVS", os.getenv("VEC_ENV_COUNT", "1")))
+     if vec_env_count < 1:
+         vec_env_count = 1
+     
+     if USE_SUBPROC_ENVS and vec_env_count < 2:
+         USE_SUBPROC_ENVS = False
+     if USE_SUBPROC_ENVS and SELF_PLAY_ENABLED:
+         warn_msg = "[WARN] USE_SUBPROC_ENVS=1 несовместим с SELF_PLAY_ENABLED=1, отключаю subprocess env."
+         print(warn_msg)
+         append_agent_log(warn_msg)
+         USE_SUBPROC_ENVS = False
+     
+     if TRAIN_LOG_ENABLED:
+         train_start_line = (
+             "[TRAIN][START] "
+             f"DoubleDQN={int(DOUBLE_DQN_ENABLED)} "
+@@ -1395,50 +1428,58 @@ def main():
+     # Делать gif только если мы реально сохраняли кадры
+     if RENDER_EVERY > 0 and not USE_SUBPROC_ENVS:
+         if totLifeT > 30:
+             genDisplay.makeGif(numOfLife=totLifeT, trunc=True)
          else:
+             genDisplay.makeGif(numOfLife=totLifeT)
+     else:
+         print("[render] RENDER_EVERY=0 -> gif skipped")
  
-EOF
-)
+     metrics_obj.lossCurve()
+     metrics_obj.showRew()
+     metrics_obj.showEpLen()
+ 
+     save_extra_metrics(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
+     metrics_obj.createJson()
+     print("Generated metrics")
+ 
+     os.makedirs(fold, exist_ok=True)
+ 
+     torch.save({
+         "policy_net": policy_net.state_dict(),
+         "target_net": target_net.state_dict(),
+         "net_type": NET_TYPE,
+         'optimizer': optimizer.state_dict(),}
+         , ("models/{}/model-{}.pth".format(safe_name, date)))
++    train_elapsed_s = time.perf_counter() - train_start_time
++    model_tag = f"{safe_name}/model-{date}"
++    save_training_summary(
++        run_id=str(randNum),
++        model_tag=model_tag,
++        ep_rows=ep_rows,
++        elapsed_s=train_elapsed_s,
++    )
+ 
+     if "env" in primary_ctx and "model" in primary_ctx and "enemy" in primary_ctx:
+         toSave = [primary_ctx["env"], primary_ctx["model"], primary_ctx["enemy"]]
+         with open(fileName, "wb") as file:
+             pickle.dump(toSave, file)
+     else:
+         if USE_SUBPROC_ENVS:
+             try:
+                 primary_ctx["conn"].send(("save_pickle", fileName))
+                 save_resp = primary_ctx["conn"].recv()
+             except (BrokenPipeError, EOFError, OSError) as exc:
+                 err_line = (
+                     "[SAVE][WARN] subprocess env недоступен: сохранение pickle пропущено. "
+                     "Где: train.py main/save_pickle (send/recv). "
+                     f"Ошибка: {exc}. "
+                     "Что сделать: проверь, что subprocess не завершился до сохранения, "
+                     "и смотри логи subprocess/Training."
+                 )
+                 append_agent_log(err_line)
+                 if TRAIN_LOG_TO_CONSOLE:
+                     print(err_line)
+             else:
+                 if isinstance(save_resp, dict) and save_resp.get("ok"):
+                     ok_line = f"[SAVE] pickle сохранён в subprocess env: {save_resp.get('path')}"
+                     append_agent_log(ok_line)
