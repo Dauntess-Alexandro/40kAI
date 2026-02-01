@@ -529,493 +529,485 @@ GRAD_CLIP_VALUE = 100.0
 UPDATES_PER_STEP = int(data.get("updates_per_step", 1))  # 1 = как было раньше
 WARMUP_STEPS     = int(data.get("warmup_steps", 0))      # 0 = без прогрева
 
-print("\nTraining...\n")
-
-end = False
-trunc = True
-
-roster_config = _load_roster_config()
-totLifeT = roster_config["totLifeT"]
-b_len = roster_config["b_len"]
-b_hei = roster_config["b_hei"]
-
-vec_env_count = int(os.getenv("NUM_ENVS", os.getenv("VEC_ENV_COUNT", "1")))
-if vec_env_count < 1:
-    vec_env_count = 1
-
-if USE_SUBPROC_ENVS and vec_env_count < 2:
-    USE_SUBPROC_ENVS = False
-if USE_SUBPROC_ENVS and SELF_PLAY_ENABLED:
-    warn_msg = "[WARN] USE_SUBPROC_ENVS=1 несовместим с SELF_PLAY_ENABLED=1, отключаю subprocess env."
-    print(warn_msg)
-    append_agent_log(warn_msg)
-    USE_SUBPROC_ENVS = False
-
-if TRAIN_LOG_ENABLED:
-    train_start_line = (
-        "[TRAIN][START] "
-        f"DoubleDQN={int(DOUBLE_DQN_ENABLED)} "
-        f"Dueling={int(DUELING_ENABLED)} "
-        f"PER={int(PER_ENABLED)} "
-        f"N_STEP={N_STEP} "
-        f"LR={LR} "
-        f"clip_reward={CLIP_REWARD} "
-        f"grad_clip={GRAD_CLIP_VALUE} "
-        f"NUM_ENVS={vec_env_count} "
-        f"BATCH_ACT={int(BATCH_ACT)} "
-        f"USE_AMP={int(USE_AMP)} "
-        f"USE_COMPILE={int(USE_COMPILE)} "
-        f"USE_SUBPROC_ENVS={int(USE_SUBPROC_ENVS)} "
-        f"PREFETCH={int(PREFETCH)} "
-        f"PIN_MEMORY={int(PIN_MEMORY)} "
-        f"LOG_EVERY={LOG_EVERY} "
-        f"SAVE_EVERY={SAVE_EVERY}"
-    )
-    if TRAIN_LOG_TO_FILE:
-        append_agent_log(train_start_line)
-    if TRAIN_LOG_TO_CONSOLE:
-        print(train_start_line)
-
-if USE_SUBPROC_ENVS and RENDER_EVERY > 0:
-    warn_msg = "[WARN] USE_SUBPROC_ENVS=1: рендер в subprocess env недоступен, рендер будет пропущен."
-    print(warn_msg)
-    append_agent_log(warn_msg)
-
-env_contexts = []
-subproc_envs = []
-subproc_conns = []
-
-numLifeT = 0
-
-verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
-log_fn = print if verbose else None
-
-if os.path.isfile("gui/data.json"):
-    print("Model Units:\n")
-    for spec in roster_config["model_units"]:
-        print("Name:", spec["name"], "Weapons: ", spec["weapons"][0], spec["weapons"][1])
-    print("Enemy Units:\n")
-    for spec in roster_config["enemy_units"]:
-        print("Name:", spec["name"], "Weapons: ", spec["weapons"][0], spec["weapons"][1])
-
-if USE_SUBPROC_ENVS:
-    ctx = mp.get_context("spawn")
-    for env_idx in range(vec_env_count):
-        parent_conn, child_conn = ctx.Pipe()
-        proc = ctx.Process(
-            target=_env_worker,
-            args=(child_conn, roster_config, b_len, b_hei, trunc),
-            daemon=True,
+def main():
+    print("\nTraining...\n")
+    
+    end = False
+    trunc = True
+    
+    roster_config = _load_roster_config()
+    totLifeT = roster_config["totLifeT"]
+    b_len = roster_config["b_len"]
+    b_hei = roster_config["b_hei"]
+    
+    vec_env_count = int(os.getenv("NUM_ENVS", os.getenv("VEC_ENV_COUNT", "1")))
+    if vec_env_count < 1:
+        vec_env_count = 1
+    
+    if USE_SUBPROC_ENVS and vec_env_count < 2:
+        USE_SUBPROC_ENVS = False
+    if USE_SUBPROC_ENVS and SELF_PLAY_ENABLED:
+        warn_msg = "[WARN] USE_SUBPROC_ENVS=1 несовместим с SELF_PLAY_ENABLED=1, отключаю subprocess env."
+        print(warn_msg)
+        append_agent_log(warn_msg)
+        USE_SUBPROC_ENVS = False
+    
+    if TRAIN_LOG_ENABLED:
+        train_start_line = (
+            "[TRAIN][START] "
+            f"DoubleDQN={int(DOUBLE_DQN_ENABLED)} "
+            f"Dueling={int(DUELING_ENABLED)} "
+            f"PER={int(PER_ENABLED)} "
+            f"N_STEP={N_STEP} "
+            f"LR={LR} "
+            f"clip_reward={CLIP_REWARD} "
+            f"grad_clip={GRAD_CLIP_VALUE} "
+            f"NUM_ENVS={vec_env_count} "
+            f"BATCH_ACT={int(BATCH_ACT)} "
+            f"USE_AMP={int(USE_AMP)} "
+            f"USE_COMPILE={int(USE_COMPILE)} "
+            f"USE_SUBPROC_ENVS={int(USE_SUBPROC_ENVS)} "
+            f"PREFETCH={int(PREFETCH)} "
+            f"PIN_MEMORY={int(PIN_MEMORY)} "
+            f"LOG_EVERY={LOG_EVERY} "
+            f"SAVE_EVERY={SAVE_EVERY}"
         )
-        proc.start()
-        init_payload = parent_conn.recv()
-        if isinstance(init_payload, dict) and init_payload.get("error"):
-            raise RuntimeError(init_payload["error"])
-        env_contexts.append(
-            {
-                "conn": parent_conn,
-                "state": init_payload["state"],
-                "info": init_payload["info"],
-                "len_model": init_payload["len_model"],
-            }
-        )
-        subproc_envs.append(proc)
-        subproc_conns.append(parent_conn)
-else:
-    for env_idx in range(vec_env_count):
-        enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
-        env_log_fn = log_fn if env_idx == 0 else None
-        attacker_side, defender_side = roll_off_attacker_defender(
-            manual_roll_allowed=False,
-            log_fn=print if env_idx == 0 else None,
-        )
-        if verbose and env_idx == 0:
-            print(f"[roster] model_units={len(model)} enemy_units={len(enemy)}")
-            for idx, unit in enumerate(model):
-                unit_data = unit.showUnitData()
-                unit_name = unit_data.get("Name", "Unknown")
-                unit_models = unit_data.get("#OfModels", 1)
-                print(f"[roster] model[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
-            for idx, unit in enumerate(enemy):
-                unit_data = unit.showUnitData()
-                unit_name = unit_data.get("Name", "Unknown")
-                unit_models = unit_data.get("#OfModels", 1)
-                print(f"[roster] enemy[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
-            print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
-            print("Units:", [(u.name, u.instance_id, u.models_count) for u in model])
-
-        deploy_only_war(
-            model_units=model,
-            enemy_units=enemy,
-            b_len=b_len,
-            b_hei=b_hei,
-            attacker_side=attacker_side,
-            log_fn=env_log_fn,
-        )
-        post_deploy_setup(log_fn=env_log_fn)
-
-        env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
-        env.attacker_side = attacker_side
-        env.defender_side = defender_side
-
-        state, info = env.reset(options={"m": model, "e": enemy, "trunc": True})
-        env_contexts.append(
-            {
-                "env": env,
-                "model": model,
-                "enemy": enemy,
-                "state": state,
-                "info": info,
-                "attacker_side": attacker_side,
-                "defender_side": defender_side,
-                "len_model": len(model),
-            }
-        )
-
-primary_ctx = env_contexts[0]
-model = primary_ctx.get("model")
-enemy = primary_ctx.get("enemy")
-env = primary_ctx.get("env")
-
-ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
-for i_u in range(primary_ctx["len_model"]):
-    ordered_keys.append(f"move_num_{i_u}")
-
-if USE_SUBPROC_ENVS:
-    primary_ctx["conn"].send(("get_action_space", ordered_keys))
-    n_actions = primary_ctx["conn"].recv()
-else:
-    n_actions = []
-    for k in ordered_keys:
-        sp = env.action_space.spaces[k]
-
-        # Discrete (и gym, и gymnasium)
-        if hasattr(sp, "n"):
-            n_actions.append(int(sp.n))
-
-        # MultiDiscrete (на всякий)
-        elif hasattr(sp, "nvec"):
-            n_actions.extend([int(x) for x in sp.nvec])
-
-        else:
-            raise TypeError(f"Unsupported action space for {k}: {type(sp)}")
-
-
-state = primary_ctx["state"]
-info = primary_ctx["info"]
-if verbose and model is not None:
-    squads_for_actions_count = len(model)
-    print(f"[action_space] squads_for_actions_count={squads_for_actions_count}")
-    for idx, unit in enumerate(model):
-        unit_data = unit.showUnitData()
-        unit_name = unit_data.get("Name", "Unknown")
-        print(f"[action_space] squad[{idx}] name={unit_name}")
-    total_models_count = 0
-    for unit in model:
-        unit_data = unit.showUnitData()
-        total_models_count += int(unit_data.get("#OfModels", 1))
-    print(f"[action_space] total_models_count={total_models_count}")
-    move_num_keys = [
-        key for key in env.action_space.spaces.keys() if key.startswith("move_num_")
-    ]
-    print(f"[action_space] move_num_keys_count={len(move_num_keys)}")
-
-# state может быть np.array или OrderedDict
-if isinstance(state, dict) or "OrderedDict" in str(type(state)):
-    n_observations = len(list(state.values()))
-else:
-    n_observations = int(np.array(state).shape[0])
-
-if USE_COMPILE and torch.cuda.is_available():
-    torch.backends.cudnn.benchmark = True
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.allow_tf32 = True
-    try:
-        torch.set_float32_matmul_precision("high")
-    except Exception:
-        pass
-
-
-policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
-target_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
-target_net.load_state_dict(policy_net.state_dict())
-target_net.eval()
-
-if USE_COMPILE and hasattr(torch, "compile"):
-    try:
-        policy_net = torch.compile(policy_net, mode="reduce-overhead")
-        target_net = torch.compile(target_net, mode="reduce-overhead")
-    except Exception as exc:
-        print(f"[WARN] torch.compile недоступен: {exc}")
-
-opponent_policy_net = None
-if SELF_PLAY_ENABLED:
-    opponent_policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
-    opponent_policy_net.eval()
-    if SELF_PLAY_OPPONENT_MODE == "fixed_checkpoint":
-        if not SELF_PLAY_FIXED_PATH:
-            raise ValueError("SELF_PLAY_FIXED_PATH обязателен для режима fixed_checkpoint.")
-        if not os.path.isfile(SELF_PLAY_FIXED_PATH):
-            raise FileNotFoundError(
-                f"SELF_PLAY_FIXED_PATH не найден: {SELF_PLAY_FIXED_PATH}. Проверь путь."
-            )
-        checkpoint = torch.load(SELF_PLAY_FIXED_PATH, map_location=device)
-        if isinstance(checkpoint, dict) and "policy_net" in checkpoint:
-            checkpoint_net_type = checkpoint.get("net_type", "basic")
-            if checkpoint_net_type != NET_TYPE:
-                warn_msg = (
-                    "[SELFPLAY] ВНИМАНИЕ: несовпадение типа сети "
-                    f"(checkpoint={checkpoint_net_type}, текущая={NET_TYPE}). "
-                    "Стартуем с новой инициализацией."
-                )
-                print(warn_msg)
-                append_agent_log(warn_msg)
-            else:
-                opponent_policy_net.load_state_dict(checkpoint["policy_net"])
-        else:
-            if NET_TYPE != "basic":
-                warn_msg = (
-                    "[SELFPLAY] ВНИМАНИЕ: старый формат чекпойнта без net_type, "
-                    f"а текущая сеть={NET_TYPE}. Стартуем с новой инициализацией."
-                )
-                print(warn_msg)
-                append_agent_log(warn_msg)
-            else:
-                opponent_policy_net.load_state_dict(checkpoint)
-        append_agent_log(
-            f"[SELFPLAY] fixed_checkpoint path={SELF_PLAY_FIXED_PATH}"
-        )
-    else:
-        opponent_policy_net.load_state_dict(policy_net.state_dict())
-
-optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
-scaler = torch.cuda.amp.GradScaler(enabled=USE_AMP)
-replay_capacity = int(os.getenv("REPLAY_CAPACITY", "100000"))
-if PER_ENABLED:
-    memory = PrioritizedReplayMemory(replay_capacity, alpha=PER_ALPHA, eps=PER_EPS)
-else:
-    memory = ReplayMemory(replay_capacity)
-
-def opponent_policy(obs, env, len_model):
-    if opponent_policy_net is None:
-        return None
-    action = select_action_with_epsilon(
-        env,
-        obs,
-        opponent_policy_net,
-        SELF_PLAY_OPPONENT_EPSILON,
-        len_model,
-    )
-    return convertToDict(action)
-
-inText = []
-
-if model is not None and enemy is not None:
-    inText.append("Model units:")
-    for i in model:
-        inText.append("Name: {}, Army Type: {}".format(i.showUnitData()["Name"], i.showUnitData()["Army"]))
-    inText.append("Enemy units:")
-    for i in enemy:
-        inText.append("Name: {}, Army Type: {}".format(i.showUnitData()["Name"], i.showUnitData()["Army"]))
-inText.append("Number of Lifetimes ran: {}\n".format(totLifeT))
-
-pbar_update_every = int(os.getenv("PBAR_UPDATE_EVERY", "5" if os.name == "nt" else "1"))
-pbar_update_every = max(1, pbar_update_every)
-pbar_mininterval = float(os.getenv("PBAR_MININTERVAL", "1.5" if os.name == "nt" else "0.1"))
-pbar_mininterval = max(0.0, pbar_mininterval)
-pbar = tqdm(total=totLifeT, mininterval=pbar_mininterval, miniters=pbar_update_every)
-pending_pbar_updates = 0
-
-for ctx in env_contexts:
+        if TRAIN_LOG_TO_FILE:
+            append_agent_log(train_start_line)
+        if TRAIN_LOG_TO_CONSOLE:
+            print(train_start_line)
+    
+    if USE_SUBPROC_ENVS and RENDER_EVERY > 0:
+        warn_msg = "[WARN] USE_SUBPROC_ENVS=1: рендер в subprocess env недоступен, рендер будет пропущен."
+        print(warn_msg)
+        append_agent_log(warn_msg)
+    
+    env_contexts = []
+    subproc_envs = []
+    subproc_conns = []
+    
+    numLifeT = 0
+    
+    verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
+    log_fn = print if verbose else None
+    
+    if os.path.isfile("gui/data.json"):
+        print("Model Units:\n")
+        for spec in roster_config["model_units"]:
+            print("Name:", spec["name"], "Weapons: ", spec["weapons"][0], spec["weapons"][1])
+        print("Enemy Units:\n")
+        for spec in roster_config["enemy_units"]:
+            print("Name:", spec["name"], "Weapons: ", spec["weapons"][0], spec["weapons"][1])
+    
     if USE_SUBPROC_ENVS:
-        ctx["conn"].send(("reset", None))
-        ctx["state"], ctx["info"] = ctx["conn"].recv()
+        ctx = mp.get_context("spawn")
+        for env_idx in range(vec_env_count):
+            parent_conn, child_conn = ctx.Pipe()
+            proc = ctx.Process(
+                target=_env_worker,
+                args=(child_conn, roster_config, b_len, b_hei, trunc),
+                daemon=True,
+            )
+            proc.start()
+            init_payload = parent_conn.recv()
+            if isinstance(init_payload, dict) and init_payload.get("error"):
+                raise RuntimeError(init_payload["error"])
+            env_contexts.append(
+                {
+                    "conn": parent_conn,
+                    "state": init_payload["state"],
+                    "info": init_payload["info"],
+                    "len_model": init_payload["len_model"],
+                }
+            )
+            subproc_envs.append(proc)
+            subproc_conns.append(parent_conn)
     else:
-        ctx["state"], ctx["info"] = ctx["env"].reset(
-            options={"m": ctx["model"], "e": ctx["enemy"], "Type": "big", "trunc": True}
+        for env_idx in range(vec_env_count):
+            enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+            env_log_fn = log_fn if env_idx == 0 else None
+            attacker_side, defender_side = roll_off_attacker_defender(
+                manual_roll_allowed=False,
+                log_fn=print if env_idx == 0 else None,
+            )
+            if verbose and env_idx == 0:
+                print(f"[roster] model_units={len(model)} enemy_units={len(enemy)}")
+                for idx, unit in enumerate(model):
+                    unit_data = unit.showUnitData()
+                    unit_name = unit_data.get("Name", "Unknown")
+                    unit_models = unit_data.get("#OfModels", 1)
+                    print(f"[roster] model[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
+                for idx, unit in enumerate(enemy):
+                    unit_data = unit.showUnitData()
+                    unit_name = unit_data.get("Name", "Unknown")
+                    unit_models = unit_data.get("#OfModels", 1)
+                    print(f"[roster] enemy[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
+                print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
+                print("Units:", [(u.name, u.instance_id, u.models_count) for u in model])
+    
+            deploy_only_war(
+                model_units=model,
+                enemy_units=enemy,
+                b_len=b_len,
+                b_hei=b_hei,
+                attacker_side=attacker_side,
+                log_fn=env_log_fn,
+            )
+            post_deploy_setup(log_fn=env_log_fn)
+    
+            env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
+            env.attacker_side = attacker_side
+            env.defender_side = defender_side
+    
+            state, info = env.reset(options={"m": model, "e": enemy, "trunc": True})
+            env_contexts.append(
+                {
+                    "env": env,
+                    "model": model,
+                    "enemy": enemy,
+                    "state": state,
+                    "info": info,
+                    "attacker_side": attacker_side,
+                    "defender_side": defender_side,
+                    "len_model": len(model),
+                }
+            )
+    
+    primary_ctx = env_contexts[0]
+    model = primary_ctx.get("model")
+    enemy = primary_ctx.get("enemy")
+    env = primary_ctx.get("env")
+    
+    ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
+    for i_u in range(primary_ctx["len_model"]):
+        ordered_keys.append(f"move_num_{i_u}")
+    
+    if USE_SUBPROC_ENVS:
+        primary_ctx["conn"].send(("get_action_space", ordered_keys))
+        n_actions = primary_ctx["conn"].recv()
+    else:
+        n_actions = []
+        for k in ordered_keys:
+            sp = env.action_space.spaces[k]
+    
+            # Discrete (и gym, и gymnasium)
+            if hasattr(sp, "n"):
+                n_actions.append(int(sp.n))
+    
+            # MultiDiscrete (на всякий)
+            elif hasattr(sp, "nvec"):
+                n_actions.extend([int(x) for x in sp.nvec])
+    
+            else:
+                raise TypeError(f"Unsupported action space for {k}: {type(sp)}")
+    
+    
+    state = primary_ctx["state"]
+    info = primary_ctx["info"]
+    if verbose and model is not None:
+        squads_for_actions_count = len(model)
+        print(f"[action_space] squads_for_actions_count={squads_for_actions_count}")
+        for idx, unit in enumerate(model):
+            unit_data = unit.showUnitData()
+            unit_name = unit_data.get("Name", "Unknown")
+            print(f"[action_space] squad[{idx}] name={unit_name}")
+        total_models_count = 0
+        for unit in model:
+            unit_data = unit.showUnitData()
+            total_models_count += int(unit_data.get("#OfModels", 1))
+        print(f"[action_space] total_models_count={total_models_count}")
+        move_num_keys = [
+            key for key in env.action_space.spaces.keys() if key.startswith("move_num_")
+        ]
+        print(f"[action_space] move_num_keys_count={len(move_num_keys)}")
+    
+    # state может быть np.array или OrderedDict
+    if isinstance(state, dict) or "OrderedDict" in str(type(state)):
+        n_observations = len(list(state.values()))
+    else:
+        n_observations = int(np.array(state).shape[0])
+    
+    if USE_COMPILE and torch.cuda.is_available():
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        try:
+            torch.set_float32_matmul_precision("high")
+        except Exception:
+            pass
+    
+    
+    policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
+    target_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
+    target_net.load_state_dict(policy_net.state_dict())
+    target_net.eval()
+    
+    if USE_COMPILE and hasattr(torch, "compile"):
+        try:
+            policy_net = torch.compile(policy_net, mode="reduce-overhead")
+            target_net = torch.compile(target_net, mode="reduce-overhead")
+        except Exception as exc:
+            print(f"[WARN] torch.compile недоступен: {exc}")
+    
+    opponent_policy_net = None
+    if SELF_PLAY_ENABLED:
+        opponent_policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
+        opponent_policy_net.eval()
+        if SELF_PLAY_OPPONENT_MODE == "fixed_checkpoint":
+            if not SELF_PLAY_FIXED_PATH:
+                raise ValueError("SELF_PLAY_FIXED_PATH обязателен для режима fixed_checkpoint.")
+            if not os.path.isfile(SELF_PLAY_FIXED_PATH):
+                raise FileNotFoundError(
+                    f"SELF_PLAY_FIXED_PATH не найден: {SELF_PLAY_FIXED_PATH}. Проверь путь."
+                )
+            checkpoint = torch.load(SELF_PLAY_FIXED_PATH, map_location=device)
+            if isinstance(checkpoint, dict) and "policy_net" in checkpoint:
+                checkpoint_net_type = checkpoint.get("net_type", "basic")
+                if checkpoint_net_type != NET_TYPE:
+                    warn_msg = (
+                        "[SELFPLAY] ВНИМАНИЕ: несовпадение типа сети "
+                        f"(checkpoint={checkpoint_net_type}, текущая={NET_TYPE}). "
+                        "Стартуем с новой инициализацией."
+                    )
+                    print(warn_msg)
+                    append_agent_log(warn_msg)
+                else:
+                    opponent_policy_net.load_state_dict(checkpoint["policy_net"])
+            else:
+                if NET_TYPE != "basic":
+                    warn_msg = (
+                        "[SELFPLAY] ВНИМАНИЕ: старый формат чекпойнта без net_type, "
+                        f"а текущая сеть={NET_TYPE}. Стартуем с новой инициализацией."
+                    )
+                    print(warn_msg)
+                    append_agent_log(warn_msg)
+                else:
+                    opponent_policy_net.load_state_dict(checkpoint)
+            append_agent_log(
+                f"[SELFPLAY] fixed_checkpoint path={SELF_PLAY_FIXED_PATH}"
+            )
+        else:
+            opponent_policy_net.load_state_dict(policy_net.state_dict())
+    
+    optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
+    scaler = torch.cuda.amp.GradScaler(enabled=USE_AMP)
+    replay_capacity = int(os.getenv("REPLAY_CAPACITY", "100000"))
+    if PER_ENABLED:
+        memory = PrioritizedReplayMemory(replay_capacity, alpha=PER_ALPHA, eps=PER_EPS)
+    else:
+        memory = ReplayMemory(replay_capacity)
+    
+    def opponent_policy(obs, env, len_model):
+        if opponent_policy_net is None:
+            return None
+        action = select_action_with_epsilon(
+            env,
+            obs,
+            opponent_policy_net,
+            SELF_PLAY_OPPONENT_EPSILON,
+            len_model,
         )
-    ctx["ep_len"] = 0
-    ctx["rew_arr"] = []
-    ctx["n_step_buffer"] = collections.deque(maxlen=N_STEP)
-
-state = primary_ctx["state"]
-info = primary_ctx["info"]
-
-current_time = datetime.datetime.now()
-date = str(current_time.second)+"-"+str(current_time.microsecond)
-name = "M:"+model[0].showUnitData()["Army"]+"_vs_"+"P:"+enemy[0].showUnitData()["Army"]
-def _sanitize_fs_name(value):
-    forbidden = '<>:"/\\\\|?*'
-    for ch in forbidden:
-        value = value.replace(ch, "_")
-    return value
-
-safe_name = _sanitize_fs_name(name)
-fold = "models/" + safe_name
-fileName = fold+"/model-"+date+".pickle"
-randNum = np.random.randint(0, 10000000)
-metrics = metrics(fold, randNum, date)
-ep_rows = [] 
-
-global_step = 0
-optimize_steps = 0
-perf_stats = {
-    "action_select_s": 0.0,
-    "enemy_turn_s": 0.0,
-    "env_step_s": 0.0,
-    "replay_sample_s": 0.0,
-    "train_forward_s": 0.0,
-    "train_backward_s": 0.0,
-    "logging_s": 0.0,
-}
-perf_counts = {
-    "env_steps": 0,
-    "updates": 0,
-}
-primary_env_unwrapped = unwrap_env(primary_ctx["env"]) if not USE_SUBPROC_ENVS else None
-if primary_env_unwrapped is not None:
-    initial_model_hp = float(sum(getattr(primary_env_unwrapped, "unit_health", [])))
-    initial_enemy_hp = float(sum(getattr(primary_env_unwrapped, "enemy_health", [])))
-    append_agent_log(
-        "Старт обучения: "
-        f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}, "
-        f"battle_round={getattr(primary_env_unwrapped, 'battle_round', 'n/a')}, trunc={trunc}"
-    )
-    if trunc:
-        append_agent_log(
-            "Логи фаз/ходов отключены (trunc=True). "
-            "Чтобы включить подробные логи: VERBOSE_LOGS=1 или MANUAL_DICE=1."
-        )
-    if initial_model_hp <= 0 or initial_enemy_hp <= 0:
-        append_agent_log(
-            "ВНИМАНИЕ: на старте эпизода обнаружено нулевое здоровье. "
-            f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}. "
-            "Это может приводить к мгновенному завершению эпизодов."
-        )
-else:
-    append_agent_log(
-        "Старт обучения: USE_SUBPROC_ENVS=1, начальные HP недоступны из subprocess env."
-    )
-
-while end is False:
-    shoot_masks = []
-    for idx, ctx in enumerate(env_contexts):
-        mask_log_fn = append_agent_log if idx == 0 else None
+        return convertToDict(action)
+    
+    inText = []
+    
+    if model is not None and enemy is not None:
+        inText.append("Model units:")
+        for i in model:
+            inText.append("Name: {}, Army Type: {}".format(i.showUnitData()["Name"], i.showUnitData()["Army"]))
+        inText.append("Enemy units:")
+        for i in enemy:
+            inText.append("Name: {}, Army Type: {}".format(i.showUnitData()["Name"], i.showUnitData()["Army"]))
+    inText.append("Number of Lifetimes ran: {}\n".format(totLifeT))
+    
+    pbar_update_every = int(os.getenv("PBAR_UPDATE_EVERY", "5" if os.name == "nt" else "1"))
+    pbar_update_every = max(1, pbar_update_every)
+    pbar_mininterval = float(os.getenv("PBAR_MININTERVAL", "1.5" if os.name == "nt" else "0.1"))
+    pbar_mininterval = max(0.0, pbar_mininterval)
+    pbar = tqdm(total=totLifeT, mininterval=pbar_mininterval, miniters=pbar_update_every)
+    pending_pbar_updates = 0
+    
+    for ctx in env_contexts:
         if USE_SUBPROC_ENVS:
-            ctx["conn"].send(("get_shoot_mask", None))
-            shoot_masks.append(ctx["conn"].recv())
+            ctx["conn"].send(("reset", None))
+            ctx["state"], ctx["info"] = ctx["conn"].recv()
         else:
-            shoot_masks.append(build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG))
-
-    states = [ctx["state"] for ctx in env_contexts]
-    action_start = time.perf_counter()
-    if BATCH_ACT:
-        actions, eps_threshold = _select_actions_batch(env_contexts, states, global_step, policy_net, shoot_masks)
-    else:
-        decay_steps = max(1.0, float(EPS_DECAY))
-        progress = min(float(global_step) / decay_steps, 1.0)
-        eps_threshold = EPS_START + (EPS_END - EPS_START) * progress
-        actions = []
-        for env_idx, ctx in enumerate(env_contexts):
-            actions.append(
-                select_action_with_epsilon(
-                    ctx["env"],
-                    ctx["state"],
-                    policy_net,
-                    eps_threshold,
-                    ctx["len_model"],
-                    shoot_mask=shoot_masks[env_idx],
-                )
+            ctx["state"], ctx["info"] = ctx["env"].reset(
+                options={"m": ctx["model"], "e": ctx["enemy"], "Type": "big", "trunc": True}
             )
-    perf_stats["action_select_s"] += time.perf_counter() - action_start
-
-    enemy_turn_start = time.perf_counter()
-    if USE_SUBPROC_ENVS:
-        for ctx in env_contexts:
-            ctx["conn"].send(("enemy_turn", None))
-        for ctx in env_contexts:
-            ctx["conn"].recv()
+        ctx["ep_len"] = 0
+        ctx["rew_arr"] = []
+        ctx["n_step_buffer"] = collections.deque(maxlen=N_STEP)
+    
+    state = primary_ctx["state"]
+    info = primary_ctx["info"]
+    
+    current_time = datetime.datetime.now()
+    date = str(current_time.second)+"-"+str(current_time.microsecond)
+    name = "M:"+model[0].showUnitData()["Army"]+"_vs_"+"P:"+enemy[0].showUnitData()["Army"]
+    def _sanitize_fs_name(value):
+        forbidden = '<>:"/\\\\|?*'
+        for ch in forbidden:
+            value = value.replace(ch, "_")
+        return value
+    
+    safe_name = _sanitize_fs_name(name)
+    fold = "models/" + safe_name
+    fileName = fold+"/model-"+date+".pickle"
+    randNum = np.random.randint(0, 10000000)
+    metrics = metrics(fold, randNum, date)
+    ep_rows = [] 
+    
+    global_step = 0
+    optimize_steps = 0
+    perf_stats = {
+        "action_select_s": 0.0,
+        "enemy_turn_s": 0.0,
+        "env_step_s": 0.0,
+        "replay_sample_s": 0.0,
+        "train_forward_s": 0.0,
+        "train_backward_s": 0.0,
+        "logging_s": 0.0,
+    }
+    perf_counts = {
+        "env_steps": 0,
+        "updates": 0,
+    }
+    primary_env_unwrapped = unwrap_env(primary_ctx["env"]) if not USE_SUBPROC_ENVS else None
+    if primary_env_unwrapped is not None:
+        initial_model_hp = float(sum(getattr(primary_env_unwrapped, "unit_health", [])))
+        initial_enemy_hp = float(sum(getattr(primary_env_unwrapped, "enemy_health", [])))
+        append_agent_log(
+            "Старт обучения: "
+            f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}, "
+            f"battle_round={getattr(primary_env_unwrapped, 'battle_round', 'n/a')}, trunc={trunc}"
+        )
+        if trunc:
+            append_agent_log(
+                "Логи фаз/ходов отключены (trunc=True). "
+                "Чтобы включить подробные логи: VERBOSE_LOGS=1 или MANUAL_DICE=1."
+            )
+        if initial_model_hp <= 0 or initial_enemy_hp <= 0:
+            append_agent_log(
+                "ВНИМАНИЕ: на старте эпизода обнаружено нулевое здоровье. "
+                f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}. "
+                "Это может приводить к мгновенному завершению эпизодов."
+            )
     else:
+        append_agent_log(
+            "Старт обучения: USE_SUBPROC_ENVS=1, начальные HP недоступны из subprocess env."
+        )
+    
+    while end is False:
+        shoot_masks = []
         for idx, ctx in enumerate(env_contexts):
-            env_unwrapped = unwrap_env(ctx["env"])
-            if SELF_PLAY_ENABLED:
-                env_unwrapped.enemyTurn(
-                    trunc=trunc,
-                    policy_fn=lambda obs, env=ctx["env"], lm=ctx["len_model"]: opponent_policy(obs, env, lm),
-                )
-            else:
-                env_unwrapped.enemyTurn(trunc=trunc)
-    perf_stats["enemy_turn_s"] += time.perf_counter() - enemy_turn_start
-
-    losses = []
-    last_td_stats = None
-    last_per_beta = PER_BETA_START
-    last_loss_value = None
-
-    dev = next(policy_net.parameters()).device
-
-    for idx, ctx in enumerate(env_contexts):
-        ctx["ep_len"] += 1
-        action_dict = convertToDict(actions[idx])
-        step_start = time.perf_counter()
-        if USE_SUBPROC_ENVS:
-            ctx["conn"].send(("step", action_dict))
-            next_observation, reward, done, res, info = ctx["conn"].recv()
-        else:
-            next_observation, reward, done, res, info = ctx["env"].step(action_dict)
-        perf_stats["env_step_s"] += time.perf_counter() - step_start
-        perf_counts["env_steps"] += 1
-        ctx["rew_arr"].append(float(reward))
-
-        unit_health = info["model health"]
-        enemy_health = info["player health"]
-        inAttack = info["in attack"]
-
-        if inAttack == 1 and trunc is False:
-            print("The units are fighting")
-
-        if RENDER_EVERY > 0 and not USE_SUBPROC_ENVS and vec_env_count == 1 and (global_step % RENDER_EVERY == 0 or done):
-            ctx["env"].render()
-
-        mission_name = info.get("mission", DEFAULT_MISSION_NAME)
-        message = (
-            "Iteration {} ended with reward {}, enemy health {}, model health {}, model VP {}, enemy VP {}, mission {}".format(
-                global_step,
-                reward,
-                enemy_health,
-                unit_health,
-                info["model VP"],
-                info["player VP"],
-                mission_name,
-            )
-        )
-        if trunc is False:
-            print(message)
-        inText.append(message)
-
-        state_t = torch.tensor(to_np_state(ctx["state"]), device=dev).unsqueeze(0)
-        next_state_t = None
-        next_shoot_mask = None
-        if not done:
-            next_state_t = torch.tensor(to_np_state(next_observation), device=dev).unsqueeze(0)
             mask_log_fn = append_agent_log if idx == 0 else None
             if USE_SUBPROC_ENVS:
                 ctx["conn"].send(("get_shoot_mask", None))
-                next_shoot_mask = ctx["conn"].recv()
+                shoot_masks.append(ctx["conn"].recv())
             else:
-                next_shoot_mask = build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG)
-
-        ctx["n_step_buffer"].append((state_t, actions[idx], float(reward), next_state_t, done, next_shoot_mask))
-        if len(ctx["n_step_buffer"]) >= N_STEP:
-            reward_sum, n_step_next_state, n_step_next_mask, n_step_count = build_n_step_transition(
-                ctx["n_step_buffer"], GAMMA
+                shoot_masks.append(build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG))
+    
+        states = [ctx["state"] for ctx in env_contexts]
+        action_start = time.perf_counter()
+        if BATCH_ACT:
+            actions, eps_threshold = _select_actions_batch(env_contexts, states, global_step, policy_net, shoot_masks)
+        else:
+            decay_steps = max(1.0, float(EPS_DECAY))
+            progress = min(float(global_step) / decay_steps, 1.0)
+            eps_threshold = EPS_START + (EPS_END - EPS_START) * progress
+            actions = []
+            for env_idx, ctx in enumerate(env_contexts):
+                actions.append(
+                    select_action_with_epsilon(
+                        ctx["env"],
+                        ctx["state"],
+                        policy_net,
+                        eps_threshold,
+                        ctx["len_model"],
+                        shoot_mask=shoot_masks[env_idx],
+                    )
+                )
+        perf_stats["action_select_s"] += time.perf_counter() - action_start
+    
+        enemy_turn_start = time.perf_counter()
+        if USE_SUBPROC_ENVS:
+            for ctx in env_contexts:
+                ctx["conn"].send(("enemy_turn", None))
+            for ctx in env_contexts:
+                ctx["conn"].recv()
+        else:
+            for idx, ctx in enumerate(env_contexts):
+                env_unwrapped = unwrap_env(ctx["env"])
+                if SELF_PLAY_ENABLED:
+                    env_unwrapped.enemyTurn(
+                        trunc=trunc,
+                        policy_fn=lambda obs, env=ctx["env"], lm=ctx["len_model"]: opponent_policy(obs, env, lm),
+                    )
+                else:
+                    env_unwrapped.enemyTurn(trunc=trunc)
+        perf_stats["enemy_turn_s"] += time.perf_counter() - enemy_turn_start
+    
+        losses = []
+        last_td_stats = None
+        last_per_beta = PER_BETA_START
+        last_loss_value = None
+    
+        dev = next(policy_net.parameters()).device
+    
+        for idx, ctx in enumerate(env_contexts):
+            ctx["ep_len"] += 1
+            action_dict = convertToDict(actions[idx])
+            step_start = time.perf_counter()
+            if USE_SUBPROC_ENVS:
+                ctx["conn"].send(("step", action_dict))
+                next_observation, reward, done, res, info = ctx["conn"].recv()
+            else:
+                next_observation, reward, done, res, info = ctx["env"].step(action_dict)
+            perf_stats["env_step_s"] += time.perf_counter() - step_start
+            perf_counts["env_steps"] += 1
+            ctx["rew_arr"].append(float(reward))
+    
+            unit_health = info["model health"]
+            enemy_health = info["player health"]
+            inAttack = info["in attack"]
+    
+            if inAttack == 1 and trunc is False:
+                print("The units are fighting")
+    
+            if RENDER_EVERY > 0 and not USE_SUBPROC_ENVS and vec_env_count == 1 and (global_step % RENDER_EVERY == 0 or done):
+                ctx["env"].render()
+    
+            mission_name = info.get("mission", DEFAULT_MISSION_NAME)
+            message = (
+                "Iteration {} ended with reward {}, enemy health {}, model health {}, model VP {}, enemy VP {}, mission {}".format(
+                    global_step,
+                    reward,
+                    enemy_health,
+                    unit_health,
+                    info["model VP"],
+                    info["player VP"],
+                    mission_name,
+                )
             )
-            reward_sum_t = torch.tensor([reward_sum], device=dev, dtype=torch.float32)
-            head_state, head_action, _, _, _, _ = ctx["n_step_buffer"][0]
-            memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count, n_step_next_mask)
-            ctx["n_step_buffer"].popleft()
-        if done:
-            while ctx["n_step_buffer"]:
+            if trunc is False:
+                print(message)
+            inText.append(message)
+    
+            state_t = torch.tensor(to_np_state(ctx["state"]), device=dev).unsqueeze(0)
+            next_state_t = None
+            next_shoot_mask = None
+            if not done:
+                next_state_t = torch.tensor(to_np_state(next_observation), device=dev).unsqueeze(0)
+                mask_log_fn = append_agent_log if idx == 0 else None
+                if USE_SUBPROC_ENVS:
+                    ctx["conn"].send(("get_shoot_mask", None))
+                    next_shoot_mask = ctx["conn"].recv()
+                else:
+                    next_shoot_mask = build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG)
+    
+            ctx["n_step_buffer"].append((state_t, actions[idx], float(reward), next_state_t, done, next_shoot_mask))
+            if len(ctx["n_step_buffer"]) >= N_STEP:
                 reward_sum, n_step_next_state, n_step_next_mask, n_step_count = build_n_step_transition(
                     ctx["n_step_buffer"], GAMMA
                 )
@@ -1023,400 +1015,413 @@ while end is False:
                 head_state, head_action, _, _, _, _ = ctx["n_step_buffer"][0]
                 memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count, n_step_next_mask)
                 ctx["n_step_buffer"].popleft()
-        ctx["state"] = next_observation
-
-        if done is True:
-            logging_start = time.perf_counter()
-            if SELF_PLAY_ENABLED:
-                append_agent_log(
-                    f"Конец эпизода {numLifeT + 1}. "
-                    f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
-                    f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
-                )
-            end_reason_env = info.get("end reason", "")
-            winner_env = info.get("winner")
-            model_hp_total = sum(info.get("model health", [])) if isinstance(info.get("model health"), (list, tuple, np.ndarray)) else info.get("model health")
-            enemy_hp_total = sum(info.get("player health", [])) if isinstance(info.get("player health"), (list, tuple, np.ndarray)) else info.get("player health")
-            append_agent_log(
-                "Конец эпизода: "
-                f"reason={end_reason_env or 'unknown'} "
-                f"winner={winner_env} "
-                f"model_hp_total={model_hp_total} enemy_hp_total={enemy_hp_total} "
-                f"model_vp={info.get('model VP')} enemy_vp={info.get('player VP')} "
-                f"turn={info.get('turn')} battle_round={info.get('battle round')}"
-            )
-            if ctx["ep_len"] == 1:
-                append_agent_log(
-                    "ВНИМАНИЕ: эпизод завершился на первом шаге. "
-                    "Проверьте reset/условия завершения (нулевое здоровье, лимиты хода, "
-                    "ошибки расстановки)."
-                )
-            pending_pbar_updates += 1
-            if pending_pbar_updates >= pbar_update_every or (numLifeT + 1) >= totLifeT:
-                pbar.update(pending_pbar_updates)
-                pending_pbar_updates = 0
-            metrics.updateRew(sum(ctx["rew_arr"]) / len(ctx["rew_arr"]))
-            metrics.updateEpLen(ctx["ep_len"])
-            # ===== extra metrics (winrate / VP diff / end reason) =====
-            ep_reward = float(sum(ctx["rew_arr"]) / len(ctx["rew_arr"])) if len(ctx["rew_arr"]) > 0 else 0.0
-            model_vp = int(info.get("model VP", 0))
-            player_vp = int(info.get("player VP", 0))
-            vp_diff = model_vp - player_vp
-
-            mh_list = info.get("model health", [])
-            ph_list = info.get("player health", [])
-
-            def _sum_health(x):
-                try:
-                    if isinstance(x, (list, tuple, np.ndarray)):
-                        return int(sum(x))
-                    return int(x)
-                except Exception:
-                    return 0
-
-            mh = _sum_health(mh_list)
-            ph = _sum_health(ph_list)
-
-            end_code = res  # то, что возвращает env (1..3 миссия или 4)
-            end_reason_env = info.get("end reason", "")
-            turn = int(info.get("turn", ctx["ep_len"]))  # если turn не добавляли в env — будет epLen
-
-            if end_reason_env:
-                end_reason = end_reason_env
-                if end_reason_env == "wipeout_enemy":
-                    result = "win"
-                elif end_reason_env == "wipeout_model":
-                    result = "loss"
-                elif end_reason_env == "turn_limit":
-                    if vp_diff > 0:
-                        result = "win"
-                    elif vp_diff < 0:
-                        result = "loss"
-                    else:
-                        result = "draw"
-                else:
-                    if vp_diff > 0:
-                        result = "win"
-                    elif vp_diff < 0:
-                        result = "loss"
-                    else:
-                        result = "draw"
-            elif ph <= 0 and mh > 0:
-                result = "win"
-                end_reason = "wipe_enemy"
-            elif mh <= 0 and ph > 0:
-                result = "loss"
-                end_reason = "wipe_model"
-            else:
-                mission_name = info.get("mission", DEFAULT_MISSION_NAME)
-                end_reason = f"turn_limit_{mission_name}"
-                if vp_diff > 0:
-                    result = "win"
-                elif vp_diff < 0:
-                    result = "loss"
-                else:
-                    result = "draw"
-
-            if result == "win":
-                inText.append("model won!")
-                if trunc is False:
-                    print("model won!")
-            elif result == "loss":
-                inText.append("enemy won!")
-                if trunc is False:
-                    print("enemy won!")
-            else:
-                inText.append("draw!")
-                if trunc is False:
-                    print("draw!")
-
-            if TRAIN_LOG_ENABLED:
-                win_flag = 1 if result == "win" else 0
-                train_ep_line = (
-                    "[TRAIN][EP] "
-                    f"ep={numLifeT + 1} "
-                    f"ep_reward={ep_reward:.6f} "
-                    f"win={win_flag} "
-                    f"vp_diff={vp_diff} "
-                    f"end_reason={end_reason}"
-                )
-                if TRAIN_LOG_TO_FILE:
-                    append_agent_log(train_ep_line)
-                if TRAIN_LOG_TO_CONSOLE:
-                    print(train_ep_line)
-
-            ep_rows.append(
-                {
-                    "episode": numLifeT + 1,  # lifetimes считаются у тебя через numLifeT
-                    "ep_reward": ep_reward,
-                    "ep_len": ctx["ep_len"],
-                    "turn": turn,
-                    "model_vp": model_vp,
-                    "player_vp": player_vp,
-                    "vp_diff": vp_diff,
-                    "result": result,
-                    "end_reason": end_reason,
-                    "end_code": end_code,
-                }
-            )
-            # ==========================================================
-
-            if res == 4:
-                inText.append("Major Victory")
-
-            if float(reward) > 0:
-                inText.append("model won!")
-                if trunc is False:
-                    print("model won!")
-            else:
-                inText.append("enemy won!")
-                if trunc is False:
-                    print("enemy won!")
-            if trunc is False:
-                print("Restarting...")
-            numLifeT += 1
-            if SAVE_EVERY > 0 and numLifeT % SAVE_EVERY == 0:
-                checkpoint_path = f"models/{safe_name}/checkpoint_ep{numLifeT}.pth"
-                os.makedirs(f"models/{safe_name}", exist_ok=True)
-                torch.save(
-                    {
-                        "policy_net": policy_net.state_dict(),
-                        "target_net": target_net.state_dict(),
-                        "net_type": NET_TYPE,
-                        "optimizer": optimizer.state_dict(),
-                    },
-                    checkpoint_path,
-                )
-                if TRAIN_LOG_ENABLED:
-                    save_line = f"[TRAIN][SAVE] ep={numLifeT} path={checkpoint_path}"
-                    if TRAIN_LOG_TO_FILE:
-                        append_agent_log(save_line)
-                    if TRAIN_LOG_TO_CONSOLE:
-                        print(save_line)
-
-            if SELF_PLAY_ENABLED and SELF_PLAY_OPPONENT_MODE == "snapshot":
-                if numLifeT % SELF_PLAY_UPDATE_EVERY_EPISODES == 0:
-                    opponent_policy_net.load_state_dict(policy_net.state_dict())
+            if done:
+                while ctx["n_step_buffer"]:
+                    reward_sum, n_step_next_state, n_step_next_mask, n_step_count = build_n_step_transition(
+                        ctx["n_step_buffer"], GAMMA
+                    )
+                    reward_sum_t = torch.tensor([reward_sum], device=dev, dtype=torch.float32)
+                    head_state, head_action, _, _, _, _ = ctx["n_step_buffer"][0]
+                    memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count, n_step_next_mask)
+                    ctx["n_step_buffer"].popleft()
+            ctx["state"] = next_observation
+    
+            if done is True:
+                logging_start = time.perf_counter()
+                if SELF_PLAY_ENABLED:
                     append_agent_log(
-                        f"[SELFPLAY] opponent snapshot updated at episode {numLifeT}"
+                        f"Конец эпизода {numLifeT + 1}. "
+                        f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
+                        f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
                     )
-
-            if USE_SUBPROC_ENVS:
-                ctx["conn"].send(("reset", None))
-                ctx["state"], ctx["info"] = ctx["conn"].recv()
-            else:
-                attacker_side, defender_side = roll_off_attacker_defender(
-                    manual_roll_allowed=False,
-                    log_fn=print if idx == 0 else None,
+                end_reason_env = info.get("end reason", "")
+                winner_env = info.get("winner")
+                model_hp_total = sum(info.get("model health", [])) if isinstance(info.get("model health"), (list, tuple, np.ndarray)) else info.get("model health")
+                enemy_hp_total = sum(info.get("player health", [])) if isinstance(info.get("player health"), (list, tuple, np.ndarray)) else info.get("player health")
+                append_agent_log(
+                    "Конец эпизода: "
+                    f"reason={end_reason_env or 'unknown'} "
+                    f"winner={winner_env} "
+                    f"model_hp_total={model_hp_total} enemy_hp_total={enemy_hp_total} "
+                    f"model_vp={info.get('model VP')} enemy_vp={info.get('player VP')} "
+                    f"turn={info.get('turn')} battle_round={info.get('battle round')}"
                 )
-                if verbose and idx == 0:
-                    print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
-
-                deploy_only_war(
-                    model_units=ctx["model"],
-                    enemy_units=ctx["enemy"],
-                    b_len=b_len,
-                    b_hei=b_hei,
-                    attacker_side=attacker_side,
-                    log_fn=log_fn if idx == 0 else None,
-                )
-                post_deploy_setup(log_fn=log_fn if idx == 0 else None)
-                ctx["env"].attacker_side = attacker_side
-                ctx["env"].defender_side = defender_side
-
-                ctx["state"], ctx["info"] = ctx["env"].reset(
-                    options={"m": ctx["model"], "e": ctx["enemy"], "Type": "small", "trunc": True}
-                )
-            ctx["ep_len"] = 0
-            ctx["rew_arr"] = []
-            perf_stats["logging_s"] += time.perf_counter() - logging_start
-
-        if numLifeT == totLifeT:
-            end = True
-            if pending_pbar_updates:
-                pbar.update(pending_pbar_updates)
-                pending_pbar_updates = 0
-            pbar.close()
-            break
-
-    if end:
-        break
-
-    if global_step >= WARMUP_STEPS:
-        for _ in range(UPDATES_PER_STEP):
-            per_beta = PER_BETA_START
-            if PER_ENABLED and PER_BETA_FRAMES > 0:
-                per_beta = min(
-                    1.0,
-                    PER_BETA_START
-                    + (1.0 - PER_BETA_START)
-                    * (optimize_steps / float(PER_BETA_FRAMES)),
-                )
-            result = optimize_model(
-                policy_net,
-                target_net,
-                optimizer,
-                memory,
-                n_observations,
-                double_dqn_enabled=DOUBLE_DQN_ENABLED,
-                per_enabled=PER_ENABLED,
-                per_beta=per_beta,
-                per_eps=PER_EPS,
-                use_amp=USE_AMP,
-                scaler=scaler,
-                pin_memory=PIN_MEMORY,
-                prefetch=PREFETCH,
-            )
-
-            # optimize_model возвращает 0 если replay ещё маленький — такие пропускаем
-            if result and result["loss"] != 0:
-                losses.append(result["loss"])
-                last_td_stats = result
-                last_per_beta = per_beta
-                last_loss_value = result["loss"]
-                optimize_steps += 1
-                perf_counts["updates"] += 1
-                timing = result.get("timing", {})
-                perf_stats["replay_sample_s"] += float(timing.get("sample_s", 0.0))
-                perf_stats["train_forward_s"] += float(timing.get("forward_s", 0.0))
-                perf_stats["train_backward_s"] += float(timing.get("backward_s", 0.0))
-                if TRAIN_LOG_ENABLED and optimize_steps % TRAIN_LOG_EVERY_UPDATES == 0:
-                    train_line = (
-                        "[TRAIN] "
+                if ctx["ep_len"] == 1:
+                    append_agent_log(
+                        "ВНИМАНИЕ: эпизод завершился на первом шаге. "
+                        "Проверьте reset/условия завершения (нулевое здоровье, лимиты хода, "
+                        "ошибки расстановки)."
+                    )
+                pending_pbar_updates += 1
+                if pending_pbar_updates >= pbar_update_every or (numLifeT + 1) >= totLifeT:
+                    pbar.update(pending_pbar_updates)
+                    pending_pbar_updates = 0
+                metrics.updateRew(sum(ctx["rew_arr"]) / len(ctx["rew_arr"]))
+                metrics.updateEpLen(ctx["ep_len"])
+                # ===== extra metrics (winrate / VP diff / end reason) =====
+                ep_reward = float(sum(ctx["rew_arr"]) / len(ctx["rew_arr"])) if len(ctx["rew_arr"]) > 0 else 0.0
+                model_vp = int(info.get("model VP", 0))
+                player_vp = int(info.get("player VP", 0))
+                vp_diff = model_vp - player_vp
+    
+                mh_list = info.get("model health", [])
+                ph_list = info.get("player health", [])
+    
+                def _sum_health(x):
+                    try:
+                        if isinstance(x, (list, tuple, np.ndarray)):
+                            return int(sum(x))
+                        return int(x)
+                    except Exception:
+                        return 0
+    
+                mh = _sum_health(mh_list)
+                ph = _sum_health(ph_list)
+    
+                end_code = res  # то, что возвращает env (1..3 миссия или 4)
+                end_reason_env = info.get("end reason", "")
+                turn = int(info.get("turn", ctx["ep_len"]))  # если turn не добавляли в env — будет epLen
+    
+                if end_reason_env:
+                    end_reason = end_reason_env
+                    if end_reason_env == "wipeout_enemy":
+                        result = "win"
+                    elif end_reason_env == "wipeout_model":
+                        result = "loss"
+                    elif end_reason_env == "turn_limit":
+                        if vp_diff > 0:
+                            result = "win"
+                        elif vp_diff < 0:
+                            result = "loss"
+                        else:
+                            result = "draw"
+                    else:
+                        if vp_diff > 0:
+                            result = "win"
+                        elif vp_diff < 0:
+                            result = "loss"
+                        else:
+                            result = "draw"
+                elif ph <= 0 and mh > 0:
+                    result = "win"
+                    end_reason = "wipe_enemy"
+                elif mh <= 0 and ph > 0:
+                    result = "loss"
+                    end_reason = "wipe_model"
+                else:
+                    mission_name = info.get("mission", DEFAULT_MISSION_NAME)
+                    end_reason = f"turn_limit_{mission_name}"
+                    if vp_diff > 0:
+                        result = "win"
+                    elif vp_diff < 0:
+                        result = "loss"
+                    else:
+                        result = "draw"
+    
+                if result == "win":
+                    inText.append("model won!")
+                    if trunc is False:
+                        print("model won!")
+                elif result == "loss":
+                    inText.append("enemy won!")
+                    if trunc is False:
+                        print("enemy won!")
+                else:
+                    inText.append("draw!")
+                    if trunc is False:
+                        print("draw!")
+    
+                if TRAIN_LOG_ENABLED:
+                    win_flag = 1 if result == "win" else 0
+                    train_ep_line = (
+                        "[TRAIN][EP] "
                         f"ep={numLifeT + 1} "
-                        f"upd={optimize_steps} "
-                        f"step={global_step} "
-                        f"loss={last_loss_value:.6f} "
-                        f"eps={eps_threshold:.4f} "
-                        f"lr={LR:.6g} "
-                        f"gamma={GAMMA:.6g} "
-                        f"PER={int(PER_ENABLED)} "
-                        f"alpha={PER_ALPHA:.4g} "
-                        f"beta={last_per_beta:.4g} "
-                        f"N_STEP={N_STEP}"
+                        f"ep_reward={ep_reward:.6f} "
+                        f"win={win_flag} "
+                        f"vp_diff={vp_diff} "
+                        f"end_reason={end_reason}"
                     )
-                    if N_STEP > 1:
-                        effective_gamma = GAMMA ** N_STEP
-                        train_line += f" effective_gamma={effective_gamma:.6g}"
-                    if PER_ENABLED and last_td_stats.get("per_stats"):
-                        per_stats = last_td_stats["per_stats"]
-                        train_line += (
-                            f" td_abs_mean={per_stats['td_error_mean']:.6f}"
-                            f" td_abs_max={per_stats['td_error_max']:.6f}"
-                            f" prio_mean={per_stats['priority_mean']:.6f}"
-                            f" prio_max={per_stats['priority_max']:.6f}"
-                            f" isw_mean={per_stats['is_weight_mean']:.6f}"
-                            f" isw_max={per_stats['is_weight_max']:.6f}"
-                        )
                     if TRAIN_LOG_TO_FILE:
-                        append_agent_log(train_line)
+                        append_agent_log(train_ep_line)
                     if TRAIN_LOG_TO_CONSOLE:
-                        print(train_line)
-
-            # ✅ Быстрый soft-update target_net (намного быстрее, чем state_dict)
-            with torch.no_grad():
-                for p_tgt, p in zip(target_net.parameters(), policy_net.parameters()):
-                    p_tgt.data.mul_(1.0 - TAU)
-                    p_tgt.data.add_(p.data, alpha=TAU)
-
-    # чтобы график loss не раздувался в 100 раз — пишем среднее за env-step
-    if len(losses) > 0:
-        metrics.updateLoss(sum(losses) / len(losses))
-    else:
-        metrics.updateLoss(0)
-    if REWARD_DEBUG and last_td_stats and optimize_steps % REWARD_DEBUG_EVERY == 0:
-        append_agent_log(
-            "[TD] "
-            f"step={global_step} "
-            f"mean={last_td_stats['td_target_mean']:.6f} "
-            f"max={last_td_stats['td_target_max']:.6f}"
-        )
-        if PER_ENABLED and last_td_stats.get("per_stats"):
-            per_stats = last_td_stats["per_stats"]
+                        print(train_ep_line)
+    
+                ep_rows.append(
+                    {
+                        "episode": numLifeT + 1,  # lifetimes считаются у тебя через numLifeT
+                        "ep_reward": ep_reward,
+                        "ep_len": ctx["ep_len"],
+                        "turn": turn,
+                        "model_vp": model_vp,
+                        "player_vp": player_vp,
+                        "vp_diff": vp_diff,
+                        "result": result,
+                        "end_reason": end_reason,
+                        "end_code": end_code,
+                    }
+                )
+                # ==========================================================
+    
+                if res == 4:
+                    inText.append("Major Victory")
+    
+                if float(reward) > 0:
+                    inText.append("model won!")
+                    if trunc is False:
+                        print("model won!")
+                else:
+                    inText.append("enemy won!")
+                    if trunc is False:
+                        print("enemy won!")
+                if trunc is False:
+                    print("Restarting...")
+                numLifeT += 1
+                if SAVE_EVERY > 0 and numLifeT % SAVE_EVERY == 0:
+                    checkpoint_path = f"models/{safe_name}/checkpoint_ep{numLifeT}.pth"
+                    os.makedirs(f"models/{safe_name}", exist_ok=True)
+                    torch.save(
+                        {
+                            "policy_net": policy_net.state_dict(),
+                            "target_net": target_net.state_dict(),
+                            "net_type": NET_TYPE,
+                            "optimizer": optimizer.state_dict(),
+                        },
+                        checkpoint_path,
+                    )
+                    if TRAIN_LOG_ENABLED:
+                        save_line = f"[TRAIN][SAVE] ep={numLifeT} path={checkpoint_path}"
+                        if TRAIN_LOG_TO_FILE:
+                            append_agent_log(save_line)
+                        if TRAIN_LOG_TO_CONSOLE:
+                            print(save_line)
+    
+                if SELF_PLAY_ENABLED and SELF_PLAY_OPPONENT_MODE == "snapshot":
+                    if numLifeT % SELF_PLAY_UPDATE_EVERY_EPISODES == 0:
+                        opponent_policy_net.load_state_dict(policy_net.state_dict())
+                        append_agent_log(
+                            f"[SELFPLAY] opponent snapshot updated at episode {numLifeT}"
+                        )
+    
+                if USE_SUBPROC_ENVS:
+                    ctx["conn"].send(("reset", None))
+                    ctx["state"], ctx["info"] = ctx["conn"].recv()
+                else:
+                    attacker_side, defender_side = roll_off_attacker_defender(
+                        manual_roll_allowed=False,
+                        log_fn=print if idx == 0 else None,
+                    )
+                    if verbose and idx == 0:
+                        print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
+    
+                    deploy_only_war(
+                        model_units=ctx["model"],
+                        enemy_units=ctx["enemy"],
+                        b_len=b_len,
+                        b_hei=b_hei,
+                        attacker_side=attacker_side,
+                        log_fn=log_fn if idx == 0 else None,
+                    )
+                    post_deploy_setup(log_fn=log_fn if idx == 0 else None)
+                    ctx["env"].attacker_side = attacker_side
+                    ctx["env"].defender_side = defender_side
+    
+                    ctx["state"], ctx["info"] = ctx["env"].reset(
+                        options={"m": ctx["model"], "e": ctx["enemy"], "Type": "small", "trunc": True}
+                    )
+                ctx["ep_len"] = 0
+                ctx["rew_arr"] = []
+                perf_stats["logging_s"] += time.perf_counter() - logging_start
+    
+            if numLifeT == totLifeT:
+                end = True
+                if pending_pbar_updates:
+                    pbar.update(pending_pbar_updates)
+                    pending_pbar_updates = 0
+                pbar.close()
+                break
+    
+        if end:
+            break
+    
+        if global_step >= WARMUP_STEPS:
+            for _ in range(UPDATES_PER_STEP):
+                per_beta = PER_BETA_START
+                if PER_ENABLED and PER_BETA_FRAMES > 0:
+                    per_beta = min(
+                        1.0,
+                        PER_BETA_START
+                        + (1.0 - PER_BETA_START)
+                        * (optimize_steps / float(PER_BETA_FRAMES)),
+                    )
+                result = optimize_model(
+                    policy_net,
+                    target_net,
+                    optimizer,
+                    memory,
+                    n_observations,
+                    double_dqn_enabled=DOUBLE_DQN_ENABLED,
+                    per_enabled=PER_ENABLED,
+                    per_beta=per_beta,
+                    per_eps=PER_EPS,
+                    use_amp=USE_AMP,
+                    scaler=scaler,
+                    pin_memory=PIN_MEMORY,
+                    prefetch=PREFETCH,
+                )
+    
+                # optimize_model возвращает 0 если replay ещё маленький — такие пропускаем
+                if result and result["loss"] != 0:
+                    losses.append(result["loss"])
+                    last_td_stats = result
+                    last_per_beta = per_beta
+                    last_loss_value = result["loss"]
+                    optimize_steps += 1
+                    perf_counts["updates"] += 1
+                    timing = result.get("timing", {})
+                    perf_stats["replay_sample_s"] += float(timing.get("sample_s", 0.0))
+                    perf_stats["train_forward_s"] += float(timing.get("forward_s", 0.0))
+                    perf_stats["train_backward_s"] += float(timing.get("backward_s", 0.0))
+                    if TRAIN_LOG_ENABLED and optimize_steps % TRAIN_LOG_EVERY_UPDATES == 0:
+                        train_line = (
+                            "[TRAIN] "
+                            f"ep={numLifeT + 1} "
+                            f"upd={optimize_steps} "
+                            f"step={global_step} "
+                            f"loss={last_loss_value:.6f} "
+                            f"eps={eps_threshold:.4f} "
+                            f"lr={LR:.6g} "
+                            f"gamma={GAMMA:.6g} "
+                            f"PER={int(PER_ENABLED)} "
+                            f"alpha={PER_ALPHA:.4g} "
+                            f"beta={last_per_beta:.4g} "
+                            f"N_STEP={N_STEP}"
+                        )
+                        if N_STEP > 1:
+                            effective_gamma = GAMMA ** N_STEP
+                            train_line += f" effective_gamma={effective_gamma:.6g}"
+                        if PER_ENABLED and last_td_stats.get("per_stats"):
+                            per_stats = last_td_stats["per_stats"]
+                            train_line += (
+                                f" td_abs_mean={per_stats['td_error_mean']:.6f}"
+                                f" td_abs_max={per_stats['td_error_max']:.6f}"
+                                f" prio_mean={per_stats['priority_mean']:.6f}"
+                                f" prio_max={per_stats['priority_max']:.6f}"
+                                f" isw_mean={per_stats['is_weight_mean']:.6f}"
+                                f" isw_max={per_stats['is_weight_max']:.6f}"
+                            )
+                        if TRAIN_LOG_TO_FILE:
+                            append_agent_log(train_line)
+                        if TRAIN_LOG_TO_CONSOLE:
+                            print(train_line)
+    
+                # ✅ Быстрый soft-update target_net (намного быстрее, чем state_dict)
+                with torch.no_grad():
+                    for p_tgt, p in zip(target_net.parameters(), policy_net.parameters()):
+                        p_tgt.data.mul_(1.0 - TAU)
+                        p_tgt.data.add_(p.data, alpha=TAU)
+    
+        # чтобы график loss не раздувался в 100 раз — пишем среднее за env-step
+        if len(losses) > 0:
+            metrics.updateLoss(sum(losses) / len(losses))
+        else:
+            metrics.updateLoss(0)
+        if REWARD_DEBUG and last_td_stats and optimize_steps % REWARD_DEBUG_EVERY == 0:
             append_agent_log(
-                "[PER] "
-                f"opt_step={optimize_steps} "
-                f"priority_mean={per_stats['priority_mean']:.6f} "
-                f"priority_max={per_stats['priority_max']:.6f} "
-                f"is_weight_mean={per_stats['is_weight_mean']:.6f} "
-                f"td_error_mean={per_stats['td_error_mean']:.6f} "
-                f"td_error_max={per_stats['td_error_max']:.6f}"
+                "[TD] "
+                f"step={global_step} "
+                f"mean={last_td_stats['td_target_mean']:.6f} "
+                f"max={last_td_stats['td_target_max']:.6f}"
             )
-    # =========================
-
-    if LOG_EVERY > 0 and global_step > 0 and global_step % LOG_EVERY == 0:
-        steps = max(1, perf_counts["env_steps"])
-        updates = max(1, perf_counts["updates"])
-        perf_line = (
-            "[PERF] "
-            f"steps={perf_counts['env_steps']} "
-            f"updates={perf_counts['updates']} "
-            f"action_ms={1000.0 * perf_stats['action_select_s'] / steps:.3f} "
-            f"enemy_turn_ms={1000.0 * perf_stats['enemy_turn_s'] / steps:.3f} "
-            f"env_step_ms={1000.0 * perf_stats['env_step_s'] / steps:.3f} "
-            f"replay_sample_ms={1000.0 * perf_stats['replay_sample_s'] / updates:.3f} "
-            f"train_fwd_ms={1000.0 * perf_stats['train_forward_s'] / updates:.3f} "
-            f"train_bwd_ms={1000.0 * perf_stats['train_backward_s'] / updates:.3f} "
-            f"log_ms={1000.0 * perf_stats['logging_s'] / steps:.3f}"
-        )
-        if TRAIN_LOG_TO_FILE:
-            append_agent_log(perf_line)
-        if TRAIN_LOG_TO_CONSOLE:
-            print(perf_line)
-        perf_stats = {k: 0.0 for k in perf_stats}
-        perf_counts = {"env_steps": 0, "updates": 0}
-
-    global_step += vec_env_count
-
-if USE_SUBPROC_ENVS:
-    for ctx in env_contexts:
-        try:
-            ctx["conn"].send(("close", None))
-            ctx["conn"].recv()
-        except Exception:
-            pass
-    for proc in subproc_envs:
-        proc.join(timeout=1.0)
-else:
-    for ctx in env_contexts:
-        ctx["env"].close()
-
-with open('trainRes.txt', 'w') as f:
-    for i in range(len(inText)):
-        f.write(inText[i])
-        f.write('\n')
-
-# Делать gif только если мы реально сохраняли кадры
-if RENDER_EVERY > 0 and not USE_SUBPROC_ENVS:
-    if totLifeT > 30:
-        genDisplay.makeGif(numOfLife=totLifeT, trunc=True)
+            if PER_ENABLED and last_td_stats.get("per_stats"):
+                per_stats = last_td_stats["per_stats"]
+                append_agent_log(
+                    "[PER] "
+                    f"opt_step={optimize_steps} "
+                    f"priority_mean={per_stats['priority_mean']:.6f} "
+                    f"priority_max={per_stats['priority_max']:.6f} "
+                    f"is_weight_mean={per_stats['is_weight_mean']:.6f} "
+                    f"td_error_mean={per_stats['td_error_mean']:.6f} "
+                    f"td_error_max={per_stats['td_error_max']:.6f}"
+                )
+        # =========================
+    
+        if LOG_EVERY > 0 and global_step > 0 and global_step % LOG_EVERY == 0:
+            steps = max(1, perf_counts["env_steps"])
+            updates = max(1, perf_counts["updates"])
+            perf_line = (
+                "[PERF] "
+                f"steps={perf_counts['env_steps']} "
+                f"updates={perf_counts['updates']} "
+                f"action_ms={1000.0 * perf_stats['action_select_s'] / steps:.3f} "
+                f"enemy_turn_ms={1000.0 * perf_stats['enemy_turn_s'] / steps:.3f} "
+                f"env_step_ms={1000.0 * perf_stats['env_step_s'] / steps:.3f} "
+                f"replay_sample_ms={1000.0 * perf_stats['replay_sample_s'] / updates:.3f} "
+                f"train_fwd_ms={1000.0 * perf_stats['train_forward_s'] / updates:.3f} "
+                f"train_bwd_ms={1000.0 * perf_stats['train_backward_s'] / updates:.3f} "
+                f"log_ms={1000.0 * perf_stats['logging_s'] / steps:.3f}"
+            )
+            if TRAIN_LOG_TO_FILE:
+                append_agent_log(perf_line)
+            if TRAIN_LOG_TO_CONSOLE:
+                print(perf_line)
+            perf_stats = {k: 0.0 for k in perf_stats}
+            perf_counts = {"env_steps": 0, "updates": 0}
+    
+        global_step += vec_env_count
+    
+    if USE_SUBPROC_ENVS:
+        for ctx in env_contexts:
+            try:
+                ctx["conn"].send(("close", None))
+                ctx["conn"].recv()
+            except Exception:
+                pass
+        for proc in subproc_envs:
+            proc.join(timeout=1.0)
     else:
-        genDisplay.makeGif(numOfLife=totLifeT)
-else:
-    print("[render] RENDER_EVERY=0 -> gif skipped")
+        for ctx in env_contexts:
+            ctx["env"].close()
+    
+    with open('trainRes.txt', 'w') as f:
+        for i in range(len(inText)):
+            f.write(inText[i])
+            f.write('\n')
+    
+    # Делать gif только если мы реально сохраняли кадры
+    if RENDER_EVERY > 0 and not USE_SUBPROC_ENVS:
+        if totLifeT > 30:
+            genDisplay.makeGif(numOfLife=totLifeT, trunc=True)
+        else:
+            genDisplay.makeGif(numOfLife=totLifeT)
+    else:
+        print("[render] RENDER_EVERY=0 -> gif skipped")
+    
+    
+    metrics.lossCurve()
+    metrics.showRew()
+    metrics.showEpLen()
+    
+    save_extra_metrics(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
+    metrics.createJson()
+    print("Generated metrics")
+    
+    os.makedirs(fold, exist_ok=True)
+    
+    torch.save({
+        "policy_net": policy_net.state_dict(),
+        "target_net": target_net.state_dict(),
+        "net_type": NET_TYPE,
+        'optimizer': optimizer.state_dict(),}
+        , ("models/{}/model-{}.pth".format(safe_name, date)))
+    
+    toSave = [primary_ctx["env"], primary_ctx["model"], primary_ctx["enemy"]]
+    
+    with open(fileName, "wb") as file:
+        pickle.dump(toSave, file)
+    
+    if os.path.isfile("gui/data.json"):
+        initFile.delFile()
 
-
-metrics.lossCurve()
-metrics.showRew()
-metrics.showEpLen()
-
-save_extra_metrics(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
-metrics.createJson()
-print("Generated metrics")
-
-os.makedirs(fold, exist_ok=True)
-
-torch.save({
-    "policy_net": policy_net.state_dict(),
-    "target_net": target_net.state_dict(),
-    "net_type": NET_TYPE,
-    'optimizer': optimizer.state_dict(),}
-    , ("models/{}/model-{}.pth".format(safe_name, date)))
-
-toSave = [primary_ctx["env"], primary_ctx["model"], primary_ctx["enemy"]]
-
-with open(fileName, "wb") as file:
-    pickle.dump(toSave, file)
-
-if os.path.isfile("gui/data.json"):
-    initFile.delFile()
+if __name__ == "__main__":
+    mp.freeze_support()
+    main()
