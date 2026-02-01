@@ -12,6 +12,7 @@ import json
 import random
 import matplotlib.pyplot as plt
 import time
+import multiprocessing as mp
 from tqdm import tqdm
 from gym_mod.envs.warhamEnv import *
 from gym_mod.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
@@ -76,6 +77,8 @@ PIN_MEMORY = os.getenv("PIN_MEMORY", "0") == "1"
 USE_AMP = os.getenv("USE_AMP", "1") == "1"
 USE_COMPILE = os.getenv("USE_COMPILE", "0") == "1"
 SAVE_EVERY = int(os.getenv("SAVE_EVERY", "0"))
+# Параллелизм через subprocess (только без self-play, маски считаются в воркерах).
+USE_SUBPROC_ENVS = os.getenv("USE_SUBPROC_ENVS", "0") == "1"
 # Рекомендации (включать вручную при наличии GPU/CPU): NUM_ENVS=8..16, BATCH_ACT=1,
 # USE_AMP=1, USE_COMPILE=1, PREFETCH=1, PIN_MEMORY=1, LOG_EVERY=200.
 # ======================
@@ -259,6 +262,89 @@ def append_agent_log(line: str) -> None:
             log_file.write(full_line + "\n")
     except Exception as exc:
         print(f"[LOG][WARN] Не удалось записать LOGS_FOR_AGENTS.md: {exc}")
+
+def _env_worker(conn, roster_config, b_len, b_hei, trunc):
+    try:
+        enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+        attacker_side, defender_side = roll_off_attacker_defender(
+            manual_roll_allowed=False,
+            log_fn=None,
+        )
+        deploy_only_war(
+            model_units=model,
+            enemy_units=enemy,
+            b_len=b_len,
+            b_hei=b_hei,
+            attacker_side=attacker_side,
+            log_fn=None,
+        )
+        post_deploy_setup(log_fn=None)
+
+        env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
+        env.attacker_side = attacker_side
+        env.defender_side = defender_side
+
+        state, info = env.reset(options={"m": model, "e": enemy, "Type": "big", "trunc": True})
+        conn.send(
+            {
+                "state": state,
+                "info": info,
+                "len_model": len(model),
+            }
+        )
+
+        while True:
+            cmd, payload = conn.recv()
+            if cmd == "enemy_turn":
+                env_unwrapped = unwrap_env(env)
+                env_unwrapped.enemyTurn(trunc=trunc)
+                conn.send(True)
+            elif cmd == "step":
+                next_observation, reward, done, res, info = env.step(payload)
+                conn.send((next_observation, reward, done, res, info))
+            elif cmd == "reset":
+                attacker_side, defender_side = roll_off_attacker_defender(
+                    manual_roll_allowed=False,
+                    log_fn=None,
+                )
+                deploy_only_war(
+                    model_units=model,
+                    enemy_units=enemy,
+                    b_len=b_len,
+                    b_hei=b_hei,
+                    attacker_side=attacker_side,
+                    log_fn=None,
+                )
+                post_deploy_setup(log_fn=None)
+                env.attacker_side = attacker_side
+                env.defender_side = defender_side
+                state, info = env.reset(
+                    options={"m": model, "e": enemy, "Type": "small", "trunc": True}
+                )
+                conn.send((state, info))
+            elif cmd == "get_shoot_mask":
+                mask = build_shoot_action_mask(env, log_fn=None, debug=False)
+                conn.send(mask)
+            elif cmd == "get_action_space":
+                keys = payload
+                sizes = []
+                for k in keys:
+                    sp = env.action_space.spaces[k]
+                    if hasattr(sp, "n"):
+                        sizes.append(int(sp.n))
+                    elif hasattr(sp, "nvec"):
+                        sizes.extend([int(x) for x in sp.nvec])
+                    else:
+                        raise TypeError(f"Unsupported action space for {k}: {type(sp)}")
+                conn.send(sizes)
+            elif cmd == "close":
+                conn.send(True)
+                break
+    except Exception as exc:
+        try:
+            conn.send({"error": str(exc)})
+        except Exception:
+            pass
 
 def _load_roster_config():
     config = {
@@ -457,6 +543,14 @@ vec_env_count = int(os.getenv("NUM_ENVS", os.getenv("VEC_ENV_COUNT", "1")))
 if vec_env_count < 1:
     vec_env_count = 1
 
+if USE_SUBPROC_ENVS and vec_env_count < 2:
+    USE_SUBPROC_ENVS = False
+if USE_SUBPROC_ENVS and SELF_PLAY_ENABLED:
+    warn_msg = "[WARN] USE_SUBPROC_ENVS=1 несовместим с SELF_PLAY_ENABLED=1, отключаю subprocess env."
+    print(warn_msg)
+    append_agent_log(warn_msg)
+    USE_SUBPROC_ENVS = False
+
 if TRAIN_LOG_ENABLED:
     train_start_line = (
         "[TRAIN][START] "
@@ -471,6 +565,7 @@ if TRAIN_LOG_ENABLED:
         f"BATCH_ACT={int(BATCH_ACT)} "
         f"USE_AMP={int(USE_AMP)} "
         f"USE_COMPILE={int(USE_COMPILE)} "
+        f"USE_SUBPROC_ENVS={int(USE_SUBPROC_ENVS)} "
         f"PREFETCH={int(PREFETCH)} "
         f"PIN_MEMORY={int(PIN_MEMORY)} "
         f"LOG_EVERY={LOG_EVERY} "
@@ -481,7 +576,14 @@ if TRAIN_LOG_ENABLED:
     if TRAIN_LOG_TO_CONSOLE:
         print(train_start_line)
 
+if USE_SUBPROC_ENVS and RENDER_EVERY > 0:
+    warn_msg = "[WARN] USE_SUBPROC_ENVS=1: рендер в subprocess env недоступен, рендер будет пропущен."
+    print(warn_msg)
+    append_agent_log(warn_msg)
+
 env_contexts = []
+subproc_envs = []
+subproc_conns = []
 
 numLifeT = 0
 
@@ -496,84 +598,112 @@ if os.path.isfile("gui/data.json"):
     for spec in roster_config["enemy_units"]:
         print("Name:", spec["name"], "Weapons: ", spec["weapons"][0], spec["weapons"][1])
 
-for env_idx in range(vec_env_count):
-    enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
-    env_log_fn = log_fn if env_idx == 0 else None
-    attacker_side, defender_side = roll_off_attacker_defender(
-        manual_roll_allowed=False,
-        log_fn=print if env_idx == 0 else None,
-    )
-    if verbose and env_idx == 0:
-        print(f"[roster] model_units={len(model)} enemy_units={len(enemy)}")
-        for idx, unit in enumerate(model):
-            unit_data = unit.showUnitData()
-            unit_name = unit_data.get("Name", "Unknown")
-            unit_models = unit_data.get("#OfModels", 1)
-            print(f"[roster] model[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
-        for idx, unit in enumerate(enemy):
-            unit_data = unit.showUnitData()
-            unit_name = unit_data.get("Name", "Unknown")
-            unit_models = unit_data.get("#OfModels", 1)
-            print(f"[roster] enemy[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
-        print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
-        print("Units:", [(u.name, u.instance_id, u.models_count) for u in model])
+if USE_SUBPROC_ENVS:
+    ctx = mp.get_context("spawn")
+    for env_idx in range(vec_env_count):
+        parent_conn, child_conn = ctx.Pipe()
+        proc = ctx.Process(
+            target=_env_worker,
+            args=(child_conn, roster_config, b_len, b_hei, trunc),
+            daemon=True,
+        )
+        proc.start()
+        init_payload = parent_conn.recv()
+        if isinstance(init_payload, dict) and init_payload.get("error"):
+            raise RuntimeError(init_payload["error"])
+        env_contexts.append(
+            {
+                "conn": parent_conn,
+                "state": init_payload["state"],
+                "info": init_payload["info"],
+                "len_model": init_payload["len_model"],
+            }
+        )
+        subproc_envs.append(proc)
+        subproc_conns.append(parent_conn)
+else:
+    for env_idx in range(vec_env_count):
+        enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+        env_log_fn = log_fn if env_idx == 0 else None
+        attacker_side, defender_side = roll_off_attacker_defender(
+            manual_roll_allowed=False,
+            log_fn=print if env_idx == 0 else None,
+        )
+        if verbose and env_idx == 0:
+            print(f"[roster] model_units={len(model)} enemy_units={len(enemy)}")
+            for idx, unit in enumerate(model):
+                unit_data = unit.showUnitData()
+                unit_name = unit_data.get("Name", "Unknown")
+                unit_models = unit_data.get("#OfModels", 1)
+                print(f"[roster] model[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
+            for idx, unit in enumerate(enemy):
+                unit_data = unit.showUnitData()
+                unit_name = unit_data.get("Name", "Unknown")
+                unit_models = unit_data.get("#OfModels", 1)
+                print(f"[roster] enemy[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
+            print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
+            print("Units:", [(u.name, u.instance_id, u.models_count) for u in model])
 
-    deploy_only_war(
-        model_units=model,
-        enemy_units=enemy,
-        b_len=b_len,
-        b_hei=b_hei,
-        attacker_side=attacker_side,
-        log_fn=env_log_fn,
-    )
-    post_deploy_setup(log_fn=env_log_fn)
+        deploy_only_war(
+            model_units=model,
+            enemy_units=enemy,
+            b_len=b_len,
+            b_hei=b_hei,
+            attacker_side=attacker_side,
+            log_fn=env_log_fn,
+        )
+        post_deploy_setup(log_fn=env_log_fn)
 
-    env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
-    env.attacker_side = attacker_side
-    env.defender_side = defender_side
+        env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
+        env.attacker_side = attacker_side
+        env.defender_side = defender_side
 
-    state, info = env.reset(options={"m": model, "e": enemy, "trunc": True})
-    env_contexts.append(
-        {
-            "env": env,
-            "model": model,
-            "enemy": enemy,
-            "state": state,
-            "info": info,
-            "attacker_side": attacker_side,
-            "defender_side": defender_side,
-            "len_model": len(model),
-        }
-    )
+        state, info = env.reset(options={"m": model, "e": enemy, "trunc": True})
+        env_contexts.append(
+            {
+                "env": env,
+                "model": model,
+                "enemy": enemy,
+                "state": state,
+                "info": info,
+                "attacker_side": attacker_side,
+                "defender_side": defender_side,
+                "len_model": len(model),
+            }
+        )
 
 primary_ctx = env_contexts[0]
-model = primary_ctx["model"]
-enemy = primary_ctx["enemy"]
-env = primary_ctx["env"]
+model = primary_ctx.get("model")
+enemy = primary_ctx.get("enemy")
+env = primary_ctx.get("env")
 
 ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
-for i_u in range(len(model)):
+for i_u in range(primary_ctx["len_model"]):
     ordered_keys.append(f"move_num_{i_u}")
 
-n_actions = []
-for k in ordered_keys:
-    sp = env.action_space.spaces[k]
+if USE_SUBPROC_ENVS:
+    primary_ctx["conn"].send(("get_action_space", ordered_keys))
+    n_actions = primary_ctx["conn"].recv()
+else:
+    n_actions = []
+    for k in ordered_keys:
+        sp = env.action_space.spaces[k]
 
-    # Discrete (и gym, и gymnasium)
-    if hasattr(sp, "n"):
-        n_actions.append(int(sp.n))
+        # Discrete (и gym, и gymnasium)
+        if hasattr(sp, "n"):
+            n_actions.append(int(sp.n))
 
-    # MultiDiscrete (на всякий)
-    elif hasattr(sp, "nvec"):
-        n_actions.extend([int(x) for x in sp.nvec])
+        # MultiDiscrete (на всякий)
+        elif hasattr(sp, "nvec"):
+            n_actions.extend([int(x) for x in sp.nvec])
 
-    else:
-        raise TypeError(f"Unsupported action space for {k}: {type(sp)}")
+        else:
+            raise TypeError(f"Unsupported action space for {k}: {type(sp)}")
 
 
 state = primary_ctx["state"]
 info = primary_ctx["info"]
-if verbose:
+if verbose and model is not None:
     squads_for_actions_count = len(model)
     print(f"[action_space] squads_for_actions_count={squads_for_actions_count}")
     for idx, unit in enumerate(model):
@@ -680,12 +810,13 @@ def opponent_policy(obs, env, len_model):
 
 inText = []
 
-inText.append("Model units:")
-for i in model:
-    inText.append("Name: {}, Army Type: {}".format(i.showUnitData()["Name"], i.showUnitData()["Army"]))
-inText.append("Enemy units:")
-for i in enemy:
-    inText.append("Name: {}, Army Type: {}".format(i.showUnitData()["Name"], i.showUnitData()["Army"]))
+if model is not None and enemy is not None:
+    inText.append("Model units:")
+    for i in model:
+        inText.append("Name: {}, Army Type: {}".format(i.showUnitData()["Name"], i.showUnitData()["Army"]))
+    inText.append("Enemy units:")
+    for i in enemy:
+        inText.append("Name: {}, Army Type: {}".format(i.showUnitData()["Name"], i.showUnitData()["Army"]))
 inText.append("Number of Lifetimes ran: {}\n".format(totLifeT))
 
 pbar_update_every = int(os.getenv("PBAR_UPDATE_EVERY", "5" if os.name == "nt" else "1"))
@@ -696,9 +827,13 @@ pbar = tqdm(total=totLifeT, mininterval=pbar_mininterval, miniters=pbar_update_e
 pending_pbar_updates = 0
 
 for ctx in env_contexts:
-    ctx["state"], ctx["info"] = ctx["env"].reset(
-        options={"m": ctx["model"], "e": ctx["enemy"], "Type": "big", "trunc": True}
-    )
+    if USE_SUBPROC_ENVS:
+        ctx["conn"].send(("reset", None))
+        ctx["state"], ctx["info"] = ctx["conn"].recv()
+    else:
+        ctx["state"], ctx["info"] = ctx["env"].reset(
+            options={"m": ctx["model"], "e": ctx["enemy"], "Type": "big", "trunc": True}
+        )
     ctx["ep_len"] = 0
     ctx["rew_arr"] = []
     ctx["n_step_buffer"] = collections.deque(maxlen=N_STEP)
@@ -737,31 +872,40 @@ perf_counts = {
     "env_steps": 0,
     "updates": 0,
 }
-primary_env_unwrapped = unwrap_env(primary_ctx["env"])
-initial_model_hp = float(sum(getattr(primary_env_unwrapped, "unit_health", [])))
-initial_enemy_hp = float(sum(getattr(primary_env_unwrapped, "enemy_health", [])))
-append_agent_log(
-    "Старт обучения: "
-    f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}, "
-    f"battle_round={getattr(primary_env_unwrapped, 'battle_round', 'n/a')}, trunc={trunc}"
-)
-if trunc:
+primary_env_unwrapped = unwrap_env(primary_ctx["env"]) if not USE_SUBPROC_ENVS else None
+if primary_env_unwrapped is not None:
+    initial_model_hp = float(sum(getattr(primary_env_unwrapped, "unit_health", [])))
+    initial_enemy_hp = float(sum(getattr(primary_env_unwrapped, "enemy_health", [])))
     append_agent_log(
-        "Логи фаз/ходов отключены (trunc=True). "
-        "Чтобы включить подробные логи: VERBOSE_LOGS=1 или MANUAL_DICE=1."
+        "Старт обучения: "
+        f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}, "
+        f"battle_round={getattr(primary_env_unwrapped, 'battle_round', 'n/a')}, trunc={trunc}"
     )
-if initial_model_hp <= 0 or initial_enemy_hp <= 0:
+    if trunc:
+        append_agent_log(
+            "Логи фаз/ходов отключены (trunc=True). "
+            "Чтобы включить подробные логи: VERBOSE_LOGS=1 или MANUAL_DICE=1."
+        )
+    if initial_model_hp <= 0 or initial_enemy_hp <= 0:
+        append_agent_log(
+            "ВНИМАНИЕ: на старте эпизода обнаружено нулевое здоровье. "
+            f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}. "
+            "Это может приводить к мгновенному завершению эпизодов."
+        )
+else:
     append_agent_log(
-        "ВНИМАНИЕ: на старте эпизода обнаружено нулевое здоровье. "
-        f"model_hp_total={initial_model_hp}, enemy_hp_total={initial_enemy_hp}. "
-        "Это может приводить к мгновенному завершению эпизодов."
+        "Старт обучения: USE_SUBPROC_ENVS=1, начальные HP недоступны из subprocess env."
     )
 
 while end is False:
     shoot_masks = []
     for idx, ctx in enumerate(env_contexts):
         mask_log_fn = append_agent_log if idx == 0 else None
-        shoot_masks.append(build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG))
+        if USE_SUBPROC_ENVS:
+            ctx["conn"].send(("get_shoot_mask", None))
+            shoot_masks.append(ctx["conn"].recv())
+        else:
+            shoot_masks.append(build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG))
 
     states = [ctx["state"] for ctx in env_contexts]
     action_start = time.perf_counter()
@@ -786,15 +930,21 @@ while end is False:
     perf_stats["action_select_s"] += time.perf_counter() - action_start
 
     enemy_turn_start = time.perf_counter()
-    for idx, ctx in enumerate(env_contexts):
-        env_unwrapped = unwrap_env(ctx["env"])
-        if SELF_PLAY_ENABLED:
-            env_unwrapped.enemyTurn(
-                trunc=trunc,
-                policy_fn=lambda obs, env=ctx["env"], lm=ctx["len_model"]: opponent_policy(obs, env, lm),
-            )
-        else:
-            env_unwrapped.enemyTurn(trunc=trunc)
+    if USE_SUBPROC_ENVS:
+        for ctx in env_contexts:
+            ctx["conn"].send(("enemy_turn", None))
+        for ctx in env_contexts:
+            ctx["conn"].recv()
+    else:
+        for idx, ctx in enumerate(env_contexts):
+            env_unwrapped = unwrap_env(ctx["env"])
+            if SELF_PLAY_ENABLED:
+                env_unwrapped.enemyTurn(
+                    trunc=trunc,
+                    policy_fn=lambda obs, env=ctx["env"], lm=ctx["len_model"]: opponent_policy(obs, env, lm),
+                )
+            else:
+                env_unwrapped.enemyTurn(trunc=trunc)
     perf_stats["enemy_turn_s"] += time.perf_counter() - enemy_turn_start
 
     losses = []
@@ -808,7 +958,11 @@ while end is False:
         ctx["ep_len"] += 1
         action_dict = convertToDict(actions[idx])
         step_start = time.perf_counter()
-        next_observation, reward, done, res, info = ctx["env"].step(action_dict)
+        if USE_SUBPROC_ENVS:
+            ctx["conn"].send(("step", action_dict))
+            next_observation, reward, done, res, info = ctx["conn"].recv()
+        else:
+            next_observation, reward, done, res, info = ctx["env"].step(action_dict)
         perf_stats["env_step_s"] += time.perf_counter() - step_start
         perf_counts["env_steps"] += 1
         ctx["rew_arr"].append(float(reward))
@@ -820,7 +974,7 @@ while end is False:
         if inAttack == 1 and trunc is False:
             print("The units are fighting")
 
-        if RENDER_EVERY > 0 and vec_env_count == 1 and (global_step % RENDER_EVERY == 0 or done):
+        if RENDER_EVERY > 0 and not USE_SUBPROC_ENVS and vec_env_count == 1 and (global_step % RENDER_EVERY == 0 or done):
             ctx["env"].render()
 
         mission_name = info.get("mission", DEFAULT_MISSION_NAME)
@@ -845,7 +999,11 @@ while end is False:
         if not done:
             next_state_t = torch.tensor(to_np_state(next_observation), device=dev).unsqueeze(0)
             mask_log_fn = append_agent_log if idx == 0 else None
-            next_shoot_mask = build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG)
+            if USE_SUBPROC_ENVS:
+                ctx["conn"].send(("get_shoot_mask", None))
+                next_shoot_mask = ctx["conn"].recv()
+            else:
+                next_shoot_mask = build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG)
 
         ctx["n_step_buffer"].append((state_t, actions[idx], float(reward), next_state_t, done, next_shoot_mask))
         if len(ctx["n_step_buffer"]) >= N_STEP:
@@ -1043,28 +1201,32 @@ while end is False:
                         f"[SELFPLAY] opponent snapshot updated at episode {numLifeT}"
                     )
 
-            attacker_side, defender_side = roll_off_attacker_defender(
-                manual_roll_allowed=False,
-                log_fn=print if idx == 0 else None,
-            )
-            if verbose and idx == 0:
-                print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
+            if USE_SUBPROC_ENVS:
+                ctx["conn"].send(("reset", None))
+                ctx["state"], ctx["info"] = ctx["conn"].recv()
+            else:
+                attacker_side, defender_side = roll_off_attacker_defender(
+                    manual_roll_allowed=False,
+                    log_fn=print if idx == 0 else None,
+                )
+                if verbose and idx == 0:
+                    print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
 
-            deploy_only_war(
-                model_units=ctx["model"],
-                enemy_units=ctx["enemy"],
-                b_len=b_len,
-                b_hei=b_hei,
-                attacker_side=attacker_side,
-                log_fn=log_fn if idx == 0 else None,
-            )
-            post_deploy_setup(log_fn=log_fn if idx == 0 else None)
-            ctx["env"].attacker_side = attacker_side
-            ctx["env"].defender_side = defender_side
+                deploy_only_war(
+                    model_units=ctx["model"],
+                    enemy_units=ctx["enemy"],
+                    b_len=b_len,
+                    b_hei=b_hei,
+                    attacker_side=attacker_side,
+                    log_fn=log_fn if idx == 0 else None,
+                )
+                post_deploy_setup(log_fn=log_fn if idx == 0 else None)
+                ctx["env"].attacker_side = attacker_side
+                ctx["env"].defender_side = defender_side
 
-            ctx["state"], ctx["info"] = ctx["env"].reset(
-                options={"m": ctx["model"], "e": ctx["enemy"], "Type": "small", "trunc": True}
-            )
+                ctx["state"], ctx["info"] = ctx["env"].reset(
+                    options={"m": ctx["model"], "e": ctx["enemy"], "Type": "small", "trunc": True}
+                )
             ctx["ep_len"] = 0
             ctx["rew_arr"] = []
             perf_stats["logging_s"] += time.perf_counter() - logging_start
@@ -1206,8 +1368,18 @@ while end is False:
 
     global_step += vec_env_count
 
-for ctx in env_contexts:
-    ctx["env"].close()
+if USE_SUBPROC_ENVS:
+    for ctx in env_contexts:
+        try:
+            ctx["conn"].send(("close", None))
+            ctx["conn"].recv()
+        except Exception:
+            pass
+    for proc in subproc_envs:
+        proc.join(timeout=1.0)
+else:
+    for ctx in env_contexts:
+        ctx["env"].close()
 
 with open('trainRes.txt', 'w') as f:
     for i in range(len(inText)):
@@ -1215,7 +1387,7 @@ with open('trainRes.txt', 'w') as f:
         f.write('\n')
 
 # Делать gif только если мы реально сохраняли кадры
-if RENDER_EVERY > 0:
+if RENDER_EVERY > 0 and not USE_SUBPROC_ENVS:
     if totLifeT > 30:
         genDisplay.makeGif(numOfLife=totLifeT, trunc=True)
     else:
