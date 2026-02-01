@@ -223,27 +223,21 @@ ApplicationWindow {
                                     anchors.fill: parent
 
                                     Button {
-                                        text: "Clear Model Cache"
-                                        enabled: !controller.running
-                                        onClicked: clearCacheDialog.open()
-                                    }
-
-                                    Button {
-                                        text: "Самообучение"
-                                        enabled: !controller.running
-                                        onClicked: controller.start_self_play()
-                                    }
-
-                                    Button {
-                                        text: "Train"
-                                        enabled: !controller.running
-                                        onClicked: controller.start_train()
-                                    }
-
-                                    Button {
-                                        text: "Тренировать 8x"
+                                        text: "Тренировка 8х"
                                         enabled: !controller.running
                                         onClicked: controller.start_train_8x()
+                                    }
+
+                                    Button {
+                                        text: "Самообучение 8х"
+                                        enabled: !controller.running
+                                        onClicked: controller.start_self_play_8x()
+                                    }
+
+                                    Button {
+                                        text: "Очистить кеш"
+                                        enabled: !controller.running
+                                        onClicked: clearCacheDialog.open()
                                     }
                                 }
                             }
