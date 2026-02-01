@@ -253,6 +253,38 @@ def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
 
     print(f"[metrics] saved: {csv_path}")
 
+def save_training_summary(run_id: str, model_tag: str, ep_rows: list[dict], elapsed_s: float, results_path: str = "results.txt") -> None:
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ep_count = len(ep_rows)
+    if ep_count > 0:
+        winrate_mean = sum(1 for r in ep_rows if r.get("result") == "win") / ep_count
+        vp_diff_mean = sum(r.get("vp_diff", 0) for r in ep_rows) / ep_count
+        reward_mean = sum(r.get("ep_reward", 0.0) for r in ep_rows) / ep_count
+        ep_len_mean = sum(r.get("ep_len", 0) for r in ep_rows) / ep_count
+        turn_mean = sum(r.get("turn", 0) for r in ep_rows) / ep_count
+    else:
+        winrate_mean = 0.0
+        vp_diff_mean = 0.0
+        reward_mean = 0.0
+        ep_len_mean = 0.0
+        turn_mean = 0.0
+
+    summary_line = (
+        f"время={timestamp} "
+        f"длительность_с={elapsed_s:.2f} "
+        f"модель={model_tag} "
+        f"run_id={run_id} "
+        f"эпизоды={ep_count} "
+        f"winrate_mean={winrate_mean:.4f} "
+        f"vp_diff_mean={vp_diff_mean:.4f} "
+        f"reward_mean={reward_mean:.6f} "
+        f"ep_len_mean={ep_len_mean:.2f} "
+        f"turn_mean={turn_mean:.2f}"
+    )
+    with open(results_path, "a", encoding="utf-8") as f:
+        f.write(summary_line + "\n")
+    print(f"[results] запись в {results_path}: {summary_line}")
+
 def append_agent_log(line: str) -> None:
     log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LOGS_FOR_AGENTS.md")
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -546,6 +578,7 @@ WARMUP_STEPS     = int(data.get("warmup_steps", 0))      # 0 = без прогр
 def main():
     global USE_SUBPROC_ENVS
     print("\nTraining...\n")
+    train_start_time = time.perf_counter()
     
     end = False
     trunc = True
@@ -1417,6 +1450,14 @@ def main():
         "net_type": NET_TYPE,
         'optimizer': optimizer.state_dict(),}
         , ("models/{}/model-{}.pth".format(safe_name, date)))
+    train_elapsed_s = time.perf_counter() - train_start_time
+    model_tag = f"{safe_name}/model-{date}"
+    save_training_summary(
+        run_id=str(randNum),
+        model_tag=model_tag,
+        ep_rows=ep_rows,
+        elapsed_s=train_elapsed_s,
+    )
 
     if "env" in primary_ctx and "model" in primary_ctx and "enemy" in primary_ctx:
         toSave = [primary_ctx["env"], primary_ctx["model"], primary_ctx["enemy"]]
