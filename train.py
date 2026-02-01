@@ -1387,6 +1387,76 @@ def main():
     
         global_step += vec_env_count
     
+    with open('trainRes.txt', 'w') as f:
+        for i in range(len(inText)):
+            f.write(inText[i])
+            f.write('\n')
+
+    # Делать gif только если мы реально сохраняли кадры
+    if RENDER_EVERY > 0 and not USE_SUBPROC_ENVS:
+        if totLifeT > 30:
+            genDisplay.makeGif(numOfLife=totLifeT, trunc=True)
+        else:
+            genDisplay.makeGif(numOfLife=totLifeT)
+    else:
+        print("[render] RENDER_EVERY=0 -> gif skipped")
+
+    metrics_obj.lossCurve()
+    metrics_obj.showRew()
+    metrics_obj.showEpLen()
+
+    save_extra_metrics(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
+    metrics_obj.createJson()
+    print("Generated metrics")
+
+    os.makedirs(fold, exist_ok=True)
+
+    torch.save({
+        "policy_net": policy_net.state_dict(),
+        "target_net": target_net.state_dict(),
+        "net_type": NET_TYPE,
+        'optimizer': optimizer.state_dict(),}
+        , ("models/{}/model-{}.pth".format(safe_name, date)))
+
+    if "env" in primary_ctx and "model" in primary_ctx and "enemy" in primary_ctx:
+        toSave = [primary_ctx["env"], primary_ctx["model"], primary_ctx["enemy"]]
+        with open(fileName, "wb") as file:
+            pickle.dump(toSave, file)
+    else:
+        if USE_SUBPROC_ENVS:
+            try:
+                primary_ctx["conn"].send(("save_pickle", fileName))
+                save_resp = primary_ctx["conn"].recv()
+            except (BrokenPipeError, EOFError, OSError) as exc:
+                err_line = (
+                    "[SAVE][WARN] subprocess env недоступен: сохранение pickle пропущено. "
+                    "Где: train.py main/save_pickle (send/recv). "
+                    f"Ошибка: {exc}. "
+                    "Что сделать: проверь, что subprocess не завершился до сохранения, "
+                    "и смотри логи subprocess/Training."
+                )
+                append_agent_log(err_line)
+                if TRAIN_LOG_TO_CONSOLE:
+                    print(err_line)
+            else:
+                if isinstance(save_resp, dict) and save_resp.get("ok"):
+                    ok_line = f"[SAVE] pickle сохранён в subprocess env: {save_resp.get('path')}"
+                    append_agent_log(ok_line)
+                    if TRAIN_LOG_TO_CONSOLE:
+                        print(ok_line)
+                else:
+                    err_line = "[SAVE][WARN] не удалось сохранить pickle в subprocess env."
+                    if isinstance(save_resp, dict) and save_resp.get("error"):
+                        err_line += f" Ошибка: {save_resp['error']}"
+                    append_agent_log(err_line)
+                    if TRAIN_LOG_TO_CONSOLE:
+                        print(err_line)
+        else:
+            skip_line = "[SAVE] subprocess env: нет локальных env/model/enemy, pickle пропущен."
+            append_agent_log(skip_line)
+            if TRAIN_LOG_TO_CONSOLE:
+                print(skip_line)
+
     if USE_SUBPROC_ENVS:
         for ctx in env_contexts:
             try:
@@ -1399,64 +1469,6 @@ def main():
     else:
         for ctx in env_contexts:
             ctx["env"].close()
-    
-    with open('trainRes.txt', 'w') as f:
-        for i in range(len(inText)):
-            f.write(inText[i])
-            f.write('\n')
-    
-    # Делать gif только если мы реально сохраняли кадры
-    if RENDER_EVERY > 0 and not USE_SUBPROC_ENVS:
-        if totLifeT > 30:
-            genDisplay.makeGif(numOfLife=totLifeT, trunc=True)
-        else:
-            genDisplay.makeGif(numOfLife=totLifeT)
-    else:
-        print("[render] RENDER_EVERY=0 -> gif skipped")
-    
-    
-    metrics_obj.lossCurve()
-    metrics_obj.showRew()
-    metrics_obj.showEpLen()
-    
-    save_extra_metrics(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
-    metrics_obj.createJson()
-    print("Generated metrics")
-    
-    os.makedirs(fold, exist_ok=True)
-    
-    torch.save({
-        "policy_net": policy_net.state_dict(),
-        "target_net": target_net.state_dict(),
-        "net_type": NET_TYPE,
-        'optimizer': optimizer.state_dict(),}
-        , ("models/{}/model-{}.pth".format(safe_name, date)))
-    
-    if "env" in primary_ctx and "model" in primary_ctx and "enemy" in primary_ctx:
-        toSave = [primary_ctx["env"], primary_ctx["model"], primary_ctx["enemy"]]
-        with open(fileName, "wb") as file:
-            pickle.dump(toSave, file)
-    else:
-        if USE_SUBPROC_ENVS:
-            primary_ctx["conn"].send(("save_pickle", fileName))
-            save_resp = primary_ctx["conn"].recv()
-            if isinstance(save_resp, dict) and save_resp.get("ok"):
-                ok_line = f"[SAVE] pickle сохранён в subprocess env: {save_resp.get('path')}"
-                append_agent_log(ok_line)
-                if TRAIN_LOG_TO_CONSOLE:
-                    print(ok_line)
-            else:
-                err_line = "[SAVE][WARN] не удалось сохранить pickle в subprocess env."
-                if isinstance(save_resp, dict) and save_resp.get("error"):
-                    err_line += f" Ошибка: {save_resp['error']}"
-                append_agent_log(err_line)
-                if TRAIN_LOG_TO_CONSOLE:
-                    print(err_line)
-        else:
-            skip_line = "[SAVE] subprocess env: нет локальных env/model/enemy, pickle пропущен."
-            append_agent_log(skip_line)
-            if TRAIN_LOG_TO_CONSOLE:
-                print(skip_line)
     
     if os.path.isfile("gui/data.json"):
         initFile.delFile()
