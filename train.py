@@ -859,7 +859,7 @@ def main():
     fold = "models/" + safe_name
     fileName = fold+"/model-"+date+".pickle"
     randNum = np.random.randint(0, 10000000)
-    metrics = metrics(fold, randNum, date)
+    metrics_obj = metrics(fold, randNum, date)
     ep_rows = [] 
     
     global_step = 0
@@ -1060,8 +1060,8 @@ def main():
                 if pending_pbar_updates >= pbar_update_every or (numLifeT + 1) >= totLifeT:
                     pbar.update(pending_pbar_updates)
                     pending_pbar_updates = 0
-                metrics.updateRew(sum(ctx["rew_arr"]) / len(ctx["rew_arr"]))
-                metrics.updateEpLen(ctx["ep_len"])
+                metrics_obj.updateRew(sum(ctx["rew_arr"]) / len(ctx["rew_arr"]))
+                metrics_obj.updateEpLen(ctx["ep_len"])
                 # ===== extra metrics (winrate / VP diff / end reason) =====
                 ep_reward = float(sum(ctx["rew_arr"]) / len(ctx["rew_arr"])) if len(ctx["rew_arr"]) > 0 else 0.0
                 model_vp = int(info.get("model VP", 0))
@@ -1326,9 +1326,9 @@ def main():
     
         # чтобы график loss не раздувался в 100 раз — пишем среднее за env-step
         if len(losses) > 0:
-            metrics.updateLoss(sum(losses) / len(losses))
+            metrics_obj.updateLoss(sum(losses) / len(losses))
         else:
-            metrics.updateLoss(0)
+            metrics_obj.updateLoss(0)
         if REWARD_DEBUG and last_td_stats and optimize_steps % REWARD_DEBUG_EVERY == 0:
             append_agent_log(
                 "[TD] "
@@ -1401,12 +1401,12 @@ def main():
         print("[render] RENDER_EVERY=0 -> gif skipped")
     
     
-    metrics.lossCurve()
-    metrics.showRew()
-    metrics.showEpLen()
+    metrics_obj.lossCurve()
+    metrics_obj.showRew()
+    metrics_obj.showEpLen()
     
     save_extra_metrics(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
-    metrics.createJson()
+    metrics_obj.createJson()
     print("Generated metrics")
     
     os.makedirs(fold, exist_ok=True)
