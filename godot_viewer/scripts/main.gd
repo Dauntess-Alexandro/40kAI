@@ -123,9 +123,9 @@ func _apply_log_tail(lines: Array) -> void:
         text_lines.append(str(line))
     var joined := "\n".join(text_lines)
     for idx in range(log_tabs.get_tab_count()):
-        var tab := log_tabs.get_tab_control(idx)
-        if tab is TextEdit:
-            tab.text = joined
+        var view: TextEdit = log_tabs.get_tab_control(idx)
+        if view != null:
+            view.text = joined
 
 func _format_active(active_value) -> String:
     if active_value == "player":
