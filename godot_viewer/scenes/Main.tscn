@@ -123,28 +123,11 @@ theme_override_constants/separation = 6
 text = "ОТРЯДЫ"
 theme_override_font_sizes/font_size = 16
 
-[node name="UnitsTable" type="GridContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent"]
+[node name="UnitsTable" type="Tree" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent"]
 columns = 5
-
-[node name="UnitsHeaderId" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent/UnitsTable"]
-text = "ID"
-theme_override_font_sizes/font_size = 12
-
-[node name="UnitsHeaderSide" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent/UnitsTable"]
-text = "Сторона"
-theme_override_font_sizes/font_size = 12
-
-[node name="UnitsHeaderHP" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent/UnitsTable"]
-text = "HP"
-theme_override_font_sizes/font_size = 12
-
-[node name="UnitsHeaderModels" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent/UnitsTable"]
-text = "Модели"
-theme_override_font_sizes/font_size = 12
-
-[node name="UnitsHeaderCoord" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent/UnitsTable"]
-text = "Коорд."
-theme_override_font_sizes/font_size = 12
+column_titles_visible = true
+hide_root = true
+size_flags_vertical = 3
 
 [node name="LegendGroup" type="PanelContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
 theme_override_styles/panel = SubResource( 1 )
@@ -189,6 +172,26 @@ color = Color(0.95, 0.85, 0.45, 1)
 text = "Цель"
 theme_override_font_sizes/font_size = 12
 
+[node name="LegendMove" type="HBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList"]
+
+[node name="LegendMoveSwatch" type="ColorRect" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList/LegendMove"]
+custom_minimum_size = Vector2(12, 12)
+color = Color(0.35, 0.6, 1, 1)
+
+[node name="LegendMoveLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList/LegendMove"]
+text = "Подсветка хода"
+theme_override_font_sizes/font_size = 12
+
+[node name="LegendShoot" type="HBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList"]
+
+[node name="LegendShootSwatch" type="ColorRect" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList/LegendShoot"]
+custom_minimum_size = Vector2(12, 12)
+color = Color(1, 0.65, 0.35, 1)
+
+[node name="LegendShootLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList/LegendShoot"]
+text = "Подсветка стрельбы"
+theme_override_font_sizes/font_size = 12
+
 [node name="CommandsGroup" type="PanelContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
 theme_override_styles/panel = SubResource( 1 )
 
@@ -208,17 +211,79 @@ text = "Горячие клавиши: Enter — отправить, Ctrl+L — 
 theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
 
-[node name="CommandInputRow" type="HBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent"]
+[node name="CommandStack" type="TabContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent"]
+tabs_visible = false
 
-[node name="CommandInput" type="LineEdit" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandInputRow"]
+[node name="TextPage" type="HBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandStack"]
+
+[node name="CommandInput" type="LineEdit" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandStack/TextPage"]
 size_flags_horizontal = 3
 placeholder_text = "Введите команду..."
 
-[node name="CommandSend" type="Button" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandInputRow"]
+[node name="CommandSend" type="Button" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandStack/TextPage"]
 text = "Отправить"
+
+[node name="DirectionPage" type="GridContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandStack"]
+columns = 3
+
+[node name="DirectionUp" type="Button" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandStack/DirectionPage"]
+text = "↑"
+
+[node name="DirectionLeft" type="Button" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandStack/DirectionPage"]
+text = "←"
+
+[node name="DirectionNone" type="Button" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandStack/DirectionPage"]
+text = "Нет"
+
+[node name="DirectionRight" type="Button" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandStack/DirectionPage"]
+text = "→"
+
+[node name="DirectionDown" type="Button" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandStack/DirectionPage"]
+text = "↓"
+
+[node name="BoolPage" type="HBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandStack"]
+
+[node name="BoolYes" type="Button" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandStack/BoolPage"]
+text = "Да"
+
+[node name="BoolNo" type="Button" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandStack/BoolPage"]
+text = "Нет"
+
+[node name="IntPage" type="HBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandStack"]
+
+[node name="IntSpin" type="SpinBox" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandStack/IntPage"]
+size_flags_horizontal = 3
+min_value = 0.0
+max_value = 999.0
+step = 1.0
+
+[node name="IntOk" type="Button" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandStack/IntPage"]
+text = "ОК"
+
+[node name="ChoicePage" type="HBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandStack"]
+
+[node name="ChoiceOption" type="OptionButton" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandStack/ChoicePage"]
+size_flags_horizontal = 3
+
+[node name="ChoiceOk" type="Button" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandStack/ChoicePage"]
+text = "ОК"
 
 [node name="LogGroup" type="VBoxContainer" parent="MainSplit"]
 custom_minimum_size = Vector2(0, 220)
+
+[node name="LogControls" type="HBoxContainer" parent="MainSplit/LogGroup"]
+
+[node name="LogOnlyTurn" type="CheckBox" parent="MainSplit/LogGroup/LogControls"]
+text = "Показать только текущий ход"
+
+[node name="LogSpacer" type="Control" parent="MainSplit/LogGroup/LogControls"]
+size_flags_horizontal = 3
+
+[node name="LogCopyTurn" type="Button" parent="MainSplit/LogGroup/LogControls"]
+text = "Копировать ход"
+
+[node name="LogClear" type="Button" parent="MainSplit/LogGroup/LogControls"]
+text = "Очистить"
 
 [node name="LogTitle" type="Label" parent="MainSplit/LogGroup"]
 text = "ЖУРНАЛ"

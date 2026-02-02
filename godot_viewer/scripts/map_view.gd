@@ -37,6 +37,13 @@ func set_ui_scale(scale: float) -> void:
     _font_size = int(round(12.0 * scale))
     queue_redraw()
 
+func set_selected_unit(side, unit_id) -> void:
+    if side == null or unit_id == null:
+        _selected_unit_key = ""
+    else:
+        _selected_unit_key = _make_key(str(side), int(unit_id))
+    queue_redraw()
+
 func set_state(state: Dictionary) -> void:
     _state = state if state != null else {}
     queue_redraw()
