@@ -264,6 +264,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         picture = QtGui.QPicture()
         painter = QtGui.QPainter(picture)
         pen = Theme.pen(Theme.grid, 0.5)
+        pen.setCosmetic(True)
         painter.setPen(pen)
         for x in range(width + 1):
             x_pos = x * self.cell_size
@@ -370,11 +371,17 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def _view_transform(self) -> QtGui.QTransform:
         transform = QtGui.QTransform()
-        pan_x = round(self._pan.x(), 2)
-        pan_y = round(self._pan.y(), 2)
+        pan_x, pan_y = self._snap_pan_to_pixels(self._pan)
         transform.translate(pan_x, pan_y)
         transform.scale(self._scale, self._scale)
         return transform
+
+    def _snap_pan_to_pixels(self, pan: QtCore.QPointF) -> Tuple[float, float]:
+        ratio = self.devicePixelRatioF() or 1.0
+        pixel = 1.0 / ratio
+        snapped_x = round(pan.x() / pixel) * pixel
+        snapped_y = round(pan.y() / pixel) * pixel
+        return snapped_x, snapped_y
 
     def _set_target_view(
         self,
@@ -525,7 +532,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.setTransform(self._view_transform())
 
         if self._grid_picture is not None:
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
             painter.drawPicture(0, 0, self._grid_picture)
+            painter.restore()
 
         if self._move_highlights:
             highlight = QtGui.QColor(Theme.selection)
