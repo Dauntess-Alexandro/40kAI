@@ -459,7 +459,7 @@ Form :: Form() {
     if (exists_test("data.json") && training == false) {
       training = true;
       setStatusMessage("Обучение 8x...");
-      trainEnvPrefix = "VEC_ENV_COUNT=8 ";
+      trainEnvPrefix = "NUM_ENVS=16 USE_SUBPROC_ENVS=1 ";
       trainingStartLabel = "обучения 8x";
       trainingStatusLabel = "Обучение 8x";
       trainingLogTag = "TRAIN8";

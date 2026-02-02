@@ -1,834 +1,130 @@
-diff --git a/gui/Application.cpp b/gui/Application.cpp
-index 6470d78611a09f3526be8bb9635adc55ba4e0a5b..fc06f6a6f59630b09a377c0a48ec40aa0a4da4d8 100644
---- a/gui/Application.cpp
-+++ b/gui/Application.cpp
-@@ -1,50 +1,51 @@
- #include <iostream>
- #include <gtkmm.h>
- #include <cstdlib>
- #include <stdlib.h>
- #include <string>
- #include <fstream>
- #include <thread>
- #include <chrono>
- #include <fstream>
- #include <cstdio>
- #include <ctime>
- #include <iomanip>
- #include <sstream>
- #include <filesystem>
- #include <vector>
- #include <algorithm>
- #include <array>
- #include <cctype>
- #include <nlohmann/json.hpp>
- #include "include/Application.h"
- #include "include/popup.h"
- #include "include/units.h"
- #include "include/warn.h"
- #include "include/help.h"
- #include "include/play.h"
-+#include "include/LastRoster.h"
+diff --git a/gui_qt/main.py b/gui_qt/main.py
+index 13cca569e58e056b9d8f3bc9656f76b9688778c9..0ddb284093c9a31b152d15b5a78642a24a0ad726 100644
+--- a/gui_qt/main.py
++++ b/gui_qt/main.py
+@@ -314,50 +314,64 @@ class GUIController(QtCore.QObject):
+     def stop_process(self) -> None:
+         if self._process is None:
+             self._emit_status("Нет активного процесса для остановки.")
+             return
+         self._emit_log("[GUI] Останавливаю процесс...", level="INFO")
+         self._process.terminate()
+         if not self._process.waitForFinished(3000):
+             self._emit_log("[GUI] Процесс не завершился, принудительное завершение.", level="WARN")
+             self._process.kill()
+         self._cleanup_process()
  
- using namespace Glib;
- using namespace Gtk;
- namespace fs = std::filesystem;
- using json = nlohmann::json;
+     @QtCore.Slot()
+     def clear_model_cache(self) -> None:
+         try:
+             self._clear_cache_files()
+             self._emit_status("Кэш моделей и LOGS_FOR_AGENTS.md очищены.")
+             self._emit_log("[GUI] Кэш моделей и LOGS_FOR_AGENTS.md очищены.")
+         except OSError as exc:
+             message = (
+                 "Не удалось очистить кэш (gui_qt/main.py): "
+                 "проверьте права доступа и повторите."
+             )
+             self._emit_status(message)
+             self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
  
- namespace {
- constexpr int kDefaultWidth = 1500;
- constexpr int kDefaultHeight = 900;
- constexpr int kMinimumWidth = 1200;
- constexpr int kMinimumHeight = 800;
- 
- std::string geometryPath() {
-   const char* home = std::getenv("HOME");
-   std::string base = home ? home : ".";
-   return base + "/.config/40kAI/gui_layout.conf";
- }
- 
- std::string toLowerCopy(std::string data) {
-   std::transform(data.begin(), data.end(), data.begin(),
-                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-   return data;
- }
- 
- std::string nowTimestamp() {
-@@ -722,63 +723,50 @@ Form :: Form() {
-     openPopUp(true);
-     return true;
-   });
- 
-   playGraphicsView.set_label("Играть в GUI");
-   playGraphicsView.signal_button_release_event().connect([&](GdkEventButton* event) {
-     system("cd .. && scripts/viewer.sh &");
-     return true;
-   });
- 
-   fixedTabPage4.add(textbox2);
-   fixedTabPage4.add(button2);
-   fixedTabPage4.add(showBoard);
-   fixedTabPage4.add(playGraphicsView);
-   fixedTabPage4.add(button5);
-   fixedTabPage4.add(setModelFile);
-   fixedTabPage4.move(textbox2, 10, 10);
-   fixedTabPage4.move(playGraphicsView, 130, 80);
-   fixedTabPage4.move(showBoard, 395, 80);
-   fixedTabPage4.move(button2, 10, 80);
-   fixedTabPage4.move(button5, 10, 40);
-   fixedTabPage4.move(setModelFile, 80, 40);
- 
-   loadWindowGeometry();
-   loadLastRoster();
--  if (modelUnits.empty()) {
--    modelUnits.push_back({"Necron Warriors", "Necrons", findDefaultModelsCount("Necrons", "Necron Warriors"),
--                          RosterModel::generateInstanceId()});
--    modelUnits.push_back({"Royal Warden", "Necrons",
--                          findDefaultModelsCount("Necrons", "Royal Warden"),
--                          RosterModel::generateInstanceId()});
--  }
--  if (enemyUnits.empty()) {
--    rosterModel.addUnit("Necron Warriors", 10, enemyClass.substr(1));
--    rosterModel.addUnit("Canoptek Scarab Swarms", 3, enemyClass.substr(1));
--    syncEnemyUnitsFromRoster();
--    saveLastRoster();
--  }
-   rosterSummaryLabel.set_text("Юниты игрока: " + std::to_string(enemyUnits.size()) +
-                               " | Юниты модели: " + std::to_string(modelUnits.size()));
-   signal_hide().connect([this]() {
-     saveLastRoster();
-     saveWindowGeometry();
-   });
-   show_all();
- }
- 
- void Form :: setStatusMessage(const std::string& message) {
-   status.set_text(message);
-   if (!training || !hideTrainingLogs) {
-     appendLogLine(message);
-   }
- }
- 
- void Form :: resetTrainingProgressStats() {
-   trainingSamples.clear();
-   trainingStartTime = std::chrono::steady_clock::now();
-   trainingLastUiUpdate = trainingStartTime - std::chrono::milliseconds(500);
- }
- 
- void Form :: recordTrainingSample(int episode, std::chrono::steady_clock::time_point now) {
-   if (episode <= 0) {
-     return;
-@@ -993,152 +981,170 @@ void Form :: changeMetrics(std::string path) {
- 	losspth = j.value("loss", losspth);
- 	rewpth = j.value("reward", rewpth);
- 	eplenpth = j.value("epLen", eplenpth);
- 
- 	// optional extra metrics (backwards compatible with older models)
- 	winratepth = j.value("winrate", winratepth);
- 	vpdiffpth = j.value("vpdiff", vpdiffpth);
- 	endreasonpth = j.value("endreasons", endreasonpth);
- 
- 	update_metrics();
- }
- 
- int Form :: openPopUp(bool textMode) {
-   boardShow = new PopUp(textMode);
-   boardShow->show();
-   return 0;
- }
- 
- int Form :: openPlayGUI() {
-   play = new Play;
-   play->show();
-   return 0;
- }
- 
- int Form :: openArmyView() {
-+  loadLastRoster();
-   armyView = new Units(&rosterModel, &modelUnits, [this]() {
-     syncEnemyUnitsFromRoster();
-     saveLastRoster();
-     updateRosterSummary();
-   });
-   armyView->show();
-   return 0;
- }
- 
- int Form :: openWarnMenu(std::string mess, int comm) {
-   warn = new Warn(mess, comm);
-   warn->show();
-   return 0;
- }
- 
- int Form :: openHelpMenu() {
-   helpMenu = new Help;
-   helpMenu->show();
-   return 0;
- }
- 
- std::string Form :: toLower(std::string data) {
-   std::transform(data.begin(), data.end(), data.begin(),[](unsigned char c){ return std::tolower(c); });
-   return data;
- }
- 
- void Form :: mirrorRoster() {
-   syncEnemyUnitsFromRoster();
-   if (rosterModel.empty()) {
-     setStatusMessage("Ростер игрока пуст — нечего копировать.");
-     return;
-   }
- 
-   if (!enemyClass.empty()) {
-     applyFactionToModel(enemyClass.substr(1));
-   }
- 
-   modelUnits = rosterModel.expandedUnits();
-   savetoTxt(enemyUnits, modelUnits);
-   setStatusMessage("Ростер модели обновлён из ростера игрока.");
- }
- 
- void Form :: updateRosterSummary() {
-   std::string summary = "Юниты игрока: " + std::to_string(enemyUnits.size()) +
-                         " | Юниты модели: " + std::to_string(modelUnits.size());
-   rosterSummaryLabel.set_text(summary);
--  std::string message = "Ростер загружен: игрок=" + std::to_string(enemyUnits.size()) +
-+  std::string message = "Ростер обновлён: игрок=" + std::to_string(enemyUnits.size()) +
-                         ", модель=" + std::to_string(modelUnits.size());
-   setStatusMessage(message);
- }
- 
- void Form :: applyFactionToModel(const std::string& faction) {
-   if (faction.empty()) {
-     return;
-   }
- 
-   std::string normalized = toLower(faction);
-   std::replace(normalized.begin(), normalized.end(), ' ', '_');
-   if (normalized == "necrons") {
-     necModel.set_active(true);
-   }
- }
- 
- void Form :: applyFactionToEnemy(const std::string& faction) {
-   if (faction.empty()) {
-     return;
-   }
- 
-   std::string normalized = toLower(faction);
-   std::replace(normalized.begin(), normalized.end(), ' ', '_');
-   if (normalized == "necrons") {
-     necEnemy.set_active(true);
-   }
- }
- 
- void Form :: saveLastRoster() {
--  rosterModel.saveToFile(RosterModel::defaultRosterPath());
-+  save_last_roster(rosterModel, modelUnits);
- }
- 
- void Form :: loadLastRoster() {
--  if (!rosterModel.loadFromFile(RosterModel::defaultRosterPath())) {
-+  std::string loadError;
-+  auto result = load_last_roster(rosterModel, modelUnits, &loadError);
-+  if (result == LastRosterLoadResult::kNotFound) {
-+    rosterModel.clear();
-+    modelUnits.clear();
-+    enemyUnits.clear();
-+    appendLogLine("[GUI] last_roster.json не найден, стартуем с пустыми ростерами.");
-+    return;
-+  }
-+  if (result == LastRosterLoadResult::kParseError) {
-+    rosterModel.clear();
-+    modelUnits.clear();
-+    enemyUnits.clear();
-+    appendLogLine("[GUI] last_roster.json: ошибка разбора, стартуем с пустыми ростерами.");
-     return;
-   }
- 
-   std::string loadedFaction = rosterModel.faction();
-   if (!loadedFaction.empty()) {
-     std::string normalized = toLower(loadedFaction);
-     std::replace(normalized.begin(), normalized.end(), ' ', '_');
-     if (normalized != "necrons") {
-       rosterModel.clear();
-       rosterModel.setFaction("Necrons");
-       enemyClass = " Necrons";
-       setStatusMessage("Фракция ростера не поддерживается, переключено на Necrons.");
-     } else {
-       loadingRoster = true;
-       applyFactionToEnemy(loadedFaction);
-       loadingRoster = false;
-     }
-   }
- 
-   syncEnemyUnitsFromRoster();
--  setStatusMessage("Loaded last roster.");
-+  rosterSummaryLabel.set_text("Юниты игрока: " + std::to_string(enemyUnits.size()) +
-+                              " | Юниты модели: " + std::to_string(modelUnits.size()));
-+  std::string message = "Loaded last roster: Player=" + std::to_string(enemyUnits.size()) +
-+                        ", Model=" + std::to_string(modelUnits.size());
-+  setStatusMessage(message);
- }
- 
- void Form :: syncEnemyUnitsFromRoster() {
-   enemyUnits = rosterModel.expandedUnits();
-   savetoTxt(enemyUnits, modelUnits);
- }
- 
- bool Form :: addEnemyUnitFromEntry(const std::string& entryText) {
-   if (entryText.empty()) {
-     return false;
-   }
-   std::ifstream infile("../gym_mod/gym_mod/engine/unitData.json");
-   json j;
-   infile >> j;
- 
-   if (!j.contains("UnitData") || !j.at("UnitData").is_array()) {
-     return false;
-   }
- 
-   for (const auto& unit : j.at("UnitData")) {
-     if (!unit.contains("Name") || !unit.contains("Army")) {
-       continue;
-     }
-     std::string name = unit.at("Name").get<std::string>();
-     if (strcmp(toLower(name).data(), toLower(entryText).data()) != 0) {
-diff --git a/gui/CMakeLists.txt b/gui/CMakeLists.txt
-index 6c5cfe97183ca4c778d60e3b2d00066bc2f21348..4c3c4c773f07e051d0a57505dabcbd94a6a918f1 100644
---- a/gui/CMakeLists.txt
-+++ b/gui/CMakeLists.txt
-@@ -26,26 +26,26 @@ else ()
-   link_libraries(${SIGC_LIBRARY})
-   find_path(GTKMM_INCLUDE_DIRS gtkmm.h)
-   include_directories(${GTKMM_INCLUDE_DIRS})
- endif ()
- 
- if (MSVC)
-   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4250")
-   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /ENTRY:mainCRTStartup")
- endif ()
- 
- file(GLOB CONFIG_FILES "${CMAKE_CURRENT_SOURCE_DIR}/img/*")
- 
- foreach(CONFIG_FILE ${CONFIG_FILES})
-     get_filename_component(CONFIG_FILE_NAME ${CONFIG_FILE} NAME)
-     configure_file(${CONFIG_FILE} "${CMAKE_CURRENT_BINARY_DIR}/${CONFIG_FILE_NAME}" COPYONLY)
- endforeach()
- 
- set(G_SLICE "always-malloc")
- add_definitions(-DG_SLICE="${G_SLICE}")
- 
- set(G_DEBUG "fatal-criticals")
- add_definitions(-DG_DEBUG="${G_DEBUG}")
- 
- set(CMAKE_CXX_STANDARD 17)
- set(CMAKE_CXX_STANDARD_REQUIRED ON)
--add_executable(Application WIN32 main.cpp Application.cpp popup.cpp units.cpp warn.cpp help.cpp play.cpp RosterModel.cpp)
-+add_executable(Application WIN32 main.cpp Application.cpp popup.cpp units.cpp warn.cpp help.cpp play.cpp RosterModel.cpp LastRoster.cpp)
-diff --git a/gui/LastRoster.cpp b/gui/LastRoster.cpp
-new file mode 100644
-index 0000000000000000000000000000000000000000..0b167450163e6953b26c2d9092cee8944508df62
---- /dev/null
-+++ b/gui/LastRoster.cpp
-@@ -0,0 +1,196 @@
-+#include "include/LastRoster.h"
++    @QtCore.Slot()
++    def clear_agent_logs(self) -> None:
++        try:
++            self._truncate_agent_logs()
++            self._emit_status("LOGS_FOR_AGENTS.md очищен.")
++            self._emit_log("[GUI] LOGS_FOR_AGENTS.md очищен.")
++        except OSError as exc:
++            message = (
++                "Не удалось очистить LOGS_FOR_AGENTS.md (gui_qt/main.py): "
++                "проверьте путь и права доступа, затем повторите."
++            )
++            self._emit_status(message)
++            self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
 +
-+#include <filesystem>
-+#include <fstream>
-+#include <cstdlib>
-+#include <nlohmann/json.hpp>
+     @QtCore.Slot(str)
+     def select_metrics_file(self, file_url: str) -> None:
+         path = self._to_local_file(file_url)
+         if not path:
+             self._emit_status("Файл метрик не выбран.")
+             return
+         if not os.path.exists(path):
+             self._emit_status("Файл модели не найден. Проверьте путь.")
+             return
+         metrics_id = self._extract_metrics_id(path)
+         if not metrics_id:
+             self._emit_status("Не удалось определить ID метрик из имени файла.")
+             return
+         json_path = os.path.join(self._repo_root, "models", f"data_{metrics_id}.json")
+         if not os.path.exists(json_path):
+             self._emit_status("Файл метрик не найден в models/.")
+             self._emit_log(f"[GUI] metrics json не найден: {json_path}", level="WARN")
+             return
+         if not self._load_metrics_from_json(json_path):
+             return
+         self._metrics_label = f"Файл: {os.path.basename(path)}"
+         self.metricsLabelChanged.emit(self._metrics_label)
+         self._emit_status("Метрики обновлены.")
+ 
+     @QtCore.Slot()
+diff --git a/gui_qt/qml/Main.qml b/gui_qt/qml/Main.qml
+index f903708172dced431dc759a34bd4eeb4b14fab60..62f3d53d6637e47b97ea6856ce18f1d02ea91ad6 100644
+--- a/gui_qt/qml/Main.qml
++++ b/gui_qt/qml/Main.qml
+@@ -217,50 +217,56 @@ ApplicationWindow {
+                                 Layout.fillWidth: true
+ 
+                                 GridLayout {
+                                     columns: 2
+                                     columnSpacing: 8
+                                     rowSpacing: 8
+                                     anchors.fill: parent
+ 
+                                     Button {
+                                         text: "Тренировка 8х"
+                                         enabled: !controller.running
+                                         onClicked: controller.start_train_8x()
+                                     }
+ 
+                                     Button {
+                                         text: "Самообучение 8х"
+                                         enabled: !controller.running
+                                         onClicked: controller.start_self_play_8x()
+                                     }
+ 
+                                     Button {
+                                         text: "Очистить кеш"
+                                         enabled: !controller.running
+                                         onClicked: clearCacheDialog.open()
+                                     }
 +
-+namespace fs = std::filesystem;
-+using json = nlohmann::json;
-+
-+namespace {
-+constexpr int kRosterVersion = 1;
-+
-+json rosterEntryToJson(const RosterEntry& entry) {
-+  json item;
-+  item["name"] = entry.name;
-+  if (!entry.faction.empty()) {
-+    item["faction"] = entry.faction;
-+  }
-+  item["models_count"] = entry.modelsCount;
-+  if (!entry.instanceId.empty()) {
-+    item["instance_id"] = entry.instanceId;
-+  }
-+  return item;
-+}
-+
-+std::vector<RosterEntry> parseRosterArray(const json& value, const std::string& fallbackFaction) {
-+  std::vector<RosterEntry> entries;
-+  if (!value.is_array()) {
-+    return entries;
-+  }
-+  for (const auto& item : value) {
-+    RosterEntry entry;
-+    if (item.is_string()) {
-+      entry.name = item.get<std::string>();
-+      entry.faction = fallbackFaction;
-+      entry.modelsCount = 1;
-+      entry.instanceId = RosterModel::generateInstanceId();
-+      entries.push_back(entry);
-+      continue;
-+    }
-+    if (!item.is_object()) {
-+      continue;
-+    }
-+    if (!item.contains("name") || !item.at("name").is_string()) {
-+      continue;
-+    }
-+    entry.name = item.at("name").get<std::string>();
-+    entry.faction = fallbackFaction;
-+    if (item.contains("faction") && item.at("faction").is_string()) {
-+      entry.faction = item.at("faction").get<std::string>();
-+    }
-+    entry.modelsCount = 1;
-+    if (item.contains("models_count") && item.at("models_count").is_number_integer()) {
-+      entry.modelsCount = item.at("models_count").get<int>();
-+    }
-+    if (item.contains("instance_id") && item.at("instance_id").is_string()) {
-+      entry.instanceId = item.at("instance_id").get<std::string>();
-+    }
-+    if (entry.instanceId.empty()) {
-+      entry.instanceId = RosterModel::generateInstanceId();
-+    }
-+    entries.push_back(entry);
-+  }
-+  return entries;
-+}
-+
-+json entriesToJson(const std::vector<RosterEntry>& entries) {
-+  json array = json::array();
-+  for (const auto& entry : entries) {
-+    array.push_back(rosterEntryToJson(entry));
-+  }
-+  return array;
-+}
-+}  // namespace
-+
-+std::string get_config_dir() {
-+  const char* xdgConfig = std::getenv("XDG_CONFIG_HOME");
-+  fs::path basePath;
-+  if (xdgConfig && *xdgConfig) {
-+    basePath = fs::path(xdgConfig);
-+  } else {
-+    const char* home = std::getenv("HOME");
-+    if (home && *home) {
-+      basePath = fs::path(home) / ".config";
-+    } else {
-+      basePath = fs::current_path();
-+    }
-+  }
-+  fs::path configPath = basePath / "40kai";
-+  std::error_code error;
-+  fs::create_directories(configPath, error);
-+  return configPath.string();
-+}
-+
-+std::string get_last_roster_path() {
-+  fs::path path = fs::path(get_config_dir()) / "last_roster.json";
-+  return path.string();
-+}
-+
-+bool save_last_roster(const RosterModel& playerRoster, const std::vector<RosterEntry>& modelRoster) {
-+  json data;
-+  data["version"] = kRosterVersion;
-+  data["player_faction"] = playerRoster.faction();
-+  data["player"] = entriesToJson(playerRoster.units());
-+  data["model"] = entriesToJson(modelRoster);
-+  fs::path path(get_last_roster_path());
-+  std::error_code error;
-+  fs::create_directories(path.parent_path(), error);
-+  std::ofstream out(path);
-+  if (!out) {
-+    return false;
-+  }
-+  out << data.dump(2);
-+  return true;
-+}
-+
-+LastRosterLoadResult load_last_roster(RosterModel& playerRoster,
-+                                      std::vector<RosterEntry>& modelRoster,
-+                                      std::string* errorMessage) {
-+  fs::path path(get_last_roster_path());
-+  if (!fs::exists(path)) {
-+    if (errorMessage) {
-+      *errorMessage = "not_found";
-+    }
-+    return LastRosterLoadResult::kNotFound;
-+  }
-+  std::ifstream infile(path);
-+  if (!infile) {
-+    if (errorMessage) {
-+      *errorMessage = "open_failed";
-+    }
-+    return LastRosterLoadResult::kParseError;
-+  }
-+  json data;
-+  try {
-+    infile >> data;
-+  } catch (...) {
-+    if (errorMessage) {
-+      *errorMessage = "parse_failed";
-+    }
-+    return LastRosterLoadResult::kParseError;
-+  }
-+
-+  if (data.is_object() && data.contains("units")) {
-+    if (!playerRoster.fromJson(data)) {
-+      if (errorMessage) {
-+        *errorMessage = "legacy_parse_failed";
-+      }
-+      return LastRosterLoadResult::kParseError;
-+    }
-+    modelRoster.clear();
-+    return LastRosterLoadResult::kLoaded;
-+  }
-+
-+  if (!data.is_object()) {
-+    if (errorMessage) {
-+      *errorMessage = "invalid_format";
-+    }
-+    return LastRosterLoadResult::kParseError;
-+  }
-+
-+  if (data.contains("version") && data.at("version").is_number_integer()) {
-+    int version = data.at("version").get<int>();
-+    if (version != kRosterVersion) {
-+      if (errorMessage) {
-+        *errorMessage = "unsupported_version";
-+      }
-+      return LastRosterLoadResult::kParseError;
-+    }
-+  }
-+
-+  std::string playerFaction;
-+  if (data.contains("player_faction") && data.at("player_faction").is_string()) {
-+    playerFaction = data.at("player_faction").get<std::string>();
-+  }
-+
-+  std::vector<RosterEntry> playerEntries;
-+  if (data.contains("player")) {
-+    playerEntries = parseRosterArray(data.at("player"), playerFaction);
-+  }
-+  std::vector<RosterEntry> modelEntries;
-+  if (data.contains("model")) {
-+    modelEntries = parseRosterArray(data.at("model"), playerFaction);
-+  }
-+
-+  json playerJson;
-+  playerJson["faction"] = playerFaction;
-+  playerJson["units"] = json::array();
-+  for (const auto& entry : playerEntries) {
-+    playerJson["units"].push_back(rosterEntryToJson(entry));
-+  }
-+  playerRoster.fromJson(playerJson);
-+  modelRoster = std::move(modelEntries);
-+  return LastRosterLoadResult::kLoaded;
-+}
-diff --git a/gui/include/LastRoster.h b/gui/include/LastRoster.h
-new file mode 100644
-index 0000000000000000000000000000000000000000..bf8a5d1532395231c0f6c2816c89cc2ecf56800d
---- /dev/null
-+++ b/gui/include/LastRoster.h
-@@ -0,0 +1,21 @@
-+#ifndef LAST_ROSTER_H
-+#define LAST_ROSTER_H
-+
-+#include <string>
-+#include <vector>
-+#include "RosterModel.h"
-+
-+enum class LastRosterLoadResult {
-+  kLoaded,
-+  kNotFound,
-+  kParseError,
-+};
-+
-+std::string get_config_dir();
-+std::string get_last_roster_path();
-+bool save_last_roster(const RosterModel& playerRoster, const std::vector<RosterEntry>& modelRoster);
-+LastRosterLoadResult load_last_roster(RosterModel& playerRoster,
-+                                      std::vector<RosterEntry>& modelRoster,
-+                                      std::string* errorMessage);
-+
-+#endif
-diff --git a/gui/units.cpp b/gui/units.cpp
-index 70a42f5deb59311fd14c25d64c7cb76098574bcb..cb4371bec88803ee9a2d55299c51595dec7ee309 100644
---- a/gui/units.cpp
-+++ b/gui/units.cpp
-@@ -1,80 +1,81 @@
- #include <iostream>
- #include <gtkmm.h>
- #include <cstdlib>
- #include <stdlib.h>
- #include <string>
- #include <fstream>
- #include <unordered_map>
- #include <nlohmann/json.hpp>
- #include <algorithm>
- #include <utility>
- #include "include/units.h"
-+#include "include/LastRoster.h"
++                                    Button {
++                                        text: "Очистить логи"
++                                        enabled: !controller.running
++                                        onClicked: controller.clear_agent_logs()
++                                    }
+                                 }
+                             }
+                         }
+                     }
  
- using namespace Glib;
- using namespace Gtk;
- using json = nlohmann::json;
+                     Label {
+                         text: root.statusText
+                     }
  
- void Units::loadAvailableUnits() {
-   availableStore->clear();
-   std::ifstream infile("../gym_mod/gym_mod/engine/unitData.json");
-   if (!infile) {
-     return;
-   }
-   json j;
-   infile >> j;
+                     Label {
+                         text: controller.progressLabel
+                     }
  
-   if (!j.contains("UnitData") || !j.at("UnitData").is_array()) {
-     return;
-   }
+                     Item {
+                         Layout.fillWidth: true
+                         height: 24
  
-   for (const auto& unit : j.at("UnitData")) {
-     if (!unit.contains("Army") || !unit.contains("Name")) {
-       continue;
-     }
-     std::string army = unit.at("Army").get<std::string>();
-     std::string name = unit.at("Name").get<std::string>();
-     int defaultCount = 1;
-     if (unit.contains("#OfModels") && unit.at("#OfModels").is_number_integer()) {
-       defaultCount = unit.at("#OfModels").get<int>();
-     }
-     auto row = *(availableStore->append());
-     row[availableColumns.name] = name;
-     row[availableColumns.faction] = army;
-     row[availableColumns.defaultCount] = defaultCount;
-   }
- }
+                         ProgressBar {
+                             id: trainingProgress
+                             anchors.fill: parent
+                             value: controller.progressValue
+                         }
  
- std::string Units::formatRosterDisplay(const std::string& name, int modelsCount) const {
-   return "(Unit) " + name + " (x" + std::to_string(modelsCount) + " Models)";
- }
- 
- void Units::persistPlayerRoster() {
--  if (!playerRosterModel) {
-+  if (!playerRosterModel || !modelUnits) {
-     return;
-   }
--  playerRosterModel->saveToFile(RosterModel::defaultRosterPath());
-+  save_last_roster(*playerRosterModel, *modelUnits);
- }
- 
- bool Units::getSelectedAvailableUnit(AvailableUnit& unit) {
-   auto selection = availableView.get_selection();
-   if (!selection) {
-     return false;
-   }
-   auto iter = selection->get_selected();
-   if (!iter) {
-     return false;
-   }
-   auto row = *iter;
-   Glib::ustring nameValue = row[availableColumns.name];
-   Glib::ustring factionValue = row[availableColumns.faction];
-   unit.name = nameValue.raw();
-   unit.faction = factionValue.raw();
-   unit.defaultCount = row[availableColumns.defaultCount];
-   return true;
- }
- 
- void Units::refreshRosterView(const std::vector<RosterEntry>& entries,
-                               const Glib::RefPtr<Gtk::ListStore>& store) {
-   if (!store) {
-     return;
-   }
-@@ -122,50 +123,51 @@ void Units::addSelectedToPlayer() {
-     return;
-   }
-   AvailableUnit unit;
-   if (!getSelectedAvailableUnit(unit)) {
-     setStatusMessage("Выберите юнит в списке доступных.");
-     return;
-   }
-   playerRosterModel->addUnit(unit.name, unit.defaultCount, unit.faction);
-   refreshRosterViews();
-   persistPlayerRoster();
-   notifyRosterUpdated();
-   setStatusMessage("Юнит добавлен в ростер игрока.");
- }
- 
- void Units::addSelectedToModel() {
-   if (!modelUnits) {
-     return;
-   }
-   AvailableUnit unit;
-   if (!getSelectedAvailableUnit(unit)) {
-     setStatusMessage("Выберите юнит в списке доступных.");
-     return;
-   }
-   modelUnits->push_back({unit.name, unit.faction, unit.defaultCount, RosterModel::generateInstanceId()});
-   refreshRosterViews();
-+  persistPlayerRoster();
-   notifyRosterUpdated();
-   setStatusMessage("Юнит добавлен в ростер модели.");
- }
- 
- void Units::removeModelUnitByInstanceId(const std::string& instanceId, size_t fallbackIndex) {
-   if (!modelUnits) {
-     return;
-   }
-   if (!instanceId.empty()) {
-     auto it = std::find_if(modelUnits->begin(), modelUnits->end(),
-                            [&](const RosterEntry& entry) { return entry.instanceId == instanceId; });
-     if (it != modelUnits->end()) {
-       modelUnits->erase(it);
-     }
-     return;
-   }
-   if (fallbackIndex < modelUnits->size()) {
-     modelUnits->erase(modelUnits->begin() + static_cast<long>(fallbackIndex));
-   }
- }
- 
- void Units::removeSelectedFromActiveRoster() {
-   auto playerSelection = playerRosterView.get_selection();
-   auto modelSelection = modelRosterView.get_selection();
-   auto playerIter = playerSelection ? playerSelection->get_selected() : Gtk::TreeModel::iterator();
-@@ -173,99 +175,102 @@ void Units::removeSelectedFromActiveRoster() {
-     auto path = playerRosterStore->get_path(playerIter);
-     if (!path.empty()) {
-       Glib::ustring instanceValue = (*playerIter)[rosterColumns.instanceId];
-       std::string instanceId = instanceValue.raw();
-       if (!instanceId.empty()) {
-         playerRosterModel->removeUnitByInstanceId(instanceId);
-       } else {
-         playerRosterModel->removeUnit(static_cast<size_t>(path.front()));
-       }
-       refreshRosterViews();
-       persistPlayerRoster();
-       notifyRosterUpdated();
-       setStatusMessage("Юнит удалён из ростера игрока.");
-       return;
-     }
-   }
- 
-   auto modelIter = modelSelection ? modelSelection->get_selected() : Gtk::TreeModel::iterator();
-   if (modelIter && modelUnits) {
-     auto path = modelRosterStore->get_path(modelIter);
-     if (!path.empty()) {
-       Glib::ustring instanceValue = (*modelIter)[rosterColumns.instanceId];
-       std::string instanceId = instanceValue.raw();
-       removeModelUnitByInstanceId(instanceId, static_cast<size_t>(path.front()));
-       refreshRosterViews();
-+      persistPlayerRoster();
-       notifyRosterUpdated();
-       setStatusMessage("Юнит удалён из ростера модели.");
-       return;
-     }
-   }
- 
-   setStatusMessage("Сначала выберите юнит для удаления.");
- }
- 
- void Units::clearPlayerRoster() {
-   if (!playerRosterModel) {
-     return;
-   }
-   playerRosterModel->clear();
-   refreshRosterViews();
-   persistPlayerRoster();
-   notifyRosterUpdated();
-   setStatusMessage("Ростер игрока очищен.");
- }
- 
- void Units::clearModelRoster() {
-   if (!modelUnits) {
-     return;
-   }
-   modelUnits->clear();
-   refreshRosterViews();
-+  persistPlayerRoster();
-   notifyRosterUpdated();
-   setStatusMessage("Ростер модели очищен.");
- }
- 
- void Units::clearAllRosters() {
-   if (playerRosterModel) {
-     playerRosterModel->clear();
--    persistPlayerRoster();
-   }
-   if (modelUnits) {
-     modelUnits->clear();
-   }
-   refreshRosterViews();
-+  persistPlayerRoster();
-   notifyRosterUpdated();
-   setStatusMessage("Оба ростера очищены.");
- }
- 
- void Units::mirrorPlayerToModel() {
-   if (!playerRosterModel || !modelUnits) {
-     return;
-   }
-   *modelUnits = playerRosterModel->expandedUnits();
-   refreshRosterViews();
-+  persistPlayerRoster();
-   notifyRosterUpdated();
-   setStatusMessage("Ростер модели обновлён из ростера игрока.");
- }
- 
- Units::Units(RosterModel* playerRosterModel,
-              std::vector<RosterEntry>* modelUnits,
-              std::function<void()> onRosterUpdated)
-     : playerRosterModel(playerRosterModel),
-       modelUnits(modelUnits),
-       onRosterUpdated(std::move(onRosterUpdated)) {
-   bar.set_show_close_button(true);
-   set_titlebar(bar);
-   bar.set_title("Army Viewer");
- 
-   add(rootBox);
- 
-   availableFrame.set_label("Available Units");
-   playerRosterFrame.set_label("Player Roster");
-   modelRosterFrame.set_label("Model Roster");
- 
-   availableStore = Gtk::ListStore::create(availableColumns);
-   playerRosterStore = Gtk::ListStore::create(rosterColumns);
-   modelRosterStore = Gtk::ListStore::create(rosterColumns);
-   availableView.set_model(availableStore);
-   playerRosterView.set_model(playerRosterStore);
-@@ -365,28 +370,32 @@ Units::Units(RosterModel* playerRosterModel,
-   rosterBox.pack_start(playerRosterFrame, Gtk::PACK_EXPAND_WIDGET);
-   rosterBox.pack_start(modelRosterFrame, Gtk::PACK_EXPAND_WIDGET);
- 
-   mainBox.pack_start(availableFrame, Gtk::PACK_EXPAND_WIDGET);
-   mainBox.pack_start(buttonBox, Gtk::PACK_SHRINK);
-   mainBox.pack_start(rosterBox, Gtk::PACK_EXPAND_WIDGET);
- 
-   rootBox.pack_start(mainBox, Gtk::PACK_EXPAND_WIDGET);
-   rootBox.pack_start(statusLabel, Gtk::PACK_SHRINK);
- 
-   rootBox.set_margin_top(12);
-   rootBox.set_margin_bottom(12);
-   rootBox.set_margin_start(12);
-   rootBox.set_margin_end(12);
-   rootBox.set_hexpand(true);
-   rootBox.set_vexpand(true);
-   availableFrame.set_hexpand(true);
-   playerRosterFrame.set_hexpand(true);
-   modelRosterFrame.set_hexpand(true);
-   buttonBox.set_valign(Gtk::ALIGN_START);
-   statusLabel.set_xalign(0.0);
- 
-   loadAvailableUnits();
-   refreshRosterViews();
- 
-+  signal_hide().connect([this]() {
-+    persistPlayerRoster();
-+  });
-+
-   resize(700, 500);
-   show_all();
- }
-
+                         Text {
+                             anchors.centerIn: parent

@@ -8,12 +8,22 @@ class ReplayMemory(object):
 
     def __init__(self, capacity):
         self.memory = deque([], maxlen=capacity)
+        self._prefetch = None
 
     def push(self, *args):
         self.memory.append(Transition(*args))
 
-    def sample(self, batch_size):
+    def _sample_impl(self, batch_size):
         return random.sample(self.memory, batch_size)
+
+    def sample(self, batch_size, prefetch=False):
+        if not prefetch:
+            return self._sample_impl(batch_size)
+        if self._prefetch is None:
+            self._prefetch = self._sample_impl(batch_size)
+        result = self._prefetch
+        self._prefetch = self._sample_impl(batch_size)
+        return result
 
     def __len__(self):
         return len(self.memory)
@@ -28,6 +38,7 @@ class PrioritizedReplayMemory(object):
         self.priorities = []
         self.pos = 0
         self.max_priority = 1.0
+        self._prefetch = None
 
     def push(self, *args):
         transition = Transition(*args)
@@ -39,7 +50,7 @@ class PrioritizedReplayMemory(object):
             self.priorities[self.pos] = self.max_priority
         self.pos = (self.pos + 1) % self.capacity
 
-    def sample(self, batch_size, beta=0.4):
+    def _sample_impl(self, batch_size, beta=0.4):
         if len(self.memory) == 0:
             return [], [], []
         priorities = np.array(self.priorities, dtype=np.float32)
@@ -50,6 +61,15 @@ class PrioritizedReplayMemory(object):
         weights = (len(self.memory) * probs[indices]) ** (-beta)
         weights = weights / weights.max()
         return samples, indices, weights.astype(np.float32)
+
+    def sample(self, batch_size, beta=0.4, prefetch=False):
+        if not prefetch:
+            return self._sample_impl(batch_size, beta=beta)
+        if self._prefetch is None:
+            self._prefetch = self._sample_impl(batch_size, beta=beta)
+        result = self._prefetch
+        self._prefetch = self._sample_impl(batch_size, beta=beta)
+        return result
 
     def update_priorities(self, indices, priorities):
         for idx, priority in zip(indices, priorities):

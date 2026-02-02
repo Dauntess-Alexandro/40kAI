@@ -1,4 +1,9 @@
 # play warhammer!
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 import pickle
 import os
@@ -13,11 +18,6 @@ from gym_mod.engine.game_io import ConsoleIO, set_active_io
 from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
 from gym_mod.envs.warhamEnv import roll_off_attacker_defender
 
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 PLAY_EPS = float(os.getenv("PLAY_EPS", "")) if os.getenv("PLAY_EPS") is not None and os.getenv("PLAY_EPS") != "" else None
 PLAY_NO_EXPLORATION = os.getenv("PLAY_NO_EXPLORATION", "0") == "1"
@@ -115,7 +115,7 @@ post_deploy_setup(log_fn=log_fn)
 env.attacker_side = attacker_side
 env.defender_side = defender_side
 
-state, info = env.reset(m=model, e=enemy)
+state, info = env.reset(options={"m": model, "e": enemy})
 if verbose:
     squads_for_actions_count = len(model)
     _log(f"[action_space] squads_for_actions_count={squads_for_actions_count}")
@@ -138,8 +138,15 @@ for i in range(len(model)):
     n_actions.append(12)
 n_observations = len(state)
 
-policy_net = DQN(n_observations, n_actions).to(device)
-target_net = DQN(n_observations, n_actions).to(device)
+net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
+dueling = net_type == "dueling"
+if not dueling and isinstance(checkpoint, dict):
+    policy_state = checkpoint.get("policy_net", {})
+    if any(key.startswith("value_heads.") for key in policy_state):
+        dueling = True
+
+policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
 optimizer = torch.optim.Adam(policy_net.parameters())
 
 policy_net.load_state_dict(checkpoint['policy_net'])
@@ -153,9 +160,9 @@ isdone = False
 i = 0
 
 if playInGUI == True:
-    env.reset(m=model, e=enemy, playType=playInGUI, Type="big", trunc=True)
+    env.reset(options={"m": model, "e": enemy, "playType": playInGUI, "Type": "big", "trunc": True})
 else:
-    env.reset(m=model, e=enemy, playType=playInGUI, Type="big", trunc=False)
+    env.reset(options={"m": model, "e": enemy, "playType": playInGUI, "Type": "big", "trunc": False})
 
 env.io = io
 

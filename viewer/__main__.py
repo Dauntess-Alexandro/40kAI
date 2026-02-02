@@ -1,5 +1,6 @@
 import argparse
 import os
+import torch
 
 from viewer.app import launch
 
