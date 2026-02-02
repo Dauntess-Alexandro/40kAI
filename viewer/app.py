@@ -10,33 +10,12 @@ GYM_PATH = os.path.join(ROOT_DIR, "gym_mod")
 if GYM_PATH not in sys.path:
     sys.path.insert(0, GYM_PATH)
 
-from viewer.scene import MapScene
+from viewer.opengl_view import OpenGLBoardWidget
 from viewer.state import StateWatcher
 from viewer.styles import Theme
 
 from gym_mod.engine.game_controller import GameController
 from gym_mod.engine.game_io import parse_dice_values
-
-
-class MapView(QtWidgets.QGraphicsView):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.setRenderHints(
-            QtGui.QPainter.Antialiasing
-            | QtGui.QPainter.TextAntialiasing
-            | QtGui.QPainter.SmoothPixmapTransform
-        )
-        self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
-        self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
-        self.setViewportUpdateMode(QtWidgets.QGraphicsView.SmartViewportUpdate)
-
-    def wheelEvent(self, event):
-        zoom_in = 1.15
-        zoom_out = 1 / zoom_in
-        if event.angleDelta().y() > 0:
-            self.scale(zoom_in, zoom_in)
-        else:
-            self.scale(zoom_out, zoom_out)
 
 
 class ViewerWindow(QtWidgets.QMainWindow):
@@ -55,11 +34,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._unit_row_by_key = {}
 
         self.state_watcher = StateWatcher(self.state_path)
-        self.map_scene = MapScene(cell_size=18)
+        self.map_scene = OpenGLBoardWidget(cell_size=18)
         self.map_scene.unit_selected.connect(self._select_row_for_unit)
-
-        self.map_view = MapView(self.map_scene)
-        self.map_view.setBackgroundBrush(Theme.brush(Theme.background))
 
         self.status_round = QtWidgets.QLabel("Раунд: —")
         self.status_turn = QtWidgets.QLabel("Ход: —")
@@ -103,6 +79,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS.md")
         self._log_file_max_bytes = 5 * 1024 * 1024
         self._init_log_viewer()
+        self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
+        self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
 
         fit_button = QtWidgets.QPushButton("Fit")
         fit_button.clicked.connect(self._fit_view)
@@ -110,7 +88,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         left_widget = QtWidgets.QWidget()
         left_layout = QtWidgets.QVBoxLayout(left_widget)
         left_layout.addWidget(fit_button, alignment=QtCore.Qt.AlignLeft)
-        left_layout.addWidget(self.map_view)
+        left_layout.addWidget(self.map_scene)
 
         log_group = QtWidgets.QGroupBox("ЖУРНАЛ")
         log_layout = QtWidgets.QVBoxLayout(log_group)
@@ -468,11 +446,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._poll_state()
 
     def _fit_view(self):
-        rect = self.map_scene.sceneRect()
-        if rect.width() > 0 and rect.height() > 0:
-            self.map_view.fitInView(rect, QtCore.Qt.KeepAspectRatio)
+        self.map_scene.fit_to_view()
 
     def _poll_state(self):
+        if not os.path.exists(self.state_watcher.path):
+            self.map_scene.set_error_message(
+                "Состояние игры недоступно. Где: viewer/state.json. "
+                "Что делать дальше: запустите игру и дождитесь генерации state.json."
+            )
+            return
         if self.state_watcher.load_if_changed():
             self._apply_state(self.state_watcher.state)
 

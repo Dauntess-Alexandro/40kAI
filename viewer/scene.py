@@ -66,7 +66,21 @@ class MapScene(QtWidgets.QGraphicsScene):
         self._show_objective_radius = True
         self._state = {}
         self._targets = None
+        self._error_item = None
         self.selectionChanged.connect(self._emit_selection)
+
+    def set_error_message(self, message):
+        if self._error_item is not None:
+            self.removeItem(self._error_item)
+            self._error_item = None
+        if not message:
+            return
+        text_item = QtWidgets.QGraphicsTextItem(str(message))
+        text_item.setDefaultTextColor(Theme.text)
+        text_item.setTextWidth(420)
+        text_item.setPos(20, 20)
+        self.addItem(text_item)
+        self._error_item = text_item
 
     def _emit_selection(self):
         self._selected_unit_key = None

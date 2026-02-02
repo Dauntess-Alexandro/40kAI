@@ -1,0 +1,1 @@
+2026-02-02 | [AGENT] Найдено: кнопка «Играть в GUI» запускает scripts/viewer.* -> `python -m viewer`. Viewer написан на PySide6 (Qt Widgets) и ранее использовал QGraphicsView/QGraphicsScene. Обновляем рендер в сторону QOpenGLWidget.
