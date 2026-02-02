@@ -32,12 +32,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._show_objective_radius = True
         self._units_by_key = {}
         self._unit_row_by_key = {}
-        self._ai_demo_phases = ["command", "move", "shoot", "charge", "fight"]
-        self._ai_demo_index = 0
-        self._ai_demo_unit_index = 0
-        self._ai_demo_active = False
-        self._ai_demo_unit_keys = []
-        self._ai_demo_active_side = None
+        self._ai_phase_demo_active = False
+        self._ai_phase_demo_side = None
+        self._ai_phase_demo_units = []
+        self._ai_phase_demo_index = 0
+        self._ai_phase_demo_unit_index = 0
+        self._ai_phase_demo_waiting = False
+        self._ai_phase_demo_timer = QtCore.QTimer(self)
+        self._ai_phase_demo_timer.setInterval(550)
+        self._ai_phase_demo_timer.timeout.connect(self._advance_ai_demo_unit)
+        self._ai_phase_steps = ["command", "move", "shoot", "charge", "fight"]
 
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = OpenGLBoardWidget(cell_size=18)
@@ -283,8 +287,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         bool_layout = QtWidgets.QHBoxLayout(bool_page)
         self.bool_yes = QtWidgets.QPushButton("Да")
         self.bool_no = QtWidgets.QPushButton("Нет")
-        self.bool_yes.clicked.connect(lambda: self._submit_answer(True))
-        self.bool_no.clicked.connect(lambda: self._submit_answer(False))
+        self.bool_yes.clicked.connect(lambda: self._handle_bool_choice(True))
+        self.bool_no.clicked.connect(lambda: self._handle_bool_choice(False))
         bool_layout.addWidget(self.bool_yes)
         bool_layout.addWidget(self.bool_no)
         self._command_pages["bool"] = self.command_stack.addWidget(bool_page)
@@ -443,6 +447,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         value = self.choice_combo.currentText()
         self._submit_answer(value)
 
+    def _handle_bool_choice(self, value: bool):
+        if self._ai_phase_demo_waiting:
+            self._handle_ai_phase_confirm(value)
+            return
+        self._submit_answer(value)
+
     def _submit_answer(self, value):
         if self._pending_request is None:
             return
@@ -488,60 +498,109 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._populate_units_table(state.get("units", []))
         self._update_log(state.get("log_tail", []))
-        self._update_ai_demo(state)
+        self._update_ai_phase_demo(state)
         self._refresh_active_context()
 
-    def _update_ai_demo(self, state):
+    def _update_ai_phase_demo(self, state):
         active = state.get("active")
         if active not in ("model", "enemy", "ai"):
-            self._ai_demo_active = False
-            self._ai_demo_unit_keys = []
-            self._ai_demo_active_side = None
+            self._stop_ai_phase_demo()
             return
+        preferred_side = "model"
         model_units = [
             (unit.get("side"), unit.get("id"))
             for unit in state.get("units", []) or []
-            if unit.get("side") == "model" and unit.get("id") is not None
+            if unit.get("side") == preferred_side and unit.get("id") is not None
         ]
+        if not model_units:
+            preferred_side = active
+            model_units = [
+                (unit.get("side"), unit.get("id"))
+                for unit in state.get("units", []) or []
+                if unit.get("side") == preferred_side and unit.get("id") is not None
+            ]
         model_units.sort(key=lambda entry: entry[1])
-        if not self._ai_demo_active or self._ai_demo_active_side != active:
-            self._ai_demo_active = True
-            self._ai_demo_index = 0
-            self._ai_demo_unit_index = 0
-        self._ai_demo_active_side = active
-        self._ai_demo_unit_keys = model_units
-        self._apply_ai_demo_context()
-
-    def _advance_ai_demo_phase(self):
-        if not self._ai_demo_active:
-            return
-        if not self._ai_demo_phases:
-            return
-        if self._ai_demo_unit_keys:
-            self._ai_demo_unit_index += 1
-            if self._ai_demo_unit_index >= len(self._ai_demo_unit_keys):
-                self._ai_demo_unit_index = 0
-                self._ai_demo_index += 1
+        if (
+            not self._ai_phase_demo_active
+            or self._ai_phase_demo_side != preferred_side
+        ):
+            self._ai_phase_demo_active = True
+            self._ai_phase_demo_side = preferred_side
+            self._ai_phase_demo_units = model_units
+            self._ai_phase_demo_index = 0
+            self._ai_phase_demo_unit_index = 0
+            self._ai_phase_demo_waiting = False
+            self._start_ai_phase_demo()
         else:
-            self._ai_demo_index += 1
-        if self._ai_demo_index >= len(self._ai_demo_phases):
-            self._ai_demo_index = 0
-        self._apply_ai_demo_context()
+            self._ai_phase_demo_units = model_units
+        if not self._ai_phase_demo_waiting and not self._ai_phase_demo_timer.isActive():
+            self._ai_phase_demo_timer.start()
 
-    def _apply_ai_demo_context(self):
-        if not self._ai_demo_active:
+    def _start_ai_phase_demo(self):
+        self._ai_phase_demo_timer.start()
+        self._apply_ai_phase_demo_context()
+
+    def _stop_ai_phase_demo(self):
+        self._ai_phase_demo_active = False
+        self._ai_phase_demo_side = None
+        self._ai_phase_demo_units = []
+        self._ai_phase_demo_index = 0
+        self._ai_phase_demo_unit_index = 0
+        self._ai_phase_demo_waiting = False
+        if self._ai_phase_demo_timer.isActive():
+            self._ai_phase_demo_timer.stop()
+        if self._pending_request:
+            self._set_request(self._pending_request)
+        else:
+            self.command_prompt.setText("Команда не требуется.")
+            self.command_hint.setText("Горячие клавиши: —")
+
+    def _advance_ai_demo_unit(self):
+        if not self._ai_phase_demo_active:
             return
-        phase = self._ai_demo_phases[self._ai_demo_index]
+        if not self._ai_phase_demo_units:
+            self._finish_ai_phase()
+            return
+        self._apply_ai_phase_demo_context()
+        self._ai_phase_demo_unit_index += 1
+        if self._ai_phase_demo_unit_index >= len(self._ai_phase_demo_units):
+            self._finish_ai_phase()
+
+    def _finish_ai_phase(self):
+        self._ai_phase_demo_timer.stop()
+        self._ai_phase_demo_waiting = True
+        phase = self._ai_phase_steps[self._ai_phase_demo_index]
+        self.command_prompt.setText(f"Фаза «{phase}» завершена. Перейти дальше?")
+        self.command_hint.setText("Горячие клавиши: Y — да, N — нет")
+        self.command_stack.setCurrentIndex(self._command_pages["bool"])
+
+    def _handle_ai_phase_confirm(self, accepted: bool):
+        if not self._ai_phase_demo_waiting:
+            return
+        self._ai_phase_demo_waiting = False
+        if accepted:
+            self._ai_phase_demo_index += 1
+            if self._ai_phase_demo_index >= len(self._ai_phase_steps):
+                self._ai_phase_demo_index = 0
+            self._ai_phase_demo_unit_index = 0
+        self._ai_phase_demo_timer.start()
+        self._apply_ai_phase_demo_context()
+
+    def _apply_ai_phase_demo_context(self):
+        if not self._ai_phase_demo_active:
+            return
+        phase = self._ai_phase_steps[self._ai_phase_demo_index]
         unit_key = None
-        if self._ai_demo_unit_keys:
-            unit_key = self._ai_demo_unit_keys[self._ai_demo_unit_index]
+        if self._ai_phase_demo_units:
+            index = min(self._ai_phase_demo_unit_index, len(self._ai_phase_demo_units) - 1)
+            unit_key = self._ai_phase_demo_units[index]
         unit_id = unit_key[1] if unit_key else None
-        side = unit_key[0] if unit_key else "model"
+        side = unit_key[0] if unit_key else self._ai_phase_demo_side or "model"
         if unit_key:
             self.map_scene.select_unit(unit_key[0], unit_key[1])
-        self.status_phase.setText(f"Фаза: {phase} (демо ИИ)")
-        self.command_prompt.setText("Демо ИИ: Enter — следующий юнит/фаза.")
-        self.command_hint.setText("Горячие клавиши: Enter — следующий юнит/фаза")
+        self.status_phase.setText(f"Фаза: {phase} (ход ИИ)")
+        self.command_prompt.setText("Ход ИИ: показываю юнитов по очереди.")
+        self.command_hint.setText("Горячие клавиши: —")
         move_range = None
         shoot_range = None
         if self._is_movement_phase(phase):
@@ -897,8 +956,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return unit_id, None
 
     def _refresh_active_context(self):
-        if self._ai_demo_active:
-            self._apply_ai_demo_context()
+        if self._ai_phase_demo_active:
+            self._apply_ai_phase_demo_context()
             return
         unit_id, side = self._resolve_active_unit()
         self._active_unit_id = unit_id
@@ -934,10 +993,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return "shoot" in phase_text or "стрел" in phase_text or "shooting" in phase_text
 
     def eventFilter(self, obj, event):
-        if event.type() == QtCore.QEvent.KeyPress and self._ai_demo_active:
+        if event.type() == QtCore.QEvent.KeyPress and self._ai_phase_demo_waiting:
             key = event.key()
-            if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
-                self._advance_ai_demo_phase()
+            if key == QtCore.Qt.Key_Y:
+                self._handle_ai_phase_confirm(True)
+                return True
+            if key == QtCore.Qt.Key_N:
+                self._handle_ai_phase_confirm(False)
                 return True
         if event.type() == QtCore.QEvent.KeyPress and self._pending_request:
             kind = getattr(self._pending_request, "kind", "")
