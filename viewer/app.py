@@ -37,6 +37,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._ai_demo_unit_index = 0
         self._ai_demo_active = False
         self._ai_demo_unit_keys = []
+        self._ai_demo_active_side = None
 
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = OpenGLBoardWidget(cell_size=18)
@@ -492,9 +493,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _update_ai_demo(self, state):
         active = state.get("active")
-        if active != "model":
+        if active not in ("model", "enemy", "ai"):
             self._ai_demo_active = False
             self._ai_demo_unit_keys = []
+            self._ai_demo_active_side = None
             return
         model_units = [
             (unit.get("side"), unit.get("id"))
@@ -502,10 +504,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if unit.get("side") == "model" and unit.get("id") is not None
         ]
         model_units.sort(key=lambda entry: entry[1])
-        if not self._ai_demo_active:
+        if not self._ai_demo_active or self._ai_demo_active_side != active:
             self._ai_demo_active = True
             self._ai_demo_index = 0
             self._ai_demo_unit_index = 0
+        self._ai_demo_active_side = active
         self._ai_demo_unit_keys = model_units
         self._apply_ai_demo_context()
 
@@ -514,13 +517,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         if not self._ai_demo_phases:
             return
-        self._ai_demo_index += 1
+        if self._ai_demo_unit_keys:
+            self._ai_demo_unit_index += 1
+            if self._ai_demo_unit_index >= len(self._ai_demo_unit_keys):
+                self._ai_demo_unit_index = 0
+                self._ai_demo_index += 1
+        else:
+            self._ai_demo_index += 1
         if self._ai_demo_index >= len(self._ai_demo_phases):
             self._ai_demo_index = 0
-            if self._ai_demo_unit_keys:
-                self._ai_demo_unit_index = (self._ai_demo_unit_index + 1) % len(
-                    self._ai_demo_unit_keys
-                )
         self._apply_ai_demo_context()
 
     def _apply_ai_demo_context(self):
@@ -535,6 +540,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if unit_key:
             self.map_scene.select_unit(unit_key[0], unit_key[1])
         self.status_phase.setText(f"Фаза: {phase} (демо ИИ)")
+        self.command_prompt.setText("Демо ИИ: Enter — следующий юнит/фаза.")
+        self.command_hint.setText("Горячие клавиши: Enter — следующий юнит/фаза")
         move_range = None
         shoot_range = None
         if self._is_movement_phase(phase):
