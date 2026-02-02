@@ -887,9 +887,9 @@ func _extract_unit_id(prompt: String):
         return null
     var regex = RegEx.new()
     regex.compile("(?:юнит|unit)\\s*#?\\s*(\\d+)")
-    var match = regex.search(prompt)
-    if match:
-        return int(match.get_string(1))
+    var regex_match = regex.search(prompt)
+    if regex_match:
+        return int(regex_match.get_string(1))
     return null
 
 func _resolve_move_range(unit: Dictionary):
