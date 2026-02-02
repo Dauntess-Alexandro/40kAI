@@ -2,15 +2,15 @@ extends Control
 
 const TAB_NAMES := ["Все", "Ход", "Стрельба", "Ближний бой", "Кубы", "Ошибки"]
 
-@onready var round_label: Label = %RoundLabel
-@onready var turn_label: Label = %TurnLabel
-@onready var phase_label: Label = %PhaseLabel
-@onready var active_label: Label = %ActiveLabel
-@onready var player_vp_label: Label = %PlayerVPLabel
-@onready var model_vp_label: Label = %ModelVPLabel
-@onready var player_cp_label: Label = %PlayerCPLabel
-@onready var model_cp_label: Label = %ModelCPLabel
-@onready var log_tabs: TabContainer = %LogTabs
+@onready var round_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/RoundLabel
+@onready var turn_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/TurnLabel
+@onready var phase_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/PhaseLabel
+@onready var active_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/ActiveLabel
+@onready var player_vp_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/PlayerVPLabel
+@onready var model_vp_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/ModelVPLabel
+@onready var player_cp_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/PlayerCPLabel
+@onready var model_cp_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/ModelCPLabel
+@onready var log_tabs: TabContainer = $MainSplit/LogGroup/LogTabs
 
 var _state_reader: StateReader
 
