@@ -29,8 +29,13 @@ var _board_width := 0
 var _board_height := 0
 var _layout_origin := Vector2.ZERO
 var _layout_cell_size := 0.0
+var _font_size := 12
 
 signal unit_selected(side: String, unit_id: int)
+
+func set_ui_scale(scale: float) -> void:
+    _font_size = int(round(12.0 * scale))
+    queue_redraw()
 
 func set_state(state: Dictionary) -> void:
     _state = state if state != null else {}
@@ -135,7 +140,7 @@ func _draw_units(origin: Vector2, cell_size: float) -> void:
         occupied[key].append(unit)
 
     var font := get_theme_default_font()
-    var font_size := get_theme_default_font_size()
+    var font_size := _font_size
 
     for unit in units:
         var unit_data := unit as Dictionary
@@ -183,7 +188,7 @@ func _draw_objectives(origin: Vector2, cell_size: float) -> void:
     if objectives_value is Array:
         objectives = objectives_value
     var font := get_theme_default_font()
-    var font_size := get_theme_default_font_size()
+    var font_size := _font_size
 
     for objective in objectives:
         var objective_data := objective as Dictionary

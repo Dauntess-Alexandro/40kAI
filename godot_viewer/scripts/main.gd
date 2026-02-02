@@ -2,8 +2,24 @@ extends Control
 
 const TAB_NAMES := ["Все", "Ход", "Стрельба", "Ближний бой", "Кубы", "Ошибки"]
 const UNITS_COLUMNS := 5
-const UNITS_COLUMN_WIDTHS := [40, 90, 50, 60, 90]
-const UNITS_FONT_SIZE := 12
+const BASE_UNITS_COLUMN_WIDTHS := [40, 90, 50, 60, 90]
+const BASE_UNITS_FONT_SIZE := 12
+const BASE_SCREEN_SIZE := Vector2(1920, 1080)
+const BASE_SPLIT_OFFSET := 760
+const BASE_TOP_SPLIT_OFFSET := 1320
+const BASE_LEFT_PANEL_WIDTH := 820
+const BASE_RIGHT_PANEL_WIDTH := 360
+const BASE_MAP_MIN_SIZE := Vector2(820, 520)
+const BASE_LOG_GROUP_HEIGHT := 220
+const BASE_LOG_TABS_HEIGHT := 200
+const BASE_RIGHT_CONTENT_SEPARATION := 10
+const BASE_UNITS_SEPARATION := 6
+const BASE_LEGEND_SEPARATION := 6
+const BASE_LEGEND_LIST_SEPARATION := 4
+const BASE_COMMANDS_SEPARATION := 6
+const BASE_STATUS_SEPARATION := 2
+const BASE_POINTS_SEPARATION := 2
+const BASE_SWATCH_SIZE := 12
 const SELECT_TEXT_COLOR := Color(1.0, 0.85, 0.4)
 const DEFAULT_COMMAND_PATH := "user://command.txt"
 
@@ -18,18 +34,46 @@ const DEFAULT_COMMAND_PATH := "user://command.txt"
 @onready var log_tabs: TabContainer = $MainSplit/LogGroup/LogTabs
 @onready var map_view: MapView = $MainSplit/TopSplit/LeftPanel/MapView
 @onready var objective_radius_toggle: CheckBox = $MainSplit/TopSplit/LeftPanel/ObjectiveRadiusToggle
+@onready var fit_button: Button = $MainSplit/TopSplit/LeftPanel/FitButton
+@onready var main_split: VSplitContainer = $MainSplit
+@onready var top_split: HSplitContainer = $MainSplit/TopSplit
+@onready var left_panel: VBoxContainer = $MainSplit/TopSplit/LeftPanel
+@onready var right_panel: ScrollContainer = $MainSplit/TopSplit/RightPanel
+@onready var right_content: VBoxContainer = $MainSplit/TopSplit/RightPanel/RightContent
+@onready var status_title: Label = $MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/StatusContent/StatusTitle
+@onready var status_content: VBoxContainer = $MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/StatusContent
+@onready var points_title: Label = $MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/PointsContent/PointsTitle
+@onready var points_content: VBoxContainer = $MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/PointsContent
+@onready var units_title: Label = $MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent/UnitsTitle
+@onready var units_content: VBoxContainer = $MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent
+@onready var legend_title: Label = $MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendTitle
+@onready var legend_content: VBoxContainer = $MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent
+@onready var legend_list: VBoxContainer = $MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList
+@onready var legend_player_swatch: ColorRect = $MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList/LegendPlayer/LegendPlayerSwatch
+@onready var legend_model_swatch: ColorRect = $MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList/LegendModel/LegendModelSwatch
+@onready var legend_objective_swatch: ColorRect = $MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList/LegendObjective/LegendObjectiveSwatch
+@onready var commands_title: Label = $MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandsTitle
+@onready var commands_content: VBoxContainer = $MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent
+@onready var command_hint: Label = $MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandHint
 @onready var units_table: GridContainer = $MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent/UnitsTable
 @onready var command_prompt: Label = $MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandPrompt
 @onready var command_input: LineEdit = $MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandInputRow/CommandInput
 @onready var command_send: Button = $MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandInputRow/CommandSend
+@onready var log_group: VBoxContainer = $MainSplit/LogGroup
+@onready var log_title: Label = $MainSplit/LogGroup/LogTitle
+@onready var log_tabs_container: TabContainer = $MainSplit/LogGroup/LogTabs
 
 var _state_reader: StateReader
 var _command_path := DEFAULT_COMMAND_PATH
 var _selected_unit_key = null
 var _last_units: Array = []
 var _last_state: Dictionary = {}
+var _ui_scale := 1.0
+var _units_column_widths: Array = []
 
 func _ready() -> void:
+    _ui_scale = _calculate_ui_scale()
+    _apply_ui_scale()
     _configure_log_tabs()
     _configure_units_headers()
     objective_radius_toggle.toggled.connect(_on_objective_radius_toggled)
@@ -54,6 +98,15 @@ func _ready() -> void:
     add_child(_state_reader)
     _state_reader.state_changed.connect(_apply_state)
 
+func _notification(what: int) -> void:
+    if what == NOTIFICATION_RESIZED:
+        var new_scale := _calculate_ui_scale()
+        if absf(new_scale - _ui_scale) >= 0.01:
+            _ui_scale = new_scale
+            _apply_ui_scale()
+            _configure_units_headers()
+            _apply_units_table(_last_units)
+
 func _configure_log_tabs() -> void:
     for idx in range(min(log_tabs.get_tab_count(), TAB_NAMES.size())):
         log_tabs.set_tab_title(idx, TAB_NAMES[idx])
@@ -62,10 +115,10 @@ func _configure_units_headers() -> void:
     for idx in range(min(units_table.get_child_count(), UNITS_COLUMNS)):
         var header := units_table.get_child(idx)
         if header is Label:
-            if idx >= 0 and idx < UNITS_COLUMN_WIDTHS.size():
-                header.custom_minimum_size = Vector2(UNITS_COLUMN_WIDTHS[idx], 0)
+            if idx >= 0 and idx < _units_column_widths.size():
+                header.custom_minimum_size = Vector2(_units_column_widths[idx], 0)
             header.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-            header.add_theme_font_size_override("font_size", UNITS_FONT_SIZE)
+            header.add_theme_font_size_override("font_size", _scaled_font_size(BASE_UNITS_FONT_SIZE))
 
 func _apply_state(state: Dictionary) -> void:
     _last_state = state
@@ -178,13 +231,79 @@ func _apply_units_table(units_value) -> void:
 func _add_units_cell(text: String, column_index: int, alignment: HorizontalAlignment, selected: bool) -> void:
     var label := Label.new()
     label.text = text
-    if column_index >= 0 and column_index < UNITS_COLUMN_WIDTHS.size():
-        label.custom_minimum_size = Vector2(UNITS_COLUMN_WIDTHS[column_index], 0)
+    if column_index >= 0 and column_index < _units_column_widths.size():
+        label.custom_minimum_size = Vector2(_units_column_widths[column_index], 0)
     label.horizontal_alignment = alignment
-    label.add_theme_font_size_override("font_size", UNITS_FONT_SIZE)
+    label.add_theme_font_size_override("font_size", _scaled_font_size(BASE_UNITS_FONT_SIZE))
     if selected:
         label.add_theme_color_override("font_color", SELECT_TEXT_COLOR)
     units_table.add_child(label)
+
+func _calculate_ui_scale() -> float:
+    var size := get_viewport().get_visible_rect().size
+    if size.x <= 0 or size.y <= 0:
+        return 1.0
+    var width_scale := size.x / BASE_SCREEN_SIZE.x
+    var height_scale := size.y / BASE_SCREEN_SIZE.y
+    return max(1.0, min(width_scale, height_scale))
+
+func _scaled_font_size(base_size: int) -> int:
+    return int(round(float(base_size) * _ui_scale))
+
+func _apply_font_size(control: Control, base_size: int) -> void:
+    if control == null:
+        return
+    control.add_theme_font_size_override("font_size", _scaled_font_size(base_size))
+
+func _apply_ui_scale() -> void:
+    main_split.split_offset = int(round(BASE_SPLIT_OFFSET * _ui_scale))
+    top_split.split_offset = int(round(BASE_TOP_SPLIT_OFFSET * _ui_scale))
+    left_panel.custom_minimum_size = Vector2(BASE_LEFT_PANEL_WIDTH * _ui_scale, 0)
+    right_panel.custom_minimum_size = Vector2(BASE_RIGHT_PANEL_WIDTH * _ui_scale, 0)
+    map_view.custom_minimum_size = BASE_MAP_MIN_SIZE * _ui_scale
+    map_view.set_ui_scale(_ui_scale)
+    right_content.add_theme_constant_override("separation", int(round(BASE_RIGHT_CONTENT_SEPARATION * _ui_scale)))
+    status_content.add_theme_constant_override("separation", int(round(BASE_STATUS_SEPARATION * _ui_scale)))
+    points_content.add_theme_constant_override("separation", int(round(BASE_POINTS_SEPARATION * _ui_scale)))
+    units_content.add_theme_constant_override("separation", int(round(BASE_UNITS_SEPARATION * _ui_scale)))
+    legend_content.add_theme_constant_override("separation", int(round(BASE_LEGEND_SEPARATION * _ui_scale)))
+    legend_list.add_theme_constant_override("separation", int(round(BASE_LEGEND_LIST_SEPARATION * _ui_scale)))
+    commands_content.add_theme_constant_override("separation", int(round(BASE_COMMANDS_SEPARATION * _ui_scale)))
+    log_group.custom_minimum_size = Vector2(0, BASE_LOG_GROUP_HEIGHT * _ui_scale)
+    log_tabs_container.custom_minimum_size = Vector2(0, BASE_LOG_TABS_HEIGHT * _ui_scale)
+    legend_player_swatch.custom_minimum_size = Vector2(BASE_SWATCH_SIZE * _ui_scale, BASE_SWATCH_SIZE * _ui_scale)
+    legend_model_swatch.custom_minimum_size = Vector2(BASE_SWATCH_SIZE * _ui_scale, BASE_SWATCH_SIZE * _ui_scale)
+    legend_objective_swatch.custom_minimum_size = Vector2(BASE_SWATCH_SIZE * _ui_scale, BASE_SWATCH_SIZE * _ui_scale)
+
+    _apply_font_size(fit_button, 12)
+    _apply_font_size(objective_radius_toggle, 12)
+    _apply_font_size(status_title, 16)
+    _apply_font_size(round_label, 12)
+    _apply_font_size(turn_label, 12)
+    _apply_font_size(phase_label, 12)
+    _apply_font_size(active_label, 12)
+    _apply_font_size(points_title, 16)
+    _apply_font_size(player_vp_label, 12)
+    _apply_font_size(model_vp_label, 12)
+    _apply_font_size(player_cp_label, 12)
+    _apply_font_size(model_cp_label, 12)
+    _apply_font_size(units_title, 16)
+    _apply_font_size(legend_title, 16)
+    _apply_font_size(commands_title, 16)
+    _apply_font_size(command_prompt, 12)
+    _apply_font_size(command_hint, 11)
+    _apply_font_size(command_input, 12)
+    _apply_font_size(command_send, 12)
+    _apply_font_size(log_title, 14)
+    log_tabs_container.add_theme_font_size_override("font_size", _scaled_font_size(12))
+    for idx in range(log_tabs_container.get_tab_count()):
+        var tab := log_tabs_container.get_tab_control(idx)
+        if tab is TextEdit:
+            tab.add_theme_font_size_override("font_size", _scaled_font_size(12))
+
+    _units_column_widths.clear()
+    for width in BASE_UNITS_COLUMN_WIDTHS:
+        _units_column_widths.append(int(round(float(width) * _ui_scale)))
 
 func _write_command(command: String) -> bool:
     var file := FileAccess.open(_command_path, FileAccess.READ_WRITE)
