@@ -290,6 +290,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
         cell = float(self.cell_size)
         width = self.width()
         height = self.height()
+        board_screen_rect = QtCore.QRectF(
+            pan_x,
+            pan_y,
+            self._board_width * cell * scale,
+            self._board_height * cell * scale,
+        )
+        painter.setClipRect(board_screen_rect)
         left_world = (-pan_x) / scale
         right_world = (width - pan_x) / scale
         top_world = (-pan_y) / scale
@@ -308,8 +315,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
             screen_x = pan_x + world_x * scale
             screen_x = round(screen_x / pixel) * pixel
             painter.drawLine(
-                QtCore.QPointF(screen_x, 0.0),
-                QtCore.QPointF(screen_x, height),
+                QtCore.QPointF(screen_x, board_screen_rect.top()),
+                QtCore.QPointF(screen_x, board_screen_rect.bottom()),
             )
 
         for row in range(min_row, max_row + 1):
@@ -317,8 +324,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
             screen_y = pan_y + world_y * scale
             screen_y = round(screen_y / pixel) * pixel
             painter.drawLine(
-                QtCore.QPointF(0.0, screen_y),
-                QtCore.QPointF(width, screen_y),
+                QtCore.QPointF(board_screen_rect.left(), screen_y),
+                QtCore.QPointF(board_screen_rect.right(), screen_y),
             )
 
         painter.restore()
