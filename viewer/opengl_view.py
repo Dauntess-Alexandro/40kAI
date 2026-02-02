@@ -73,6 +73,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._min_scale = 0.2
         self._max_scale = 6.0
         self._pan = QtCore.QPointF(0, 0)
+        self._target_scale = self._scale
+        self._target_pan = QtCore.QPointF(0, 0)
+        self._view_anim_timer = QtCore.QTimer(self)
+        self._view_anim_timer.setInterval(16)
+        self._view_anim_timer.timeout.connect(self._animate_view_step)
         self._dragging = False
         self._drag_start = QtCore.QPointF(0, 0)
         self._drag_distance = 0.0
@@ -237,10 +242,12 @@ class OpenGLBoardWidget(QOpenGLWidget):
         scale_y = view_size.height() / self._board_rect.height()
         self._scale = max(self._min_scale, min(self._max_scale, min(scale_x, scale_y) * 0.95))
         self._center_board()
+        self._set_target_view(self._scale, self._pan, immediate=True)
         self.update()
 
     def center_view(self) -> None:
         self._center_board()
+        self._set_target_view(self._scale, self._pan, immediate=True)
         self.update()
 
     def _center_board(self) -> None:
@@ -249,6 +256,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         view_center = QtCore.QPointF(self.width() / 2, self.height() / 2)
         board_center = self._board_rect.center()
         self._pan = view_center - board_center * self._scale
+        self._target_pan = QtCore.QPointF(self._pan)
 
     def _ensure_grid_cache(self, width: int, height: int) -> None:
         if self._grid_picture and self._grid_size == (width, height):
@@ -362,9 +370,47 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def _view_transform(self) -> QtGui.QTransform:
         transform = QtGui.QTransform()
-        transform.translate(self._pan.x(), self._pan.y())
+        pan_x = round(self._pan.x(), 2)
+        pan_y = round(self._pan.y(), 2)
+        transform.translate(pan_x, pan_y)
         transform.scale(self._scale, self._scale)
         return transform
+
+    def _set_target_view(
+        self,
+        scale: Optional[float] = None,
+        pan: Optional[QtCore.QPointF] = None,
+        *,
+        immediate: bool = False,
+    ) -> None:
+        if scale is not None:
+            self._target_scale = scale
+        if pan is not None:
+            self._target_pan = QtCore.QPointF(pan)
+        if immediate:
+            self._scale = self._target_scale
+            self._pan = QtCore.QPointF(self._target_pan)
+            if self._view_anim_timer.isActive():
+                self._view_anim_timer.stop()
+            return
+        if not self._view_anim_timer.isActive():
+            self._view_anim_timer.start()
+
+    def _animate_view_step(self) -> None:
+        smoothing = 0.2
+        scale_delta = self._target_scale - self._scale
+        pan_delta = self._target_pan - self._pan
+        self._scale += scale_delta * smoothing
+        self._pan += pan_delta * smoothing
+        if (
+            abs(scale_delta) < 0.001
+            and abs(pan_delta.x()) < 0.1
+            and abs(pan_delta.y()) < 0.1
+        ):
+            self._scale = self._target_scale
+            self._pan = QtCore.QPointF(self._target_pan)
+            self._view_anim_timer.stop()
+        self.update()
 
     def _map_to_world(self, pos: QtCore.QPointF) -> QtCore.QPointF:
         transform = self._view_transform()
@@ -372,6 +418,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if not ok:
             return QtCore.QPointF()
         return inverted.map(pos)
+
+    def _snap_world_to_cell(self, world: QtCore.QPointF) -> QtCore.QPointF:
+        if self._board_rect.isEmpty():
+            return world
+        col = int(world.x() // self.cell_size)
+        row = int(world.y() // self.cell_size)
+        col = max(0, min(self._board_width - 1, col))
+        row = max(0, min(self._board_height - 1, row))
+        return QtCore.QPointF(
+            col * self.cell_size + self.cell_size / 2,
+            row * self.cell_size + self.cell_size / 2,
+        )
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
         if self._board_rect.isEmpty():
@@ -386,8 +444,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         new_scale = max(self._min_scale, min(self._max_scale, new_scale))
         if new_scale == self._scale:
             return
-        self._scale = new_scale
-        self._pan = cursor - world_before * self._scale
+        target_pan = cursor - world_before * new_scale
+        self._set_target_view(new_scale, target_pan)
         self.update()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
@@ -402,10 +460,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if self._dragging:
             delta = pos - self._drag_start
             self._drag_distance = max(self._drag_distance, abs(delta.x()) + abs(delta.y()))
-            self._pan += delta
+            self._set_target_view(pan=self._target_pan + delta)
             self._drag_start = pos
             self.update()
-        self._cursor_world = self._map_to_world(pos)
+        world = self._map_to_world(pos)
+        self._cursor_world = self._snap_world_to_cell(world)
         self.update()
         super().mouseMoveEvent(event)
 
