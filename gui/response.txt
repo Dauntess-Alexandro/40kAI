@@ -4013,3 +4013,7 @@ VP MODEL: 0, VP PLAYER: 0
 [ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
 --- ФАЗА ДВИЖЕНИЯ ---
 Бросок 1D6 на Advance...
+[MODEL] pickle=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-8-957504.pickle
+[MODEL] checkpoint=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-8-957504.pth
+[MODEL] pickle=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-8-957504.pickle
+[MODEL] checkpoint=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-8-957504.pth

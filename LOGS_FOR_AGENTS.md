@@ -37,3 +37,12 @@ VP MODEL: 0, VP PLAYER: 0
 2026-02-02 16:51:05 | Выбрано в таблице: row=1 -> unit_id=22
 2026-02-02 16:51:07 | Выбрано в таблице: row=2 -> unit_id=11
 2026-02-02 16:51:35 | Бросок 1D6 на Advance...
+2026-02-02 17:30:35 | [VIEWER] Рендер: OpenGL (QOpenGLWidget).
+2026-02-02 17:30:35 | [VIEWER] Фоллбэк-рендер не активирован.
+2026-02-02 17:30:35 | [MODEL] pickle=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-8-957504.pickle
+2026-02-02 17:30:35 | [MODEL] checkpoint=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-8-957504.pth
+2026-02-02 17:32:46 | Выбрано в таблице: row=3 -> unit_id=12
+2026-02-02 17:43:27 | [VIEWER] Рендер: OpenGL (QOpenGLWidget).
+2026-02-02 17:43:27 | [VIEWER] Фоллбэк-рендер не активирован.
+2026-02-02 17:43:27 | [MODEL] pickle=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-8-957504.pickle
+2026-02-02 17:43:27 | [MODEL] checkpoint=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-8-957504.pth
