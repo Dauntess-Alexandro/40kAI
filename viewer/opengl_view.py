@@ -276,6 +276,53 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._grid_picture = picture
         self._grid_size = (width, height)
 
+    def _draw_grid(self, painter: QtGui.QPainter) -> None:
+        if self._board_rect.isEmpty() or self._scale <= 0:
+            return
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+        pen = Theme.pen(Theme.grid, 1.0)
+        pen.setCosmetic(True)
+        painter.setPen(pen)
+
+        pan_x, pan_y = self._snap_pan_to_pixels(self._pan)
+        scale = self._scale
+        cell = float(self.cell_size)
+        width = self.width()
+        height = self.height()
+        left_world = (-pan_x) / scale
+        right_world = (width - pan_x) / scale
+        top_world = (-pan_y) / scale
+        bottom_world = (height - pan_y) / scale
+
+        min_col = max(0, int(left_world // cell))
+        max_col = min(self._board_width, int(right_world // cell) + 1)
+        min_row = max(0, int(top_world // cell))
+        max_row = min(self._board_height, int(bottom_world // cell) + 1)
+
+        ratio = self.devicePixelRatioF() or 1.0
+        pixel = 1.0 / ratio
+
+        for col in range(min_col, max_col + 1):
+            world_x = col * cell
+            screen_x = pan_x + world_x * scale
+            screen_x = round(screen_x / pixel) * pixel
+            painter.drawLine(
+                QtCore.QPointF(screen_x, 0.0),
+                QtCore.QPointF(screen_x, height),
+            )
+
+        for row in range(min_row, max_row + 1):
+            world_y = row * cell
+            screen_y = pan_y + world_y * scale
+            screen_y = round(screen_y / pixel) * pixel
+            painter.drawLine(
+                QtCore.QPointF(0.0, screen_y),
+                QtCore.QPointF(width, screen_y),
+            )
+
+        painter.restore()
+
     def _state_unit(self, unit_key: Tuple[str, int]) -> Optional[dict]:
         units = self._state.get("units", []) or []
         for unit in units:
@@ -529,13 +576,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter.end()
             return
 
-        painter.setTransform(self._view_transform())
+        self._draw_grid(painter)
 
-        if self._grid_picture is not None:
-            painter.save()
-            painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
-            painter.drawPicture(0, 0, self._grid_picture)
-            painter.restore()
+        painter.setTransform(self._view_transform())
 
         if self._move_highlights:
             highlight = QtGui.QColor(Theme.selection)
