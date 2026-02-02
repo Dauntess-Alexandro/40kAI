@@ -79,16 +79,57 @@ text = "Model CP: —"
 [node name="UnitsTitle" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup"]
 text = "ОТРЯДЫ"
 
-[node name="UnitsTablePlaceholder" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup"]
-text = "Таблица юнитов (будет реализована на следующем шаге)."
+[node name="UnitsTable" type="GridContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup"]
+columns = 5
+
+[node name="UnitsHeaderId" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsTable"]
+text = "ID"
+
+[node name="UnitsHeaderSide" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsTable"]
+text = "Сторона"
+
+[node name="UnitsHeaderHP" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsTable"]
+text = "HP"
+
+[node name="UnitsHeaderModels" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsTable"]
+text = "Модели"
+
+[node name="UnitsHeaderCoord" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsTable"]
+text = "Коорд."
 
 [node name="LegendGroup" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
 
 [node name="LegendTitle" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup"]
 text = "ЛЕГЕНДА"
 
-[node name="LegendPlaceholder" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup"]
-text = "Легенда цветов (будет реализована на следующем шаге)."
+[node name="LegendList" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup"]
+
+[node name="LegendPlayer" type="HBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendList"]
+
+[node name="LegendPlayerSwatch" type="ColorRect" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendList/LegendPlayer"]
+custom_minimum_size = Vector2(14, 14)
+color = Color(0.26, 0.72, 1, 1)
+
+[node name="LegendPlayerLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendList/LegendPlayer"]
+text = "Игрок"
+
+[node name="LegendModel" type="HBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendList"]
+
+[node name="LegendModelSwatch" type="ColorRect" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendList/LegendModel"]
+custom_minimum_size = Vector2(14, 14)
+color = Color(0.96, 0.4, 0.4, 1)
+
+[node name="LegendModelLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendList/LegendModel"]
+text = "Модель"
+
+[node name="LegendObjective" type="HBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendList"]
+
+[node name="LegendObjectiveSwatch" type="ColorRect" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendList/LegendObjective"]
+custom_minimum_size = Vector2(14, 14)
+color = Color(0.95, 0.85, 0.45, 1)
+
+[node name="LegendObjectiveLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendList/LegendObjective"]
+text = "Цель"
 
 [node name="CommandsGroup" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
 
@@ -99,10 +140,16 @@ text = "КОМАНДЫ"
 text = "Ожидаю команду..."
 
 [node name="CommandHint" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup"]
-text = "Горячие клавиши: —"
+text = "Горячие клавиши: Enter — отправить, Ctrl+L — очистить"
 
-[node name="CommandPlaceholder" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup"]
-text = "Панель ввода команд (будет реализована на следующем шаге)."
+[node name="CommandInputRow" type="HBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup"]
+
+[node name="CommandInput" type="LineEdit" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandInputRow"]
+size_flags_horizontal = 3
+placeholder_text = "Введите команду..."
+
+[node name="CommandSend" type="Button" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandInputRow"]
+text = "Отправить"
 
 [node name="LogGroup" type="VBoxContainer" parent="MainSplit"]
 custom_minimum_size = Vector2(0, 220)
