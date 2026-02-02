@@ -100,6 +100,8 @@ func _ready() -> void:
 
 func _notification(what: int) -> void:
     if what == NOTIFICATION_RESIZED:
+        if not is_node_ready() or main_split == null:
+            return
         var new_scale := _calculate_ui_scale()
         if absf(new_scale - _ui_scale) >= 0.01:
             _ui_scale = new_scale
@@ -256,24 +258,41 @@ func _apply_font_size(control: Control, base_size: int) -> void:
     control.add_theme_font_size_override("font_size", _scaled_font_size(base_size))
 
 func _apply_ui_scale() -> void:
-    main_split.split_offset = int(round(BASE_SPLIT_OFFSET * _ui_scale))
-    top_split.split_offset = int(round(BASE_TOP_SPLIT_OFFSET * _ui_scale))
-    left_panel.custom_minimum_size = Vector2(BASE_LEFT_PANEL_WIDTH * _ui_scale, 0)
-    right_panel.custom_minimum_size = Vector2(BASE_RIGHT_PANEL_WIDTH * _ui_scale, 0)
-    map_view.custom_minimum_size = BASE_MAP_MIN_SIZE * _ui_scale
-    map_view.set_ui_scale(_ui_scale)
-    right_content.add_theme_constant_override("separation", int(round(BASE_RIGHT_CONTENT_SEPARATION * _ui_scale)))
-    status_content.add_theme_constant_override("separation", int(round(BASE_STATUS_SEPARATION * _ui_scale)))
-    points_content.add_theme_constant_override("separation", int(round(BASE_POINTS_SEPARATION * _ui_scale)))
-    units_content.add_theme_constant_override("separation", int(round(BASE_UNITS_SEPARATION * _ui_scale)))
-    legend_content.add_theme_constant_override("separation", int(round(BASE_LEGEND_SEPARATION * _ui_scale)))
-    legend_list.add_theme_constant_override("separation", int(round(BASE_LEGEND_LIST_SEPARATION * _ui_scale)))
-    commands_content.add_theme_constant_override("separation", int(round(BASE_COMMANDS_SEPARATION * _ui_scale)))
-    log_group.custom_minimum_size = Vector2(0, BASE_LOG_GROUP_HEIGHT * _ui_scale)
-    log_tabs_container.custom_minimum_size = Vector2(0, BASE_LOG_TABS_HEIGHT * _ui_scale)
-    legend_player_swatch.custom_minimum_size = Vector2(BASE_SWATCH_SIZE * _ui_scale, BASE_SWATCH_SIZE * _ui_scale)
-    legend_model_swatch.custom_minimum_size = Vector2(BASE_SWATCH_SIZE * _ui_scale, BASE_SWATCH_SIZE * _ui_scale)
-    legend_objective_swatch.custom_minimum_size = Vector2(BASE_SWATCH_SIZE * _ui_scale, BASE_SWATCH_SIZE * _ui_scale)
+    if main_split != null:
+        main_split.split_offset = int(round(BASE_SPLIT_OFFSET * _ui_scale))
+    if top_split != null:
+        top_split.split_offset = int(round(BASE_TOP_SPLIT_OFFSET * _ui_scale))
+    if left_panel != null:
+        left_panel.custom_minimum_size = Vector2(BASE_LEFT_PANEL_WIDTH * _ui_scale, 0)
+    if right_panel != null:
+        right_panel.custom_minimum_size = Vector2(BASE_RIGHT_PANEL_WIDTH * _ui_scale, 0)
+    if map_view != null:
+        map_view.custom_minimum_size = BASE_MAP_MIN_SIZE * _ui_scale
+        map_view.set_ui_scale(_ui_scale)
+    if right_content != null:
+        right_content.add_theme_constant_override("separation", int(round(BASE_RIGHT_CONTENT_SEPARATION * _ui_scale)))
+    if status_content != null:
+        status_content.add_theme_constant_override("separation", int(round(BASE_STATUS_SEPARATION * _ui_scale)))
+    if points_content != null:
+        points_content.add_theme_constant_override("separation", int(round(BASE_POINTS_SEPARATION * _ui_scale)))
+    if units_content != null:
+        units_content.add_theme_constant_override("separation", int(round(BASE_UNITS_SEPARATION * _ui_scale)))
+    if legend_content != null:
+        legend_content.add_theme_constant_override("separation", int(round(BASE_LEGEND_SEPARATION * _ui_scale)))
+    if legend_list != null:
+        legend_list.add_theme_constant_override("separation", int(round(BASE_LEGEND_LIST_SEPARATION * _ui_scale)))
+    if commands_content != null:
+        commands_content.add_theme_constant_override("separation", int(round(BASE_COMMANDS_SEPARATION * _ui_scale)))
+    if log_group != null:
+        log_group.custom_minimum_size = Vector2(0, BASE_LOG_GROUP_HEIGHT * _ui_scale)
+    if log_tabs_container != null:
+        log_tabs_container.custom_minimum_size = Vector2(0, BASE_LOG_TABS_HEIGHT * _ui_scale)
+    if legend_player_swatch != null:
+        legend_player_swatch.custom_minimum_size = Vector2(BASE_SWATCH_SIZE * _ui_scale, BASE_SWATCH_SIZE * _ui_scale)
+    if legend_model_swatch != null:
+        legend_model_swatch.custom_minimum_size = Vector2(BASE_SWATCH_SIZE * _ui_scale, BASE_SWATCH_SIZE * _ui_scale)
+    if legend_objective_swatch != null:
+        legend_objective_swatch.custom_minimum_size = Vector2(BASE_SWATCH_SIZE * _ui_scale, BASE_SWATCH_SIZE * _ui_scale)
 
     _apply_font_size(fit_button, 12)
     _apply_font_size(objective_radius_toggle, 12)
@@ -295,11 +314,12 @@ func _apply_ui_scale() -> void:
     _apply_font_size(command_input, 12)
     _apply_font_size(command_send, 12)
     _apply_font_size(log_title, 14)
-    log_tabs_container.add_theme_font_size_override("font_size", _scaled_font_size(12))
-    for idx in range(log_tabs_container.get_tab_count()):
-        var tab := log_tabs_container.get_tab_control(idx)
-        if tab is TextEdit:
-            tab.add_theme_font_size_override("font_size", _scaled_font_size(12))
+    if log_tabs_container != null:
+        log_tabs_container.add_theme_font_size_override("font_size", _scaled_font_size(12))
+        for idx in range(log_tabs_container.get_tab_count()):
+            var tab := log_tabs_container.get_tab_control(idx)
+            if tab is TextEdit:
+                tab.add_theme_font_size_override("font_size", _scaled_font_size(12))
 
     _units_column_widths.clear()
     for width in BASE_UNITS_COLUMN_WIDTHS:
