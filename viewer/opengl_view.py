@@ -12,7 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from viewer.styles import Theme
 
@@ -36,7 +37,7 @@ class ObjectiveRender:
     control_radius: float
 
 
-class OpenGLBoardWidget(QtWidgets.QOpenGLWidget):
+class OpenGLBoardWidget(QOpenGLWidget):
     unit_selected = QtCore.Signal(str, int)
 
     def __init__(self, cell_size: int = 18, parent: Optional[QtWidgets.QWidget] = None):
