@@ -1,83 +1,273 @@
-diff --git a/gui_qt/main.py b/gui_qt/main.py
-index 13cca569e58e056b9d8f3bc9656f76b9688778c9..0ddb284093c9a31b152d15b5a78642a24a0ad726 100644
---- a/gui_qt/main.py
-+++ b/gui_qt/main.py
-@@ -314,50 +314,64 @@ class GUIController(QtCore.QObject):
-     def stop_process(self) -> None:
-         if self._process is None:
-             self._emit_status("Нет активного процесса для остановки.")
-             return
-         self._emit_log("[GUI] Останавливаю процесс...", level="INFO")
-         self._process.terminate()
-         if not self._process.waitForFinished(3000):
-             self._emit_log("[GUI] Процесс не завершился, принудительное завершение.", level="WARN")
-             self._process.kill()
-         self._cleanup_process()
- 
-     @QtCore.Slot()
-     def clear_model_cache(self) -> None:
-         try:
-             self._clear_cache_files()
-             self._emit_status("Кэш моделей и LOGS_FOR_AGENTS.md очищены.")
-             self._emit_log("[GUI] Кэш моделей и LOGS_FOR_AGENTS.md очищены.")
-         except OSError as exc:
-             message = (
-                 "Не удалось очистить кэш (gui_qt/main.py): "
-                 "проверьте права доступа и повторите."
-             )
-             self._emit_status(message)
-             self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
- 
-+    @QtCore.Slot()
-+    def clear_agent_logs(self) -> None:
-+        try:
-+            self._truncate_agent_logs()
-+            self._emit_status("LOGS_FOR_AGENTS.md очищен.")
-+            self._emit_log("[GUI] LOGS_FOR_AGENTS.md очищен.")
-+        except OSError as exc:
-+            message = (
-+                "Не удалось очистить LOGS_FOR_AGENTS.md (gui_qt/main.py): "
-+                "проверьте путь и права доступа, затем повторите."
-+            )
-+            self._emit_status(message)
-+            self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
-+
-     @QtCore.Slot(str)
-     def select_metrics_file(self, file_url: str) -> None:
-         path = self._to_local_file(file_url)
-         if not path:
-             self._emit_status("Файл метрик не выбран.")
-             return
-         if not os.path.exists(path):
-             self._emit_status("Файл модели не найден. Проверьте путь.")
-             return
-         metrics_id = self._extract_metrics_id(path)
-         if not metrics_id:
-             self._emit_status("Не удалось определить ID метрик из имени файла.")
-             return
-         json_path = os.path.join(self._repo_root, "models", f"data_{metrics_id}.json")
-         if not os.path.exists(json_path):
-             self._emit_status("Файл метрик не найден в models/.")
-             self._emit_log(f"[GUI] metrics json не найден: {json_path}", level="WARN")
-             return
-         if not self._load_metrics_from_json(json_path):
-             return
-         self._metrics_label = f"Файл: {os.path.basename(path)}"
-         self.metricsLabelChanged.emit(self._metrics_label)
-         self._emit_status("Метрики обновлены.")
- 
-     @QtCore.Slot()
 diff --git a/gui_qt/qml/Main.qml b/gui_qt/qml/Main.qml
-index f903708172dced431dc759a34bd4eeb4b14fab60..62f3d53d6637e47b97ea6856ce18f1d02ea91ad6 100644
+index 62f3d53d6637e47b97ea6856ce18f1d02ea91ad6..6ec7961506d7276a0598bdde0c23fa3821567966 100644
 --- a/gui_qt/qml/Main.qml
 +++ b/gui_qt/qml/Main.qml
-@@ -217,50 +217,56 @@ ApplicationWindow {
+@@ -1,870 +1,887 @@
+ import QtQuick 2.15
+ import QtQuick.Controls 2.15
+ import QtQuick.Layouts 1.15
++import QtQuick.Window 2.15
+ import Qt.labs.platform 1.1 as Platform
+ 
+ ApplicationWindow {
+     id: root
+-    width: 1200
+-    height: 780
++    width: Math.round(Screen.width * 0.85)
++    height: Math.round(Screen.height * 0.85)
+     visible: true
+     title: "40kAI — второй GUI (Qt)"
+ 
+     property string statusText: "Готово к запуску."
++    property real uiScale: Math.max(1.0, Math.min(Screen.width / 1920, Screen.height / 1080))
++    property int spacingXs: Math.round(6 * uiScale)
++    property int spacingSm: Math.round(8 * uiScale)
++    property int spacingMd: Math.round(12 * uiScale)
++    property int spacingLg: Math.round(16 * uiScale)
++    property int spacingXl: Math.round(20 * uiScale)
++    property int inputWidthSm: Math.round(80 * uiScale)
++    property int inputWidthMd: Math.round(100 * uiScale)
++    property int listHeightSm: Math.round(180 * uiScale)
++    property int dialogWidthSm: Math.round(420 * uiScale)
++    property int dialogWidthLg: Math.round(720 * uiScale)
++    property int dialogWidthXl: Math.round(900 * uiScale)
++    property int dialogHeightMd: Math.round(520 * uiScale)
++    property int dialogHeightLg: Math.round(500 * uiScale)
++
++    font.pixelSize: Math.round(14 * uiScale)
+ 
+     ColumnLayout {
+         anchors.fill: parent
+         spacing: 0
+ 
+         TabBar {
+             id: mainTabs
+             Layout.fillWidth: true
+ 
+             TabButton { text: "Train" }
+             TabButton { text: "Model Metrics" }
+             TabButton { text: "Play" }
+             TabButton { text: "Settings" }
+             TabButton { text: "Оценка" }
+         }
+ 
+         StackLayout {
+             id: mainStack
+             currentIndex: mainTabs.currentIndex
+             Layout.fillWidth: true
+             Layout.fillHeight: true
+ 
+             Item {
+                 Layout.fillWidth: true
+                 Layout.fillHeight: true
+ 
+                 Item {
+                     anchors.fill: parent
+-                    anchors.margins: 16
++                    anchors.margins: root.spacingLg
+ 
+                     ColumnLayout {
+                         anchors.fill: parent
+-                        spacing: 12
++                        spacing: root.spacingMd
+ 
+                     Text {
+                         text: "Train Model:"
+-                        font.pixelSize: 20
++                        font.pixelSize: Math.round(20 * root.uiScale)
+                         font.bold: true
+                     }
+ 
+                     GridLayout {
+                         columns: 2
+-                        columnSpacing: 16
+-                        rowSpacing: 12
++                        columnSpacing: root.spacingLg
++                        rowSpacing: root.spacingMd
+                         Layout.fillWidth: true
+ 
+                         ColumnLayout {
+-                            spacing: 10
++                            spacing: root.spacingSm
+                             Layout.fillWidth: true
+ 
+                             GroupBox {
+                                 title: "Настройки"
+                                 Layout.fillWidth: true
+ 
+                                 ColumnLayout {
+-                                    spacing: 8
++                                    spacing: root.spacingSm
+                                     anchors.fill: parent
+ 
+                                     RowLayout {
+-                                        spacing: 8
++                                        spacing: root.spacingSm
+                                         Label { text: "# of Games in Training:" }
+                                         TextField {
+                                             id: numGamesField
+                                             text: controller.numGames.toString()
+                                             validator: IntValidator { bottom: 1 }
+-                                            Layout.preferredWidth: 100
++                                            Layout.preferredWidth: root.inputWidthMd
+                                             onEditingFinished: {
+                                                 var value = parseInt(text)
+                                                 if (!isNaN(value)) {
+                                                     controller.set_num_games(value)
+                                                 }
+                                             }
+                                         }
+                                     }
+ 
+                                     RowLayout {
+-                                        spacing: 8
++                                        spacing: root.spacingSm
+                                         Label { text: "Model Faction:" }
+                                         RadioButton { text: "Necrons"; checked: true }
+                                     }
+ 
+                                     RowLayout {
+-                                        spacing: 8
++                                        spacing: root.spacingSm
+                                         Label { text: "Player Faction:" }
+                                         RadioButton { text: "Necrons"; checked: true }
+                                     }
+                                 }
+                             }
+ 
+                             GroupBox {
+                                 title: "Размеры поля"
+                                 Layout.fillWidth: true
+ 
+                                 ColumnLayout {
+-                                    spacing: 8
++                                    spacing: root.spacingSm
+                                     anchors.fill: parent
+ 
+                                     RowLayout {
+-                                        spacing: 6
++                                        spacing: root.spacingXs
+                                         Label { text: "X:" }
+                                         TextField {
+                                             id: boardXField
+                                             text: controller.boardX.toString()
+                                             validator: IntValidator { bottom: 1 }
+-                                            Layout.preferredWidth: 80
++                                            Layout.preferredWidth: root.inputWidthSm
+                                             onEditingFinished: {
+                                                 var value = parseInt(text)
+                                                 if (!isNaN(value)) {
+                                                     controller.set_board_x(value)
+                                                 }
+                                             }
+                                         }
+                                         Button { text: "+"; onClicked: controller.increment_board_x() }
+                                         Button { text: "-"; onClicked: controller.decrement_board_x() }
+                                     }
+ 
+                                     RowLayout {
+-                                        spacing: 6
++                                        spacing: root.spacingXs
+                                         Label { text: "Y:" }
+                                         TextField {
+                                             id: boardYField
+                                             text: controller.boardY.toString()
+                                             validator: IntValidator { bottom: 1 }
+-                                            Layout.preferredWidth: 80
++                                            Layout.preferredWidth: root.inputWidthSm
+                                             onEditingFinished: {
+                                                 var value = parseInt(text)
+                                                 if (!isNaN(value)) {
+                                                     controller.set_board_y(value)
+                                                 }
+                                             }
+                                         }
+                                         Button { text: "+"; onClicked: controller.increment_board_y() }
+                                         Button { text: "-"; onClicked: controller.decrement_board_y() }
+                                     }
+                                 }
+                             }
+                         }
+ 
+                         ColumnLayout {
+-                            spacing: 10
++                            spacing: root.spacingSm
+                             Layout.fillWidth: true
+ 
+                             GroupBox {
+                                 title: "Ростер"
+                                 Layout.fillWidth: true
+ 
+                                 ColumnLayout {
+-                                    spacing: 8
++                                    spacing: root.spacingSm
+                                     anchors.fill: parent
+ 
+                                     Label {
+                                         text: controller.rosterSummary
+                                         font.bold: true
+                                     }
+ 
+                                     Label {
+                                         text: "Доступные юниты (Necrons)"
+                                     }
+ 
+                                     ListView {
+                                         id: availableUnitsInline
+                                         Layout.fillWidth: true
+-                                        Layout.preferredHeight: 180
++                                        Layout.preferredHeight: root.listHeightSm
+                                         model: controller.availableUnitsModel
+                                         clip: true
+                                         delegate: Rectangle {
+                                             width: ListView.view ? ListView.view.width : 0
+-                                            height: unitNameInline.implicitHeight + 10
++                                            height: unitNameInline.implicitHeight + root.spacingSm
+                                             color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
+ 
+                                             Text {
+                                                 id: unitNameInline
+                                                 text: model.display
+                                                 color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
+                                                 elide: Text.ElideRight
+                                                 anchors.verticalCenter: parent.verticalCenter
+                                                 anchors.left: parent.left
+-                                                anchors.leftMargin: 8
++                                                anchors.leftMargin: root.spacingSm
+                                             }
+                                         }
+                                     }
+ 
+                                     RowLayout {
+-                                        spacing: 8
++                                        spacing: root.spacingSm
+                                         Button {
+                                             text: "Добавить в игрока"
+                                             onClicked: controller.add_unit_to_player(availableUnitsInline.currentIndex)
+                                         }
+                                         Button {
+                                             text: "Добавить в модель"
+                                             onClicked: controller.add_unit_to_model(availableUnitsInline.currentIndex)
+                                         }
+                                     }
+ 
+                                     Button {
+                                         text: "Army Viewer"
+                                         onClicked: armyViewerDialog.open()
+                                     }
+                                 }
+                             }
+ 
+                             GroupBox {
+                                 title: "Действия"
                                  Layout.fillWidth: true
  
                                  GridLayout {
                                      columns: 2
-                                     columnSpacing: 8
-                                     rowSpacing: 8
+-                                    columnSpacing: 8
+-                                    rowSpacing: 8
++                                    columnSpacing: root.spacingSm
++                                    rowSpacing: root.spacingSm
                                      anchors.fill: parent
  
                                      Button {
@@ -97,12 +287,12 @@ index f903708172dced431dc759a34bd4eeb4b14fab60..62f3d53d6637e47b97ea6856ce18f1d0
                                          enabled: !controller.running
                                          onClicked: clearCacheDialog.open()
                                      }
-+
-+                                    Button {
-+                                        text: "Очистить логи"
-+                                        enabled: !controller.running
-+                                        onClicked: controller.clear_agent_logs()
-+                                    }
+ 
+                                     Button {
+                                         text: "Очистить логи"
+                                         enabled: !controller.running
+                                         onClicked: controller.clear_agent_logs()
+                                     }
                                  }
                              }
                          }
@@ -118,7 +308,8 @@ index f903708172dced431dc759a34bd4eeb4b14fab60..62f3d53d6637e47b97ea6856ce18f1d0
  
                      Item {
                          Layout.fillWidth: true
-                         height: 24
+-                        height: 24
++                        height: Math.round(24 * root.uiScale)
  
                          ProgressBar {
                              id: trainingProgress
@@ -128,3 +319,639 @@ index f903708172dced431dc759a34bd4eeb4b14fab60..62f3d53d6637e47b97ea6856ce18f1d0
  
                          Text {
                              anchors.centerIn: parent
+                             text: controller.progressText
+                             color: "#ffffff"
+                         }
+                     }
+ 
+                     Label {
+                         text: controller.progressStats
+                     }
+ 
+                     GroupBox {
+                         title: "Логи"
+                         Layout.fillWidth: true
+                         Layout.fillHeight: true
+ 
+                         ScrollView {
+                             anchors.fill: parent
+ 
+                             TextArea {
+                                 id: logArea
+                                 readOnly: true
+                                 wrapMode: TextArea.Wrap
+                                 text: ""
+                             }
+                         }
+                     }
+                     }
+                 }
+             }
+ 
+             Item {
+                 Layout.fillWidth: true
+                 Layout.fillHeight: true
+ 
+                 ColumnLayout {
+                     anchors.fill: parent
+-                    anchors.margins: 16
+-                    spacing: 12
++                    anchors.margins: root.spacingLg
++                    spacing: root.spacingMd
+ 
+                     Text {
+                         text: "Model Metrics"
+-                        font.pixelSize: 20
++                        font.pixelSize: Math.round(20 * root.uiScale)
+                         font.bold: true
+                     }
+ 
+                     RowLayout {
+-                        spacing: 12
++                        spacing: root.spacingMd
+                         Layout.fillWidth: true
+ 
+                         Button {
+                             text: "Выбрать модель"
+                             onClicked: metricsFileDialog.open()
+                         }
+ 
+                         Label {
+                             text: controller.metricsLabel
+                             Layout.fillWidth: true
+                             elide: Label.ElideRight
+                         }
+                     }
+ 
+                     GridLayout {
+                         columns: 2
+-                        columnSpacing: 12
+-                        rowSpacing: 12
++                        columnSpacing: root.spacingMd
++                        rowSpacing: root.spacingMd
+                         Layout.fillWidth: true
+                         Layout.fillHeight: true
+ 
+                         GroupBox {
+                             title: "Награда за эпизод"
+                             Layout.fillWidth: true
+                             Layout.fillHeight: true
+ 
+                             ColumnLayout {
+                                 anchors.fill: parent
+-                                spacing: 6
++                                spacing: root.spacingXs
+ 
+                                 Item {
+                                     Layout.fillWidth: true
+                                     Layout.fillHeight: true
+ 
+                                     Image {
+                                         id: rewardChart
+                                         anchors.fill: parent
+                                         source: controller.metricsRewardPath
+                                         fillMode: Image.PreserveAspectFit
+                                         smooth: true
+                                     }
+ 
+                                     Text {
+                                         anchors.centerIn: parent
+                                         text: "Нет данных по наградам."
+                                         color: "#777777"
+                                         visible: rewardChart.status !== Image.Ready
+                                     }
+                                 }
+ 
+                                 Label {
+                                     text: "Средняя награда по ходу обучения."
+                                     wrapMode: Text.WordWrap
+                                 }
+                             }
+                         }
+ 
+                         GroupBox {
+                             title: "Потери (loss)"
+                             Layout.fillWidth: true
+                             Layout.fillHeight: true
+ 
+                             ColumnLayout {
+                                 anchors.fill: parent
+-                                spacing: 6
++                                spacing: root.spacingXs
+ 
+                                 Item {
+                                     Layout.fillWidth: true
+                                     Layout.fillHeight: true
+ 
+                                     Image {
+                                         id: lossChart
+                                         anchors.fill: parent
+                                         source: controller.metricsLossPath
+                                         fillMode: Image.PreserveAspectFit
+                                         smooth: true
+                                     }
+ 
+                                     Text {
+                                         anchors.centerIn: parent
+                                         text: "Нет данных по loss."
+                                         color: "#777777"
+                                         visible: lossChart.status !== Image.Ready
+                                     }
+                                 }
+ 
+                                 Label {
+                                     text: "Динамика функции потерь."
+                                     wrapMode: Text.WordWrap
+                                 }
+                             }
+                         }
+ 
+                         GroupBox {
+                             title: "Длина эпизода"
+                             Layout.fillWidth: true
+                             Layout.fillHeight: true
+ 
+                             ColumnLayout {
+                                 anchors.fill: parent
+-                                spacing: 6
++                                spacing: root.spacingXs
+ 
+                                 Item {
+                                     Layout.fillWidth: true
+                                     Layout.fillHeight: true
+ 
+                                     Image {
+                                         id: epLenChart
+                                         anchors.fill: parent
+                                         source: controller.metricsEpLenPath
+                                         fillMode: Image.PreserveAspectFit
+                                         smooth: true
+                                     }
+ 
+                                     Text {
+                                         anchors.centerIn: parent
+                                         text: "Нет данных по длине эпизода."
+                                         color: "#777777"
+                                         visible: epLenChart.status !== Image.Ready
+                                     }
+                                 }
+ 
+                                 Label {
+                                     text: "Сколько ходов длится партия."
+                                     wrapMode: Text.WordWrap
+                                 }
+                             }
+                         }
+ 
+                         GroupBox {
+                             title: "Winrate"
+                             Layout.fillWidth: true
+                             Layout.fillHeight: true
+ 
+                             ColumnLayout {
+                                 anchors.fill: parent
+-                                spacing: 6
++                                spacing: root.spacingXs
+ 
+                                 Item {
+                                     Layout.fillWidth: true
+                                     Layout.fillHeight: true
+ 
+                                     Image {
+                                         id: winrateChart
+                                         anchors.fill: parent
+                                         source: controller.metricsWinratePath
+                                         fillMode: Image.PreserveAspectFit
+                                         smooth: true
+                                     }
+ 
+                                     Text {
+                                         anchors.centerIn: parent
+                                         text: "Нет данных по winrate."
+                                         color: "#777777"
+                                         visible: winrateChart.status !== Image.Ready
+                                     }
+                                 }
+ 
+                                 Label {
+                                     text: "Доля побед модели по играм."
+                                     wrapMode: Text.WordWrap
+                                 }
+                             }
+                         }
+ 
+                         GroupBox {
+                             title: "Разница VP"
+                             Layout.fillWidth: true
+                             Layout.fillHeight: true
+ 
+                             ColumnLayout {
+                                 anchors.fill: parent
+-                                spacing: 6
++                                spacing: root.spacingXs
+ 
+                                 Item {
+                                     Layout.fillWidth: true
+                                     Layout.fillHeight: true
+ 
+                                     Image {
+                                         id: vpDiffChart
+                                         anchors.fill: parent
+                                         source: controller.metricsVpDiffPath
+                                         fillMode: Image.PreserveAspectFit
+                                         smooth: true
+                                     }
+ 
+                                     Text {
+                                         anchors.centerIn: parent
+                                         text: "Нет данных по VP."
+                                         color: "#777777"
+                                         visible: vpDiffChart.status !== Image.Ready
+                                     }
+                                 }
+ 
+                                 Label {
+                                     text: "Разница очков победы между сторонами."
+                                     wrapMode: Text.WordWrap
+                                 }
+                             }
+                         }
+ 
+                         GroupBox {
+                             title: "Причины завершения"
+                             Layout.fillWidth: true
+                             Layout.fillHeight: true
+ 
+                             ColumnLayout {
+                                 anchors.fill: parent
+-                                spacing: 6
++                                spacing: root.spacingXs
+ 
+                                 Item {
+                                     Layout.fillWidth: true
+                                     Layout.fillHeight: true
+ 
+                                     Image {
+                                         id: endReasonChart
+                                         anchors.fill: parent
+                                         source: controller.metricsEndReasonPath
+                                         fillMode: Image.PreserveAspectFit
+                                         smooth: true
+                                     }
+ 
+                                     Text {
+                                         anchors.centerIn: parent
+                                         text: "Нет данных по причинам завершения."
+                                         color: "#777777"
+                                         visible: endReasonChart.status !== Image.Ready
+                                     }
+                                 }
+ 
+                                 Label {
+                                     text: "Почему эпизоды завершались."
+                                     wrapMode: Text.WordWrap
+                                 }
+                             }
+                         }
+                     }
+                 }
+             }
+ 
+             Item {
+                 Layout.fillWidth: true
+                 Layout.fillHeight: true
+                 Item {
+                     anchors.fill: parent
+-                    anchors.margins: 16
++                    anchors.margins: root.spacingLg
+ 
+                     ColumnLayout {
+                         anchors.fill: parent
+-                        spacing: 16
++                        spacing: root.spacingLg
+ 
+                         Text {
+                             text: "Играть против модели"
+-                            font.pixelSize: 20
++                            font.pixelSize: Math.round(20 * root.uiScale)
+                             font.bold: true
+                         }
+ 
+                         GroupBox {
+                             title: "Модель"
+                             Layout.fillWidth: true
+ 
+                             ColumnLayout {
+-                                spacing: 10
++                                spacing: root.spacingSm
+                                 anchors.fill: parent
+ 
+                                 RowLayout {
+-                                    spacing: 8
++                                    spacing: root.spacingSm
+                                     Label { text: "Выбрать модель:" }
+                                     Button {
+                                         text: "Выбрать"
+                                         onClicked: playModelDialog.open()
+                                     }
+                                     Button {
+                                         text: "Последняя"
+                                         onClicked: controller.select_latest_play_model()
+                                     }
+                                 }
+ 
+                                 Label {
+                                     text: controller.playModelLabel
+                                     wrapMode: Text.WordWrap
+                                 }
+                             }
+                         }
+ 
+                         GroupBox {
+                             title: "Запуск"
+                             Layout.fillWidth: true
+ 
+                             RowLayout {
+-                                spacing: 12
++                                spacing: root.spacingMd
+                                 anchors.fill: parent
+ 
+                                 Button {
+                                     text: "Играть в терминале"
+                                     onClicked: controller.play_in_terminal()
+                                 }
+                                 Button {
+                                     text: "Играть в GUI"
+                                     onClicked: controller.play_in_gui()
+                                 }
+                                 Button {
+                                     text: "Показать ASCII карту"
+                                     onClicked: asciiBoardDialog.open()
+                                 }
+                             }
+                         }
+                     }
+                 }
+             }
+ 
+             Item {
+                 Layout.fillWidth: true
+                 Layout.fillHeight: true
+                 Label {
+                     anchors.centerIn: parent
+                     text: "Скоро"
+                 }
+             }
+ 
+             Item {
+                 Layout.fillWidth: true
+                 Layout.fillHeight: true
+                 Label {
+                     anchors.centerIn: parent
+                     text: "Скоро"
+                 }
+             }
+         }
+     }
+ 
+     Dialog {
+         id: clearCacheDialog
+         title: "Очистка кэша"
+         modal: true
+         standardButtons: Dialog.Ok | Dialog.Cancel
+-        implicitWidth: 420
++        implicitWidth: root.dialogWidthSm
+         onAccepted: controller.clear_model_cache()
+ 
+         contentItem: Text {
+             text: "Вы действительно хотите удалить все сохранённые модели и метрики?"
+             wrapMode: Text.WordWrap
+         }
+     }
+ 
+     Platform.FileDialog {
+         id: playModelDialog
+         title: "Выбрать модель"
+         folder: controller.modelsFolderUrl
+         nameFilters: ["Pickle Files (*.pickle)", "All Files (*)"]
+         onAccepted: controller.select_play_model(playModelDialog.fileUrl)
+     }
+ 
+     Dialog {
+         id: asciiBoardDialog
+         title: "ASCII карта"
+         modal: true
+         standardButtons: Dialog.Close
+-        width: 720
+-        height: 520
++        width: root.dialogWidthLg
++        height: root.dialogHeightMd
+         onOpened: controller.refresh_board_text()
+ 
+         ColumnLayout {
+             anchors.fill: parent
+-            spacing: 8
++            spacing: root.spacingSm
+ 
+             TextArea {
+                 text: controller.boardText
+                 readOnly: true
+                 wrapMode: TextEdit.NoWrap
+                 font.family: "monospace"
+                 Layout.fillWidth: true
+                 Layout.fillHeight: true
+             }
+         }
+ 
+         Timer {
+             interval: 1000
+             repeat: true
+             running: asciiBoardDialog.visible
+             onTriggered: controller.refresh_board_text()
+         }
+     }
+ 
+     Dialog {
+         id: armyViewerDialog
+         title: "Army Viewer"
+         modal: true
+         standardButtons: Dialog.Close
+-        width: 900
+-        height: 500
++        width: root.dialogWidthXl
++        height: root.dialogHeightLg
+ 
+         ColumnLayout {
+             anchors.fill: parent
+-            spacing: 12
++            spacing: root.spacingMd
+ 
+             RowLayout {
+-                spacing: 12
++                spacing: root.spacingMd
+                 Layout.fillWidth: true
+                 Layout.fillHeight: true
+ 
+                 GroupBox {
+                     title: "Доступные юниты (Necrons)"
+                     Layout.fillWidth: true
+                     Layout.fillHeight: true
+ 
+                     ColumnLayout {
+                         anchors.fill: parent
+-                        spacing: 8
++                        spacing: root.spacingSm
+ 
+                         ListView {
+                             id: availableUnitsView
+                             Layout.fillWidth: true
+                             Layout.fillHeight: true
+                             model: controller.availableUnitsModel
+                             clip: true
+                             delegate: Rectangle {
+                                 width: ListView.view ? ListView.view.width : 0
+-                                height: unitNameAvailable.implicitHeight + 10
++                                height: unitNameAvailable.implicitHeight + root.spacingSm
+                                 color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
+ 
+                                 Text {
+                                     id: unitNameAvailable
+                                     text: model.display
+                                     color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
+                                     elide: Text.ElideRight
+                                     anchors.verticalCenter: parent.verticalCenter
+                                     anchors.left: parent.left
+-                                    anchors.leftMargin: 8
++                                    anchors.leftMargin: root.spacingSm
+                                 }
+                             }
+                         }
+ 
+                         RowLayout {
+-                            spacing: 8
++                            spacing: root.spacingSm
+                             Button {
+                                 text: "Добавить в игрока"
+                                 onClicked: controller.add_unit_to_player(availableUnitsView.currentIndex)
+                             }
+                             Button {
+                                 text: "Добавить в модель"
+                                 onClicked: controller.add_unit_to_model(availableUnitsView.currentIndex)
+                             }
+                         }
+                     }
+                 }
+ 
+                 GroupBox {
+                     title: "Ростер игрока"
+                     Layout.fillWidth: true
+                     Layout.fillHeight: true
+ 
+                     ColumnLayout {
+                         anchors.fill: parent
+-                        spacing: 8
++                        spacing: root.spacingSm
+ 
+                         ListView {
+                             id: playerRosterView
+                             Layout.fillWidth: true
+                             Layout.fillHeight: true
+                             model: controller.playerRosterModel
+                             clip: true
+                             delegate: Rectangle {
+                                 width: ListView.view ? ListView.view.width : 0
+-                                height: unitNamePlayer.implicitHeight + 10
++                                height: unitNamePlayer.implicitHeight + root.spacingSm
+                                 color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
+ 
+                                 Text {
+                                     id: unitNamePlayer
+                                     text: model.display
+                                     color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
+                                     elide: Text.ElideRight
+                                     anchors.verticalCenter: parent.verticalCenter
+                                     anchors.left: parent.left
+-                                    anchors.leftMargin: 8
++                                    anchors.leftMargin: root.spacingSm
+                                 }
+                             }
+                         }
+ 
+                         RowLayout {
+-                            spacing: 8
++                            spacing: root.spacingSm
+                             Button {
+                                 text: "Удалить"
+                                 onClicked: controller.remove_player_unit(playerRosterView.currentIndex)
+                             }
+                             Button {
+                                 text: "Очистить"
+                                 onClicked: controller.clear_player_roster()
+                             }
+                         }
+                     }
+                 }
+ 
+                 GroupBox {
+                     title: "Ростер модели"
+                     Layout.fillWidth: true
+                     Layout.fillHeight: true
+ 
+                     ColumnLayout {
+                         anchors.fill: parent
+-                        spacing: 8
++                        spacing: root.spacingSm
+ 
+                         ListView {
+                             id: modelRosterView
+                             Layout.fillWidth: true
+                             Layout.fillHeight: true
+                             model: controller.modelRosterModel
+                             clip: true
+                             delegate: Rectangle {
+                                 width: ListView.view ? ListView.view.width : 0
+-                                height: unitNameModel.implicitHeight + 10
++                                height: unitNameModel.implicitHeight + root.spacingSm
+                                 color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
+ 
+                                 Text {
+                                     id: unitNameModel
+                                     text: model.display
+                                     color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
+                                     elide: Text.ElideRight
+                                     anchors.verticalCenter: parent.verticalCenter
+                                     anchors.left: parent.left
+-                                    anchors.leftMargin: 8
++                                    anchors.leftMargin: root.spacingSm
+                                 }
+                             }
+                         }
+ 
+                         RowLayout {
+-                            spacing: 8
++                            spacing: root.spacingSm
+                             Button {
+                                 text: "Удалить"
+                                 onClicked: controller.remove_model_unit(modelRosterView.currentIndex)
+                             }
+                             Button {
+                                 text: "Очистить"
+                                 onClicked: controller.clear_model_roster()
+                             }
+                         }
+                     }
+                 }
+             }
+         }
+     }
+ 
+     Connections {
+         target: controller
+         function onLogLine(message) {
+             logArea.text += message + "\n"
+             logArea.cursorPosition = logArea.length
+         }
+         function onStatusChanged(message) {
+             root.statusText = message
+         }
+         function onNumGamesChanged(value) {
