@@ -3,23 +3,24 @@ extends Control
 const TAB_NAMES := ["Все", "Ход", "Стрельба", "Ближний бой", "Кубы", "Ошибки"]
 const UNITS_COLUMNS := 5
 const UNITS_COLUMN_WIDTHS := [40, 90, 50, 60, 90]
+const UNITS_FONT_SIZE := 12
 const DEFAULT_COMMAND_PATH := "user://command.txt"
 
-@onready var round_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/RoundLabel
-@onready var turn_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/TurnLabel
-@onready var phase_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/PhaseLabel
-@onready var active_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/ActiveLabel
-@onready var player_vp_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/PlayerVPLabel
-@onready var model_vp_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/ModelVPLabel
-@onready var player_cp_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/PlayerCPLabel
-@onready var model_cp_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/ModelCPLabel
+@onready var round_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/StatusContent/RoundLabel
+@onready var turn_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/StatusContent/TurnLabel
+@onready var phase_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/StatusContent/PhaseLabel
+@onready var active_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/StatusContent/ActiveLabel
+@onready var player_vp_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/PointsContent/PlayerVPLabel
+@onready var model_vp_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/PointsContent/ModelVPLabel
+@onready var player_cp_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/PointsContent/PlayerCPLabel
+@onready var model_cp_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/PointsContent/ModelCPLabel
 @onready var log_tabs: TabContainer = $MainSplit/LogGroup/LogTabs
 @onready var map_view: MapView = $MainSplit/TopSplit/LeftPanel/MapView
 @onready var objective_radius_toggle: CheckBox = $MainSplit/TopSplit/LeftPanel/ObjectiveRadiusToggle
-@onready var units_table: GridContainer = $MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsTable
-@onready var command_prompt: Label = $MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandPrompt
-@onready var command_input: LineEdit = $MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandInputRow/CommandInput
-@onready var command_send: Button = $MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandInputRow/CommandSend
+@onready var units_table: GridContainer = $MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent/UnitsTable
+@onready var command_prompt: Label = $MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandPrompt
+@onready var command_input: LineEdit = $MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandInputRow/CommandInput
+@onready var command_send: Button = $MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandInputRow/CommandSend
 
 var _state_reader: StateReader
 var _command_path := DEFAULT_COMMAND_PATH
@@ -53,6 +54,7 @@ func _configure_units_headers() -> void:
             if idx >= 0 and idx < UNITS_COLUMN_WIDTHS.size():
                 header.custom_minimum_size = Vector2(UNITS_COLUMN_WIDTHS[idx], 0)
             header.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+            header.add_theme_font_size_override("font_size", UNITS_FONT_SIZE)
 
 func _apply_state(state: Dictionary) -> void:
     round_label.text = "Раунд: %s" % _to_text(state.get("round", "—"))
@@ -158,6 +160,7 @@ func _add_units_cell(text: String, column_index: int, alignment: HorizontalAlign
     if column_index >= 0 and column_index < UNITS_COLUMN_WIDTHS.size():
         label.custom_minimum_size = Vector2(UNITS_COLUMN_WIDTHS[column_index], 0)
     label.horizontal_alignment = alignment
+    label.add_theme_font_size_override("font_size", UNITS_FONT_SIZE)
     units_table.add_child(label)
 
 func _write_command(command: String) -> bool:
