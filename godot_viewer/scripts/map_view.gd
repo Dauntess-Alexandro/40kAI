@@ -28,13 +28,16 @@ func _notification(what: int) -> void:
 func _draw() -> void:
     draw_rect(Rect2(Vector2.ZERO, size), BACKGROUND_COLOR, true)
 
-    var board: Dictionary = _state.get("board", {})
-    var width := int(board.get("width", DEFAULT_BOARD.width))
-    var height := int(board.get("height", DEFAULT_BOARD.height))
+    var board: Dictionary = {}
+    var board_value = _state.get("board")
+    if board_value is Dictionary:
+        board = board_value
+    var width: int = int(board.get("width", DEFAULT_BOARD.width))
+    var height: int = int(board.get("height", DEFAULT_BOARD.height))
     if width <= 0 or height <= 0:
         return
 
-    var cell_size := min(size.x / width, size.y / height)
+    var cell_size: float = min(size.x / float(width), size.y / float(height))
     if cell_size <= 0:
         return
 
@@ -56,10 +59,14 @@ func _draw_grid(origin: Vector2, width: int, height: int, cell_size: float) -> v
         draw_line(from, to, GRID_COLOR, 1.0)
 
 func _draw_units(origin: Vector2, cell_size: float) -> void:
-    var units: Array = _state.get("units", []) or []
+    var units: Array = []
+    var units_value = _state.get("units")
+    if units_value is Array:
+        units = units_value
     var occupied := {}
     for unit in units:
-        var key := Vector2i(int(unit.get("x", -1)), int(unit.get("y", -1)))
+        var unit_data := unit as Dictionary
+        var key := Vector2i(int(unit_data.get("x", -1)), int(unit_data.get("y", -1)))
         if not occupied.has(key):
             occupied[key] = []
         occupied[key].append(unit)
@@ -68,50 +75,63 @@ func _draw_units(origin: Vector2, cell_size: float) -> void:
     var font_size := get_theme_default_font_size()
 
     for unit in units:
-        var x := unit.get("x")
-        var y := unit.get("y")
-        if x == null or y == null:
+        var unit_data := unit as Dictionary
+        var x_value = unit_data.get("x")
+        var y_value = unit_data.get("y")
+        if x_value == null or y_value == null:
             continue
 
-        var key := Vector2i(int(x), int(y))
+        var x: int = int(x_value)
+        var y: int = int(y_value)
+        var key := Vector2i(x, y)
         var stack: Array = occupied.get(key, [])
         var offset := 0.0
         if stack.size() > 1:
             offset = (stack.find(unit) - (stack.size() - 1) * 0.5) * (cell_size * 0.15)
         var center := origin + Vector2((x + 0.5) * cell_size + offset, (y + 0.5) * cell_size - offset)
 
-        var color := PLAYER_COLOR if unit.get("side") == "player" else MODEL_COLOR
+        var side_value = unit_data.get("side")
+        var color := PLAYER_COLOR if side_value == "player" else MODEL_COLOR
         var radius := cell_size * 0.35
         draw_circle(center, radius, color)
         draw_arc(center, radius, 0, TAU, 32, Color(0, 0, 0, 0.4), 1.0)
 
-        var id_text := str(unit.get("id", ""))
+        var id_text := str(unit_data.get("id", ""))
         if id_text != "":
             var text_pos := center + Vector2(-radius, -radius - 4)
             draw_string(font, text_pos, id_text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, TEXT_COLOR)
 
 func _draw_objectives(origin: Vector2, cell_size: float) -> void:
-    var objectives: Array = _state.get("objectives", []) or []
+    var objectives: Array = []
+    var objectives_value = _state.get("objectives")
+    if objectives_value is Array:
+        objectives = objectives_value
     var font := get_theme_default_font()
     var font_size := get_theme_default_font_size()
 
     for objective in objectives:
-        var x := objective.get("x")
-        var y := objective.get("y")
-        if x == null or y == null:
+        var objective_data := objective as Dictionary
+        var x_value = objective_data.get("x")
+        var y_value = objective_data.get("y")
+        if x_value == null or y_value == null:
             continue
+        var x: int = int(x_value)
+        var y: int = int(y_value)
         var center := origin + Vector2((x + 0.5) * cell_size, (y + 0.5) * cell_size)
         var radius := cell_size * 0.2
         draw_circle(center, radius, OBJECTIVE_COLOR)
         draw_arc(center, radius, 0, TAU, 20, Color(0, 0, 0, 0.5), 1.0)
 
-        var id_text := str(objective.get("id", ""))
+        var id_text := str(objective_data.get("id", ""))
         if id_text != "":
             var text_pos := center + Vector2(radius + 2, radius + 2)
             draw_string(font, text_pos, id_text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, TEXT_COLOR)
 
         if _show_objective_radius:
-            var owner := objective.get("owner")
+            var owner: String = ""
+            var owner_value = objective_data.get("owner")
+            if owner_value != null:
+                owner = str(owner_value)
             var ring_color := OBJECTIVE_COLOR
             if owner == "player":
                 ring_color = PLAYER_COLOR
