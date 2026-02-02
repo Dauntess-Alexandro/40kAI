@@ -1,16 +1,33 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import QtQuick.Window 2.15
 import Qt.labs.platform 1.1 as Platform
 
 ApplicationWindow {
     id: root
-    width: 1200
-    height: 780
+    width: Math.round(Screen.width * 0.85)
+    height: Math.round(Screen.height * 0.85)
     visible: true
     title: "40kAI — второй GUI (Qt)"
 
     property string statusText: "Готово к запуску."
+    property real uiScale: Math.max(1.0, Math.min(Screen.width / 1920, Screen.height / 1080))
+    property int spacingXs: Math.round(6 * uiScale)
+    property int spacingSm: Math.round(8 * uiScale)
+    property int spacingMd: Math.round(12 * uiScale)
+    property int spacingLg: Math.round(16 * uiScale)
+    property int spacingXl: Math.round(20 * uiScale)
+    property int inputWidthSm: Math.round(80 * uiScale)
+    property int inputWidthMd: Math.round(100 * uiScale)
+    property int listHeightSm: Math.round(180 * uiScale)
+    property int dialogWidthSm: Math.round(420 * uiScale)
+    property int dialogWidthLg: Math.round(720 * uiScale)
+    property int dialogWidthXl: Math.round(900 * uiScale)
+    property int dialogHeightMd: Math.round(520 * uiScale)
+    property int dialogHeightLg: Math.round(500 * uiScale)
+
+    font.pixelSize: Math.round(14 * uiScale)
 
     ColumnLayout {
         anchors.fill: parent
@@ -39,26 +56,26 @@ ApplicationWindow {
 
                 Item {
                     anchors.fill: parent
-                    anchors.margins: 16
+                    anchors.margins: root.spacingLg
 
                     ColumnLayout {
                         anchors.fill: parent
-                        spacing: 12
+                        spacing: root.spacingMd
 
                     Text {
                         text: "Train Model:"
-                        font.pixelSize: 20
+                        font.pixelSize: Math.round(20 * root.uiScale)
                         font.bold: true
                     }
 
                     GridLayout {
                         columns: 2
-                        columnSpacing: 16
-                        rowSpacing: 12
+                        columnSpacing: root.spacingLg
+                        rowSpacing: root.spacingMd
                         Layout.fillWidth: true
 
                         ColumnLayout {
-                            spacing: 10
+                            spacing: root.spacingSm
                             Layout.fillWidth: true
 
                             GroupBox {
@@ -66,17 +83,17 @@ ApplicationWindow {
                                 Layout.fillWidth: true
 
                                 ColumnLayout {
-                                    spacing: 8
+                                    spacing: root.spacingSm
                                     anchors.fill: parent
 
                                     RowLayout {
-                                        spacing: 8
+                                        spacing: root.spacingSm
                                         Label { text: "# of Games in Training:" }
                                         TextField {
                                             id: numGamesField
                                             text: controller.numGames.toString()
                                             validator: IntValidator { bottom: 1 }
-                                            Layout.preferredWidth: 100
+                                            Layout.preferredWidth: root.inputWidthMd
                                             onEditingFinished: {
                                                 var value = parseInt(text)
                                                 if (!isNaN(value)) {
@@ -87,13 +104,13 @@ ApplicationWindow {
                                     }
 
                                     RowLayout {
-                                        spacing: 8
+                                        spacing: root.spacingSm
                                         Label { text: "Model Faction:" }
                                         RadioButton { text: "Necrons"; checked: true }
                                     }
 
                                     RowLayout {
-                                        spacing: 8
+                                        spacing: root.spacingSm
                                         Label { text: "Player Faction:" }
                                         RadioButton { text: "Necrons"; checked: true }
                                     }
@@ -105,17 +122,17 @@ ApplicationWindow {
                                 Layout.fillWidth: true
 
                                 ColumnLayout {
-                                    spacing: 8
+                                    spacing: root.spacingSm
                                     anchors.fill: parent
 
                                     RowLayout {
-                                        spacing: 6
+                                        spacing: root.spacingXs
                                         Label { text: "X:" }
                                         TextField {
                                             id: boardXField
                                             text: controller.boardX.toString()
                                             validator: IntValidator { bottom: 1 }
-                                            Layout.preferredWidth: 80
+                                            Layout.preferredWidth: root.inputWidthSm
                                             onEditingFinished: {
                                                 var value = parseInt(text)
                                                 if (!isNaN(value)) {
@@ -128,13 +145,13 @@ ApplicationWindow {
                                     }
 
                                     RowLayout {
-                                        spacing: 6
+                                        spacing: root.spacingXs
                                         Label { text: "Y:" }
                                         TextField {
                                             id: boardYField
                                             text: controller.boardY.toString()
                                             validator: IntValidator { bottom: 1 }
-                                            Layout.preferredWidth: 80
+                                            Layout.preferredWidth: root.inputWidthSm
                                             onEditingFinished: {
                                                 var value = parseInt(text)
                                                 if (!isNaN(value)) {
@@ -150,7 +167,7 @@ ApplicationWindow {
                         }
 
                         ColumnLayout {
-                            spacing: 10
+                            spacing: root.spacingSm
                             Layout.fillWidth: true
 
                             GroupBox {
@@ -158,7 +175,7 @@ ApplicationWindow {
                                 Layout.fillWidth: true
 
                                 ColumnLayout {
-                                    spacing: 8
+                                    spacing: root.spacingSm
                                     anchors.fill: parent
 
                                     Label {
@@ -173,12 +190,12 @@ ApplicationWindow {
                                     ListView {
                                         id: availableUnitsInline
                                         Layout.fillWidth: true
-                                        Layout.preferredHeight: 180
+                                        Layout.preferredHeight: root.listHeightSm
                                         model: controller.availableUnitsModel
                                         clip: true
                                         delegate: Rectangle {
                                             width: ListView.view ? ListView.view.width : 0
-                                            height: unitNameInline.implicitHeight + 10
+                                            height: unitNameInline.implicitHeight + root.spacingSm
                                             color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
 
                                             Text {
@@ -188,13 +205,13 @@ ApplicationWindow {
                                                 elide: Text.ElideRight
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 anchors.left: parent.left
-                                                anchors.leftMargin: 8
+                                                anchors.leftMargin: root.spacingSm
                                             }
                                         }
                                     }
 
                                     RowLayout {
-                                        spacing: 8
+                                        spacing: root.spacingSm
                                         Button {
                                             text: "Добавить в игрока"
                                             onClicked: controller.add_unit_to_player(availableUnitsInline.currentIndex)
@@ -218,8 +235,8 @@ ApplicationWindow {
 
                                 GridLayout {
                                     columns: 2
-                                    columnSpacing: 8
-                                    rowSpacing: 8
+                                    columnSpacing: root.spacingSm
+                                    rowSpacing: root.spacingSm
                                     anchors.fill: parent
 
                                     Button {
@@ -260,7 +277,7 @@ ApplicationWindow {
 
                     Item {
                         Layout.fillWidth: true
-                        height: 24
+                        height: Math.round(24 * root.uiScale)
 
                         ProgressBar {
                             id: trainingProgress
@@ -305,17 +322,17 @@ ApplicationWindow {
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 16
-                    spacing: 12
+                    anchors.margins: root.spacingLg
+                    spacing: root.spacingMd
 
                     Text {
                         text: "Model Metrics"
-                        font.pixelSize: 20
+                        font.pixelSize: Math.round(20 * root.uiScale)
                         font.bold: true
                     }
 
                     RowLayout {
-                        spacing: 12
+                        spacing: root.spacingMd
                         Layout.fillWidth: true
 
                         Button {
@@ -332,8 +349,8 @@ ApplicationWindow {
 
                     GridLayout {
                         columns: 2
-                        columnSpacing: 12
-                        rowSpacing: 12
+                        columnSpacing: root.spacingMd
+                        rowSpacing: root.spacingMd
                         Layout.fillWidth: true
                         Layout.fillHeight: true
 
@@ -344,7 +361,7 @@ ApplicationWindow {
 
                             ColumnLayout {
                                 anchors.fill: parent
-                                spacing: 6
+                                spacing: root.spacingXs
 
                                 Item {
                                     Layout.fillWidth: true
@@ -380,7 +397,7 @@ ApplicationWindow {
 
                             ColumnLayout {
                                 anchors.fill: parent
-                                spacing: 6
+                                spacing: root.spacingXs
 
                                 Item {
                                     Layout.fillWidth: true
@@ -416,7 +433,7 @@ ApplicationWindow {
 
                             ColumnLayout {
                                 anchors.fill: parent
-                                spacing: 6
+                                spacing: root.spacingXs
 
                                 Item {
                                     Layout.fillWidth: true
@@ -452,7 +469,7 @@ ApplicationWindow {
 
                             ColumnLayout {
                                 anchors.fill: parent
-                                spacing: 6
+                                spacing: root.spacingXs
 
                                 Item {
                                     Layout.fillWidth: true
@@ -488,7 +505,7 @@ ApplicationWindow {
 
                             ColumnLayout {
                                 anchors.fill: parent
-                                spacing: 6
+                                spacing: root.spacingXs
 
                                 Item {
                                     Layout.fillWidth: true
@@ -524,7 +541,7 @@ ApplicationWindow {
 
                             ColumnLayout {
                                 anchors.fill: parent
-                                spacing: 6
+                                spacing: root.spacingXs
 
                                 Item {
                                     Layout.fillWidth: true
@@ -561,15 +578,15 @@ ApplicationWindow {
                 Layout.fillHeight: true
                 Item {
                     anchors.fill: parent
-                    anchors.margins: 16
+                    anchors.margins: root.spacingLg
 
                     ColumnLayout {
                         anchors.fill: parent
-                        spacing: 16
+                        spacing: root.spacingLg
 
                         Text {
                             text: "Играть против модели"
-                            font.pixelSize: 20
+                            font.pixelSize: Math.round(20 * root.uiScale)
                             font.bold: true
                         }
 
@@ -578,11 +595,11 @@ ApplicationWindow {
                             Layout.fillWidth: true
 
                             ColumnLayout {
-                                spacing: 10
+                                spacing: root.spacingSm
                                 anchors.fill: parent
 
                                 RowLayout {
-                                    spacing: 8
+                                    spacing: root.spacingSm
                                     Label { text: "Выбрать модель:" }
                                     Button {
                                         text: "Выбрать"
@@ -606,7 +623,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
 
                             RowLayout {
-                                spacing: 12
+                                spacing: root.spacingMd
                                 anchors.fill: parent
 
                                 Button {
@@ -652,7 +669,7 @@ ApplicationWindow {
         title: "Очистка кэша"
         modal: true
         standardButtons: Dialog.Ok | Dialog.Cancel
-        implicitWidth: 420
+        implicitWidth: root.dialogWidthSm
         onAccepted: controller.clear_model_cache()
 
         contentItem: Text {
@@ -674,13 +691,13 @@ ApplicationWindow {
         title: "ASCII карта"
         modal: true
         standardButtons: Dialog.Close
-        width: 720
-        height: 520
+        width: root.dialogWidthLg
+        height: root.dialogHeightMd
         onOpened: controller.refresh_board_text()
 
         ColumnLayout {
             anchors.fill: parent
-            spacing: 8
+            spacing: root.spacingSm
 
             TextArea {
                 text: controller.boardText
@@ -705,15 +722,15 @@ ApplicationWindow {
         title: "Army Viewer"
         modal: true
         standardButtons: Dialog.Close
-        width: 900
-        height: 500
+        width: root.dialogWidthXl
+        height: root.dialogHeightLg
 
         ColumnLayout {
             anchors.fill: parent
-            spacing: 12
+            spacing: root.spacingMd
 
             RowLayout {
-                spacing: 12
+                spacing: root.spacingMd
                 Layout.fillWidth: true
                 Layout.fillHeight: true
 
@@ -724,7 +741,7 @@ ApplicationWindow {
 
                     ColumnLayout {
                         anchors.fill: parent
-                        spacing: 8
+                        spacing: root.spacingSm
 
                         ListView {
                             id: availableUnitsView
@@ -734,7 +751,7 @@ ApplicationWindow {
                             clip: true
                             delegate: Rectangle {
                                 width: ListView.view ? ListView.view.width : 0
-                                height: unitNameAvailable.implicitHeight + 10
+                                height: unitNameAvailable.implicitHeight + root.spacingSm
                                 color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
 
                                 Text {
@@ -744,13 +761,13 @@ ApplicationWindow {
                                     elide: Text.ElideRight
                                     anchors.verticalCenter: parent.verticalCenter
                                     anchors.left: parent.left
-                                    anchors.leftMargin: 8
+                                    anchors.leftMargin: root.spacingSm
                                 }
                             }
                         }
 
                         RowLayout {
-                            spacing: 8
+                            spacing: root.spacingSm
                             Button {
                                 text: "Добавить в игрока"
                                 onClicked: controller.add_unit_to_player(availableUnitsView.currentIndex)
@@ -770,7 +787,7 @@ ApplicationWindow {
 
                     ColumnLayout {
                         anchors.fill: parent
-                        spacing: 8
+                        spacing: root.spacingSm
 
                         ListView {
                             id: playerRosterView
@@ -780,7 +797,7 @@ ApplicationWindow {
                             clip: true
                             delegate: Rectangle {
                                 width: ListView.view ? ListView.view.width : 0
-                                height: unitNamePlayer.implicitHeight + 10
+                                height: unitNamePlayer.implicitHeight + root.spacingSm
                                 color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
 
                                 Text {
@@ -790,13 +807,13 @@ ApplicationWindow {
                                     elide: Text.ElideRight
                                     anchors.verticalCenter: parent.verticalCenter
                                     anchors.left: parent.left
-                                    anchors.leftMargin: 8
+                                    anchors.leftMargin: root.spacingSm
                                 }
                             }
                         }
 
                         RowLayout {
-                            spacing: 8
+                            spacing: root.spacingSm
                             Button {
                                 text: "Удалить"
                                 onClicked: controller.remove_player_unit(playerRosterView.currentIndex)
@@ -816,7 +833,7 @@ ApplicationWindow {
 
                     ColumnLayout {
                         anchors.fill: parent
-                        spacing: 8
+                        spacing: root.spacingSm
 
                         ListView {
                             id: modelRosterView
@@ -826,7 +843,7 @@ ApplicationWindow {
                             clip: true
                             delegate: Rectangle {
                                 width: ListView.view ? ListView.view.width : 0
-                                height: unitNameModel.implicitHeight + 10
+                                height: unitNameModel.implicitHeight + root.spacingSm
                                 color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
 
                                 Text {
@@ -836,13 +853,13 @@ ApplicationWindow {
                                     elide: Text.ElideRight
                                     anchors.verticalCenter: parent.verticalCenter
                                     anchors.left: parent.left
-                                    anchors.leftMargin: 8
+                                    anchors.leftMargin: root.spacingSm
                                 }
                             }
                         }
 
                         RowLayout {
-                            spacing: 8
+                            spacing: root.spacingSm
                             Button {
                                 text: "Удалить"
                                 onClicked: controller.remove_model_unit(modelRosterView.currentIndex)
