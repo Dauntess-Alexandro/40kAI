@@ -40,11 +40,17 @@ func _ready() -> void:
     command_send.pressed.connect(_on_command_send_pressed)
     var env_command_path := OS.get_environment("COMMAND_PATH")
     if env_command_path != "":
-        _command_path = env_command_path
+    _command_path = env_command_path
     _state_reader = StateReader.new()
     var env_state_path := OS.get_environment("STATE_PATH")
+    if env_state_path == "":
+        env_state_path = OS.get_environment("STATE_JSON_PATH")
     if env_state_path != "":
         _state_reader.state_path = env_state_path
+    elif not FileAccess.file_exists(_state_reader.state_path):
+        var repo_state_path := ProjectSettings.globalize_path("res://../gui/state.json")
+        if FileAccess.file_exists(repo_state_path):
+            _state_reader.state_path = repo_state_path
     add_child(_state_reader)
     _state_reader.state_changed.connect(_apply_state)
 
