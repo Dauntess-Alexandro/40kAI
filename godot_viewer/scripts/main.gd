@@ -5,7 +5,8 @@ const UNITS_COLUMNS := 5
 const UNITS_COLUMN_WIDTHS := [40, 90, 50, 60, 90]
 const UNITS_FONT_SIZE := 12
 const SELECT_TEXT_COLOR := Color(1.0, 0.85, 0.4)
-const DEFAULT_COMMAND_PATH := "user://command.txt"
+const DEFAULT_COMMAND_PATH := "res://../gui/command.txt"
+const REQUEST_PATH := "res://../gui/request.json"
 
 @onready var round_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/StatusContent/RoundLabel
 @onready var turn_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/StatusContent/TurnLabel
@@ -23,6 +24,7 @@ const DEFAULT_COMMAND_PATH := "user://command.txt"
 @onready var play_stop_button: Button = $MainSplit/TopSplit/RightPanel/RightContent/PlayGroup/PlayContent/PlayButtons/PlayStop
 @onready var units_table: GridContainer = $MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent/UnitsTable
 @onready var command_prompt: Label = $MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandPrompt
+@onready var command_hint: Label = $MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandHint
 @onready var command_input: LineEdit = $MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandInputRow/CommandInput
 @onready var command_send: Button = $MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandInputRow/CommandSend
 
@@ -32,6 +34,7 @@ var _selected_unit_key = null
 var _last_units: Array = []
 var _last_state: Dictionary = {}
 var _play_pid: int = -1
+var _pending_request = null
 
 func _ready() -> void:
     _configure_log_tabs()
@@ -47,6 +50,8 @@ func _ready() -> void:
     var env_command_path := OS.get_environment("COMMAND_PATH")
     if env_command_path != "":
         _command_path = env_command_path
+    else:
+        _command_path = ProjectSettings.globalize_path(DEFAULT_COMMAND_PATH)
     _state_reader = StateReader.new()
     var env_state_path := OS.get_environment("STATE_PATH")
     if env_state_path == "":
@@ -91,6 +96,7 @@ func _apply_state(state: Dictionary) -> void:
     _apply_log_tail(state.get("log_tail", []))
     map_view.set_state(state)
     _last_units = state.get("units", []) if state.get("units") is Array else []
+    _set_request(_read_request_file())
     _update_active_context(state)
     _apply_units_table(_last_units)
 
@@ -117,7 +123,7 @@ func _on_play_start_pressed() -> void:
     if _play_pid != -1 and OS.is_process_running(_play_pid):
         play_status.text = "Статус: уже запущено."
         return
-    var command = "cd .. && STATE_JSON_PATH=gui/state.json ./play.sh None True"
+    var command = "cd .. && STATE_JSON_PATH=gui/state.json COMMAND_PATH=gui/command.txt REQUEST_PATH=gui/request.json ./scripts/godot_play.sh None"
     var pid = OS.create_process("bash", ["-lc", command])
     if pid <= 0:
         play_status.text = "Статус: не удалось запустить play.py."
@@ -151,6 +157,61 @@ func _submit_command(text: String) -> void:
         command_input.clear()
     else:
         command_prompt.text = "Не удалось отправить команду (проверьте путь: %s)." % _command_path
+
+func _read_request_file():
+    var path = ProjectSettings.globalize_path(REQUEST_PATH)
+    if not FileAccess.file_exists(path):
+        return null
+    var file := FileAccess.open(path, FileAccess.READ)
+    if file == null:
+        return null
+    var content = file.get_as_text()
+    file.close()
+    if content.strip_edges() == "":
+        return null
+    var json = JSON.new()
+    var result = json.parse(content)
+    if result != OK:
+        return null
+    if json.data is Dictionary:
+        return json.data
+    return null
+
+func _set_request(request) -> void:
+    _pending_request = request
+    if request == null:
+        command_prompt.text = "Ожидаю команду..."
+        command_hint.text = "Горячие клавиши: Enter — отправить, Ctrl+L — очистить"
+        command_input.placeholder_text = "Введите команду..."
+        return
+    if request is Dictionary:
+        command_prompt.text = str(request.get("prompt", "Ожидаю команду..."))
+        var kind = str(request.get("kind", "text"))
+        if kind == "direction":
+            command_hint.text = "Горячие клавиши: ↑ ↓ ← →, пробел/0 — нет"
+        elif kind == "bool":
+            command_hint.text = "Горячие клавиши: Y — да, N — нет"
+        elif kind == "int":
+            command_hint.text = "Горячие клавиши: Enter — отправить"
+        elif kind == "choice":
+            command_hint.text = "Горячие клавиши: Enter — отправить"
+        elif kind == "dice":
+            var count = int(request.get("count", 0))
+            var example_values := []
+            for idx in range(count):
+                example_values.append(str((idx % 6) + 1))
+            var spaced = " ".join(example_values)
+            var comma = ",".join(example_values)
+            var compact = "".join(example_values)
+            var hint = "Например: %s или %s" % [spaced, comma]
+            if compact != "":
+                hint += " или %s" % compact
+            command_input.placeholder_text = hint
+        else:
+            command_hint.text = "Горячие клавиши: Enter — отправить, Ctrl+L — очистить"
+            command_input.placeholder_text = "Введите команду..."
+        if kind != "dice":
+            command_input.placeholder_text = "Введите команду..."
 
 func _apply_log_tail(lines: Array) -> void:
     var text_lines := []
