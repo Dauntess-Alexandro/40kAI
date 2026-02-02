@@ -11,11 +11,15 @@ const TAB_NAMES := ["Все", "Ход", "Стрельба", "Ближний бо
 @onready var player_cp_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/PlayerCPLabel
 @onready var model_cp_label: Label = $MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/ModelCPLabel
 @onready var log_tabs: TabContainer = $MainSplit/LogGroup/LogTabs
+@onready var map_view: MapView = $MainSplit/TopSplit/LeftPanel/MapView
+@onready var objective_radius_toggle: CheckBox = $MainSplit/TopSplit/LeftPanel/ObjectiveRadiusToggle
 
 var _state_reader: StateReader
 
 func _ready() -> void:
     _configure_log_tabs()
+    objective_radius_toggle.toggled.connect(_on_objective_radius_toggled)
+    map_view.set_show_objective_radius(objective_radius_toggle.button_pressed)
     _state_reader = StateReader.new()
     var env_state_path := OS.get_environment("STATE_PATH")
     if env_state_path != "":
@@ -41,6 +45,10 @@ func _apply_state(state: Dictionary) -> void:
     model_cp_label.text = "Model CP: %s" % _to_text(cp.get("model", "—"))
 
     _apply_log_tail(state.get("log_tail", []))
+    map_view.set_state(state)
+
+func _on_objective_radius_toggled(pressed: bool) -> void:
+    map_view.set_show_objective_radius(pressed)
 
 func _apply_log_tail(lines: Array) -> void:
     var text_lines := []

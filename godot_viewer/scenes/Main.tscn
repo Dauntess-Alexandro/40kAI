@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id=1]
+[ext_resource type="Script" path="res://scripts/map_view.gd" id=2]
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -23,10 +24,14 @@ custom_minimum_size = Vector2(820, 0)
 [node name="FitButton" type="Button" parent="MainSplit/TopSplit/LeftPanel"]
 text = "Fit"
 
-[node name="MapPlaceholder" type="ColorRect" parent="MainSplit/TopSplit/LeftPanel"]
+[node name="ObjectiveRadiusToggle" type="CheckBox" parent="MainSplit/TopSplit/LeftPanel"]
+text = "Показывать радиус целей"
+button_pressed = true
+
+[node name="MapView" type="Control" parent="MainSplit/TopSplit/LeftPanel"]
 custom_minimum_size = Vector2(820, 520)
 size_flags_vertical = 3
-color = Color(0.11, 0.1, 0.09, 1)
+script = ExtResource( 2 )
 
 [node name="RightPanel" type="ScrollContainer" parent="MainSplit/TopSplit"]
 custom_minimum_size = Vector2(360, 0)
