@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from PySide6 import QtCore, QtGui, QtQml
+from PySide6.QtGui import QIcon
 
 
 @dataclass
@@ -1105,6 +1106,11 @@ class GUIController(QtCore.QObject):
 
 def main() -> int:
     app = QtGui.QGuiApplication(sys.argv)
+
+    icon_path = os.path.join(os.path.dirname(__file__), "assets", "40kai_icon.ico")
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
+
     engine = QtQml.QQmlApplicationEngine()
 
     controller = GUIController()

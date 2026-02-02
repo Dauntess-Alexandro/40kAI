@@ -22,8 +22,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 34,
-      "y": 18
+      "x": 37,
+      "y": 56
     },
     {
       "side": "player",
@@ -31,8 +31,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 33,
-      "y": 58
+      "x": 31,
+      "y": 1
     },
     {
       "side": "model",
@@ -41,7 +41,7 @@
       "models": 10,
       "hp": 10.0,
       "x": 0,
-      "y": 29
+      "y": 24
     },
     {
       "side": "model",
@@ -49,8 +49,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 2,
-      "y": 23
+      "x": 1,
+      "y": 22
     }
   ],
   "objectives": [
@@ -107,5 +107,5 @@
     "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
     "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])"
   ],
-  "generated_at": "2026-02-01T15:48:48.769154Z"
+  "generated_at": "2026-02-02T05:05:10.375812Z"
 }
