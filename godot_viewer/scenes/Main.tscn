@@ -189,6 +189,28 @@ color = Color(0.95, 0.85, 0.45, 1)
 text = "Цель"
 theme_override_font_sizes/font_size = 12
 
+[node name="PlayGroup" type="PanelContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
+theme_override_styles/panel = SubResource( 1 )
+
+[node name="PlayContent" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/PlayGroup"]
+theme_override_constants/separation = 6
+
+[node name="PlayTitle" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/PlayGroup/PlayContent"]
+text = "ИГРА"
+theme_override_font_sizes/font_size = 16
+
+[node name="PlayStatus" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/PlayGroup/PlayContent"]
+text = "Статус: —"
+theme_override_font_sizes/font_size = 12
+
+[node name="PlayButtons" type="HBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/PlayGroup/PlayContent"]
+
+[node name="PlayStart" type="Button" parent="MainSplit/TopSplit/RightPanel/RightContent/PlayGroup/PlayContent/PlayButtons"]
+text = "Запустить (последняя модель)"
+
+[node name="PlayStop" type="Button" parent="MainSplit/TopSplit/RightPanel/RightContent/PlayGroup/PlayContent/PlayButtons"]
+text = "Остановить"
+
 [node name="CommandsGroup" type="PanelContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
 theme_override_styles/panel = SubResource( 1 )
 

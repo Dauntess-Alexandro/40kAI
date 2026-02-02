@@ -18,6 +18,9 @@ const DEFAULT_COMMAND_PATH := "user://command.txt"
 @onready var log_tabs: TabContainer = $MainSplit/LogGroup/LogTabs
 @onready var map_view: MapView = $MainSplit/TopSplit/LeftPanel/MapView
 @onready var objective_radius_toggle: CheckBox = $MainSplit/TopSplit/LeftPanel/ObjectiveRadiusToggle
+@onready var play_status: Label = $MainSplit/TopSplit/RightPanel/RightContent/PlayGroup/PlayContent/PlayStatus
+@onready var play_start_button: Button = $MainSplit/TopSplit/RightPanel/RightContent/PlayGroup/PlayContent/PlayButtons/PlayStart
+@onready var play_stop_button: Button = $MainSplit/TopSplit/RightPanel/RightContent/PlayGroup/PlayContent/PlayButtons/PlayStop
 @onready var units_table: GridContainer = $MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent/UnitsTable
 @onready var command_prompt: Label = $MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandPrompt
 @onready var command_input: LineEdit = $MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandInputRow/CommandInput
@@ -28,6 +31,7 @@ var _command_path := DEFAULT_COMMAND_PATH
 var _selected_unit_key = null
 var _last_units: Array = []
 var _last_state: Dictionary = {}
+var _play_pid: int = -1
 
 func _ready() -> void:
     _configure_log_tabs()
@@ -38,6 +42,8 @@ func _ready() -> void:
     command_input.text_submitted.connect(_on_command_submitted)
     command_input.gui_input.connect(_on_command_input_gui)
     command_send.pressed.connect(_on_command_send_pressed)
+    play_start_button.pressed.connect(_on_play_start_pressed)
+    play_stop_button.pressed.connect(_on_play_stop_pressed)
     var env_command_path := OS.get_environment("COMMAND_PATH")
     if env_command_path != "":
         _command_path = env_command_path
@@ -53,6 +59,7 @@ func _ready() -> void:
             _state_reader.state_path = repo_state_path
     add_child(_state_reader)
     _state_reader.state_changed.connect(_apply_state)
+    _refresh_play_status()
 
 func _configure_log_tabs() -> void:
     for idx in range(min(log_tabs.get_tab_count(), TAB_NAMES.size())):
@@ -105,6 +112,34 @@ func _on_command_input_gui(event: InputEvent) -> void:
     if event is InputEventKey and event.pressed and event.ctrl_pressed and event.keycode == KEY_L:
         command_input.clear()
         command_prompt.text = "Команда очищена."
+
+func _on_play_start_pressed() -> void:
+    if _play_pid != -1 and OS.is_process_running(_play_pid):
+        play_status.text = "Статус: уже запущено."
+        return
+    var command = "cd .. && STATE_JSON_PATH=gui/state.json ./play.sh None True"
+    var pid = OS.create_process("bash", ["-lc", command])
+    if pid <= 0:
+        play_status.text = "Статус: не удалось запустить play.py."
+        return
+    _play_pid = pid
+    _refresh_play_status()
+
+func _on_play_stop_pressed() -> void:
+    if _play_pid != -1 and OS.is_process_running(_play_pid):
+        OS.kill(_play_pid)
+    _play_pid = -1
+    _refresh_play_status()
+
+func _refresh_play_status() -> void:
+    if _play_pid != -1 and OS.is_process_running(_play_pid):
+        play_status.text = "Статус: игра запущена."
+        play_start_button.disabled = true
+        play_stop_button.disabled = false
+    else:
+        play_status.text = "Статус: —"
+        play_start_button.disabled = false
+        play_stop_button.disabled = true
 
 func _submit_command(text: String) -> void:
     var trimmed := text.strip_edges()
