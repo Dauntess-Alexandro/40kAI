@@ -32,6 +32,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._show_objective_radius = True
         self._units_by_key = {}
         self._unit_row_by_key = {}
+        self._ai_demo_phases = ["command", "move", "shoot", "charge", "fight"]
+        self._ai_demo_index = 0
+        self._ai_demo_unit_index = 0
+        self._ai_demo_active = False
+        self._ai_demo_unit_keys = []
 
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = OpenGLBoardWidget(cell_size=18)
@@ -482,7 +487,71 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._populate_units_table(state.get("units", []))
         self._update_log(state.get("log_tail", []))
+        self._update_ai_demo(state)
         self._refresh_active_context()
+
+    def _update_ai_demo(self, state):
+        active = state.get("active")
+        if active != "model":
+            self._ai_demo_active = False
+            self._ai_demo_unit_keys = []
+            return
+        model_units = [
+            (unit.get("side"), unit.get("id"))
+            for unit in state.get("units", []) or []
+            if unit.get("side") == "model" and unit.get("id") is not None
+        ]
+        model_units.sort(key=lambda entry: entry[1])
+        if not self._ai_demo_active:
+            self._ai_demo_active = True
+            self._ai_demo_index = 0
+            self._ai_demo_unit_index = 0
+        self._ai_demo_unit_keys = model_units
+        self._apply_ai_demo_context()
+
+    def _advance_ai_demo_phase(self):
+        if not self._ai_demo_active:
+            return
+        if not self._ai_demo_phases:
+            return
+        self._ai_demo_index += 1
+        if self._ai_demo_index >= len(self._ai_demo_phases):
+            self._ai_demo_index = 0
+            if self._ai_demo_unit_keys:
+                self._ai_demo_unit_index = (self._ai_demo_unit_index + 1) % len(
+                    self._ai_demo_unit_keys
+                )
+        self._apply_ai_demo_context()
+
+    def _apply_ai_demo_context(self):
+        if not self._ai_demo_active:
+            return
+        phase = self._ai_demo_phases[self._ai_demo_index]
+        unit_key = None
+        if self._ai_demo_unit_keys:
+            unit_key = self._ai_demo_unit_keys[self._ai_demo_unit_index]
+        unit_id = unit_key[1] if unit_key else None
+        side = unit_key[0] if unit_key else "model"
+        if unit_key:
+            self.map_scene.select_unit(unit_key[0], unit_key[1])
+        self.status_phase.setText(f"Фаза: {phase} (демо ИИ)")
+        move_range = None
+        shoot_range = None
+        if self._is_movement_phase(phase):
+            move_range = self._resolve_move_range(self._units_by_key.get(unit_key))
+        if self._is_shooting_phase(phase):
+            shoot_range = self._resolve_weapon_range(self._units_by_key.get(unit_key))
+        self.map_scene.set_active_context(
+            active_unit_id=unit_id,
+            active_unit_side=side,
+            phase=phase,
+            move_range=move_range,
+            shoot_range=shoot_range,
+            show_objective_radius=self._show_objective_radius,
+            targets=self.state_watcher.state.get("available_targets")
+            if self.state_watcher and self.state_watcher.state
+            else None,
+        )
 
     def _populate_units_table(self, units):
         self.units_table.setRowCount(len(units))
@@ -821,6 +890,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return unit_id, None
 
     def _refresh_active_context(self):
+        if self._ai_demo_active:
+            self._apply_ai_demo_context()
+            return
         unit_id, side = self._resolve_active_unit()
         self._active_unit_id = unit_id
         self._active_unit_side = side
@@ -855,6 +927,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return "shoot" in phase_text or "стрел" in phase_text or "shooting" in phase_text
 
     def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.KeyPress and self._ai_demo_active:
+            key = event.key()
+            if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+                self._advance_ai_demo_phase()
+                return True
         if event.type() == QtCore.QEvent.KeyPress and self._pending_request:
             kind = getattr(self._pending_request, "kind", "")
             key = event.key()
