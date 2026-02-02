@@ -55,6 +55,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._objectives: List[ObjectiveRender] = []
         self._unit_labels: List[Tuple[str, QtCore.QPointF]] = []
         self._objective_labels: List[Tuple[str, QtCore.QPointF]] = []
+        self._units_state: List[dict] = []
+        self._prev_unit_positions: Dict[Tuple[str, int], QtCore.QPointF] = {}
+        self._curr_unit_positions: Dict[Tuple[str, int], QtCore.QPointF] = {}
+        self._unit_anim_timer = QtCore.QTimer(self)
+        self._unit_anim_timer.setInterval(16)
+        self._unit_anim_timer.timeout.connect(self._animate_unit_step)
+        self._unit_anim_clock = QtCore.QElapsedTimer()
+        self._unit_anim_duration_ms = 180
 
         self._move_highlights: List[QtCore.QRectF] = []
         self._target_highlights: List[Tuple[QtCore.QPointF, float]] = []
@@ -110,43 +118,21 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._board_rect = QtCore.QRectF(0, 0, width * self.cell_size, height * self.cell_size)
         self._ensure_grid_cache(width, height)
 
-        self._units = []
-        self._unit_by_key = {}
-        self._unit_labels = []
-
-        units = self._state.get("units", []) or []
-        occupied: Dict[Tuple[int, int], List[dict]] = {}
-        for unit in units:
-            key = (unit.get("x"), unit.get("y"))
-            occupied.setdefault(key, []).append(unit)
-
-        for unit in units:
+        self._units_state = list(self._state.get("units", []) or [])
+        self._prev_unit_positions = dict(self._curr_unit_positions)
+        self._curr_unit_positions = {}
+        for unit in self._units_state:
+            key = (unit.get("side"), unit.get("id"))
             x = unit.get("x")
             y = unit.get("y")
-            if x is None or y is None:
+            if key[0] is None or key[1] is None or x is None or y is None:
                 continue
-            stack = occupied.get((x, y), [])
-            offset = 0.0
-            if len(stack) > 1:
-                offset = (stack.index(unit) - (len(stack) - 1) / 2) * (self.cell_size * 0.15)
-            center_x = x * self.cell_size + self.cell_size / 2 + offset
-            center_y = y * self.cell_size + self.cell_size / 2 - offset
-            color = Theme.player if unit.get("side") == "player" else Theme.model
-            radius = self.cell_size * 0.35
-            key = (unit.get("side"), unit.get("id"))
-            render = UnitRender(
-                key=key,
-                center=QtCore.QPointF(center_x, center_y),
-                radius=radius,
-                color=color,
-                label=str(unit.get("id", "")),
-            )
-            self._units.append(render)
-            if key[0] is not None and key[1] is not None:
-                self._unit_by_key[key] = render
-            self._unit_labels.append(
-                (render.label, QtCore.QPointF(center_x - radius, center_y - radius - 8))
-            )
+            self._curr_unit_positions[key] = QtCore.QPointF(float(x), float(y))
+
+        for key, point in self._curr_unit_positions.items():
+            self._prev_unit_positions.setdefault(key, QtCore.QPointF(point))
+
+        self._start_unit_animation()
 
         self._objectives = []
         self._objective_labels = []
@@ -329,6 +315,77 @@ class OpenGLBoardWidget(QOpenGLWidget):
             )
 
         painter.restore()
+
+    def _start_unit_animation(self) -> None:
+        self._unit_anim_clock.restart()
+        if self._unit_anim_duration_ms <= 0:
+            self._rebuild_units(1.0)
+            if self._unit_anim_timer.isActive():
+                self._unit_anim_timer.stop()
+            self.refresh_overlays()
+            self.update()
+            return
+        if not self._unit_anim_timer.isActive():
+            self._unit_anim_timer.start()
+        self._rebuild_units(0.0)
+        self.refresh_overlays()
+        self.update()
+
+    def _animate_unit_step(self) -> None:
+        if not self._unit_anim_clock.isValid():
+            self._unit_anim_clock.start()
+        elapsed = self._unit_anim_clock.elapsed()
+        factor = min(1.0, elapsed / float(self._unit_anim_duration_ms))
+        self._rebuild_units(factor)
+        self.refresh_overlays()
+        self.update()
+        if factor >= 1.0 and self._unit_anim_timer.isActive():
+            self._unit_anim_timer.stop()
+
+    def _rebuild_units(self, factor: float) -> None:
+        self._units = []
+        self._unit_by_key = {}
+        self._unit_labels = []
+
+        occupied: Dict[Tuple[int, int], List[dict]] = {}
+        for unit in self._units_state:
+            key = (unit.get("side"), unit.get("id"))
+            curr_pos = self._curr_unit_positions.get(key)
+            if curr_pos is None:
+                continue
+            cell_key = (int(curr_pos.x()), int(curr_pos.y()))
+            occupied.setdefault(cell_key, []).append(unit)
+
+        for unit in self._units_state:
+            key = (unit.get("side"), unit.get("id"))
+            curr_pos = self._curr_unit_positions.get(key)
+            if curr_pos is None:
+                continue
+            prev_pos = self._prev_unit_positions.get(key, curr_pos)
+            interp_x = prev_pos.x() + (curr_pos.x() - prev_pos.x()) * factor
+            interp_y = prev_pos.y() + (curr_pos.y() - prev_pos.y()) * factor
+
+            stack = occupied.get((int(curr_pos.x()), int(curr_pos.y())), [])
+            offset = 0.0
+            if len(stack) > 1:
+                offset = (stack.index(unit) - (len(stack) - 1) / 2) * (self.cell_size * 0.15)
+            center_x = interp_x * self.cell_size + self.cell_size / 2 + offset
+            center_y = interp_y * self.cell_size + self.cell_size / 2 - offset
+            color = Theme.player if unit.get("side") == "player" else Theme.model
+            radius = self.cell_size * 0.35
+            render = UnitRender(
+                key=key,
+                center=QtCore.QPointF(center_x, center_y),
+                radius=radius,
+                color=color,
+                label=str(unit.get("id", "")),
+            )
+            self._units.append(render)
+            if key[0] is not None and key[1] is not None:
+                self._unit_by_key[key] = render
+            self._unit_labels.append(
+                (render.label, QtCore.QPointF(center_x - radius, center_y - radius - 8))
+            )
 
     def _state_unit(self, unit_key: Tuple[str, int]) -> Optional[dict]:
         units = self._state.get("units", []) or []
