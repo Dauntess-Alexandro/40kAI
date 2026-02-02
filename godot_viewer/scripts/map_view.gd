@@ -66,11 +66,12 @@ func _gui_input(event: InputEvent) -> void:
     if event is InputEventMouseMotion:
         _update_hover(event.position)
     elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-        var unit_data := _pick_unit(event.position)
-        if unit_data:
+        var unit_data: Dictionary = _pick_unit(event.position)
+        if not unit_data.is_empty():
             _selected_unit_key = str(unit_data.get("key", ""))
-            var unit := unit_data.get("unit")
-            if unit is Dictionary:
+            var unit_value = unit_data.get("unit")
+            if unit_value is Dictionary:
+                var unit: Dictionary = unit_value
                 var side = str(unit.get("side", ""))
                 var unit_id = int(unit.get("id", -1))
                 if side != "" and unit_id >= 0:
@@ -145,8 +146,8 @@ func _draw_units(origin: Vector2, cell_size: float) -> void:
 
         var x: int = int(x_value)
         var y: int = int(y_value)
-        var key := Vector2i(x, y)
-        var stack: Array = occupied.get(key, [])
+        var cell_key := Vector2i(x, y)
+        var stack: Array = occupied.get(cell_key, [])
         var offset := 0.0
         if stack.size() > 1:
             offset = (stack.find(unit) - (stack.size() - 1) * 0.5) * (cell_size * 0.15)
@@ -157,18 +158,18 @@ func _draw_units(origin: Vector2, cell_size: float) -> void:
         var radius := cell_size * 0.35
         draw_circle(center, radius, color)
         draw_arc(center, radius, 0, TAU, 32, Color(0, 0, 0, 0.4), 1.0)
-        var key := _make_key(str(side_value), int(unit_data.get("id", -1)))
-        _unit_centers[key] = center
+        var unit_key := _make_key(str(side_value), int(unit_data.get("id", -1)))
+        _unit_centers[unit_key] = center
         _unit_draw_data.append({
-            "key": key,
+            "key": unit_key,
             "unit": unit_data,
             "center": center,
             "radius": radius
         })
 
-        if _selected_unit_key != "" and _selected_unit_key == key:
+        if _selected_unit_key != "" and _selected_unit_key == unit_key:
             draw_arc(center, radius + 2.0, 0, TAU, 32, SELECT_COLOR, 2.0)
-        elif _hovered_unit_key != "" and _hovered_unit_key == key:
+        elif _hovered_unit_key != "" and _hovered_unit_key == unit_key:
             draw_arc(center, radius + 2.0, 0, TAU, 32, HOVER_COLOR, 2.0)
 
         var id_text := str(unit_data.get("id", ""))
@@ -225,12 +226,16 @@ func _draw_dashed_circle(center: Vector2, radius: float, color: Color, width: fl
             draw_arc(center, radius, start_angle, end_angle, 4, color, width)
 
 func _update_hover(position: Vector2) -> void:
-    var unit_data := _pick_unit(position)
-    if unit_data:
+    var unit_data: Dictionary = _pick_unit(position)
+    if not unit_data.is_empty():
         var key = unit_data.get("key")
         if _hovered_unit_key != str(key):
             _hovered_unit_key = str(key)
-            _set_tooltip_for_unit(unit_data.get("unit"))
+            var unit_value = unit_data.get("unit")
+            if unit_value is Dictionary:
+                _set_tooltip_for_unit(unit_value)
+            else:
+                _set_tooltip_for_unit({})
             queue_redraw()
     else:
         if _hovered_unit_key != "":
@@ -238,16 +243,16 @@ func _update_hover(position: Vector2) -> void:
             tooltip_text = ""
             queue_redraw()
 
-func _pick_unit(position: Vector2):
+func _pick_unit(position: Vector2) -> Dictionary:
     for item in _unit_draw_data:
         var center: Vector2 = item.get("center", Vector2.ZERO)
         var radius: float = float(item.get("radius", 0))
         if position.distance_to(center) <= radius + 4.0:
             return item
-    return null
+    return {}
 
-func _set_tooltip_for_unit(unit_data) -> void:
-    if not unit_data is Dictionary:
+func _set_tooltip_for_unit(unit_data: Dictionary) -> void:
+    if unit_data.is_empty():
         tooltip_text = ""
         return
     var name_text := str(unit_data.get("name", "—"))
@@ -268,8 +273,8 @@ func _set_tooltip_for_unit(unit_data) -> void:
 func _draw_movement_overlay(origin: Vector2, cell_size: float) -> void:
     if not _should_show_movement():
         return
-    var unit := _state_unit(_active_unit_key)
-    if unit == null:
+    var unit: Dictionary = _state_unit(_active_unit_key)
+    if unit.is_empty():
         return
     var move_range = _move_range
     if move_range == null:
@@ -297,8 +302,8 @@ func _draw_movement_overlay(origin: Vector2, cell_size: float) -> void:
 func _draw_target_overlay(cell_size: float) -> void:
     if not _should_show_shooting():
         return
-    var unit := _state_unit(_active_unit_key)
-    if unit == null:
+    var unit: Dictionary = _state_unit(_active_unit_key)
+    if unit.is_empty():
         return
     var shoot_range = _shoot_range
     if shoot_range == null:
@@ -319,9 +324,9 @@ func _should_show_shooting() -> bool:
     var phase_text := _phase.to_lower()
     return "shoot" in phase_text or "стрел" in phase_text or "shooting" in phase_text
 
-func _state_unit(unit_key: String):
+func _state_unit(unit_key: String) -> Dictionary:
     if unit_key == "":
-        return null
+        return {}
     var units: Array = _state.get("units", []) or []
     for unit in units:
         if not unit is Dictionary:
@@ -329,7 +334,7 @@ func _state_unit(unit_key: String):
         var unit_data: Dictionary = unit
         if unit_key == _make_key(str(unit_data.get("side", "")), int(unit_data.get("id", -1))):
             return unit_data
-    return null
+    return {}
 
 func _resolve_targets(unit: Dictionary, shoot_range: int) -> Array:
     var targets := {}
@@ -361,7 +366,7 @@ func _resolve_targets(unit: Dictionary, shoot_range: int) -> Array:
         var target_y = target.get("y")
         if target_x == null or target_y == null:
             continue
-        var distance := abs(int(target_x) - int(source_x)) + abs(int(target_y) - int(source_y))
+        var distance: int = abs(int(target_x) - int(source_x)) + abs(int(target_y) - int(source_y))
         if distance <= shoot_range:
             targets[_make_key(str(target.get("side", "")), int(target.get("id", -1)))] = true
     return targets.keys()

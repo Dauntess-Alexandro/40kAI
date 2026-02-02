@@ -43,8 +43,14 @@ func _ready() -> void:
         _command_path = env_command_path
     _state_reader = StateReader.new()
     var env_state_path := OS.get_environment("STATE_PATH")
+    if env_state_path == "":
+        env_state_path = OS.get_environment("STATE_JSON_PATH")
     if env_state_path != "":
         _state_reader.state_path = env_state_path
+    elif not FileAccess.file_exists(_state_reader.state_path):
+        var repo_state_path := ProjectSettings.globalize_path("res://../gui/state.json")
+        if FileAccess.file_exists(repo_state_path):
+            _state_reader.state_path = repo_state_path
     add_child(_state_reader)
     _state_reader.state_changed.connect(_apply_state)
 
@@ -213,13 +219,15 @@ func _update_active_context(state: Dictionary) -> void:
     var targets = null
     if state.has("available_targets"):
         targets = state.get("available_targets")
+    var active_unit_id = unit_key.get("id") if unit_key != null else null
+    var active_unit_side = unit_key.get("side") if unit_key != null else null
     map_view.set_active_context(
-        active_unit_id = unit_key.get("id") if unit_key != null else null,
-        active_unit_side = unit_key.get("side") if unit_key != null else null,
-        phase = phase,
-        move_range = move_range,
-        shoot_range = shoot_range,
-        targets = targets
+        active_unit_id,
+        active_unit_side,
+        phase,
+        move_range,
+        shoot_range,
+        targets
     )
 
 func _resolve_active_unit(state: Dictionary):
