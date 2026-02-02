@@ -1,94 +1,130 @@
 diff --git a/gui_qt/main.py b/gui_qt/main.py
-index 74c99cfeff1c0c9adde7e3a21eaae6922f8d3e15..13cca569e58e056b9d8f3bc9656f76b9688778c9 100644
+index 13cca569e58e056b9d8f3bc9656f76b9688778c9..0ddb284093c9a31b152d15b5a78642a24a0ad726 100644
 --- a/gui_qt/main.py
 +++ b/gui_qt/main.py
-@@ -1,32 +1,33 @@
- import json
- import os
- import re
- import shutil
- import subprocess
- import sys
- import time
-+import ctypes
- from collections import deque
- from dataclasses import dataclass
- from typing import Optional
- 
- from PySide6 import QtCore, QtGui, QtQml
- from PySide6.QtGui import QIcon
- 
- 
- @dataclass
- class RosterEntry:
-     name: str
-     count: int
-     instance_id: str
- 
- 
- @dataclass
- class UnitInfo:
-     name: str
-     faction: str
-     default_count: int
- 
- 
- class GUIController(QtCore.QObject):
-     logLine = QtCore.Signal(str)
-     statusChanged = QtCore.Signal(str)
-@@ -1083,47 +1084,55 @@ class GUIController(QtCore.QObject):
-                     continue
-                 target = os.path.join(gui_img_path, name)
-                 if os.path.isdir(target):
-                     shutil.rmtree(target)
-                 else:
-                     os.remove(target)
-         self._truncate_agent_logs()
- 
-     def _remove_contents(self, path: str) -> None:
-         if not os.path.isdir(path):
+@@ -314,50 +314,64 @@ class GUIController(QtCore.QObject):
+     def stop_process(self) -> None:
+         if self._process is None:
+             self._emit_status("Нет активного процесса для остановки.")
              return
-         for name in os.listdir(path):
-             target = os.path.join(path, name)
-             if os.path.isdir(target):
-                 shutil.rmtree(target)
-             else:
-                 os.remove(target)
+         self._emit_log("[GUI] Останавливаю процесс...", level="INFO")
+         self._process.terminate()
+         if not self._process.waitForFinished(3000):
+             self._emit_log("[GUI] Процесс не завершился, принудительное завершение.", level="WARN")
+             self._process.kill()
+         self._cleanup_process()
  
-     def _truncate_agent_logs(self) -> None:
-         log_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS.md")
-         with open(log_path, "w", encoding="utf-8"):
-             pass
+     @QtCore.Slot()
+     def clear_model_cache(self) -> None:
+         try:
+             self._clear_cache_files()
+             self._emit_status("Кэш моделей и LOGS_FOR_AGENTS.md очищены.")
+             self._emit_log("[GUI] Кэш моделей и LOGS_FOR_AGENTS.md очищены.")
+         except OSError as exc:
+             message = (
+                 "Не удалось очистить кэш (gui_qt/main.py): "
+                 "проверьте права доступа и повторите."
+             )
+             self._emit_status(message)
+             self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
  
- 
- def main() -> int:
-+    if sys.platform.startswith("win"):
-+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("40kAI.GUI")
++    @QtCore.Slot()
++    def clear_agent_logs(self) -> None:
++        try:
++            self._truncate_agent_logs()
++            self._emit_status("LOGS_FOR_AGENTS.md очищен.")
++            self._emit_log("[GUI] LOGS_FOR_AGENTS.md очищен.")
++        except OSError as exc:
++            message = (
++                "Не удалось очистить LOGS_FOR_AGENTS.md (gui_qt/main.py): "
++                "проверьте путь и права доступа, затем повторите."
++            )
++            self._emit_status(message)
++            self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
 +
-     app = QtGui.QGuiApplication(sys.argv)
+     @QtCore.Slot(str)
+     def select_metrics_file(self, file_url: str) -> None:
+         path = self._to_local_file(file_url)
+         if not path:
+             self._emit_status("Файл метрик не выбран.")
+             return
+         if not os.path.exists(path):
+             self._emit_status("Файл модели не найден. Проверьте путь.")
+             return
+         metrics_id = self._extract_metrics_id(path)
+         if not metrics_id:
+             self._emit_status("Не удалось определить ID метрик из имени файла.")
+             return
+         json_path = os.path.join(self._repo_root, "models", f"data_{metrics_id}.json")
+         if not os.path.exists(json_path):
+             self._emit_status("Файл метрик не найден в models/.")
+             self._emit_log(f"[GUI] metrics json не найден: {json_path}", level="WARN")
+             return
+         if not self._load_metrics_from_json(json_path):
+             return
+         self._metrics_label = f"Файл: {os.path.basename(path)}"
+         self.metricsLabelChanged.emit(self._metrics_label)
+         self._emit_status("Метрики обновлены.")
  
-     icon_path = os.path.join(os.path.dirname(__file__), "assets", "40kai_icon.ico")
-     if os.path.exists(icon_path):
-         app.setWindowIcon(QIcon(icon_path))
+     @QtCore.Slot()
+diff --git a/gui_qt/qml/Main.qml b/gui_qt/qml/Main.qml
+index f903708172dced431dc759a34bd4eeb4b14fab60..62f3d53d6637e47b97ea6856ce18f1d02ea91ad6 100644
+--- a/gui_qt/qml/Main.qml
++++ b/gui_qt/qml/Main.qml
+@@ -217,50 +217,56 @@ ApplicationWindow {
+                                 Layout.fillWidth: true
  
-     engine = QtQml.QQmlApplicationEngine()
+                                 GridLayout {
+                                     columns: 2
+                                     columnSpacing: 8
+                                     rowSpacing: 8
+                                     anchors.fill: parent
  
-     controller = GUIController()
-     engine.rootContext().setContextProperty("controller", controller)
+                                     Button {
+                                         text: "Тренировка 8х"
+                                         enabled: !controller.running
+                                         onClicked: controller.start_train_8x()
+                                     }
  
-     qml_path = os.path.join(os.path.dirname(__file__), "qml", "Main.qml")
-     engine.load(QtCore.QUrl.fromLocalFile(qml_path))
+                                     Button {
+                                         text: "Самообучение 8х"
+                                         enabled: !controller.running
+                                         onClicked: controller.start_self_play_8x()
+                                     }
  
-     if not engine.rootObjects():
-         return 1
- 
-+    if os.path.exists(icon_path):
-+        root = engine.rootObjects()[0]
-+        if hasattr(root, "setIcon"):
-+            root.setIcon(QIcon(icon_path))
+                                     Button {
+                                         text: "Очистить кеш"
+                                         enabled: !controller.running
+                                         onClicked: clearCacheDialog.open()
+                                     }
 +
-     return app.exec()
++                                    Button {
++                                        text: "Очистить логи"
++                                        enabled: !controller.running
++                                        onClicked: controller.clear_agent_logs()
++                                    }
+                                 }
+                             }
+                         }
+                     }
  
+                     Label {
+                         text: root.statusText
+                     }
  
- if __name__ == "__main__":
-     sys.exit(main())
+                     Label {
+                         text: controller.progressLabel
+                     }
+ 
+                     Item {
+                         Layout.fillWidth: true
+                         height: 24
+ 
+                         ProgressBar {
+                             id: trainingProgress
+                             anchors.fill: parent
+                             value: controller.progressValue
+                         }
+ 
+                         Text {
+                             anchors.centerIn: parent

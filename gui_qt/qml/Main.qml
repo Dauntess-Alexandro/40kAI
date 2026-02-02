@@ -239,6 +239,12 @@ ApplicationWindow {
                                         enabled: !controller.running
                                         onClicked: clearCacheDialog.open()
                                     }
+
+                                    Button {
+                                        text: "Очистить логи"
+                                        enabled: !controller.running
+                                        onClicked: controller.clear_agent_logs()
+                                    }
                                 }
                             }
                         }

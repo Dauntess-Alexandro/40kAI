@@ -336,6 +336,20 @@ class GUIController(QtCore.QObject):
             self._emit_status(message)
             self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
 
+    @QtCore.Slot()
+    def clear_agent_logs(self) -> None:
+        try:
+            self._truncate_agent_logs()
+            self._emit_status("LOGS_FOR_AGENTS.md очищен.")
+            self._emit_log("[GUI] LOGS_FOR_AGENTS.md очищен.")
+        except OSError as exc:
+            message = (
+                "Не удалось очистить LOGS_FOR_AGENTS.md (gui_qt/main.py): "
+                "проверьте путь и права доступа, затем повторите."
+            )
+            self._emit_status(message)
+            self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
+
     @QtCore.Slot(str)
     def select_metrics_file(self, file_url: str) -> None:
         path = self._to_local_file(file_url)
