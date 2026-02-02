@@ -627,17 +627,17 @@ func _matches_any(text: String, tokens: Array) -> bool:
 func _detect_turn_number(line: String):
     var regex = RegEx.new()
     regex.compile("боевого раунда\\s*(\\d+)")
-    var match = regex.search(line)
-    if match:
-        return int(match.get_string(1))
+    var regex_match = regex.search(line)
+    if regex_match:
+        return int(regex_match.get_string(1))
     regex.compile("\\bturn\\s*(\\d+)")
-    match = regex.search(line)
-    if match:
-        return int(match.get_string(1))
+    regex_match = regex.search(line)
+    if regex_match:
+        return int(regex_match.get_string(1))
     regex.compile("\\bраунд\\s*(\\d+)")
-    match = regex.search(line)
-    if match:
-        return int(match.get_string(1))
+    regex_match = regex.search(line)
+    if regex_match:
+        return int(regex_match.get_string(1))
     return null
 
 func _should_show_entry(entry: Dictionary, tab_key: String) -> bool:
