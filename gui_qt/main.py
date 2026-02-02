@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import time
+import ctypes
 from collections import deque
 from dataclasses import dataclass
 from typing import Optional
@@ -1105,6 +1106,9 @@ class GUIController(QtCore.QObject):
 
 
 def main() -> int:
+    if sys.platform.startswith("win"):
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("40kAI.GUI")
+
     app = QtGui.QGuiApplication(sys.argv)
 
     icon_path = os.path.join(os.path.dirname(__file__), "assets", "40kai_icon.ico")
@@ -1121,6 +1125,11 @@ def main() -> int:
 
     if not engine.rootObjects():
         return 1
+
+    if os.path.exists(icon_path):
+        root = engine.rootObjects()[0]
+        if hasattr(root, "setIcon"):
+            root.setIcon(QIcon(icon_path))
 
     return app.exec()
 
