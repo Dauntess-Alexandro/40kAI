@@ -38,8 +38,9 @@ func _load_state() -> Dictionary:
     var result := json.parse(content)
     if result != OK:
         return _default_state()
-    var data := json.data
-    if data is Dictionary:
+    var data: Dictionary = {}
+    if json.data is Dictionary:
+        data = json.data
         var state := _default_state()
         for key in data.keys():
             state[key] = data[key]
