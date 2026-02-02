@@ -1,0 +1,24 @@
+; Engine configuration file.
+; It's best to edit this file in the editor, not manually.
+; Format:
+;   [section] ; comment
+;   key=value
+
+config_version=5
+
+[application]
+config/name="40kAI Viewer"
+run/main_scene="res://scenes/Main.tscn"
+config/features=PackedStringArray("4.2")
+
+[display]
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/size/window_width_override=1280
+window/size/window_height_override=720
+window/size/resizable=true
+
+[input]
+
+[filesystem]
+imported_files_path="res://.godot/imported"

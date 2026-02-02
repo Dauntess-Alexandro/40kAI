@@ -1,0 +1,127 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id=1]
+
+[node name="Main" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource( 1 )
+
+[node name="MainSplit" type="VSplitContainer" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="TopSplit" type="HSplitContainer" parent="MainSplit"]
+
+[node name="LeftPanel" type="VBoxContainer" parent="MainSplit/TopSplit"]
+custom_minimum_size = Vector2(820, 0)
+
+[node name="FitButton" type="Button" parent="MainSplit/TopSplit/LeftPanel"]
+text = "Fit"
+
+[node name="MapPlaceholder" type="ColorRect" parent="MainSplit/TopSplit/LeftPanel"]
+custom_minimum_size = Vector2(820, 520)
+size_flags_vertical = 3
+color = Color(0.11, 0.1, 0.09, 1)
+
+[node name="RightPanel" type="ScrollContainer" parent="MainSplit/TopSplit"]
+custom_minimum_size = Vector2(360, 0)
+
+[node name="RightContent" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="StatusGroup" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
+
+[node name="StatusTitle" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/StatusGroup"]
+text = "СТАТУС"
+
+[node name="RoundLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/StatusGroup"]
+text = "Раунд: —"
+
+[node name="TurnLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/StatusGroup"]
+text = "Ход: —"
+
+[node name="PhaseLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/StatusGroup"]
+text = "Фаза: —"
+
+[node name="ActiveLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/StatusGroup"]
+text = "Активен: —"
+
+[node name="PointsGroup" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
+
+[node name="PointsTitle" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/PointsGroup"]
+text = "ОЧКИ"
+
+[node name="PlayerVPLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/PointsGroup"]
+text = "Player VP: —"
+
+[node name="ModelVPLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/PointsGroup"]
+text = "Model VP: —"
+
+[node name="PlayerCPLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/PointsGroup"]
+text = "Player CP: —"
+
+[node name="ModelCPLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/PointsGroup"]
+text = "Model CP: —"
+
+[node name="UnitsGroup" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
+
+[node name="UnitsTitle" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup"]
+text = "ОТРЯДЫ"
+
+[node name="UnitsTablePlaceholder" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup"]
+text = "Таблица юнитов (будет реализована на следующем шаге)."
+
+[node name="LegendGroup" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
+
+[node name="LegendTitle" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup"]
+text = "ЛЕГЕНДА"
+
+[node name="LegendPlaceholder" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup"]
+text = "Легенда цветов (будет реализована на следующем шаге)."
+
+[node name="CommandsGroup" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
+
+[node name="CommandsTitle" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup"]
+text = "КОМАНДЫ"
+
+[node name="CommandPrompt" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup"]
+text = "Ожидаю команду..."
+
+[node name="CommandHint" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup"]
+text = "Горячие клавиши: —"
+
+[node name="CommandPlaceholder" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup"]
+text = "Панель ввода команд (будет реализована на следующем шаге)."
+
+[node name="LogGroup" type="VBoxContainer" parent="MainSplit"]
+custom_minimum_size = Vector2(0, 220)
+
+[node name="LogTitle" type="Label" parent="MainSplit/LogGroup"]
+text = "ЖУРНАЛ"
+
+[node name="LogTabs" type="TabContainer" parent="MainSplit/LogGroup"]
+custom_minimum_size = Vector2(0, 200)
+
+[node name="AllTab" type="TextEdit" parent="MainSplit/LogGroup/LogTabs"]
+editable = false
+
+[node name="TurnTab" type="TextEdit" parent="MainSplit/LogGroup/LogTabs"]
+editable = false
+
+[node name="ShootingTab" type="TextEdit" parent="MainSplit/LogGroup/LogTabs"]
+editable = false
+
+[node name="FightTab" type="TextEdit" parent="MainSplit/LogGroup/LogTabs"]
+editable = false
+
+[node name="DiceTab" type="TextEdit" parent="MainSplit/LogGroup/LogTabs"]
+editable = false
+
+[node name="ErrorsTab" type="TextEdit" parent="MainSplit/LogGroup/LogTabs"]
+editable = false
