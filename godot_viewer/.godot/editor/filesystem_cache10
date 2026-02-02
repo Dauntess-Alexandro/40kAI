@@ -1,0 +1,8 @@
+63f7b34db8d8cdea90c76aacccf841ec
+::res://::1770023455
+::res://scenes/::1770022219
+Main.tscn::PackedScene::-1::1770022219::0::1::::<><><>0<>0<><>::res://scripts/main.gd<>res://scripts/map_view.gd
+::res://scripts/::1770023418
+main.gd::GDScript::604546037719986840::1770023418::0::1::::<>Control<><>0<>0<><>::
+map_view.gd::GDScript::8228454205274503553::1770022788::0::1::::MapView<>Control<><>0<>0<><>::
+state_reader.gd::GDScript::4262733444436739892::1770017057::0::1::::StateReader<>Node<><>0<>0<><>::
