@@ -1,6 +1,23 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id=1]
+[ext_resource type="Script" path="res://scripts/map_view.gd" id=2]
+
+[sub_resource type="StyleBoxFlat" id=1]
+bg_color = Color(0.2, 0.2, 0.22, 1)
+border_color = Color(0.26, 0.26, 0.28, 1)
+border_width_bottom = 1
+border_width_left = 1
+border_width_right = 1
+border_width_top = 1
+corner_radius_bottom_left = 6
+corner_radius_bottom_right = 6
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+content_margin_bottom = 8
+content_margin_left = 10
+content_margin_right = 10
+content_margin_top = 8
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -14,19 +31,27 @@ layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+split_offset = 760
 
 [node name="TopSplit" type="HSplitContainer" parent="MainSplit"]
+split_offset = 1320
 
 [node name="LeftPanel" type="VBoxContainer" parent="MainSplit/TopSplit"]
 custom_minimum_size = Vector2(820, 0)
 
 [node name="FitButton" type="Button" parent="MainSplit/TopSplit/LeftPanel"]
 text = "Fit"
+theme_override_font_sizes/font_size = 12
 
-[node name="MapPlaceholder" type="ColorRect" parent="MainSplit/TopSplit/LeftPanel"]
+[node name="ObjectiveRadiusToggle" type="CheckBox" parent="MainSplit/TopSplit/LeftPanel"]
+text = "Показывать радиус целей"
+button_pressed = true
+theme_override_font_sizes/font_size = 12
+
+[node name="MapView" type="Control" parent="MainSplit/TopSplit/LeftPanel"]
 custom_minimum_size = Vector2(820, 520)
 size_flags_vertical = 3
-color = Color(0.11, 0.1, 0.09, 1)
+script = ExtResource( 2 )
 
 [node name="RightPanel" type="ScrollContainer" parent="MainSplit/TopSplit"]
 custom_minimum_size = Vector2(360, 0)
@@ -34,76 +59,170 @@ custom_minimum_size = Vector2(360, 0)
 [node name="RightContent" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel"]
 size_flags_horizontal = 3
 size_flags_vertical = 3
+theme_override_constants/separation = 10
 
-[node name="StatusGroup" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
+[node name="StatusGroup" type="PanelContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
+theme_override_styles/panel = SubResource( 1 )
 
-[node name="StatusTitle" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/StatusGroup"]
+[node name="StatusContent" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/StatusGroup"]
+theme_override_constants/separation = 2
+
+[node name="StatusTitle" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/StatusContent"]
 text = "СТАТУС"
+theme_override_font_sizes/font_size = 16
 
-[node name="RoundLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/StatusGroup"]
+[node name="RoundLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/StatusContent"]
 text = "Раунд: —"
+theme_override_font_sizes/font_size = 12
 
-[node name="TurnLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/StatusGroup"]
+[node name="TurnLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/StatusContent"]
 text = "Ход: —"
+theme_override_font_sizes/font_size = 12
 
-[node name="PhaseLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/StatusGroup"]
+[node name="PhaseLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/StatusContent"]
 text = "Фаза: —"
+theme_override_font_sizes/font_size = 12
 
-[node name="ActiveLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/StatusGroup"]
+[node name="ActiveLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/StatusGroup/StatusContent"]
 text = "Активен: —"
+theme_override_font_sizes/font_size = 12
 
-[node name="PointsGroup" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
+[node name="PointsGroup" type="PanelContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
+theme_override_styles/panel = SubResource( 1 )
 
-[node name="PointsTitle" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/PointsGroup"]
+[node name="PointsContent" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/PointsGroup"]
+theme_override_constants/separation = 2
+
+[node name="PointsTitle" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/PointsContent"]
 text = "ОЧКИ"
+theme_override_font_sizes/font_size = 16
 
-[node name="PlayerVPLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/PointsGroup"]
+[node name="PlayerVPLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/PointsContent"]
 text = "Player VP: —"
+theme_override_font_sizes/font_size = 12
 
-[node name="ModelVPLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/PointsGroup"]
+[node name="ModelVPLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/PointsContent"]
 text = "Model VP: —"
+theme_override_font_sizes/font_size = 12
 
-[node name="PlayerCPLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/PointsGroup"]
+[node name="PlayerCPLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/PointsContent"]
 text = "Player CP: —"
+theme_override_font_sizes/font_size = 12
 
-[node name="ModelCPLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/PointsGroup"]
+[node name="ModelCPLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/PointsGroup/PointsContent"]
 text = "Model CP: —"
+theme_override_font_sizes/font_size = 12
 
-[node name="UnitsGroup" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
+[node name="UnitsGroup" type="PanelContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
+theme_override_styles/panel = SubResource( 1 )
 
-[node name="UnitsTitle" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup"]
+[node name="UnitsContent" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup"]
+theme_override_constants/separation = 6
+
+[node name="UnitsTitle" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent"]
 text = "ОТРЯДЫ"
+theme_override_font_sizes/font_size = 16
 
-[node name="UnitsTablePlaceholder" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup"]
-text = "Таблица юнитов (будет реализована на следующем шаге)."
+[node name="UnitsTable" type="GridContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent"]
+columns = 5
 
-[node name="LegendGroup" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
+[node name="UnitsHeaderId" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent/UnitsTable"]
+text = "ID"
+theme_override_font_sizes/font_size = 12
 
-[node name="LegendTitle" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup"]
+[node name="UnitsHeaderSide" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent/UnitsTable"]
+text = "Сторона"
+theme_override_font_sizes/font_size = 12
+
+[node name="UnitsHeaderHP" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent/UnitsTable"]
+text = "HP"
+theme_override_font_sizes/font_size = 12
+
+[node name="UnitsHeaderModels" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent/UnitsTable"]
+text = "Модели"
+theme_override_font_sizes/font_size = 12
+
+[node name="UnitsHeaderCoord" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/UnitsGroup/UnitsContent/UnitsTable"]
+text = "Коорд."
+theme_override_font_sizes/font_size = 12
+
+[node name="LegendGroup" type="PanelContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
+theme_override_styles/panel = SubResource( 1 )
+
+[node name="LegendContent" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup"]
+theme_override_constants/separation = 6
+
+[node name="LegendTitle" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent"]
 text = "ЛЕГЕНДА"
+theme_override_font_sizes/font_size = 16
 
-[node name="LegendPlaceholder" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup"]
-text = "Легенда цветов (будет реализована на следующем шаге)."
+[node name="LegendList" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent"]
+theme_override_constants/separation = 4
 
-[node name="CommandsGroup" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
+[node name="LegendPlayer" type="HBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList"]
 
-[node name="CommandsTitle" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup"]
+[node name="LegendPlayerSwatch" type="ColorRect" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList/LegendPlayer"]
+custom_minimum_size = Vector2(12, 12)
+color = Color(0.26, 0.72, 1, 1)
+
+[node name="LegendPlayerLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList/LegendPlayer"]
+text = "Игрок"
+theme_override_font_sizes/font_size = 12
+
+[node name="LegendModel" type="HBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList"]
+
+[node name="LegendModelSwatch" type="ColorRect" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList/LegendModel"]
+custom_minimum_size = Vector2(12, 12)
+color = Color(0.96, 0.4, 0.4, 1)
+
+[node name="LegendModelLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList/LegendModel"]
+text = "Модель"
+theme_override_font_sizes/font_size = 12
+
+[node name="LegendObjective" type="HBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList"]
+
+[node name="LegendObjectiveSwatch" type="ColorRect" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList/LegendObjective"]
+custom_minimum_size = Vector2(12, 12)
+color = Color(0.95, 0.85, 0.45, 1)
+
+[node name="LegendObjectiveLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/LegendGroup/LegendContent/LegendList/LegendObjective"]
+text = "Цель"
+theme_override_font_sizes/font_size = 12
+
+[node name="CommandsGroup" type="PanelContainer" parent="MainSplit/TopSplit/RightPanel/RightContent"]
+theme_override_styles/panel = SubResource( 1 )
+
+[node name="CommandsContent" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup"]
+theme_override_constants/separation = 6
+
+[node name="CommandsTitle" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent"]
 text = "КОМАНДЫ"
+theme_override_font_sizes/font_size = 16
 
-[node name="CommandPrompt" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup"]
+[node name="CommandPrompt" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent"]
 text = "Ожидаю команду..."
+theme_override_font_sizes/font_size = 12
 
-[node name="CommandHint" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup"]
-text = "Горячие клавиши: —"
+[node name="CommandHint" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent"]
+text = "Горячие клавиши: Enter — отправить, Ctrl+L — очистить"
+theme_override_font_sizes/font_size = 11
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
 
-[node name="CommandPlaceholder" type="Label" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup"]
-text = "Панель ввода команд (будет реализована на следующем шаге)."
+[node name="CommandInputRow" type="HBoxContainer" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent"]
+
+[node name="CommandInput" type="LineEdit" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandInputRow"]
+size_flags_horizontal = 3
+placeholder_text = "Введите команду..."
+
+[node name="CommandSend" type="Button" parent="MainSplit/TopSplit/RightPanel/RightContent/CommandsGroup/CommandsContent/CommandInputRow"]
+text = "Отправить"
 
 [node name="LogGroup" type="VBoxContainer" parent="MainSplit"]
 custom_minimum_size = Vector2(0, 220)
 
 [node name="LogTitle" type="Label" parent="MainSplit/LogGroup"]
 text = "ЖУРНАЛ"
+theme_override_font_sizes/font_size = 14
 
 [node name="LogTabs" type="TabContainer" parent="MainSplit/LogGroup"]
 custom_minimum_size = Vector2(0, 200)
