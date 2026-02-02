@@ -145,8 +145,8 @@ func _draw_units(origin: Vector2, cell_size: float) -> void:
 
         var x: int = int(x_value)
         var y: int = int(y_value)
-        var key := Vector2i(x, y)
-        var stack: Array = occupied.get(key, [])
+        var cell_key := Vector2i(x, y)
+        var stack: Array = occupied.get(cell_key, [])
         var offset := 0.0
         if stack.size() > 1:
             offset = (stack.find(unit) - (stack.size() - 1) * 0.5) * (cell_size * 0.15)
@@ -157,18 +157,18 @@ func _draw_units(origin: Vector2, cell_size: float) -> void:
         var radius := cell_size * 0.35
         draw_circle(center, radius, color)
         draw_arc(center, radius, 0, TAU, 32, Color(0, 0, 0, 0.4), 1.0)
-        var key := _make_key(str(side_value), int(unit_data.get("id", -1)))
-        _unit_centers[key] = center
+        var unit_key := _make_key(str(side_value), int(unit_data.get("id", -1)))
+        _unit_centers[unit_key] = center
         _unit_draw_data.append({
-            "key": key,
+            "key": unit_key,
             "unit": unit_data,
             "center": center,
             "radius": radius
         })
 
-        if _selected_unit_key != "" and _selected_unit_key == key:
+        if _selected_unit_key != "" and _selected_unit_key == unit_key:
             draw_arc(center, radius + 2.0, 0, TAU, 32, SELECT_COLOR, 2.0)
-        elif _hovered_unit_key != "" and _hovered_unit_key == key:
+        elif _hovered_unit_key != "" and _hovered_unit_key == unit_key:
             draw_arc(center, radius + 2.0, 0, TAU, 32, HOVER_COLOR, 2.0)
 
         var id_text := str(unit_data.get("id", ""))
