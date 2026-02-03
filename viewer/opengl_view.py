@@ -101,6 +101,35 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._error_message = message
         self.update()
 
+    def is_animating(self) -> bool:
+        return self._unit_anim_timer.isActive()
+
+    def finish_animation(self) -> None:
+        if not self._unit_anim_timer.isActive():
+            return
+        self._unit_anim_timer.stop()
+        self._rebuild_units(1.0)
+        self._prev_unit_positions = dict(self._curr_unit_positions)
+        self.refresh_overlays()
+        self.update()
+
+    def animate_unit_move(
+        self,
+        unit_key: Tuple[str, int],
+        start_pos: Tuple[int, int],
+        end_pos: Tuple[int, int],
+    ) -> None:
+        for unit in self._units_state:
+            if (unit.get("side"), unit.get("id")) == unit_key:
+                unit["x"] = end_pos[0]
+                unit["y"] = end_pos[1]
+                break
+        for key, pos in self._curr_unit_positions.items():
+            self._prev_unit_positions[key] = QtCore.QPointF(pos)
+        self._prev_unit_positions[unit_key] = QtCore.QPointF(float(start_pos[0]), float(start_pos[1]))
+        self._curr_unit_positions[unit_key] = QtCore.QPointF(float(end_pos[0]), float(end_pos[1]))
+        self._start_unit_animation()
+
     def update_state(self, state: Optional[Dict]) -> None:
         self._state = state or {}
         if not state:
