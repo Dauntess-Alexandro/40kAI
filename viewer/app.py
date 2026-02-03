@@ -81,6 +81,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._init_log_viewer()
         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
+        self._init_demo()
 
         fit_button = QtWidgets.QPushButton("Fit")
         fit_button.clicked.connect(self._fit_view)
@@ -161,6 +162,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.toggle_objective_radius.setChecked(True)
         self.toggle_objective_radius.toggled.connect(self._toggle_objective_radius)
         toolbar.addAction(self.toggle_objective_radius)
+        self.toggle_demo = QtGui.QAction("Демо хода ИИ", self)
+        self.toggle_demo.setCheckable(True)
+        self.toggle_demo.setChecked(True)
+        self.toggle_demo.toggled.connect(self._toggle_demo_mode)
+        toolbar.addAction(self.toggle_demo)
+        self.toggle_demo_auto = QtGui.QAction("Авто-демо", self)
+        self.toggle_demo_auto.setCheckable(True)
+        self.toggle_demo_auto.setChecked(False)
+        self.toggle_demo_auto.toggled.connect(self._toggle_demo_auto)
+        toolbar.addAction(self.toggle_demo_auto)
 
     def _toggle_objective_radius(self, checked):
         self._show_objective_radius = checked
@@ -314,6 +325,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_stack.setEnabled(False)
             self.command_hint.setText("Горячие клавиши: —")
             self._refresh_active_context()
+            self._refresh_demo_prompt()
             return
 
         self.command_prompt.setText(request.prompt)
@@ -356,6 +368,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_stack.setCurrentIndex(self._command_pages["text"])
         self._update_command_hint(kind)
         self._refresh_active_context()
+        self._refresh_demo_prompt()
 
     def _update_command_hint(self, kind):
         if kind == "direction":
@@ -368,6 +381,202 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_hint.setText("Горячие клавиши: Enter — выбрать")
         else:
             self.command_hint.setText("Горячие клавиши: Enter — отправить")
+
+    def _init_demo(self):
+        self._demo_enabled = True
+        self._demo_auto = False
+        self._demo_waiting = False
+        self._demo_schedule = []
+        self._demo_index = 0
+        self._demo_turn_signature = None
+        self._demo_unit_keys = []
+        self._demo_timer = QtCore.QTimer(self)
+        self._demo_timer.setInterval(700)
+        self._demo_timer.timeout.connect(self._advance_demo_step)
+
+    def _toggle_demo_mode(self, checked):
+        self._demo_enabled = checked
+        if not checked:
+            self._demo_timer.stop()
+            self._demo_schedule = []
+            self._demo_index = 0
+            self._demo_waiting = False
+            self.map_scene.set_demo_focus(None, None)
+            self.add_log_line("[DEMO] Демо хода ИИ отключено.")
+        else:
+            self.add_log_line("[DEMO] Демо хода ИИ включено.")
+        if self.state_watcher and self.state_watcher.state:
+            self._refresh_demo_state(self.state_watcher.state)
+        self._refresh_demo_prompt()
+
+    def _toggle_demo_auto(self, checked):
+        self._demo_auto = checked
+        if self._demo_auto and self._demo_schedule:
+            if not self._demo_timer.isActive():
+                self._demo_timer.start()
+            self.add_log_line("[DEMO] Авто-демо включено.")
+        else:
+            if self._demo_timer.isActive():
+                self._demo_timer.stop()
+            self.add_log_line("[DEMO] Авто-демо выключено.")
+        self._refresh_demo_prompt()
+
+    def _refresh_demo_state(self, state):
+        if not self._demo_enabled:
+            return
+        if state.get("active") != "model":
+            self._demo_waiting = False
+            if self._demo_timer.isActive():
+                self._demo_timer.stop()
+            self.map_scene.set_demo_focus(None, None)
+            self._demo_schedule = []
+            self._demo_index = 0
+            self._demo_turn_signature = None
+            self._demo_unit_keys = []
+            self._refresh_demo_prompt()
+            return
+        signature = (state.get("round"), state.get("turn"))
+        unit_keys = [
+            (unit.get("side"), unit.get("id"))
+            for unit in state.get("units", []) or []
+            if unit.get("side") == "model" and unit.get("id") is not None
+        ]
+        if signature != self._demo_turn_signature or unit_keys != self._demo_unit_keys:
+            self._demo_turn_signature = signature
+            self._demo_unit_keys = unit_keys
+            self._build_demo_schedule(state, unit_keys)
+            self._demo_index = 0
+            if self._demo_schedule:
+                self.add_log_line("[DEMO] Запуск демонстрации хода ИИ по фазам.")
+        if self._demo_auto and self._demo_schedule and not self._demo_timer.isActive():
+            self._demo_timer.start()
+        self._refresh_demo_prompt()
+
+    def _build_demo_schedule(self, state, unit_keys):
+        phase_defs = [
+            ("command", "Командования"),
+            ("move", "Движения"),
+            ("shoot", "Стрельбы"),
+            ("charge", "Чарджа"),
+            ("fight", "Битвы"),
+        ]
+        units_by_key = {}
+        for unit in state.get("units", []) or []:
+            key = (unit.get("side"), unit.get("id"))
+            units_by_key[key] = unit
+        schedule = []
+        for phase_key, phase_label in phase_defs:
+            total = len(unit_keys)
+            for index, key in enumerate(unit_keys, start=1):
+                unit = units_by_key.get(key, {})
+                schedule.append(
+                    {
+                        "phase": phase_key,
+                        "phase_label": phase_label,
+                        "unit_key": key,
+                        "unit_name": unit.get("name", "—"),
+                        "index": index,
+                        "total": total,
+                    }
+                )
+        self._demo_schedule = schedule
+        self._demo_waiting = bool(schedule)
+        if not schedule:
+            self.map_scene.set_demo_focus(None, None)
+
+    def _advance_demo_step(self):
+        if not self._demo_schedule:
+            self._demo_waiting = False
+            if self._demo_timer.isActive():
+                self._demo_timer.stop()
+            self.map_scene.set_demo_focus(None, None)
+            self._refresh_demo_prompt()
+            return
+        if self._demo_index >= len(self._demo_schedule):
+            if self._demo_auto:
+                self._demo_waiting = False
+                if self._demo_timer.isActive():
+                    self._demo_timer.stop()
+                self.map_scene.set_demo_focus(None, None)
+                self.add_log_line("[DEMO] Демонстрация хода ИИ завершена.")
+                self._refresh_demo_prompt()
+                return
+            self._demo_index = 0
+            self.add_log_line("[DEMO] Демо хода ИИ перезапущено.")
+        step = self._demo_schedule[self._demo_index]
+        self._demo_index += 1
+        unit_key = step["unit_key"]
+        phase_label = step["phase_label"]
+        unit_id = unit_key[1]
+        unit_name = step["unit_name"]
+        self.map_scene.set_demo_focus(unit_key, step["phase"])
+        self.add_log_line(
+            "[DEMO] Фаза "
+            f"{phase_label}: юнит {step['index']}/{step['total']} "
+            f"(id={unit_id}, name={unit_name})."
+        )
+        self._refresh_demo_prompt()
+
+    def _handle_demo_command(self, text: str) -> bool:
+        lowered = text.strip().lower()
+        if lowered in ("y", "yes", "да", "auto", "авто"):
+            self._demo_auto = True
+            if not self._demo_timer.isActive():
+                self._demo_timer.start()
+            self.toggle_demo_auto.setChecked(True)
+            self._refresh_demo_prompt()
+            return True
+        if lowered in ("n", "no", "нет", "pause", "стоп", "пауза"):
+            self._demo_auto = False
+            if self._demo_timer.isActive():
+                self._demo_timer.stop()
+            self.toggle_demo_auto.setChecked(False)
+            self._refresh_demo_prompt()
+            return True
+        if lowered in ("enter", "next", "шаг", "далее"):
+            self._advance_demo_step()
+            return True
+        self.command_prompt.setText(
+            "Ошибка команды демо в панели «Команды»: "
+            f"непонятный ввод '{text}'. "
+            "Что делать дальше: Enter — следующий шаг, Y — авто, N — пауза."
+        )
+        return True
+
+    def _refresh_demo_prompt(self):
+        if self._pending_request is not None:
+            return
+        if not self._demo_enabled:
+            return
+        state = self.state_watcher.state if self.state_watcher else None
+        if not state or state.get("active") != "model":
+            return
+        if not self._demo_schedule:
+            self.command_prompt.setText("Демо хода ИИ: нет юнитов для показа.")
+            self.command_hint.setText("Горячие клавиши: —")
+            self.command_stack.setEnabled(False)
+            return
+        self.command_stack.setEnabled(True)
+        self.command_stack.setCurrentIndex(self._command_pages["text"])
+        self.command_input.setPlaceholderText("Enter — следующий шаг, Y/N — авто/пауза")
+        if self._demo_index < len(self._demo_schedule):
+            step = self._demo_schedule[self._demo_index]
+            phase_label = step["phase_label"]
+            unit_label = f"{step['index']}/{step['total']}"
+            self.command_prompt.setText(
+                "Демо хода ИИ: фаза "
+                f"{phase_label}, юнит {unit_label}. "
+                "Enter — следующий шаг, Y — авто, N — пауза."
+            )
+        else:
+            self.command_prompt.setText(
+                "Демо хода ИИ завершено. "
+                "Enter — повторить, Y — авто, N — пауза."
+            )
+        auto_label = "Y — авто, N — пауза"
+        if self._demo_auto:
+            auto_label = "Авто-демо включено (N — пауза)"
+        self.command_hint.setText(f"Горячие клавиши: Enter — шаг, {auto_label}")
 
     def _init_log_viewer(self):
         fixed_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
@@ -410,8 +619,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _submit_text(self):
         text = self.command_input.text().strip()
+        if not text and self._pending_request is None and self._demo_waiting:
+            self.command_input.clear()
+            self._advance_demo_step()
+            return
         if not text:
             return
+        if self._pending_request is None and self._demo_waiting:
+            handled = self._handle_demo_command(text)
+            if handled:
+                self.command_input.clear()
+                return
         if self._pending_request and getattr(self._pending_request, "kind", "") == "dice":
             count = self._pending_request.count or 0
             min_value = self._pending_request.min_value or 1
@@ -483,6 +701,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._populate_units_table(state.get("units", []))
         self._update_log(state.get("log_tail", []))
         self._refresh_active_context()
+        self._refresh_demo_state(state)
 
     def _populate_units_table(self, units):
         self.units_table.setRowCount(len(units))
@@ -855,43 +1074,51 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return "shoot" in phase_text or "стрел" in phase_text or "shooting" in phase_text
 
     def eventFilter(self, obj, event):
-        if event.type() == QtCore.QEvent.KeyPress and self._pending_request:
-            kind = getattr(self._pending_request, "kind", "")
+        if event.type() == QtCore.QEvent.KeyPress:
             key = event.key()
             text = event.text().lower()
-            if kind == "direction":
-                if key == QtCore.Qt.Key_Up:
-                    self._submit_answer("up")
-                    return True
-                if key == QtCore.Qt.Key_Down:
-                    self._submit_answer("down")
-                    return True
-                if key == QtCore.Qt.Key_Left:
-                    self._submit_answer("left")
-                    return True
-                if key == QtCore.Qt.Key_Right:
-                    self._submit_answer("right")
-                    return True
-                if key in (QtCore.Qt.Key_Space, QtCore.Qt.Key_0):
-                    self._submit_answer("none")
-                    return True
-            elif kind == "bool":
-                if text == "y":
-                    self._submit_answer("y")
-                    return True
-                if text == "n":
-                    self._submit_answer("n")
-                    return True
-                if key == QtCore.Qt.Key_Escape:
-                    self.command_input.clear()
-                    return True
-            elif kind == "int":
+            if self._pending_request:
+                kind = getattr(self._pending_request, "kind", "")
+                if kind == "direction":
+                    if key == QtCore.Qt.Key_Up:
+                        self._submit_answer("up")
+                        return True
+                    if key == QtCore.Qt.Key_Down:
+                        self._submit_answer("down")
+                        return True
+                    if key == QtCore.Qt.Key_Left:
+                        self._submit_answer("left")
+                        return True
+                    if key == QtCore.Qt.Key_Right:
+                        self._submit_answer("right")
+                        return True
+                    if key in (QtCore.Qt.Key_Space, QtCore.Qt.Key_0):
+                        self._submit_answer("none")
+                        return True
+                elif kind == "bool":
+                    if text == "y":
+                        self._submit_answer("y")
+                        return True
+                    if text == "n":
+                        self._submit_answer("n")
+                        return True
+                    if key == QtCore.Qt.Key_Escape:
+                        self.command_input.clear()
+                        return True
+                elif kind == "int":
+                    if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+                        self._submit_answer(self.int_spin.value())
+                        return True
+                elif kind == "choice":
+                    if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+                        self._submit_choice()
+                        return True
+            elif self._demo_waiting:
                 if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
-                    self._submit_answer(self.int_spin.value())
+                    self._advance_demo_step()
                     return True
-            elif kind == "choice":
-                if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
-                    self._submit_choice()
+                if text in ("y", "n"):
+                    self._handle_demo_command(text)
                     return True
         return super().eventFilter(obj, event)
 

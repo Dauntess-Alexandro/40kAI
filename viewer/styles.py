@@ -16,6 +16,11 @@ class Theme:
     model = QtGui.QColor("#4a7aa8")
     objective = QtGui.QColor("#d1a21b")
     selection = QtGui.QColor("#d7b66f")
+    demo_command = QtGui.QColor("#d7b66f")
+    demo_move = QtGui.QColor("#7fbf7f")
+    demo_shoot = QtGui.QColor("#c4935a")
+    demo_charge = QtGui.QColor("#d16666")
+    demo_fight = QtGui.QColor("#9a75d6")
 
     @staticmethod
     def font(size=10, bold=False):
