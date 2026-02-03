@@ -969,6 +969,16 @@ class Warhammer40kEnv(gym.Env):
         self._ensure_io().emit_event(payload)
         if self._present_ai_debug_enabled():
             self._log(f"[PRESENT][EVENT] {payload}")
+        if self.playType:
+            try:
+                self.updateBoard()
+            except Exception:
+                if self._present_ai_debug_enabled():
+                    self._log(
+                        "[PRESENT][WARN] Не удалось обновить state.json после события. "
+                        "Где: Warhammer40kEnv._emit_replay_event. "
+                        "Что сделать дальше: проверьте доступность STATE_JSON_PATH."
+                    )
 
     def _log(self, msg: str, verbose_only: bool = False):
         if verbose_only and not self._is_verbose():
@@ -1521,6 +1531,16 @@ class Warhammer40kEnv(gym.Env):
     def begin_phase(self, side: str, phase: str):
         self.active_side = side
         self.phase = phase
+        if self.playType:
+            try:
+                self.updateBoard()
+            except Exception:
+                if self._present_ai_debug_enabled():
+                    self._log(
+                        "[PRESENT][WARN] Не удалось обновить state.json на старте фазы. "
+                        "Где: Warhammer40kEnv.begin_phase. "
+                        "Что сделать дальше: проверьте доступность STATE_JSON_PATH."
+                    )
         if side == "model":
             self._emit_replay_event("phase_start", phase=phase, duration_ms=400)
         if not self._round_banner_shown:

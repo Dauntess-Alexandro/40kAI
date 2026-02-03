@@ -37,6 +37,15 @@ class PlaybackController(QtCore.QObject):
         if not self._waiting_for_enter and not self._timer.isActive():
             self._process_next_event()
 
+    def is_playing(self) -> bool:
+        if self._waiting_for_enter:
+            return True
+        if self._queue:
+            return True
+        if self._timer.isActive():
+            return True
+        return self._board.is_animating()
+
     def handle_enter(self) -> bool:
         if self._board.is_animating():
             self._board.finish_animation()

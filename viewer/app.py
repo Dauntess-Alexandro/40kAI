@@ -844,6 +844,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return unit_id, None
 
     def _refresh_active_context(self):
+        if self._playback is not None and self._playback.is_playing():
+            return
         unit_id, side = self._resolve_active_unit()
         self._active_unit_id = unit_id
         self._active_unit_side = side
