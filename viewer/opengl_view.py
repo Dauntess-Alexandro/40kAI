@@ -97,6 +97,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.setMouseTracking(True)
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
 
+    def unit_animation_duration_ms(self) -> int:
+        return int(self._unit_anim_duration_ms)
+
+    def clear_selection(self) -> None:
+        self._selected_unit_key = None
+        self.update()
+
     def set_error_message(self, message: Optional[str]) -> None:
         self._error_message = message
         self.update()
