@@ -444,11 +444,15 @@ class GUIController(QtCore.QObject):
         env["FIGHT_REPORT"] = "1"
         env["PLAY_NO_EXPLORATION"] = "1"
         command = self._build_script_command(script, [])
+        creationflags = 0
+        if self._is_windows:
+            creationflags = subprocess.CREATE_NO_WINDOW
         subprocess.Popen(
             command,
             cwd=self._repo_root,
             env=env,
             start_new_session=True,
+            creationflags=creationflags,
         )
         self._emit_status("Запуск игры в GUI через Viewer.")
 

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional, List
 import re
 import os
+import sys
 import threading
 import queue
 
@@ -94,6 +95,12 @@ class ConsoleIO(BaseIO):
         _append_log_line(message, self.log_path)
 
     def request_bool(self, prompt: str) -> Optional[bool]:
+        if not sys.stdin or sys.stdin.closed:
+            self.log(
+                "Ошибка ввода: stdin недоступен. Где: ConsoleIO.request_bool. "
+                "Что делать дальше: используйте GUI-ввод или запустите игру в терминале."
+            )
+            return None
         while True:
             response = input(prompt).strip().lower()
             if response in ("y", "yes", "да", "д"):
@@ -105,6 +112,12 @@ class ConsoleIO(BaseIO):
             self.log("Неверный ввод: нужно Да/Нет.")
 
     def request_int(self, prompt: str, min_value: Optional[int] = None, max_value: Optional[int] = None):
+        if not sys.stdin or sys.stdin.closed:
+            self.log(
+                "Ошибка ввода: stdin недоступен. Где: ConsoleIO.request_int. "
+                "Что делать дальше: используйте GUI-ввод или запустите игру в терминале."
+            )
+            return None
         while True:
             response = input(prompt).strip()
             if response.lower() in ("q", "quit"):
@@ -123,12 +136,24 @@ class ConsoleIO(BaseIO):
             return value
 
     def request_choice(self, prompt: str, options: list[str]):
+        if not sys.stdin or sys.stdin.closed:
+            self.log(
+                "Ошибка ввода: stdin недоступен. Где: ConsoleIO.request_choice. "
+                "Что делать дальше: используйте GUI-ввод или запустите игру в терминале."
+            )
+            return None
         response = input(prompt).strip()
         if response.lower() in ("q", "quit"):
             return None
         return response
 
     def request_direction(self, prompt: str, options: list[str]):
+        if not sys.stdin or sys.stdin.closed:
+            self.log(
+                "Ошибка ввода: stdin недоступен. Где: ConsoleIO.request_direction. "
+                "Что делать дальше: используйте GUI-ввод или запустите игру в терминале."
+            )
+            return None
         response = input(prompt).strip().lower()
         if response in ("q", "quit"):
             return None
@@ -141,6 +166,12 @@ class ConsoleIO(BaseIO):
         min_value: Optional[int] = None,
         max_value: Optional[int] = None,
     ):
+        if not sys.stdin or sys.stdin.closed:
+            self.log(
+                "Ошибка ввода: stdin недоступен. Где: ConsoleIO.request_dice. "
+                "Что делать дальше: используйте GUI-ввод или запустите игру в терминале."
+            )
+            return None
         min_val = 1 if min_value is None else min_value
         max_val = 6 if max_value is None else max_value
         while True:
@@ -159,6 +190,12 @@ class ConsoleIO(BaseIO):
             return "skip"
         if self._demo_auto:
             return "auto"
+        if not sys.stdin or sys.stdin.closed:
+            self.log(
+                "Ошибка ввода: stdin недоступен. Где: ConsoleIO.request_demo. "
+                "Что делать дальше: используйте GUI-ввод или запустите игру в терминале."
+            )
+            return None
         while True:
             response = input(prompt).strip().lower()
             if response in ("", "step", "enter", "next", "шаг", "далее"):
