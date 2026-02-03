@@ -1029,6 +1029,13 @@ class Warhammer40kEnv(gym.Env):
     def _log_phase(self, side: str, phase: str):
         if not self._should_log():
             return
+        phase_short = {
+            "command": "К",
+            "movement": "Д",
+            "shooting": "С",
+            "charge": "Ч",
+            "fight": "Б",
+        }.get(phase, phase[:1].upper())
         phase_title = {
             "command": "ФАЗА КОМАНДОВАНИЯ",
             "movement": "ФАЗА ДВИЖЕНИЯ",
@@ -1036,7 +1043,8 @@ class Warhammer40kEnv(gym.Env):
             "charge": "ФАЗА ЧАРДЖА",
             "fight": "ФАЗА БОЯ",
         }.get(phase, f"ФАЗА {phase.upper()}")
-        self._log(f"--- {phase_title} ---")
+        side_label = self._side_label(side)
+        self._log(f"--- РАУНД {self.battle_round} | {side_label} | {phase_title} ({phase_short}) ---")
 
     def _log_unit(self, side: str, unit_id: int, unit_idx: int, msg: str):
         if not self._should_log():
@@ -1481,7 +1489,7 @@ class Warhammer40kEnv(gym.Env):
         self.active_side = side
         self.phase = phase
         if not self._round_banner_shown:
-            self._log(f"=== БОЕВОЙ РАУНД {self.battle_round} ===")
+            self._log(f"=== РАУНД {self.battle_round} ===")
             self._round_banner_shown = True
             if not self._fight_env_logged:
                 self._log(
@@ -1495,7 +1503,7 @@ class Warhammer40kEnv(gym.Env):
                 )
                 self._fight_env_logged = True
         if phase == "command":
-            self._log(f"--- ХОД {self._side_label(side)} ---")
+            self._log(f"--- РАУНД {self.battle_round} | ХОД {self._side_label(side)} ---")
             if side == "model":
                 self.unitFellBack = [False] * len(self.unit_health)
             elif side == "enemy":
@@ -1503,7 +1511,7 @@ class Warhammer40kEnv(gym.Env):
         self._log_phase(self._side_label(side), phase)
 
     def _end_battle_round(self):
-        self._log(f"=== КОНЕЦ БОЕВОГО РАУНДА {self.battle_round} ===")
+        self._log(f"=== КОНЕЦ РАУНДА {self.battle_round} ===")
         self.battle_round += 1
         self.numTurns = self.battle_round
         self._round_banner_shown = False
@@ -1521,7 +1529,6 @@ class Warhammer40kEnv(gym.Env):
     def command_phase(self, side: str, action=None, manual: bool = False):
         self.begin_phase(side, "command")
         if side == "model":
-            self._log_phase("MODEL", "command")
             self.modelCP += 1
             self.enemyCP += 1
             reward_delta = 0
