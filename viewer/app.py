@@ -1,7 +1,8 @@
-import torch
+import copy
 import os
 import re
 import sys
+from collections import deque
 from datetime import datetime
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -66,6 +67,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_entries = []
         self._current_turn_number = None
         self._log_tail_snapshot = None
+        self._ai_log_tail_snapshot = None
         self._log_tabs = {}
         self._log_tab_defs = [
             ("all", "Все"),
@@ -149,6 +151,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.timer.setInterval(300)
         self.timer.timeout.connect(self._poll_state)
         self.timer.start()
+
+        self._display_state = None
+        self._latest_state = None
+        self._ai_steps = deque()
+        self._ai_playback_active = False
+        self._ai_phase_override = None
+        self._ai_last_phase_shown = None
+        self._ai_timer = QtCore.QTimer(self)
+        self._ai_timer.setSingleShot(True)
+        self._ai_timer.timeout.connect(self._playback_next_step)
 
         self._poll_state()
         QtCore.QTimer.singleShot(0, self._start_controller)
@@ -459,7 +471,20 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._apply_state(self.state_watcher.state)
 
     def _apply_state(self, state):
-        board = state.get("board", {})
+        self._latest_state = state
+        self._update_log(state.get("log_tail", []))
+        new_log_lines = self._extract_new_log_lines(state.get("log_tail", []))
+        self._sync_ai_phase_from_logs(new_log_lines)
+
+        if self._should_playback_ai(state):
+            self._queue_ai_steps(state)
+            return
+
+        self._cancel_ai_playback()
+        self._apply_visual_state(state)
+
+    def _apply_visual_state(self, state, *, refresh_active=True):
+        self._display_state = state
         self.map_scene.update_state(state)
 
         self._units_by_key = {}
@@ -481,8 +506,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.points_cp_model.setText(f"Model CP: {cp.get('model', '—')}")
 
         self._populate_units_table(state.get("units", []))
-        self._update_log(state.get("log_tail", []))
-        self._refresh_active_context()
+        if refresh_active:
+            self._refresh_active_context()
 
     def _populate_units_table(self, units):
         self.units_table.setRowCount(len(units))
@@ -845,6 +870,245 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if self.state_watcher and self.state_watcher.state
             else None,
         )
+
+    def _should_playback_ai(self, state) -> bool:
+        if not state:
+            return False
+        if self._pending_request is not None:
+            return False
+        if self.controller.is_finished:
+            return False
+        return state.get("active") == "model"
+
+    def _extract_new_log_lines(self, log_tail):
+        if not isinstance(log_tail, list):
+            return []
+        if self._ai_log_tail_snapshot is None:
+            self._ai_log_tail_snapshot = list(log_tail)
+            return log_tail
+        snapshot = self._ai_log_tail_snapshot
+        if len(log_tail) >= len(snapshot) and log_tail[: len(snapshot)] == snapshot:
+            new_lines = log_tail[len(snapshot) :]
+        else:
+            new_lines = log_tail
+        self._ai_log_tail_snapshot = list(log_tail)
+        return new_lines
+
+    def _sync_ai_phase_from_logs(self, new_lines):
+        for line in new_lines:
+            phase_key = self._phase_key_from_log(line)
+            if phase_key:
+                self._ai_phase_override = phase_key
+
+    def _phase_key_from_log(self, line: str):
+        text = str(line).upper()
+        if "ФАЗА" not in text:
+            return None
+        if "КОМАНД" in text:
+            return "command"
+        if "ДВИЖ" in text:
+            return "movement"
+        if "СТРЕЛ" in text:
+            return "shooting"
+        if "ЧАРДЖ" in text:
+            return "charge"
+        if "БОЯ" in text or "БЛИЖ" in text:
+            return "fight"
+        return None
+
+    def _normalize_phase_key(self, phase):
+        text = str(phase or "").lower()
+        if "command" in text or "команд" in text:
+            return "command"
+        if "move" in text or "движ" in text or "movement" in text:
+            return "movement"
+        if "shoot" in text or "стрел" in text or "shooting" in text:
+            return "shooting"
+        if "charge" in text or "чардж" in text:
+            return "charge"
+        if "fight" in text or "бой" in text:
+            return "fight"
+        return text or None
+
+    def _phase_label(self, phase_key):
+        return {
+            "command": "Фаза командования",
+            "movement": "Фаза движения",
+            "shooting": "Фаза стрельбы",
+            "charge": "Фаза чарджа",
+            "fight": "Фаза боя",
+        }.get(phase_key, f"Фаза {phase_key}" if phase_key else "Фаза —")
+
+    def _queue_ai_steps(self, state):
+        if self._display_state is None:
+            self._apply_visual_state(state)
+            return
+        steps = self._build_ai_steps(self._display_state, state)
+        if not steps:
+            return
+        self._ai_steps.extend(steps)
+        if not self._ai_playback_active:
+            self._start_ai_playback()
+
+    def _build_ai_steps(self, from_state, to_state):
+        steps = []
+        from_units = {
+            (unit.get("side"), unit.get("id")): unit
+            for unit in from_state.get("units", []) or []
+        }
+        to_units = {
+            (unit.get("side"), unit.get("id")): unit
+            for unit in to_state.get("units", []) or []
+        }
+        changed_keys = []
+        for key, to_unit in to_units.items():
+            from_unit = from_units.get(key)
+            if from_unit is None:
+                continue
+            if (
+                from_unit.get("x") != to_unit.get("x")
+                or from_unit.get("y") != to_unit.get("y")
+                or from_unit.get("hp") != to_unit.get("hp")
+                or from_unit.get("models") != to_unit.get("models")
+            ):
+                changed_keys.append(key)
+
+        side_priority = {"model": 0, "player": 1}
+        changed_keys.sort(key=lambda key: (side_priority.get(key[0], 2), key[1] or 0))
+
+        phase_key = self._ai_phase_override or self._normalize_phase_key(to_state.get("phase"))
+        phase_label = self._phase_label(phase_key)
+
+        if not changed_keys and phase_key and phase_key != self._ai_last_phase_shown:
+            snapshot = copy.deepcopy(from_state)
+            snapshot["phase"] = phase_key
+            snapshot["active"] = to_state.get("active")
+            snapshot["turn"] = to_state.get("turn")
+            snapshot["round"] = to_state.get("round")
+            snapshot["vp"] = to_state.get("vp")
+            snapshot["cp"] = to_state.get("cp")
+            steps.append(
+                {
+                    "state": snapshot,
+                    "phase_key": phase_key,
+                    "phase_label": phase_label,
+                    "unit_key": None,
+                    "index": 0,
+                    "total": 0,
+                }
+            )
+            self._ai_last_phase_shown = phase_key
+            return steps
+
+        if not changed_keys:
+            return steps
+
+        base_state = copy.deepcopy(from_state)
+        base_state["active"] = to_state.get("active")
+        base_state["turn"] = to_state.get("turn")
+        base_state["round"] = to_state.get("round")
+        base_state["vp"] = to_state.get("vp")
+        base_state["cp"] = to_state.get("cp")
+
+        units_list = base_state.get("units", []) or []
+        base_state["units"] = units_list
+        units_by_key = {(unit.get("side"), unit.get("id")): unit for unit in units_list}
+        total = len(changed_keys)
+        for index, key in enumerate(changed_keys, start=1):
+            unit = to_units.get(key)
+            if unit is None:
+                continue
+            if key in units_by_key:
+                units_by_key[key].update(unit)
+            else:
+                units_list.append(copy.deepcopy(unit))
+                units_by_key[key] = units_list[-1]
+            base_state["phase"] = phase_key
+            snapshot = copy.deepcopy(base_state)
+            steps.append(
+                {
+                    "state": snapshot,
+                    "phase_key": phase_key,
+                    "phase_label": phase_label,
+                    "unit_key": key,
+                    "index": index,
+                    "total": total,
+                }
+            )
+        self._ai_last_phase_shown = phase_key
+        return steps
+
+    def _start_ai_playback(self):
+        if self._ai_playback_active:
+            return
+        self._ai_playback_active = True
+        self._playback_next_step()
+
+    def _cancel_ai_playback(self):
+        if self._ai_timer.isActive():
+            self._ai_timer.stop()
+        self._ai_steps.clear()
+        self._ai_playback_active = False
+        self._ai_phase_override = None
+        self._ai_last_phase_shown = None
+
+    def _playback_next_step(self):
+        if not self._ai_steps:
+            self._ai_playback_active = False
+            if self._latest_state is not None:
+                self._apply_visual_state(self._latest_state)
+            self._set_request(self._pending_request)
+            return
+
+        step = self._ai_steps.popleft()
+        snapshot = step["state"]
+        self._apply_visual_state(snapshot, refresh_active=False)
+
+        unit_key = step["unit_key"]
+        if unit_key:
+            side, unit_id = unit_key
+            self.map_scene.select_unit(side, unit_id)
+        else:
+            self.map_scene.clear_selection()
+
+        phase_key = step["phase_key"]
+        phase_label = step["phase_label"]
+        if unit_key:
+            _, unit_id = unit_key
+            prompt = f"Ход ИИ: {phase_label}. Юнит {unit_id} ({step['index']}/{step['total']})."
+        else:
+            prompt = f"Ход ИИ: {phase_label}. Подготовка..."
+        self.command_prompt.setText(prompt)
+        self.command_hint.setText("Автопросмотр хода ИИ — подождите.")
+        self.command_stack.setEnabled(False)
+
+        active_unit = None
+        if unit_key:
+            active_unit = self._units_by_key.get(unit_key)
+        move_range = None
+        shoot_range = None
+        if active_unit:
+            if self._normalize_phase_key(phase_key) == "movement":
+                move_range = self._resolve_move_range(active_unit)
+            if self._normalize_phase_key(phase_key) == "shooting":
+                shoot_range = self._resolve_weapon_range(active_unit)
+        self.map_scene.set_active_context(
+            active_unit_id=unit_key[1] if unit_key else None,
+            active_unit_side=unit_key[0] if unit_key else None,
+            phase=phase_key,
+            move_range=move_range,
+            shoot_range=shoot_range,
+            show_objective_radius=self._show_objective_radius,
+            targets=self.state_watcher.state.get("available_targets")
+            if self.state_watcher and self.state_watcher.state
+            else None,
+        )
+
+        base_delay = 320
+        anim_delay = self.map_scene.unit_animation_duration_ms()
+        extra_delay = 180 if self._normalize_phase_key(phase_key) in {"shooting", "fight"} else 0
+        delay = base_delay + anim_delay + extra_delay
+        self._ai_timer.start(delay)
 
     def _is_movement_phase(self, phase):
         phase_text = str(phase or "").lower()
