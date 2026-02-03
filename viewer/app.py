@@ -14,7 +14,7 @@ if GYM_PATH not in sys.path:
 from viewer.opengl_view import OpenGLBoardWidget
 from viewer.state import StateWatcher
 from viewer.styles import Theme
-from viewer.model_log_tree import ModelLogTreeBuilder
+from viewer.model_log_tree import render_model_log_flat
 
 from gym_mod.engine.game_controller import GameController
 from gym_mod.engine.game_io import parse_dice_values
@@ -69,11 +69,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_entries = []
         self._current_turn_number = None
         self._log_tail_snapshot = None
-        self._model_log_builder = ModelLogTreeBuilder()
         self._model_events_snapshot = None
         self._model_event_queue: queue.Queue = queue.Queue()
         self._model_log_source = None
         self._model_events_stream = []
+        self._model_events_current = []
         self._log_tabs = {}
         self._log_tab_defs = [
             ("player", "Все ходы игрока"),
@@ -433,7 +433,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if self._model_log_source in (None, "stream"):
             self._model_log_source = "stream"
             self._model_events_stream.extend(self._filter_model_events(drained))
-            self._model_log_builder.ingest(self._model_events_stream)
+            self._model_events_current = list(self._model_events_stream)
             self._refresh_model_log_view()
 
     def _start_controller(self):
@@ -570,7 +570,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             filtered = self._filter_model_events(events)
             self._model_events_snapshot = list(events)
             self._model_log_source = "state"
-            self._model_log_builder.ingest(filtered)
+            self._model_events_current = list(filtered)
             self._refresh_model_log_view()
         elif self._model_log_source is None:
             self._drain_event_queue()
@@ -832,7 +832,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         include_verbose = self.log_model_verbose.isChecked()
         only_round = self._current_turn_number if self.log_only_current_turn.isChecked() else None
-        text = self._model_log_builder.render_text(
+        text = render_model_log_flat(
+            self._model_events_current,
             include_verbose=include_verbose,
             only_round=only_round,
         )
@@ -866,9 +867,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_entries = []
         self._current_turn_number = None
         self._log_tail_snapshot = None
-        self._model_log_builder.reset()
         self._model_events_snapshot = None
         self._model_events_stream = []
+        self._model_events_current = []
         for view in self._log_tabs.values():
             view.clear()
 
