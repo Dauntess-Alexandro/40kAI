@@ -475,9 +475,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.add_log_line(str(msg))
 
     def _start_controller(self):
-        messages, request = self.controller.start()
+        messages, request = self.controller.start(block=False)
         self._append_log(messages)
-        self._set_request(request)
+        if request is not None:
+            self._set_request(request)
         self._poll_state()
 
     def _submit_text(self):
@@ -544,9 +545,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 "Состояние игры недоступно. Где: viewer/state.json. "
                 "Что делать дальше: запустите игру и дождитесь генерации state.json."
             )
-            return
-        if self.state_watcher.load_if_changed():
-            self._apply_state(self.state_watcher.state)
+        else:
+            if self.state_watcher.load_if_changed():
+                self._apply_state(self.state_watcher.state)
+        if self._pending_request is None:
+            request = self.controller.poll_request()
+            if request is not None:
+                self._set_request(request)
 
     def _apply_state(self, state):
         board = state.get("board", {})
