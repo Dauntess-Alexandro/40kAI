@@ -82,6 +82,21 @@ def write_state_json(env, path=None):
     elif active_side == "model":
         active_side = "model"
 
+    active_unit_side = getattr(env, "active_unit_side", None)
+    if active_unit_side == "enemy":
+        active_unit_side = "player"
+    elif active_unit_side == "model":
+        active_unit_side = "model"
+    active_unit_id = getattr(env, "active_unit_id", None)
+    active_unit_phase = getattr(env, "active_unit_phase", None)
+    active_unit = None
+    if active_unit_side in {"player", "model"} and active_unit_id is not None:
+        active_unit = {
+            "side": active_unit_side,
+            "id": _safe_int(active_unit_id, active_unit_id),
+            "phase": active_unit_phase,
+        }
+
     payload = {
         "board": {"width": _safe_int(getattr(env, "b_hei", None), None),
                   "height": _safe_int(getattr(env, "b_len", None), None)},
@@ -89,6 +104,7 @@ def write_state_json(env, path=None):
         "round": _safe_int(getattr(env, "battle_round", None), None),
         "phase": getattr(env, "phase", None),
         "active": active_side,
+        "active_unit": active_unit,
         "vp": {"player": _safe_int(getattr(env, "enemyVP", None), None),
                "model": _safe_int(getattr(env, "modelVP", None), None)},
         "cp": {"player": _safe_int(getattr(env, "enemyCP", None), None),

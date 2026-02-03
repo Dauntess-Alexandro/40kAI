@@ -813,12 +813,20 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _resolve_active_unit(self):
         unit_id = self._extract_unit_id(getattr(self._pending_request, "prompt", ""))
-        if unit_id is None:
-            return None, None
-        for (side, candidate_id), unit in self._units_by_key.items():
-            if candidate_id == unit_id:
-                return unit_id, side
-        return unit_id, None
+        if unit_id is not None:
+            for (side, candidate_id), unit in self._units_by_key.items():
+                if candidate_id == unit_id:
+                    return unit_id, side
+            return unit_id, None
+
+        state = self.state_watcher.state if self.state_watcher else None
+        active_unit = state.get("active_unit") if isinstance(state, dict) else None
+        if isinstance(active_unit, dict):
+            fallback_id = active_unit.get("id")
+            fallback_side = active_unit.get("side")
+            if fallback_id is not None and fallback_side:
+                return fallback_id, fallback_side
+        return None, None
 
     def _refresh_active_context(self):
         unit_id, side = self._resolve_active_unit()

@@ -9,6 +9,7 @@ import os
 import random
 import re
 import sys
+import time
 from typing import Optional
 
 import reward_config as reward_cfg
@@ -838,6 +839,10 @@ class Warhammer40kEnv(gym.Env):
         self.turn_order = ["enemy", "model"]
         self._round_banner_shown = False
         self._fight_env_logged = False
+        self.active_unit_side = None
+        self.active_unit_id = None
+        self.active_unit_phase = None
+        self._demo_delay_sec = self._read_demo_delay()
         self.mission_name = MISSION_NAME
 
         self.coordsOfOM = np.array([
@@ -1480,6 +1485,10 @@ class Warhammer40kEnv(gym.Env):
     def begin_phase(self, side: str, phase: str):
         self.active_side = side
         self.phase = phase
+        self.active_unit_phase = phase
+        if side != "model":
+            self.active_unit_side = None
+            self.active_unit_id = None
         if not self._round_banner_shown:
             self._log(f"=== БОЕВОЙ РАУНД {self.battle_round} ===")
             self._round_banner_shown = True
@@ -1518,6 +1527,33 @@ class Warhammer40kEnv(gym.Env):
             self.active_side = self.turn_order[current_index + 1]
         self.phase = "command"
 
+    def _read_demo_delay(self) -> float:
+        raw = os.getenv("AI_DEMO_DELAY", "0.35").strip()
+        try:
+            value = float(raw)
+        except ValueError:
+            value = 0.35
+        return max(0.0, value)
+
+    def _demo_enabled(self, side: str) -> bool:
+        return bool(getattr(self, "playType", False)) and side == "model" and self._demo_delay_sec > 0
+
+    def _demo_tick(self, side: str, unit_idx: int, phase: str, delay: Optional[float] = None) -> None:
+        if not self._demo_enabled(side):
+            return
+        if side == "model":
+            self.active_unit_side = "model"
+            self.active_unit_id = self._unit_id("model", unit_idx)
+        elif side == "enemy":
+            self.active_unit_side = "enemy"
+            self.active_unit_id = self._unit_id("enemy", unit_idx)
+        else:
+            self.active_unit_side = None
+            self.active_unit_id = None
+        self.active_unit_phase = phase
+        self.updateBoard(render=False)
+        time.sleep(self._demo_delay_sec if delay is None else max(0.0, delay))
+
     def command_phase(self, side: str, action=None, manual: bool = False):
         self.begin_phase(side, "command")
         if side == "model":
@@ -1527,6 +1563,7 @@ class Warhammer40kEnv(gym.Env):
             reward_delta = 0
             battle_shock = [False] * len(self.unit_health)
             for i in range(len(self.unit_health)):
+                self._demo_tick("model", i, "command")
                 unit_label = self._format_unit_label("model", i)
                 if self.unit_health[i] <= 0:
                     self.modelOC[i] = 0
@@ -1717,6 +1754,7 @@ class Warhammer40kEnv(gym.Env):
             objective_proximity_delta = 0.0
             for i in range(len(self.unit_health)):
                 modelName = i + 21
+                self._demo_tick("model", i, "movement", delay=self._demo_delay_sec * 0.4)
                 battleSh = battle_shock[i] if battle_shock else False
                 pos_before = tuple(self.unit_coords[i])
                 if self.unit_health[i] <= 0:
@@ -1791,6 +1829,7 @@ class Warhammer40kEnv(gym.Env):
                     else:
                         self._log_unit("MODEL", modelName, i, f"Позиция после: {pos_after}")
 
+                    self._demo_tick("model", i, "movement")
                     if pos_before != pos_after:
                         self._resolve_overwatch(
                             defender_side="enemy",
@@ -2196,6 +2235,7 @@ class Warhammer40kEnv(gym.Env):
             reward_delta = 0
             for i in range(len(self.unit_health)):
                 modelName = i + 21
+                self._demo_tick("model", i, "shooting")
                 advanced = advanced_flags[i] if advanced_flags else False
                 if self.unit_health[i] <= 0:
                     self._log_unit("MODEL", modelName, i, "Юнит мертв, стрельба пропущена.")
@@ -2661,6 +2701,7 @@ class Warhammer40kEnv(gym.Env):
             any_charge_targets = False
             for i in range(len(self.unit_health)):
                 modelName = i + 21
+                self._demo_tick("model", i, "charge")
                 advanced = advanced_flags[i] if advanced_flags else False
                 pos_before = tuple(self.unit_coords[i])
                 if self.unit_health[i] <= 0:
@@ -3430,6 +3471,7 @@ class Warhammer40kEnv(gym.Env):
                     # цель мертва/невалидна — снимаем бой
                     self.unitInAttack[att_idx] = [0, 0]
                     return False
+                self._demo_tick("model", att_idx, "fight")
                 self._log_unit_phase(
                     "MODEL",
                     "fight",
@@ -3985,8 +4027,9 @@ class Warhammer40kEnv(gym.Env):
         info = self.get_info()
         return self.game_over, info
 
-    def updateBoard(self):
-        self.render(mode="test")
+    def updateBoard(self, render: bool = True):
+        if render:
+            self.render(mode="test")
         self.board = np.zeros((self.b_len, self.b_hei))
 
         for i in range(len(self.unit_health)):
