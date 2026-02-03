@@ -22,6 +22,7 @@ class GameController:
         self._request_queue: queue.Queue = queue.Queue()
         self._answer_queue: queue.Queue = queue.Queue()
         self._io = GuiIO(self._request_queue, self._answer_queue)
+        set_active_io(self._io)
         self._thread: Optional[threading.Thread] = None
         self._finished = False
         self._started = False
