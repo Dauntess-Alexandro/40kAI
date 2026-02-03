@@ -33,6 +33,7 @@ class AiStep:
 @dataclass
 class AiPlayback:
     active: bool = False
+    collecting: bool = False
     steps: List[AiStep] = field(default_factory=list)
     idx: int = 0
     current_phase: str = "command"
@@ -905,6 +906,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _playback_begin(self) -> None:
         self.playback.active = True
+        self.playback.collecting = True
         self.playback.steps.clear()
         self.playback.idx = 0
         self.playback.current_phase = "command"
@@ -914,8 +916,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._playback_last_unit_id = None
 
     def _playback_finalize(self) -> None:
-        if not self.playback.active:
+        if not self.playback.active or not self.playback.collecting:
             return
+        self.playback.collecting = False
         self.playback.idx = 0
         self.add_log_line("Playback готов. Нажми Enter (пустая команда) или введи ai.next.")
         self._playback_debug_log("[PB] done")
@@ -930,12 +933,19 @@ class ViewerWindow(QtWidgets.QMainWindow):
         )
 
     def _playback_on_log_line(self, line: str) -> None:
-        if "--- ХОД PLAYER ---" in line or "=== КОНЕЦ БОЕВОГО РАУНДА" in line:
-            if self.playback.active:
-                self._playback_finalize()
-            return
-        if "[MODEL]" in line and not self.playback.active:
+        if "--- ХОД MODEL ---" in line:
             self._playback_begin()
+            return
+        if "--- ХОД PLAYER ---" in line or "=== КОНЕЦ БОЕВОГО РАУНДА" in line:
+            self._playback_finalize()
+            return
+
+        match = self._playback_unit_re.search(line)
+        if match and not self.playback.collecting:
+            self._playback_begin()
+
+        if not self.playback.collecting:
+            return
 
         if "--- ФАЗА " in line:
             phase = None
@@ -953,7 +963,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 self.playback.current_phase = phase
                 self.playback.last_phase_header = phase
 
-        match = self._playback_unit_re.search(line)
         if match:
             unit_id = int(match.group(1))
             self._playback_last_unit_id = unit_id
@@ -1032,7 +1041,22 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def playback_next_step(self) -> None:
         if not self.playback.active or not self.playback.steps:
-            self._append_log(["Нет активного playback."])
+            self._append_log(
+                [
+                    "Нет активного playback. Где: Viewer/playback. "
+                    "Что делать дальше: дождитесь хода модели и строки "
+                    "'Playback готов'."
+                ]
+            )
+            return
+        if self.playback.collecting:
+            self._append_log(
+                [
+                    "Playback ещё собирается. Где: лог хода модели. "
+                    "Что делать дальше: дождитесь строки '--- ХОД PLAYER ---' "
+                    "или '=== КОНЕЦ БОЕВОГО РАУНДА'."
+                ]
+            )
             return
         if self.map_scene.is_animating():
             self.map_scene.finish_animation()
