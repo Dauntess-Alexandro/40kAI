@@ -62,7 +62,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._unit_anim_timer.setInterval(16)
         self._unit_anim_timer.timeout.connect(self._animate_unit_step)
         self._unit_anim_clock = QtCore.QElapsedTimer()
-        self._unit_anim_duration_ms = 180
+        self._unit_anim_duration_ms = 280
 
         self._move_highlights: List[QtCore.QRectF] = []
         self._target_highlights: List[Tuple[QtCore.QPointF, float]] = []

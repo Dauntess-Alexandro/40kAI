@@ -95,6 +95,7 @@ def write_state_json(env, path=None):
                "model": _safe_int(getattr(env, "modelCP", None), None)},
         "units": units,
         "objectives": objectives,
+        "active_unit": getattr(env, "active_unit", None),
         "log_tail": _read_log_tail(),
         "generated_at": datetime.utcnow().isoformat() + "Z",
     }

@@ -11,6 +11,7 @@ def _default_state() -> Dict[str, Any]:
         "round": None,
         "phase": None,
         "active": None,
+        "active_unit": None,
         "vp": {"player": None, "model": None},
         "cp": {"player": None, "model": None},
         "units": [],

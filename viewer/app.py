@@ -29,6 +29,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._pending_request = None
         self._active_unit_id = None
         self._active_unit_side = None
+        self._state_active_unit = None
         self._show_objective_radius = True
         self._units_by_key = {}
         self._unit_row_by_key = {}
@@ -461,6 +462,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _apply_state(self, state):
         board = state.get("board", {})
         self.map_scene.update_state(state)
+        self._state_active_unit = state.get("active_unit")
 
         self._units_by_key = {}
         for unit in state.get("units", []) or []:
@@ -822,6 +824,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _refresh_active_context(self):
         unit_id, side = self._resolve_active_unit()
+        if self._state_active_unit and self._state_active_unit.get("id") is not None:
+            state_side = self._state_active_unit.get("side")
+            state_id = self._state_active_unit.get("id")
+            if state_side and state_id is not None:
+                unit_id, side = state_id, state_side
+                self.map_scene.select_unit(side, unit_id)
         self._active_unit_id = unit_id
         self._active_unit_side = side
         active_unit = self._units_by_key.get((side, unit_id))

@@ -9,6 +9,7 @@ import os
 import random
 import re
 import sys
+import time
 from typing import Optional
 
 import reward_config as reward_cfg
@@ -853,6 +854,9 @@ class Warhammer40kEnv(gym.Env):
         self._agent_log_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "..", "LOGS_FOR_AGENTS.md")
         )
+        self.demo_ai = False
+        self.demo_unit_delay_s = 0.35
+        self.active_unit = None
 
         self.modelOC = []
         self.enemyOC = []
@@ -1100,6 +1104,41 @@ class Warhammer40kEnv(gym.Env):
     def _unit_id(self, side: str, unit_idx: int) -> int:
         side = side.lower()
         return (21 + unit_idx) if side == "model" else (11 + unit_idx)
+
+    def _demo_sleep(self) -> None:
+        if not self.demo_ai:
+            return
+        delay = getattr(self, "demo_unit_delay_s", 0)
+        if delay and delay > 0:
+            time.sleep(delay)
+
+    def _demo_sync(self) -> None:
+        if not self.demo_ai:
+            return
+        self.updateBoard()
+        self._demo_sleep()
+
+    def _set_active_unit(self, side: Optional[str], unit_idx: Optional[int]) -> None:
+        if side is None or unit_idx is None:
+            self.active_unit = None
+            return
+        unit_id = self._unit_id(side, unit_idx)
+        side_label = "model" if side == "model" else "player"
+        self.active_unit = {"side": side_label, "id": unit_id}
+        self._demo_sync()
+
+    def _clear_active_unit(self) -> None:
+        self.active_unit = None
+        self._demo_sync()
+
+    def _demo_pause_phase(self, phase_label: str) -> None:
+        if not self.demo_ai:
+            return
+        self._clear_active_unit()
+        self._ensure_io().request_choice(
+            f"Фаза {phase_label} завершена. Команда: «Дальше».",
+            ["Дальше"],
+        )
 
     def _get_unit_data(self, side: str, unit_idx: int):
         side = side.lower()
@@ -1527,9 +1566,17 @@ class Warhammer40kEnv(gym.Env):
             reward_delta = 0
             battle_shock = [False] * len(self.unit_health)
             for i in range(len(self.unit_health)):
+                if self.demo_ai:
+                    self._set_active_unit("model", i)
                 unit_label = self._format_unit_label("model", i)
                 if self.unit_health[i] <= 0:
                     self.modelOC[i] = 0
+                    self._log_unit(
+                        "MODEL",
+                        self._unit_id("model", i),
+                        i,
+                        "Юнит мертв, командование пропущено.",
+                    )
                     continue
                 self.modelOC[i] = self.unit_data[i]["OC"]
                 if isBelowHalfStr(self.unit_data[i], self.unit_health[i]) is True and self.unit_health[i] > 0:
@@ -1716,6 +1763,8 @@ class Warhammer40kEnv(gym.Env):
             objective_hold_delta = 0.0
             objective_proximity_delta = 0.0
             for i in range(len(self.unit_health)):
+                if self.demo_ai:
+                    self._set_active_unit("model", i)
                 modelName = i + 21
                 battleSh = battle_shock[i] if battle_shock else False
                 pos_before = tuple(self.unit_coords[i])
@@ -1885,6 +1934,8 @@ class Warhammer40kEnv(gym.Env):
                             i,
                             f"Остаётся в ближнем бою с {self._format_unit_label('enemy', idOfE)}, движение пропущено.",
                         )
+                if self.demo_ai:
+                    self._demo_sync()
             if objective_hold_delta != 0 or objective_proximity_delta != 0:
                 total_obj_delta = objective_hold_delta + objective_proximity_delta
                 self._log_reward(
@@ -2195,6 +2246,8 @@ class Warhammer40kEnv(gym.Env):
             self._log_phase("MODEL", "shooting")
             reward_delta = 0
             for i in range(len(self.unit_health)):
+                if self.demo_ai:
+                    self._set_active_unit("model", i)
                 modelName = i + 21
                 advanced = advanced_flags[i] if advanced_flags else False
                 if self.unit_health[i] <= 0:
@@ -2431,6 +2484,8 @@ class Warhammer40kEnv(gym.Env):
                             self._log(f"{self._format_unit_label('model', i)} не смог стрелять: выбранная цель недоступна.")
                 else:
                     self._log_unit("MODEL", modelName, i, "Нет целей в дальности, стрельба пропущена.")
+                if self.demo_ai:
+                    self._demo_sync()
             return reward_delta
         elif side == "enemy" and action is not None and not manual:
             self._log_phase(self._display_side("enemy"), "shooting")
@@ -2660,6 +2715,8 @@ class Warhammer40kEnv(gym.Env):
             reward_delta = 0
             any_charge_targets = False
             for i in range(len(self.unit_health)):
+                if self.demo_ai:
+                    self._set_active_unit("model", i)
                 modelName = i + 21
                 advanced = advanced_flags[i] if advanced_flags else False
                 pos_before = tuple(self.unit_coords[i])
@@ -2796,6 +2853,8 @@ class Warhammer40kEnv(gym.Env):
                             )
                         else:
                             self._log_unit("MODEL", modelName, i, "Нет целей в 12\", чардж пропущен.")
+                if self.demo_ai:
+                    self._demo_sync()
             if not any_charge_targets:
                 self._log("[MODEL] Чардж: нет доступных целей")
             return reward_delta
@@ -3423,6 +3482,8 @@ class Warhammer40kEnv(gym.Env):
             """
             # проверка жив/в бою
             if att_side == "model":
+                if self.demo_ai:
+                    self._set_active_unit("model", att_idx)
                 if self.unit_health[att_idx] <= 0 or self.unitInAttack[att_idx][0] != 1:
                     return False
                 def_idx = self.unitInAttack[att_idx][1]
@@ -3503,6 +3564,8 @@ class Warhammer40kEnv(gym.Env):
                     self.enemyInAttack[def_idx] = [0, 0]
                     self.unitInAttack[att_idx] = [0, 0]
 
+                if self.demo_ai:
+                    self._demo_sync()
                 return True
 
             else:  # att_side == "enemy"
@@ -3798,22 +3861,32 @@ class Warhammer40kEnv(gym.Env):
         reward += delta
         if delta != 0:
             self._log_reward(f"Reward (шаг): командование delta={delta:+.3f}")
+        if self.demo_ai:
+            self._demo_pause_phase("командования")
         advanced_flags, delta = self.movement_phase("model", action=action, battle_shock=battle_shock)
         reward += delta
         if delta != 0:
             self._log_reward(f"Reward (шаг): движение delta={delta:+.3f}")
+        if self.demo_ai:
+            self._demo_pause_phase("движения")
         shoot_delta = self.shooting_phase("model", advanced_flags=advanced_flags, action=action) or 0
         reward += shoot_delta
         if shoot_delta != 0:
             self._log_reward(f"Reward (шаг): стрельба delta={shoot_delta:+.3f}")
+        if self.demo_ai:
+            self._demo_pause_phase("стрельбы")
         charge_delta = self.charge_phase("model", advanced_flags=advanced_flags, action=action) or 0
         reward += charge_delta
         if charge_delta != 0:
             self._log_reward(f"Reward (шаг): чардж delta={charge_delta:+.3f}")
+        if self.demo_ai:
+            self._demo_pause_phase("чарджа")
         fight_delta = self.fight_phase("model") or 0
         reward += fight_delta
         if fight_delta != 0:
             self._log_reward(f"Reward (шаг): бой delta={fight_delta:+.3f}")
+        if self.demo_ai:
+            self._demo_pause_phase("боя")
         game_over, end_reason, winner = apply_end_of_battle(self, log_fn=self._log)
         self.enemyStrat["overwatch"] = -1
         self.enemyStrat["smokescreen"] = -1

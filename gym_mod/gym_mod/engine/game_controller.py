@@ -122,6 +122,8 @@ class GameController:
 
             env.io = self._io
             env.playType = True
+            env.demo_ai = True
+            env.demo_unit_delay_s = float(os.getenv("DEMO_UNIT_DELAY_S", "0.35"))
 
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
