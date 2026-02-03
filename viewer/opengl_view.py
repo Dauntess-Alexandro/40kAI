@@ -74,6 +74,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._move_range = None
         self._shoot_range = None
         self._targets = None
+        self._layer_order = [
+            "movement",
+            "objectives",
+            "units",
+            "selection",
+            "shooting",
+            "labels",
+        ]
 
         self._selected_unit_key: Optional[Tuple[str, int]] = None
 
@@ -643,55 +651,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._draw_grid(painter)
 
         painter.setTransform(self._view_transform())
-
-        if self._move_highlights:
-            highlight = QtGui.QColor(Theme.selection)
-            highlight.setAlpha(80)
-            painter.setPen(QtCore.Qt.NoPen)
-            painter.setBrush(QtGui.QBrush(highlight))
-            for rect in self._move_highlights:
-                painter.drawRect(rect)
-
-        for objective in self._objectives:
-            painter.setBrush(Theme.brush(objective.color))
-            painter.setPen(Theme.pen(Theme.outline, 0.8))
-            painter.drawEllipse(objective.center, objective.radius, objective.radius)
-            if self._show_objective_radius:
-                control_pen = QtGui.QPen(objective.owner_color)
-                control_pen.setWidthF(1.2)
-                control_pen.setStyle(QtCore.Qt.DashLine)
-                painter.setPen(control_pen)
-                painter.setBrush(QtCore.Qt.NoBrush)
-                painter.drawEllipse(
-                    objective.center,
-                    objective.control_radius,
-                    objective.control_radius,
-                )
-
-        for render in self._units:
-            painter.setBrush(Theme.brush(render.color))
-            painter.setPen(Theme.pen(Theme.outline, 0.8))
-            painter.drawEllipse(render.center, render.radius, render.radius)
-
-        if self._selected_unit_key in self._unit_by_key:
-            render = self._unit_by_key[self._selected_unit_key]
-            painter.setBrush(QtCore.Qt.NoBrush)
-            painter.setPen(Theme.pen(Theme.selection, 2))
-            painter.drawEllipse(render.center, render.radius + 2, render.radius + 2)
-
-        if self._target_highlights:
-            painter.setBrush(QtCore.Qt.NoBrush)
-            painter.setPen(Theme.pen(Theme.accent, 2))
-            for center, radius in self._target_highlights:
-                painter.drawEllipse(center, radius, radius)
-
-        text_font = Theme.font(size=8, bold=True)
-        painter.setFont(text_font)
-        painter.setPen(Theme.text)
-        for label, pos in self._unit_labels:
-            painter.drawText(pos, label)
-        for label, pos in self._objective_labels:
-            painter.drawText(pos, label)
+        for layer_name in self._layer_order:
+            if layer_name == "movement":
+                self._draw_movement_layer(painter)
+            elif layer_name == "objectives":
+                self._draw_objective_layer(painter)
+            elif layer_name == "units":
+                self._draw_units_layer(painter)
+            elif layer_name == "selection":
+                self._draw_selection_layer(painter)
+            elif layer_name == "shooting":
+                self._draw_shooting_layer(painter)
+            elif layer_name == "labels":
+                self._draw_labels_layer(painter)
 
         painter.setTransform(QtGui.QTransform())
         if self._debug_overlay:
@@ -709,3 +681,60 @@ class OpenGLBoardWidget(QOpenGLWidget):
             )
 
         painter.end()
+
+    def _draw_movement_layer(self, painter: QtGui.QPainter) -> None:
+        if not self._move_highlights:
+            return
+        highlight = QtGui.QColor(Theme.selection)
+        highlight.setAlpha(80)
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.setBrush(QtGui.QBrush(highlight))
+        for rect in self._move_highlights:
+            painter.drawRect(rect)
+
+    def _draw_objective_layer(self, painter: QtGui.QPainter) -> None:
+        for objective in self._objectives:
+            painter.setBrush(Theme.brush(objective.color))
+            painter.setPen(Theme.pen(Theme.outline, 0.8))
+            painter.drawEllipse(objective.center, objective.radius, objective.radius)
+            if self._show_objective_radius:
+                control_pen = QtGui.QPen(objective.owner_color)
+                control_pen.setWidthF(1.2)
+                control_pen.setStyle(QtCore.Qt.DashLine)
+                painter.setPen(control_pen)
+                painter.setBrush(QtCore.Qt.NoBrush)
+                painter.drawEllipse(
+                    objective.center,
+                    objective.control_radius,
+                    objective.control_radius,
+                )
+
+    def _draw_units_layer(self, painter: QtGui.QPainter) -> None:
+        for render in self._units:
+            painter.setBrush(Theme.brush(render.color))
+            painter.setPen(Theme.pen(Theme.outline, 0.8))
+            painter.drawEllipse(render.center, render.radius, render.radius)
+
+    def _draw_selection_layer(self, painter: QtGui.QPainter) -> None:
+        if self._selected_unit_key in self._unit_by_key:
+            render = self._unit_by_key[self._selected_unit_key]
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.setPen(Theme.pen(Theme.selection, 2))
+            painter.drawEllipse(render.center, render.radius + 2, render.radius + 2)
+
+    def _draw_shooting_layer(self, painter: QtGui.QPainter) -> None:
+        if not self._target_highlights:
+            return
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.setPen(Theme.pen(Theme.accent, 2))
+        for center, radius in self._target_highlights:
+            painter.drawEllipse(center, radius, radius)
+
+    def _draw_labels_layer(self, painter: QtGui.QPainter) -> None:
+        text_font = Theme.font(size=8, bold=True)
+        painter.setFont(text_font)
+        painter.setPen(Theme.text)
+        for label, pos in self._unit_labels:
+            painter.drawText(pos, label)
+        for label, pos in self._objective_labels:
+            painter.drawText(pos, label)
