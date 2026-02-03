@@ -1,7 +1,9 @@
 import torch
 import os
+import queue
 import re
 import sys
+import threading
 from datetime import datetime
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -41,6 +43,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.status_turn = QtWidgets.QLabel("Ход: —")
         self.status_phase = QtWidgets.QLabel("Фаза: —")
         self.status_active = QtWidgets.QLabel("Активен: —")
+        self.status_demo = QtWidgets.QLabel("Демо ИИ: —")
 
         self.points_vp_player = QtWidgets.QLabel("Player VP: —")
         self.points_vp_model = QtWidgets.QLabel("Model VP: —")
@@ -78,9 +81,28 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._max_log_lines = 5000
         self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS.md")
         self._log_file_max_bytes = 5 * 1024 * 1024
+
+        self._demo_timer = QtCore.QTimer(self)
+        self._demo_timer.setInterval(int(os.getenv("VIEWER_DEMO_INTERVAL_MS", "650")))
+        self._demo_timer.timeout.connect(self._advance_demo_step)
+        self._demo_step_mode = os.getenv("VIEWER_DEMO_STEP", "0").lower() in {"1", "true", "yes", "y"}
+        self._demo_queue = []
+        self._demo_index = -1
+        self._demo_phase = None
+        self._demo_turn_key = None
+        self._demo_active = False
+        self._demo_waiting_input = False
+        self._demo_cli_queue: queue.Queue[str] = queue.Queue()
+        self._demo_cli_thread: threading.Thread | None = None
+        self._start_demo_cli_thread()
         self._init_log_viewer()
         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
+        if self._demo_step_mode:
+            self.add_log_line(
+                "[VIEWER] Демо-режим: пошаговый. "
+                "CLI: Enter/Y — следующий шаг, N — остановить демонстрацию."
+            )
 
         fit_button = QtWidgets.QPushButton("Fit")
         fit_button.clicked.connect(self._fit_view)
@@ -195,6 +217,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.status_turn)
         layout.addWidget(self.status_phase)
         layout.addWidget(self.status_active)
+        layout.addWidget(self.status_demo)
         return box
 
     def _group_points(self):
@@ -449,6 +472,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.map_scene.fit_to_view()
 
     def _poll_state(self):
+        self._process_demo_cli()
         if not os.path.exists(self.state_watcher.path):
             self.map_scene.set_error_message(
                 "Состояние игры недоступно. Где: viewer/state.json. "
@@ -482,6 +506,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._populate_units_table(state.get("units", []))
         self._update_log(state.get("log_tail", []))
+        self._update_demo_schedule(state)
         self._refresh_active_context()
 
     def _populate_units_table(self, units):
@@ -551,6 +576,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if side and unit_id is not None:
             self.map_scene.select_unit(side, unit_id)
             self._append_log([f"Выбрано в таблице: row={row} -> unit_id={unit_id}"])
+
+    def _highlight_unit_silent(self, side, unit_id):
+        unit_key = (side, unit_id)
+        row = self._unit_row_by_key.get(unit_key)
+        if row is None:
+            row = self._find_row_for_unit(unit_key)
+        if row is None:
+            return
+        with QtCore.QSignalBlocker(self.units_table):
+            self.units_table.selectRow(row)
 
     def add_log_line(self, line: str):
         text = str(line)
@@ -810,6 +845,138 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if isinstance(value, (int, float)):
                 return int(value)
         return 12
+
+    def _start_demo_cli_thread(self):
+        if not sys.stdin or not sys.stdin.isatty():
+            return
+        if self._demo_cli_thread is not None:
+            return
+        self._demo_cli_thread = threading.Thread(target=self._demo_cli_reader, daemon=True)
+        self._demo_cli_thread.start()
+
+    def _demo_cli_reader(self):
+        while True:
+            line = sys.stdin.readline()
+            if line == "":
+                return
+            self._demo_cli_queue.put(line.strip().lower())
+
+    def _process_demo_cli(self):
+        if self._demo_cli_queue.empty():
+            return
+        while not self._demo_cli_queue.empty():
+            cmd = self._demo_cli_queue.get()
+            if cmd in {"", "y", "yes"}:
+                if self._demo_step_mode and self._demo_waiting_input:
+                    self._advance_demo_step(manual=True)
+            elif cmd in {"n", "no"}:
+                if self._demo_active:
+                    self.add_log_line("[VIEWER] Демо-режим: остановлено пользователем (N).")
+                self._stop_demo(clear_focus=True)
+            elif cmd in {"auto", "a"}:
+                self._demo_step_mode = False
+                self._demo_waiting_input = False
+                if self._demo_active and not self._demo_timer.isActive():
+                    self._demo_timer.start()
+                self.add_log_line("[VIEWER] Демо-режим: авто.")
+            elif cmd in {"step", "s"}:
+                self._demo_step_mode = True
+                self._demo_waiting_input = True
+                if self._demo_timer.isActive():
+                    self._demo_timer.stop()
+                self.add_log_line(
+                    "[VIEWER] Демо-режим: пошаговый. CLI: Enter/Y — следующий шаг, N — остановить."
+                )
+
+    def _update_demo_schedule(self, state):
+        log_tail = state.get("log_tail", []) or []
+        has_model_turn = self._log_tail_has_marker(log_tail, "ХОД MODEL")
+        if not has_model_turn:
+            if state.get("active") != "model":
+                self._stop_demo(clear_focus=True)
+            return
+        turn_key = (state.get("round"), state.get("turn"), "model")
+        if turn_key == self._demo_turn_key and self._demo_active:
+            return
+        self._demo_turn_key = turn_key
+        self._start_demo_for_turn(state)
+
+    def _log_tail_has_marker(self, log_tail, marker: str) -> bool:
+        marker_upper = marker.upper()
+        for line in reversed(log_tail):
+            if marker_upper in str(line).upper():
+                return True
+        return False
+
+    def _start_demo_for_turn(self, state):
+        model_units = [u for u in state.get("units", []) or [] if u.get("side") == "model"]
+        model_units = [u for u in model_units if u.get("id") is not None]
+        model_units.sort(key=lambda unit: unit.get("id", 0))
+        if not model_units:
+            self._stop_demo(clear_focus=True)
+            self.add_log_line("[VIEWER] Демо ИИ: нет доступных юнитов для подсветки.")
+            return
+        phases = ["command", "movement", "shooting", "charge", "fight"]
+        self._demo_queue = [(phase, unit) for phase in phases for unit in model_units]
+        self._demo_index = -1
+        self._demo_phase = None
+        self._demo_active = True
+        self.add_log_line("[VIEWER] Демо ИИ: старт покадровой подсветки фаз.")
+        if self._demo_step_mode:
+            self._demo_waiting_input = True
+            if self._demo_timer.isActive():
+                self._demo_timer.stop()
+            self.status_demo.setText("Демо ИИ: ожидание шага (Enter/Y).")
+        else:
+            self._demo_waiting_input = False
+            if not self._demo_timer.isActive():
+                self._demo_timer.start()
+            self._advance_demo_step(manual=True)
+
+    def _advance_demo_step(self, manual: bool = False):
+        if not self._demo_active:
+            return
+        if self._demo_step_mode and not manual:
+            return
+        self._demo_index += 1
+        if self._demo_index >= len(self._demo_queue):
+            self._demo_index = len(self._demo_queue) - 1
+            self._demo_timer.stop()
+            self._demo_waiting_input = False
+            self.status_demo.setText("Демо ИИ: фаза завершена, жду следующую.")
+            return
+        phase, unit = self._demo_queue[self._demo_index]
+        unit_id = unit.get("id")
+        if unit_id is None:
+            return
+        self._demo_phase = phase
+        self.map_scene.set_demo_focus(phase=phase, side="model", unit_id=unit_id)
+        self._highlight_unit_silent("model", unit_id)
+        self.status_demo.setText(f"Демо ИИ: {self._phase_title(phase)} — юнит {unit_id}")
+        if self._demo_step_mode:
+            self._demo_waiting_input = True
+
+    def _phase_title(self, phase: str) -> str:
+        titles = {
+            "command": "командование",
+            "movement": "движение",
+            "shooting": "стрельба",
+            "charge": "чардж",
+            "fight": "бой",
+        }
+        return titles.get(phase, phase)
+
+    def _stop_demo(self, clear_focus: bool = False):
+        self._demo_active = False
+        self._demo_queue = []
+        self._demo_index = -1
+        self._demo_phase = None
+        self._demo_waiting_input = False
+        if self._demo_timer.isActive():
+            self._demo_timer.stop()
+        if clear_focus:
+            self.map_scene.set_demo_focus(phase=None, side=None, unit_id=None)
+        self.status_demo.setText("Демо ИИ: —")
 
     def _resolve_active_unit(self):
         unit_id = self._extract_unit_id(getattr(self._pending_request, "prompt", ""))

@@ -77,6 +77,15 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
         self._selected_unit_key: Optional[Tuple[str, int]] = None
 
+        self._demo_unit_key: Optional[Tuple[str, int]] = None
+        self._demo_phase: str = ""
+        self._demo_color = Theme.selection
+        self._demo_pulse_timer = QtCore.QTimer(self)
+        self._demo_pulse_timer.setInterval(32)
+        self._demo_pulse_timer.timeout.connect(self._animate_demo_pulse)
+        self._demo_pulse_clock = QtCore.QElapsedTimer()
+        self._demo_pulse_value = 0.0
+
         self._scale = 1.0
         self._min_scale = 0.2
         self._max_scale = 6.0
@@ -196,6 +205,27 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def set_objective_radius_visible(self, visible: bool) -> None:
         self._show_objective_radius = bool(visible)
+        self.update()
+
+    def set_demo_focus(
+        self,
+        phase: Optional[str],
+        side: Optional[str],
+        unit_id: Optional[int],
+    ) -> None:
+        if side is None or unit_id is None:
+            self._demo_unit_key = None
+            self._demo_phase = ""
+            if self._demo_pulse_timer.isActive():
+                self._demo_pulse_timer.stop()
+            self.update()
+            return
+        self._demo_unit_key = (side, unit_id)
+        self._demo_phase = str(phase or "")
+        self._demo_color = self._phase_color(self._demo_phase)
+        self._demo_pulse_clock.restart()
+        if not self._demo_pulse_timer.isActive():
+            self._demo_pulse_timer.start()
         self.update()
 
     def refresh_overlays(self) -> None:
@@ -480,6 +510,27 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 targets.add((target.get("side"), target.get("id")))
         return targets
 
+    def _phase_color(self, phase: str) -> QtGui.QColor:
+        phase_text = phase.lower()
+        if "command" in phase_text or "команд" in phase_text:
+            return Theme.demo_command
+        if "move" in phase_text or "движ" in phase_text or "movement" in phase_text:
+            return Theme.demo_move
+        if "shoot" in phase_text or "стрел" in phase_text or "shooting" in phase_text:
+            return Theme.demo_shoot
+        if "charge" in phase_text or "чардж" in phase_text:
+            return Theme.demo_charge
+        if "fight" in phase_text or "битв" in phase_text or "ближн" in phase_text:
+            return Theme.demo_fight
+        return Theme.selection
+
+    def _animate_demo_pulse(self) -> None:
+        if not self._demo_pulse_clock.isValid():
+            self._demo_pulse_clock.start()
+        elapsed = self._demo_pulse_clock.elapsed()
+        self._demo_pulse_value = (elapsed % 1200) / 1200.0
+        self.update()
+
     def _view_transform(self) -> QtGui.QTransform:
         transform = QtGui.QTransform()
         pan_x, pan_y = self._snap_pan_to_pixels(self._pan)
@@ -672,6 +723,17 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter.setBrush(Theme.brush(render.color))
             painter.setPen(Theme.pen(Theme.outline, 0.8))
             painter.drawEllipse(render.center, render.radius, render.radius)
+
+        if self._demo_unit_key in self._unit_by_key:
+            render = self._unit_by_key[self._demo_unit_key]
+            pulse = 0.5 + 0.5 * QtCore.qSin(self._demo_pulse_value * 2 * 3.1415)
+            demo_color = QtGui.QColor(self._demo_color)
+            demo_color.setAlphaF(0.35 + 0.45 * pulse)
+            pen = QtGui.QPen(demo_color)
+            pen.setWidthF(2.0 + 1.2 * pulse)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.setPen(pen)
+            painter.drawEllipse(render.center, render.radius + 4, render.radius + 4)
 
         if self._selected_unit_key in self._unit_by_key:
             render = self._unit_by_key[self._selected_unit_key]
