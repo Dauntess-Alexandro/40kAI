@@ -37,6 +37,18 @@ if torch.cuda.is_available():
 import warnings
 warnings.filterwarnings("ignore") 
 
+# ===== torch inductor warnings/behavior =====
+INDUCTOR_CUDAGRAPH_WARN_LIMIT = os.getenv("INDUCTOR_CUDAGRAPH_WARN_LIMIT")
+INDUCTOR_SKIP_DYNAMIC_CUDAGRAPHS = os.getenv("INDUCTOR_SKIP_DYNAMIC_CUDAGRAPHS", "0") == "1"
+if INDUCTOR_CUDAGRAPH_WARN_LIMIT is not None:
+    if INDUCTOR_CUDAGRAPH_WARN_LIMIT.lower() in ("none", "off", "disable"):
+        torch._inductor.config.triton.cudagraph_dynamic_shape_warn_limit = None
+    else:
+        torch._inductor.config.triton.cudagraph_dynamic_shape_warn_limit = int(INDUCTOR_CUDAGRAPH_WARN_LIMIT)
+if INDUCTOR_SKIP_DYNAMIC_CUDAGRAPHS:
+    torch._inductor.config.triton.cudagraph_skip_dynamic_graphs = True
+# ==========================================
+
 with open(os.path.abspath("hyperparams.json")) as j:
     data = json.loads(j.read())
 

@@ -1,52 +1,67 @@
-diff --git a/train.bat b/train.bat
-index 7b815fafe027452f9629ecf5373511e079b3b546..1aad5f6f9a01701829b9f3601f7cd19dd8fd3d88 100644
---- a/train.bat
-+++ b/train.bat
-@@ -1,7 +1,15 @@
- @echo off
- setlocal
- cd /d %~dp0
- if exist ".venv\Scripts\activate.bat" call ".venv\Scripts\activate.bat"
- set PYTHONPATH=%cd%\gym_mod;%PYTHONPATH%
-+REM Дефолты для ускорения обучения/чекпойнтов (не переопределяем, если заданы в окружении)
-+if not defined NUM_ENVS set NUM_ENVS=16
-+if not defined BATCH_ACT set BATCH_ACT=1
-+if not defined USE_AMP set USE_AMP=1
-+if not defined USE_COMPILE set USE_COMPILE=1
-+if not defined PREFETCH set PREFETCH=1
-+if not defined PIN_MEMORY set PIN_MEMORY=1
-+if not defined SAVE_EVERY set SAVE_EVERY=200
- python -u train.py
- endlocal
-diff --git a/train.sh b/train.sh
-index 9ca1ab247674e4a43f13a2f5bf3fddaaae3db308..71e4ef55ec69b6e9fc09b6afb0867509f1f15af9 100755
---- a/train.sh
-+++ b/train.sh
-@@ -1,10 +1,26 @@
- #!/usr/bin/env bash
- set -e
- cd "$(dirname "$0")"
- source ".venv/bin/activate"
+diff --git a/train.py b/train.py
+index 0ce915386482e064697fb0ed5e575b67785e3f88..0378fd3cbb883796878fb97ebad036e116908994 100644
+--- a/train.py
++++ b/train.py
+@@ -15,50 +15,62 @@ import time
+ import multiprocessing as mp
+ from tqdm import tqdm
+ from gym_mod.envs.warhamEnv import *
+ from gym_mod.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
+ from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
+ from gymnasium import spaces
  
- # ВАЖНО: заставляем Python брать пакет gym_mod из нужного места
- export PYTHONPATH="$(pwd)/gym_mod:${PYTHONPATH:-}"
+ from model.DQN import *
+ from model.memory import *
+ from model.utils import *
  
--python -u train.py
-+# Дефолты для ускорения обучения/чекпойнтов (не переопределяем, если заданы в окружении)
-+: "${NUM_ENVS:=16}"
-+: "${BATCH_ACT:=1}"
-+: "${USE_AMP:=1}"
-+: "${USE_COMPILE:=1}"
-+: "${PREFETCH:=1}"
-+: "${PIN_MEMORY:=1}"
-+: "${SAVE_EVERY:=200}"
+ import torch
+ import torch.nn as nn
+ import torch.optim as optim
+ import torch.nn.functional as F
+ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+ import torch
+ print("[DEVICE CHECK] cuda:", torch.cuda.is_available())
+ if torch.cuda.is_available():
+     print("[DEVICE CHECK] name:", torch.cuda.get_device_name(0))
+ 
+ 
+ import warnings
+ warnings.filterwarnings("ignore") 
+ 
++# ===== torch inductor warnings/behavior =====
++INDUCTOR_CUDAGRAPH_WARN_LIMIT = os.getenv("INDUCTOR_CUDAGRAPH_WARN_LIMIT")
++INDUCTOR_SKIP_DYNAMIC_CUDAGRAPHS = os.getenv("INDUCTOR_SKIP_DYNAMIC_CUDAGRAPHS", "0") == "1"
++if INDUCTOR_CUDAGRAPH_WARN_LIMIT is not None:
++    if INDUCTOR_CUDAGRAPH_WARN_LIMIT.lower() in ("none", "off", "disable"):
++        torch._inductor.config.triton.cudagraph_dynamic_shape_warn_limit = None
++    else:
++        torch._inductor.config.triton.cudagraph_dynamic_shape_warn_limit = int(INDUCTOR_CUDAGRAPH_WARN_LIMIT)
++if INDUCTOR_SKIP_DYNAMIC_CUDAGRAPHS:
++    torch._inductor.config.triton.cudagraph_skip_dynamic_graphs = True
++# ==========================================
 +
-+export NUM_ENVS
-+export BATCH_ACT
-+export USE_AMP
-+export USE_COMPILE
-+export PREFETCH
-+export PIN_MEMORY
-+export SAVE_EVERY
+ with open(os.path.abspath("hyperparams.json")) as j:
+     data = json.loads(j.read())
  
-+python -u train.py
+ # ===== algo flags =====
+ DOUBLE_DQN_ENABLED = os.getenv("DOUBLE_DQN_ENABLED", "1") == "1"
+ DUELING_ENABLED = os.getenv("DUELING_ENABLED", "1") == "1"
+ REWARD_DEBUG = os.getenv("REWARD_DEBUG", "0") == "1"
+ REWARD_DEBUG_EVERY = int(os.getenv("REWARD_DEBUG_EVERY", "200"))
+ # ===== train logging =====
+ TRAIN_LOG_ENABLED = os.getenv("TRAIN_LOG_ENABLED", "1") == "1"
+ TRAIN_LOG_EVERY_UPDATES = int(os.getenv("TRAIN_LOG_EVERY_UPDATES", "200"))
+ TRAIN_LOG_TO_FILE = os.getenv("TRAIN_LOG_TO_FILE", "1") == "1"
+ TRAIN_LOG_TO_CONSOLE = os.getenv("TRAIN_LOG_TO_CONSOLE", "0") == "1"
+ TRAIN_DEBUG = os.getenv("TRAIN_DEBUG", "0") == "1"
+ LOG_EVERY = int(os.getenv("LOG_EVERY", "200"))
+ if TRAIN_LOG_EVERY_UPDATES < 1:
+     TRAIN_LOG_EVERY_UPDATES = 1
+ if TRAIN_DEBUG:
+     TRAIN_LOG_EVERY_UPDATES = min(TRAIN_LOG_EVERY_UPDATES, 50)
+ # =========================
+ # ===== per + n-step =====
+ PER_ENABLED = os.getenv("PER_ENABLED", "1") == "1"
+ PER_ALPHA = float(os.getenv("PER_ALPHA", "0.6"))
+ PER_BETA_START = float(os.getenv("PER_BETA_START", "0.4"))
+ PER_BETA_FRAMES = int(os.getenv("PER_BETA_FRAMES", "200000"))
