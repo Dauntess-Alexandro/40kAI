@@ -147,7 +147,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
             app.installEventFilter(self)
 
         self.timer = QtCore.QTimer(self)
-        self.timer.setInterval(300)
+        poll_ms = int(os.getenv("VIEWER_STATE_POLL_MS", "80"))
+        if poll_ms < 30:
+            poll_ms = 30
+        self.timer.setInterval(poll_ms)
         self.timer.timeout.connect(self._poll_state)
         self.timer.start()
 
