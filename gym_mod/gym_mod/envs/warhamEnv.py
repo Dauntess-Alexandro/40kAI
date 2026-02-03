@@ -1928,19 +1928,23 @@ class Warhammer40kEnv(gym.Env):
                             self.enemyInAttack[idOfE][0] = 0
                             self.enemyInAttack[idOfE][1] = 0
                             pos_after = tuple(self.unit_coords[i])
-                        self._log_unit("MODEL", modelName, i, f"Отступление завершено. Позиция после: {pos_after}")
-                        if pos_before != pos_after:
-                            self._emit_replay_event(
-                                "unit_move",
-                                phase="movement",
-                                unit_id=modelName,
-                                duration_ms=600 + int(self.unit_data[i]["Movement"]) * 120,
-                                **{
-                                    "from": self._coords_to_view(pos_before),
-                                    "to": self._coords_to_view(pos_after),
-                                },
+                            self._log_unit(
+                                "MODEL",
+                                modelName,
+                                i,
+                                f"Отступление завершено. Позиция после: {pos_after}",
                             )
                             if pos_before != pos_after:
+                                self._emit_replay_event(
+                                    "unit_move",
+                                    phase="movement",
+                                    unit_id=modelName,
+                                    duration_ms=600 + int(self.unit_data[i]["Movement"]) * 120,
+                                    **{
+                                        "from": self._coords_to_view(pos_before),
+                                        "to": self._coords_to_view(pos_after),
+                                    },
+                                )
                                 self._resolve_overwatch(
                                     defender_side="enemy",
                                     moving_unit_side="model",
@@ -1957,12 +1961,12 @@ class Warhammer40kEnv(gym.Env):
                                 "Reward (движение): "
                                 f"остался в бою bonus=+{reward_cfg.MOVEMENT_MELEE_STAY_BONUS:.3f}",
                             )
-                        self._log_unit(
-                            "MODEL",
-                            modelName,
-                            i,
-                            f"Остаётся в ближнем бою с {self._format_unit_label('enemy', idOfE)}, движение пропущено.",
-                        )
+                            self._log_unit(
+                                "MODEL",
+                                modelName,
+                                i,
+                                f"Остаётся в ближнем бою с {self._format_unit_label('enemy', idOfE)}, движение пропущено.",
+                            )
             if objective_hold_delta != 0 or objective_proximity_delta != 0:
                 total_obj_delta = objective_hold_delta + objective_proximity_delta
                 self._log_reward(
