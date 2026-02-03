@@ -40,11 +40,11 @@ class GameController:
         request = self._next_request(block=block)
         return self._consume_messages(), request
 
-    def answer(self, value):
+    def answer(self, value, *, block: bool = True):
         if self._finished:
             return [], None
         self._answer_queue.put(value)
-        request = self._next_request(block=True)
+        request = self._next_request(block=block)
         return self._consume_messages(), request
 
     def _consume_messages(self):
@@ -60,6 +60,9 @@ class GameController:
 
     def poll_request(self):
         return self._next_request(block=False)
+
+    def poll_messages(self):
+        return self._consume_messages()
 
     def _next_request(self, block: bool):
         if self._finished and self._request_queue.empty():

@@ -531,9 +531,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _submit_answer(self, value):
         if self._pending_request is None:
             return
-        messages, request = self.controller.answer(value)
+        messages, request = self.controller.answer(value, block=False)
         self._append_log(messages)
-        self._set_request(request)
+        if request is not None:
+            self._set_request(request)
         self._poll_state()
 
     def _fit_view(self):
@@ -548,6 +549,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         else:
             if self.state_watcher.load_if_changed():
                 self._apply_state(self.state_watcher.state)
+        self._append_log(self.controller.poll_messages())
         if self._pending_request is None:
             request = self.controller.poll_request()
             if request is not None:
