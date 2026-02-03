@@ -482,6 +482,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if self._should_playback_ai(state):
             if log_steps:
                 self._queue_ai_log_steps(state, log_steps)
+            elif self._ai_turn_active or state.get("active") == "model":
+                return
             else:
                 self._queue_ai_steps(state)
             return
@@ -936,7 +938,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
             unit_id = self._unit_id_from_log(text)
             if unit_id is None:
                 continue
+            if not self._ai_current_phase:
+                self.add_log_line(
+                    "Ход ИИ: пропущен шаг — не определена фаза для строки "
+                    f"с unit_id={unit_id}. Что делать дальше: проверьте лог фазы."
+                )
+                continue
             if not self._should_add_unit_step(text, self._ai_current_phase):
+                self.add_log_line(
+                    "Ход ИИ: пропущен шаг — строка не относится к фазе "
+                    f"{self._ai_current_phase} для unit_id={unit_id}."
+                )
                 continue
             steps.append({"phase_key": self._ai_current_phase, "unit_id": unit_id, "raw": text})
         return steps
@@ -948,13 +960,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 "позиция после" in lowered
                 or "движение пропущено" in lowered
                 or "отступление завершено" in lowered
+                or "позиция до" in lowered
             )
         if phase_key == "shooting":
-            return "стрельб" in lowered or "оруж" in lowered or "hit" in lowered
+            return "стрельб" in lowered or "оруж" in lowered or "hit" in lowered or "fire" in lowered
         if phase_key == "charge":
-            return "чардж" in lowered or "charge" in lowered
+            return "чардж" in lowered or "charge" in lowered or "overwatch" in lowered
         if phase_key == "fight":
-            return "бой" in lowered or "атаки" in lowered or "удар" in lowered
+            return "бой" in lowered or "атаки" in lowered or "удар" in lowered or "melee" in lowered
         return False
 
     def _unit_id_from_log(self, text: str):
