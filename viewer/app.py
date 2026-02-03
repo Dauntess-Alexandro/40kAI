@@ -1,5 +1,6 @@
 import torch
 import os
+import queue
 import re
 import sys
 from datetime import datetime
@@ -13,9 +14,11 @@ if GYM_PATH not in sys.path:
 from viewer.opengl_view import OpenGLBoardWidget
 from viewer.state import StateWatcher
 from viewer.styles import Theme
+from viewer.model_log_tree import ModelLogTreeBuilder
 
 from gym_mod.engine.game_controller import GameController
 from gym_mod.engine.game_io import parse_dice_values
+from gym_mod.engine.event_bus import get_event_bus
 
 
 class ViewerWindow(QtWidgets.QMainWindow):
@@ -66,6 +69,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_entries = []
         self._current_turn_number = None
         self._log_tail_snapshot = None
+        self._model_log_builder = ModelLogTreeBuilder()
+        self._model_events_snapshot = None
+        self._model_event_queue: queue.Queue = queue.Queue()
+        self._model_log_source = None
+        self._model_events_stream = []
         self._log_tabs = {}
         self._log_tab_defs = [
             ("player", "Все ходы игрока"),
@@ -78,6 +86,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._init_log_viewer()
         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
+        try:
+            get_event_bus().subscribe(self._on_event_bus_event)
+        except Exception:
+            pass
 
         fit_button = QtWidgets.QPushButton("Fit")
         fit_button.clicked.connect(self._fit_view)
@@ -382,6 +394,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.log_only_current_turn = QtWidgets.QCheckBox("Показать только текущий ход")
         self.log_only_current_turn.toggled.connect(self._refresh_log_views)
 
+        self.log_model_verbose = QtWidgets.QCheckBox("Подробно (verbose)")
+        self.log_model_verbose.toggled.connect(self._refresh_model_log_view)
+
         self.log_copy_turn = QtWidgets.QPushButton("Копировать ход")
         self.log_copy_turn.clicked.connect(self._copy_current_turn)
         self.log_clear = QtWidgets.QPushButton("Очистить")
@@ -389,6 +404,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._log_controls_layout = QtWidgets.QHBoxLayout()
         self._log_controls_layout.addWidget(self.log_only_current_turn)
+        self._log_controls_layout.addWidget(self.log_model_verbose)
         self._log_controls_layout.addStretch()
         self._log_controls_layout.addWidget(self.log_copy_turn)
         self._log_controls_layout.addWidget(self.log_clear)
@@ -398,6 +414,27 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         for msg in messages:
             self.add_log_line(str(msg))
+
+    def _on_event_bus_event(self, event):
+        try:
+            self._model_event_queue.put_nowait(event)
+        except queue.Full:
+            return
+
+    def _drain_event_queue(self):
+        drained = []
+        while True:
+            try:
+                drained.append(self._model_event_queue.get_nowait())
+            except queue.Empty:
+                break
+        if not drained:
+            return
+        if self._model_log_source in (None, "stream"):
+            self._model_log_source = "stream"
+            self._model_events_stream.extend(self._filter_model_events(drained))
+            self._model_log_builder.ingest(self._model_events_stream)
+            self._refresh_model_log_view()
 
     def _start_controller(self):
         messages, request = self.controller.start()
@@ -479,6 +516,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._populate_units_table(state.get("units", []))
         self._update_log(state.get("log_tail", []))
+        self._update_model_events(state.get("model_events", []))
+        self._drain_event_queue()
         self._refresh_active_context()
 
     def _populate_units_table(self, units):
@@ -521,6 +560,30 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 return
             self._reset_log_lines(text_lines, write_to_file=False)
             self._log_tail_snapshot = text_lines
+
+    def _update_model_events(self, events):
+        if not isinstance(events, list):
+            return
+        if events:
+            if self._model_events_snapshot == events:
+                return
+            filtered = self._filter_model_events(events)
+            self._model_events_snapshot = list(events)
+            self._model_log_source = "state"
+            self._model_log_builder.ingest(filtered)
+            self._refresh_model_log_view()
+        elif self._model_log_source is None:
+            self._drain_event_queue()
+
+    def _filter_model_events(self, events):
+        filtered = []
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            side = str(event.get("side", "")).lower()
+            if side in ("enemy", "model"):
+                filtered.append(event)
+        return filtered
 
     def _select_row_for_unit(self, side, unit_id):
         unit_key = (side, unit_id)
@@ -573,6 +636,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         for key, _ in self._log_tab_defs:
             if self._should_show_entry(entry, key):
+                if key == "model":
+                    continue
                 self._append_to_view(self._log_tabs[key], display_text)
 
     def _append_to_view(self, view: QtWidgets.QPlainTextEdit, text: str):
@@ -754,9 +819,26 @@ class ViewerWindow(QtWidgets.QMainWindow):
                     grouped_lines[key].append(entry["display"])
         for key, lines in grouped_lines.items():
             if lines:
+                if key == "model":
+                    continue
                 self._log_tabs[key].setPlainText("\n".join(lines))
                 scrollbar = self._log_tabs[key].verticalScrollBar()
                 scrollbar.setValue(scrollbar.maximum())
+        self._refresh_model_log_view()
+
+    def _refresh_model_log_view(self):
+        view = self._log_tabs.get("model")
+        if view is None:
+            return
+        include_verbose = self.log_model_verbose.isChecked()
+        only_round = self._current_turn_number if self.log_only_current_turn.isChecked() else None
+        text = self._model_log_builder.render_text(
+            include_verbose=include_verbose,
+            only_round=only_round,
+        )
+        view.setPlainText(text if text else "Пока нет событий модели.")
+        scrollbar = view.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
 
     def _reset_log_lines(self, lines, write_to_file: bool):
         self._log_entries = []
@@ -784,6 +866,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_entries = []
         self._current_turn_number = None
         self._log_tail_snapshot = None
+        self._model_log_builder.reset()
+        self._model_events_snapshot = None
+        self._model_events_stream = []
         for view in self._log_tabs.values():
             view.clear()
 
