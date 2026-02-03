@@ -160,6 +160,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._ai_last_phase_shown = None
         self._ai_turn_active = False
         self._ai_current_phase = None
+        self._ai_waiting_for_logs = False
         self._ai_timer = QtCore.QTimer(self)
         self._ai_timer.setSingleShot(True)
         self._ai_timer.timeout.connect(self._playback_next_step)
@@ -476,13 +477,24 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._latest_state = state
         self._update_log(state.get("log_tail", []))
         new_log_lines = self._extract_new_log_lines(state.get("log_tail", []))
+        if state.get("active") == "model" and self._pending_request is None:
+            self._ai_turn_active = True
+            if self._ai_current_phase is None:
+                self._ai_current_phase = self._normalize_phase_key(state.get("phase"))
         self._sync_ai_phase_from_logs(new_log_lines)
         log_steps = self._collect_ai_steps_from_logs(new_log_lines)
 
         if self._should_playback_ai(state):
             if log_steps:
+                self._ai_waiting_for_logs = False
                 self._queue_ai_log_steps(state, log_steps)
             elif self._ai_turn_active or state.get("active") == "model":
+                if not self._ai_waiting_for_logs:
+                    self._ai_waiting_for_logs = True
+                    self.add_log_line(
+                        "Ход ИИ: ожидание шагов из лога (нет новых строк для фаз/юнитов). "
+                        "Где: viewer/app.py. Что делать дальше: дождитесь новых строк log_tail."
+                    )
                 return
             else:
                 self._queue_ai_steps(state)
@@ -1218,6 +1230,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._ai_last_phase_shown = None
         self._ai_turn_active = False
         self._ai_current_phase = None
+        self._ai_waiting_for_logs = False
 
     def _playback_next_step(self):
         if not self._ai_steps:
