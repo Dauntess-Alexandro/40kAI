@@ -2,7 +2,9 @@ import torch
 import os
 import re
 import sys
+from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Dict, List, Optional, Tuple
 from PySide6 import QtCore, QtGui, QtWidgets
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -16,6 +18,32 @@ from viewer.styles import Theme
 
 from gym_mod.engine.game_controller import GameController
 from gym_mod.engine.game_io import parse_dice_values
+
+
+@dataclass
+class AiStep:
+    phase: str
+    unit_key: Tuple[str, int]
+    action_type: str
+    from_pos: Optional[Tuple[int, int]] = None
+    to_pos: Optional[Tuple[int, int]] = None
+    meta: Dict = field(default_factory=dict)
+    duration_ms: int = 300
+
+
+@dataclass
+class AiTurnPlayback:
+    mode: str = "live"
+    phases: List[str] = field(
+        default_factory=lambda: ["command", "move", "shoot", "charge", "fight"]
+    )
+    steps: List[AiStep] = field(default_factory=list)
+    current_step_index: int = 0
+    play_state: str = "paused"
+    speed: float = 1.0
+
+    def is_active(self) -> bool:
+        return self.mode == "playback" and bool(self.steps)
 
 
 class ViewerWindow(QtWidgets.QMainWindow):
@@ -81,6 +109,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._init_log_viewer()
         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
+
+        self._playback = AiTurnPlayback()
+        self._playback_timer = QtCore.QTimer(self)
+        self._playback_timer.setSingleShot(True)
+        self._playback_timer.timeout.connect(self._playback_next_step)
+        self._ai_prev_snapshot = None
+        self._last_active = None
 
         fit_button = QtWidgets.QPushButton("Fit")
         fit_button.clicked.connect(self._fit_view)
@@ -310,16 +345,27 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if self.controller.is_finished:
                 self.command_prompt.setText("Игра завершена.")
             else:
-                self.command_prompt.setText("Команда не требуется.")
-            self.command_stack.setEnabled(False)
-            self.command_hint.setText("Горячие клавиши: —")
+                if self._playback.is_active():
+                    self.command_prompt.setText(
+                        "Playback ИИ активен. Используйте команды ai.* в окне."
+                    )
+                    self.command_stack.setEnabled(True)
+                    self.command_stack.setCurrentIndex(self._command_pages["text"])
+                    self.command_hint.setText("Подсказка: ai.next, ai.prev, ai.play, ai.pause")
+                else:
+                    self.command_prompt.setText("Команда не требуется.")
+                    self.command_stack.setEnabled(False)
+                    self.command_hint.setText("Горячие клавиши: —")
             self._refresh_active_context()
             return
 
         self.command_prompt.setText(request.prompt)
         self.command_stack.setEnabled(True)
         kind = getattr(request, "kind", "text")
-        if kind == "direction":
+        if self._playback.is_active():
+            self.command_stack.setCurrentIndex(self._command_pages["text"])
+            self.command_input.setPlaceholderText("Введите команду...")
+        elif kind == "direction":
             self.command_input.setPlaceholderText("Введите команду...")
             self.command_stack.setCurrentIndex(self._command_pages["direction"])
         elif kind == "bool":
@@ -355,6 +401,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_input.setPlaceholderText("Введите команду...")
             self.command_stack.setCurrentIndex(self._command_pages["text"])
         self._update_command_hint(kind)
+        if self._playback.is_active():
+            self.command_hint.setText("Подсказка: ai.next, ai.prev, ai.play, ai.pause")
         self._refresh_active_context()
 
     def _update_command_hint(self, kind):
@@ -408,9 +456,356 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._set_request(request)
         self._poll_state()
 
+    def _playback_debug_enabled(self) -> bool:
+        return os.getenv("VIEW_PLAYBACK_DEBUG", "0") == "1"
+
+    def _snapshot_state(self, state: Dict) -> Dict:
+        snapshot = {
+            "turn": state.get("turn"),
+            "round": state.get("round"),
+            "phase": state.get("phase"),
+            "active": state.get("active"),
+            "units": [],
+        }
+        for unit in state.get("units", []) or []:
+            snapshot["units"].append(
+                {
+                    "side": unit.get("side"),
+                    "id": unit.get("id"),
+                    "x": unit.get("x"),
+                    "y": unit.get("y"),
+                    "hp": unit.get("hp"),
+                    "models": unit.get("models"),
+                }
+            )
+        return snapshot
+
+    def _build_ai_steps(
+        self,
+        prev_snapshot: Dict,
+        next_snapshot: Dict,
+        log_tail: Optional[List[str]] = None,
+    ) -> List[AiStep]:
+        steps: List[AiStep] = []
+        phases = self._playback.phases
+        prev_units = {
+            (unit.get("side"), unit.get("id")): unit for unit in prev_snapshot.get("units", [])
+        }
+        next_units = [
+            unit
+            for unit in next_snapshot.get("units", [])
+            if unit.get("side") == "model"
+        ]
+        next_units.sort(key=lambda item: item.get("id", 0))
+
+        phase_counts = {phase: 0 for phase in phases}
+
+        for phase in phases:
+            for unit in next_units:
+                unit_key = (unit.get("side"), unit.get("id"))
+                if unit_key[0] is None or unit_key[1] is None:
+                    continue
+                if phase == "command":
+                    steps.append(
+                        AiStep(
+                            phase=phase,
+                            unit_key=unit_key,
+                            action_type="highlight",
+                            duration_ms=320,
+                        )
+                    )
+                elif phase == "move":
+                    steps.append(
+                        AiStep(
+                            phase=phase,
+                            unit_key=unit_key,
+                            action_type="highlight",
+                            duration_ms=240,
+                        )
+                    )
+                    prev_unit = prev_units.get(unit_key, {})
+                    from_pos = (prev_unit.get("x"), prev_unit.get("y"))
+                    to_pos = (unit.get("x"), unit.get("y"))
+                    if (
+                        None not in from_pos
+                        and None not in to_pos
+                        and from_pos != to_pos
+                    ):
+                        steps.append(
+                            AiStep(
+                                phase=phase,
+                                unit_key=unit_key,
+                                action_type="move",
+                                from_pos=(int(from_pos[0]), int(from_pos[1])),
+                                to_pos=(int(to_pos[0]), int(to_pos[1])),
+                                duration_ms=650,
+                            )
+                        )
+                else:
+                    steps.append(
+                        AiStep(
+                            phase=phase,
+                            unit_key=unit_key,
+                            action_type="highlight",
+                            duration_ms=260,
+                        )
+                    )
+            phase_counts[phase] = sum(1 for step in steps if step.phase == phase)
+
+        if self._playback_debug_enabled():
+            self.add_log_line(
+                f"[PLAYBACK] Построено шагов: {len(steps)}. "
+                + ", ".join(f"{phase}={phase_counts[phase]}" for phase in phases)
+            )
+            for step in steps:
+                if step.action_type == "move":
+                    self.add_log_line(
+                        "[PLAYBACK] move: "
+                        f"{step.unit_key} {step.from_pos} -> {step.to_pos}"
+                    )
+        return steps
+
+    def _start_ai_playback(self, prev_snapshot: Dict, next_snapshot: Dict, log_tail=None):
+        steps = self._build_ai_steps(prev_snapshot, next_snapshot, log_tail=log_tail)
+        if not steps:
+            self._playback.mode = "live"
+            self._playback.steps = []
+            return
+        self._playback.mode = "playback"
+        self._playback.steps = steps
+        self._playback.current_step_index = 0
+        self._playback.play_state = "paused"
+        self.map_scene.prepare_playback_positions()
+        self.map_scene.clear_playback_overlays()
+        self._playback_run_current_step(schedule_next=False)
+        self._set_request(self._pending_request)
+
+    def _reset_playback(self):
+        if self._playback_timer.isActive():
+            self._playback_timer.stop()
+        self._playback.mode = "live"
+        self._playback.steps = []
+        self._playback.current_step_index = 0
+        self._playback.play_state = "paused"
+        self.map_scene.clear_playback_overlays()
+
+    def _playback_effective_duration(self, duration_ms: int) -> int:
+        speed = max(0.1, float(self._playback.speed or 1.0))
+        return max(40, int(duration_ms / speed))
+
+    def _playback_run_current_step(self, schedule_next: bool = True):
+        if not self._playback.is_active():
+            return
+        index = max(0, min(self._playback.current_step_index, len(self._playback.steps) - 1))
+        self._playback.current_step_index = index
+        step = self._playback.steps[index]
+        self._playback_execute_step(step, allow_animation=True)
+        if self._playback_debug_enabled():
+            self.add_log_line(
+                "[PLAYBACK] Шаг "
+                f"{index + 1}/{len(self._playback.steps)}: "
+                f"{step.phase} {step.unit_key} {step.action_type} "
+                f"{step.duration_ms}мс"
+            )
+        if schedule_next and self._playback.play_state == "playing":
+            duration = self._playback_effective_duration(step.duration_ms)
+            self._playback_timer.start(duration)
+
+    def _playback_execute_step(self, step: AiStep, *, allow_animation: bool):
+        self.map_scene.set_playback_phase(step.phase)
+        self.map_scene.set_playback_active_unit(step.unit_key)
+        self.status_phase.setText(f"Фаза (playback): {step.phase}")
+        if step.action_type == "move" and allow_animation:
+            self.map_scene.play_move_animation(
+                step.unit_key,
+                step.from_pos,
+                step.to_pos,
+                self._playback_effective_duration(step.duration_ms),
+            )
+        elif step.action_type in {"shoot", "charge", "fight"} and allow_animation:
+            target_key = step.meta.get("target_key")
+            if target_key:
+                self.map_scene.play_shoot_effect(
+                    step.unit_key,
+                    target_key,
+                    self._playback_effective_duration(step.duration_ms),
+                )
+        self.map_scene.update()
+
+    def _playback_next_step(self):
+        if not self._playback.is_active():
+            return
+        if self._playback.current_step_index >= len(self._playback.steps) - 1:
+            self._playback.play_state = "paused"
+            return
+        self._playback.current_step_index += 1
+        self._playback_run_current_step(schedule_next=True)
+
+    def _playback_prev_step(self):
+        if not self._playback.is_active():
+            return
+        if self._playback_timer.isActive():
+            self._playback_timer.stop()
+        if self._playback.current_step_index <= 0:
+            self._playback.current_step_index = 0
+        else:
+            self._playback.current_step_index -= 1
+        step = self._playback.steps[self._playback.current_step_index]
+        self._playback_execute_step(step, allow_animation=False)
+
+    def _playback_find_phase_index(self, phase: str) -> Optional[int]:
+        phase_list = self._playback.phases
+        try:
+            return phase_list.index(phase)
+        except ValueError:
+            return None
+
+    def _playback_goto_phase(self, direction: int):
+        if not self._playback.is_active():
+            return
+        current_phase = self._playback.steps[self._playback.current_step_index].phase
+        current_idx = self._playback_find_phase_index(current_phase)
+        if current_idx is None:
+            return
+        next_idx = current_idx + direction
+        if next_idx < 0 or next_idx >= len(self._playback.phases):
+            return
+        next_phase = self._playback.phases[next_idx]
+        for idx, step in enumerate(self._playback.steps):
+            if step.phase == next_phase:
+                self._playback.current_step_index = idx
+                self._playback_run_current_step(schedule_next=False)
+                return
+
+    def _playback_goto_unit(self, phase: str, unit_index: int):
+        if not self._playback.is_active():
+            return
+        highlight_steps = [
+            (idx, step)
+            for idx, step in enumerate(self._playback.steps)
+            if step.phase == phase and step.action_type == "highlight"
+        ]
+        if not highlight_steps:
+            self.add_log_line(
+                "Playback: фаза не найдена. Где: ai.goto. "
+                "Что делать дальше: используйте command/move/shoot/charge/fight."
+            )
+            return
+        target_idx = unit_index - 1
+        if target_idx < 0 or target_idx >= len(highlight_steps):
+            self.add_log_line(
+                "Playback: неверный индекс юнита. Где: ai.goto. "
+                "Что делать дальше: используйте индекс 1..N."
+            )
+            return
+        self._playback.current_step_index = highlight_steps[target_idx][0]
+        self._playback_run_current_step(schedule_next=False)
+
+    def _playback_status(self):
+        if not self._playback.is_active():
+            self.add_log_line(
+                "Playback не активен. Где: viewer/app.py. "
+                "Что делать дальше: дождитесь хода ИИ и попробуйте снова."
+            )
+            return
+        step = self._playback.steps[self._playback.current_step_index]
+        self.add_log_line(
+            "Playback: шаг "
+            f"{self._playback.current_step_index + 1}/{len(self._playback.steps)}, "
+            f"фаза={step.phase}, unit={step.unit_key}, "
+            f"state={self._playback.play_state}, speed={self._playback.speed}"
+        )
+
+    def _handle_ai_command(self, text: str) -> bool:
+        lowered = text.strip().lower()
+        if not lowered.startswith("ai."):
+            return False
+        if not self._playback.is_active():
+            self.add_log_line(
+                "Playback не активен. Где: командное окно. "
+                "Что делать дальше: дождитесь завершения хода ИИ."
+            )
+            return True
+        if lowered == "ai.next":
+            self._playback_next_step()
+            return True
+        if lowered == "ai.prev":
+            self._playback_prev_step()
+            return True
+        if lowered == "ai.phase.next":
+            self._playback_goto_phase(1)
+            return True
+        if lowered == "ai.phase.prev":
+            self._playback_goto_phase(-1)
+            return True
+        if lowered == "ai.play":
+            self._playback.play_state = "playing"
+            self._playback_run_current_step(schedule_next=True)
+            return True
+        if lowered == "ai.pause":
+            self._playback.play_state = "paused"
+            if self._playback_timer.isActive():
+                self._playback_timer.stop()
+            return True
+        if lowered.startswith("ai.speed"):
+            parts = lowered.split()
+            if len(parts) < 2:
+                self.add_log_line(
+                    "Playback: не задана скорость. Где: ai.speed. "
+                    "Что делать дальше: укажите число 0.25..4.0."
+                )
+                return True
+            try:
+                speed = float(parts[1])
+            except ValueError:
+                self.add_log_line(
+                    "Playback: неверная скорость. Где: ai.speed. "
+                    "Что делать дальше: используйте число 0.25..4.0."
+                )
+                return True
+            speed = max(0.25, min(4.0, speed))
+            self._playback.speed = speed
+            self.add_log_line(f"Playback: скорость установлена на {speed:.2f}x.")
+            return True
+        if lowered.startswith("ai.goto"):
+            parts = lowered.split()
+            if len(parts) < 3:
+                self.add_log_line(
+                    "Playback: неверная команда goto. Где: ai.goto. "
+                    "Что делать дальше: ai.goto PHASE INDEX."
+                )
+                return True
+            phase = parts[1]
+            try:
+                unit_index = int(parts[2])
+            except ValueError:
+                self.add_log_line(
+                    "Playback: неверный индекс. Где: ai.goto. "
+                    "Что делать дальше: укажите целое число."
+                )
+                return True
+            self._playback_goto_unit(phase, unit_index)
+            return True
+        if lowered == "ai.status":
+            self._playback_status()
+            return True
+        if lowered == "ai.skip":
+            self._reset_playback()
+            self.add_log_line("Playback отключён. Показ финального состояния активен.")
+            self._set_request(self._pending_request)
+            return True
+        self.add_log_line(
+            "Playback: неизвестная команда. Где: командное окно. "
+            "Что делать дальше: используйте ai.next/ai.prev/ai.play/ai.pause."
+        )
+        return True
+
     def _submit_text(self):
         text = self.command_input.text().strip()
         if not text:
+            return
+        if self._handle_ai_command(text):
+            self.command_input.clear()
             return
         if self._pending_request and getattr(self._pending_request, "kind", "") == "dice":
             count = self._pending_request.count or 0
@@ -459,8 +854,23 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._apply_state(self.state_watcher.state)
 
     def _apply_state(self, state):
-        board = state.get("board", {})
+        prev_active = self._last_active
+        current_active = state.get("active")
+        start_ai_turn = current_active == "model" and prev_active != "model"
+        end_ai_turn = prev_active == "model" and current_active != "model"
+        if start_ai_turn:
+            self._ai_prev_snapshot = self._snapshot_state(state)
+            self._reset_playback()
         self.map_scene.update_state(state)
+        if end_ai_turn:
+            if self._ai_prev_snapshot:
+                self._start_ai_playback(
+                    self._ai_prev_snapshot,
+                    self._snapshot_state(state),
+                    log_tail=state.get("log_tail", []),
+                )
+            self._ai_prev_snapshot = None
+        self._last_active = current_active
 
         self._units_by_key = {}
         for unit in state.get("units", []) or []:
@@ -468,7 +878,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self.status_round.setText(f"Раунд: {state.get('round', '—')}")
         self.status_turn.setText(f"Ход: {state.get('turn', '—')}")
-        self.status_phase.setText(f"Фаза: {state.get('phase', '—')}")
+        if self._playback.is_active():
+            step = self._playback.steps[self._playback.current_step_index]
+            self.status_phase.setText(f"Фаза (playback): {step.phase}")
+        else:
+            self.status_phase.setText(f"Фаза: {state.get('phase', '—')}")
         active = state.get("active")
         active_label = "Игрок" if active == "player" else "Модель" if active == "model" else "—"
         self.status_active.setText(f"Активен: {active_label}")

@@ -62,7 +62,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._unit_anim_timer.setInterval(16)
         self._unit_anim_timer.timeout.connect(self._animate_unit_step)
         self._unit_anim_clock = QtCore.QElapsedTimer()
-        self._unit_anim_duration_ms = 180
+        self._default_unit_anim_duration_ms = 180
+        self._unit_anim_duration_ms = self._default_unit_anim_duration_ms
+        self._unit_anim_restore_duration = None
 
         self._move_highlights: List[QtCore.QRectF] = []
         self._target_highlights: List[Tuple[QtCore.QPointF, float]] = []
@@ -76,6 +78,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._targets = None
 
         self._selected_unit_key: Optional[Tuple[str, int]] = None
+        self._playback_active_key: Optional[Tuple[str, int]] = None
+        self._playback_phase: Optional[str] = None
+        self._playback_shot_effects: List[Tuple[QtCore.QPointF, QtCore.QPointF]] = []
 
         self._scale = 1.0
         self._min_scale = 0.2
@@ -196,6 +201,67 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def set_objective_radius_visible(self, visible: bool) -> None:
         self._show_objective_radius = bool(visible)
+        self.update()
+
+    def prepare_playback_positions(self) -> None:
+        self._prev_unit_positions = dict(self._curr_unit_positions)
+        self._unit_anim_duration_ms = self._default_unit_anim_duration_ms
+        self._unit_anim_restore_duration = None
+        if self._unit_anim_timer.isActive():
+            self._unit_anim_timer.stop()
+        self._rebuild_units(1.0)
+        self.update()
+
+    def set_playback_active_unit(self, unit_key: Optional[Tuple[str, int]]) -> None:
+        self._playback_active_key = unit_key
+        self.update()
+
+    def set_playback_phase(self, phase_name: Optional[str]) -> None:
+        self._playback_phase = phase_name or ""
+        self.update()
+
+    def play_move_animation(
+        self,
+        unit_key: Tuple[str, int],
+        from_pos: Optional[Tuple[int, int]],
+        to_pos: Optional[Tuple[int, int]],
+        duration_ms: int,
+    ) -> None:
+        self._prev_unit_positions = dict(self._curr_unit_positions)
+        if from_pos is not None:
+            self._prev_unit_positions[unit_key] = QtCore.QPointF(
+                float(from_pos[0]), float(from_pos[1])
+            )
+        if to_pos is not None:
+            self._curr_unit_positions[unit_key] = QtCore.QPointF(
+                float(to_pos[0]), float(to_pos[1])
+            )
+        self._unit_anim_restore_duration = self._default_unit_anim_duration_ms
+        self._unit_anim_duration_ms = max(0, int(duration_ms))
+        self._start_unit_animation()
+
+    def play_shoot_effect(
+        self,
+        attacker_key: Tuple[str, int],
+        target_key: Tuple[str, int],
+        duration_ms: int,
+    ) -> None:
+        attacker = self._unit_by_key.get(attacker_key)
+        target = self._unit_by_key.get(target_key)
+        if attacker is None or target is None:
+            return
+        self._playback_shot_effects = [(attacker.center, target.center)]
+        self.update()
+        QtCore.QTimer.singleShot(max(0, int(duration_ms)), self._clear_shoot_effects)
+
+    def _clear_shoot_effects(self) -> None:
+        self._playback_shot_effects = []
+        self.update()
+
+    def clear_playback_overlays(self) -> None:
+        self._playback_active_key = None
+        self._playback_phase = None
+        self._playback_shot_effects = []
         self.update()
 
     def refresh_overlays(self) -> None:
@@ -341,6 +407,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.update()
         if factor >= 1.0 and self._unit_anim_timer.isActive():
             self._unit_anim_timer.stop()
+            if self._unit_anim_restore_duration is not None:
+                self._unit_anim_duration_ms = self._unit_anim_restore_duration
+                self._unit_anim_restore_duration = None
 
     def _rebuild_units(self, factor: float) -> None:
         self._units = []
@@ -679,11 +748,22 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter.setPen(Theme.pen(Theme.selection, 2))
             painter.drawEllipse(render.center, render.radius + 2, render.radius + 2)
 
+        if self._playback_active_key in self._unit_by_key:
+            render = self._unit_by_key[self._playback_active_key]
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.setPen(Theme.pen(Theme.selection, 2.6))
+            painter.drawEllipse(render.center, render.radius + 4, render.radius + 4)
+
         if self._target_highlights:
             painter.setBrush(QtCore.Qt.NoBrush)
             painter.setPen(Theme.pen(Theme.accent, 2))
             for center, radius in self._target_highlights:
                 painter.drawEllipse(center, radius, radius)
+
+        if self._playback_shot_effects:
+            painter.setPen(Theme.pen(Theme.accent, 2.2))
+            for start, end in self._playback_shot_effects:
+                painter.drawLine(start, end)
 
         text_font = Theme.font(size=8, bold=True)
         painter.setFont(text_font)
