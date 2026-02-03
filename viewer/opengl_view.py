@@ -10,6 +10,7 @@ Viewer tech findings ("Играть в GUI"):
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -63,6 +64,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._unit_anim_timer.timeout.connect(self._animate_unit_step)
         self._unit_anim_clock = QtCore.QElapsedTimer()
         self._unit_anim_duration_ms = 180
+        self._restore_unit_anim_duration_ms = None
+
+        self._playback_active_key: Optional[Tuple[str, int]] = None
+        self._playback_phase: Optional[str] = None
+        self._playback_pulse_timer = QtCore.QTimer(self)
+        self._playback_pulse_timer.setInterval(50)
+        self._playback_pulse_timer.timeout.connect(self.update)
+        self._playback_pulse_clock = QtCore.QElapsedTimer()
 
         self._move_highlights: List[QtCore.QRectF] = []
         self._target_highlights: List[Tuple[QtCore.QPointF, float]] = []
@@ -316,7 +325,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
         painter.restore()
 
-    def _start_unit_animation(self) -> None:
+    def _start_unit_animation(self, duration_ms: Optional[int] = None) -> None:
+        if duration_ms is not None:
+            self._restore_unit_anim_duration_ms = self._unit_anim_duration_ms
+            self._unit_anim_duration_ms = max(1, int(duration_ms))
         self._unit_anim_clock.restart()
         if self._unit_anim_duration_ms <= 0:
             self._rebuild_units(1.0)
@@ -341,6 +353,64 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.update()
         if factor >= 1.0 and self._unit_anim_timer.isActive():
             self._unit_anim_timer.stop()
+            if self._restore_unit_anim_duration_ms is not None:
+                self._unit_anim_duration_ms = self._restore_unit_anim_duration_ms
+                self._restore_unit_anim_duration_ms = None
+
+    def set_active_unit(self, side: Optional[str], unit_id: Optional[int]) -> None:
+        if side is None or unit_id is None:
+            self._playback_active_key = None
+            if self._playback_pulse_timer.isActive():
+                self._playback_pulse_timer.stop()
+            self.update()
+            return
+        self._playback_active_key = (side, int(unit_id))
+        if not self._playback_pulse_clock.isValid():
+            self._playback_pulse_clock.start()
+        if not self._playback_pulse_timer.isActive():
+            self._playback_pulse_timer.start()
+        self.update()
+
+    def set_active_phase(self, phase: Optional[str]) -> None:
+        self._playback_phase = phase
+        self.update()
+
+    def play_move(
+        self,
+        side: str,
+        unit_id: int,
+        from_pos: Optional[dict],
+        to_pos: Optional[dict],
+        duration_ms: int,
+    ) -> None:
+        key = (side, int(unit_id))
+        if from_pos and "x" in from_pos and "y" in from_pos:
+            prev = QtCore.QPointF(float(from_pos["x"]), float(from_pos["y"]))
+        else:
+            prev = self._curr_unit_positions.get(key)
+        if to_pos and "x" in to_pos and "y" in to_pos:
+            curr = QtCore.QPointF(float(to_pos["x"]), float(to_pos["y"]))
+        else:
+            curr = self._curr_unit_positions.get(key)
+        if prev is None or curr is None:
+            return
+        self._prev_unit_positions[key] = QtCore.QPointF(prev)
+        self._curr_unit_positions[key] = QtCore.QPointF(curr)
+        self._start_unit_animation(duration_ms)
+
+    def is_animating(self) -> bool:
+        return self._unit_anim_timer.isActive()
+
+    def finish_animation(self) -> None:
+        if not self._unit_anim_timer.isActive():
+            return
+        self._rebuild_units(1.0)
+        self._unit_anim_timer.stop()
+        if self._restore_unit_anim_duration_ms is not None:
+            self._unit_anim_duration_ms = self._restore_unit_anim_duration_ms
+            self._restore_unit_anim_duration_ms = None
+        self.refresh_overlays()
+        self.update()
 
     def _rebuild_units(self, factor: float) -> None:
         self._units = []
@@ -672,6 +742,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter.setBrush(Theme.brush(render.color))
             painter.setPen(Theme.pen(Theme.outline, 0.8))
             painter.drawEllipse(render.center, render.radius, render.radius)
+
+        if self._playback_active_key in self._unit_by_key:
+            render = self._unit_by_key[self._playback_active_key]
+            elapsed = self._playback_pulse_clock.elapsed() / 1000.0 if self._playback_pulse_clock.isValid() else 0.0
+            pulse = 0.5 + 0.5 * math.sin(elapsed * 4.0)
+            radius = render.radius + 4 + 2 * pulse
+            color = QtGui.QColor(Theme.selection)
+            color.setAlpha(120 + int(80 * pulse))
+            pen = QtGui.QPen(color)
+            pen.setWidthF(2.4)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.setPen(pen)
+            painter.drawEllipse(render.center, radius, radius)
 
         if self._selected_unit_key in self._unit_by_key:
             render = self._unit_by_key[self._selected_unit_key]

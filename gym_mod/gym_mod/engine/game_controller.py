@@ -49,6 +49,11 @@ class GameController:
     def _consume_messages(self):
         return self._io.consume_messages()
 
+    def consume_events(self):
+        if hasattr(self._io, "consume_events"):
+            return self._io.consume_events()
+        return []
+
     def _next_request(self, block: bool):
         if self._finished and self._request_queue.empty():
             return None

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional, List
+import json
 import re
 import os
 import threading
@@ -24,6 +25,9 @@ class Request:
 class BaseIO:
     def log(self, message: str) -> None:
         raise NotImplementedError
+
+    def emit_event(self, payload: dict) -> None:
+        _ = payload
 
     def request_bool(self, prompt: str) -> Optional[bool]:
         raise NotImplementedError
@@ -87,6 +91,15 @@ class ConsoleIO(BaseIO):
             return
         print(message)
         _append_log_line(message, self.log_path)
+
+    def emit_event(self, payload: dict) -> None:
+        if os.getenv("PRESENT_AI", "0") != "1":
+            return
+        try:
+            packed = json.dumps(payload, ensure_ascii=False)
+        except (TypeError, ValueError):
+            return
+        print(f"AI_EVENT {packed}")
 
     def request_bool(self, prompt: str) -> Optional[bool]:
         while True:
@@ -161,6 +174,7 @@ class GuiIO(BaseIO):
         self.answer_queue = answer_queue
         self.log_path = log_path or LOG_DEFAULT_PATH
         self._messages: list[str] = []
+        self._events: list[dict] = []
         self._lock = threading.Lock()
 
     def consume_messages(self) -> list[str]:
@@ -169,12 +183,24 @@ class GuiIO(BaseIO):
             self._messages.clear()
         return messages
 
+    def consume_events(self) -> list[dict]:
+        with self._lock:
+            events = list(self._events)
+            self._events.clear()
+        return events
+
     def log(self, message: str) -> None:
         if message is None:
             return
         with self._lock:
             self._messages.append(message)
         _append_log_line(message, self.log_path)
+
+    def emit_event(self, payload: dict) -> None:
+        if payload is None:
+            return
+        with self._lock:
+            self._events.append(payload)
 
     def _wait_for_answer(self):
         return self.answer_queue.get()

@@ -11,6 +11,7 @@ if GYM_PATH not in sys.path:
     sys.path.insert(0, GYM_PATH)
 
 from viewer.opengl_view import OpenGLBoardWidget
+from viewer.playback import PlaybackController
 from viewer.state import StateWatcher
 from viewer.styles import Theme
 
@@ -29,6 +30,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._pending_request = None
         self._active_unit_id = None
         self._active_unit_side = None
+        self._present_ai = os.getenv("PRESENT_AI", "0") == "1"
+        self._present_ai_debug = os.getenv("PRESENT_AI_DEBUG", "0") == "1"
         self._show_objective_radius = True
         self._units_by_key = {}
         self._unit_row_by_key = {}
@@ -149,6 +152,19 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.timer.setInterval(300)
         self.timer.timeout.connect(self._poll_state)
         self.timer.start()
+
+        self._playback = None
+        if self._present_ai:
+            self._playback = PlaybackController(
+                self.map_scene,
+                self.add_log_line,
+                debug=self._present_ai_debug,
+                parent=self,
+            )
+            self.event_timer = QtCore.QTimer(self)
+            self.event_timer.setInterval(50)
+            self.event_timer.timeout.connect(self._poll_events)
+            self.event_timer.start()
 
         self._poll_state()
         QtCore.QTimer.singleShot(0, self._start_controller)
@@ -457,6 +473,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         if self.state_watcher.load_if_changed():
             self._apply_state(self.state_watcher.state)
+
+    def _poll_events(self):
+        if not self._playback:
+            return
+        events = self.controller.consume_events()
+        if events:
+            self._playback.add_events(events)
 
     def _apply_state(self, state):
         board = state.get("board", {})
@@ -855,6 +878,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return "shoot" in phase_text or "стрел" in phase_text or "shooting" in phase_text
 
     def eventFilter(self, obj, event):
+        if (
+            event.type() == QtCore.QEvent.KeyPress
+            and self._playback is not None
+            and event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter)
+        ):
+            if self._playback.handle_enter():
+                return True
         if event.type() == QtCore.QEvent.KeyPress and self._pending_request:
             kind = getattr(self._pending_request, "kind", "")
             key = event.key()

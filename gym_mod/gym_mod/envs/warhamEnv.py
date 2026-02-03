@@ -853,6 +853,8 @@ class Warhammer40kEnv(gym.Env):
         self._agent_log_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "..", "LOGS_FOR_AGENTS.md")
         )
+        self._present_ai = os.getenv("PRESENT_AI", "0") == "1"
+        self._present_ai_debug = os.getenv("PRESENT_AI_DEBUG", "0") == "1"
 
         self.modelOC = []
         self.enemyOC = []
@@ -928,6 +930,45 @@ class Warhammer40kEnv(gym.Env):
         if not hasattr(self, "io") or self.io is None:
             self.io = get_active_io()
         return self.io
+
+    def _present_ai_enabled(self) -> bool:
+        return self._present_ai
+
+    def _present_ai_debug_enabled(self) -> bool:
+        return self._present_ai_debug
+
+    def _coords_to_view(self, coords) -> Optional[dict]:
+        if coords is None:
+            return None
+        try:
+            return {"x": int(coords[1]), "y": int(coords[0])}
+        except (TypeError, ValueError, IndexError):
+            return None
+
+    def _emit_replay_event(
+        self,
+        event_type: str,
+        *,
+        phase: Optional[str] = None,
+        unit_id: Optional[int] = None,
+        duration_ms: Optional[int] = None,
+        **extra,
+    ) -> None:
+        if not self._present_ai_enabled():
+            return
+        payload = {
+            "type": event_type,
+            "phase": phase or self.phase,
+            "unit_id": unit_id,
+            "side": "model",
+            "turn": self.numTurns,
+            "round": self.battle_round,
+            "duration_ms": duration_ms,
+        }
+        payload.update(extra)
+        self._ensure_io().emit_event(payload)
+        if self._present_ai_debug_enabled():
+            self._log(f"[PRESENT][EVENT] {payload}")
 
     def _log(self, msg: str, verbose_only: bool = False):
         if verbose_only and not self._is_verbose():
@@ -1480,6 +1521,8 @@ class Warhammer40kEnv(gym.Env):
     def begin_phase(self, side: str, phase: str):
         self.active_side = side
         self.phase = phase
+        if side == "model":
+            self._emit_replay_event("phase_start", phase=phase, duration_ms=400)
         if not self._round_banner_shown:
             self._log(f"=== БОЕВОЙ РАУНД {self.battle_round} ===")
             self._round_banner_shown = True
@@ -1528,6 +1571,12 @@ class Warhammer40kEnv(gym.Env):
             battle_shock = [False] * len(self.unit_health)
             for i in range(len(self.unit_health)):
                 unit_label = self._format_unit_label("model", i)
+                self._emit_replay_event(
+                    "unit_focus",
+                    phase="command",
+                    unit_id=i + 21,
+                    duration_ms=350,
+                )
                 if self.unit_health[i] <= 0:
                     self.modelOC[i] = 0
                     continue
@@ -1575,6 +1624,7 @@ class Warhammer40kEnv(gym.Env):
             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
             apply_end_of_command_phase(self, side="model", dice_fn=dice_fn, log_fn=self._log)
             score_end_of_command_phase(self, "model", log_fn=self._log)
+            self._emit_replay_event("phase_end", phase="command", duration_ms=200)
             return battle_shock, reward_delta
 
         if side == "enemy" and action is not None and not manual:
@@ -1719,6 +1769,12 @@ class Warhammer40kEnv(gym.Env):
                 modelName = i + 21
                 battleSh = battle_shock[i] if battle_shock else False
                 pos_before = tuple(self.unit_coords[i])
+                self._emit_replay_event(
+                    "unit_focus",
+                    phase="movement",
+                    unit_id=modelName,
+                    duration_ms=350,
+                )
                 if self.unit_health[i] <= 0:
                     self._log_unit("MODEL", modelName, i, f"Юнит мертв, движение пропущено. Позиция: {pos_before}")
                     continue
@@ -1790,6 +1846,17 @@ class Warhammer40kEnv(gym.Env):
                         self._log_unit("MODEL", modelName, i, f"Движение пропущено (no move). Позиция после: {pos_after}")
                     else:
                         self._log_unit("MODEL", modelName, i, f"Позиция после: {pos_after}")
+                        if pos_before != pos_after:
+                            self._emit_replay_event(
+                                "unit_move",
+                                phase="movement",
+                                unit_id=modelName,
+                                duration_ms=600 + max(0, movement) * 120,
+                                **{
+                                    "from": self._coords_to_view(pos_before),
+                                    "to": self._coords_to_view(pos_after),
+                                },
+                            )
 
                     if pos_before != pos_after:
                         self._resolve_overwatch(
@@ -1861,7 +1928,18 @@ class Warhammer40kEnv(gym.Env):
                             self.enemyInAttack[idOfE][0] = 0
                             self.enemyInAttack[idOfE][1] = 0
                             pos_after = tuple(self.unit_coords[i])
-                            self._log_unit("MODEL", modelName, i, f"Отступление завершено. Позиция после: {pos_after}")
+                        self._log_unit("MODEL", modelName, i, f"Отступление завершено. Позиция после: {pos_after}")
+                        if pos_before != pos_after:
+                            self._emit_replay_event(
+                                "unit_move",
+                                phase="movement",
+                                unit_id=modelName,
+                                duration_ms=600 + int(self.unit_data[i]["Movement"]) * 120,
+                                **{
+                                    "from": self._coords_to_view(pos_before),
+                                    "to": self._coords_to_view(pos_after),
+                                },
+                            )
                             if pos_before != pos_after:
                                 self._resolve_overwatch(
                                     defender_side="enemy",
@@ -1891,6 +1969,7 @@ class Warhammer40kEnv(gym.Env):
                     "Reward (VP/объекты, движение): "
                     f"hold={objective_hold_delta:.3f}, proximity={objective_proximity_delta:.3f}, total={total_obj_delta:.3f}"
                 )
+            self._emit_replay_event("phase_end", phase="movement", duration_ms=200)
             return advanced_flags, reward_delta
 
         if side == "enemy" and action is not None and not manual:
@@ -2197,6 +2276,12 @@ class Warhammer40kEnv(gym.Env):
             for i in range(len(self.unit_health)):
                 modelName = i + 21
                 advanced = advanced_flags[i] if advanced_flags else False
+                self._emit_replay_event(
+                    "unit_focus",
+                    phase="shooting",
+                    unit_id=modelName,
+                    duration_ms=350,
+                )
                 if self.unit_health[i] <= 0:
                     self._log_unit("MODEL", modelName, i, "Юнит мертв, стрельба пропущена.")
                     continue
@@ -2243,6 +2328,13 @@ class Warhammer40kEnv(gym.Env):
                             modelName,
                             i,
                             f"Цели в дальности: {target_list}, выбрана: {self._format_unit_label('enemy', idOfE)} (причина: {reason})",
+                        )
+                        self._emit_replay_event(
+                            "unit_shoot",
+                            phase="shooting",
+                            unit_id=modelName,
+                            duration_ms=450,
+                            target_id=idOfE + 11,
                         )
                         effect = self._maybe_use_smokescreen(
                             defender_side="enemy",
@@ -2431,6 +2523,7 @@ class Warhammer40kEnv(gym.Env):
                             self._log(f"{self._format_unit_label('model', i)} не смог стрелять: выбранная цель недоступна.")
                 else:
                     self._log_unit("MODEL", modelName, i, "Нет целей в дальности, стрельба пропущена.")
+            self._emit_replay_event("phase_end", phase="shooting", duration_ms=200)
             return reward_delta
         elif side == "enemy" and action is not None and not manual:
             self._log_phase(self._display_side("enemy"), "shooting")
@@ -2663,6 +2756,12 @@ class Warhammer40kEnv(gym.Env):
                 modelName = i + 21
                 advanced = advanced_flags[i] if advanced_flags else False
                 pos_before = tuple(self.unit_coords[i])
+                self._emit_replay_event(
+                    "unit_focus",
+                    phase="charge",
+                    unit_id=modelName,
+                    duration_ms=350,
+                )
                 if self.unit_health[i] <= 0:
                     self._log_unit("MODEL", modelName, i, "Юнит мертв, чардж пропущен.")
                     continue
@@ -2739,6 +2838,18 @@ class Warhammer40kEnv(gym.Env):
                                 i,
                                 f"Движение чарджа: {pos_before} -> {pos_after}, в контакте={self.unitInAttack[i][0] == 1}.",
                             )
+                            self._emit_replay_event(
+                                "unit_charge",
+                                phase="charge",
+                                unit_id=modelName,
+                                duration_ms=650,
+                                target_id=idOfE + 11,
+                                success=True,
+                                **{
+                                    "from": self._coords_to_view(pos_before),
+                                    "to": self._coords_to_view(pos_after),
+                                },
+                            )
                             # 10e: Heroic Intervention доступен защитнику после успешного charge move.
                             self._resolve_heroic_intervention(
                                 defender_side="enemy",
@@ -2781,6 +2892,14 @@ class Warhammer40kEnv(gym.Env):
                                 "Reward (чардж): "
                                 f"fail_penalty=-{reward_cfg.CHARGE_FAIL_PENALTY:.3f}",
                             )
+                            self._emit_replay_event(
+                                "unit_charge",
+                                phase="charge",
+                                unit_id=modelName,
+                                duration_ms=450,
+                                target_id=idOfE + 11,
+                                success=False,
+                            )
                     else:
                         if potential_targets:
                             target_list = self._format_unit_choices("enemy", potential_targets)
@@ -2798,6 +2917,7 @@ class Warhammer40kEnv(gym.Env):
                             self._log_unit("MODEL", modelName, i, "Нет целей в 12\", чардж пропущен.")
             if not any_charge_targets:
                 self._log("[MODEL] Чардж: нет доступных целей")
+            self._emit_replay_event("phase_end", phase="charge", duration_ms=200)
             return reward_delta
         elif side == "enemy" and action is not None and not manual:
             self._log_phase(self._display_side("enemy"), "charge")
@@ -3093,6 +3213,24 @@ class Warhammer40kEnv(gym.Env):
                 model_list = self._format_unit_choices("model", engaged_model)
                 enemy_list = self._format_unit_choices("enemy", engaged_enemy)
                 self._log(f"[MODEL] Ближний бой: участвуют {model_list}; противники {enemy_list}")
+                for idx in range(len(self.unit_health)):
+                    if self.unit_health[idx] <= 0 or self.unitInAttack[idx][0] != 1:
+                        continue
+                    def_idx = self.unitInAttack[idx][1]
+                    self._emit_replay_event(
+                        "unit_focus",
+                        phase="fight",
+                        unit_id=idx + 21,
+                        duration_ms=350,
+                    )
+                    if 0 <= def_idx < len(self.enemy_health):
+                        self._emit_replay_event(
+                            "unit_fight",
+                            phase="fight",
+                            unit_id=idx + 21,
+                            duration_ms=450,
+                            target_id=def_idx + 11,
+                        )
                 for idx in engaged_model:
                     def_idx = self.unitInAttack[idx][1]
                     if 0 <= def_idx < len(self.enemy_health):
@@ -3229,6 +3367,8 @@ class Warhammer40kEnv(gym.Env):
                 f"advantage={advantage_term:.3f}, strength={strength_term:.3f}, "
                 f"objectives={obj_term:.3f} (delta={obj_delta}), total={reward_delta:.3f}"
             )
+        if side == "model":
+            self._emit_replay_event("phase_end", phase="fight", duration_ms=200)
         return reward_delta
 
     def refresh_objective_control(self):
@@ -3911,6 +4051,7 @@ class Warhammer40kEnv(gym.Env):
                 f"min_dist={min_obj_dist_start}->{min_obj_dist_end}"
             )
 
+        self._emit_replay_event("turn_end", phase="fight", duration_ms=400)
         self._advance_turn_order()
         if self.game_over and res == 0:
             res = 4
