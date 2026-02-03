@@ -101,10 +101,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._max_log_lines = 5000
         self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS.md")
         self._log_file_max_bytes = 5 * 1024 * 1024
-        self._init_log_viewer()
-        self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
-        self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
-
         self.playback = AiPlayback()
         self._playback_last_unit_id = None
         self._playback_debug = os.getenv("VIEW_PLAYBACK_DEBUG") == "1"
@@ -115,6 +111,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._playback_pos_after_re = re.compile(
             r"Позиция после:\\s*\\(([-\\d]+)\\s*,\\s*([-\\d]+)\\)"
         )
+
+        self._init_log_viewer()
+        self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
+        self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
 
         fit_button = QtWidgets.QPushButton("Fit")
         fit_button.clicked.connect(self._fit_view)
