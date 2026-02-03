@@ -158,6 +158,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._ai_playback_active = False
         self._ai_phase_override = None
         self._ai_last_phase_shown = None
+        self._ai_turn_active = False
+        self._ai_current_phase = None
         self._ai_timer = QtCore.QTimer(self)
         self._ai_timer.setSingleShot(True)
         self._ai_timer.timeout.connect(self._playback_next_step)
@@ -475,9 +477,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._update_log(state.get("log_tail", []))
         new_log_lines = self._extract_new_log_lines(state.get("log_tail", []))
         self._sync_ai_phase_from_logs(new_log_lines)
+        log_steps = self._collect_ai_steps_from_logs(new_log_lines)
 
         if self._should_playback_ai(state):
-            self._queue_ai_steps(state)
+            if log_steps:
+                self._queue_ai_log_steps(state, log_steps)
+            else:
+                self._queue_ai_steps(state)
             return
 
         self._cancel_ai_playback()
@@ -878,7 +884,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return False
         if self.controller.is_finished:
             return False
-        return state.get("active") == "model"
+        return state.get("active") == "model" or self._ai_turn_active
 
     def _extract_new_log_lines(self, log_tail):
         if not isinstance(log_tail, list):
@@ -899,6 +905,67 @@ class ViewerWindow(QtWidgets.QMainWindow):
             phase_key = self._phase_key_from_log(line)
             if phase_key:
                 self._ai_phase_override = phase_key
+
+    def _collect_ai_steps_from_logs(self, new_lines):
+        steps = []
+        for line in new_lines:
+            text = str(line)
+            upper = text.upper()
+            if "--- ХОД MODEL" in upper:
+                self._ai_turn_active = True
+                self._ai_current_phase = None
+                self._ai_last_phase_shown = None
+                continue
+            if "--- ХОД PLAYER" in upper or "КОНЕЦ БОЕВОГО РАУНДА" in upper:
+                self._ai_turn_active = False
+                self._ai_current_phase = None
+                continue
+
+            phase_key = self._phase_key_from_log(text)
+            if phase_key:
+                if steps and steps[-1]["unit_id"] is None and steps[-1]["phase_key"] == phase_key:
+                    self._ai_current_phase = phase_key
+                    continue
+                self._ai_current_phase = phase_key
+                steps.append({"phase_key": phase_key, "unit_id": None, "raw": text})
+                continue
+
+            if not self._ai_turn_active:
+                continue
+
+            unit_id = self._unit_id_from_log(text)
+            if unit_id is None:
+                continue
+            if not self._should_add_unit_step(text, self._ai_current_phase):
+                continue
+            steps.append({"phase_key": self._ai_current_phase, "unit_id": unit_id, "raw": text})
+        return steps
+
+    def _should_add_unit_step(self, text: str, phase_key) -> bool:
+        lowered = text.lower()
+        if phase_key == "movement":
+            return (
+                "позиция после" in lowered
+                or "движение пропущено" in lowered
+                or "отступление завершено" in lowered
+            )
+        if phase_key == "shooting":
+            return "стрельб" in lowered or "оруж" in lowered or "hit" in lowered
+        if phase_key == "charge":
+            return "чардж" in lowered or "charge" in lowered
+        if phase_key == "fight":
+            return "бой" in lowered or "атаки" in lowered or "удар" in lowered
+        return False
+
+    def _unit_id_from_log(self, text: str):
+        match = re.search(r"\\bunit\\s*(\\d+)\\b", text, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        match = re.search(r"\\bюнит\\s*#?\\s*(\\d+)\\b", text, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        return None
+
 
     def _phase_key_from_log(self, line: str):
         text = str(line).upper()
@@ -949,6 +1016,91 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._ai_steps.extend(steps)
         if not self._ai_playback_active:
             self._start_ai_playback()
+
+    def _queue_ai_log_steps(self, state, log_steps):
+        if self._display_state is None:
+            self._apply_visual_state(state)
+            return
+        steps = self._build_ai_steps_from_logs(self._display_state, state, log_steps)
+        if not steps:
+            return
+        self._ai_steps.extend(steps)
+        if not self._ai_playback_active:
+            self._start_ai_playback()
+
+    def _build_ai_steps_from_logs(self, from_state, to_state, log_steps):
+        base_state = copy.deepcopy(from_state)
+        base_state["active"] = to_state.get("active")
+        base_state["turn"] = to_state.get("turn")
+        base_state["round"] = to_state.get("round")
+        base_state["vp"] = to_state.get("vp")
+        base_state["cp"] = to_state.get("cp")
+
+        units_list = base_state.get("units", []) or []
+        base_state["units"] = units_list
+        units_by_key = {(unit.get("side"), unit.get("id")): unit for unit in units_list}
+
+        steps = []
+        for entry in log_steps:
+            phase_key = entry.get("phase_key") or self._normalize_phase_key(to_state.get("phase"))
+            phase_label = self._phase_label(phase_key)
+            unit_id = entry.get("unit_id")
+            if unit_id is None:
+                snapshot = copy.deepcopy(base_state)
+                snapshot["phase"] = phase_key
+                steps.append(
+                    {
+                        "state": snapshot,
+                        "phase_key": phase_key,
+                        "phase_label": phase_label,
+                        "unit_key": None,
+                        "index": 0,
+                        "total": 0,
+                    }
+                )
+                continue
+
+            target_unit = None
+            for unit in (to_state.get("units", []) or []):
+                if unit.get("id") == unit_id:
+                    target_unit = unit
+                    break
+            if target_unit is None:
+                continue
+            unit_key = (target_unit.get("side"), unit_id)
+            if unit_key in units_by_key:
+                units_by_key[unit_key].update(target_unit)
+            else:
+                units_list.append(copy.deepcopy(target_unit))
+                units_by_key[unit_key] = units_list[-1]
+            base_state["phase"] = phase_key
+            snapshot = copy.deepcopy(base_state)
+            steps.append(
+                {
+                    "state": snapshot,
+                    "phase_key": phase_key,
+                    "phase_label": phase_label,
+                    "unit_key": unit_key,
+                    "index": 0,
+                    "total": 0,
+                }
+            )
+
+        phase_counts = {}
+        for step in steps:
+            if step["unit_key"] is None:
+                continue
+            phase_counts[step["phase_key"]] = phase_counts.get(step["phase_key"], 0) + 1
+        phase_seen = {}
+        for step in steps:
+            if step["unit_key"] is None:
+                continue
+            phase = step["phase_key"]
+            phase_seen[phase] = phase_seen.get(phase, 0) + 1
+            step["index"] = phase_seen[phase]
+            step["total"] = phase_counts.get(phase, 0)
+
+        return steps
 
     def _build_ai_steps(self, from_state, to_state):
         steps = []
@@ -1051,6 +1203,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._ai_playback_active = False
         self._ai_phase_override = None
         self._ai_last_phase_shown = None
+        self._ai_turn_active = False
+        self._ai_current_phase = None
 
     def _playback_next_step(self):
         if not self._ai_steps:
