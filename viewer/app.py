@@ -535,6 +535,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._append_log(messages)
         if request is not None:
             self._set_request(request)
+        else:
+            self._set_request(None)
         self._poll_state()
 
     def _fit_view(self):
