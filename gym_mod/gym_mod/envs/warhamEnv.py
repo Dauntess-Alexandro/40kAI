@@ -1135,10 +1135,19 @@ class Warhammer40kEnv(gym.Env):
         if not self.demo_ai:
             return
         self._clear_active_unit()
-        self._ensure_io().request_choice(
-            f"Фаза {phase_label} завершена. Команда: «Дальше».",
-            ["Дальше"],
-        )
+        while True:
+            answer = self._ensure_io().request_bool(
+                f"Фаза {phase_label} завершена. Следующая фаза? (y/n): "
+            )
+            if answer is True:
+                return
+            if answer is None:
+                self._log(
+                    "Команда отменена: ожидание следующей фазы прервано. "
+                    "Где: демо-режим фаз. Что сделать дальше: введите y для продолжения."
+                )
+                continue
+            self._log("Ожидаю подтверждение перехода к следующей фазе (y).")
 
     def _get_unit_data(self, side: str, unit_idx: int):
         side = side.lower()
