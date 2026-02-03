@@ -431,19 +431,25 @@ class GUIController(QtCore.QObject):
             self._emit_status("Сохранённые модели не найдены. Запускаю базовый режим.")
         if not self._check_torch_import():
             return
+        command = None
         if self._is_windows:
-            script = os.path.join(self._repo_root, "scripts", "viewer.bat")
+            pythonw_path = os.path.join(self._repo_root, ".venv", "Scripts", "pythonw.exe")
+            if not os.path.exists(pythonw_path):
+                pythonw_path = sys.executable.replace("python.exe", "pythonw.exe")
+            if not os.path.exists(pythonw_path):
+                pythonw_path = sys.executable
+            command = [pythonw_path, "-m", "viewer"]
         else:
             script = os.path.join(self._repo_root, "scripts", "viewer.sh")
-        if not os.path.exists(script):
-            self._emit_status("Не найден скрипт Viewer. Проверьте репозиторий.")
-            return
+            if not os.path.exists(script):
+                self._emit_status("Не найден скрипт Viewer. Проверьте репозиторий.")
+                return
+            command = self._build_script_command(script, [])
         self._persist_rosters()
         env = os.environ.copy()
         env["MODEL_PATH"] = model_path
         env["FIGHT_REPORT"] = "1"
         env["PLAY_NO_EXPLORATION"] = "1"
-        command = self._build_script_command(script, [])
         creationflags = 0
         if self._is_windows:
             creationflags = subprocess.CREATE_NO_WINDOW
