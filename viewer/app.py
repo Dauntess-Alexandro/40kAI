@@ -2,7 +2,9 @@ import torch
 import os
 import re
 import sys
+from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Dict, List, Optional, Set, Tuple
 from PySide6 import QtCore, QtGui, QtWidgets
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -16,6 +18,27 @@ from viewer.styles import Theme
 
 from gym_mod.engine.game_controller import GameController
 from gym_mod.engine.game_io import parse_dice_values
+
+
+@dataclass
+class AiStep:
+    phase: str
+    unit_id: int
+    action: str
+    from_pos: Optional[Tuple[int, int]] = None
+    to_pos: Optional[Tuple[int, int]] = None
+    text: str = ""
+
+
+@dataclass
+class AiPlayback:
+    active: bool = False
+    steps: List[AiStep] = field(default_factory=list)
+    idx: int = 0
+    current_phase: str = "command"
+    last_phase_header: Optional[str] = None
+    move_tmp: Dict[int, Dict[str, Tuple[int, int]]] = field(default_factory=dict)
+    seen_units_by_phase: Dict[str, Set[int]] = field(default_factory=dict)
 
 
 class ViewerWindow(QtWidgets.QMainWindow):
@@ -81,6 +104,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._init_log_viewer()
         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
+
+        self.playback = AiPlayback()
+        self._playback_last_unit_id = None
+        self._playback_debug = os.getenv("VIEW_PLAYBACK_DEBUG") == "1"
+        self._playback_unit_re = re.compile(r"\\[MODEL\\]\\s+Unit\\s+(\\d+)")
+        self._playback_pos_before_re = re.compile(
+            r"Позиция до:\\s*\\(([-\\d]+)\\s*,\\s*([-\\d]+)\\)"
+        )
+        self._playback_pos_after_re = re.compile(
+            r"Позиция после:\\s*\\(([-\\d]+)\\s*,\\s*([-\\d]+)\\)"
+        )
 
         fit_button = QtWidgets.QPushButton("Fit")
         fit_button.clicked.connect(self._fit_view)
@@ -409,8 +443,18 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._poll_state()
 
     def _submit_text(self):
-        text = self.command_input.text().strip()
+        raw_text = self.command_input.text()
+        text = raw_text.strip()
         if not text:
+            self.command_input.clear()
+            if self.playback.active:
+                self.playback_next_step()
+            else:
+                self._append_log(["Нет активного playback."])
+            return
+        if text in ("ai.next", "next"):
+            self.command_input.clear()
+            self.playback_next_step()
             return
         if self._pending_request and getattr(self._pending_request, "kind", "") == "dice":
             count = self._pending_request.count or 0
@@ -554,6 +598,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def add_log_line(self, line: str):
         text = str(line)
+        self._playback_on_log_line(text)
         new_turn = self._detect_turn_number(text)
         if new_turn is not None:
             self._current_turn_number = new_turn
@@ -853,6 +898,166 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _is_shooting_phase(self, phase):
         phase_text = str(phase or "").lower()
         return "shoot" in phase_text or "стрел" in phase_text or "shooting" in phase_text
+
+    def _playback_debug_log(self, message: str) -> None:
+        if self._playback_debug:
+            print(message)
+
+    def _playback_begin(self) -> None:
+        self.playback.active = True
+        self.playback.steps.clear()
+        self.playback.idx = 0
+        self.playback.current_phase = "command"
+        self.playback.last_phase_header = None
+        self.playback.move_tmp.clear()
+        self.playback.seen_units_by_phase.clear()
+        self._playback_last_unit_id = None
+
+    def _playback_finalize(self) -> None:
+        if not self.playback.active:
+            return
+        self.playback.idx = 0
+        self.add_log_line("Playback готов. Нажми Enter (пустая команда) или введи ai.next.")
+        self._playback_debug_log("[PB] done")
+
+    def _playback_add_step(self, step: AiStep) -> None:
+        self.playback.steps.append(step)
+        self._playback_debug_log(
+            "[PB] add step: idx="
+            f"{len(self.playback.steps) - 1}, phase={step.phase}, "
+            f"unit={step.unit_id}, action={step.action}, "
+            f"from={step.from_pos} to={step.to_pos}"
+        )
+
+    def _playback_on_log_line(self, line: str) -> None:
+        if "--- ХОД PLAYER ---" in line or "=== КОНЕЦ БОЕВОГО РАУНДА" in line:
+            if self.playback.active:
+                self._playback_finalize()
+            return
+        if "[MODEL]" in line and not self.playback.active:
+            self._playback_begin()
+
+        if "--- ФАЗА " in line:
+            phase = None
+            if "КОМАНД" in line:
+                phase = "command"
+            elif "ДВИЖ" in line:
+                phase = "move"
+            elif "СТРЕЛ" in line:
+                phase = "shoot"
+            elif "ЧАРДЖ" in line:
+                phase = "charge"
+            elif "БОЯ" in line:
+                phase = "fight"
+            if phase and phase != self.playback.last_phase_header:
+                self.playback.current_phase = phase
+                self.playback.last_phase_header = phase
+
+        match = self._playback_unit_re.search(line)
+        if match:
+            unit_id = int(match.group(1))
+            self._playback_last_unit_id = unit_id
+            self.playback.seen_units_by_phase.setdefault(
+                self.playback.current_phase, set()
+            ).add(unit_id)
+
+        if self.playback.current_phase == "move" and self._playback_last_unit_id is not None:
+            before_match = self._playback_pos_before_re.search(line)
+            if before_match:
+                from_pos = (int(before_match.group(1)), int(before_match.group(2)))
+                self.playback.move_tmp.setdefault(self._playback_last_unit_id, {})[
+                    "from"
+                ] = from_pos
+            after_match = self._playback_pos_after_re.search(line)
+            if after_match:
+                to_pos = (int(after_match.group(1)), int(after_match.group(2)))
+                unit_id = self._playback_last_unit_id
+                tmp = self.playback.move_tmp.setdefault(unit_id, {})
+                tmp["to"] = to_pos
+                from_pos = tmp.get("from")
+                if from_pos is not None:
+                    self._playback_add_step(
+                        AiStep(
+                            phase="move",
+                            unit_id=unit_id,
+                            action="highlight",
+                        )
+                    )
+                    if from_pos != to_pos:
+                        self._playback_add_step(
+                            AiStep(
+                                phase="move",
+                                unit_id=unit_id,
+                                action="move",
+                                from_pos=from_pos,
+                                to_pos=to_pos,
+                            )
+                        )
+                    else:
+                        self._playback_add_step(
+                            AiStep(
+                                phase="move",
+                                unit_id=unit_id,
+                                action="noop",
+                                text="no movement",
+                            )
+                        )
+                self.playback.move_tmp.pop(unit_id, None)
+
+        lowered = line.lower()
+        if self.playback.current_phase in {"shoot", "charge", "fight"}:
+            if (
+                "нет целей" in lowered
+                or "нет доступных атак" in lowered
+                or "пропущен" in lowered
+                or "пропущена" in lowered
+            ):
+                unit_id = self._playback_last_unit_id
+                if unit_id is not None:
+                    self._playback_add_step(
+                        AiStep(
+                            phase=self.playback.current_phase,
+                            unit_id=unit_id,
+                            action="highlight",
+                        )
+                    )
+                    self._playback_add_step(
+                        AiStep(
+                            phase=self.playback.current_phase,
+                            unit_id=unit_id,
+                            action="noop",
+                            text="no targets/skip",
+                        )
+                    )
+
+    def playback_next_step(self) -> None:
+        if not self.playback.active or not self.playback.steps:
+            self._append_log(["Нет активного playback."])
+            return
+        if self.map_scene.is_animating():
+            self.map_scene.finish_animation()
+            return
+        if self.playback.idx >= len(self.playback.steps):
+            self._append_log(["Playback завершён."])
+            self.playback.active = False
+            self.map_scene.clear_playback()
+            return
+        step = self.playback.steps[self.playback.idx]
+        self.playback.idx += 1
+        self._playback_debug_log(
+            f"[PB] exec: idx={self.playback.idx - 1}, "
+            f"phase={step.phase}, unit={step.unit_id}, action={step.action}"
+        )
+        self.map_scene.set_playback_phase(step.phase)
+        self.map_scene.set_playback_active_unit(step.unit_id)
+        if step.action == "move" and step.from_pos and step.to_pos:
+            self.map_scene.play_unit_move(
+                step.unit_id,
+                step.from_pos,
+                step.to_pos,
+                duration_ms=600,
+            )
+        self.map_scene.update()
 
     def eventFilter(self, obj, event):
         if event.type() == QtCore.QEvent.KeyPress and self._pending_request:

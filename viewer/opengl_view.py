@@ -37,6 +37,14 @@ class ObjectiveRender:
     control_radius: float
 
 
+@dataclass
+class PlaybackMove:
+    unit_id: int
+    from_pos: QtCore.QPointF
+    to_pos: QtCore.QPointF
+    duration_ms: int
+
+
 class OpenGLBoardWidget(QOpenGLWidget):
     unit_selected = QtCore.Signal(str, int)
 
@@ -63,6 +71,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._unit_anim_timer.timeout.connect(self._animate_unit_step)
         self._unit_anim_clock = QtCore.QElapsedTimer()
         self._unit_anim_duration_ms = 180
+        self._playback_phase: Optional[str] = None
+        self._playback_active_unit: Optional[int] = None
+        self._playback_move: Optional[PlaybackMove] = None
+        self._playback_anim_timer = QtCore.QTimer(self)
+        self._playback_anim_timer.setInterval(16)
+        self._playback_anim_timer.timeout.connect(self._animate_playback_step)
+        self._playback_anim_clock = QtCore.QElapsedTimer()
 
         self._move_highlights: List[QtCore.QRectF] = []
         self._target_highlights: List[Tuple[QtCore.QPointF, float]] = []
@@ -196,6 +211,50 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def set_objective_radius_visible(self, visible: bool) -> None:
         self._show_objective_radius = bool(visible)
+        self.update()
+
+    def set_playback_phase(self, phase: Optional[str]) -> None:
+        self._playback_phase = phase
+        self.update()
+
+    def set_playback_active_unit(self, unit_id: Optional[int]) -> None:
+        self._playback_active_unit = unit_id
+        self.update()
+
+    def clear_playback(self) -> None:
+        self._playback_phase = None
+        self._playback_active_unit = None
+        self.finish_animation()
+        self.update()
+
+    def is_animating(self) -> bool:
+        if not self._playback_move:
+            return False
+        elapsed = self._playback_anim_clock.elapsed()
+        return elapsed < self._playback_move.duration_ms
+
+    def finish_animation(self) -> None:
+        if self._playback_anim_timer.isActive():
+            self._playback_anim_timer.stop()
+        self._playback_move = None
+        self.update()
+
+    def play_unit_move(
+        self,
+        unit_id: int,
+        from_pos: Tuple[int, int],
+        to_pos: Tuple[int, int],
+        duration_ms: int = 600,
+    ) -> None:
+        self._playback_move = PlaybackMove(
+            unit_id=unit_id,
+            from_pos=QtCore.QPointF(float(from_pos[0]), float(from_pos[1])),
+            to_pos=QtCore.QPointF(float(to_pos[0]), float(to_pos[1])),
+            duration_ms=max(1, int(duration_ms)),
+        )
+        self._playback_anim_clock.restart()
+        if not self._playback_anim_timer.isActive():
+            self._playback_anim_timer.start()
         self.update()
 
     def refresh_overlays(self) -> None:
@@ -342,10 +401,35 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if factor >= 1.0 and self._unit_anim_timer.isActive():
             self._unit_anim_timer.stop()
 
+    def _animate_playback_step(self) -> None:
+        if not self._playback_move:
+            if self._playback_anim_timer.isActive():
+                self._playback_anim_timer.stop()
+            return
+        if not self._playback_anim_clock.isValid():
+            self._playback_anim_clock.start()
+        elapsed = self._playback_anim_clock.elapsed()
+        if elapsed >= self._playback_move.duration_ms:
+            self._playback_move = None
+            self._playback_anim_timer.stop()
+        self.update()
+
     def _rebuild_units(self, factor: float) -> None:
         self._units = []
         self._unit_by_key = {}
         self._unit_labels = []
+
+        playback_unit_id = self._playback_move.unit_id if self._playback_move else None
+        playback_factor = None
+        playback_from = None
+        playback_to = None
+        if self._playback_move:
+            if not self._playback_anim_clock.isValid():
+                self._playback_anim_clock.start()
+            elapsed = self._playback_anim_clock.elapsed()
+            playback_factor = min(1.0, elapsed / float(self._playback_move.duration_ms))
+            playback_from = self._playback_move.from_pos
+            playback_to = self._playback_move.to_pos
 
         occupied: Dict[Tuple[int, int], List[dict]] = {}
         for unit in self._units_state:
@@ -364,6 +448,15 @@ class OpenGLBoardWidget(QOpenGLWidget):
             prev_pos = self._prev_unit_positions.get(key, curr_pos)
             interp_x = prev_pos.x() + (curr_pos.x() - prev_pos.x()) * factor
             interp_y = prev_pos.y() + (curr_pos.y() - prev_pos.y()) * factor
+            if (
+                playback_unit_id is not None
+                and unit.get("id") == playback_unit_id
+                and playback_factor is not None
+                and playback_from is not None
+                and playback_to is not None
+            ):
+                interp_x = playback_from.x() + (playback_to.x() - playback_from.x()) * playback_factor
+                interp_y = playback_from.y() + (playback_to.y() - playback_from.y()) * playback_factor
 
             stack = occupied.get((int(curr_pos.x()), int(curr_pos.y())), [])
             offset = 0.0
@@ -672,6 +765,21 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter.setBrush(Theme.brush(render.color))
             painter.setPen(Theme.pen(Theme.outline, 0.8))
             painter.drawEllipse(render.center, render.radius, render.radius)
+
+        if self._playback_active_unit is not None:
+            playback_render = None
+            for render in self._units:
+                if render.key[1] == self._playback_active_unit:
+                    playback_render = render
+                    break
+            if playback_render:
+                painter.setBrush(QtCore.Qt.NoBrush)
+                painter.setPen(Theme.pen(Theme.selection, 2.4))
+                painter.drawEllipse(
+                    playback_render.center,
+                    playback_render.radius + 3,
+                    playback_render.radius + 3,
+                )
 
         if self._selected_unit_key in self._unit_by_key:
             render = self._unit_by_key[self._selected_unit_key]
