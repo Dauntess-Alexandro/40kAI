@@ -11,6 +11,7 @@ if GYM_PATH not in sys.path:
     sys.path.insert(0, GYM_PATH)
 
 from viewer.opengl_view import OpenGLBoardWidget
+from viewer.playback import PlaybackController
 from viewer.state import StateWatcher
 from viewer.styles import Theme
 
@@ -41,6 +42,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.status_turn = QtWidgets.QLabel("Ход: —")
         self.status_phase = QtWidgets.QLabel("Фаза: —")
         self.status_active = QtWidgets.QLabel("Активен: —")
+        self.playback_prompt = QtWidgets.QLabel("Нажмите Enter для следующей фазы")
+        self.playback_prompt.setStyleSheet(f"color: {Theme.muted.name()};")
+        self.playback_prompt.setVisible(False)
+        self.playback_controller = PlaybackController(
+            map_scene=self.map_scene,
+            apply_state_fn=self._apply_state,
+            prompt_label=self.playback_prompt,
+            log_fn=self.add_log_line,
+        )
 
         self.points_vp_player = QtWidgets.QLabel("Player VP: —")
         self.points_vp_model = QtWidgets.QLabel("Model VP: —")
@@ -195,6 +205,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.status_turn)
         layout.addWidget(self.status_phase)
         layout.addWidget(self.status_active)
+        layout.addWidget(self.playback_prompt)
         return box
 
     def _group_points(self):
@@ -456,7 +467,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
             )
             return
         if self.state_watcher.load_if_changed():
-            self._apply_state(self.state_watcher.state)
+            if not self.playback_controller.block_state_updates():
+                self._apply_state(self.state_watcher.state)
+        self._poll_replay_events()
+
+    def _poll_replay_events(self):
+        events = self.controller.consume_replay_events()
+        if events:
+            self.playback_controller.add_events(events)
 
     def _apply_state(self, state):
         board = state.get("board", {})
@@ -482,7 +500,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._populate_units_table(state.get("units", []))
         self._update_log(state.get("log_tail", []))
-        self._refresh_active_context()
+        if not self.playback_controller.is_active():
+            self._refresh_active_context()
 
     def _populate_units_table(self, units):
         self.units_table.setRowCount(len(units))
@@ -855,6 +874,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return "shoot" in phase_text or "стрел" in phase_text or "shooting" in phase_text
 
     def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.KeyPress:
+            key = event.key()
+            if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+                if self.playback_controller.on_enter():
+                    return True
         if event.type() == QtCore.QEvent.KeyPress and self._pending_request:
             kind = getattr(self._pending_request, "kind", "")
             key = event.key()

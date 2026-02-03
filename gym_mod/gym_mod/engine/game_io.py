@@ -46,6 +46,12 @@ class BaseIO:
     ):
         raise NotImplementedError
 
+    def emit_replay_event(self, event: dict) -> None:
+        return None
+
+    def consume_replay_events(self) -> list[dict]:
+        return []
+
 
 def parse_dice_values(text: str, count: int, min_value: int = 1, max_value: int = 6) -> list[int]:
     if text is None:
@@ -149,6 +155,12 @@ class ConsoleIO(BaseIO):
                     f"Ошибка ввода кубов: нужно ввести {count} значений от {min_val} до {max_val}."
                 )
 
+    def emit_replay_event(self, event: dict) -> None:
+        _ = event
+
+    def consume_replay_events(self) -> list[dict]:
+        return []
+
 
 class GuiIO(BaseIO):
     def __init__(
@@ -161,6 +173,7 @@ class GuiIO(BaseIO):
         self.answer_queue = answer_queue
         self.log_path = log_path or LOG_DEFAULT_PATH
         self._messages: list[str] = []
+        self._replay_events: list[dict] = []
         self._lock = threading.Lock()
 
     def consume_messages(self) -> list[str]:
@@ -175,6 +188,18 @@ class GuiIO(BaseIO):
         with self._lock:
             self._messages.append(message)
         _append_log_line(message, self.log_path)
+
+    def emit_replay_event(self, event: dict) -> None:
+        if event is None:
+            return
+        with self._lock:
+            self._replay_events.append(event)
+
+    def consume_replay_events(self) -> list[dict]:
+        with self._lock:
+            events = list(self._replay_events)
+            self._replay_events.clear()
+        return events
 
     def _wait_for_answer(self):
         return self.answer_queue.get()

@@ -63,9 +63,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._unit_anim_timer.timeout.connect(self._animate_unit_step)
         self._unit_anim_clock = QtCore.QElapsedTimer()
         self._unit_anim_duration_ms = 180
+        self._replay_move_timer = QtCore.QTimer(self)
+        self._replay_move_timer.setInterval(16)
+        self._replay_move_timer.timeout.connect(self._animate_replay_move_step)
+        self._replay_move_clock = QtCore.QElapsedTimer()
+        self._replay_move: Optional[dict] = None
+        self._replay_override_positions: Dict[Tuple[str, int], QtCore.QPointF] = {}
 
         self._move_highlights: List[QtCore.QRectF] = []
         self._target_highlights: List[Tuple[QtCore.QPointF, float]] = []
+        self._effect_highlights: List[Tuple[QtCore.QPointF, float]] = []
+        self._effect_timer = QtCore.QTimer(self)
+        self._effect_timer.setSingleShot(True)
+        self._effect_timer.timeout.connect(self._clear_effect)
         self._show_objective_radius = True
 
         self._active_unit_id = None
@@ -192,6 +202,90 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._show_objective_radius = bool(show_objective_radius)
         self._targets = targets
         self.refresh_overlays()
+        self.update()
+
+    def set_active_unit(self, unit_id: Optional[int], side: Optional[str] = None) -> None:
+        self._active_unit_id = unit_id
+        self._active_unit_side = side
+        self.refresh_overlays()
+        self.update()
+
+    def set_active_phase(self, phase: Optional[str]) -> None:
+        self._phase = phase or ""
+        self.refresh_overlays()
+        self.update()
+
+    def play_move(
+        self,
+        unit_id: int,
+        from_xy: List[float],
+        to_xy: List[float],
+        path: Optional[List[List[float]]] = None,
+        duration_ms: int = 600,
+        side: Optional[str] = None,
+    ) -> None:
+        _ = path
+        if unit_id is None:
+            return
+        if side is None:
+            side = self._active_unit_side
+        key = (side, unit_id)
+        if not key[0]:
+            return
+        if len(from_xy) < 2 or len(to_xy) < 2:
+            return
+        start = QtCore.QPointF(float(from_xy[0]), float(from_xy[1]))
+        end = QtCore.QPointF(float(to_xy[0]), float(to_xy[1]))
+        self._replay_move = {
+            "key": key,
+            "start": start,
+            "end": end,
+            "duration": max(1, int(duration_ms)),
+        }
+        self._replay_override_positions[key] = QtCore.QPointF(start)
+        self._replay_move_clock.restart()
+        if not self._replay_move_timer.isActive():
+            self._replay_move_timer.start()
+        self.update()
+
+    def is_animating(self) -> bool:
+        return self._replay_move_timer.isActive()
+
+    def finish_animation(self) -> None:
+        if not self._replay_move:
+            return
+        key = self._replay_move.get("key")
+        end = self._replay_move.get("end")
+        if key:
+            self._replay_override_positions.pop(key, None)
+        self._replay_move = None
+        if self._replay_move_timer.isActive():
+            self._replay_move_timer.stop()
+        self.update()
+
+    def play_effect(
+        self,
+        effect_type: str,
+        attacker_id: Optional[int],
+        target_id: Optional[int],
+        duration_ms: int = 450,
+    ) -> None:
+        _ = effect_type
+        self._effect_highlights = []
+        if target_id is not None:
+            target = self._unit_by_key.get(("player", target_id)) or self._unit_by_key.get(
+                ("model", target_id)
+            )
+            if target:
+                self._effect_highlights.append((target.center, target.radius + self.cell_size * 0.2))
+        if attacker_id is not None:
+            attacker = self._unit_by_key.get(("player", attacker_id)) or self._unit_by_key.get(
+                ("model", attacker_id)
+            )
+            if attacker:
+                self._effect_highlights.append((attacker.center, attacker.radius + self.cell_size * 0.1))
+        if duration_ms > 0:
+            self._effect_timer.start(int(duration_ms))
         self.update()
 
     def set_objective_radius_visible(self, visible: bool) -> None:
@@ -342,6 +436,34 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if factor >= 1.0 and self._unit_anim_timer.isActive():
             self._unit_anim_timer.stop()
 
+    def _animate_replay_move_step(self) -> None:
+        if not self._replay_move:
+            if self._replay_move_timer.isActive():
+                self._replay_move_timer.stop()
+            return
+        if not self._replay_move_clock.isValid():
+            self._replay_move_clock.start()
+        elapsed = self._replay_move_clock.elapsed()
+        duration = float(self._replay_move.get("duration", 1))
+        factor = min(1.0, elapsed / duration)
+        start = self._replay_move.get("start")
+        end = self._replay_move.get("end")
+        key = self._replay_move.get("key")
+        if key and start is not None and end is not None:
+            interp_x = start.x() + (end.x() - start.x()) * factor
+            interp_y = start.y() + (end.y() - start.y()) * factor
+            self._replay_override_positions[key] = QtCore.QPointF(interp_x, interp_y)
+        self.update()
+        if factor >= 1.0 and self._replay_move_timer.isActive():
+            self._replay_move_timer.stop()
+            if key in self._replay_override_positions:
+                self._replay_override_positions.pop(key, None)
+            self._replay_move = None
+
+    def _clear_effect(self) -> None:
+        self._effect_highlights = []
+        self.update()
+
     def _rebuild_units(self, factor: float) -> None:
         self._units = []
         self._unit_by_key = {}
@@ -359,9 +481,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
         for unit in self._units_state:
             key = (unit.get("side"), unit.get("id"))
             curr_pos = self._curr_unit_positions.get(key)
+            override_pos = self._replay_override_positions.get(key)
+            if override_pos is not None:
+                curr_pos = override_pos
             if curr_pos is None:
                 continue
             prev_pos = self._prev_unit_positions.get(key, curr_pos)
+            if override_pos is not None:
+                prev_pos = curr_pos
             interp_x = prev_pos.x() + (curr_pos.x() - prev_pos.x()) * factor
             interp_y = prev_pos.y() + (curr_pos.y() - prev_pos.y()) * factor
 
@@ -673,6 +800,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter.setPen(Theme.pen(Theme.outline, 0.8))
             painter.drawEllipse(render.center, render.radius, render.radius)
 
+        if self._active_unit_id is not None and self._active_unit_side is not None:
+            active_key = (self._active_unit_side, self._active_unit_id)
+            if active_key in self._unit_by_key:
+                render = self._unit_by_key[active_key]
+                painter.setBrush(QtCore.Qt.NoBrush)
+                painter.setPen(Theme.pen(Theme.selection, 3))
+                painter.drawEllipse(render.center, render.radius + 4, render.radius + 4)
+
         if self._selected_unit_key in self._unit_by_key:
             render = self._unit_by_key[self._selected_unit_key]
             painter.setBrush(QtCore.Qt.NoBrush)
@@ -683,6 +818,12 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter.setBrush(QtCore.Qt.NoBrush)
             painter.setPen(Theme.pen(Theme.accent, 2))
             for center, radius in self._target_highlights:
+                painter.drawEllipse(center, radius, radius)
+
+        if self._effect_highlights:
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.setPen(Theme.pen(Theme.accent, 3))
+            for center, radius in self._effect_highlights:
                 painter.drawEllipse(center, radius, radius)
 
         text_font = Theme.font(size=8, bold=True)
