@@ -46,6 +46,9 @@ class BaseIO:
     ):
         raise NotImplementedError
 
+    def request_demo(self, prompt: str) -> Optional[str]:
+        raise NotImplementedError
+
 
 def parse_dice_values(text: str, count: int, min_value: int = 1, max_value: int = 6) -> list[int]:
     if text is None:
@@ -81,6 +84,8 @@ def _append_log_line(message: str, path: Optional[str] = None) -> None:
 class ConsoleIO(BaseIO):
     def __init__(self, log_path: Optional[str] = None):
         self.log_path = log_path or LOG_DEFAULT_PATH
+        self._demo_enabled = False
+        self._demo_auto = False
 
     def log(self, message: str) -> None:
         if message is None:
@@ -149,6 +154,35 @@ class ConsoleIO(BaseIO):
                     f"Ошибка ввода кубов: нужно ввести {count} значений от {min_val} до {max_val}."
                 )
 
+    def request_demo(self, prompt: str) -> Optional[str]:
+        if not self._demo_enabled:
+            return "skip"
+        if self._demo_auto:
+            return "auto"
+        while True:
+            response = input(prompt).strip().lower()
+            if response in ("", "step", "enter", "next", "шаг", "далее"):
+                return "step"
+            if response in ("y", "yes", "да", "д", "auto", "авто"):
+                return "auto"
+            if response in ("n", "no", "нет", "н", "pause", "пауза", "стоп"):
+                return "pause"
+            if response in ("q", "quit"):
+                return None
+            self.log("Неверный ввод: Enter — шаг, Y — авто, N — пауза.")
+
+    def set_demo_enabled(self, enabled: bool) -> None:
+        self._demo_enabled = bool(enabled)
+        if not self._demo_enabled:
+            self._demo_auto = False
+
+    def set_demo_auto(self, enabled: bool) -> None:
+        self._demo_auto = bool(enabled)
+
+    @property
+    def demo_enabled(self) -> bool:
+        return self._demo_enabled
+
 
 class GuiIO(BaseIO):
     def __init__(
@@ -162,6 +196,8 @@ class GuiIO(BaseIO):
         self.log_path = log_path or LOG_DEFAULT_PATH
         self._messages: list[str] = []
         self._lock = threading.Lock()
+        self._demo_enabled = False
+        self._demo_auto = False
 
     def consume_messages(self) -> list[str]:
         with self._lock:
@@ -252,6 +288,51 @@ class GuiIO(BaseIO):
             except ValueError:
                 return None
         return None
+
+    def set_demo_enabled(self, enabled: bool) -> None:
+        with self._lock:
+            self._demo_enabled = bool(enabled)
+            if not self._demo_enabled:
+                self._demo_auto = False
+
+    def set_demo_auto(self, enabled: bool) -> None:
+        with self._lock:
+            self._demo_auto = bool(enabled)
+
+    @property
+    def demo_enabled(self) -> bool:
+        with self._lock:
+            return self._demo_enabled
+
+    @property
+    def demo_auto(self) -> bool:
+        with self._lock:
+            return self._demo_auto
+
+    def request_demo(self, prompt: str) -> Optional[str]:
+        with self._lock:
+            enabled = self._demo_enabled
+            auto = self._demo_auto
+        if not enabled:
+            return "skip"
+        if auto:
+            return "auto"
+        request = Request(kind="demo", prompt=prompt, options=["step", "auto", "pause"])
+        self.request_queue.put(request)
+        answer = self._wait_for_answer()
+        if answer is None:
+            return None
+        if isinstance(answer, str):
+            lowered = answer.strip().lower()
+            if lowered in ("y", "yes", "да", "д", "auto", "авто"):
+                self.set_demo_auto(True)
+                return "auto"
+            if lowered in ("n", "no", "нет", "н", "pause", "пауза", "стоп"):
+                self.set_demo_auto(False)
+                return "pause"
+            if lowered in ("step", "enter", "next", "шаг", "далее", ""):
+                return "step"
+        return "step"
 
 
 _ACTIVE_IO: Optional[BaseIO] = None

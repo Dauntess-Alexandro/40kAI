@@ -929,6 +929,43 @@ class Warhammer40kEnv(gym.Env):
             self.io = get_active_io()
         return self.io
 
+    def _demo_step(
+        self,
+        side: str,
+        phase: str,
+        unit_idx: Optional[int] = None,
+        reason: Optional[str] = None,
+    ) -> None:
+        if side.lower() != "model":
+            return
+        io = self._ensure_io()
+        if not hasattr(io, "request_demo"):
+            return
+        if hasattr(io, "demo_enabled") and not io.demo_enabled:
+            return
+        phase_title = {
+            "command": "командования",
+            "movement": "движения",
+            "shooting": "стрельбы",
+            "charge": "чарджа",
+            "fight": "боя",
+        }.get(phase, phase)
+        parts = [f"Демо хода ИИ: фаза {phase_title}"]
+        if unit_idx is not None:
+            unit_id = self._unit_id("model", unit_idx)
+            unit_label = self._format_unit_label("model", unit_idx, unit_id=unit_id)
+            parts.append(f"юнит {unit_id} ({unit_label})")
+        if reason:
+            parts.append(reason)
+        prompt = ". ".join(parts) + ". Enter — следующий шаг, Y — авто, N — пауза: "
+        response = io.request_demo(prompt)
+        if response is None:
+            self._log(
+                "Демо хода ИИ остановлено пользователем. "
+                "Где: Warhammer40kEnv._demo_step. "
+                "Что делать дальше: отключите демо или продолжите игру."
+            )
+
     def _log(self, msg: str, verbose_only: bool = False):
         if verbose_only and not self._is_verbose():
             return
@@ -1529,8 +1566,10 @@ class Warhammer40kEnv(gym.Env):
             for i in range(len(self.unit_health)):
                 unit_label = self._format_unit_label("model", i)
                 if self.unit_health[i] <= 0:
+                    self._demo_step("model", "command", unit_idx=i, reason="юнит мертв, командование пропущено")
                     self.modelOC[i] = 0
                     continue
+                self._demo_step("model", "command", unit_idx=i)
                 self.modelOC[i] = self.unit_data[i]["OC"]
                 if isBelowHalfStr(self.unit_data[i], self.unit_health[i]) is True and self.unit_health[i] > 0:
                     if self.trunc is False:
@@ -1720,8 +1759,10 @@ class Warhammer40kEnv(gym.Env):
                 battleSh = battle_shock[i] if battle_shock else False
                 pos_before = tuple(self.unit_coords[i])
                 if self.unit_health[i] <= 0:
+                    self._demo_step("model", "movement", unit_idx=i, reason="юнит мертв, движение пропущено")
                     self._log_unit("MODEL", modelName, i, f"Юнит мертв, движение пропущено. Позиция: {pos_before}")
                     continue
+                self._demo_step("model", "movement", unit_idx=i)
                 if self.unitInAttack[i][0] == 0 and self.unit_health[i] > 0:
                     base_m = self.unit_data[i]["Movement"]
                     label = "move_num_" + str(i)
@@ -2198,8 +2239,10 @@ class Warhammer40kEnv(gym.Env):
                 modelName = i + 21
                 advanced = advanced_flags[i] if advanced_flags else False
                 if self.unit_health[i] <= 0:
+                    self._demo_step("model", "shooting", unit_idx=i, reason="юнит мертв, стрельба пропущена")
                     self._log_unit("MODEL", modelName, i, "Юнит мертв, стрельба пропущена.")
                     continue
+                self._demo_step("model", "shooting", unit_idx=i)
                 if self.unitFellBack[i]:
                     self._log_unit("MODEL", modelName, i, "Fall Back в этом ходу — стрельба недоступна.")
                     continue
@@ -2664,8 +2707,10 @@ class Warhammer40kEnv(gym.Env):
                 advanced = advanced_flags[i] if advanced_flags else False
                 pos_before = tuple(self.unit_coords[i])
                 if self.unit_health[i] <= 0:
+                    self._demo_step("model", "charge", unit_idx=i, reason="юнит мертв, чардж пропущен")
                     self._log_unit("MODEL", modelName, i, "Юнит мертв, чардж пропущен.")
                     continue
+                self._demo_step("model", "charge", unit_idx=i)
                 if self.unitFellBack[i]:
                     self._log_unit("MODEL", modelName, i, "Fall Back в этом ходу — чардж невозможен.")
                     continue
@@ -3085,6 +3130,13 @@ class Warhammer40kEnv(gym.Env):
         strength_term = 0.0
         if side == "model":
             self._log_phase("MODEL", "fight")
+            for i in range(len(self.unit_health)):
+                if self.unit_health[i] <= 0:
+                    self._demo_step("model", "fight", unit_idx=i, reason="юнит мертв, бой пропущен")
+                elif self.unitInAttack[i][0] != 1:
+                    self._demo_step("model", "fight", unit_idx=i, reason="нет контакта, бой пропущен")
+                else:
+                    self._demo_step("model", "fight", unit_idx=i)
             engaged_model = [i for i in range(len(self.unit_health)) if self.unit_health[i] > 0 and self.unitInAttack[i][0] == 1]
             engaged_enemy = [i for i in range(len(self.enemy_health)) if self.enemy_health[i] > 0 and self.enemyInAttack[i][0] == 1]
             if not engaged_model and not engaged_enemy:

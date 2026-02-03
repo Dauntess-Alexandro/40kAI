@@ -49,6 +49,14 @@ class GameController:
     def _consume_messages(self):
         return self._io.consume_messages()
 
+    def set_demo_enabled(self, enabled: bool) -> None:
+        if hasattr(self._io, "set_demo_enabled"):
+            self._io.set_demo_enabled(enabled)
+
+    def set_demo_auto(self, enabled: bool) -> None:
+        if hasattr(self._io, "set_demo_auto"):
+            self._io.set_demo_auto(enabled)
+
     def _next_request(self, block: bool):
         if self._finished and self._request_queue.empty():
             return None
