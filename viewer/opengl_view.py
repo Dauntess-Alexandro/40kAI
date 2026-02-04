@@ -1005,10 +1005,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
             remaining.append(fx)
 
             config = fx.config or {}
-            core_life = float(config.get("core_life", 0.22))
-            glow_life = float(config.get("glow_life", 0.34))
-            flash_life = float(config.get("flash_life", 0.14))
-            ring_life = float(config.get("ring_life", 0.38))
+
+            def _resolve_life(value: Optional[float], default_fraction: float) -> float:
+                if value is None:
+                    value = default_fraction
+                value = float(value)
+                if value <= 1.0:
+                    return max(0.001, duration * value)
+                return value
+
+            core_life = _resolve_life(config.get("core_life"), 0.22)
+            glow_life = _resolve_life(config.get("glow_life"), 0.34)
+            flash_life = _resolve_life(config.get("flash_life"), 0.14)
+            ring_life = _resolve_life(config.get("ring_life"), 0.38)
 
             core_p = min(1.0, age / core_life)
             glow_p = min(1.0, age / glow_life)

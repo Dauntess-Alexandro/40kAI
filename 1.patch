@@ -1,255 +1,72 @@
-diff --git a/viewer/app.py b/viewer/app.py
-index 7b2e4630359a70757ab70062eecc1b61db43e721..017c627c478489c7e6fdb034d626b1ab63e93c82 100644
---- a/viewer/app.py
-+++ b/viewer/app.py
-@@ -53,58 +53,62 @@ class ViewerWindow(QtWidgets.QMainWindow):
-         self.units_table = QtWidgets.QTableWidget(0, 5)
-         self.units_table.setHorizontalHeaderLabels(["Сторона", "ID", "Имя", "HP", "Модели"])
-         header = self.units_table.horizontalHeader()
-         header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
-         header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
-         header.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
-         header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
-         header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)
-         header.sortIndicatorChanged.connect(self._rebuild_unit_row_mapping)
-         self.units_table.verticalHeader().setVisible(False)
-         self.units_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-         self.units_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-         self.units_table.setAlternatingRowColors(True)
-         self.units_table.itemSelectionChanged.connect(self._sync_selection_from_table)
-         self._apply_units_table_font()
- 
-         self._log_entries = []
-         self._current_turn_number = None
-         self._log_tail_snapshot = None
-         self._model_events_snapshot = None
-         self._model_event_queue: queue.Queue = queue.Queue()
-         self._model_log_source = None
-         self._model_events_stream = []
-         self._model_events_current = []
-         self._log_tabs = {}
-+        self._log_tab_indices = {}
-+        self._log_tab_programmatic_switch = False
-+        self._last_manual_log_tab_index = None
-         self._log_tab_defs = [
-             ("player", "Все ходы игрока"),
-             ("model", "Все ходы модели"),
-             ("key", "Ключевые события"),
-         ]
-         self._max_log_lines = 5000
-         self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS.md")
-         self._log_file_max_bytes = 5 * 1024 * 1024
-+        self._last_active_side = None
-         self._init_log_viewer()
-         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
-         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
-         try:
-             get_event_bus().subscribe(self._on_event_bus_event)
-         except Exception:
-             pass
- 
-         fit_button = QtWidgets.QPushButton("Fit")
-         fit_button.clicked.connect(self._fit_view)
- 
-         left_widget = QtWidgets.QWidget()
-         left_layout = QtWidgets.QVBoxLayout(left_widget)
-         left_layout.addWidget(fit_button, alignment=QtCore.Qt.AlignLeft)
-         left_layout.addWidget(self.map_scene)
- 
-         log_group = QtWidgets.QGroupBox("ЖУРНАЛ")
-         log_layout = QtWidgets.QVBoxLayout(log_group)
-         log_layout.addLayout(self._log_controls_layout)
-         log_layout.addWidget(self.log_tabs)
-         log_group.setSizePolicy(
-             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
-         )
- 
-         command_group = QtWidgets.QGroupBox("КОМАНДЫ")
-@@ -361,57 +365,59 @@ class ViewerWindow(QtWidgets.QMainWindow):
+diff --git a/viewer/opengl_view.py b/viewer/opengl_view.py
+index fb5107c66309622ea2f7c955e5fa1c7781f60d4b..d3bddeed5a1d8b4abd66b6c626856e9f8bfc71dc 100644
+--- a/viewer/opengl_view.py
++++ b/viewer/opengl_view.py
+@@ -983,54 +983,63 @@ class OpenGLBoardWidget(QOpenGLWidget):
+             life = rng.uniform(0.25, 0.35)
+             particles.append(
+                 DisintegrationParticle(
+                     offset=offset,
+                     velocity=velocity,
+                     size_px=size_px,
+                     life=life,
+                 )
              )
-             self.command_stack.setCurrentIndex(self._command_pages["text"])
-         else:
-             self.command_input.setPlaceholderText("Введите команду...")
-             self.command_stack.setCurrentIndex(self._command_pages["text"])
-         self._update_command_hint(kind)
-         self._refresh_active_context()
+         return particles
  
-     def _update_command_hint(self, kind):
-         if kind == "direction":
-             self.command_hint.setText("Горячие клавиши: ↑ ↓ ← →, пробел/0 — нет")
-         elif kind == "bool":
-             self.command_hint.setText("Горячие клавиши: Y — да, N — нет")
-         elif kind == "int":
-             self.command_hint.setText("Горячие клавиши: Enter — отправить")
-         elif kind == "choice":
-             self.command_hint.setText("Горячие клавиши: Enter — выбрать")
-         else:
-             self.command_hint.setText("Горячие клавиши: Enter — отправить")
- 
-     def _init_log_viewer(self):
-         fixed_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
-         fixed_font.setPointSize(10)
- 
-         self.log_tabs = QtWidgets.QTabWidget()
--        for key, label in self._log_tab_defs:
-+        for index, (key, label) in enumerate(self._log_tab_defs):
-             view = QtWidgets.QPlainTextEdit()
-             view.setReadOnly(True)
-             view.setFont(fixed_font)
-             view.setMaximumBlockCount(self._max_log_lines)
-             self._log_tabs[key] = view
-+            self._log_tab_indices[key] = index
-             self.log_tabs.addTab(view, label)
-+        self.log_tabs.currentChanged.connect(self._on_log_tab_changed)
- 
-         self.log_only_current_turn = QtWidgets.QCheckBox("Показать только текущий ход")
-         self.log_only_current_turn.toggled.connect(self._refresh_log_views)
- 
-         self.log_model_verbose = QtWidgets.QCheckBox("Подробно (verbose)")
-         self.log_model_verbose.toggled.connect(self._refresh_model_log_view)
- 
-         self.log_copy_turn = QtWidgets.QPushButton("Копировать ход")
-         self.log_copy_turn.clicked.connect(self._copy_current_turn)
-         self.log_clear = QtWidgets.QPushButton("Очистить")
-         self.log_clear.clicked.connect(self._clear_log_viewer)
- 
-         self._log_controls_layout = QtWidgets.QHBoxLayout()
-         self._log_controls_layout.addWidget(self.log_only_current_turn)
-         self._log_controls_layout.addWidget(self.log_model_verbose)
-         self._log_controls_layout.addStretch()
-         self._log_controls_layout.addWidget(self.log_copy_turn)
-         self._log_controls_layout.addWidget(self.log_clear)
- 
-     def _append_log(self, messages):
-         if not messages:
+     def _draw_gauss_effects(self, painter: QtGui.QPainter) -> None:
+         if not self._fx_active:
              return
-         for msg in messages:
-             self.add_log_line(str(msg))
+         now = monotonic()
+         remaining: List[GaussTracerEffect] = []
+         for fx in self._fx_active:
+             age = now - fx.t0
+             duration = max(0.001, fx.duration)
+             progress = max(0.0, min(1.0, age / duration))
+             if progress >= 1.0:
+                 continue
+             remaining.append(fx)
  
-@@ -481,53 +487,54 @@ class ViewerWindow(QtWidgets.QMainWindow):
- 
-     def _fit_view(self):
-         self.map_scene.fit_to_view()
- 
-     def _poll_state(self):
-         if not os.path.exists(self.state_watcher.path):
-             self.map_scene.set_error_message(
-                 "Состояние игры недоступно. Где: viewer/state.json. "
-                 "Что делать дальше: запустите игру и дождитесь генерации state.json."
-             )
-             return
-         if self.state_watcher.load_if_changed():
-             self._apply_state(self.state_watcher.state)
- 
-     def _apply_state(self, state):
-         board = state.get("board", {})
-         self.map_scene.update_state(state)
- 
-         self._units_by_key = {}
-         for unit in state.get("units", []) or []:
-             self._units_by_key[(unit.get("side"), unit.get("id"))] = unit
- 
-         self.status_round.setText(f"Раунд: {state.get('round', '—')}")
-         self.status_turn.setText(f"Ход: {state.get('turn', '—')}")
-         self.status_phase.setText(f"Фаза: {state.get('phase', '—')}")
--        active = state.get("active")
-+        active = state.get("active") or state.get("active_side")
-         active_label = "Игрок" if active == "player" else "Модель" if active == "model" else "—"
-         self.status_active.setText(f"Активен: {active_label}")
-+        self._auto_switch_log_tab(active)
- 
-         vp = state.get("vp", {})
-         cp = state.get("cp", {})
-         self.points_vp_player.setText(f"Player VP: {vp.get('player', '—')}")
-         self.points_vp_model.setText(f"Model VP: {vp.get('model', '—')}")
-         self.points_cp_player.setText(f"Player CP: {cp.get('player', '—')}")
-         self.points_cp_model.setText(f"Model CP: {cp.get('model', '—')}")
- 
-         self._populate_units_table(state.get("units", []))
-         self._update_log(state.get("log_tail", []))
-         self._update_model_events(state.get("model_events", []))
-         self._drain_event_queue()
-         self._refresh_active_context()
- 
-     def _populate_units_table(self, units):
-         self.units_table.setRowCount(len(units))
-         self.units_table.setSortingEnabled(False)
-         self._unit_row_by_key = {}
-         for row, unit in enumerate(units):
-             side_label = "Игрок" if unit.get("side") == "player" else "Модель"
-             unit_key = (unit.get("side"), unit.get("id"))
-             values = [
-                 side_label,
-                 str(unit.get("id", "—")),
-                 unit.get("name", "—"),
-@@ -982,50 +989,70 @@ class ViewerWindow(QtWidgets.QMainWindow):
-         unit_id, side = self._resolve_active_unit()
-         self._active_unit_id = unit_id
-         self._active_unit_side = side
-         active_unit = self._units_by_key.get((side, unit_id))
-         phase = None
-         if self.state_watcher and self.state_watcher.state:
-             phase = self.state_watcher.state.get("phase")
-         move_range = None
-         shoot_range = None
-         if self._is_movement_phase(phase):
-             move_range = self._resolve_move_range(active_unit)
-         if self._is_shooting_phase(phase):
-             shoot_range = self._resolve_weapon_range(active_unit)
-         self.map_scene.set_active_context(
-             active_unit_id=unit_id,
-             active_unit_side=side,
-             phase=phase,
-             move_range=move_range,
-             shoot_range=shoot_range,
-             show_objective_radius=self._show_objective_radius,
-             targets=self.state_watcher.state.get("available_targets")
-             if self.state_watcher and self.state_watcher.state
-             else None,
-         )
- 
-+    def _auto_switch_log_tab(self, active_side):
-+        if active_side not in ("player", "model"):
-+            return
-+        if active_side == self._last_active_side:
-+            return
-+        self._last_active_side = active_side
-+        target_index = self._log_tab_indices.get(active_side)
-+        if target_index is None:
-+            return
-+        self._log_tab_programmatic_switch = True
-+        try:
-+            self.log_tabs.setCurrentIndex(target_index)
-+        finally:
-+            self._log_tab_programmatic_switch = False
+             config = fx.config or {}
+-            core_life = float(config.get("core_life", 0.22))
+-            glow_life = float(config.get("glow_life", 0.34))
+-            flash_life = float(config.get("flash_life", 0.14))
+-            ring_life = float(config.get("ring_life", 0.38))
 +
-+    def _on_log_tab_changed(self, index):
-+        if self._log_tab_programmatic_switch:
-+            return
-+        self._last_manual_log_tab_index = index
++            def _resolve_life(value: Optional[float], default_fraction: float) -> float:
++                if value is None:
++                    value = default_fraction
++                value = float(value)
++                if value <= 1.0:
++                    return max(0.001, duration * value)
++                return value
 +
-     def _is_movement_phase(self, phase):
-         phase_text = str(phase or "").lower()
-         return "move" in phase_text or "движ" in phase_text or "movement" in phase_text
++            core_life = _resolve_life(config.get("core_life"), 0.22)
++            glow_life = _resolve_life(config.get("glow_life"), 0.34)
++            flash_life = _resolve_life(config.get("flash_life"), 0.14)
++            ring_life = _resolve_life(config.get("ring_life"), 0.38)
  
-     def _is_shooting_phase(self, phase):
-         phase_text = str(phase or "").lower()
-         return "shoot" in phase_text or "стрел" in phase_text or "shooting" in phase_text
+             core_p = min(1.0, age / core_life)
+             glow_p = min(1.0, age / glow_life)
+             flash_p = min(1.0, age / flash_life)
+             ring_p = min(1.0, age / ring_life)
  
-     def eventFilter(self, obj, event):
-         if event.type() == QtCore.QEvent.KeyPress and self._pending_request:
-             kind = getattr(self._pending_request, "kind", "")
-             key = event.key()
-             text = event.text().lower()
-             if kind == "direction":
-                 if key == QtCore.Qt.Key_Up:
-                     self._submit_answer("up")
-                     return True
-                 if key == QtCore.Qt.Key_Down:
-                     self._submit_answer("down")
-                     return True
-                 if key == QtCore.Qt.Key_Left:
-                     self._submit_answer("left")
-                     return True
-                 if key == QtCore.Qt.Key_Right:
-                     self._submit_answer("right")
+             def ease_out(value: float) -> float:
+                 return (1.0 - value) ** 2
+ 
+             glow_alpha = 0.55 * ease_out(glow_p)
+             core_alpha = 0.85 * ease_out(core_p)
+             flash_alpha = 0.9 * ease_out(flash_p)
+             ring_alpha = 0.7 * ease_out(ring_p)
+ 
+             glow_color = QtGui.QColor(*config.get("glow_color", (90, 255, 140)))
+             core_color = QtGui.QColor(*config.get("core_color", (140, 255, 190)))
+             impact_color = QtGui.QColor(*config.get("impact_color", (160, 255, 200)))
+ 
+             glow_jitter_speed = float(config.get("glow_jitter_speed", 18.0))
+             glow_jitter_px = float(config.get("glow_jitter_px", 2.0))
+             glow_width_px = float(config.get("glow_width_px", 10.0))
+             core_width_px = float(config.get("core_width_px", 2.0))
+             core_gap_px = float(config.get("core_gap_px", 2.2))
+             jitter = 0.6 + 0.4 * math.sin((age + fx.seed * 0.0001) * glow_jitter_speed)
+             glow_width = self._px_to_world(glow_width_px + glow_jitter_px * jitter)
