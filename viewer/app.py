@@ -568,6 +568,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 self._log_tail_snapshot = text_lines
                 return
             self._reset_log_lines(text_lines, write_to_file=False)
+            self._replay_fx_from_log_lines(text_lines)
             self._log_tail_snapshot = text_lines
 
     def _update_model_events(self, events):
@@ -871,6 +872,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
                     }
                 )
         self._refresh_log_views()
+        if not write_to_file:
+            self._replay_fx_from_log_lines(lines)
+
+    def _replay_fx_from_log_lines(self, lines, limit: int = 40) -> None:
+        if not lines:
+            return
+        tail = list(lines[-limit:])
+        self._fx_debug(f"FX: перепроигрываю последние {len(tail)} строк(и) лога.")
+        for line in tail:
+            self._handle_fx_log_line(str(line))
 
     def _clear_log_viewer(self):
         self._log_entries = []
