@@ -145,6 +145,10 @@ class UnitTooltipWidget(QtWidgets.QFrame):
             "range": "📏",
             "bs": "🎯",
             "ws": "🎯",
+            "attacks": "⚡",
+            "strength": "💪",
+            "ap": "🧷",
+            "damage": "💥",
             "cover": "🛡",
             "los": "👁",
             "mods": "✨",
@@ -153,7 +157,7 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         }
 
         self._build_layout()
-        self.setMinimumWidth(300)
+        self.setMinimumWidth(320)
         self.hide()
 
     def _build_layout(self) -> None:
@@ -202,26 +206,26 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         self._ranged_title.setWordWrap(True)
         self._ranged_title.setObjectName("unitTooltipWeaponTitle")
 
-        self._ranged_chip_range = self._build_chip_label()
-        self._ranged_chip_bs = self._build_chip_label()
-        ranged_chips = QtWidgets.QHBoxLayout()
-        ranged_chips.setContentsMargins(0, 0, 0, 0)
-        ranged_chips.setSpacing(6)
-        ranged_chips.addWidget(self._ranged_chip_range)
-        ranged_chips.addWidget(self._ranged_chip_bs)
-        ranged_chips.addStretch(1)
+        self._ranged_chip_labels = self._build_chip_labels(
+            ("range", "bs", "attacks", "strength", "ap", "damage")
+        )
+        self._ranged_chip_layout = QtWidgets.QGridLayout()
+        self._ranged_chip_layout.setContentsMargins(0, 0, 0, 0)
+        self._ranged_chip_layout.setHorizontalSpacing(6)
+        self._ranged_chip_layout.setVerticalSpacing(4)
 
         self._melee_title = QtWidgets.QLabel(self)
         self._melee_title.setFont(Theme.font(size=9, bold=True))
         self._melee_title.setWordWrap(True)
         self._melee_title.setObjectName("unitTooltipWeaponTitle")
 
-        self._melee_chip_ws = self._build_chip_label()
-        melee_chips = QtWidgets.QHBoxLayout()
-        melee_chips.setContentsMargins(0, 0, 0, 0)
-        melee_chips.setSpacing(6)
-        melee_chips.addWidget(self._melee_chip_ws)
-        melee_chips.addStretch(1)
+        self._melee_chip_labels = self._build_chip_labels(
+            ("ws", "attacks", "strength", "ap", "damage")
+        )
+        self._melee_chip_layout = QtWidgets.QGridLayout()
+        self._melee_chip_layout.setContentsMargins(0, 0, 0, 0)
+        self._melee_chip_layout.setHorizontalSpacing(6)
+        self._melee_chip_layout.setVerticalSpacing(4)
 
         misc_row = QtWidgets.QHBoxLayout()
         misc_row.setContentsMargins(0, 0, 0, 0)
@@ -245,9 +249,9 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         layout.addLayout(stats_row)
         layout.addWidget(self._hp_bar)
         layout.addWidget(self._ranged_title)
-        layout.addLayout(ranged_chips)
+        layout.addLayout(self._ranged_chip_layout)
         layout.addWidget(self._melee_title)
-        layout.addLayout(melee_chips)
+        layout.addLayout(self._melee_chip_layout)
         layout.addLayout(misc_row)
         self.setLayout(layout)
 
@@ -274,6 +278,32 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         label.setFont(Theme.font(size=8, bold=False))
         label.setObjectName("unitTooltipChip")
         return label
+
+    def _build_chip_labels(self, keys: Tuple[str, ...]) -> Dict[str, QtWidgets.QLabel]:
+        labels: Dict[str, QtWidgets.QLabel] = {}
+        for key in keys:
+            labels[key] = self._build_chip_label()
+        return labels
+
+    def _update_chip_layout(
+        self,
+        layout: QtWidgets.QGridLayout,
+        labels: Dict[str, QtWidgets.QLabel],
+        values: Dict[str, Optional[str]],
+    ) -> None:
+        visible_labels: List[QtWidgets.QLabel] = []
+        for key, label in labels.items():
+            value = values.get(key)
+            if value is None:
+                label.hide()
+                continue
+            label.setText(value)
+            label.show()
+            visible_labels.append(label)
+        for index, label in enumerate(visible_labels):
+            row = index // 3
+            col = index % 3
+            layout.addWidget(label, row, col)
 
     def set_debug_mode(self, enabled: bool) -> None:
         self._debug_mode = enabled
@@ -305,12 +335,31 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         self._ranged_title.setText(f"{self._icon_map['weapon']} {ranged_name}")
         self._melee_title.setText(f"{self._icon_map['melee']} {melee_name}")
 
-        ranged_range = payload.get("ranged_range", "—")
-        ranged_bs = payload.get("ranged_bs", "—")
-        melee_ws = payload.get("melee_ws", "—")
-        self._ranged_chip_range.setText(f"{self._icon_map['range']} {ranged_range}")
-        self._ranged_chip_bs.setText(f"{self._icon_map['bs']} {ranged_bs}")
-        self._melee_chip_ws.setText(f"{self._icon_map['ws']} {melee_ws}")
+        ranged_values = {
+            "range": payload.get("ranged_range"),
+            "bs": payload.get("ranged_bs"),
+            "attacks": payload.get("ranged_attacks"),
+            "strength": payload.get("ranged_strength"),
+            "ap": payload.get("ranged_ap"),
+            "damage": payload.get("ranged_damage"),
+        }
+        melee_values = {
+            "ws": payload.get("melee_ws"),
+            "attacks": payload.get("melee_attacks"),
+            "strength": payload.get("melee_strength"),
+            "ap": payload.get("melee_ap"),
+            "damage": payload.get("melee_damage"),
+        }
+        self._update_chip_layout(
+            self._ranged_chip_layout,
+            self._ranged_chip_labels,
+            self._format_chip_values(ranged_values),
+        )
+        self._update_chip_layout(
+            self._melee_chip_layout,
+            self._melee_chip_labels,
+            self._format_chip_values(melee_values),
+        )
 
         wounds_value = payload.get("wounds_value")
         wounds_max = payload.get("wounds_max")
@@ -322,6 +371,16 @@ class UnitTooltipWidget(QtWidgets.QFrame):
             self._hp_bar.hide()
 
         self._apply_styles()
+
+    def _format_chip_values(self, values: Dict[str, Optional[object]]) -> Dict[str, Optional[str]]:
+        formatted: Dict[str, Optional[str]] = {}
+        for key, value in values.items():
+            if value is None or value == "—":
+                formatted[key] = None
+                continue
+            label = self._icon_map.get(key, "")
+            formatted[key] = f"{label} {value}"
+        return formatted
 
     def _on_anim_finished(self) -> None:
         if self._hiding and self._opacity_effect.opacity() <= 0.01:
@@ -2183,6 +2242,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return f"{int(value)}+"
         return str(value)
 
+    def _format_stat_value(self, value: object) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            text = value.strip()
+            return text if text else None
+        return str(value)
+
     def _build_unit_tooltip_payload(self, unit: dict) -> Dict:
         title = self._unit_display_name(unit)
         models = unit.get("models", "—")
@@ -2222,6 +2289,30 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if melee_profile and melee_profile.get("WS") is not None
             else unit.get("ws") or unit.get("WS") or unit.get("weapon_skill")
         )
+        ranged_attacks = self._format_stat_value(
+            ranged_profile.get("A") if ranged_profile else None
+        )
+        ranged_strength = self._format_stat_value(
+            ranged_profile.get("S") if ranged_profile else None
+        )
+        ranged_ap = self._format_stat_value(
+            ranged_profile.get("AP") if ranged_profile else None
+        )
+        ranged_damage = self._format_stat_value(
+            ranged_profile.get("Damage") if ranged_profile else None
+        )
+        melee_attacks = self._format_stat_value(
+            melee_profile.get("A") if melee_profile else None
+        )
+        melee_strength = self._format_stat_value(
+            melee_profile.get("S") if melee_profile else None
+        )
+        melee_ap = self._format_stat_value(
+            melee_profile.get("AP") if melee_profile else None
+        )
+        melee_damage = self._format_stat_value(
+            melee_profile.get("Damage") if melee_profile else None
+        )
         return {
             "title": title,
             "unit_id": unit_id,
@@ -2232,8 +2323,16 @@ class OpenGLBoardWidget(QOpenGLWidget):
             "ranged_name": ranged_name,
             "ranged_range": weapon_range if weapon_range is not None else "—",
             "ranged_bs": self._format_skill_value(bs_value),
+            "ranged_attacks": ranged_attacks,
+            "ranged_strength": ranged_strength,
+            "ranged_ap": ranged_ap,
+            "ranged_damage": ranged_damage,
             "melee_name": melee_name,
             "melee_ws": self._format_skill_value(ws_value),
+            "melee_attacks": melee_attacks,
+            "melee_strength": melee_strength,
+            "melee_ap": melee_ap,
+            "melee_damage": melee_damage,
             "cover": cover,
             "los": los,
             "mods": mods,
