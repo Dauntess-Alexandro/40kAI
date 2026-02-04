@@ -592,16 +592,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 filtered.append(event)
         return filtered
 
-    def _select_row_for_unit(self, side, unit_id):
+    def _select_row_for_unit(self, side, unit_id, log_selection=True):
         unit_key = (side, unit_id)
         row = self._unit_row_by_key.get(unit_key)
         if row is None:
             row = self._find_row_for_unit(unit_key)
         if row is None:
             return
-        self.units_table.selectRow(row)
-        unit_name = self._units_by_key.get(unit_key, {}).get("name", "—")
-        self._append_log([f"Выбрано на карте: unit_id={unit_id}, name={unit_name}"])
+        self._select_units_table_row(row)
+        if log_selection:
+            unit_name = self._units_by_key.get(unit_key, {}).get("name", "—")
+            self._append_log([f"Выбрано на карте: unit_id={unit_id}, name={unit_name}"])
 
     def _sync_selection_from_table(self):
         selected = self.units_table.selectionModel().selectedRows()
@@ -618,6 +619,23 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if side and unit_id is not None:
             self.map_scene.select_unit(side, unit_id)
             self._append_log([f"Выбрано в таблице: row={row} -> unit_id={unit_id}"])
+
+    def _select_units_table_row(self, row):
+        self.units_table.selectRow(row)
+        item = self.units_table.item(row, 0)
+        if item is not None:
+            self.units_table.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtCenter)
+
+    def _focus_unit_in_table(self, unit_id, side):
+        if unit_id is None:
+            return
+        if side is not None:
+            self._select_row_for_unit(side, unit_id, log_selection=False)
+            return
+        row = self._find_row_for_unit_id(unit_id)
+        if row is None:
+            return
+        self._select_units_table_row(row)
 
     def add_log_line(self, line: str):
         raw_text = str(line)
@@ -946,6 +964,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 return row
         return None
 
+    def _find_row_for_unit_id(self, unit_id):
+        for row in range(self.units_table.rowCount()):
+            item = self.units_table.item(row, 1)
+            if item is None:
+                continue
+            if item.text() == str(unit_id):
+                return row
+        return None
+
     def _extract_unit_id(self, prompt):
         if not prompt:
             return None
@@ -1010,6 +1037,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if self.state_watcher and self.state_watcher.state
             else None,
         )
+        self._focus_unit_in_table(unit_id, side)
 
     def _auto_switch_log_tab(self, active_side):
         if active_side not in ("player", "model"):
