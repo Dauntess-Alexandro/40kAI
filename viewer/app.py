@@ -505,7 +505,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._units_by_key = {}
         for unit in state.get("units", []) or []:
-            self._units_by_key[(unit.get("side"), unit.get("id"))] = unit
+            unit_id = self._normalize_unit_id(unit.get("id"))
+            unit["id"] = unit_id
+            self._units_by_key[(unit.get("side"), unit_id)] = unit
 
         self.status_round.setText(f"Раунд: {state.get('round', '—')}")
         self.status_turn.setText(f"Ход: {state.get('turn', '—')}")
@@ -533,11 +535,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.units_table.setSortingEnabled(False)
         self._unit_row_by_key = {}
         for row, unit in enumerate(units):
+            unit_id = self._normalize_unit_id(unit.get("id"))
             side_label = "Игрок" if unit.get("side") == "player" else "Модель"
-            unit_key = (unit.get("side"), unit.get("id"))
+            unit_key = (unit.get("side"), unit_id)
             values = [
                 side_label,
-                str(unit.get("id", "—")),
+                str(unit_id if unit_id is not None else "—"),
                 unit.get("name", "—"),
                 str(unit.get("hp", "—")),
                 str(unit.get("models", "—")),
@@ -982,7 +985,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if unit_id is None:
             return None, None
         for (side, candidate_id), unit in self._units_by_key.items():
-            if candidate_id == unit_id:
+            if self._normalize_unit_id(candidate_id) == unit_id:
                 return unit_id, side
         return unit_id, None
 
@@ -1015,8 +1018,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _auto_select_active_unit_row(self, unit_id, side):
         if unit_id is None or not side:
-            self._last_auto_unit_key = None
-            return
+            if unit_id is None:
+                self._last_auto_unit_key = None
+                return
+            side = self._find_side_for_unit_id(unit_id)
+            if not side:
+                self._last_auto_unit_key = None
+                return
         unit_key = (side, unit_id)
         if unit_key == self._last_auto_unit_key:
             return
@@ -1037,6 +1045,25 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 return
         with QtCore.QSignalBlocker(selection_model):
             self.units_table.selectRow(row)
+
+    def _normalize_unit_id(self, value):
+        if value is None:
+            return None
+        if isinstance(value, int):
+            return value
+        text = str(value).strip()
+        if text.isdigit():
+            return int(text)
+        return value
+
+    def _find_side_for_unit_id(self, unit_id):
+        for (side, candidate_id) in self._unit_row_by_key.keys():
+            if self._normalize_unit_id(candidate_id) == unit_id:
+                return side
+        for (side, candidate_id) in self._units_by_key.keys():
+            if self._normalize_unit_id(candidate_id) == unit_id:
+                return side
+        return None
 
     def _auto_switch_log_tab(self, active_side):
         if active_side not in ("player", "model"):
