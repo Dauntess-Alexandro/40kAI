@@ -5,7 +5,7 @@ from typing import Dict
 
 GAUSS_FLAYER_FX = {
     "weapon_name": "Gauss flayer",
-    "duration": 0.5,
+    "duration": 6.5,
     "core_life": 0.22,
     "glow_life": 0.34,
     "flash_life": 0.14,

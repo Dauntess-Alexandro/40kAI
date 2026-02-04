@@ -1128,7 +1128,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         t0 = time.monotonic()
         seed = hash((attacker_id, target_id, int(t0 * 1000))) & 0xFFFFFFFF
         config = get_gun_fx_config("Gauss flayer")
-        duration = float(config.get("duration", 0.5))
+        duration = float(config.get("duration", 6.5))
         effect = self.map_scene.build_gauss_effect(
             start,
             end,
