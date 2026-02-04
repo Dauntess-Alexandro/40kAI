@@ -71,6 +71,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._log_entries = []
         self._current_turn_number = None
+        self._current_turn_side = None
         self._log_tail_snapshot = None
         self._model_events_snapshot = None
         self._model_event_queue: queue.Queue = queue.Queue()
@@ -625,10 +626,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def add_log_line(self, line: str):
         raw_text = str(line)
-        new_turn = self._detect_turn_number(raw_text)
-        if new_turn is not None:
-            self._current_turn_number = new_turn
+        new_turn = self._update_turn_context(raw_text)
         categories = self._classify_line(raw_text)
+        if self._should_assign_shooting_side(raw_text, categories):
+            categories.add(self._current_turn_side)
         display_text = self._decorate_log_line(raw_text, categories)
         entry = {
             "raw": raw_text,
@@ -703,9 +704,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 "wound",
                 "save",
                 "оружие",
+                "bs оружия",
+                "s vs t",
+                "save цели",
+                "правило",
+                "итог по движку",
                 "стрельб",
             ],
         ):
+            categories.add("shooting")
+            categories.add("key")
+        if "shooting" not in categories and self._is_shooting_report_line(line):
             categories.add("shooting")
             categories.add("key")
         if self._matches_any(
@@ -771,6 +780,42 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _matches_any(self, lowered: str, tokens):
         return any(token in lowered for token in tokens)
 
+    def _has_explicit_side_tag(self, text: str) -> bool:
+        if "🧑" in text or "🤖" in text:
+            return True
+        lowered = text.lower()
+        return any(token in lowered for token in ("[player]", "[model]", "[enemy]"))
+
+    def _is_shooting_report_line(self, text: str) -> bool:
+        lowered = text.lower()
+        if any(
+            token in lowered
+            for token in (
+                "🎲 бросок",
+                "📌 --- отчёт по стрельбе ---",
+                "оружие:",
+                "bs оружия:",
+                "s vs t:",
+                "save цели:",
+                "правило:",
+                "hit rolls",
+                "wound rolls",
+                "save rolls",
+                "✅ итог по движку",
+            )
+        ):
+            return True
+        return re.search(r"\bunit\s+\d+.*нан[её]с.*по\s+unit\s+\d+", lowered) is not None
+
+    def _should_assign_shooting_side(self, text: str, categories: set) -> bool:
+        if self._current_turn_side is None:
+            return False
+        if self._has_explicit_side_tag(text):
+            return False
+        if "player" in categories or "model" in categories:
+            return False
+        return self._is_shooting_report_line(text)
+
     def _decorate_log_line(self, text: str, categories: set) -> str:
         if not categories:
             return text
@@ -805,6 +850,25 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if match:
             return int(match.group(1))
         return None
+
+    def _detect_turn_side(self, line: str):
+        lowered = line.lower()
+        if "ход player" in lowered:
+            return "player"
+        if "ход model" in lowered:
+            return "model"
+        if "ход enemy" in lowered:
+            return "model"
+        return None
+
+    def _update_turn_context(self, line: str):
+        new_turn = self._detect_turn_number(line)
+        if new_turn is not None:
+            self._current_turn_number = new_turn
+        new_side = self._detect_turn_side(line)
+        if new_side is not None:
+            self._current_turn_side = new_side
+        return new_turn
 
     def _should_show_entry(self, entry, tab_key):
         if tab_key == "key":
@@ -855,15 +919,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _reset_log_lines(self, lines, write_to_file: bool):
         self._log_entries = []
         self._current_turn_number = None
+        self._current_turn_side = None
         for line in lines:
             if write_to_file:
                 self.add_log_line(line)
             else:
                 raw_text = str(line)
-                new_turn = self._detect_turn_number(raw_text)
-                if new_turn is not None:
-                    self._current_turn_number = new_turn
+                self._update_turn_context(raw_text)
                 categories = self._classify_line(raw_text)
+                if self._should_assign_shooting_side(raw_text, categories):
+                    categories.add(self._current_turn_side)
                 self._log_entries.append(
                     {
                         "raw": raw_text,
@@ -887,6 +952,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _clear_log_viewer(self):
         self._log_entries = []
         self._current_turn_number = None
+        self._current_turn_side = None
         self._log_tail_snapshot = None
         self._model_events_snapshot = None
         self._model_events_stream = []
