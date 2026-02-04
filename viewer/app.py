@@ -231,8 +231,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         layout.addLayout(self._legend_row("Игрок", Theme.player))
         layout.addLayout(self._legend_row("Модель", Theme.model))
         layout.addLayout(self._legend_row("Цель", Theme.objective))
-        layout.addLayout(self._legend_row("Подсветка хода", Theme.selection))
-        layout.addLayout(self._legend_row("Подсветка стрельбы", Theme.accent))
         return box
 
     def _legend_row(self, label, color):

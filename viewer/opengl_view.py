@@ -78,11 +78,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._shoot_range = None
         self._targets = None
         self._layer_order = [
-            "movement",
             "objectives",
             "units",
             "selection",
-            "shooting",
             "fx",
             "labels",
         ]
@@ -259,16 +257,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def refresh_overlays(self) -> None:
         self._move_highlights = []
         self._target_highlights = []
-        active_key = (self._active_unit_side, self._active_unit_id)
-        if not active_key[0] or active_key[1] is None:
-            return
-        unit = self._state_unit(active_key)
-        if unit is None:
-            return
-        if self._should_show_movement():
-            self._draw_movement_overlay(unit)
-        if self._should_show_shooting():
-            self._draw_target_overlay(unit)
+        return
 
     def select_unit(self, side, unit_id) -> None:
         key = (side, unit_id)
