@@ -78,6 +78,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_tab_indices = {}
         self._log_tab_programmatic_switch = False
         self._last_manual_log_tab_index = None
+        self._suppress_table_sync = False
         self._log_tab_defs = [
             ("player", "Все ходы игрока"),
             ("model", "Все ходы модели"),
@@ -605,6 +606,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._append_log([f"Выбрано на карте: unit_id={unit_id}, name={unit_name}"])
 
     def _sync_selection_from_table(self):
+        if self._suppress_table_sync:
+            return
         selected = self.units_table.selectionModel().selectedRows()
         if not selected:
             return
@@ -621,18 +624,24 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._append_log([f"Выбрано в таблице: row={row} -> unit_id={unit_id}"])
 
     def _select_units_table_row(self, row):
-        selection = self.units_table.selectionModel()
-        if selection is None:
+        if row < 0 or row >= self.units_table.rowCount():
             return
-        index = self.units_table.model().index(row, 0)
-        selection.select(
-            index,
-            QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows,
-        )
-        self.units_table.setCurrentIndex(index)
-        item = self.units_table.item(row, 0)
-        if item is not None:
-            self.units_table.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtCenter)
+        self._suppress_table_sync = True
+        try:
+            self.units_table.clearSelection()
+            last_col = max(0, self.units_table.columnCount() - 1)
+            selection_range = QtWidgets.QTableWidgetSelectionRange(row, 0, row, last_col)
+            self.units_table.setRangeSelected(selection_range, True)
+            self.units_table.setCurrentCell(row, 0)
+            self.units_table.setFocus()
+            item = self.units_table.item(row, 0)
+            if item is not None:
+                self.units_table.scrollToItem(
+                    item,
+                    QtWidgets.QAbstractItemView.PositionAtCenter,
+                )
+        finally:
+            self._suppress_table_sync = False
 
     def _focus_unit_in_table(self, unit_id, side):
         if unit_id is None:
