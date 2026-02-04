@@ -3,6 +3,8 @@ import os
 import queue
 import re
 import sys
+import time
+from typing import Optional
 from datetime import datetime
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -12,6 +14,7 @@ if GYM_PATH not in sys.path:
     sys.path.insert(0, GYM_PATH)
 
 from viewer.opengl_view import OpenGLBoardWidget
+from viewer.gun_fx import get_gun_fx_config
 from viewer.state import StateWatcher
 from viewer.styles import Theme
 from viewer.model_log_tree import render_model_log_flat
@@ -68,6 +71,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._log_entries = []
         self._current_turn_number = None
+        self._current_turn_side = None
         self._log_tail_snapshot = None
         self._model_events_snapshot = None
         self._model_event_queue: queue.Queue = queue.Queue()
@@ -78,6 +82,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_tab_indices = {}
         self._log_tab_programmatic_switch = False
         self._last_manual_log_tab_index = None
+        self._shoot_fx_context = None
         self._log_tab_defs = [
             ("player", "Все ходы игрока"),
             ("model", "Все ходы модели"),
@@ -561,9 +566,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if len(text_lines) >= len(existing) and text_lines[: len(existing)] == existing:
                 for line in text_lines[len(existing) :]:
                     self.add_log_line(line)
+                    self._handle_fx_log_line(line)
                 self._log_tail_snapshot = text_lines
                 return
             self._reset_log_lines(text_lines, write_to_file=False)
+            self._replay_fx_from_log_lines(text_lines)
             self._log_tail_snapshot = text_lines
 
     def _update_model_events(self, events):
@@ -619,10 +626,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def add_log_line(self, line: str):
         raw_text = str(line)
-        new_turn = self._detect_turn_number(raw_text)
-        if new_turn is not None:
-            self._current_turn_number = new_turn
+        new_turn = self._update_turn_context(raw_text)
         categories = self._classify_line(raw_text)
+        if self._should_assign_shooting_side(raw_text, categories):
+            categories.add(self._current_turn_side)
         display_text = self._decorate_log_line(raw_text, categories)
         entry = {
             "raw": raw_text,
@@ -697,9 +704,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 "wound",
                 "save",
                 "оружие",
+                "bs оружия",
+                "s vs t",
+                "save цели",
+                "правило",
+                "итог по движку",
                 "стрельб",
             ],
         ):
+            categories.add("shooting")
+            categories.add("key")
+        if "shooting" not in categories and self._is_shooting_report_line(line):
             categories.add("shooting")
             categories.add("key")
         if self._matches_any(
@@ -765,6 +780,42 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _matches_any(self, lowered: str, tokens):
         return any(token in lowered for token in tokens)
 
+    def _has_explicit_side_tag(self, text: str) -> bool:
+        if "🧑" in text or "🤖" in text:
+            return True
+        lowered = text.lower()
+        return any(token in lowered for token in ("[player]", "[model]", "[enemy]"))
+
+    def _is_shooting_report_line(self, text: str) -> bool:
+        lowered = text.lower()
+        if any(
+            token in lowered
+            for token in (
+                "🎲 бросок",
+                "📌 --- отчёт по стрельбе ---",
+                "оружие:",
+                "bs оружия:",
+                "s vs t:",
+                "save цели:",
+                "правило:",
+                "hit rolls",
+                "wound rolls",
+                "save rolls",
+                "✅ итог по движку",
+            )
+        ):
+            return True
+        return re.search(r"\bunit\s+\d+.*нан[её]с.*по\s+unit\s+\d+", lowered) is not None
+
+    def _should_assign_shooting_side(self, text: str, categories: set) -> bool:
+        if self._current_turn_side is None:
+            return False
+        if self._has_explicit_side_tag(text):
+            return False
+        if "player" in categories or "model" in categories:
+            return False
+        return self._is_shooting_report_line(text)
+
     def _decorate_log_line(self, text: str, categories: set) -> str:
         if not categories:
             return text
@@ -799,6 +850,25 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if match:
             return int(match.group(1))
         return None
+
+    def _detect_turn_side(self, line: str):
+        lowered = line.lower()
+        if "ход player" in lowered:
+            return "player"
+        if "ход model" in lowered:
+            return "model"
+        if "ход enemy" in lowered:
+            return "model"
+        return None
+
+    def _update_turn_context(self, line: str):
+        new_turn = self._detect_turn_number(line)
+        if new_turn is not None:
+            self._current_turn_number = new_turn
+        new_side = self._detect_turn_side(line)
+        if new_side is not None:
+            self._current_turn_side = new_side
+        return new_turn
 
     def _should_show_entry(self, entry, tab_key):
         if tab_key == "key":
@@ -849,15 +919,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _reset_log_lines(self, lines, write_to_file: bool):
         self._log_entries = []
         self._current_turn_number = None
+        self._current_turn_side = None
         for line in lines:
             if write_to_file:
                 self.add_log_line(line)
             else:
                 raw_text = str(line)
-                new_turn = self._detect_turn_number(raw_text)
-                if new_turn is not None:
-                    self._current_turn_number = new_turn
+                self._update_turn_context(raw_text)
                 categories = self._classify_line(raw_text)
+                if self._should_assign_shooting_side(raw_text, categories):
+                    categories.add(self._current_turn_side)
                 self._log_entries.append(
                     {
                         "raw": raw_text,
@@ -867,10 +938,21 @@ class ViewerWindow(QtWidgets.QMainWindow):
                     }
                 )
         self._refresh_log_views()
+        if not write_to_file:
+            self._replay_fx_from_log_lines(lines)
+
+    def _replay_fx_from_log_lines(self, lines, limit: int = 40) -> None:
+        if not lines:
+            return
+        tail = list(lines[-limit:])
+        self._fx_debug(f"FX: перепроигрываю последние {len(tail)} строк(и) лога.")
+        for line in tail:
+            self._handle_fx_log_line(str(line))
 
     def _clear_log_viewer(self):
         self._log_entries = []
         self._current_turn_number = None
+        self._current_turn_side = None
         self._log_tail_snapshot = None
         self._model_events_snapshot = None
         self._model_events_stream = []
@@ -1028,6 +1110,122 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if self.state_watcher and self.state_watcher.state
             else None,
         )
+
+    def _handle_fx_log_line(self, line: str) -> None:
+        # FX: ищем связку "Стреляет -> Оружие", чтобы привязать визуальный эффект к выстрелу.
+        if not line:
+            return
+        now = time.monotonic()
+        if self._shoot_fx_context and now - self._shoot_fx_context["t0"] > 2.0:
+            self._fx_debug(
+                "FX: контекст выстрела устарел, ожидаем новую пару строк (Стреляет/Оружие)."
+            )
+            self._shoot_fx_context = None
+
+        if "ОТЧЁТ ПО СТРЕЛЬБЕ" in line:
+            self._shoot_fx_context = {
+                "t0": now,
+                "report_active": True,
+                "attacker_id": None,
+                "target_id": None,
+                "weapon_name": None,
+                "line": "",
+            }
+            self._fx_debug("FX: старт отчёта по стрельбе, ждём строки Стреляет/Оружие.")
+            return
+
+        shot_match = re.search(r"Стреляет:\s*Unit\s+(\d+).*?цель:\s*Unit\s+(\d+)", line, re.IGNORECASE)
+        if shot_match:
+            if not self._shoot_fx_context:
+                self._shoot_fx_context = {"t0": now, "report_active": False}
+            self._shoot_fx_context = {
+                **self._shoot_fx_context,
+                "attacker_id": int(shot_match.group(1)),
+                "target_id": int(shot_match.group(2)),
+                "line": line,
+                "t0": now,
+            }
+            self._fx_debug(
+                "FX: найдена строка стрельбы "
+                f"(attacker={self._shoot_fx_context['attacker_id']}, "
+                f"target={self._shoot_fx_context['target_id']})."
+            )
+            return
+
+        weapon_match = re.search(r"Оружие:\s*(.+)", line, re.IGNORECASE)
+        if not weapon_match:
+            if "✅ Итог по движку" in line:
+                context = self._shoot_fx_context
+                if context and context.get("weapon_name") and context.get("attacker_id") and context.get("target_id"):
+                    if "gauss" in context["weapon_name"].lower():
+                        if "necron" in (context.get("line") or "").lower():
+                            self._spawn_gauss_effect(context["attacker_id"], context["target_id"])
+                            self._fx_debug("FX: gauss-эффект создан после строки итогов.")
+                        else:
+                            self._fx_debug("FX: итог есть, но в строке стрельбы нет Necron.")
+                    else:
+                        self._fx_debug("FX: итог есть, но оружие не gauss.")
+                self._shoot_fx_context = None
+            return
+        weapon_name = weapon_match.group(1).strip()
+        self._fx_debug(f"FX: найдена строка оружия: {weapon_name}.")
+        if not self._shoot_fx_context:
+            self._shoot_fx_context = {"t0": now, "report_active": False}
+        self._shoot_fx_context["weapon_name"] = weapon_name
+        if "gauss" not in weapon_name.lower():
+            self._fx_debug("FX: оружие не gauss, эффект пропущен.")
+            return
+        context = self._shoot_fx_context
+        if not context:
+            self._fx_debug("FX: нет контекста стрельбы для gauss, эффект пропущен.")
+            return
+        if not context.get("report_active"):
+            self._fx_debug("FX: gauss найден, ждём строку итогов для запуска эффекта.")
+
+    def _spawn_gauss_effect(self, attacker_id: int, target_id: int) -> None:
+        start = self._unit_world_center(attacker_id)
+        end = self._unit_world_center(target_id)
+        if start is None or end is None:
+            self._fx_debug(
+                "FX: не удалось получить координаты для эффекта "
+                f"(attacker={attacker_id}, target={target_id})."
+            )
+            return
+        t0 = time.monotonic()
+        seed = hash((attacker_id, target_id, int(t0 * 1000))) & 0xFFFFFFFF
+        config = get_gun_fx_config("Gauss flayer")
+        duration = float(config.get("duration", 6.5))
+        effect = self.map_scene.build_gauss_effect(
+            start,
+            end,
+            t0=t0,
+            duration=duration,
+            seed=seed,
+            config=config,
+        )
+        self.map_scene.add_effect(effect)
+        self._fx_debug(
+            "FX: позиция эффекта "
+            f"start=({start.x():.1f},{start.y():.1f}) "
+            f"end=({end.x():.1f},{end.y():.1f})."
+        )
+
+    def _unit_world_center(self, unit_id: int) -> Optional[QtCore.QPointF]:
+        cell = self.map_scene.cell_size
+        for (_, candidate_id), unit in self._units_by_key.items():
+            if candidate_id != unit_id:
+                continue
+            x = unit.get("x")
+            y = unit.get("y")
+            if x is None or y is None:
+                return None
+            return QtCore.QPointF(x * cell + cell / 2, y * cell + cell / 2)
+        return None
+
+    def _fx_debug(self, message: str) -> None:
+        if not message:
+            return
+        self._append_log_to_file(message)
 
     def _auto_switch_log_tab(self, active_side):
         if active_side not in ("player", "model"):
