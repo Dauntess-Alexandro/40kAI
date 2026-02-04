@@ -15,6 +15,7 @@ from viewer.opengl_view import OpenGLBoardWidget
 from viewer.state import StateWatcher
 from viewer.styles import Theme
 from viewer.model_log_tree import render_model_log_flat
+from viewer.unit_icons import icon_for_unit, icon_src_for_unit
 
 from gym_mod.engine.game_controller import GameController
 from gym_mod.engine.game_io import parse_dice_values
@@ -63,6 +64,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.units_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.units_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.units_table.setAlternatingRowColors(True)
+        self.units_table.setIconSize(QtCore.QSize(18, 18))
         self.units_table.itemSelectionChanged.connect(self._sync_selection_from_table)
         self._apply_units_table_font()
 
@@ -388,10 +390,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self.log_tabs = QtWidgets.QTabWidget()
         for index, (key, label) in enumerate(self._log_tab_defs):
-            view = QtWidgets.QPlainTextEdit()
-            view.setReadOnly(True)
-            view.setFont(fixed_font)
-            view.setMaximumBlockCount(self._max_log_lines)
+            if key == "model":
+                view = QtWidgets.QTextEdit()
+                view.setReadOnly(True)
+                view.setFont(fixed_font)
+            else:
+                view = QtWidgets.QPlainTextEdit()
+                view.setReadOnly(True)
+                view.setFont(fixed_font)
+                view.setMaximumBlockCount(self._max_log_lines)
             self._log_tabs[key] = view
             self._log_tab_indices[key] = index
             self.log_tabs.addTab(view, label)
@@ -534,10 +541,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         for row, unit in enumerate(units):
             side_label = "Игрок" if unit.get("side") == "player" else "Модель"
             unit_key = (unit.get("side"), unit.get("id"))
+            unit_name = unit.get("name", "—")
             values = [
                 side_label,
                 str(unit.get("id", "—")),
-                unit.get("name", "—"),
+                unit_name,
                 str(unit.get("hp", "—")),
                 str(unit.get("models", "—")),
             ]
@@ -545,6 +553,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 item = QtWidgets.QTableWidgetItem(value)
                 if col == 0:
                     item.setData(QtCore.Qt.UserRole, unit_key)
+                if col == 2:
+                    item.setIcon(icon_for_unit(unit_name))
+                    item.setToolTip(unit_name)
                 self.units_table.setItem(row, col, item)
             self._unit_row_by_key[unit_key] = row
         self.units_table.setSortingEnabled(True)
@@ -650,7 +661,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _append_to_view(self, view: QtWidgets.QPlainTextEdit, text: str):
         scrollbar = view.verticalScrollBar()
         at_bottom = scrollbar.value() >= scrollbar.maximum()
-        view.appendPlainText(text)
+        if isinstance(view, QtWidgets.QPlainTextEdit):
+            view.appendPlainText(text)
+        else:
+            view.append(text)
         if at_bottom:
             scrollbar.setValue(scrollbar.maximum())
 
@@ -844,9 +858,46 @@ class ViewerWindow(QtWidgets.QMainWindow):
             include_verbose=include_verbose,
             only_round=only_round,
         )
-        view.setPlainText(text if text else "Пока нет событий модели.")
+        if isinstance(view, QtWidgets.QTextEdit):
+            html = self._build_model_log_html(text)
+            view.setHtml(html if html else "Пока нет событий модели.")
+        else:
+            view.setPlainText(text if text else "Пока нет событий модели.")
         scrollbar = view.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
+
+    def _build_model_log_html(self, text: str) -> str:
+        import html
+
+        if not text:
+            return ""
+        fixed_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
+        fixed_font.setPointSize(10)
+        lines = text.splitlines()
+        html_lines = []
+        for line in lines:
+            if not line:
+                html_lines.append("<br>")
+                continue
+            icon_html = ""
+            match = re.match(r"^Unit\\s+\\d+(?:\\s+—\\s+(?P<name>.+))?$", line)
+            if match:
+                unit_name = match.group("name") or ""
+                icon_src = icon_src_for_unit(unit_name)
+                if icon_src:
+                    icon_html = (
+                        f'<img src="{icon_src}" '
+                        'width="16" height="16" style="vertical-align: middle;" /> '
+                    )
+            safe_line = html.escape(line)
+            html_lines.append(f'<div style="white-space: pre;">{icon_html}{safe_line}</div>')
+        body = "\n".join(html_lines)
+        return (
+            "<html><body style="
+            f"\"font-family: '{fixed_font.family()}'; font-size: {fixed_font.pointSize()}pt;\">"
+            f"{body}</body></html>"
+        )
+
 
     def _reset_log_lines(self, lines, write_to_file: bool):
         self._log_entries = []
