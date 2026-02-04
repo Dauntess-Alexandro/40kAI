@@ -621,7 +621,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._append_log([f"Выбрано в таблице: row={row} -> unit_id={unit_id}"])
 
     def _select_units_table_row(self, row):
-        self.units_table.selectRow(row)
+        selection = self.units_table.selectionModel()
+        if selection is None:
+            return
+        index = self.units_table.model().index(row, 0)
+        selection.select(
+            index,
+            QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows,
+        )
+        self.units_table.setCurrentIndex(index)
         item = self.units_table.item(row, 0)
         if item is not None:
             self.units_table.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtCenter)
