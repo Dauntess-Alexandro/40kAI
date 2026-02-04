@@ -10,6 +10,7 @@ Viewer tech findings ("Играть в GUI"):
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import math
 from pathlib import Path
 import random
@@ -138,8 +139,10 @@ class UnitTooltipWidget(QtWidgets.QFrame):
             "models": "👥",
             "wounds": "❤️",
             "weapon": "🔫",
+            "melee": "⚔️",
             "range": "📏",
             "bs": "🎯",
+            "ws": "🎯",
             "cover": "🛡",
             "los": "👁",
             "mods": "✨",
@@ -148,6 +151,7 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         }
 
         self._build_layout()
+        self.setMinimumWidth(280)
         self.hide()
 
     def _build_layout(self) -> None:
@@ -181,26 +185,48 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         self._divider.setFixedHeight(1)
         self._divider.setObjectName("unitTooltipDivider")
 
-        self._stats_grid = QtWidgets.QGridLayout()
-        self._stats_grid.setContentsMargins(0, 0, 0, 0)
-        self._stats_grid.setHorizontalSpacing(12)
-        self._stats_grid.setVerticalSpacing(4)
-
         self._stat_widgets: Dict[str, QtWidgets.QWidget] = {}
-        for key in ("models", "wounds", "weapon", "range", "bs", "cover", "los", "mods"):
-            widget = self._build_stat_widget(key)
-            self._stat_widgets[key] = widget
+        for key in ("models", "wounds", "cover", "los", "mods"):
+            self._stat_widgets[key] = self._build_stat_widget(key)
 
-        self._stats_grid.addWidget(self._stat_widgets["models"], 0, 0)
-        self._stats_grid.addWidget(self._stat_widgets["wounds"], 0, 1)
-        self._stats_grid.addWidget(self._stat_widgets["weapon"], 1, 0)
-        self._stats_grid.addWidget(self._stat_widgets["range"], 1, 1)
-        self._stats_grid.addWidget(self._stat_widgets["bs"], 2, 0)
-        self._stats_grid.addWidget(self._stat_widgets["cover"], 2, 1)
-        self._stats_grid.addWidget(self._stat_widgets["los"], 3, 0)
-        self._stats_grid.addWidget(self._stat_widgets["mods"], 3, 1)
-        self._stats_grid.setColumnStretch(0, 1)
-        self._stats_grid.setColumnStretch(1, 1)
+        stats_row = QtWidgets.QHBoxLayout()
+        stats_row.setContentsMargins(0, 0, 0, 0)
+        stats_row.setSpacing(16)
+        stats_row.addWidget(self._stat_widgets["models"], 1)
+        stats_row.addWidget(self._stat_widgets["wounds"], 1)
+
+        self._ranged_title = QtWidgets.QLabel(self)
+        self._ranged_title.setFont(Theme.font(size=9, bold=True))
+        self._ranged_title.setWordWrap(True)
+        self._ranged_title.setObjectName("unitTooltipWeaponTitle")
+
+        self._ranged_chip_range = self._build_chip_label()
+        self._ranged_chip_bs = self._build_chip_label()
+        ranged_chips = QtWidgets.QHBoxLayout()
+        ranged_chips.setContentsMargins(0, 0, 0, 0)
+        ranged_chips.setSpacing(6)
+        ranged_chips.addWidget(self._ranged_chip_range)
+        ranged_chips.addWidget(self._ranged_chip_bs)
+        ranged_chips.addStretch(1)
+
+        self._melee_title = QtWidgets.QLabel(self)
+        self._melee_title.setFont(Theme.font(size=9, bold=True))
+        self._melee_title.setWordWrap(True)
+        self._melee_title.setObjectName("unitTooltipWeaponTitle")
+
+        self._melee_chip_ws = self._build_chip_label()
+        melee_chips = QtWidgets.QHBoxLayout()
+        melee_chips.setContentsMargins(0, 0, 0, 0)
+        melee_chips.setSpacing(6)
+        melee_chips.addWidget(self._melee_chip_ws)
+        melee_chips.addStretch(1)
+
+        misc_row = QtWidgets.QHBoxLayout()
+        misc_row.setContentsMargins(0, 0, 0, 0)
+        misc_row.setSpacing(12)
+        misc_row.addWidget(self._stat_widgets["cover"], 1)
+        misc_row.addWidget(self._stat_widgets["los"], 1)
+        misc_row.addWidget(self._stat_widgets["mods"], 1)
 
         self._hp_bar = QtWidgets.QProgressBar(self)
         self._hp_bar.setRange(0, 1)
@@ -214,8 +240,13 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         layout.setSpacing(6)
         layout.addLayout(header_layout)
         layout.addWidget(self._divider)
-        layout.addLayout(self._stats_grid)
+        layout.addLayout(stats_row)
         layout.addWidget(self._hp_bar)
+        layout.addWidget(self._ranged_title)
+        layout.addLayout(ranged_chips)
+        layout.addWidget(self._melee_title)
+        layout.addLayout(melee_chips)
+        layout.addLayout(misc_row)
         self.setLayout(layout)
 
     def _build_stat_widget(self, key: str) -> QtWidgets.QWidget:
@@ -235,6 +266,12 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         widget._icon_label = icon
         widget._value_label = value
         return widget
+
+    def _build_chip_label(self) -> QtWidgets.QLabel:
+        label = QtWidgets.QLabel(self)
+        label.setFont(Theme.font(size=8, bold=False))
+        label.setObjectName("unitTooltipChip")
+        return label
 
     def set_debug_mode(self, enabled: bool) -> None:
         self._debug_mode = enabled
@@ -257,12 +294,21 @@ class UnitTooltipWidget(QtWidgets.QFrame):
 
         self._set_stat_value("models", payload.get("models", "—"))
         self._set_stat_value("wounds", payload.get("wounds", "—"))
-        self._set_stat_value("weapon", payload.get("weapon", "—"))
-        self._set_stat_value("range", payload.get("range", "—"))
-        self._set_stat_value("bs", payload.get("bs", "—"))
         self._set_stat_value("cover", payload.get("cover", "—"))
         self._set_stat_value("los", payload.get("los", "—"))
         self._set_stat_value("mods", payload.get("mods", "—"))
+
+        ranged_name = payload.get("ranged_name", "—")
+        melee_name = payload.get("melee_name", "—")
+        self._ranged_title.setText(f"{self._icon_map['weapon']} {ranged_name}")
+        self._melee_title.setText(f"{self._icon_map['melee']} {melee_name}")
+
+        ranged_range = payload.get("ranged_range", "—")
+        ranged_bs = payload.get("ranged_bs", "—")
+        melee_ws = payload.get("melee_ws", "—")
+        self._ranged_chip_range.setText(f"{self._icon_map['range']} {ranged_range}")
+        self._ranged_chip_bs.setText(f"{self._icon_map['bs']} {ranged_bs}")
+        self._melee_chip_ws.setText(f"{self._icon_map['ws']} {melee_ws}")
 
         wounds_value = payload.get("wounds_value")
         wounds_max = payload.get("wounds_max")
@@ -314,6 +360,16 @@ class UnitTooltipWidget(QtWidgets.QFrame):
             }}
             QLabel#unitTooltipValue {{
                 color: {text};
+            }}
+            QLabel#unitTooltipWeaponTitle {{
+                color: {text};
+            }}
+            QLabel#unitTooltipChip {{
+                color: {text};
+                background-color: rgba(14, 16, 14, 0.6);
+                border: 1px solid rgba(0, 0, 0, 0.3);
+                border-radius: 4px;
+                padding: 1px 6px;
             }}
             QProgressBar#unitTooltipHpBar {{
                 background: rgba(10, 12, 10, 0.6);
@@ -458,6 +514,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._tooltip_follow_timer.timeout.connect(self._tick_tooltip_follow)
         self._tooltip_pinned = False
         self._tooltip_widget = UnitTooltipWidget(self)
+        self._weapon_data = self._load_weapon_data()
+        self._weapon_data_by_name = self._index_weapon_data(self._weapon_data)
         self._t0: Optional[float] = None
         self._fx_timer = QtCore.QTimer(self)
         self._fx_timer.setInterval(16)
@@ -1981,6 +2039,94 @@ class OpenGLBoardWidget(QOpenGLWidget):
         offset = QtCore.QPoint(14, 18)
         return cursor_pos + offset
 
+    def _load_weapon_data(self) -> List[dict]:
+        base_dir = Path(__file__).resolve().parents[1]
+        data_path = base_dir / "gym_mod" / "gym_mod" / "engine" / "unitData.json"
+        if not data_path.exists():
+            return []
+        try:
+            with data_path.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            return []
+        weapon_data = data.get("WeaponData", [])
+        if isinstance(weapon_data, list):
+            return weapon_data
+        return []
+
+    def _index_weapon_data(self, weapon_data: List[dict]) -> Dict[str, List[dict]]:
+        index: Dict[str, List[dict]] = {}
+        for entry in weapon_data:
+            name = str(entry.get("Name") or "").strip().lower()
+            if not name:
+                continue
+            index.setdefault(name, []).append(entry)
+        return index
+
+    def _unit_weapon_names(self, unit: dict) -> List[str]:
+        names: List[str] = []
+        for key in ("weapon_name", "weapon", "weapons", "weapon_names"):
+            value = unit.get(key)
+            if not value:
+                continue
+            if isinstance(value, list):
+                names.extend(value)
+            else:
+                names.append(value)
+        cleaned = []
+        seen = set()
+        for name in names:
+            label = str(name).strip()
+            if not label or label in seen:
+                continue
+            seen.add(label)
+            cleaned.append(label)
+        return cleaned
+
+    def _get_weapon_by_type(self, unit: dict, weapon_type: str) -> Optional[dict]:
+        names = self._unit_weapon_names(unit)
+        if not names:
+            return None
+        army = str(unit.get("army") or unit.get("faction") or "").lower()
+        weapon_type = weapon_type.lower()
+        for name in names:
+            matches = [
+                entry
+                for entry in self._weapon_data_by_name.get(name.lower(), [])
+                if str(entry.get("Type") or "").lower() == weapon_type
+            ]
+            if not matches:
+                continue
+            if army:
+                for entry in matches:
+                    if str(entry.get("Army") or "").lower() == army:
+                        return entry
+            return matches[0]
+        return None
+
+    def _get_primary_ranged_weapon(self, unit: dict) -> Optional[dict]:
+        return self._get_weapon_by_type(unit, "ranged")
+
+    def _get_primary_melee_weapon(self, unit: dict) -> Optional[dict]:
+        return self._get_weapon_by_type(unit, "melee")
+
+    def _format_skill_value(self, value: object) -> str:
+        if value is None:
+            return "—"
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return "—"
+            if text.endswith("+"):
+                return text
+            try:
+                return f"{int(float(text))}+"
+            except ValueError:
+                return text
+        if isinstance(value, (int, float)):
+            return f"{int(value)}+"
+        return str(value)
+
     def _build_unit_tooltip_payload(self, unit: dict) -> Dict:
         title = self._unit_display_name(unit)
         models = unit.get("models", "—")
@@ -1994,12 +2140,32 @@ class OpenGLBoardWidget(QOpenGLWidget):
         elif wounds_value is not None:
             wounds_label = str(int(wounds_value))
         cover = self._tooltip_cover_status(unit)
-        weapon_name = self._tooltip_weapon_name(unit)
+        ranged_profile = self._get_primary_ranged_weapon(unit)
+        melee_profile = self._get_primary_melee_weapon(unit)
+        ranged_name = (
+            ranged_profile.get("Name")
+            if ranged_profile
+            else self._tooltip_weapon_name(unit)
+        ) or "—"
+        melee_name = melee_profile.get("Name") if melee_profile else "—"
         unit_id = unit.get("id", "—")
         los = self._tooltip_los_status(unit)
         mods = self._tooltip_mods_status(unit)
-        weapon_range = self._resolve_weapon_range(unit) or "—"
-        bs = unit.get("bs") or unit.get("BS") or unit.get("ballistic_skill") or "—"
+        weapon_range = (
+            ranged_profile.get("Range")
+            if ranged_profile and ranged_profile.get("Range") is not None
+            else self._resolve_weapon_range(unit)
+        )
+        bs_value = (
+            ranged_profile.get("BS")
+            if ranged_profile and ranged_profile.get("BS") is not None
+            else unit.get("bs") or unit.get("BS") or unit.get("ballistic_skill")
+        )
+        ws_value = (
+            melee_profile.get("WS")
+            if melee_profile and melee_profile.get("WS") is not None
+            else unit.get("ws") or unit.get("WS") or unit.get("weapon_skill")
+        )
         return {
             "title": title,
             "unit_id": unit_id,
@@ -2007,9 +2173,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
             "wounds": wounds_label,
             "wounds_value": wounds_value,
             "wounds_max": wounds_max,
-            "weapon": weapon_name,
-            "range": weapon_range,
-            "bs": bs,
+            "ranged_name": ranged_name,
+            "ranged_range": weapon_range if weapon_range is not None else "—",
+            "ranged_bs": self._format_skill_value(bs_value),
+            "melee_name": melee_name,
+            "melee_ws": self._format_skill_value(ws_value),
             "cover": cover,
             "los": los,
             "mods": mods,
@@ -2148,7 +2316,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def _tooltip_weapon_name(self, unit: dict) -> str:
         weapon_name = unit.get("weapon_name") or unit.get("weapon") or unit.get("weapons")
         if isinstance(weapon_name, list):
-            weapon_name = ", ".join(map(str, weapon_name))
+            if weapon_name:
+                weapon_name = weapon_name[0]
+            else:
+                weapon_name = None
         return weapon_name or "—"
 
     def _resolve_weapon_range(self, unit: dict) -> Optional[int]:
