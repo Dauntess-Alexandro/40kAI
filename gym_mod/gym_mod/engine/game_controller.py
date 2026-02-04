@@ -179,8 +179,10 @@ class GameController:
             target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
             optimizer = torch.optim.Adam(policy_net.parameters())
 
-            policy_net.load_state_dict(checkpoint["policy_net"])
-            target_net.load_state_dict(checkpoint["target_net"])
+            policy_state = self._normalize_state_dict(checkpoint["policy_net"])
+            target_state = self._normalize_state_dict(checkpoint["target_net"])
+            policy_net.load_state_dict(policy_state)
+            target_net.load_state_dict(target_state)
             optimizer.load_state_dict(checkpoint["optimizer"])
 
             policy_net.eval()
@@ -238,3 +240,21 @@ class GameController:
                 "Проверьте путь к модели и наличие файлов .pickle/.pth."
             )
             self._finished = True
+
+    def _normalize_state_dict(self, state_dict):
+        if not isinstance(state_dict, dict):
+            return state_dict
+        if not state_dict:
+            return state_dict
+        if all(key.startswith("_orig_mod.") for key in state_dict.keys()):
+            self._io.log("[MODEL] checkpoint: найден префикс _orig_mod, нормализую ключи.")
+            return {key.replace("_orig_mod.", "", 1): value for key, value in state_dict.items()}
+        if any(key.startswith("_orig_mod.") for key in state_dict.keys()):
+            self._io.log(
+                "[MODEL] checkpoint: частично найден префикс _orig_mod, нормализую ключи."
+            )
+            normalized = {}
+            for key, value in state_dict.items():
+                normalized[key.replace("_orig_mod.", "", 1)] = value
+            return normalized
+        return state_dict
