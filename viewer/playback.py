@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Callable, Dict, List, Optional, Tuple
 
 from PySide6 import QtCore
@@ -20,6 +21,12 @@ class PlaybackController(QtCore.QObject):
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._play_next_event_in_phase)
         self._debug = os.getenv("VIEW_PLAYBACK_DEBUG", "").strip() == "1"
+        self._move_before_re = re.compile(
+            r"Позиция до:\s*\((?P<x>-?\d+),\s*(?P<y>-?\d+)\)"
+        )
+        self._move_after_re = re.compile(
+            r"Позиция после:\s*\((?P<x>-?\d+),\s*(?P<y>-?\d+)\)"
+        )
 
         self.events: List[Dict] = []
         self._events_by_phase: Dict[str, List[Dict]] = {}
@@ -28,6 +35,7 @@ class PlaybackController(QtCore.QObject):
         self.current_phase = ""
         self.phase_order = ["command", "move", "shoot", "charge", "fight"]
         self.state = self.STATE_IDLE
+        self._pending_move_from: Dict[int, Tuple[float, float]] = {}
 
     def reset(self) -> None:
         self._log_debug("reset")
@@ -38,6 +46,7 @@ class PlaybackController(QtCore.QObject):
         self.idx = 0
         self.current_phase = ""
         self.state = self.STATE_IDLE
+        self._pending_move_from = {}
         self._board.clear_playback_context()
         self._board.set_active_phase(None)
         self._set_status("")
@@ -55,6 +64,8 @@ class PlaybackController(QtCore.QObject):
         self.state = self.STATE_PLAYING_PHASE
         self.current_phase = phase
         self.idx = 0
+        if phase == "move":
+            self._pending_move_from = {}
         self._board.set_active_phase(phase)
         self._set_status(f"Идёт фаза {self._phase_label(phase)}…")
         self._log_debug(f"start_phase: {phase}")
@@ -89,13 +100,22 @@ class PlaybackController(QtCore.QObject):
 
         unit_id = self._extract_unit_id(event)
         unit_side = self._normalize_side(event.get("side"))
-        if unit_id is not None:
+        if unit_id is not None and event_type in (
+            "unit_start",
+            "move",
+            "shoot",
+            "charge",
+            "fight",
+            "skip",
+            "summary",
+            "scan",
+        ):
             self._board.set_active_unit(unit_id, unit_side)
 
-        if event_type == "unit_move":
-            from_xy, to_xy = self._extract_move_points(event)
+        if event_type in ("unit_move", "move"):
+            from_xy, to_xy = self._resolve_move_points(event, unit_id)
             duration_ms = self._duration_ms(event, 300)
-            if unit_id is not None and from_xy and to_xy:
+            if unit_id is not None and from_xy and to_xy and from_xy != to_xy:
                 self._board.play_move(unit_id, from_xy, to_xy, duration_ms, side=unit_side)
                 self._timer.start(max(80, duration_ms))
                 return
@@ -198,6 +218,28 @@ class PlaybackController(QtCore.QObject):
         start = event.get("from") or event.get("start")
         end = event.get("to") or event.get("end")
         return self._parse_point(start), self._parse_point(end)
+
+    def _resolve_move_points(
+        self, event: Dict, unit_id: Optional[int]
+    ) -> Tuple[Optional[Tuple[float, float]], Optional[Tuple[float, float]]]:
+        start, end = self._extract_move_points(event)
+        if start and end:
+            return start, end
+        msg = str(event.get("msg") or "")
+        before = self._move_before_re.search(msg)
+        if before and unit_id is not None:
+            self._pending_move_from[unit_id] = (
+                float(before.group("x")),
+                float(before.group("y")),
+            )
+        after = self._move_after_re.search(msg)
+        if after and unit_id is not None:
+            to_xy = (float(after.group("x")), float(after.group("y")))
+            from_xy = self._pending_move_from.pop(unit_id, None)
+            if from_xy is None:
+                from_xy = to_xy
+            return from_xy, to_xy
+        return None, None
 
     def _parse_point(self, value) -> Optional[Tuple[float, float]]:
         if isinstance(value, (list, tuple)) and len(value) >= 2:
