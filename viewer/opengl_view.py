@@ -50,6 +50,47 @@ class DisintegrationParticle:
 
 
 @dataclass
+class BranchBlueprint:
+    u: float
+    side_sign: float
+    length_px: float
+    bend_px: float
+    phase: float
+    width_px: float
+    alpha: float
+    period: float
+    life: float
+    fork: bool
+
+
+@dataclass
+class GlyphBlueprint:
+    u: float
+    offset_n_px: float
+    glyph_id: int
+    scale_px: float
+    phase: float
+    alpha: float
+    drift_speed: float
+    period: float
+    life: float
+
+
+@dataclass
+class EdgeSpeckBlueprint:
+    u0: float
+    side_sign: float
+    offset_px: float
+    size_px: float
+    alpha: float
+    phase: float
+    period: float
+    life: float
+    speed: float
+    wobble_px: float
+
+
+@dataclass
 class GaussTracerEffect:
     start: QtCore.QPointF
     end: QtCore.QPointF
@@ -58,6 +99,9 @@ class GaussTracerEffect:
     seed: int
     particles: List[DisintegrationParticle]
     config: Dict
+    branches: List[BranchBlueprint]
+    glyphs: List[GlyphBlueprint]
+    edge_specks: List[EdgeSpeckBlueprint]
 
 
 class OpenGLBoardWidget(QOpenGLWidget):
@@ -253,7 +297,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
         seed: int,
         config: Optional[Dict] = None,
     ) -> GaussTracerEffect:
+        config = config or {}
+        direction = end - start
+        length_world = math.hypot(direction.x(), direction.y())
         particles = self._generate_gauss_particles(seed)
+        branches = self._generate_gauss_branches(seed, length_world, config)
+        glyphs = self._generate_gauss_glyphs(seed, config)
+        edge_specks = self._generate_gauss_edge_specks(seed, config)
         return GaussTracerEffect(
             start=start,
             end=end,
@@ -261,7 +311,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
             duration=duration,
             seed=seed,
             particles=particles,
-            config=config or {},
+            config=config,
+            branches=branches,
+            glyphs=glyphs,
+            edge_specks=edge_specks,
         )
 
     def add_effect(self, effect: GaussTracerEffect) -> None:
@@ -991,6 +1044,195 @@ class OpenGLBoardWidget(QOpenGLWidget):
             )
         return particles
 
+    def _generate_gauss_branches(
+        self,
+        seed: int,
+        length_world: float,
+        config: Dict,
+    ) -> List[BranchBlueprint]:
+        rng = random.Random(seed + 11)
+        branches_config = config.get("branches", {})
+        count_min = int(branches_config.get("count_min", 10))
+        count_max = int(branches_config.get("count_max", 18))
+        length_cells = length_world / max(self.cell_size, 0.001)
+        length_scale = max(0.75, min(1.35, length_cells / 7.0))
+        base_count = rng.uniform(count_min, count_max)
+        count = max(6, int(round(base_count * length_scale)))
+        life_min = float(branches_config.get("life_min", 0.10))
+        life_max = float(branches_config.get("life_max", 0.18))
+        width_px = float(branches_config.get("width_px", 1.0))
+        wide_width_px = float(branches_config.get("wide_width_px", 2.0))
+        wide_chance = float(branches_config.get("wide_chance", 0.12))
+        len_min_px = float(branches_config.get("len_min_px", 6.0))
+        len_max_px = float(branches_config.get("len_max_px", 18.0))
+        alpha_min = float(branches_config.get("alpha_min", 0.10))
+        alpha_max = float(branches_config.get("alpha_max", 0.22))
+        spawn_rate_min = float(branches_config.get("spawn_rate_min", 2.0))
+        spawn_rate_max = float(branches_config.get("spawn_rate_max", 4.0))
+        fork_chance = float(branches_config.get("fork_chance", 0.25))
+        branches: List[BranchBlueprint] = []
+        for _ in range(count):
+            period = 1.0 / max(0.05, rng.uniform(spawn_rate_min, spawn_rate_max))
+            branches.append(
+                BranchBlueprint(
+                    u=rng.uniform(0.06, 0.94),
+                    side_sign=rng.choice((-1.0, 1.0)),
+                    length_px=rng.uniform(len_min_px, len_max_px),
+                    bend_px=rng.uniform(-1.5, 3.5),
+                    phase=rng.uniform(0.0, 1.0),
+                    width_px=wide_width_px if rng.random() < wide_chance else width_px,
+                    alpha=rng.uniform(alpha_min, alpha_max),
+                    period=period,
+                    life=rng.uniform(life_min, life_max),
+                    fork=rng.random() < fork_chance,
+                )
+            )
+        return branches
+
+    def _generate_gauss_glyphs(self, seed: int, config: Dict) -> List[GlyphBlueprint]:
+        rng = random.Random(seed + 37)
+        glyph_config = config.get("glyphs", {})
+        count_min = int(glyph_config.get("count_min", 8))
+        count_max = int(glyph_config.get("count_max", 14))
+        alpha_min = float(glyph_config.get("alpha_min", 0.06))
+        alpha_max = float(glyph_config.get("alpha_max", 0.14))
+        scale_min_px = float(glyph_config.get("scale_min_px", 1.6))
+        scale_max_px = float(glyph_config.get("scale_max_px", 3.0))
+        offset_min_px = float(glyph_config.get("offset_n_min_px", -4.0))
+        offset_max_px = float(glyph_config.get("offset_n_max_px", 4.0))
+        drift_min = float(glyph_config.get("drift_speed_min", 0.10))
+        drift_max = float(glyph_config.get("drift_speed_max", 0.25))
+        life_min = float(glyph_config.get("life_min", 0.25))
+        life_max = float(glyph_config.get("life_max", 0.45))
+        period_min = float(glyph_config.get("period_min", 0.7))
+        period_max = float(glyph_config.get("period_max", 1.4))
+        glyph_count = rng.randint(count_min, count_max)
+        glyphs: List[GlyphBlueprint] = []
+        shape_count = len(self._gauss_glyph_shapes())
+        for _ in range(glyph_count):
+            glyphs.append(
+                GlyphBlueprint(
+                    u=rng.uniform(0.08, 0.92),
+                    offset_n_px=rng.uniform(offset_min_px, offset_max_px),
+                    glyph_id=rng.randrange(shape_count),
+                    scale_px=rng.uniform(scale_min_px, scale_max_px),
+                    phase=rng.uniform(0.0, 1.0),
+                    alpha=rng.uniform(alpha_min, alpha_max),
+                    drift_speed=rng.uniform(drift_min, drift_max),
+                    period=rng.uniform(period_min, period_max),
+                    life=rng.uniform(life_min, life_max),
+                )
+            )
+        return glyphs
+
+    def _generate_gauss_edge_specks(self, seed: int, config: Dict) -> List[EdgeSpeckBlueprint]:
+        rng = random.Random(seed + 91)
+        speck_config = config.get("edge_specks", {})
+        count_min = int(speck_config.get("count_min", 60))
+        count_max = int(speck_config.get("count_max", 120))
+        life_min = float(speck_config.get("life_min", 0.16))
+        life_max = float(speck_config.get("life_max", 0.26))
+        size_min_px = float(speck_config.get("size_min_px", 1.0))
+        size_max_px = float(speck_config.get("size_max_px", 3.0))
+        alpha_min = float(speck_config.get("alpha_min", 0.08))
+        alpha_max = float(speck_config.get("alpha_max", 0.18))
+        offset_min_px = float(speck_config.get("offset_min_px", 2.0))
+        offset_max_px = float(speck_config.get("offset_max_px", 6.0))
+        speed_min = float(speck_config.get("speed_min", 0.6))
+        speed_max = float(speck_config.get("speed_max", 1.8))
+        wobble_min_px = float(speck_config.get("wobble_min_px", 0.5))
+        wobble_max_px = float(speck_config.get("wobble_max_px", 1.5))
+        period_min = float(speck_config.get("period_min", 0.35))
+        period_max = float(speck_config.get("period_max", 0.6))
+        count = rng.randint(count_min, count_max)
+        specks: List[EdgeSpeckBlueprint] = []
+        for _ in range(count):
+            specks.append(
+                EdgeSpeckBlueprint(
+                    u0=rng.uniform(0.0, 1.0),
+                    side_sign=rng.choice((-1.0, 1.0)),
+                    offset_px=rng.uniform(offset_min_px, offset_max_px),
+                    size_px=rng.uniform(size_min_px, size_max_px),
+                    alpha=rng.uniform(alpha_min, alpha_max),
+                    phase=rng.uniform(0.0, 1.0),
+                    period=rng.uniform(period_min, period_max),
+                    life=rng.uniform(life_min, life_max),
+                    speed=rng.uniform(speed_min, speed_max),
+                    wobble_px=rng.uniform(wobble_min_px, wobble_max_px),
+                )
+            )
+        return specks
+
+    def _window_fade(self, time_value: float, period: float, life: float) -> float:
+        if period <= 0.0 or life <= 0.0:
+            return 0.0
+        t_mod = time_value % period
+        if t_mod > life:
+            return 0.0
+        edge = min(life * 0.25, life * 0.5)
+        if edge <= 0.0:
+            return 1.0
+        if t_mod < edge:
+            return t_mod / edge
+        if t_mod > life - edge:
+            return max(0.0, (life - t_mod) / edge)
+        return 1.0
+
+    def _dim_color(self, color: QtGui.QColor, factor: float) -> QtGui.QColor:
+        factor = max(0.0, min(1.0, factor))
+        return QtGui.QColor(
+            int(color.red() * factor),
+            int(color.green() * factor),
+            int(color.blue() * factor),
+        )
+
+    def _gauss_glyph_shapes(
+        self,
+    ) -> List[List[Tuple[QtCore.QPointF, QtCore.QPointF]]]:
+        return [
+            [
+                (QtCore.QPointF(-0.6, -0.4), QtCore.QPointF(-0.6, 0.4)),
+                (QtCore.QPointF(-0.6, -0.4), QtCore.QPointF(0.6, -0.4)),
+                (QtCore.QPointF(-0.6, 0.4), QtCore.QPointF(0.3, 0.4)),
+            ],
+            [
+                (QtCore.QPointF(-0.5, -0.5), QtCore.QPointF(0.5, -0.5)),
+                (QtCore.QPointF(-0.5, -0.5), QtCore.QPointF(-0.5, 0.5)),
+                (QtCore.QPointF(-0.2, 0.1), QtCore.QPointF(0.5, 0.1)),
+            ],
+            [
+                (QtCore.QPointF(-0.5, -0.2), QtCore.QPointF(0.5, -0.2)),
+                (QtCore.QPointF(0.0, -0.6), QtCore.QPointF(0.0, 0.6)),
+                (QtCore.QPointF(-0.5, 0.2), QtCore.QPointF(0.5, 0.2)),
+            ],
+            [
+                (QtCore.QPointF(-0.6, -0.3), QtCore.QPointF(-0.2, -0.3)),
+                (QtCore.QPointF(0.2, 0.3), QtCore.QPointF(0.6, 0.3)),
+                (QtCore.QPointF(-0.2, -0.3), QtCore.QPointF(0.2, 0.3)),
+            ],
+            [
+                (QtCore.QPointF(-0.4, -0.4), QtCore.QPointF(0.4, -0.4)),
+                (QtCore.QPointF(-0.4, 0.4), QtCore.QPointF(0.4, 0.4)),
+                (QtCore.QPointF(-0.4, -0.4), QtCore.QPointF(-0.4, 0.4)),
+                (QtCore.QPointF(0.4, -0.4), QtCore.QPointF(0.4, 0.4)),
+            ],
+            [
+                (QtCore.QPointF(-0.5, 0.0), QtCore.QPointF(0.5, 0.0)),
+                (QtCore.QPointF(0.0, -0.5), QtCore.QPointF(0.0, 0.5)),
+                (QtCore.QPointF(-0.2, -0.2), QtCore.QPointF(0.2, 0.2)),
+            ],
+            [
+                (QtCore.QPointF(-0.5, -0.1), QtCore.QPointF(-0.1, -0.5)),
+                (QtCore.QPointF(-0.1, -0.5), QtCore.QPointF(0.5, -0.5)),
+                (QtCore.QPointF(-0.1, -0.1), QtCore.QPointF(0.4, 0.4)),
+            ],
+            [
+                (QtCore.QPointF(-0.4, -0.4), QtCore.QPointF(0.4, 0.0)),
+                (QtCore.QPointF(-0.4, 0.4), QtCore.QPointF(0.4, 0.0)),
+                (QtCore.QPointF(-0.1, -0.2), QtCore.QPointF(0.1, 0.2)),
+            ],
+        ]
+
     def _draw_gauss_effects(self, painter: QtGui.QPainter) -> None:
         if not self._fx_active:
             return
@@ -1045,8 +1287,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
             glow_width = self._px_to_world(glow_width_px + glow_jitter_px * jitter)
             core_width = self._px_to_world(core_width_px)
             core_gap = self._px_to_world(core_gap_px)
+            direction = fx.end - fx.start
+            length = math.hypot(direction.x(), direction.y())
+            length = max(length, 0.001)
+            dir_unit = QtCore.QPointF(direction.x() / length, direction.y() / length)
+            normal_unit = QtCore.QPointF(-dir_unit.y(), dir_unit.x())
 
-            # Порядок слоёв: glow tube -> core beam -> impact flash/ring -> disintegration pixels.
+            # Порядок слоёв: glow tube -> core beam -> pulse -> edge specks/branches/glyphs
+            # -> impact flash/ring -> disintegration pixels.
             painter.save()
             painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
             painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
@@ -1067,13 +1315,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
             core_pen.setJoinStyle(QtCore.Qt.RoundJoin)
             core_pen.setColor(self._with_alpha(core_color, core_alpha))
             painter.setPen(core_pen)
-            direction = fx.end - fx.start
-            length = math.hypot(direction.x(), direction.y())
-            if length > 0.001:
-                normal = QtCore.QPointF(-direction.y() / length, direction.x() / length)
-                offset = QtCore.QPointF(normal.x() * core_gap, normal.y() * core_gap)
-                painter.drawLine(fx.start + offset, fx.end + offset)
-                painter.drawLine(fx.start - offset, fx.end - offset)
+            offset = QtCore.QPointF(normal_unit.x() * core_gap, normal_unit.y() * core_gap)
+            painter.drawLine(fx.start + offset, fx.end + offset)
+            painter.drawLine(fx.start - offset, fx.end - offset)
             painter.restore()
 
             pulse_color = QtGui.QColor(*config.get("pulse_color", (120, 255, 170)))
@@ -1098,6 +1342,128 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     direction.y() * min(1.0, base + pulse_len / max(length, 0.001)),
                 )
                 painter.drawLine(start_pos, end_pos)
+            painter.restore()
+
+            glow_dim = self._dim_color(glow_color, 0.75)
+            branch_dim = self._dim_color(core_color, 0.7)
+            glyph_dim = self._dim_color(glow_color, 0.6)
+            glow_half_px = glow_width_px * 0.5
+
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+            painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+            painter.setPen(QtCore.Qt.NoPen)
+            for speck in fx.edge_specks:
+                fade = self._window_fade(age + speck.phase, speck.period, speck.life)
+                if fade <= 0.0:
+                    continue
+                u = (speck.u0 + (age * speck.speed) / length) % 1.0
+                base = QtCore.QPointF(
+                    fx.start.x() + direction.x() * u,
+                    fx.start.y() + direction.y() * u,
+                )
+                wobble = speck.wobble_px * math.sin((age + speck.phase) * math.tau * 1.1)
+                offset_px = glow_half_px + speck.offset_px + wobble
+                offset = QtCore.QPointF(
+                    normal_unit.x() * self._px_to_world(offset_px) * speck.side_sign,
+                    normal_unit.y() * self._px_to_world(offset_px) * speck.side_sign,
+                )
+                size_world = self._px_to_world(speck.size_px)
+                intensity = 0.75 + 0.25 * math.sin((age + speck.phase) * math.tau * 1.7)
+                alpha = speck.alpha * fade * intensity
+                color = self._with_alpha(glow_dim, alpha)
+                painter.setBrush(QtGui.QBrush(color))
+                rect = QtCore.QRectF(
+                    base.x() + offset.x() - size_world / 2,
+                    base.y() + offset.y() - size_world / 2,
+                    size_world,
+                    size_world,
+                )
+                painter.drawRect(rect)
+            painter.restore()
+
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+            for branch in fx.branches:
+                fade = self._window_fade(age + branch.phase, branch.period, branch.life)
+                if fade <= 0.0:
+                    continue
+                anchor = QtCore.QPointF(
+                    fx.start.x() + direction.x() * branch.u,
+                    fx.start.y() + direction.y() * branch.u,
+                )
+                end_offset = QtCore.QPointF(
+                    normal_unit.x() * self._px_to_world(branch.length_px) * branch.side_sign,
+                    normal_unit.y() * self._px_to_world(branch.length_px) * branch.side_sign,
+                )
+                bend = QtCore.QPointF(
+                    dir_unit.x() * self._px_to_world(branch.bend_px),
+                    dir_unit.y() * self._px_to_world(branch.bend_px),
+                )
+                end_point = anchor + end_offset + bend
+                alpha = branch.alpha * fade
+                branch_pen = QtGui.QPen(self._with_alpha(branch_dim, alpha))
+                branch_pen.setWidthF(self._px_to_world(branch.width_px))
+                branch_pen.setCapStyle(QtCore.Qt.RoundCap)
+                painter.setPen(branch_pen)
+                painter.drawLine(anchor, end_point)
+                if branch.fork:
+                    fork_len = self._px_to_world(branch.length_px * 0.6)
+                    fork_offset = QtCore.QPointF(
+                        normal_unit.x() * fork_len * branch.side_sign * 0.6,
+                        normal_unit.y() * fork_len * branch.side_sign * 0.6,
+                    )
+                    fork_point = anchor + fork_offset + bend
+                    painter.drawLine(anchor, fork_point)
+            painter.restore()
+
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+            glyph_shapes = self._gauss_glyph_shapes()
+            glyph_pen = QtGui.QPen()
+            glyph_pen.setWidthF(self._px_to_world(1.0))
+            glyph_pen.setCapStyle(QtCore.Qt.RoundCap)
+            for glyph in fx.glyphs:
+                fade = self._window_fade(age + glyph.phase, glyph.period, glyph.life)
+                if fade <= 0.0:
+                    continue
+                u = (glyph.u + age * glyph.drift_speed) % 1.0
+                base = QtCore.QPointF(
+                    fx.start.x() + direction.x() * u,
+                    fx.start.y() + direction.y() * u,
+                )
+                offset = QtCore.QPointF(
+                    normal_unit.x() * self._px_to_world(glyph.offset_n_px),
+                    normal_unit.y() * self._px_to_world(glyph.offset_n_px),
+                )
+                scale = self._px_to_world(glyph.scale_px)
+                alpha = glyph.alpha * fade * (0.85 + 0.15 * math.sin((age + glyph.phase) * math.tau))
+                glyph_pen.setColor(self._with_alpha(glyph_dim, alpha))
+                painter.setPen(glyph_pen)
+                for start_pt, end_pt in glyph_shapes[glyph.glyph_id]:
+                    start_world = QtCore.QPointF(
+                        base.x()
+                        + offset.x()
+                        + dir_unit.x() * start_pt.x() * scale
+                        + normal_unit.x() * start_pt.y() * scale,
+                        base.y()
+                        + offset.y()
+                        + dir_unit.y() * start_pt.x() * scale
+                        + normal_unit.y() * start_pt.y() * scale,
+                    )
+                    end_world = QtCore.QPointF(
+                        base.x()
+                        + offset.x()
+                        + dir_unit.x() * end_pt.x() * scale
+                        + normal_unit.x() * end_pt.y() * scale,
+                        base.y()
+                        + offset.y()
+                        + dir_unit.y() * end_pt.x() * scale
+                        + normal_unit.y() * end_pt.y() * scale,
+                    )
+                    painter.drawLine(start_world, end_world)
             painter.restore()
 
             flash_radius = self.cell_size * (
