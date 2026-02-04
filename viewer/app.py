@@ -1039,6 +1039,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         now = time.monotonic()
         if self._shoot_fx_context and now - self._shoot_fx_context["t0"] > 2.0:
+            self._fx_debug(
+                "FX: контекст выстрела устарел, ожидаем новую пару строк (Стреляет/Оружие)."
+            )
             self._shoot_fx_context = None
 
         shot_match = re.search(r"Стреляет:\s*Unit\s+(\d+).*?цель:\s*Unit\s+(\d+)", line, re.IGNORECASE)
@@ -1049,27 +1052,41 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 "line": line,
                 "t0": now,
             }
+            self._fx_debug(
+                "FX: найдена строка стрельбы "
+                f"(attacker={self._shoot_fx_context['attacker_id']}, "
+                f"target={self._shoot_fx_context['target_id']})."
+            )
             return
 
         weapon_match = re.search(r"Оружие:\s*(.+)", line, re.IGNORECASE)
         if not weapon_match:
             return
         weapon_name = weapon_match.group(1).strip()
+        self._fx_debug(f"FX: найдена строка оружия: {weapon_name}.")
         if "gauss" not in weapon_name.lower():
+            self._fx_debug("FX: оружие не gauss, эффект пропущен.")
             return
         context = self._shoot_fx_context
         if not context:
+            self._fx_debug("FX: нет контекста стрельбы для gauss, эффект пропущен.")
             return
         if "necron" not in context["line"].lower():
+            self._fx_debug("FX: в строке стрельбы нет Necron, эффект пропущен.")
             self._shoot_fx_context = None
             return
         self._spawn_gauss_effect(context["attacker_id"], context["target_id"])
+        self._fx_debug("FX: gauss-эффект создан и добавлен в рендер.")
         self._shoot_fx_context = None
 
     def _spawn_gauss_effect(self, attacker_id: int, target_id: int) -> None:
         start = self._unit_world_center(attacker_id)
         end = self._unit_world_center(target_id)
         if start is None or end is None:
+            self._fx_debug(
+                "FX: не удалось получить координаты для эффекта "
+                f"(attacker={attacker_id}, target={target_id})."
+            )
             return
         t0 = time.monotonic()
         seed = hash((attacker_id, target_id, int(t0 * 1000))) & 0xFFFFFFFF
@@ -1081,6 +1098,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
             seed=seed,
         )
         self.map_scene.add_effect(effect)
+        self._fx_debug(
+            "FX: позиция эффекта "
+            f"start=({start.x():.1f},{start.y():.1f}) "
+            f"end=({end.x():.1f},{end.y():.1f})."
+        )
 
     def _unit_world_center(self, unit_id: int) -> Optional[QtCore.QPointF]:
         cell = self.map_scene.cell_size
@@ -1093,6 +1115,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 return None
             return QtCore.QPointF(x * cell + cell / 2, y * cell + cell / 2)
         return None
+
+    def _fx_debug(self, message: str) -> None:
+        if not message:
+            return
+        self._append_log_to_file(message)
 
     def _auto_switch_log_tab(self, active_side):
         if active_side not in ("player", "model"):
