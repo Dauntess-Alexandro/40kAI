@@ -1,388 +1,255 @@
-diff --git a/eval.py b/eval.py
-index 86f154028cb4565a0911e8e5e863404212e484d0..2a2844bb9c9d39ad401e8849193e049a3fb7de7b 100644
---- a/eval.py
-+++ b/eval.py
-@@ -1,39 +1,40 @@
- import argparse
- import os
- import pickle
- import sys
- from collections import Counter
- from statistics import median
- from typing import Optional
+diff --git a/viewer/app.py b/viewer/app.py
+index 7b2e4630359a70757ab70062eecc1b61db43e721..017c627c478489c7e6fdb034d626b1ab63e93c82 100644
+--- a/viewer/app.py
++++ b/viewer/app.py
+@@ -53,58 +53,62 @@ class ViewerWindow(QtWidgets.QMainWindow):
+         self.units_table = QtWidgets.QTableWidget(0, 5)
+         self.units_table.setHorizontalHeaderLabels(["Сторона", "ID", "Имя", "HP", "Модели"])
+         header = self.units_table.horizontalHeader()
+         header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+         header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+         header.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
+         header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
+         header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)
+         header.sortIndicatorChanged.connect(self._rebuild_unit_row_mapping)
+         self.units_table.verticalHeader().setVisible(False)
+         self.units_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+         self.units_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+         self.units_table.setAlternatingRowColors(True)
+         self.units_table.itemSelectionChanged.connect(self._sync_selection_from_table)
+         self._apply_units_table_font()
  
- import torch
+         self._log_entries = []
+         self._current_turn_number = None
+         self._log_tail_snapshot = None
+         self._model_events_snapshot = None
+         self._model_event_queue: queue.Queue = queue.Queue()
+         self._model_log_source = None
+         self._model_events_stream = []
+         self._model_events_current = []
+         self._log_tabs = {}
++        self._log_tab_indices = {}
++        self._log_tab_programmatic_switch = False
++        self._last_manual_log_tab_index = None
+         self._log_tab_defs = [
+             ("player", "Все ходы игрока"),
+             ("model", "Все ходы модели"),
+             ("key", "Ключевые события"),
+         ]
+         self._max_log_lines = 5000
+         self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS.md")
+         self._log_file_max_bytes = 5 * 1024 * 1024
++        self._last_active_side = None
+         self._init_log_viewer()
+         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
+         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
+         try:
+             get_event_bus().subscribe(self._on_event_bus_event)
+         except Exception:
+             pass
  
- from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
- from gym_mod.engine.mission import check_end_of_battle
- from gym_mod.envs.warhamEnv import roll_off_attacker_defender
- from model.DQN import DQN
-+from model.utils import normalize_state_dict
- from model.utils import build_shoot_action_mask, convertToDict, unwrap_env
+         fit_button = QtWidgets.QPushButton("Fit")
+         fit_button.clicked.connect(self._fit_view)
  
+         left_widget = QtWidgets.QWidget()
+         left_layout = QtWidgets.QVBoxLayout(left_widget)
+         left_layout.addWidget(fit_button, alignment=QtCore.Qt.AlignLeft)
+         left_layout.addWidget(self.map_scene)
  
- def log(message: str) -> None:
-     if message.startswith("["):
-         print(f"[EVAL]{message}", flush=True)
-     else:
-         print(f"[EVAL] {message}", flush=True)
- 
- 
- def load_latest_model(model_path: Optional[str] = None):
-     if model_path and model_path != "None":
-         pickle_path = model_path
-         checkpoint_path = model_path[:-len("pickle")] + "pth"
-     else:
-         save_path = "models/"
-         folders = os.listdir(save_path) if os.path.isdir(save_path) else []
-         envs = []
-         modelpth = []
- 
-         for folder in folders:
-             full = os.path.join(save_path, folder)
-             if os.path.isdir(full):
-                 files = os.listdir(full)
-                 for filename in files:
-@@ -194,52 +195,52 @@ def main():
-     post_deploy_setup(log_fn=None)
-     env_unwrapped.attacker_side = attacker_side
-     env_unwrapped.defender_side = defender_side
- 
-     state, info = env.reset(
-         options={"m": model_units, "e": enemy_units, "Type": "big", "trunc": True}
-     )
-     n_actions = [5, 2, len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
-     for _ in range(len(model_units)):
-         n_actions.append(12)
-     n_observations = len(state)
- 
-     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
- 
-     net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
-     dueling = net_type == "dueling"
-     if not dueling and isinstance(checkpoint, dict):
-         policy_state = checkpoint.get("policy_net", {})
-         if any(key.startswith("value_heads.") for key in policy_state):
-             dueling = True
- 
-     policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
-     target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
-     optimizer = torch.optim.Adam(policy_net.parameters())
- 
--    policy_net.load_state_dict(checkpoint["policy_net"])
--    target_net.load_state_dict(checkpoint["target_net"])
-+    policy_net.load_state_dict(normalize_state_dict(checkpoint["policy_net"]))
-+    target_net.load_state_dict(normalize_state_dict(checkpoint["target_net"]))
-     optimizer.load_state_dict(checkpoint["optimizer"])
- 
-     policy_net.eval()
-     target_net.eval()
- 
-     log(f"Старт оценки: игр={games}, epsilon={epsilon:.3f}.")
- 
-     wins = 0
-     losses = 0
-     draws = 0
-     vp_diffs = []
-     end_reasons = Counter()
- 
-     for idx in range(1, games + 1):
-         winner, end_reason, vp_diff, model_vp, enemy_vp = run_episode(
-             env, model_units, enemy_units, policy_net, epsilon, device
+         log_group = QtWidgets.QGroupBox("ЖУРНАЛ")
+         log_layout = QtWidgets.QVBoxLayout(log_group)
+         log_layout.addLayout(self._log_controls_layout)
+         log_layout.addWidget(self.log_tabs)
+         log_group.setSizePolicy(
+             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
          )
-         vp_diffs.append(vp_diff)
-         end_reasons[end_reason] += 1
-         if winner == "model":
-             wins += 1
-         elif winner == "enemy":
-             losses += 1
+ 
+         command_group = QtWidgets.QGroupBox("КОМАНДЫ")
+@@ -361,57 +365,59 @@ class ViewerWindow(QtWidgets.QMainWindow):
+             )
+             self.command_stack.setCurrentIndex(self._command_pages["text"])
          else:
-             draws += 1
-diff --git a/gym_mod/gym_mod/engine/game_controller.py b/gym_mod/gym_mod/engine/game_controller.py
-index 563f7393169ad0b83ac9e35c6836b4243672240b..2d08fa5aec89211db0ac14f09ea183d9974de54d 100644
---- a/gym_mod/gym_mod/engine/game_controller.py
-+++ b/gym_mod/gym_mod/engine/game_controller.py
-@@ -1,39 +1,39 @@
- from __future__ import annotations
+             self.command_input.setPlaceholderText("Введите команду...")
+             self.command_stack.setCurrentIndex(self._command_pages["text"])
+         self._update_command_hint(kind)
+         self._refresh_active_context()
  
- import os
- import pickle
- import queue
- import threading
- from typing import Optional
+     def _update_command_hint(self, kind):
+         if kind == "direction":
+             self.command_hint.setText("Горячие клавиши: ↑ ↓ ← →, пробел/0 — нет")
+         elif kind == "bool":
+             self.command_hint.setText("Горячие клавиши: Y — да, N — нет")
+         elif kind == "int":
+             self.command_hint.setText("Горячие клавиши: Enter — отправить")
+         elif kind == "choice":
+             self.command_hint.setText("Горячие клавиши: Enter — выбрать")
+         else:
+             self.command_hint.setText("Горячие клавиши: Enter — отправить")
  
- import torch
+     def _init_log_viewer(self):
+         fixed_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
+         fixed_font.setPointSize(10)
  
- from gym_mod.engine.game_io import GuiIO, set_active_io
- from gym_mod.engine.state_export import DEFAULT_STATE_PATH
- from model.DQN import DQN
--from model.utils import select_action, convertToDict, build_shoot_action_mask
-+from model.utils import select_action, convertToDict, build_shoot_action_mask, normalize_state_dict
- from gym_mod.envs.warhamEnv import roll_off_attacker_defender
+         self.log_tabs = QtWidgets.QTabWidget()
+-        for key, label in self._log_tab_defs:
++        for index, (key, label) in enumerate(self._log_tab_defs):
+             view = QtWidgets.QPlainTextEdit()
+             view.setReadOnly(True)
+             view.setFont(fixed_font)
+             view.setMaximumBlockCount(self._max_log_lines)
+             self._log_tabs[key] = view
++            self._log_tab_indices[key] = index
+             self.log_tabs.addTab(view, label)
++        self.log_tabs.currentChanged.connect(self._on_log_tab_changed)
  
+         self.log_only_current_turn = QtWidgets.QCheckBox("Показать только текущий ход")
+         self.log_only_current_turn.toggled.connect(self._refresh_log_views)
  
- class GameController:
-     def __init__(self, model_path: Optional[str] = None, state_path: Optional[str] = None):
-         self.model_path = model_path or "None"
-         self.state_path = state_path or os.getenv("STATE_JSON_PATH", DEFAULT_STATE_PATH)
-         self._request_queue: queue.Queue = queue.Queue()
-         self._answer_queue: queue.Queue = queue.Queue()
-         self._io = GuiIO(self._request_queue, self._answer_queue)
-         self._thread: Optional[threading.Thread] = None
-         self._finished = False
-         self._started = False
+         self.log_model_verbose = QtWidgets.QCheckBox("Подробно (verbose)")
+         self.log_model_verbose.toggled.connect(self._refresh_model_log_view)
  
-     @property
-     def is_finished(self) -> bool:
-         return self._finished
+         self.log_copy_turn = QtWidgets.QPushButton("Копировать ход")
+         self.log_copy_turn.clicked.connect(self._copy_current_turn)
+         self.log_clear = QtWidgets.QPushButton("Очистить")
+         self.log_clear.clicked.connect(self._clear_log_viewer)
  
-     def start(self):
-         if self._started:
-             return self._consume_messages(), self._next_request(block=False)
-         self._started = True
-         self._thread = threading.Thread(target=self._run_game_loop, daemon=True)
-         self._thread.start()
-         request = self._next_request(block=True)
-@@ -145,64 +145,64 @@ class GameController:
-             deploy_only_war(
-                 model_units=model,
-                 enemy_units=enemy,
-                 b_len=env.unwrapped.b_len,
-                 b_hei=env.unwrapped.b_hei,
-                 attacker_side=attacker_side,
-                 log_fn=self._io.log,
+         self._log_controls_layout = QtWidgets.QHBoxLayout()
+         self._log_controls_layout.addWidget(self.log_only_current_turn)
+         self._log_controls_layout.addWidget(self.log_model_verbose)
+         self._log_controls_layout.addStretch()
+         self._log_controls_layout.addWidget(self.log_copy_turn)
+         self._log_controls_layout.addWidget(self.log_clear)
+ 
+     def _append_log(self, messages):
+         if not messages:
+             return
+         for msg in messages:
+             self.add_log_line(str(msg))
+ 
+@@ -481,53 +487,54 @@ class ViewerWindow(QtWidgets.QMainWindow):
+ 
+     def _fit_view(self):
+         self.map_scene.fit_to_view()
+ 
+     def _poll_state(self):
+         if not os.path.exists(self.state_watcher.path):
+             self.map_scene.set_error_message(
+                 "Состояние игры недоступно. Где: viewer/state.json. "
+                 "Что делать дальше: запустите игру и дождитесь генерации state.json."
              )
-             post_deploy_setup(log_fn=self._io.log)
+             return
+         if self.state_watcher.load_if_changed():
+             self._apply_state(self.state_watcher.state)
  
-             env.attacker_side = attacker_side
-             env.defender_side = defender_side
+     def _apply_state(self, state):
+         board = state.get("board", {})
+         self.map_scene.update_state(state)
  
-             state, info = env.reset(
-                 options={"m": model, "e": enemy, "playType": True, "Type": "big", "trunc": True}
-             )
+         self._units_by_key = {}
+         for unit in state.get("units", []) or []:
+             self._units_by_key[(unit.get("side"), unit.get("id"))] = unit
  
-             n_actions = [5, 2, len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
-             for _ in range(len(model)):
-                 n_actions.append(12)
-             n_observations = len(state)
+         self.status_round.setText(f"Раунд: {state.get('round', '—')}")
+         self.status_turn.setText(f"Ход: {state.get('turn', '—')}")
+         self.status_phase.setText(f"Фаза: {state.get('phase', '—')}")
+-        active = state.get("active")
++        active = state.get("active") or state.get("active_side")
+         active_label = "Игрок" if active == "player" else "Модель" if active == "model" else "—"
+         self.status_active.setText(f"Активен: {active_label}")
++        self._auto_switch_log_tab(active)
  
-             net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
-             dueling = net_type == "dueling"
-             if not dueling and isinstance(checkpoint, dict):
--                policy_state = checkpoint.get("policy_net", {})
-+                policy_state = normalize_state_dict(checkpoint.get("policy_net", {}))
-                 if any(key.startswith("advantage_heads.") for key in policy_state.keys()):
-                     dueling = True
+         vp = state.get("vp", {})
+         cp = state.get("cp", {})
+         self.points_vp_player.setText(f"Player VP: {vp.get('player', '—')}")
+         self.points_vp_model.setText(f"Model VP: {vp.get('model', '—')}")
+         self.points_cp_player.setText(f"Player CP: {cp.get('player', '—')}")
+         self.points_cp_model.setText(f"Model CP: {cp.get('model', '—')}")
  
-             net_label = "dueling" if dueling else "basic"
-             net_source = "net_type" if net_type else "state_dict"
-             self._io.log(f"[MODEL] Архитектура сети: {net_label} (источник: {net_source})")
+         self._populate_units_table(state.get("units", []))
+         self._update_log(state.get("log_tail", []))
+         self._update_model_events(state.get("model_events", []))
+         self._drain_event_queue()
+         self._refresh_active_context()
  
-             policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
-             target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
-             optimizer = torch.optim.Adam(policy_net.parameters())
+     def _populate_units_table(self, units):
+         self.units_table.setRowCount(len(units))
+         self.units_table.setSortingEnabled(False)
+         self._unit_row_by_key = {}
+         for row, unit in enumerate(units):
+             side_label = "Игрок" if unit.get("side") == "player" else "Модель"
+             unit_key = (unit.get("side"), unit.get("id"))
+             values = [
+                 side_label,
+                 str(unit.get("id", "—")),
+                 unit.get("name", "—"),
+@@ -982,50 +989,70 @@ class ViewerWindow(QtWidgets.QMainWindow):
+         unit_id, side = self._resolve_active_unit()
+         self._active_unit_id = unit_id
+         self._active_unit_side = side
+         active_unit = self._units_by_key.get((side, unit_id))
+         phase = None
+         if self.state_watcher and self.state_watcher.state:
+             phase = self.state_watcher.state.get("phase")
+         move_range = None
+         shoot_range = None
+         if self._is_movement_phase(phase):
+             move_range = self._resolve_move_range(active_unit)
+         if self._is_shooting_phase(phase):
+             shoot_range = self._resolve_weapon_range(active_unit)
+         self.map_scene.set_active_context(
+             active_unit_id=unit_id,
+             active_unit_side=side,
+             phase=phase,
+             move_range=move_range,
+             shoot_range=shoot_range,
+             show_objective_radius=self._show_objective_radius,
+             targets=self.state_watcher.state.get("available_targets")
+             if self.state_watcher and self.state_watcher.state
+             else None,
+         )
  
--            policy_net.load_state_dict(checkpoint["policy_net"])
--            target_net.load_state_dict(checkpoint["target_net"])
-+            policy_net.load_state_dict(normalize_state_dict(checkpoint["policy_net"]))
-+            target_net.load_state_dict(normalize_state_dict(checkpoint["target_net"]))
-             optimizer.load_state_dict(checkpoint["optimizer"])
- 
-             policy_net.eval()
-             target_net.eval()
- 
-             self._io.log(
-                 "\nИнструкции:\nИгрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).\n"
-                 "Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).\n"
-             )
- 
-             is_done = False
-             i = 0
-             reward = 0
- 
-             def update_board(target_env):
-                 board_env = target_env
-                 if not hasattr(board_env, "updateBoard") and hasattr(board_env, "unwrapped"):
-                     board_env = board_env.unwrapped
-                 if hasattr(board_env, "updateBoard"):
-                     board_env.updateBoard()
- 
-             while not is_done:
-                 done, info = env.unwrapped.player()
-                 update_board(env)
-                 state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-diff --git a/model/utils.py b/model/utils.py
-index b8e0e13aa3c049e5726e011d78845bc5d6f64454..e51b7f4120cb426d30c1b10588e9587e770a807d 100644
---- a/model/utils.py
-+++ b/model/utils.py
-@@ -6,50 +6,69 @@ import numpy as np
- import os
- import json
- from time import perf_counter
- 
- 
- import random
- import math
- 
- from model.memory import Transition
- from gym_mod.engine.utils import distance
- 
- with open(os.path.abspath("hyperparams.json")) as j:
-     data = json.loads(j.read())
- 
- EPS_START = data["eps_start"]
- EPS_END = data["eps_end"]
- EPS_DECAY = data["eps_decay"]
- BATCH_SIZE = data["batch_size"]
- GAMMA = data["gamma"]
- 
- device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
- 
- def unwrap_env(env):
-     return getattr(env, "unwrapped", env)
- 
-+def normalize_state_dict(state_dict):
-+    if not isinstance(state_dict, dict):
-+        return state_dict
-+    prefixes = ("_orig_mod.", "module.")
-+    needs_strip = any(
-+        any(key.startswith(prefix) for prefix in prefixes) for key in state_dict.keys()
-+    )
-+    if not needs_strip:
-+        return state_dict
-+    normalized = {}
-+    for key, value in state_dict.items():
-+        new_key = key
-+        for prefix in prefixes:
-+            if new_key.startswith(prefix):
-+                new_key = new_key[len(prefix):]
-+                break
-+        normalized[new_key] = value
-+    return normalized
++    def _auto_switch_log_tab(self, active_side):
++        if active_side not in ("player", "model"):
++            return
++        if active_side == self._last_active_side:
++            return
++        self._last_active_side = active_side
++        target_index = self._log_tab_indices.get(active_side)
++        if target_index is None:
++            return
++        self._log_tab_programmatic_switch = True
++        try:
++            self.log_tabs.setCurrentIndex(target_index)
++        finally:
++            self._log_tab_programmatic_switch = False
 +
- def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None):
-     sample = random.random()
-     decay_steps = max(1.0, float(EPS_DECAY))
-     progress = min(float(steps_done) / decay_steps, 1.0)
-     eps_threshold = EPS_START + (EPS_END - EPS_START) * progress
-     steps_done += 1
-     dev = next(policy_net.parameters()).device
++    def _on_log_tab_changed(self, index):
++        if self._log_tab_programmatic_switch:
++            return
++        self._last_manual_log_tab_index = index
++
+     def _is_movement_phase(self, phase):
+         phase_text = str(phase or "").lower()
+         return "move" in phase_text or "движ" in phase_text or "movement" in phase_text
  
-     
-     if isinstance(state, collections.OrderedDict):
-         state = np.array(list(state.values()), dtype=np.float32)
-     elif isinstance(state, np.ndarray):
-         state = state.astype(np.float32, copy=False)
+     def _is_shooting_phase(self, phase):
+         phase_text = str(phase or "").lower()
+         return "shoot" in phase_text or "стрел" in phase_text or "shooting" in phase_text
  
-     if not torch.is_tensor(state):
-         state = torch.tensor(state, dtype=torch.float32, device=dev)
-     else:
-         state = state.to(dev)
- 
-     # делаем батч-измерение (batch dimension)
-     if state.dim() == 1:
-         state = state.unsqueeze(0)
- 
- 
-     if sample > eps_threshold:
-diff --git a/play.py b/play.py
-index dbdfcb425e5616fc966dce3d598db9665c8adbcf..210f09223e762648c0d6ee4c2222dc01d6bf3207 100644
---- a/play.py
-+++ b/play.py
-@@ -1,40 +1,41 @@
- # play warhammer!
- import torch
- import torch.nn as nn
- import torch.optim as optim
- import torch.nn.functional as F
- device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
- 
- import pickle
- import os
- import sys
- from gym_mod.envs.warhamEnv import *
- import warnings
- warnings.filterwarnings("ignore")
- 
- from model.DQN import *
-+from model.utils import normalize_state_dict
- from model.utils import *
- from gym_mod.engine.game_io import ConsoleIO, set_active_io
- from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
- from gym_mod.envs.warhamEnv import roll_off_attacker_defender
- 
- 
- PLAY_EPS = float(os.getenv("PLAY_EPS", "")) if os.getenv("PLAY_EPS") is not None and os.getenv("PLAY_EPS") != "" else None
- PLAY_NO_EXPLORATION = os.getenv("PLAY_NO_EXPLORATION", "0") == "1"
- if PLAY_NO_EXPLORATION:
-     PLAY_EPS = 0.0
- 
- if sys.argv[1] == "None":
-     savePath = "models/"
- 
-     folders = os.listdir(savePath)
- 
-     envs = []
-     modelpth = []
- 
-     for i in folders:
-         
-         if os.path.isdir(savePath+i):
-             fs = os.listdir(savePath+i)
-             for j in fs:
-                 if j[-len(".pickle"):] == ".pickle":
-@@ -127,52 +128,52 @@ if verbose:
-     for unit in model:
-         unit_data = unit.showUnitData()
-         total_models_count += int(unit_data.get("#OfModels", 1))
-     _log(f"[action_space] total_models_count={total_models_count}")
-     move_num_keys = [
-         key for key in env.action_space.spaces.keys() if key.startswith("move_num_")
-     ]
-     _log(f"[action_space] move_num_keys_count={len(move_num_keys)}")
-     _log(f"[action_space] move_num_keys={sorted(move_num_keys)}")
- n_actions = [5,2,len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
- for i in range(len(model)):
-     n_actions.append(12)
- n_observations = len(state)
- 
- net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
- dueling = net_type == "dueling"
- if not dueling and isinstance(checkpoint, dict):
-     policy_state = checkpoint.get("policy_net", {})
-     if any(key.startswith("value_heads.") for key in policy_state):
-         dueling = True
- 
- policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
- target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
- optimizer = torch.optim.Adam(policy_net.parameters())
- 
--policy_net.load_state_dict(checkpoint['policy_net'])
--target_net.load_state_dict(checkpoint['target_net'])
-+policy_net.load_state_dict(normalize_state_dict(checkpoint['policy_net']))
-+target_net.load_state_dict(normalize_state_dict(checkpoint['target_net']))
- optimizer.load_state_dict(checkpoint['optimizer'])
- 
- policy_net.eval()
- target_net.eval()
- 
- isdone = False
- i = 0
- 
- if playInGUI == True:
-     env.reset(options={"m": model, "e": enemy, "playType": playInGUI, "Type": "big", "trunc": True})
- else:
-     env.reset(options={"m": model, "e": enemy, "playType": playInGUI, "Type": "big", "trunc": False})
- 
- env.io = io
- 
- reward = 0
- io.log("\nИнструкции:\n")
- io.log("Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.)")
- io.log("Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.)\n")
- 
- while isdone == False:
-     done, info = env.unwrapped.player()
-     state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-     shoot_mask = build_shoot_action_mask(env)
-     if PLAY_EPS is not None:
+     def eventFilter(self, obj, event):
+         if event.type() == QtCore.QEvent.KeyPress and self._pending_request:
+             kind = getattr(self._pending_request, "kind", "")
+             key = event.key()
+             text = event.text().lower()
+             if kind == "direction":
+                 if key == QtCore.Qt.Key_Up:
+                     self._submit_answer("up")
+                     return True
+                 if key == QtCore.Qt.Key_Down:
+                     self._submit_answer("down")
+                     return True
+                 if key == QtCore.Qt.Key_Left:
+                     self._submit_answer("left")
+                     return True
+                 if key == QtCore.Qt.Key_Right:
+                     self._submit_answer("right")

@@ -75,6 +75,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_events_stream = []
         self._model_events_current = []
         self._log_tabs = {}
+        self._log_tab_indices = {}
+        self._log_tab_programmatic_switch = False
+        self._last_manual_log_tab_index = None
         self._log_tab_defs = [
             ("player", "Все ходы игрока"),
             ("model", "Все ходы модели"),
@@ -83,6 +86,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._max_log_lines = 5000
         self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS.md")
         self._log_file_max_bytes = 5 * 1024 * 1024
+        self._last_active_side = None
         self._init_log_viewer()
         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
@@ -383,13 +387,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         fixed_font.setPointSize(10)
 
         self.log_tabs = QtWidgets.QTabWidget()
-        for key, label in self._log_tab_defs:
+        for index, (key, label) in enumerate(self._log_tab_defs):
             view = QtWidgets.QPlainTextEdit()
             view.setReadOnly(True)
             view.setFont(fixed_font)
             view.setMaximumBlockCount(self._max_log_lines)
             self._log_tabs[key] = view
+            self._log_tab_indices[key] = index
             self.log_tabs.addTab(view, label)
+        self.log_tabs.currentChanged.connect(self._on_log_tab_changed)
 
         self.log_only_current_turn = QtWidgets.QCheckBox("Показать только текущий ход")
         self.log_only_current_turn.toggled.connect(self._refresh_log_views)
@@ -503,9 +509,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.status_round.setText(f"Раунд: {state.get('round', '—')}")
         self.status_turn.setText(f"Ход: {state.get('turn', '—')}")
         self.status_phase.setText(f"Фаза: {state.get('phase', '—')}")
-        active = state.get("active")
+        active = state.get("active") or state.get("active_side")
         active_label = "Игрок" if active == "player" else "Модель" if active == "model" else "—"
         self.status_active.setText(f"Активен: {active_label}")
+        self._auto_switch_log_tab(active)
 
         vp = state.get("vp", {})
         cp = state.get("cp", {})
@@ -1003,6 +1010,26 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if self.state_watcher and self.state_watcher.state
             else None,
         )
+
+    def _auto_switch_log_tab(self, active_side):
+        if active_side not in ("player", "model"):
+            return
+        if active_side == self._last_active_side:
+            return
+        self._last_active_side = active_side
+        target_index = self._log_tab_indices.get(active_side)
+        if target_index is None:
+            return
+        self._log_tab_programmatic_switch = True
+        try:
+            self.log_tabs.setCurrentIndex(target_index)
+        finally:
+            self._log_tab_programmatic_switch = False
+
+    def _on_log_tab_changed(self, index):
+        if self._log_tab_programmatic_switch:
+            return
+        self._last_manual_log_tab_index = index
 
     def _is_movement_phase(self, phase):
         phase_text = str(phase or "").lower()
