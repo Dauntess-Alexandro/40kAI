@@ -276,6 +276,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._selected_unit_key = key
             self.update()
 
+    def center_on_unit(self, side, unit_id, immediate: bool = False) -> None:
+        key = (side, unit_id)
+        render = self._unit_by_key.get(key)
+        if render is None:
+            return
+        pan = QtCore.QPointF(
+            self.width() / 2 - render.center.x() * self._scale,
+            self.height() / 2 - render.center.y() * self._scale,
+        )
+        self._set_target_view(self._scale, pan, immediate=immediate)
+        self.update()
+
     def fit_to_view(self) -> None:
         if self._board_rect.isEmpty():
             return

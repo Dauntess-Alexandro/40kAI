@@ -35,6 +35,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._show_objective_radius = True
         self._units_by_key = {}
         self._unit_row_by_key = {}
+        self._last_focused_unit_key = None
 
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = OpenGLBoardWidget(cell_size=18)
@@ -1010,6 +1011,29 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if self.state_watcher and self.state_watcher.state
             else None,
         )
+        self._focus_unit_from_pending_request()
+
+    def _focus_unit_from_pending_request(self):
+        unit_id, side = self._resolve_active_unit()
+        if unit_id is None or side is None:
+            return
+        unit_key = (side, unit_id)
+        row = self._unit_row_by_key.get(unit_key)
+        if row is None:
+            row = self._find_row_for_unit(unit_key)
+        if row is None:
+            return
+        self.units_table.selectRow(row)
+        self.map_scene.select_unit(side, unit_id)
+        if unit_key == self._last_focused_unit_key:
+            return
+        item = self.units_table.item(row, 0)
+        if item is not None:
+            self.units_table.scrollToItem(
+                item, QtWidgets.QAbstractItemView.PositionAtCenter
+            )
+        self.map_scene.center_on_unit(side, unit_id)
+        self._last_focused_unit_key = unit_key
 
     def _auto_switch_log_tab(self, active_side):
         if active_side not in ("player", "model"):
