@@ -948,7 +948,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter.rotate(rotation_deg)
         painter.setOpacity(opacity)
         rect = QtCore.QRectF(-size / 2, -size / 2, size, size)
-        painter.drawPixmap(rect, pixmap)
+        source_rect = QtCore.QRectF(pixmap.rect())
+        painter.drawPixmap(rect, pixmap, source_rect)
         painter.restore()
 
     def _cell_center(self, col: int, row: int) -> QtCore.QPointF:
