@@ -10,6 +10,9 @@ Viewer tech findings ("Играть в GUI"):
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
+from pathlib import Path
+from time import perf_counter
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -80,6 +83,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             "units",
             "selection",
             "shooting",
+            "fx",
             "labels",
         ]
 
@@ -102,8 +106,26 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._cursor_world: Optional[QtCore.QPointF] = None
         self._error_message: Optional[str] = None
 
+        self._target_unit_id: Optional[int] = None
+        self._target_cell: Optional[Tuple[int, int]] = None
+        self._hover_cell: Optional[Tuple[int, int]] = None
+        self._t0: Optional[float] = None
+        self._fx_timer = QtCore.QTimer(self)
+        self._fx_timer.setInterval(16)
+        self._fx_timer.timeout.connect(self._tick_fx)
+        self._fx_pixmaps: Dict[str, QtGui.QPixmap] = {}
+        self._fx_tinted_cache: Dict[Tuple[str, int], QtGui.QPixmap] = {}
+        self._fx_initialized = False
+
         self.setMouseTracking(True)
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
+
+    def initializeGL(self) -> None:
+        super().initializeGL()
+        self._t0 = perf_counter()
+        self._load_fx_assets()
+        if not self._fx_timer.isActive():
+            self._fx_timer.start()
 
     def set_error_message(self, message: Optional[str]) -> None:
         self._error_message = message
@@ -199,6 +221,34 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._shoot_range = shoot_range
         self._show_objective_radius = bool(show_objective_radius)
         self._targets = targets
+        self.refresh_overlays()
+        self.update()
+
+    def set_active_unit(self, unit_id: Optional[int]) -> None:
+        self._active_unit_id = unit_id
+        self._active_unit_side = None
+        unit = self._find_unit_by_id(unit_id) if unit_id is not None else None
+        if unit is not None:
+            self._active_unit_side = unit.get("side")
+        self.refresh_overlays()
+        self.update()
+
+    def set_target_unit(self, unit_id: Optional[int]) -> None:
+        self._target_unit_id = unit_id
+        self._target_cell = None
+        self.update()
+
+    def set_target_cell(self, cell: Optional[Tuple[int, int]]) -> None:
+        self._target_cell = cell
+        self._target_unit_id = None
+        self.update()
+
+    def set_hover_cell(self, cell: Optional[Tuple[int, int]]) -> None:
+        self._hover_cell = cell
+        self.update()
+
+    def set_active_phase(self, phase: Optional[str]) -> None:
+        self._phase = phase or ""
         self.refresh_overlays()
         self.update()
 
@@ -662,6 +712,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 self._draw_selection_layer(painter)
             elif layer_name == "shooting":
                 self._draw_shooting_layer(painter)
+            elif layer_name == "fx":
+                self._draw_fx_layer(painter)
             elif layer_name == "labels":
                 self._draw_labels_layer(painter)
 
@@ -738,3 +790,160 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter.drawText(pos, label)
         for label, pos in self._objective_labels:
             painter.drawText(pos, label)
+
+    def _tick_fx(self) -> None:
+        if self.isVisible():
+            self.update()
+
+    def _load_fx_assets(self) -> None:
+        if self._fx_initialized:
+            return
+        assets_dir = Path(__file__).resolve().parent / "assets" / "fx"
+        for name in ("glow_soft", "ring_soft", "tesseract_segments"):
+            path = assets_dir / f"{name}.png"
+            if not path.exists():
+                continue
+            image = QtGui.QImage(str(path))
+            if image.isNull():
+                continue
+            pixmap = QtGui.QPixmap.fromImage(image)
+            self._fx_pixmaps[name] = pixmap
+        self._fx_initialized = True
+
+    def _find_unit_by_id(self, unit_id: Optional[int]) -> Optional[dict]:
+        if unit_id is None:
+            return None
+        for unit in self._state.get("units", []) or []:
+            if unit.get("id") == unit_id:
+                return unit
+        return None
+
+    def _unit_render_for_unit(self, unit: Optional[dict]) -> Optional[UnitRender]:
+        if not unit:
+            return None
+        key = (unit.get("side"), unit.get("id"))
+        return self._unit_by_key.get(key)
+
+    def _is_necron(self, unit: Optional[dict]) -> bool:
+        if not unit:
+            return False
+        faction = str(unit.get("faction") or "")
+        name = str(unit.get("name") or "")
+        return faction.lower() == "necrons" or "necron" in name.lower()
+
+    def _fx_color_for_unit(self, unit: Optional[dict]) -> Tuple[QtGui.QColor, float]:
+        if self._is_necron(unit):
+            return QtGui.QColor(100, 255, 140), 1.0
+        return QtGui.QColor(180, 220, 255), 0.35
+
+    def _tinted_pixmap(self, name: str, color: QtGui.QColor) -> Optional[QtGui.QPixmap]:
+        base = self._fx_pixmaps.get(name)
+        if base is None:
+            return None
+        key = (name, color.rgba())
+        cached = self._fx_tinted_cache.get(key)
+        if cached is not None:
+            return cached
+        tinted = QtGui.QPixmap(base.size())
+        tinted.fill(QtCore.Qt.transparent)
+        painter = QtGui.QPainter(tinted)
+        painter.drawPixmap(0, 0, base)
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceIn)
+        painter.fillRect(tinted.rect(), color)
+        painter.end()
+        self._fx_tinted_cache[key] = tinted
+        return tinted
+
+    def _draw_fx_layer(self, painter: QtGui.QPainter) -> None:
+        if not self._fx_pixmaps:
+            return
+        t = (perf_counter() - self._t0) if self._t0 is not None else 0.0
+        pulse = 0.5 + 0.5 * math.sin(2 * math.pi * t * 1.2)
+
+        active_unit = self._find_unit_by_id(self._active_unit_id)
+        active_render = self._unit_render_for_unit(active_unit)
+        if active_render:
+            color, strength = self._fx_color_for_unit(active_unit)
+            glow_pixmap = self._tinted_pixmap("glow_soft", color)
+            ring_pixmap = self._tinted_pixmap("ring_soft", color)
+            glow_alpha = 0.45 * (0.7 + 0.3 * pulse) * strength
+            ring_alpha = 0.55 * (0.7 + 0.3 * pulse) * strength
+            glow_size = active_render.radius * 4.2 * (0.95 + 0.08 * pulse)
+            ring_size = active_render.radius * 3.6 * (0.95 + 0.08 * pulse)
+            painter.save()
+            painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+            self._draw_fx_sprite(painter, glow_pixmap, active_render.center, glow_size, glow_alpha)
+            painter.restore()
+            painter.save()
+            painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+            self._draw_fx_sprite(painter, ring_pixmap, active_render.center, ring_size, ring_alpha)
+            painter.restore()
+
+        target_unit = self._find_unit_by_id(self._target_unit_id)
+        target_render = self._unit_render_for_unit(target_unit)
+        target_center = None
+        target_radius = None
+        if target_render:
+            target_center = target_render.center
+            target_radius = target_render.radius
+        elif self._target_cell is not None:
+            target_center = self._cell_center(*self._target_cell)
+            target_radius = self.cell_size * 0.4
+        if target_center is not None and target_radius is not None:
+            color, strength = self._fx_color_for_unit(target_unit)
+            ring_pixmap = self._tinted_pixmap("ring_soft", color)
+            seg_pixmap = self._tinted_pixmap("tesseract_segments", color)
+            ring_alpha = 0.5 * (0.7 + 0.3 * pulse) * strength
+            seg_alpha = 0.55 * (0.8 + 0.2 * pulse) * strength
+            ring_size = target_radius * 4.4 * (0.95 + 0.08 * pulse)
+            seg_size = target_radius * 5.0 * (0.98 + 0.05 * pulse)
+            painter.save()
+            painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+            self._draw_fx_sprite(painter, ring_pixmap, target_center, ring_size, ring_alpha)
+            angle = math.degrees(t * 0.6)
+            self._draw_fx_sprite(
+                painter,
+                seg_pixmap,
+                target_center,
+                seg_size,
+                seg_alpha,
+                rotation_deg=angle,
+            )
+            painter.restore()
+
+        if self._hover_cell is not None:
+            hover_center = self._cell_center(*self._hover_cell)
+            hover_color = QtGui.QColor(200, 230, 255)
+            hover_pixmap = self._tinted_pixmap("glow_soft", hover_color)
+            hover_alpha = 0.25 * (0.8 + 0.2 * pulse)
+            hover_size = self.cell_size * 2.2
+            painter.save()
+            painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+            self._draw_fx_sprite(painter, hover_pixmap, hover_center, hover_size, hover_alpha)
+            painter.restore()
+
+    def _draw_fx_sprite(
+        self,
+        painter: QtGui.QPainter,
+        pixmap: Optional[QtGui.QPixmap],
+        center: QtCore.QPointF,
+        size: float,
+        opacity: float,
+        rotation_deg: float = 0.0,
+    ) -> None:
+        if pixmap is None or opacity <= 0 or size <= 0:
+            return
+        painter.save()
+        painter.translate(center)
+        if rotation_deg:
+            painter.rotate(rotation_deg)
+        painter.setOpacity(opacity)
+        rect = QtCore.QRectF(-size / 2, -size / 2, size, size)
+        painter.drawPixmap(rect, pixmap)
+        painter.restore()
+
+    def _cell_center(self, col: int, row: int) -> QtCore.QPointF:
+        return QtCore.QPointF(
+            col * self.cell_size + self.cell_size / 2,
+            row * self.cell_size + self.cell_size / 2,
+        )
