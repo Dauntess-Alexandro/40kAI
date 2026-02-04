@@ -172,6 +172,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._target_unit_id: Optional[int] = None
         self._target_cell: Optional[Tuple[int, int]] = None
         self._hover_cell: Optional[Tuple[int, int]] = None
+        self._hover_unit_key: Optional[Tuple[str, int]] = None
+        self._hover_tooltip_text: Optional[str] = None
+        self._hover_tooltip_ts: float = 0.0
+        self._hover_tooltip_interval_s = 1.0 / 30.0
         self._t0: Optional[float] = None
         self._fx_timer = QtCore.QTimer(self)
         self._fx_timer.setInterval(16)
@@ -203,6 +207,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             )
             return
         self.set_error_message(None)
+        self._clear_hover_tooltip()
         board = self._state.get("board", {})
         width = int(board.get("width") or 60)
         height = int(board.get("height") or 40)
@@ -732,6 +737,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         world = self._map_to_world(pos)
         self._cursor_world = self._snap_world_to_cell(world)
         self._update_hover_cell(world)
+        self._update_hover_tooltip(event, world)
         self.update()
         super().mouseMoveEvent(event)
 
@@ -744,6 +750,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def leaveEvent(self, event: QtCore.QEvent) -> None:
         self._hover_cell = None
+        self._clear_hover_tooltip()
         self.update()
         super().leaveEvent(event)
 
@@ -774,6 +781,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._selected_unit_key = closest_key
             self.unit_selected.emit(closest_key[0], closest_key[1])
         self.update()
+
+    def _clear_hover_tooltip(self) -> None:
+        if self._hover_unit_key is None and not self._hover_tooltip_text:
+            return
+        self._hover_unit_key = None
+        self._hover_tooltip_text = None
+        QtWidgets.QToolTip.hideText()
 
     def paintGL(self) -> None:
         painter = QtGui.QPainter(self)
@@ -1568,3 +1582,136 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._hover_cell = None
             return
         self._hover_cell = (col, row)
+
+    def _update_hover_tooltip(self, event: QtGui.QMouseEvent, world: QtCore.QPointF) -> None:
+        if self._board_rect.isEmpty():
+            self._clear_hover_tooltip()
+            return
+        unit_key = self._unit_key_at_world(world)
+        if unit_key is None:
+            self._clear_hover_tooltip()
+            return
+        now = monotonic()
+        needs_refresh = unit_key != self._hover_unit_key
+        if not needs_refresh and now - self._hover_tooltip_ts < self._hover_tooltip_interval_s:
+            return
+        unit = self._state_unit(unit_key)
+        if not unit:
+            self._clear_hover_tooltip()
+            return
+        tooltip_text = self._build_unit_tooltip(unit)
+        if needs_refresh or tooltip_text != self._hover_tooltip_text:
+            self._hover_tooltip_text = tooltip_text
+        self._hover_unit_key = unit_key
+        self._hover_tooltip_ts = now
+        anchor = self._tooltip_anchor_for_unit(unit_key, event.globalPosition().toPoint())
+        QtWidgets.QToolTip.showText(anchor, tooltip_text, self)
+
+    def _unit_key_at_world(self, world: QtCore.QPointF) -> Optional[Tuple[str, int]]:
+        if self._board_rect.isEmpty():
+            return None
+        col = int(world.x() // self.cell_size)
+        row = int(world.y() // self.cell_size)
+        if col < 0 or row < 0 or col >= self._board_width or row >= self._board_height:
+            return None
+        candidates = [
+            unit
+            for unit in self._units_state
+            if int(unit.get("x", -1)) == col and int(unit.get("y", -1)) == row
+        ]
+        closest_key = None
+        closest_dist = None
+        for unit in candidates:
+            key = (unit.get("side"), unit.get("id"))
+            render = self._unit_by_key.get(key)
+            if render is None:
+                continue
+            dx = world.x() - render.center.x()
+            dy = world.y() - render.center.y()
+            distance = (dx * dx + dy * dy) ** 0.5
+            if closest_dist is None or distance < closest_dist:
+                closest_dist = distance
+                closest_key = key
+        if closest_key:
+            return closest_key
+        closest_key = None
+        closest_dist = None
+        for render in self._units:
+            dx = world.x() - render.center.x()
+            dy = world.y() - render.center.y()
+            distance = (dx * dx + dy * dy) ** 0.5
+            if distance <= render.radius:
+                if closest_dist is None or distance < closest_dist:
+                    closest_dist = distance
+                    closest_key = render.key
+        return closest_key
+
+    def _tooltip_anchor_for_unit(
+        self,
+        unit_key: Tuple[str, int],
+        fallback_pos: QtCore.QPoint,
+    ) -> QtCore.QPoint:
+        render = self._unit_by_key.get(unit_key)
+        if render is None:
+            return fallback_pos
+        screen_pos = self._view_transform().map(render.center)
+        offset = QtCore.QPoint(12, -12)
+        return self.mapToGlobal(QtCore.QPoint(int(screen_pos.x()), int(screen_pos.y()))) + offset
+
+    def _build_unit_tooltip(self, unit: dict) -> str:
+        title = self._unit_display_name(unit)
+        models = unit.get("models", "—")
+        wounds = unit.get("wounds", unit.get("hp", "—"))
+        cover = self._tooltip_cover_status(unit)
+        weapon_line = self._tooltip_weapon_line(unit)
+        unit_id = unit.get("id", "—")
+        los = self._tooltip_los_status(unit)
+        mods = self._tooltip_mods_status(unit)
+        lines = [
+            title,
+            f"Models / Wounds: {models} / {wounds}",
+            f"Cover: {cover}",
+            weapon_line,
+            f"Unit ID: {unit_id}",
+            f"LOS: {los}",
+            f"Mods: {mods}",
+        ]
+        return "\n".join(lines)
+
+    def _unit_display_name(self, unit: dict) -> str:
+        name = str(unit.get("name") or "").strip()
+        unit_type = str(unit.get("type") or unit.get("unit_type") or "").strip()
+        if name and unit_type and unit_type.lower() not in name.lower():
+            return f"{name} ({unit_type})"
+        if name:
+            return name
+        if unit_type:
+            return unit_type
+        return "Юнит"
+
+    def _tooltip_cover_status(self, unit: dict) -> str:
+        return "открыт"
+
+    def _tooltip_weapon_line(self, unit: dict) -> str:
+        weapon_name = (
+            unit.get("weapon_name")
+            or unit.get("weapon")
+            or unit.get("weapons")
+            or "—"
+        )
+        weapon_range = self._resolve_weapon_range(unit) or "—"
+        bs = unit.get("bs") or unit.get("BS") or unit.get("ballistic_skill") or "—"
+        return f"Weapon: {weapon_name} | Range {weapon_range} | BS {bs}"
+
+    def _resolve_weapon_range(self, unit: dict) -> Optional[int]:
+        for key in ("range", "weapon_range", "shoot_range", "shooting_range"):
+            value = unit.get(key)
+            if value is not None:
+                return value
+        return None
+
+    def _tooltip_los_status(self, unit: dict) -> str:
+        return "TBD"
+
+    def _tooltip_mods_status(self, unit: dict) -> str:
+        return "—"
