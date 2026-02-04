@@ -1,67 +1,388 @@
-diff --git a/train.py b/train.py
-index 0ce915386482e064697fb0ed5e575b67785e3f88..0378fd3cbb883796878fb97ebad036e116908994 100644
---- a/train.py
-+++ b/train.py
-@@ -15,50 +15,62 @@ import time
- import multiprocessing as mp
- from tqdm import tqdm
- from gym_mod.envs.warhamEnv import *
- from gym_mod.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
+diff --git a/eval.py b/eval.py
+index 86f154028cb4565a0911e8e5e863404212e484d0..2a2844bb9c9d39ad401e8849193e049a3fb7de7b 100644
+--- a/eval.py
++++ b/eval.py
+@@ -1,39 +1,40 @@
+ import argparse
+ import os
+ import pickle
+ import sys
+ from collections import Counter
+ from statistics import median
+ from typing import Optional
+ 
+ import torch
+ 
  from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
- from gymnasium import spaces
+ from gym_mod.engine.mission import check_end_of_battle
+ from gym_mod.envs.warhamEnv import roll_off_attacker_defender
+ from model.DQN import DQN
++from model.utils import normalize_state_dict
+ from model.utils import build_shoot_action_mask, convertToDict, unwrap_env
  
- from model.DQN import *
- from model.memory import *
- from model.utils import *
  
+ def log(message: str) -> None:
+     if message.startswith("["):
+         print(f"[EVAL]{message}", flush=True)
+     else:
+         print(f"[EVAL] {message}", flush=True)
+ 
+ 
+ def load_latest_model(model_path: Optional[str] = None):
+     if model_path and model_path != "None":
+         pickle_path = model_path
+         checkpoint_path = model_path[:-len("pickle")] + "pth"
+     else:
+         save_path = "models/"
+         folders = os.listdir(save_path) if os.path.isdir(save_path) else []
+         envs = []
+         modelpth = []
+ 
+         for folder in folders:
+             full = os.path.join(save_path, folder)
+             if os.path.isdir(full):
+                 files = os.listdir(full)
+                 for filename in files:
+@@ -194,52 +195,52 @@ def main():
+     post_deploy_setup(log_fn=None)
+     env_unwrapped.attacker_side = attacker_side
+     env_unwrapped.defender_side = defender_side
+ 
+     state, info = env.reset(
+         options={"m": model_units, "e": enemy_units, "Type": "big", "trunc": True}
+     )
+     n_actions = [5, 2, len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
+     for _ in range(len(model_units)):
+         n_actions.append(12)
+     n_observations = len(state)
+ 
+     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+ 
+     net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
+     dueling = net_type == "dueling"
+     if not dueling and isinstance(checkpoint, dict):
+         policy_state = checkpoint.get("policy_net", {})
+         if any(key.startswith("value_heads.") for key in policy_state):
+             dueling = True
+ 
+     policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+     target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+     optimizer = torch.optim.Adam(policy_net.parameters())
+ 
+-    policy_net.load_state_dict(checkpoint["policy_net"])
+-    target_net.load_state_dict(checkpoint["target_net"])
++    policy_net.load_state_dict(normalize_state_dict(checkpoint["policy_net"]))
++    target_net.load_state_dict(normalize_state_dict(checkpoint["target_net"]))
+     optimizer.load_state_dict(checkpoint["optimizer"])
+ 
+     policy_net.eval()
+     target_net.eval()
+ 
+     log(f"Старт оценки: игр={games}, epsilon={epsilon:.3f}.")
+ 
+     wins = 0
+     losses = 0
+     draws = 0
+     vp_diffs = []
+     end_reasons = Counter()
+ 
+     for idx in range(1, games + 1):
+         winner, end_reason, vp_diff, model_vp, enemy_vp = run_episode(
+             env, model_units, enemy_units, policy_net, epsilon, device
+         )
+         vp_diffs.append(vp_diff)
+         end_reasons[end_reason] += 1
+         if winner == "model":
+             wins += 1
+         elif winner == "enemy":
+             losses += 1
+         else:
+             draws += 1
+diff --git a/gym_mod/gym_mod/engine/game_controller.py b/gym_mod/gym_mod/engine/game_controller.py
+index 563f7393169ad0b83ac9e35c6836b4243672240b..2d08fa5aec89211db0ac14f09ea183d9974de54d 100644
+--- a/gym_mod/gym_mod/engine/game_controller.py
++++ b/gym_mod/gym_mod/engine/game_controller.py
+@@ -1,39 +1,39 @@
+ from __future__ import annotations
+ 
+ import os
+ import pickle
+ import queue
+ import threading
+ from typing import Optional
+ 
+ import torch
+ 
+ from gym_mod.engine.game_io import GuiIO, set_active_io
+ from gym_mod.engine.state_export import DEFAULT_STATE_PATH
+ from model.DQN import DQN
+-from model.utils import select_action, convertToDict, build_shoot_action_mask
++from model.utils import select_action, convertToDict, build_shoot_action_mask, normalize_state_dict
+ from gym_mod.envs.warhamEnv import roll_off_attacker_defender
+ 
+ 
+ class GameController:
+     def __init__(self, model_path: Optional[str] = None, state_path: Optional[str] = None):
+         self.model_path = model_path or "None"
+         self.state_path = state_path or os.getenv("STATE_JSON_PATH", DEFAULT_STATE_PATH)
+         self._request_queue: queue.Queue = queue.Queue()
+         self._answer_queue: queue.Queue = queue.Queue()
+         self._io = GuiIO(self._request_queue, self._answer_queue)
+         self._thread: Optional[threading.Thread] = None
+         self._finished = False
+         self._started = False
+ 
+     @property
+     def is_finished(self) -> bool:
+         return self._finished
+ 
+     def start(self):
+         if self._started:
+             return self._consume_messages(), self._next_request(block=False)
+         self._started = True
+         self._thread = threading.Thread(target=self._run_game_loop, daemon=True)
+         self._thread.start()
+         request = self._next_request(block=True)
+@@ -145,64 +145,64 @@ class GameController:
+             deploy_only_war(
+                 model_units=model,
+                 enemy_units=enemy,
+                 b_len=env.unwrapped.b_len,
+                 b_hei=env.unwrapped.b_hei,
+                 attacker_side=attacker_side,
+                 log_fn=self._io.log,
+             )
+             post_deploy_setup(log_fn=self._io.log)
+ 
+             env.attacker_side = attacker_side
+             env.defender_side = defender_side
+ 
+             state, info = env.reset(
+                 options={"m": model, "e": enemy, "playType": True, "Type": "big", "trunc": True}
+             )
+ 
+             n_actions = [5, 2, len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
+             for _ in range(len(model)):
+                 n_actions.append(12)
+             n_observations = len(state)
+ 
+             net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
+             dueling = net_type == "dueling"
+             if not dueling and isinstance(checkpoint, dict):
+-                policy_state = checkpoint.get("policy_net", {})
++                policy_state = normalize_state_dict(checkpoint.get("policy_net", {}))
+                 if any(key.startswith("advantage_heads.") for key in policy_state.keys()):
+                     dueling = True
+ 
+             net_label = "dueling" if dueling else "basic"
+             net_source = "net_type" if net_type else "state_dict"
+             self._io.log(f"[MODEL] Архитектура сети: {net_label} (источник: {net_source})")
+ 
+             policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+             target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+             optimizer = torch.optim.Adam(policy_net.parameters())
+ 
+-            policy_net.load_state_dict(checkpoint["policy_net"])
+-            target_net.load_state_dict(checkpoint["target_net"])
++            policy_net.load_state_dict(normalize_state_dict(checkpoint["policy_net"]))
++            target_net.load_state_dict(normalize_state_dict(checkpoint["target_net"]))
+             optimizer.load_state_dict(checkpoint["optimizer"])
+ 
+             policy_net.eval()
+             target_net.eval()
+ 
+             self._io.log(
+                 "\nИнструкции:\nИгрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).\n"
+                 "Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).\n"
+             )
+ 
+             is_done = False
+             i = 0
+             reward = 0
+ 
+             def update_board(target_env):
+                 board_env = target_env
+                 if not hasattr(board_env, "updateBoard") and hasattr(board_env, "unwrapped"):
+                     board_env = board_env.unwrapped
+                 if hasattr(board_env, "updateBoard"):
+                     board_env.updateBoard()
+ 
+             while not is_done:
+                 done, info = env.unwrapped.player()
+                 update_board(env)
+                 state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+diff --git a/model/utils.py b/model/utils.py
+index b8e0e13aa3c049e5726e011d78845bc5d6f64454..e51b7f4120cb426d30c1b10588e9587e770a807d 100644
+--- a/model/utils.py
++++ b/model/utils.py
+@@ -6,50 +6,69 @@ import numpy as np
+ import os
+ import json
+ from time import perf_counter
+ 
+ 
+ import random
+ import math
+ 
+ from model.memory import Transition
+ from gym_mod.engine.utils import distance
+ 
+ with open(os.path.abspath("hyperparams.json")) as j:
+     data = json.loads(j.read())
+ 
+ EPS_START = data["eps_start"]
+ EPS_END = data["eps_end"]
+ EPS_DECAY = data["eps_decay"]
+ BATCH_SIZE = data["batch_size"]
+ GAMMA = data["gamma"]
+ 
+ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+ 
+ def unwrap_env(env):
+     return getattr(env, "unwrapped", env)
+ 
++def normalize_state_dict(state_dict):
++    if not isinstance(state_dict, dict):
++        return state_dict
++    prefixes = ("_orig_mod.", "module.")
++    needs_strip = any(
++        any(key.startswith(prefix) for prefix in prefixes) for key in state_dict.keys()
++    )
++    if not needs_strip:
++        return state_dict
++    normalized = {}
++    for key, value in state_dict.items():
++        new_key = key
++        for prefix in prefixes:
++            if new_key.startswith(prefix):
++                new_key = new_key[len(prefix):]
++                break
++        normalized[new_key] = value
++    return normalized
++
+ def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None):
+     sample = random.random()
+     decay_steps = max(1.0, float(EPS_DECAY))
+     progress = min(float(steps_done) / decay_steps, 1.0)
+     eps_threshold = EPS_START + (EPS_END - EPS_START) * progress
+     steps_done += 1
+     dev = next(policy_net.parameters()).device
+ 
+     
+     if isinstance(state, collections.OrderedDict):
+         state = np.array(list(state.values()), dtype=np.float32)
+     elif isinstance(state, np.ndarray):
+         state = state.astype(np.float32, copy=False)
+ 
+     if not torch.is_tensor(state):
+         state = torch.tensor(state, dtype=torch.float32, device=dev)
+     else:
+         state = state.to(dev)
+ 
+     # делаем батч-измерение (batch dimension)
+     if state.dim() == 1:
+         state = state.unsqueeze(0)
+ 
+ 
+     if sample > eps_threshold:
+diff --git a/play.py b/play.py
+index dbdfcb425e5616fc966dce3d598db9665c8adbcf..210f09223e762648c0d6ee4c2222dc01d6bf3207 100644
+--- a/play.py
++++ b/play.py
+@@ -1,40 +1,41 @@
+ # play warhammer!
  import torch
  import torch.nn as nn
  import torch.optim as optim
  import torch.nn.functional as F
  device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
- import torch
- print("[DEVICE CHECK] cuda:", torch.cuda.is_available())
- if torch.cuda.is_available():
-     print("[DEVICE CHECK] name:", torch.cuda.get_device_name(0))
  
- 
+ import pickle
+ import os
+ import sys
+ from gym_mod.envs.warhamEnv import *
  import warnings
- warnings.filterwarnings("ignore") 
+ warnings.filterwarnings("ignore")
  
-+# ===== torch inductor warnings/behavior =====
-+INDUCTOR_CUDAGRAPH_WARN_LIMIT = os.getenv("INDUCTOR_CUDAGRAPH_WARN_LIMIT")
-+INDUCTOR_SKIP_DYNAMIC_CUDAGRAPHS = os.getenv("INDUCTOR_SKIP_DYNAMIC_CUDAGRAPHS", "0") == "1"
-+if INDUCTOR_CUDAGRAPH_WARN_LIMIT is not None:
-+    if INDUCTOR_CUDAGRAPH_WARN_LIMIT.lower() in ("none", "off", "disable"):
-+        torch._inductor.config.triton.cudagraph_dynamic_shape_warn_limit = None
-+    else:
-+        torch._inductor.config.triton.cudagraph_dynamic_shape_warn_limit = int(INDUCTOR_CUDAGRAPH_WARN_LIMIT)
-+if INDUCTOR_SKIP_DYNAMIC_CUDAGRAPHS:
-+    torch._inductor.config.triton.cudagraph_skip_dynamic_graphs = True
-+# ==========================================
-+
- with open(os.path.abspath("hyperparams.json")) as j:
-     data = json.loads(j.read())
+ from model.DQN import *
++from model.utils import normalize_state_dict
+ from model.utils import *
+ from gym_mod.engine.game_io import ConsoleIO, set_active_io
+ from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
+ from gym_mod.envs.warhamEnv import roll_off_attacker_defender
  
- # ===== algo flags =====
- DOUBLE_DQN_ENABLED = os.getenv("DOUBLE_DQN_ENABLED", "1") == "1"
- DUELING_ENABLED = os.getenv("DUELING_ENABLED", "1") == "1"
- REWARD_DEBUG = os.getenv("REWARD_DEBUG", "0") == "1"
- REWARD_DEBUG_EVERY = int(os.getenv("REWARD_DEBUG_EVERY", "200"))
- # ===== train logging =====
- TRAIN_LOG_ENABLED = os.getenv("TRAIN_LOG_ENABLED", "1") == "1"
- TRAIN_LOG_EVERY_UPDATES = int(os.getenv("TRAIN_LOG_EVERY_UPDATES", "200"))
- TRAIN_LOG_TO_FILE = os.getenv("TRAIN_LOG_TO_FILE", "1") == "1"
- TRAIN_LOG_TO_CONSOLE = os.getenv("TRAIN_LOG_TO_CONSOLE", "0") == "1"
- TRAIN_DEBUG = os.getenv("TRAIN_DEBUG", "0") == "1"
- LOG_EVERY = int(os.getenv("LOG_EVERY", "200"))
- if TRAIN_LOG_EVERY_UPDATES < 1:
-     TRAIN_LOG_EVERY_UPDATES = 1
- if TRAIN_DEBUG:
-     TRAIN_LOG_EVERY_UPDATES = min(TRAIN_LOG_EVERY_UPDATES, 50)
- # =========================
- # ===== per + n-step =====
- PER_ENABLED = os.getenv("PER_ENABLED", "1") == "1"
- PER_ALPHA = float(os.getenv("PER_ALPHA", "0.6"))
- PER_BETA_START = float(os.getenv("PER_BETA_START", "0.4"))
- PER_BETA_FRAMES = int(os.getenv("PER_BETA_FRAMES", "200000"))
+ 
+ PLAY_EPS = float(os.getenv("PLAY_EPS", "")) if os.getenv("PLAY_EPS") is not None and os.getenv("PLAY_EPS") != "" else None
+ PLAY_NO_EXPLORATION = os.getenv("PLAY_NO_EXPLORATION", "0") == "1"
+ if PLAY_NO_EXPLORATION:
+     PLAY_EPS = 0.0
+ 
+ if sys.argv[1] == "None":
+     savePath = "models/"
+ 
+     folders = os.listdir(savePath)
+ 
+     envs = []
+     modelpth = []
+ 
+     for i in folders:
+         
+         if os.path.isdir(savePath+i):
+             fs = os.listdir(savePath+i)
+             for j in fs:
+                 if j[-len(".pickle"):] == ".pickle":
+@@ -127,52 +128,52 @@ if verbose:
+     for unit in model:
+         unit_data = unit.showUnitData()
+         total_models_count += int(unit_data.get("#OfModels", 1))
+     _log(f"[action_space] total_models_count={total_models_count}")
+     move_num_keys = [
+         key for key in env.action_space.spaces.keys() if key.startswith("move_num_")
+     ]
+     _log(f"[action_space] move_num_keys_count={len(move_num_keys)}")
+     _log(f"[action_space] move_num_keys={sorted(move_num_keys)}")
+ n_actions = [5,2,len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
+ for i in range(len(model)):
+     n_actions.append(12)
+ n_observations = len(state)
+ 
+ net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
+ dueling = net_type == "dueling"
+ if not dueling and isinstance(checkpoint, dict):
+     policy_state = checkpoint.get("policy_net", {})
+     if any(key.startswith("value_heads.") for key in policy_state):
+         dueling = True
+ 
+ policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+ target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+ optimizer = torch.optim.Adam(policy_net.parameters())
+ 
+-policy_net.load_state_dict(checkpoint['policy_net'])
+-target_net.load_state_dict(checkpoint['target_net'])
++policy_net.load_state_dict(normalize_state_dict(checkpoint['policy_net']))
++target_net.load_state_dict(normalize_state_dict(checkpoint['target_net']))
+ optimizer.load_state_dict(checkpoint['optimizer'])
+ 
+ policy_net.eval()
+ target_net.eval()
+ 
+ isdone = False
+ i = 0
+ 
+ if playInGUI == True:
+     env.reset(options={"m": model, "e": enemy, "playType": playInGUI, "Type": "big", "trunc": True})
+ else:
+     env.reset(options={"m": model, "e": enemy, "playType": playInGUI, "Type": "big", "trunc": False})
+ 
+ env.io = io
+ 
+ reward = 0
+ io.log("\nИнструкции:\n")
+ io.log("Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.)")
+ io.log("Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.)\n")
+ 
+ while isdone == False:
+     done, info = env.unwrapped.player()
+     state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+     shoot_mask = build_shoot_action_mask(env)
+     if PLAY_EPS is not None:

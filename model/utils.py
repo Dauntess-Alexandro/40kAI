@@ -28,6 +28,25 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def unwrap_env(env):
     return getattr(env, "unwrapped", env)
 
+def normalize_state_dict(state_dict):
+    if not isinstance(state_dict, dict):
+        return state_dict
+    prefixes = ("_orig_mod.", "module.")
+    needs_strip = any(
+        any(key.startswith(prefix) for prefix in prefixes) for key in state_dict.keys()
+    )
+    if not needs_strip:
+        return state_dict
+    normalized = {}
+    for key, value in state_dict.items():
+        new_key = key
+        for prefix in prefixes:
+            if new_key.startswith(prefix):
+                new_key = new_key[len(prefix):]
+                break
+        normalized[new_key] = value
+    return normalized
+
 def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None):
     sample = random.random()
     decay_steps = max(1.0, float(EPS_DECAY))

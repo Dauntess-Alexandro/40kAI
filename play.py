@@ -13,6 +13,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from model.DQN import *
+from model.utils import normalize_state_dict
 from model.utils import *
 from gym_mod.engine.game_io import ConsoleIO, set_active_io
 from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
@@ -149,8 +150,8 @@ policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
 target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
 optimizer = torch.optim.Adam(policy_net.parameters())
 
-policy_net.load_state_dict(checkpoint['policy_net'])
-target_net.load_state_dict(checkpoint['target_net'])
+policy_net.load_state_dict(normalize_state_dict(checkpoint['policy_net']))
+target_net.load_state_dict(normalize_state_dict(checkpoint['target_net']))
 optimizer.load_state_dict(checkpoint['optimizer'])
 
 policy_net.eval()

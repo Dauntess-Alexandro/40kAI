@@ -12,6 +12,7 @@ from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
 from gym_mod.engine.mission import check_end_of_battle
 from gym_mod.envs.warhamEnv import roll_off_attacker_defender
 from model.DQN import DQN
+from model.utils import normalize_state_dict
 from model.utils import build_shoot_action_mask, convertToDict, unwrap_env
 
 
@@ -216,8 +217,8 @@ def main():
     target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
     optimizer = torch.optim.Adam(policy_net.parameters())
 
-    policy_net.load_state_dict(checkpoint["policy_net"])
-    target_net.load_state_dict(checkpoint["target_net"])
+    policy_net.load_state_dict(normalize_state_dict(checkpoint["policy_net"]))
+    target_net.load_state_dict(normalize_state_dict(checkpoint["target_net"]))
     optimizer.load_state_dict(checkpoint["optimizer"])
 
     policy_net.eval()
