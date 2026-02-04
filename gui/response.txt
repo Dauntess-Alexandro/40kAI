@@ -4148,3 +4148,33 @@ Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move
 Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
 Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
 Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+[MODEL] pickle=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-22-938594.pickle
+[MODEL] checkpoint=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-22-938594.pth
+Roll-off Attacker/Defender: enemy=1 model=3 -> attacker=model
+Юниты: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]
+[DEPLOY] Order: model first, alternating
+[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (52,3)
+[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (25,33)
+[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (28,2)
+[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (24,37)
+[MISSION Only War] Post-deploy: currently no post-deploy units supported
+[MODEL] Архитектура сети: dueling (источник: net_type)
+Ошибка игры: Error(s) in loading state_dict for DQN:
+	Missing key(s) in state_dict: "layer1.weight", "layer1.bias", "layer2.weight", "layer2.bias", "value_heads.0.weight", "value_heads.0.bias", "value_heads.1.weight", "value_heads.1.bias", "value_heads.2.weight", "value_heads.2.bias", "value_heads.3.weight", "value_heads.3.bias", "value_heads.4.weight", "value_heads.4.bias", "value_heads.5.weight", "value_heads.5.bias", "value_heads.6.weight", "value_heads.6.bias", "value_heads.7.weight", "value_heads.7.bias", "advantage_heads.0.weight", "advantage_heads.0.bias", "advantage_heads.1.weight", "advantage_heads.1.bias", "advantage_heads.2.weight", "advantage_heads.2.bias", "advantage_heads.3.weight", "advantage_heads.3.bias", "advantage_heads.4.weight", "advantage_heads.4.bias", "advantage_heads.5.weight", "advantage_heads.5.bias", "advantage_heads.6.weight", "advantage_heads.6.bias", "advantage_heads.7.weight", "advantage_heads.7.bias". 
+	Unexpected key(s) in state_dict: "_orig_mod.layer1.weight", "_orig_mod.layer1.bias", "_orig_mod.layer2.weight", "_orig_mod.layer2.bias", "_orig_mod.value_heads.0.weight", "_orig_mod.value_heads.0.bias", "_orig_mod.value_heads.1.weight", "_orig_mod.value_heads.1.bias", "_orig_mod.value_heads.2.weight", "_orig_mod.value_heads.2.bias", "_orig_mod.value_heads.3.weight", "_orig_mod.value_heads.3.bias", "_orig_mod.value_heads.4.weight", "_orig_mod.value_heads.4.bias", "_orig_mod.value_heads.5.weight", "_orig_mod.value_heads.5.bias", "_orig_mod.value_heads.6.weight", "_orig_mod.value_heads.6.bias", "_orig_mod.value_heads.7.weight", "_orig_mod.value_heads.7.bias", "_orig_mod.advantage_heads.0.weight", "_orig_mod.advantage_heads.0.bias", "_orig_mod.advantage_heads.1.weight", "_orig_mod.advantage_heads.1.bias", "_orig_mod.advantage_heads.2.weight", "_orig_mod.advantage_heads.2.bias", "_orig_mod.advantage_heads.3.weight", "_orig_mod.advantage_heads.3.bias", "_orig_mod.advantage_heads.4.weight", "_orig_mod.advantage_heads.4.bias", "_orig_mod.advantage_heads.5.weight", "_orig_mod.advantage_heads.5.bias", "_orig_mod.advantage_heads.6.weight", "_orig_mod.advantage_heads.6.bias", "_orig_mod.advantage_heads.7.weight", "_orig_mod.advantage_heads.7.bias". . Место: запуск GameController. Проверьте путь к модели и наличие файлов .pickle/.pth.
