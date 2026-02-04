@@ -994,10 +994,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 continue
             remaining.append(fx)
 
-            core_life = 0.14
-            glow_life = 0.26
-            flash_life = 0.12
-            ring_life = 0.32
+            core_life = 0.22
+            glow_life = 0.34
+            flash_life = 0.14
+            ring_life = 0.38
 
             core_p = min(1.0, age / core_life)
             glow_p = min(1.0, age / glow_life)
@@ -1016,8 +1016,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
             core_color = QtGui.QColor(140, 255, 190)
             impact_color = QtGui.QColor(160, 255, 200)
 
-            glow_width = self._px_to_world(10.0)
-            core_width = self._px_to_world(2.4)
+            jitter = 0.6 + 0.4 * math.sin((age + fx.seed * 0.0001) * 18.0)
+            glow_width = self._px_to_world(10.0 + 2.0 * jitter)
+            core_width = self._px_to_world(2.0)
+            core_gap = self._px_to_world(2.2)
 
             # Порядок слоёв: glow tube -> core beam -> impact flash/ring -> disintegration pixels.
             painter.save()
@@ -1040,7 +1042,35 @@ class OpenGLBoardWidget(QOpenGLWidget):
             core_pen.setJoinStyle(QtCore.Qt.RoundJoin)
             core_pen.setColor(self._with_alpha(core_color, core_alpha))
             painter.setPen(core_pen)
-            painter.drawLine(fx.start, fx.end)
+            direction = fx.end - fx.start
+            length = math.hypot(direction.x(), direction.y())
+            if length > 0.001:
+                normal = QtCore.QPointF(-direction.y() / length, direction.x() / length)
+                offset = QtCore.QPointF(normal.x() * core_gap, normal.y() * core_gap)
+                painter.drawLine(fx.start + offset, fx.end + offset)
+                painter.drawLine(fx.start - offset, fx.end - offset)
+            painter.restore()
+
+            pulse_color = QtGui.QColor(120, 255, 170)
+            pulse_len = self._px_to_world(12.0)
+            pulse_gap = self._px_to_world(18.0)
+            pulse_count = max(1, int(length / pulse_gap))
+            pulse_speed = 0.9
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+            pulse_pen = QtGui.QPen(self._with_alpha(pulse_color, 0.5 * glow_alpha))
+            pulse_pen.setWidthF(self._px_to_world(3.0))
+            pulse_pen.setCapStyle(QtCore.Qt.RoundCap)
+            painter.setPen(pulse_pen)
+            for idx in range(pulse_count):
+                base = (idx / pulse_count + age * pulse_speed) % 1.0
+                start_pos = fx.start + QtCore.QPointF(direction.x() * base, direction.y() * base)
+                end_pos = fx.start + QtCore.QPointF(
+                    direction.x() * min(1.0, base + pulse_len / max(length, 0.001)),
+                    direction.y() * min(1.0, base + pulse_len / max(length, 0.001)),
+                )
+                painter.drawLine(start_pos, end_pos)
             painter.restore()
 
             flash_radius = self.cell_size * (0.08 + 0.12 * flash_p)

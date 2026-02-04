@@ -1130,7 +1130,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             start,
             end,
             t0=t0,
-            duration=0.35,
+            duration=0.5,
             seed=seed,
         )
         self.map_scene.add_effect(effect)
