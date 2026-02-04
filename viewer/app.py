@@ -35,6 +35,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._show_objective_radius = True
         self._units_by_key = {}
         self._unit_row_by_key = {}
+        self._suppress_table_selection_sync = False
+        self._last_focused_request_id = None
 
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = OpenGLBoardWidget(cell_size=18)
@@ -368,7 +370,36 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_input.setPlaceholderText("Введите команду...")
             self.command_stack.setCurrentIndex(self._command_pages["text"])
         self._update_command_hint(kind)
+        self._focus_unit_from_command_prompt()
         self._refresh_active_context()
+
+    def _focus_unit_from_command_prompt(self):
+        if self._pending_request is None:
+            return
+        request_id = id(self._pending_request)
+        if self._last_focused_request_id == request_id:
+            return
+        prompt = getattr(self._pending_request, "prompt", "")
+        unit_id = self._extract_unit_id(prompt)
+        if unit_id is None:
+            return
+        row = self._find_row_for_unit_id(unit_id)
+        if row is None:
+            return
+        item = self.units_table.item(row, 0)
+        unit_key = item.data(QtCore.Qt.UserRole) if item is not None else None
+        if not unit_key:
+            return
+        side, unit_id = unit_key
+        self._suppress_table_selection_sync = True
+        try:
+            self.units_table.selectRow(row)
+            if item is not None:
+                self.units_table.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtCenter)
+        finally:
+            self._suppress_table_selection_sync = False
+        if self.map_scene.focus_unit(side, unit_id, immediate=True):
+            self._last_focused_request_id = request_id
 
     def _update_command_hint(self, kind):
         if kind == "direction":
@@ -604,6 +635,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._append_log([f"Выбрано на карте: unit_id={unit_id}, name={unit_name}"])
 
     def _sync_selection_from_table(self):
+        if self._suppress_table_selection_sync:
+            return
         selected = self.units_table.selectionModel().selectedRows()
         if not selected:
             return
@@ -943,6 +976,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if item is None:
                 continue
             if item.data(QtCore.Qt.UserRole) == unit_key:
+                return row
+        return None
+
+    def _find_row_for_unit_id(self, unit_id):
+        unit_id_text = str(unit_id)
+        for row in range(self.units_table.rowCount()):
+            item = self.units_table.item(row, 1)
+            if item is None:
+                continue
+            if item.text() == unit_id_text:
                 return row
         return None
 

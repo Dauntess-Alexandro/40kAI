@@ -276,6 +276,30 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._selected_unit_key = key
             self.update()
 
+    def focus_unit(self, side, unit_id, *, immediate: bool = False) -> bool:
+        key = (side, unit_id)
+        render = self._unit_by_key.get(key)
+        if render is not None:
+            center = render.center
+        else:
+            unit = self._state_unit(key)
+            if unit is None:
+                return False
+            x = unit.get("x")
+            y = unit.get("y")
+            if x is None or y is None:
+                return False
+            center = QtCore.QPointF(
+                x * self.cell_size + self.cell_size / 2,
+                y * self.cell_size + self.cell_size / 2,
+            )
+        self._selected_unit_key = key
+        view_center = QtCore.QPointF(self.width() / 2, self.height() / 2)
+        target_pan = view_center - center * self._scale
+        self._set_target_view(pan=target_pan, immediate=immediate)
+        self.update()
+        return True
+
     def fit_to_view(self) -> None:
         if self._board_rect.isEmpty():
             return
