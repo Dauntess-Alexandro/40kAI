@@ -445,6 +445,17 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._hover_tooltip_text: Optional[Dict] = None
         self._hover_tooltip_ts: float = 0.0
         self._hover_tooltip_interval_s = 1.0 / 30.0
+        self._hover_candidate_key: Optional[Tuple[str, int]] = None
+        self._hover_candidate_pos = QtCore.QPoint()
+        self._hover_candidate_mods = QtCore.Qt.KeyboardModifiers()
+        self._hover_timer = QtCore.QTimer(self)
+        self._hover_timer.setSingleShot(True)
+        self._hover_timer.setInterval(150)
+        self._hover_timer.timeout.connect(self._show_hover_tooltip)
+        self._tooltip_target_pos = QtCore.QPoint()
+        self._tooltip_follow_timer = QtCore.QTimer(self)
+        self._tooltip_follow_timer.setInterval(25)
+        self._tooltip_follow_timer.timeout.connect(self._tick_tooltip_follow)
         self._tooltip_pinned = False
         self._tooltip_widget = UnitTooltipWidget(self)
         self._t0: Optional[float] = None
@@ -995,6 +1006,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._dragging = True
             self._drag_start = QtCore.QPointF(event.position())
             self._drag_distance = 0.0
+        if event.button() == QtCore.Qt.RightButton:
+            world = self._map_to_world(QtCore.QPointF(event.position()))
+            unit_key = self._unit_key_at_world(world)
+            if unit_key:
+                self._tooltip_pinned = not self._tooltip_pinned
+                self._tooltip_widget.set_pinned(self._tooltip_pinned)
+                if self._tooltip_pinned:
+                    self._hover_candidate_key = unit_key
+                    self._hover_candidate_pos = event.globalPosition().toPoint()
+                    self._show_hover_tooltip()
+                else:
+                    self._clear_hover_tooltip(force=True)
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
@@ -1035,15 +1058,6 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._tooltip_widget.set_debug_mode(self._debug_overlay)
             self.update()
             return
-        if key == QtCore.Qt.Key_P:
-            self._tooltip_pinned = not self._tooltip_pinned
-            self._tooltip_widget.set_pinned(self._tooltip_pinned)
-            if not self._tooltip_pinned:
-                self._clear_hover_tooltip()
-            else:
-                self._refresh_tooltip_anchor()
-            self.update()
-            return
         super().keyPressEvent(event)
 
     def _select_unit_at(self, pos: QtCore.QPointF) -> None:
@@ -1064,13 +1078,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.update()
 
     def _clear_hover_tooltip(self, force: bool = False) -> None:
+        if self._hover_timer.isActive():
+            self._hover_timer.stop()
         if self._tooltip_pinned and not force:
             return
         if self._hover_unit_key is None and not self._hover_tooltip_text:
             return
         self._hover_unit_key = None
         self._hover_tooltip_text = None
+        self._hover_candidate_key = None
         self._tooltip_widget.hide_animated()
+        if self._tooltip_follow_timer.isActive():
+            self._tooltip_follow_timer.stop()
 
     def paintGL(self) -> None:
         painter = QtGui.QPainter(self)
@@ -1875,27 +1894,37 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._clear_hover_tooltip()
             return
         if self._tooltip_pinned and self._hover_unit_key is not None:
-            self._refresh_tooltip_anchor()
             return
         now = monotonic()
         needs_refresh = unit_key != self._hover_unit_key
         if not needs_refresh and now - self._hover_tooltip_ts < self._hover_tooltip_interval_s:
+            anchor = self._tooltip_anchor_for_cursor(event.globalPosition().toPoint())
+            self._set_tooltip_target(anchor)
             return
         unit = self._state_unit(unit_key)
         if not unit:
             self._clear_hover_tooltip()
             return
-        tooltip_payload = self._build_unit_tooltip_payload(unit)
-        if needs_refresh or tooltip_payload != self._hover_tooltip_text:
-            self._hover_tooltip_text = tooltip_payload
-        self._hover_unit_key = unit_key
-        self._hover_tooltip_ts = now
-        anchor = self._tooltip_anchor_for_unit(unit_key, event.globalPosition().toPoint())
-        accent = self._unit_accent_color(unit)
-        self._tooltip_widget.set_pinned(self._tooltip_pinned)
-        self._tooltip_widget.set_debug_mode(self._debug_overlay)
-        self._tooltip_widget.update_content(tooltip_payload, accent)
-        self._position_tooltip(anchor)
+        anchor = self._tooltip_anchor_for_cursor(event.globalPosition().toPoint())
+        self._set_tooltip_target(anchor)
+        if unit_key != self._hover_candidate_key:
+            self._hover_candidate_key = unit_key
+            self._hover_candidate_pos = event.globalPosition().toPoint()
+            self._hover_candidate_mods = event.modifiers()
+            self._hover_timer.start()
+        elif self._hover_timer.isActive():
+            self._hover_candidate_pos = event.globalPosition().toPoint()
+            self._hover_candidate_mods = event.modifiers()
+        if needs_refresh:
+            tooltip_payload = self._build_unit_tooltip_payload(unit)
+            if self._tooltip_widget.isVisible():
+                self._hover_tooltip_text = tooltip_payload
+                self._hover_unit_key = unit_key
+                self._hover_tooltip_ts = now
+                accent = self._unit_accent_color(unit)
+                self._tooltip_widget.set_pinned(self._tooltip_pinned)
+                self._tooltip_widget.set_debug_mode(self._debug_overlay)
+                self._tooltip_widget.update_content(tooltip_payload, accent)
 
     def _unit_key_at_world(self, world: QtCore.QPointF) -> Optional[Tuple[str, int]]:
         if self._board_rect.isEmpty():
@@ -1947,6 +1976,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         screen_pos = self._view_transform().map(render.center)
         offset = QtCore.QPoint(12, -12)
         return self.mapToGlobal(QtCore.QPoint(int(screen_pos.x()), int(screen_pos.y()))) + offset
+
+    def _tooltip_anchor_for_cursor(self, cursor_pos: QtCore.QPoint) -> QtCore.QPoint:
+        offset = QtCore.QPoint(14, 18)
+        return cursor_pos + offset
 
     def _build_unit_tooltip_payload(self, unit: dict) -> Dict:
         title = self._unit_display_name(unit)
@@ -2003,12 +2036,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return Theme.model
         return Theme.accent
 
-    def _position_tooltip(self, anchor: QtCore.QPoint) -> None:
+    def _position_tooltip(self, anchor: QtCore.QPoint, animate: bool = True) -> None:
         if not self._tooltip_widget:
             return
         widget = self._tooltip_widget
         widget.adjustSize()
-        size = widget.size()
+        pos = self._clamp_tooltip_pos(anchor, widget.size())
+        self._tooltip_target_pos = pos
+        widget.show_at(pos, animate=animate)
+        if not self._tooltip_follow_timer.isActive():
+            self._tooltip_follow_timer.start()
+
+    def _clamp_tooltip_pos(self, anchor: QtCore.QPoint, size: QtCore.QSize) -> QtCore.QPoint:
         padding = 12
         pos = QtCore.QPoint(anchor)
         screen = self.screen() or self.window().screen()
@@ -2021,7 +2060,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             pos.setX(padding)
         if pos.y() < padding:
             pos.setY(padding)
-        widget.show_at(pos)
+        return pos
 
     def _refresh_tooltip_anchor(self) -> None:
         if self._hover_unit_key is None:
@@ -2035,6 +2074,62 @@ class OpenGLBoardWidget(QOpenGLWidget):
         payload = self._build_unit_tooltip_payload(unit)
         self._tooltip_widget.update_content(payload, accent)
         self._position_tooltip(anchor)
+
+    def _set_tooltip_target(self, anchor: QtCore.QPoint) -> None:
+        if not self._tooltip_widget:
+            return
+        self._tooltip_widget.adjustSize()
+        self._tooltip_target_pos = self._clamp_tooltip_pos(anchor, self._tooltip_widget.size())
+        if not self._tooltip_follow_timer.isActive() and self._tooltip_widget.isVisible():
+            self._tooltip_follow_timer.start()
+
+    def _tick_tooltip_follow(self) -> None:
+        widget = self._tooltip_widget
+        if not widget.isVisible():
+            self._tooltip_follow_timer.stop()
+            return
+        if self._tooltip_pinned and self._hover_unit_key is not None:
+            anchor = self._tooltip_anchor_for_unit(
+                self._hover_unit_key,
+                self.mapToGlobal(QtCore.QPoint(0, 0)),
+            )
+            self._set_tooltip_target(anchor)
+        current = widget.pos()
+        target = self._tooltip_target_pos
+        dx = target.x() - current.x()
+        dy = target.y() - current.y()
+        if abs(dx) < 1 and abs(dy) < 1:
+            widget.move(target)
+            return
+        step = 0.35
+        next_pos = QtCore.QPoint(
+            int(current.x() + dx * step),
+            int(current.y() + dy * step),
+        )
+        widget.move(next_pos)
+
+    def _show_hover_tooltip(self) -> None:
+        if not self._hover_candidate_key:
+            return
+        unit = self._state_unit(self._hover_candidate_key)
+        if not unit:
+            self._clear_hover_tooltip()
+            return
+        if self._hover_candidate_mods & (QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier):
+            self._tooltip_pinned = True
+        self._tooltip_widget.set_pinned(self._tooltip_pinned)
+        self._tooltip_widget.set_debug_mode(self._debug_overlay)
+        tooltip_payload = self._build_unit_tooltip_payload(unit)
+        self._hover_tooltip_text = tooltip_payload
+        self._hover_unit_key = self._hover_candidate_key
+        self._hover_tooltip_ts = monotonic()
+        accent = self._unit_accent_color(unit)
+        self._tooltip_widget.update_content(tooltip_payload, accent)
+        if self._tooltip_pinned:
+            anchor = self._tooltip_anchor_for_unit(self._hover_unit_key, self._hover_candidate_pos)
+        else:
+            anchor = self._tooltip_anchor_for_cursor(self._hover_candidate_pos)
+        self._position_tooltip(anchor, animate=True)
 
     def _unit_display_name(self, unit: dict) -> str:
         name = str(unit.get("name") or "").strip()
