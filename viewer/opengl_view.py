@@ -112,6 +112,7 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         self._pinned = False
         self._debug_mode = False
         self._target_pos = QtCore.QPoint()
+        self._hiding = False
 
         self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
         self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating, True)
@@ -134,6 +135,7 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         self._anim_group = QtCore.QParallelAnimationGroup(self)
         self._anim_group.addAnimation(self._fade_anim)
         self._anim_group.addAnimation(self._move_anim)
+        self._anim_group.finished.connect(self._on_anim_finished)
 
         self._icon_map = {
             "models": "👥",
@@ -151,7 +153,7 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         }
 
         self._build_layout()
-        self.setMinimumWidth(280)
+        self.setMinimumWidth(300)
         self.hide()
 
     def _build_layout(self) -> None:
@@ -321,6 +323,11 @@ class UnitTooltipWidget(QtWidgets.QFrame):
 
         self._apply_styles()
 
+    def _on_anim_finished(self) -> None:
+        if self._hiding and self._opacity_effect.opacity() <= 0.01:
+            self.hide()
+        self._hiding = False
+
     def _set_stat_value(self, key: str, value: object) -> None:
         widget = self._stat_widgets.get(key)
         if not widget:
@@ -390,6 +397,7 @@ class UnitTooltipWidget(QtWidgets.QFrame):
 
     def show_at(self, target_pos: QtCore.QPoint, animate: bool = True) -> None:
         self._target_pos = target_pos
+        self._hiding = False
         if not animate:
             self.move(target_pos)
             self._opacity_effect.setOpacity(1.0)
@@ -399,10 +407,6 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         self._move_anim.stop()
         self._fade_anim.stop()
         self._anim_group.stop()
-        try:
-            self._anim_group.finished.disconnect(self.hide)
-        except TypeError:
-            pass
         self.move(start_pos)
         self.show()
         self._fade_anim.setStartValue(self._opacity_effect.opacity())
@@ -417,16 +421,12 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         self._fade_anim.stop()
         self._move_anim.stop()
         self._anim_group.stop()
+        self._hiding = True
         self._fade_anim.setStartValue(self._opacity_effect.opacity())
         self._fade_anim.setEndValue(0.0)
         self._move_anim.setStartValue(self.pos())
         self._move_anim.setEndValue(self.pos())
-        try:
-            self._anim_group.finished.disconnect(self.hide)
-        except TypeError:
-            pass
         self._anim_group.start()
-        self._anim_group.finished.connect(self.hide)
 
 
 class OpenGLBoardWidget(QOpenGLWidget):
@@ -514,6 +514,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._tooltip_follow_timer.timeout.connect(self._tick_tooltip_follow)
         self._tooltip_pinned = False
         self._tooltip_widget = UnitTooltipWidget(self)
+        self._unit_data = self._load_unit_data()
+        self._unit_data_by_name = self._index_unit_data(self._unit_data)
         self._weapon_data = self._load_weapon_data()
         self._weapon_data_by_name = self._index_weapon_data(self._weapon_data)
         self._t0: Optional[float] = None
@@ -2054,6 +2056,30 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return weapon_data
         return []
 
+    def _load_unit_data(self) -> List[dict]:
+        base_dir = Path(__file__).resolve().parents[1]
+        data_path = base_dir / "gym_mod" / "gym_mod" / "engine" / "unitData.json"
+        if not data_path.exists():
+            return []
+        try:
+            with data_path.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            return []
+        unit_data = data.get("UnitData", [])
+        if isinstance(unit_data, list):
+            return unit_data
+        return []
+
+    def _index_unit_data(self, unit_data: List[dict]) -> Dict[str, List[dict]]:
+        index: Dict[str, List[dict]] = {}
+        for entry in unit_data:
+            name = str(entry.get("Name") or "").strip().lower()
+            if not name:
+                continue
+            index.setdefault(name, []).append(entry)
+        return index
+
     def _index_weapon_data(self, weapon_data: List[dict]) -> Dict[str, List[dict]]:
         index: Dict[str, List[dict]] = {}
         for entry in weapon_data:
@@ -2063,14 +2089,34 @@ class OpenGLBoardWidget(QOpenGLWidget):
             index.setdefault(name, []).append(entry)
         return index
 
+    def _unit_profile(self, unit: dict) -> Optional[dict]:
+        name_candidates = [
+            unit.get("name"),
+            unit.get("unit_name"),
+            unit.get("type"),
+            unit.get("unit_type"),
+        ]
+        for name in name_candidates:
+            label = str(name or "").strip()
+            if not label:
+                continue
+            matches = self._unit_data_by_name.get(label.lower())
+            if matches:
+                return matches[0]
+        return None
+
     def _unit_weapon_names(self, unit: dict) -> List[str]:
         names: List[str] = []
-        for key in ("weapon_name", "weapon", "weapons", "weapon_names"):
+        for key in ("weapon_name", "weapon", "weapons", "weapon_names", "ranged_weapon", "melee_weapon"):
             value = unit.get(key)
             if not value:
                 continue
             if isinstance(value, list):
                 names.extend(value)
+            elif isinstance(value, dict):
+                maybe_name = value.get("Name") or value.get("name")
+                if maybe_name:
+                    names.append(maybe_name)
             else:
                 names.append(value)
         cleaned = []
@@ -2081,6 +2127,16 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 continue
             seen.add(label)
             cleaned.append(label)
+        if not cleaned:
+            profile = self._unit_profile(unit)
+            if profile:
+                weapons = profile.get("Weapons")
+                if isinstance(weapons, list):
+                    for name in weapons:
+                        label = str(name).strip()
+                        if label and label not in seen:
+                            seen.add(label)
+                            cleaned.append(label)
         return cleaned
 
     def _get_weapon_by_type(self, unit: dict, weapon_type: str) -> Optional[dict]:
