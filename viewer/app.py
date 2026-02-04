@@ -15,6 +15,7 @@ from viewer.opengl_view import OpenGLBoardWidget
 from viewer.state import StateWatcher
 from viewer.styles import Theme
 from viewer.model_log_tree import render_model_log_flat
+from viewer.playback import PlaybackController
 
 from gym_mod.engine.game_controller import GameController
 from gym_mod.engine.game_io import parse_dice_values
@@ -74,6 +75,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_log_source = None
         self._model_events_stream = []
         self._model_events_current = []
+        self._model_turn_events = []
+        self._playback_state_length = 0
+        self._playback_last_active = None
         self._log_tabs = {}
         self._log_tab_defs = [
             ("player", "Все ходы игрока"),
@@ -153,6 +157,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         app = QtWidgets.QApplication.instance()
         if app is not None:
             app.installEventFilter(self)
+
+        self.playback = PlaybackController(self.map_scene, status_callback=self._set_playback_status)
 
         self.timer = QtCore.QTimer(self)
         self.timer.setInterval(300)
@@ -319,9 +325,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if self.controller.is_finished:
                 self.command_prompt.setText("Игра завершена.")
             else:
-                self.command_prompt.setText("Команда не требуется.")
+                if not (self.playback and self.playback.is_active()):
+                    self.command_prompt.setText("Команда не требуется.")
             self.command_stack.setEnabled(False)
-            self.command_hint.setText("Горячие клавиши: —")
+            if not (self.playback and self.playback.is_active()):
+                self.command_hint.setText("Горячие клавиши: —")
             self._refresh_active_context()
             return
 
@@ -430,11 +438,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 break
         if not drained:
             return
+        filtered = self._filter_model_events(drained)
         if self._model_log_source in (None, "stream"):
             self._model_log_source = "stream"
-            self._model_events_stream.extend(self._filter_model_events(drained))
+            self._model_events_stream.extend(filtered)
             self._model_events_current = list(self._model_events_stream)
             self._refresh_model_log_view()
+            self._handle_model_events_for_playback(filtered)
 
     def _start_controller(self):
         messages, request = self.controller.start()
@@ -518,6 +528,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._update_log(state.get("log_tail", []))
         self._update_model_events(state.get("model_events", []))
         self._drain_event_queue()
+        self._update_playback_from_state(state)
         self._refresh_active_context()
 
     def _populate_units_table(self, units):
@@ -572,6 +583,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_log_source = "state"
             self._model_events_current = list(filtered)
             self._refresh_model_log_view()
+            self._collect_playback_events_from_state(filtered)
         elif self._model_log_source is None:
             self._drain_event_queue()
 
@@ -584,6 +596,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if side in ("enemy", "model"):
                 filtered.append(event)
         return filtered
+
+    def _collect_playback_events_from_state(self, filtered):
+        if not filtered:
+            self._playback_state_length = 0
+            return
+        if self._playback_state_length > len(filtered):
+            self._playback_state_length = 0
+        new_events = filtered[self._playback_state_length :]
+        self._playback_state_length = len(filtered)
+        self._handle_model_events_for_playback(new_events)
 
     def _select_row_for_unit(self, side, unit_id):
         unit_key = (side, unit_id)
@@ -870,8 +892,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_events_snapshot = None
         self._model_events_stream = []
         self._model_events_current = []
+        self._model_turn_events = []
+        self._playback_state_length = 0
         for view in self._log_tabs.values():
             view.clear()
+        if self.playback:
+            self.playback.reset()
 
     def _collect_current_turn_logs(self):
         if self._current_turn_number is None:
@@ -979,6 +1005,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return unit_id, None
 
     def _refresh_active_context(self):
+        if self.playback and self.playback.is_active():
+            self.map_scene.set_active_phase(self.playback.current_phase)
+            return
         unit_id, side = self._resolve_active_unit()
         self._active_unit_id = unit_id
         self._active_unit_side = side
@@ -1013,6 +1042,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return "shoot" in phase_text or "стрел" in phase_text or "shooting" in phase_text
 
     def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.KeyPress:
+            key = event.key()
+            if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+                if self.playback and self.playback.on_enter():
+                    return True
         if event.type() == QtCore.QEvent.KeyPress and self._pending_request:
             kind = getattr(self._pending_request, "kind", "")
             key = event.key()
@@ -1052,6 +1086,52 @@ class ViewerWindow(QtWidgets.QMainWindow):
                     self._submit_choice()
                     return True
         return super().eventFilter(obj, event)
+
+    def _set_playback_status(self, text: str) -> None:
+        if self._pending_request is not None:
+            return
+        if text:
+            self.command_prompt.setText(text)
+            self.command_hint.setText("Горячие клавиши: Enter — продолжить")
+        else:
+            self.command_prompt.setText("Команда не требуется.")
+            self.command_hint.setText("Горячие клавиши: —")
+
+    def _handle_model_events_for_playback(self, events):
+        if not events:
+            return
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            side = str(event.get("side", "")).lower()
+            if side not in ("enemy", "model"):
+                continue
+            event_type = str(event.get("type", "")).lower()
+            if event_type == "turn_start":
+                self._model_turn_events = []
+            self._model_turn_events.append(event)
+            if event_type == "turn_end":
+                self._start_playback_if_ready()
+
+    def _update_playback_from_state(self, state):
+        active = state.get("active")
+        if self._playback_last_active is None:
+            self._playback_last_active = active
+            return
+        if self._playback_last_active == "model" and active == "player":
+            self._start_playback_if_ready()
+        if self._playback_last_active == "player" and active == "model":
+            self._model_turn_events = []
+        self._playback_last_active = active
+
+    def _start_playback_if_ready(self):
+        if not self._model_turn_events:
+            return
+        if self.playback and self.playback.is_active():
+            return
+        events = list(self._model_turn_events)
+        self._model_turn_events = []
+        self.playback.start(events)
 
 
 def launch(state_path, model_path=None):
