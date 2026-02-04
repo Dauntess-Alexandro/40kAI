@@ -12,7 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 from pathlib import Path
-from time import perf_counter
+import random
+from time import monotonic, perf_counter
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -38,6 +39,24 @@ class ObjectiveRender:
     label: str
     owner_color: QtGui.QColor
     control_radius: float
+
+
+@dataclass
+class DisintegrationParticle:
+    offset: QtCore.QPointF
+    velocity: QtCore.QPointF
+    size_px: float
+    life: float
+
+
+@dataclass
+class GaussTracerEffect:
+    start: QtCore.QPointF
+    end: QtCore.QPointF
+    t0: float
+    duration: float
+    seed: int
+    particles: List[DisintegrationParticle]
 
 
 class OpenGLBoardWidget(QOpenGLWidget):
@@ -86,6 +105,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         ]
 
         self._selected_unit_key: Optional[Tuple[str, int]] = None
+        self._fx_active: List[GaussTracerEffect] = []
 
         self._scale = 1.0
         self._min_scale = 0.2
@@ -220,6 +240,24 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._show_objective_radius = bool(show_objective_radius)
         self._targets = targets
         self.refresh_overlays()
+        self.update()
+
+    def build_gauss_effect(
+        self,
+        start: QtCore.QPointF,
+        end: QtCore.QPointF,
+        *,
+        t0: float,
+        duration: float,
+        seed: int,
+    ) -> GaussTracerEffect:
+        particles = self._generate_gauss_particles(seed)
+        return GaussTracerEffect(start=start, end=end, t0=t0, duration=duration, seed=seed, particles=particles)
+
+    def add_effect(self, effect: GaussTracerEffect) -> None:
+        if effect is None:
+            return
+        self._fx_active.append(effect)
         self.update()
 
     def set_active_unit(self, unit_id: Optional[int]) -> None:
@@ -850,6 +888,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return tinted
 
     def _draw_fx_layer(self, painter: QtGui.QPainter) -> None:
+        self._draw_gauss_effects(painter)
         if not self._fx_pixmaps:
             return
         t = (perf_counter() - self._t0) if self._t0 is not None else 0.0
@@ -919,6 +958,149 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
             self._draw_fx_sprite(painter, hover_pixmap, hover_center, hover_size, hover_alpha)
             painter.restore()
+
+    def _generate_gauss_particles(self, seed: int) -> List[DisintegrationParticle]:
+        rng = random.Random(seed)
+        particles: List[DisintegrationParticle] = []
+        count = rng.randint(10, 25)
+        for _ in range(count):
+            angle = rng.uniform(0.0, math.tau)
+            radius = self.cell_size * rng.uniform(0.05, 0.2)
+            offset = QtCore.QPointF(math.cos(angle) * radius, math.sin(angle) * radius)
+            vel_mag = self.cell_size * rng.uniform(0.6, 1.5)
+            velocity = QtCore.QPointF(math.cos(angle) * vel_mag, math.sin(angle) * vel_mag)
+            size_px = rng.uniform(2.0, 4.0)
+            life = rng.uniform(0.25, 0.35)
+            particles.append(
+                DisintegrationParticle(
+                    offset=offset,
+                    velocity=velocity,
+                    size_px=size_px,
+                    life=life,
+                )
+            )
+        return particles
+
+    def _draw_gauss_effects(self, painter: QtGui.QPainter) -> None:
+        if not self._fx_active:
+            return
+        now = monotonic()
+        remaining: List[GaussTracerEffect] = []
+        for fx in self._fx_active:
+            age = now - fx.t0
+            duration = max(0.001, fx.duration)
+            progress = max(0.0, min(1.0, age / duration))
+            if progress >= 1.0:
+                continue
+            remaining.append(fx)
+
+            core_life = 0.14
+            glow_life = 0.26
+            flash_life = 0.12
+            ring_life = 0.32
+
+            core_p = min(1.0, age / core_life)
+            glow_p = min(1.0, age / glow_life)
+            flash_p = min(1.0, age / flash_life)
+            ring_p = min(1.0, age / ring_life)
+
+            def ease_out(value: float) -> float:
+                return (1.0 - value) ** 2
+
+            glow_alpha = 0.55 * ease_out(glow_p)
+            core_alpha = 0.85 * ease_out(core_p)
+            flash_alpha = 0.9 * ease_out(flash_p)
+            ring_alpha = 0.7 * ease_out(ring_p)
+
+            glow_color = QtGui.QColor(90, 255, 140)
+            core_color = QtGui.QColor(140, 255, 190)
+            impact_color = QtGui.QColor(160, 255, 200)
+
+            glow_width = self._px_to_world(10.0)
+            core_width = self._px_to_world(2.4)
+
+            # Порядок слоёв: glow tube -> core beam -> impact flash/ring -> disintegration pixels.
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+            glow_pen = QtGui.QPen(glow_color)
+            glow_pen.setWidthF(glow_width)
+            glow_pen.setCapStyle(QtCore.Qt.RoundCap)
+            glow_pen.setJoinStyle(QtCore.Qt.RoundJoin)
+            glow_pen.setColor(self._with_alpha(glow_color, glow_alpha))
+            painter.setPen(glow_pen)
+            painter.drawLine(fx.start, fx.end)
+            painter.restore()
+
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            core_pen = QtGui.QPen(core_color)
+            core_pen.setWidthF(core_width)
+            core_pen.setCapStyle(QtCore.Qt.RoundCap)
+            core_pen.setJoinStyle(QtCore.Qt.RoundJoin)
+            core_pen.setColor(self._with_alpha(core_color, core_alpha))
+            painter.setPen(core_pen)
+            painter.drawLine(fx.start, fx.end)
+            painter.restore()
+
+            flash_radius = self.cell_size * (0.08 + 0.12 * flash_p)
+            ring_radius = self.cell_size * (0.05 + 0.3 * ring_p)
+            ring_width = self._px_to_world(2.5)
+
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.setBrush(QtGui.QBrush(self._with_alpha(impact_color, flash_alpha)))
+            painter.drawEllipse(fx.end, flash_radius, flash_radius)
+            painter.restore()
+
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+            ring_pen = QtGui.QPen(self._with_alpha(impact_color, ring_alpha))
+            ring_pen.setWidthF(ring_width)
+            painter.setPen(ring_pen)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawEllipse(fx.end, ring_radius, ring_radius)
+            painter.restore()
+
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+            particle_color = QtGui.QColor(140, 255, 180)
+            for particle in fx.particles:
+                particle_age = age
+                if particle_age >= particle.life:
+                    continue
+                particle_p = min(1.0, particle_age / particle.life)
+                alpha = 0.7 * ease_out(particle_p)
+                size_world = self._px_to_world(particle.size_px)
+                velocity = QtCore.QPointF(
+                    particle.velocity.x() * particle_age,
+                    particle.velocity.y() * particle_age,
+                )
+                position = fx.end + particle.offset + velocity
+                rect = QtCore.QRectF(
+                    position.x() - size_world / 2,
+                    position.y() - size_world / 2,
+                    size_world,
+                    size_world,
+                )
+                painter.setPen(QtCore.Qt.NoPen)
+                painter.setBrush(QtGui.QBrush(self._with_alpha(particle_color, alpha)))
+                painter.drawRect(rect)
+            painter.restore()
+
+        self._fx_active = remaining
+
+    def _with_alpha(self, color: QtGui.QColor, alpha: float) -> QtGui.QColor:
+        out = QtGui.QColor(color)
+        out.setAlphaF(max(0.0, min(1.0, alpha)))
+        return out
+
+    def _px_to_world(self, px: float) -> float:
+        scale = self._scale if self._scale > 0 else 1.0
+        return px / scale
 
     def _draw_fx_sprite(
         self,

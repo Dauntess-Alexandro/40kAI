@@ -3,6 +3,8 @@ import os
 import queue
 import re
 import sys
+import time
+from typing import Optional
 from datetime import datetime
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -78,6 +80,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_tab_indices = {}
         self._log_tab_programmatic_switch = False
         self._last_manual_log_tab_index = None
+        self._shoot_fx_context = None
         self._log_tab_defs = [
             ("player", "Все ходы игрока"),
             ("model", "Все ходы модели"),
@@ -561,6 +564,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if len(text_lines) >= len(existing) and text_lines[: len(existing)] == existing:
                 for line in text_lines[len(existing) :]:
                     self.add_log_line(line)
+                    self._handle_fx_log_line(line)
                 self._log_tail_snapshot = text_lines
                 return
             self._reset_log_lines(text_lines, write_to_file=False)
@@ -1028,6 +1032,67 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if self.state_watcher and self.state_watcher.state
             else None,
         )
+
+    def _handle_fx_log_line(self, line: str) -> None:
+        # FX: ищем связку "Стреляет -> Оружие", чтобы привязать визуальный эффект к выстрелу.
+        if not line:
+            return
+        now = time.monotonic()
+        if self._shoot_fx_context and now - self._shoot_fx_context["t0"] > 2.0:
+            self._shoot_fx_context = None
+
+        shot_match = re.search(r"Стреляет:\s*Unit\s+(\d+).*?цель:\s*Unit\s+(\d+)", line, re.IGNORECASE)
+        if shot_match:
+            self._shoot_fx_context = {
+                "attacker_id": int(shot_match.group(1)),
+                "target_id": int(shot_match.group(2)),
+                "line": line,
+                "t0": now,
+            }
+            return
+
+        weapon_match = re.search(r"Оружие:\s*(.+)", line, re.IGNORECASE)
+        if not weapon_match:
+            return
+        weapon_name = weapon_match.group(1).strip()
+        if "gauss" not in weapon_name.lower():
+            return
+        context = self._shoot_fx_context
+        if not context:
+            return
+        if "necron" not in context["line"].lower():
+            self._shoot_fx_context = None
+            return
+        self._spawn_gauss_effect(context["attacker_id"], context["target_id"])
+        self._shoot_fx_context = None
+
+    def _spawn_gauss_effect(self, attacker_id: int, target_id: int) -> None:
+        start = self._unit_world_center(attacker_id)
+        end = self._unit_world_center(target_id)
+        if start is None or end is None:
+            return
+        t0 = time.monotonic()
+        seed = hash((attacker_id, target_id, int(t0 * 1000))) & 0xFFFFFFFF
+        effect = self.map_scene.build_gauss_effect(
+            start,
+            end,
+            t0=t0,
+            duration=0.35,
+            seed=seed,
+        )
+        self.map_scene.add_effect(effect)
+
+    def _unit_world_center(self, unit_id: int) -> Optional[QtCore.QPointF]:
+        cell = self.map_scene.cell_size
+        for (_, candidate_id), unit in self._units_by_key.items():
+            if candidate_id != unit_id:
+                continue
+            x = unit.get("x")
+            y = unit.get("y")
+            if x is None or y is None:
+                return None
+            return QtCore.QPointF(x * cell + cell / 2, y * cell + cell / 2)
+        return None
 
     def _auto_switch_log_tab(self, active_side):
         if active_side not in ("player", "model"):
