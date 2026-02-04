@@ -1044,9 +1044,24 @@ class ViewerWindow(QtWidgets.QMainWindow):
             )
             self._shoot_fx_context = None
 
+        if "ОТЧЁТ ПО СТРЕЛЬБЕ" in line:
+            self._shoot_fx_context = {
+                "t0": now,
+                "report_active": True,
+                "attacker_id": None,
+                "target_id": None,
+                "weapon_name": None,
+                "line": "",
+            }
+            self._fx_debug("FX: старт отчёта по стрельбе, ждём строки Стреляет/Оружие.")
+            return
+
         shot_match = re.search(r"Стреляет:\s*Unit\s+(\d+).*?цель:\s*Unit\s+(\d+)", line, re.IGNORECASE)
         if shot_match:
+            if not self._shoot_fx_context:
+                self._shoot_fx_context = {"t0": now, "report_active": False}
             self._shoot_fx_context = {
+                **self._shoot_fx_context,
                 "attacker_id": int(shot_match.group(1)),
                 "target_id": int(shot_match.group(2)),
                 "line": line,
@@ -1061,9 +1076,24 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         weapon_match = re.search(r"Оружие:\s*(.+)", line, re.IGNORECASE)
         if not weapon_match:
+            if "✅ Итог по движку" in line:
+                context = self._shoot_fx_context
+                if context and context.get("weapon_name") and context.get("attacker_id") and context.get("target_id"):
+                    if "gauss" in context["weapon_name"].lower():
+                        if "necron" in (context.get("line") or "").lower():
+                            self._spawn_gauss_effect(context["attacker_id"], context["target_id"])
+                            self._fx_debug("FX: gauss-эффект создан после строки итогов.")
+                        else:
+                            self._fx_debug("FX: итог есть, но в строке стрельбы нет Necron.")
+                    else:
+                        self._fx_debug("FX: итог есть, но оружие не gauss.")
+                self._shoot_fx_context = None
             return
         weapon_name = weapon_match.group(1).strip()
         self._fx_debug(f"FX: найдена строка оружия: {weapon_name}.")
+        if not self._shoot_fx_context:
+            self._shoot_fx_context = {"t0": now, "report_active": False}
+        self._shoot_fx_context["weapon_name"] = weapon_name
         if "gauss" not in weapon_name.lower():
             self._fx_debug("FX: оружие не gauss, эффект пропущен.")
             return
@@ -1071,13 +1101,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if not context:
             self._fx_debug("FX: нет контекста стрельбы для gauss, эффект пропущен.")
             return
-        if "necron" not in context["line"].lower():
-            self._fx_debug("FX: в строке стрельбы нет Necron, эффект пропущен.")
-            self._shoot_fx_context = None
-            return
-        self._spawn_gauss_effect(context["attacker_id"], context["target_id"])
-        self._fx_debug("FX: gauss-эффект создан и добавлен в рендер.")
-        self._shoot_fx_context = None
+        if not context.get("report_active"):
+            self._fx_debug("FX: gauss найден, ждём строку итогов для запуска эффекта.")
 
     def _spawn_gauss_effect(self, attacker_id: int, target_id: int) -> None:
         start = self._unit_world_center(attacker_id)
