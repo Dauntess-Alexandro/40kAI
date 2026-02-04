@@ -14,6 +14,7 @@ if GYM_PATH not in sys.path:
     sys.path.insert(0, GYM_PATH)
 
 from viewer.opengl_view import OpenGLBoardWidget
+from viewer.gun_fx import get_gun_fx_config
 from viewer.state import StateWatcher
 from viewer.styles import Theme
 from viewer.model_log_tree import render_model_log_flat
@@ -1126,12 +1127,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         t0 = time.monotonic()
         seed = hash((attacker_id, target_id, int(t0 * 1000))) & 0xFFFFFFFF
+        config = get_gun_fx_config("Gauss flayer")
+        duration = float(config.get("duration", 0.5))
         effect = self.map_scene.build_gauss_effect(
             start,
             end,
             t0=t0,
-            duration=0.5,
+            duration=duration,
             seed=seed,
+            config=config,
         )
         self.map_scene.add_effect(effect)
         self._fx_debug(

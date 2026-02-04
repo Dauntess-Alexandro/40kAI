@@ -57,6 +57,7 @@ class GaussTracerEffect:
     duration: float
     seed: int
     particles: List[DisintegrationParticle]
+    config: Dict
 
 
 class OpenGLBoardWidget(QOpenGLWidget):
@@ -250,9 +251,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
         t0: float,
         duration: float,
         seed: int,
+        config: Optional[Dict] = None,
     ) -> GaussTracerEffect:
         particles = self._generate_gauss_particles(seed)
-        return GaussTracerEffect(start=start, end=end, t0=t0, duration=duration, seed=seed, particles=particles)
+        return GaussTracerEffect(
+            start=start,
+            end=end,
+            t0=t0,
+            duration=duration,
+            seed=seed,
+            particles=particles,
+            config=config or {},
+        )
 
     def add_effect(self, effect: GaussTracerEffect) -> None:
         if effect is None:
@@ -994,10 +1004,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 continue
             remaining.append(fx)
 
-            core_life = 0.22
-            glow_life = 0.34
-            flash_life = 0.14
-            ring_life = 0.38
+            config = fx.config or {}
+            core_life = float(config.get("core_life", 0.22))
+            glow_life = float(config.get("glow_life", 0.34))
+            flash_life = float(config.get("flash_life", 0.14))
+            ring_life = float(config.get("ring_life", 0.38))
 
             core_p = min(1.0, age / core_life)
             glow_p = min(1.0, age / glow_life)
@@ -1012,14 +1023,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
             flash_alpha = 0.9 * ease_out(flash_p)
             ring_alpha = 0.7 * ease_out(ring_p)
 
-            glow_color = QtGui.QColor(90, 255, 140)
-            core_color = QtGui.QColor(140, 255, 190)
-            impact_color = QtGui.QColor(160, 255, 200)
+            glow_color = QtGui.QColor(*config.get("glow_color", (90, 255, 140)))
+            core_color = QtGui.QColor(*config.get("core_color", (140, 255, 190)))
+            impact_color = QtGui.QColor(*config.get("impact_color", (160, 255, 200)))
 
-            jitter = 0.6 + 0.4 * math.sin((age + fx.seed * 0.0001) * 18.0)
-            glow_width = self._px_to_world(10.0 + 2.0 * jitter)
-            core_width = self._px_to_world(2.0)
-            core_gap = self._px_to_world(2.2)
+            glow_jitter_speed = float(config.get("glow_jitter_speed", 18.0))
+            glow_jitter_px = float(config.get("glow_jitter_px", 2.0))
+            glow_width_px = float(config.get("glow_width_px", 10.0))
+            core_width_px = float(config.get("core_width_px", 2.0))
+            core_gap_px = float(config.get("core_gap_px", 2.2))
+            jitter = 0.6 + 0.4 * math.sin((age + fx.seed * 0.0001) * glow_jitter_speed)
+            glow_width = self._px_to_world(glow_width_px + glow_jitter_px * jitter)
+            core_width = self._px_to_world(core_width_px)
+            core_gap = self._px_to_world(core_gap_px)
 
             # Порядок слоёв: glow tube -> core beam -> impact flash/ring -> disintegration pixels.
             painter.save()
@@ -1051,16 +1067,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 painter.drawLine(fx.start - offset, fx.end - offset)
             painter.restore()
 
-            pulse_color = QtGui.QColor(120, 255, 170)
-            pulse_len = self._px_to_world(12.0)
-            pulse_gap = self._px_to_world(18.0)
+            pulse_color = QtGui.QColor(*config.get("pulse_color", (120, 255, 170)))
+            pulse_len = self._px_to_world(float(config.get("pulse_len_px", 12.0)))
+            pulse_gap = self._px_to_world(float(config.get("pulse_gap_px", 18.0)))
             pulse_count = max(1, int(length / pulse_gap))
-            pulse_speed = 0.9
+            pulse_speed = float(config.get("pulse_speed", 0.9))
             painter.save()
             painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
             painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
-            pulse_pen = QtGui.QPen(self._with_alpha(pulse_color, 0.5 * glow_alpha))
-            pulse_pen.setWidthF(self._px_to_world(3.0))
+            pulse_alpha = float(config.get("pulse_alpha", 0.5))
+            pulse_width_px = float(config.get("pulse_width_px", 3.0))
+            pulse_pen = QtGui.QPen(self._with_alpha(pulse_color, pulse_alpha * glow_alpha))
+            pulse_pen.setWidthF(self._px_to_world(pulse_width_px))
             pulse_pen.setCapStyle(QtCore.Qt.RoundCap)
             painter.setPen(pulse_pen)
             for idx in range(pulse_count):
@@ -1073,9 +1091,15 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 painter.drawLine(start_pos, end_pos)
             painter.restore()
 
-            flash_radius = self.cell_size * (0.08 + 0.12 * flash_p)
-            ring_radius = self.cell_size * (0.05 + 0.3 * ring_p)
-            ring_width = self._px_to_world(2.5)
+            flash_radius = self.cell_size * (
+                float(config.get("impact_flash_base", 0.08))
+                + float(config.get("impact_flash_extra", 0.12)) * flash_p
+            )
+            ring_radius = self.cell_size * (
+                float(config.get("impact_ring_base", 0.05))
+                + float(config.get("impact_ring_extra", 0.3)) * ring_p
+            )
+            ring_width = self._px_to_world(float(config.get("impact_ring_width_px", 2.5)))
 
             painter.save()
             painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
@@ -1097,7 +1121,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
             painter.save()
             painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
-            particle_color = QtGui.QColor(140, 255, 180)
+            particle_color = QtGui.QColor(*config.get("particle_color", (140, 255, 180)))
             for particle in fx.particles:
                 particle_age = age
                 if particle_age >= particle.life:
