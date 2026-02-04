@@ -104,6 +104,275 @@ class GaussTracerEffect:
     edge_specks: List[EdgeSpeckBlueprint]
 
 
+class UnitTooltipWidget(QtWidgets.QFrame):
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None):
+        super().__init__(parent)
+        self._accent_color = Theme.accent
+        self._pinned = False
+        self._debug_mode = False
+        self._target_pos = QtCore.QPoint()
+
+        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating, True)
+        self.setObjectName("unitTooltip")
+        self.setWindowFlag(QtCore.Qt.FramelessWindowHint, True)
+        self.setWindowFlag(QtCore.Qt.ToolTip, True)
+
+        self._opacity_effect = QtWidgets.QGraphicsOpacityEffect(self)
+        self._opacity_effect.setOpacity(0.0)
+        self.setGraphicsEffect(self._opacity_effect)
+
+        self._fade_anim = QtCore.QPropertyAnimation(self._opacity_effect, b"opacity", self)
+        self._fade_anim.setDuration(160)
+        self._fade_anim.setEasingCurve(QtCore.QEasingCurve.InOutQuad)
+
+        self._move_anim = QtCore.QPropertyAnimation(self, b"pos", self)
+        self._move_anim.setDuration(160)
+        self._move_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+
+        self._anim_group = QtCore.QParallelAnimationGroup(self)
+        self._anim_group.addAnimation(self._fade_anim)
+        self._anim_group.addAnimation(self._move_anim)
+
+        self._icon_map = {
+            "models": "👥",
+            "wounds": "❤️",
+            "weapon": "🔫",
+            "range": "📏",
+            "bs": "🎯",
+            "cover": "🛡",
+            "los": "👁",
+            "mods": "✨",
+            "pin": "📌",
+            "debug": "🔧",
+        }
+
+        self._build_layout()
+        self.hide()
+
+    def _build_layout(self) -> None:
+        self._marker = QtWidgets.QFrame(self)
+        self._marker.setFixedSize(6, 22)
+        self._marker.setObjectName("unitTooltipMarker")
+
+        self._title_label = QtWidgets.QLabel(self)
+        self._title_label.setFont(Theme.font(size=10, bold=True))
+        self._title_label.setObjectName("unitTooltipTitle")
+
+        self._meta_label = QtWidgets.QLabel(self)
+        self._meta_label.setFont(Theme.font(size=8, bold=False))
+        self._meta_label.setObjectName("unitTooltipMeta")
+
+        self._status_label = QtWidgets.QLabel(self)
+        self._status_label.setFont(Theme.font(size=8, bold=True))
+        self._status_label.setObjectName("unitTooltipStatus")
+
+        header_layout = QtWidgets.QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(6)
+        header_layout.addWidget(self._marker)
+        header_layout.addWidget(self._title_label, 1)
+        header_layout.addWidget(self._status_label, 0, QtCore.Qt.AlignRight)
+        header_layout.addWidget(self._meta_label, 0, QtCore.Qt.AlignRight)
+
+        self._divider = QtWidgets.QFrame(self)
+        self._divider.setFrameShape(QtWidgets.QFrame.HLine)
+        self._divider.setFrameShadow(QtWidgets.QFrame.Plain)
+        self._divider.setFixedHeight(1)
+        self._divider.setObjectName("unitTooltipDivider")
+
+        self._stats_grid = QtWidgets.QGridLayout()
+        self._stats_grid.setContentsMargins(0, 0, 0, 0)
+        self._stats_grid.setHorizontalSpacing(12)
+        self._stats_grid.setVerticalSpacing(4)
+
+        self._stat_widgets: Dict[str, QtWidgets.QWidget] = {}
+        for key in ("models", "wounds", "weapon", "range", "bs", "cover", "los", "mods"):
+            widget = self._build_stat_widget(key)
+            self._stat_widgets[key] = widget
+
+        self._stats_grid.addWidget(self._stat_widgets["models"], 0, 0)
+        self._stats_grid.addWidget(self._stat_widgets["wounds"], 0, 1)
+        self._stats_grid.addWidget(self._stat_widgets["weapon"], 1, 0)
+        self._stats_grid.addWidget(self._stat_widgets["range"], 1, 1)
+        self._stats_grid.addWidget(self._stat_widgets["bs"], 2, 0)
+        self._stats_grid.addWidget(self._stat_widgets["cover"], 2, 1)
+        self._stats_grid.addWidget(self._stat_widgets["los"], 3, 0)
+        self._stats_grid.addWidget(self._stat_widgets["mods"], 3, 1)
+        self._stats_grid.setColumnStretch(0, 1)
+        self._stats_grid.setColumnStretch(1, 1)
+
+        self._hp_bar = QtWidgets.QProgressBar(self)
+        self._hp_bar.setRange(0, 1)
+        self._hp_bar.setValue(0)
+        self._hp_bar.setTextVisible(False)
+        self._hp_bar.setFixedHeight(7)
+        self._hp_bar.setObjectName("unitTooltipHpBar")
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
+        layout.addLayout(header_layout)
+        layout.addWidget(self._divider)
+        layout.addLayout(self._stats_grid)
+        layout.addWidget(self._hp_bar)
+        self.setLayout(layout)
+
+    def _build_stat_widget(self, key: str) -> QtWidgets.QWidget:
+        widget = QtWidgets.QWidget(self)
+        layout = QtWidgets.QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        icon = QtWidgets.QLabel(self._icon_map.get(key, ""), widget)
+        icon.setFont(Theme.font(size=9, bold=False))
+        icon.setObjectName("unitTooltipIcon")
+        value = QtWidgets.QLabel("—", widget)
+        value.setFont(Theme.font(size=9, bold=False))
+        value.setObjectName("unitTooltipValue")
+        layout.addWidget(icon)
+        layout.addWidget(value, 1)
+        widget.setLayout(layout)
+        widget._icon_label = icon
+        widget._value_label = value
+        return widget
+
+    def set_debug_mode(self, enabled: bool) -> None:
+        self._debug_mode = enabled
+
+    def set_pinned(self, pinned: bool) -> None:
+        self._pinned = pinned
+
+    def update_content(self, payload: Dict, accent: QtGui.QColor) -> None:
+        self._accent_color = accent
+        self._title_label.setText(payload.get("title", "Юнит"))
+        unit_id = payload.get("unit_id", "—")
+        self._meta_label.setText(f"Unit {unit_id}")
+
+        status_bits: List[str] = []
+        if self._pinned:
+            status_bits.append(f"{self._icon_map['pin']} PIN")
+        if self._debug_mode:
+            status_bits.append(f"{self._icon_map['debug']} DBG")
+        self._status_label.setText("  ".join(status_bits))
+
+        self._set_stat_value("models", payload.get("models", "—"))
+        self._set_stat_value("wounds", payload.get("wounds", "—"))
+        self._set_stat_value("weapon", payload.get("weapon", "—"))
+        self._set_stat_value("range", payload.get("range", "—"))
+        self._set_stat_value("bs", payload.get("bs", "—"))
+        self._set_stat_value("cover", payload.get("cover", "—"))
+        self._set_stat_value("los", payload.get("los", "—"))
+        self._set_stat_value("mods", payload.get("mods", "—"))
+
+        wounds_value = payload.get("wounds_value")
+        wounds_max = payload.get("wounds_max")
+        if isinstance(wounds_value, (int, float)) and isinstance(wounds_max, (int, float)):
+            self._hp_bar.setRange(0, max(1, int(wounds_max)))
+            self._hp_bar.setValue(max(0, int(wounds_value)))
+            self._hp_bar.show()
+        else:
+            self._hp_bar.hide()
+
+        self._apply_styles()
+
+    def _set_stat_value(self, key: str, value: object) -> None:
+        widget = self._stat_widgets.get(key)
+        if not widget:
+            return
+        text = "—" if value is None else str(value)
+        widget._value_label.setText(text)
+
+    def _apply_styles(self) -> None:
+        accent = self._accent_color
+        accent_rgba = f"rgba({accent.red()}, {accent.green()}, {accent.blue()}, 0.7)"
+        bg_rgba = "rgba(20, 22, 20, 0.86)"
+        self.setStyleSheet(
+            """
+            QFrame#unitTooltip {{
+                background-color: {bg};
+                border: 1px solid {accent};
+                border-radius: 8px;
+            }}
+            QFrame#unitTooltipMarker {{
+                background-color: {accent};
+                border-radius: 3px;
+            }}
+            QLabel#unitTooltipTitle {{
+                color: {text};
+            }}
+            QLabel#unitTooltipMeta {{
+                color: {muted};
+            }}
+            QLabel#unitTooltipStatus {{
+                color: {accent};
+            }}
+            QFrame#unitTooltipDivider {{
+                background-color: {accent};
+            }}
+            QLabel#unitTooltipIcon {{
+                color: {accent};
+            }}
+            QLabel#unitTooltipValue {{
+                color: {text};
+            }}
+            QProgressBar#unitTooltipHpBar {{
+                background: rgba(10, 12, 10, 0.6);
+                border: 1px solid rgba(0, 0, 0, 0.3);
+                border-radius: 4px;
+            }}
+            QProgressBar#unitTooltipHpBar::chunk {{
+                background-color: {accent};
+                border-radius: 4px;
+            }}
+            """.format(
+                bg=bg_rgba,
+                accent=accent_rgba,
+                text=Theme.text.name(),
+                muted=Theme.muted.name(),
+            )
+        )
+
+    def show_at(self, target_pos: QtCore.QPoint, animate: bool = True) -> None:
+        self._target_pos = target_pos
+        if not animate:
+            self.move(target_pos)
+            self._opacity_effect.setOpacity(1.0)
+            self.show()
+            return
+        start_pos = target_pos + QtCore.QPoint(0, 6)
+        self._move_anim.stop()
+        self._fade_anim.stop()
+        self._anim_group.stop()
+        try:
+            self._anim_group.finished.disconnect(self.hide)
+        except TypeError:
+            pass
+        self.move(start_pos)
+        self.show()
+        self._fade_anim.setStartValue(self._opacity_effect.opacity())
+        self._fade_anim.setEndValue(1.0)
+        self._move_anim.setStartValue(start_pos)
+        self._move_anim.setEndValue(target_pos)
+        self._anim_group.start()
+
+    def hide_animated(self) -> None:
+        if not self.isVisible():
+            return
+        self._fade_anim.stop()
+        self._move_anim.stop()
+        self._anim_group.stop()
+        self._fade_anim.setStartValue(self._opacity_effect.opacity())
+        self._fade_anim.setEndValue(0.0)
+        self._move_anim.setStartValue(self.pos())
+        self._move_anim.setEndValue(self.pos())
+        try:
+            self._anim_group.finished.disconnect(self.hide)
+        except TypeError:
+            pass
+        self._anim_group.start()
+        self._anim_group.finished.connect(self.hide)
+
+
 class OpenGLBoardWidget(QOpenGLWidget):
     unit_selected = QtCore.Signal(str, int)
 
@@ -173,9 +442,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._target_cell: Optional[Tuple[int, int]] = None
         self._hover_cell: Optional[Tuple[int, int]] = None
         self._hover_unit_key: Optional[Tuple[str, int]] = None
-        self._hover_tooltip_text: Optional[str] = None
+        self._hover_tooltip_text: Optional[Dict] = None
         self._hover_tooltip_ts: float = 0.0
         self._hover_tooltip_interval_s = 1.0 / 30.0
+        self._tooltip_pinned = False
+        self._tooltip_widget = UnitTooltipWidget(self)
         self._t0: Optional[float] = None
         self._fx_timer = QtCore.QTimer(self)
         self._fx_timer.setInterval(16)
@@ -207,7 +478,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             )
             return
         self.set_error_message(None)
-        self._clear_hover_tooltip()
+        self._clear_hover_tooltip(force=True)
         board = self._state.get("board", {})
         width = int(board.get("width") or 60)
         height = int(board.get("height") or 40)
@@ -761,6 +1032,16 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return
         if key == QtCore.Qt.Key_D:
             self._debug_overlay = not self._debug_overlay
+            self._tooltip_widget.set_debug_mode(self._debug_overlay)
+            self.update()
+            return
+        if key == QtCore.Qt.Key_P:
+            self._tooltip_pinned = not self._tooltip_pinned
+            self._tooltip_widget.set_pinned(self._tooltip_pinned)
+            if not self._tooltip_pinned:
+                self._clear_hover_tooltip()
+            else:
+                self._refresh_tooltip_anchor()
             self.update()
             return
         super().keyPressEvent(event)
@@ -782,12 +1063,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self.unit_selected.emit(closest_key[0], closest_key[1])
         self.update()
 
-    def _clear_hover_tooltip(self) -> None:
+    def _clear_hover_tooltip(self, force: bool = False) -> None:
+        if self._tooltip_pinned and not force:
+            return
         if self._hover_unit_key is None and not self._hover_tooltip_text:
             return
         self._hover_unit_key = None
         self._hover_tooltip_text = None
-        QtWidgets.QToolTip.hideText()
+        self._tooltip_widget.hide_animated()
 
     def paintGL(self) -> None:
         painter = QtGui.QPainter(self)
@@ -1591,6 +1874,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if unit_key is None:
             self._clear_hover_tooltip()
             return
+        if self._tooltip_pinned and self._hover_unit_key is not None:
+            self._refresh_tooltip_anchor()
+            return
         now = monotonic()
         needs_refresh = unit_key != self._hover_unit_key
         if not needs_refresh and now - self._hover_tooltip_ts < self._hover_tooltip_interval_s:
@@ -1599,13 +1885,17 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if not unit:
             self._clear_hover_tooltip()
             return
-        tooltip_text = self._build_unit_tooltip(unit)
-        if needs_refresh or tooltip_text != self._hover_tooltip_text:
-            self._hover_tooltip_text = tooltip_text
+        tooltip_payload = self._build_unit_tooltip_payload(unit)
+        if needs_refresh or tooltip_payload != self._hover_tooltip_text:
+            self._hover_tooltip_text = tooltip_payload
         self._hover_unit_key = unit_key
         self._hover_tooltip_ts = now
         anchor = self._tooltip_anchor_for_unit(unit_key, event.globalPosition().toPoint())
-        QtWidgets.QToolTip.showText(anchor, tooltip_text, self)
+        accent = self._unit_accent_color(unit)
+        self._tooltip_widget.set_pinned(self._tooltip_pinned)
+        self._tooltip_widget.set_debug_mode(self._debug_overlay)
+        self._tooltip_widget.update_content(tooltip_payload, accent)
+        self._position_tooltip(anchor)
 
     def _unit_key_at_world(self, world: QtCore.QPointF) -> Optional[Tuple[str, int]]:
         if self._board_rect.isEmpty():
@@ -1658,25 +1948,93 @@ class OpenGLBoardWidget(QOpenGLWidget):
         offset = QtCore.QPoint(12, -12)
         return self.mapToGlobal(QtCore.QPoint(int(screen_pos.x()), int(screen_pos.y()))) + offset
 
-    def _build_unit_tooltip(self, unit: dict) -> str:
+    def _build_unit_tooltip_payload(self, unit: dict) -> Dict:
         title = self._unit_display_name(unit)
         models = unit.get("models", "—")
-        wounds = unit.get("wounds", unit.get("hp", "—"))
+        wounds_value = self._coerce_number(unit.get("wounds", unit.get("hp")))
+        wounds_max = self._coerce_number(
+            unit.get("max_wounds", unit.get("wounds_max", unit.get("wounds", unit.get("hp"))))
+        )
+        wounds_label = "—"
+        if wounds_value is not None and wounds_max is not None:
+            wounds_label = f"{int(wounds_value)}/{int(wounds_max)}"
+        elif wounds_value is not None:
+            wounds_label = str(int(wounds_value))
         cover = self._tooltip_cover_status(unit)
-        weapon_line = self._tooltip_weapon_line(unit)
+        weapon_name = self._tooltip_weapon_name(unit)
         unit_id = unit.get("id", "—")
         los = self._tooltip_los_status(unit)
         mods = self._tooltip_mods_status(unit)
-        lines = [
-            title,
-            f"Models / Wounds: {models} / {wounds}",
-            f"Cover: {cover}",
-            weapon_line,
-            f"Unit ID: {unit_id}",
-            f"LOS: {los}",
-            f"Mods: {mods}",
-        ]
-        return "\n".join(lines)
+        weapon_range = self._resolve_weapon_range(unit) or "—"
+        bs = unit.get("bs") or unit.get("BS") or unit.get("ballistic_skill") or "—"
+        return {
+            "title": title,
+            "unit_id": unit_id,
+            "models": models,
+            "wounds": wounds_label,
+            "wounds_value": wounds_value,
+            "wounds_max": wounds_max,
+            "weapon": weapon_name,
+            "range": weapon_range,
+            "bs": bs,
+            "cover": cover,
+            "los": los,
+            "mods": mods,
+        }
+
+    def _coerce_number(self, value: object) -> Optional[float]:
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                return None
+        return None
+
+    def _unit_accent_color(self, unit: dict) -> QtGui.QColor:
+        army = str(unit.get("army") or unit.get("faction") or "").lower()
+        side = str(unit.get("side") or "").lower()
+        if "necron" in army or "некрон" in army:
+            return QtGui.QColor("#6fbf7a")
+        if side == "player":
+            return Theme.player
+        if side == "model":
+            return Theme.model
+        return Theme.accent
+
+    def _position_tooltip(self, anchor: QtCore.QPoint) -> None:
+        if not self._tooltip_widget:
+            return
+        widget = self._tooltip_widget
+        widget.adjustSize()
+        size = widget.size()
+        padding = 12
+        pos = QtCore.QPoint(anchor)
+        screen = self.screen() or self.window().screen()
+        available = screen.availableGeometry() if screen else self.rect()
+        if pos.x() + size.width() + padding > available.right():
+            pos.setX(pos.x() - size.width() - padding)
+        if pos.y() + size.height() + padding > available.bottom():
+            pos.setY(pos.y() - size.height() - padding)
+        if pos.x() < padding:
+            pos.setX(padding)
+        if pos.y() < padding:
+            pos.setY(padding)
+        widget.show_at(pos)
+
+    def _refresh_tooltip_anchor(self) -> None:
+        if self._hover_unit_key is None:
+            return
+        unit = self._state_unit(self._hover_unit_key)
+        if not unit:
+            self._clear_hover_tooltip(force=True)
+            return
+        anchor = self._tooltip_anchor_for_unit(self._hover_unit_key, self.mapToGlobal(QtCore.QPoint(0, 0)))
+        accent = self._unit_accent_color(unit)
+        payload = self._build_unit_tooltip_payload(unit)
+        self._tooltip_widget.update_content(payload, accent)
+        self._position_tooltip(anchor)
 
     def _unit_display_name(self, unit: dict) -> str:
         name = str(unit.get("name") or "").strip()
@@ -1690,18 +2048,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return "Юнит"
 
     def _tooltip_cover_status(self, unit: dict) -> str:
-        return "открыт"
+        return "—"
 
-    def _tooltip_weapon_line(self, unit: dict) -> str:
-        weapon_name = (
-            unit.get("weapon_name")
-            or unit.get("weapon")
-            or unit.get("weapons")
-            or "—"
-        )
-        weapon_range = self._resolve_weapon_range(unit) or "—"
-        bs = unit.get("bs") or unit.get("BS") or unit.get("ballistic_skill") or "—"
-        return f"Weapon: {weapon_name} | Range {weapon_range} | BS {bs}"
+    def _tooltip_weapon_name(self, unit: dict) -> str:
+        weapon_name = unit.get("weapon_name") or unit.get("weapon") or unit.get("weapons")
+        if isinstance(weapon_name, list):
+            weapon_name = ", ".join(map(str, weapon_name))
+        return weapon_name or "—"
 
     def _resolve_weapon_range(self, unit: dict) -> Optional[int]:
         for key in ("range", "weapon_range", "shoot_range", "shooting_range"):
@@ -1711,7 +2064,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return None
 
     def _tooltip_los_status(self, unit: dict) -> str:
-        return "TBD"
+        return "—"
 
     def _tooltip_mods_status(self, unit: dict) -> str:
         return "—"
