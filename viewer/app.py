@@ -61,6 +61,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         header.sortIndicatorChanged.connect(self._rebuild_unit_row_mapping)
         self.units_table.verticalHeader().setVisible(False)
         self.units_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.units_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.units_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.units_table.setAlternatingRowColors(True)
         self.units_table.itemSelectionChanged.connect(self._sync_selection_from_table)
@@ -81,6 +82,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._suppress_table_sync = False
         self._pending_focus_unit_id = None
         self._pending_focus_side = None
+        self._last_focus_failure_key = None
         self._log_tab_defs = [
             ("player", "Все ходы игрока"),
             ("model", "Все ходы модели"),
@@ -636,6 +638,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
             last_col = max(0, self.units_table.columnCount() - 1)
             selection_range = QtWidgets.QTableWidgetSelectionRange(row, 0, row, last_col)
             self.units_table.setRangeSelected(selection_range, True)
+            for col in range(last_col + 1):
+                item = self.units_table.item(row, col)
+                if item is not None:
+                    item.setSelected(True)
             self.units_table.setCurrentCell(row, 0)
             self.units_table.setFocus()
             item = self.units_table.item(row, 0)
@@ -652,11 +658,28 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         if side is not None:
             self._select_row_for_unit(side, unit_id, log_selection=False)
+            self._last_focus_failure_key = None
             return
         row = self._find_row_for_unit_id(unit_id)
         if row is None:
+            self._log_focus_failure(unit_id, side)
             return
         self._select_units_table_row(row)
+        self._last_focus_failure_key = None
+
+    def _log_focus_failure(self, unit_id, side):
+        key = (unit_id, side)
+        if self._last_focus_failure_key == key:
+            return
+        self._last_focus_failure_key = key
+        side_label = side if side is not None else "неизвестно"
+        self.add_log_line(
+            "Автофокус: не найдена строка для юнита "
+            f"{unit_id} (сторона={side_label}). "
+            "Где: таблица «ОТРЯДЫ». "
+            "Что делать дальше: проверьте, что state.json содержит этого юнита "
+            "и дождитесь обновления таблицы."
+        )
 
     def _focus_unit_from_prompt(self, prompt):
         unit_id = self._extract_unit_id(prompt)
