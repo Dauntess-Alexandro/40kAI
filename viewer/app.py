@@ -79,6 +79,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_tab_programmatic_switch = False
         self._last_manual_log_tab_index = None
         self._suppress_table_sync = False
+        self._pending_focus_unit_id = None
+        self._pending_focus_side = None
         self._log_tab_defs = [
             ("player", "Все ходы игрока"),
             ("model", "Все ходы модели"),
@@ -331,6 +333,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
 
         self.command_prompt.setText(request.prompt)
+        self._focus_unit_from_prompt(request.prompt)
         self.command_stack.setEnabled(True)
         kind = getattr(request, "kind", "text")
         if kind == "direction":
@@ -550,6 +553,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._unit_row_by_key[unit_key] = row
         self.units_table.setSortingEnabled(True)
         self._rebuild_unit_row_mapping()
+        self._apply_pending_unit_focus()
 
     def _update_log(self, lines):
         if isinstance(lines, list):
@@ -653,6 +657,28 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if row is None:
             return
         self._select_units_table_row(row)
+
+    def _focus_unit_from_prompt(self, prompt):
+        unit_id = self._extract_unit_id(prompt)
+        if unit_id is None:
+            self._pending_focus_unit_id = None
+            self._pending_focus_side = None
+            return
+        side = self._resolve_unit_side_by_id(unit_id)
+        self._pending_focus_unit_id = unit_id
+        self._pending_focus_side = side
+        self._focus_unit_in_table(unit_id, side)
+
+    def _apply_pending_unit_focus(self):
+        if self._pending_focus_unit_id is None:
+            return
+        self._focus_unit_in_table(self._pending_focus_unit_id, self._pending_focus_side)
+
+    def _resolve_unit_side_by_id(self, unit_id):
+        for (side, candidate_id), _ in self._units_by_key.items():
+            if candidate_id == unit_id:
+                return side
+        return None
 
     def add_log_line(self, line: str):
         raw_text = str(line)
