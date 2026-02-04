@@ -330,6 +330,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
 
         self.command_prompt.setText(request.prompt)
+        self._focus_unit_from_prompt(request.prompt)
         self.command_stack.setEnabled(True)
         kind = getattr(request, "kind", "text")
         if kind == "direction":
@@ -369,6 +370,25 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_stack.setCurrentIndex(self._command_pages["text"])
         self._update_command_hint(kind)
         self._refresh_active_context()
+
+    def _focus_unit_from_prompt(self, prompt: str) -> None:
+        if not prompt:
+            return
+        match = re.search(r"ход\\s+юнита:\\s*unit\\s*(\\d+)", prompt, re.IGNORECASE)
+        if not match:
+            return
+        unit_id = int(match.group(1))
+        target_key = None
+        for (side, candidate_id) in self._units_by_key.keys():
+            if candidate_id == unit_id:
+                target_key = (side, candidate_id)
+                break
+        if not target_key:
+            return
+        side, unit_id = target_key
+        self._select_row_for_unit(side, unit_id)
+        self.map_scene.select_unit(side, unit_id)
+        self.map_scene.center_on_unit(side, unit_id)
 
     def _update_command_hint(self, kind):
         if kind == "direction":
