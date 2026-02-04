@@ -22,8 +22,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 33,
-      "y": 26
+      "x": 38,
+      "y": 36
     },
     {
       "side": "player",
@@ -31,8 +31,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 32,
-      "y": 42
+      "x": 37,
+      "y": 19
     },
     {
       "side": "model",
@@ -40,8 +40,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 1,
-      "y": 1
+      "x": 5,
+      "y": 33
     },
     {
       "side": "model",
@@ -49,8 +49,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 4,
-      "y": 35
+      "x": 7,
+      "y": 28
     }
   ],
   "objectives": [
@@ -76,21 +76,21 @@
     }
   ],
   "log_tail": [
-    "VP MODEL: 0, VP PLAYER: 0",
-    "Unit 21 — Necrons Necron Warriors (x10 моделей) стреляет по Unit 11 — Necrons Necron Warriors (x10 моделей) 1.0 раз(а)",
-    "=== БОЕВОЙ РАУНД 2 ===",
-    "--- ХОД PLAYER ---",
-    "--- ФАЗА КОМАНДОВАНИЯ ---",
-    "[PLAYER] Unit 11 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols",
-    "[MODEL] pickle=C:\\40kAI\\models\\M_Necrons_vs_P_Necrons\\model-34-321670.pickle",
-    "[MODEL] checkpoint=C:\\40kAI\\models\\M_Necrons_vs_P_Necrons\\model-34-321670.pth",
-    "Roll-off Attacker/Defender: enemy=1 model=6 -> attacker=model",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "[MODEL] pickle=C:\\40kAI\\models\\M_Necrons_vs_P_Necrons\\model-7-75252.pickle",
+    "[MODEL] checkpoint=C:\\40kAI\\models\\M_Necrons_vs_P_Necrons\\model-7-75252.pth",
+    "Roll-off Attacker/Defender: enemy=1 model=4 -> attacker=model",
     "Юниты: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]",
     "[DEPLOY] Order: model first, alternating",
-    "[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (1,1)",
-    "[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (26,33)",
-    "[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (35,4)",
-    "[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (42,32)",
+    "[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (33,5)",
+    "[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (36,38)",
+    "[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (28,7)",
+    "[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (19,37)",
     "[MISSION Only War] Post-deploy: currently no post-deploy units supported",
     "[MODEL] Архитектура сети: dueling (источник: net_type)",
     "",
@@ -104,9 +104,9 @@
     "=== БОЕВОЙ РАУНД 1 ===",
     "--- ХОД PLAYER ---",
     "--- ФАЗА КОМАНДОВАНИЯ ---",
-    "[ENEMY] Only War: end of Command phase -> controlled=2, gained=0, VP: 0 -> 0, objectives=[0, 1]",
+    "[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0",
     "--- ФАЗА ДВИЖЕНИЯ ---"
   ],
   "model_events": [],
-  "generated_at": "2026-02-04T10:08:37.611900Z"
+  "generated_at": "2026-02-04T10:31:26.695644Z"
 }
