@@ -11,7 +11,7 @@ import torch
 from gym_mod.engine.game_io import GuiIO, set_active_io
 from gym_mod.engine.state_export import DEFAULT_STATE_PATH
 from model.DQN import DQN
-from model.utils import select_action, convertToDict, build_shoot_action_mask
+from model.utils import select_action, convertToDict, build_shoot_action_mask, normalize_state_dict
 from gym_mod.envs.warhamEnv import roll_off_attacker_defender
 
 
@@ -167,7 +167,7 @@ class GameController:
             net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
             dueling = net_type == "dueling"
             if not dueling and isinstance(checkpoint, dict):
-                policy_state = checkpoint.get("policy_net", {})
+                policy_state = normalize_state_dict(checkpoint.get("policy_net", {}))
                 if any(key.startswith("advantage_heads.") for key in policy_state.keys()):
                     dueling = True
 
@@ -179,8 +179,8 @@ class GameController:
             target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
             optimizer = torch.optim.Adam(policy_net.parameters())
 
-            policy_net.load_state_dict(checkpoint["policy_net"])
-            target_net.load_state_dict(checkpoint["target_net"])
+            policy_net.load_state_dict(normalize_state_dict(checkpoint["policy_net"]))
+            target_net.load_state_dict(normalize_state_dict(checkpoint["target_net"]))
             optimizer.load_state_dict(checkpoint["optimizer"])
 
             policy_net.eval()

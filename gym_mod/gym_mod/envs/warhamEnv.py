@@ -26,6 +26,7 @@ from gym_mod.engine.skills import apply_end_of_command_phase
 from gym_mod.engine.logging_utils import format_unit
 from gym_mod.engine.state_export import write_state_json
 from gym_mod.engine.game_io import get_active_io
+from gym_mod.engine.event_bus import get_event_bus, get_event_recorder
 
 # ============================================================
 # 🔧 FIX: resolve string weapons like "Bolt pistol [PISTOL]"
@@ -838,6 +839,8 @@ class Warhammer40kEnv(gym.Env):
         self.turn_order = ["enemy", "model"]
         self._round_banner_shown = False
         self._fight_env_logged = False
+        self._phase_event_emitted = False
+        self._phase_unit_logged = set()
         self.mission_name = MISSION_NAME
 
         self.coordsOfOM = np.array([
@@ -857,6 +860,7 @@ class Warhammer40kEnv(gym.Env):
         self.modelOC = []
         self.enemyOC = []
         self.modelUpdates = ""
+        get_event_recorder().clear()
 
         for i in range(len(enemy)):
             self.enemy_weapon.append(enemy[i].showWeapon())
@@ -935,6 +939,52 @@ class Warhammer40kEnv(gym.Env):
         if not self._should_log():
             return
         self._ensure_io().log(msg)
+        if self.active_side == "model" and self._looks_like_dice_log(msg):
+            self._emit_event(
+                {
+                    "side": "enemy",
+                    "phase": self.phase,
+                    "type": "dice",
+                    "msg": msg,
+                    "data": {"raw": msg},
+                    "unit_id": None,
+                    "unit_name": None,
+                    "verbosity": "verbose" if verbose_only else "normal",
+                }
+            )
+
+    def _looks_like_dice_log(self, msg: str) -> bool:
+        lowered = msg.lower()
+        return any(token in lowered for token in ("🎲", "бросок", "d6", "2d6", "d3"))
+
+    def _normalize_event_side(self, side: str) -> str:
+        side_upper = str(side).upper()
+        if side_upper in ("MODEL", "ENEMY"):
+            return "enemy"
+        if side_upper in ("PLAYER", "HUMAN"):
+            return "player"
+        if side == "model":
+            return "enemy"
+        if side == "enemy":
+            return "player"
+        return str(side)
+
+    def _unit_name(self, side: str, unit_idx: int) -> str | None:
+        data = self._get_unit_data(side, unit_idx)
+        if isinstance(data, dict):
+            return data.get("Name")
+        return None
+
+    def _emit_event(self, event: dict) -> None:
+        if not isinstance(event, dict):
+            return
+        event.setdefault("battle_round", self.battle_round)
+        event.setdefault("turn", self.numTurns)
+        event.setdefault("phase", self.phase)
+        event.setdefault("data", {})
+        event.setdefault("msg", "")
+        event.setdefault("verbosity", "normal")
+        get_event_bus().emit(event)
 
     def _append_agent_log(self, msg: str) -> None:
         if msg is None:
@@ -947,14 +997,28 @@ class Warhammer40kEnv(gym.Env):
         except Exception:
             return
 
-    def _log_reward(self, msg: str) -> None:
+    def _log_reward(self, msg: str, unit_id: int | None = None, unit_name: str | None = None) -> None:
         self._log(msg)
         self._append_agent_log(msg)
+        if self.active_side == "model":
+            self._emit_event(
+                {
+                    "side": "enemy",
+                    "phase": self.phase,
+                    "type": "reward",
+                    "msg": msg,
+                    "data": {"raw": msg},
+                    "unit_id": unit_id,
+                    "unit_name": unit_name,
+                }
+            )
 
     def _log_reward_unit(self, side: str, unit_id: int, unit_idx: int, msg: str) -> None:
         side_label = self._side_label(side)
         unit_label = self._format_unit_label(side, unit_idx, unit_id=unit_id)
-        self._log_reward(f"[{side_label}] {unit_label}: {msg}")
+        unit_side = "model" if self._normalize_event_side(side) == "enemy" else "enemy"
+        unit_name = self._unit_name(unit_side, unit_idx)
+        self._log_reward(f"[{side_label}] {unit_label}: {msg}", unit_id=unit_id, unit_name=unit_name)
 
     def _log_reward_warning(self, msg: str) -> None:
         if os.getenv("REWARD_DEBUG", "0") != "1":
@@ -1037,6 +1101,21 @@ class Warhammer40kEnv(gym.Env):
             "fight": "ФАЗА БОЯ",
         }.get(phase, f"ФАЗА {phase.upper()}")
         self._log(f"--- {phase_title} ---")
+        if not self._phase_event_emitted:
+            event_side = self._normalize_event_side(side)
+            if event_side == "enemy":
+                self._emit_event(
+                    {
+                        "side": event_side,
+                        "phase": phase,
+                        "type": "phase_start",
+                        "msg": phase_title,
+                        "data": {"title": phase_title},
+                        "unit_id": None,
+                        "unit_name": None,
+                    }
+                )
+                self._phase_event_emitted = True
 
     def _log_unit(self, side: str, unit_id: int, unit_idx: int, msg: str):
         if not self._should_log():
@@ -1044,6 +1123,7 @@ class Warhammer40kEnv(gym.Env):
         side_label = self._side_label(side)
         unit_label = self._format_unit_label(side, unit_idx, unit_id=unit_id)
         self._log(f"[{side_label}] {unit_label}: {msg}")
+        self._emit_unit_event(side_label, side, unit_id, unit_idx, msg, None, verbose_only=False)
 
     def _display_side(self, side: str) -> str:
         if side == "enemy":
@@ -1060,6 +1140,7 @@ class Warhammer40kEnv(gym.Env):
         if not self._should_log():
             return
         self._log(f"[{side_label}][{phase.upper()}] {msg}")
+        self._emit_unit_event(side_label, None, None, None, msg, phase, verbose_only=False)
 
     def _log_unit_phase(self, side_label: str, phase: str, unit_id: int, unit_idx: int, msg: str):
         if not self._should_log():
@@ -1070,12 +1151,83 @@ class Warhammer40kEnv(gym.Env):
             unit_id=unit_id,
         )
         self._log(f"[{side_label}][{phase.upper()}] {unit_label}: {msg}")
+        self._emit_unit_event(side_label, None, unit_id, unit_idx, msg, phase, verbose_only=False)
 
     def _log_action(self, side: str, unit_idx: int, msg: str, phase: str = None, verbose_only: bool = False):
         side_label = self._side_label(side)
         unit_label = self._format_unit_label(side, unit_idx)
         phase_prefix = f"[{phase.upper()}] " if phase else ""
         self._log(f"[{side_label}] {phase_prefix}{unit_label}: {msg}", verbose_only=verbose_only)
+        self._emit_unit_event(side_label, side, None, unit_idx, msg, phase, verbose_only=verbose_only)
+
+    def _emit_unit_event(
+        self,
+        side_label: str,
+        side: str | None,
+        unit_id: int | None,
+        unit_idx: int | None,
+        msg: str,
+        phase: str | None,
+        verbose_only: bool,
+    ) -> None:
+        event_side = self._normalize_event_side(side_label if side is None else side)
+        if event_side != "enemy":
+            return
+        phase_value = phase or self.phase
+        resolved_unit_id = unit_id
+        resolved_unit_name = None
+        if unit_idx is not None:
+            resolved_unit_name = self._unit_name("model", unit_idx)
+            if resolved_unit_id is None:
+                resolved_unit_id = self._unit_id("model", unit_idx)
+        if resolved_unit_id is not None and resolved_unit_id not in self._phase_unit_logged:
+            self._phase_unit_logged.add(resolved_unit_id)
+            self._emit_event(
+                {
+                    "side": event_side,
+                    "phase": phase_value,
+                    "type": "unit_start",
+                    "msg": f"Юнит {resolved_unit_id} — {resolved_unit_name or '—'}",
+                    "unit_id": resolved_unit_id,
+                    "unit_name": resolved_unit_name,
+                    "data": {},
+                }
+            )
+        event_type = self._classify_event_type(msg, phase_value)
+        self._emit_event(
+            {
+                "side": event_side,
+                "phase": phase_value,
+                "type": event_type,
+                "msg": msg,
+                "data": {"raw": msg},
+                "unit_id": resolved_unit_id,
+                "unit_name": resolved_unit_name,
+                "verbosity": "verbose" if verbose_only else "normal",
+            }
+        )
+
+    def _classify_event_type(self, msg: str, phase: str | None) -> str:
+        lowered = msg.lower()
+        if "reward" in lowered or "награда" in lowered:
+            return "reward"
+        if "vp" in lowered or "объект" in lowered or "cp" in lowered:
+            return "vp"
+        if "бросок" in lowered or "🎲" in lowered or "d6" in lowered or "2d6" in lowered or "d3" in lowered:
+            return "dice"
+        if "цели" in lowered or "доступн" in lowered or "скан" in lowered or "выбор" in lowered:
+            return "scan"
+        if "пропущ" in lowered or "нет доступных целей" in lowered or "нет целей" in lowered:
+            return "skip"
+        if phase == "movement":
+            return "move"
+        if phase == "shooting":
+            return "shoot"
+        if phase == "charge":
+            return "charge"
+        if phase == "fight":
+            return "fight"
+        return "summary"
 
     def _log_rule(
         self,
@@ -1480,6 +1632,8 @@ class Warhammer40kEnv(gym.Env):
     def begin_phase(self, side: str, phase: str):
         self.active_side = side
         self.phase = phase
+        self._phase_event_emitted = False
+        self._phase_unit_logged = set()
         if not self._round_banner_shown:
             self._log(f"=== БОЕВОЙ РАУНД {self.battle_round} ===")
             self._round_banner_shown = True
@@ -1501,9 +1655,32 @@ class Warhammer40kEnv(gym.Env):
             elif side == "enemy":
                 self.enemyFellBack = [False] * len(self.enemy_health)
         self._log_phase(self._side_label(side), phase)
+        if side == "model":
+            self._emit_event(
+                {
+                    "side": "enemy",
+                    "phase": phase,
+                    "type": "summary",
+                    "msg": f"Ход модели: {phase}",
+                    "unit_id": None,
+                    "unit_name": None,
+                    "data": {"phase": phase},
+                }
+            )
 
     def _end_battle_round(self):
         self._log(f"=== КОНЕЦ БОЕВОГО РАУНДА {self.battle_round} ===")
+        self._emit_event(
+            {
+                "side": "enemy",
+                "phase": self.phase,
+                "type": "summary",
+                "msg": f"Конец боевого раунда {self.battle_round}",
+                "unit_id": None,
+                "unit_name": None,
+                "data": {},
+            }
+        )
         self.battle_round += 1
         self.numTurns = self.battle_round
         self._round_banner_shown = False
@@ -1575,6 +1752,17 @@ class Warhammer40kEnv(gym.Env):
             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
             apply_end_of_command_phase(self, side="model", dice_fn=dice_fn, log_fn=self._log)
             score_end_of_command_phase(self, "model", log_fn=self._log)
+            self._emit_event(
+                {
+                    "side": "enemy",
+                    "phase": "command",
+                    "type": "phase_end",
+                    "msg": f"Командование завершено: VP={self.modelVP}, CP={self.modelCP}",
+                    "unit_id": None,
+                    "unit_name": None,
+                    "data": {"vp": self.modelVP, "cp": self.modelCP},
+                }
+            )
             return battle_shock, reward_delta
 
         if side == "enemy" and action is not None and not manual:
@@ -1891,6 +2079,17 @@ class Warhammer40kEnv(gym.Env):
                     "Reward (VP/объекты, движение): "
                     f"hold={objective_hold_delta:.3f}, proximity={objective_proximity_delta:.3f}, total={total_obj_delta:.3f}"
                 )
+            self._emit_event(
+                {
+                    "side": "enemy",
+                    "phase": "movement",
+                    "type": "phase_end",
+                    "msg": "Движение завершено.",
+                    "unit_id": None,
+                    "unit_name": None,
+                    "data": {"reward_delta": reward_delta},
+                }
+            )
             return advanced_flags, reward_delta
 
         if side == "enemy" and action is not None and not manual:
@@ -2431,6 +2630,17 @@ class Warhammer40kEnv(gym.Env):
                             self._log(f"{self._format_unit_label('model', i)} не смог стрелять: выбранная цель недоступна.")
                 else:
                     self._log_unit("MODEL", modelName, i, "Нет целей в дальности, стрельба пропущена.")
+            self._emit_event(
+                {
+                    "side": "enemy",
+                    "phase": "shooting",
+                    "type": "phase_end",
+                    "msg": "Стрельба завершена.",
+                    "unit_id": None,
+                    "unit_name": None,
+                    "data": {"reward_delta": reward_delta},
+                }
+            )
             return reward_delta
         elif side == "enemy" and action is not None and not manual:
             self._log_phase(self._display_side("enemy"), "shooting")
@@ -2798,6 +3008,17 @@ class Warhammer40kEnv(gym.Env):
                             self._log_unit("MODEL", modelName, i, "Нет целей в 12\", чардж пропущен.")
             if not any_charge_targets:
                 self._log("[MODEL] Чардж: нет доступных целей")
+            self._emit_event(
+                {
+                    "side": "enemy",
+                    "phase": "charge",
+                    "type": "phase_end",
+                    "msg": "Чардж завершён.",
+                    "unit_id": None,
+                    "unit_name": None,
+                    "data": {"reward_delta": reward_delta},
+                }
+            )
             return reward_delta
         elif side == "enemy" and action is not None and not manual:
             self._log_phase(self._display_side("enemy"), "charge")
@@ -3229,6 +3450,18 @@ class Warhammer40kEnv(gym.Env):
                 f"advantage={advantage_term:.3f}, strength={strength_term:.3f}, "
                 f"objectives={obj_term:.3f} (delta={obj_delta}), total={reward_delta:.3f}"
             )
+        if side == "model":
+            self._emit_event(
+                {
+                    "side": "enemy",
+                    "phase": "fight",
+                    "type": "phase_end",
+                    "msg": "Фаза боя завершена.",
+                    "unit_id": None,
+                    "unit_name": None,
+                    "data": {"reward_delta": reward_delta},
+                }
+            )
         return reward_delta
 
     def refresh_objective_control(self):
@@ -3317,6 +3550,9 @@ class Warhammer40kEnv(gym.Env):
         self.modelUpdates = ""
         self._prev_vp_diff = 0
         self._objective_hold_streaks = [0] * len(self.coordsOfOM)
+        self._phase_event_emitted = False
+        self._phase_unit_logged = set()
+        get_event_recorder().clear()
 
         for i in range(len(self.enemy_data)):
             self.enemy_coords.append([self.enemy[i].showCoords()[0], self.enemy[i].showCoords()[1]])

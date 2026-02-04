@@ -2,6 +2,8 @@ import json
 import os
 from datetime import datetime
 
+from gym_mod.engine.event_bus import get_event_recorder
+
 
 DEFAULT_STATE_PATH = os.path.join(os.getcwd(), "gui", "state.json")
 
@@ -31,6 +33,11 @@ def _read_log_tail(max_lines=30):
                 lines = [line.rstrip("\n") for line in handle.readlines()]
                 return lines[-max_lines:] if lines else []
     return []
+
+
+def _read_event_tail(max_events=2000):
+    recorder = get_event_recorder()
+    return recorder.snapshot(limit=max_events)
 
 
 def _unit_payload(side, unit_id, unit_data, coords, hp):
@@ -96,6 +103,7 @@ def write_state_json(env, path=None):
         "units": units,
         "objectives": objectives,
         "log_tail": _read_log_tail(),
+        "model_events": _read_event_tail(),
         "generated_at": datetime.utcnow().isoformat() + "Z",
     }
 
