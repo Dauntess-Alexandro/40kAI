@@ -35,6 +35,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._show_objective_radius = True
         self._units_by_key = {}
         self._unit_row_by_key = {}
+        self._last_focused_unit_key = None
 
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = OpenGLBoardWidget(cell_size=18)
@@ -599,6 +600,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             row = self._find_row_for_unit(unit_key)
         if row is None:
             return
+        # Таблица пересоздаётся при каждом обновлении состояния, выбор нужно восстанавливать.
         self.units_table.selectRow(row)
         unit_name = self._units_by_key.get(unit_key, {}).get("name", "—")
         self._append_log([f"Выбрано на карте: unit_id={unit_id}, name={unit_name}"])
@@ -985,6 +987,33 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 return unit_id, side
         return unit_id, None
 
+    def _focus_unit_from_pending_request(self):
+        prompt_text = getattr(self._pending_request, "prompt", "")
+        unit_id = self._extract_unit_id(prompt_text)
+        if unit_id is None:
+            return
+        resolved_id, side = self._resolve_active_unit()
+        if resolved_id is None or side is None:
+            return
+        unit_key = (side, resolved_id)
+        row = self._find_row_for_unit(unit_key)
+        if row is None:
+            row = self._unit_row_by_key.get(unit_key)
+        if row is None:
+            return
+        self.units_table.selectRow(row)
+        if unit_key == self._last_focused_unit_key:
+            return
+        item = self.units_table.item(row, 0)
+        if item is not None:
+            self.units_table.scrollToItem(
+                item,
+                QtWidgets.QAbstractItemView.PositionAtCenter,
+            )
+        self.map_scene.select_unit(side, resolved_id)
+        self.map_scene.center_on_unit(side, resolved_id)
+        self._last_focused_unit_key = unit_key
+
     def _refresh_active_context(self):
         unit_id, side = self._resolve_active_unit()
         self._active_unit_id = unit_id
@@ -1010,6 +1039,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if self.state_watcher and self.state_watcher.state
             else None,
         )
+        self._focus_unit_from_pending_request()
 
     def _auto_switch_log_tab(self, active_side):
         if active_side not in ("player", "model"):

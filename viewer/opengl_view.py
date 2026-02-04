@@ -276,6 +276,22 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._selected_unit_key = key
             self.update()
 
+    def center_on_unit(self, side, unit_id, immediate: bool = False) -> bool:
+        key = (side, int(unit_id))
+        render = self._unit_by_key.get(key)
+        if render is None:
+            return False
+        # Мягко сдвигаем камеру так, чтобы юнит оказался в центре экрана.
+        current_zoom = self._scale
+        center_x = self.width() / 2
+        center_y = self.height() / 2
+        target_pan = QtCore.QPointF(
+            center_x - render.center.x() * current_zoom,
+            center_y - render.center.y() * current_zoom,
+        )
+        self._set_target_view(current_zoom, target_pan, immediate=immediate)
+        return True
+
     def fit_to_view(self) -> None:
         if self._board_rect.isEmpty():
             return
