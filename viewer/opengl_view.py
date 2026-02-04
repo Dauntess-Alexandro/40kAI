@@ -641,6 +641,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self.update()
         world = self._map_to_world(pos)
         self._cursor_world = self._snap_world_to_cell(world)
+        self._update_hover_cell(world)
         self.update()
         super().mouseMoveEvent(event)
 
@@ -650,6 +651,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 self._select_unit_at(event.position())
             self._dragging = False
         super().mouseReleaseEvent(event)
+
+    def leaveEvent(self, event: QtCore.QEvent) -> None:
+        self._hover_cell = None
+        self.update()
+        super().leaveEvent(event)
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
         key = event.key()
@@ -862,6 +868,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
         active_unit = self._find_unit_by_id(self._active_unit_id)
         active_render = self._unit_render_for_unit(active_unit)
+        if active_render is None and self._selected_unit_key in self._unit_by_key:
+            active_render = self._unit_by_key[self._selected_unit_key]
+            active_unit = self._state_unit(self._selected_unit_key)
         if active_render:
             color, strength = self._fx_color_for_unit(active_unit)
             glow_pixmap = self._tinted_pixmap("glow_soft", color)
@@ -947,3 +956,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
             col * self.cell_size + self.cell_size / 2,
             row * self.cell_size + self.cell_size / 2,
         )
+
+    def _update_hover_cell(self, world: QtCore.QPointF) -> None:
+        if self._board_rect.isEmpty():
+            self._hover_cell = None
+            return
+        col = int(world.x() // self.cell_size)
+        row = int(world.y() // self.cell_size)
+        if col < 0 or row < 0 or col >= self._board_width or row >= self._board_height:
+            self._hover_cell = None
+            return
+        self._hover_cell = (col, row)
