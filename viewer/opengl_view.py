@@ -58,6 +58,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._units_state: List[dict] = []
         self._prev_unit_positions: Dict[Tuple[str, int], QtCore.QPointF] = {}
         self._curr_unit_positions: Dict[Tuple[str, int], QtCore.QPointF] = {}
+        self._suppress_auto_animation = False
         self._unit_anim_timer = QtCore.QTimer(self)
         self._unit_anim_timer.setInterval(16)
         self._unit_anim_timer.timeout.connect(self._animate_unit_step)
@@ -140,7 +141,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
         for key, point in self._curr_unit_positions.items():
             self._prev_unit_positions.setdefault(key, QtCore.QPointF(point))
 
-        self._start_unit_animation()
+        if self._suppress_auto_animation:
+            if self._unit_anim_timer.isActive():
+                self._unit_anim_timer.stop()
+            self._rebuild_units(1.0)
+            self.refresh_overlays()
+            self.update()
+        else:
+            self._start_unit_animation()
 
         self._objectives = []
         self._objective_labels = []
@@ -201,6 +209,59 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._targets = targets
         self.refresh_overlays()
         self.update()
+
+    def set_active_phase(self, phase: Optional[str]) -> None:
+        self._phase = phase or ""
+        self.refresh_overlays()
+        self.update()
+
+    def set_active_unit(self, unit_id: Optional[int]) -> None:
+        self._active_unit_id = unit_id
+        self._active_unit_side = None
+        if unit_id is not None:
+            for unit in self._state.get("units", []) or []:
+                if unit.get("id") == unit_id:
+                    self._active_unit_side = unit.get("side")
+                    break
+        self.refresh_overlays()
+        self.update()
+
+    def set_phase_playback_enabled(self, enabled: bool) -> None:
+        self._suppress_auto_animation = bool(enabled)
+
+    def play_move(
+        self,
+        unit_id: int,
+        from_xy: Tuple[float, float],
+        to_xy: Tuple[float, float],
+        duration_ms: int,
+    ) -> None:
+        unit_key = None
+        for key in self._curr_unit_positions:
+            if key[1] == unit_id:
+                unit_key = key
+                break
+        if unit_key is None:
+            return
+        prev_positions = {
+            key: QtCore.QPointF(point) for key, point in self._curr_unit_positions.items()
+        }
+        self._prev_unit_positions = prev_positions
+        self._curr_unit_positions = dict(prev_positions)
+        self._prev_unit_positions[unit_key] = QtCore.QPointF(float(from_xy[0]), float(from_xy[1]))
+        self._curr_unit_positions[unit_key] = QtCore.QPointF(float(to_xy[0]), float(to_xy[1]))
+        self._unit_anim_duration_ms = max(0, int(duration_ms))
+        self._start_unit_animation()
+
+    def is_animating(self) -> bool:
+        return self._unit_anim_timer.isActive()
+
+    def finish_animation(self) -> None:
+        if self._unit_anim_timer.isActive():
+            self._unit_anim_timer.stop()
+            self._rebuild_units(1.0)
+            self.refresh_overlays()
+            self.update()
 
     def set_objective_radius_visible(self, visible: bool) -> None:
         self._show_objective_radius = bool(visible)
@@ -716,6 +777,12 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter.drawEllipse(render.center, render.radius, render.radius)
 
     def _draw_selection_layer(self, painter: QtGui.QPainter) -> None:
+        active_key = (self._active_unit_side, self._active_unit_id)
+        if active_key in self._unit_by_key:
+            render = self._unit_by_key[active_key]
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.setPen(Theme.pen(Theme.accent, 2.4))
+            painter.drawEllipse(render.center, render.radius + 4, render.radius + 4)
         if self._selected_unit_key in self._unit_by_key:
             render = self._unit_by_key[self._selected_unit_key]
             painter.setBrush(QtCore.Qt.NoBrush)

@@ -12,6 +12,7 @@ if GYM_PATH not in sys.path:
     sys.path.insert(0, GYM_PATH)
 
 from viewer.opengl_view import OpenGLBoardWidget
+from viewer.playback import PhasePlaybackController
 from viewer.state import StateWatcher
 from viewer.styles import Theme
 from viewer.model_log_tree import render_model_log_flat
@@ -39,6 +40,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = OpenGLBoardWidget(cell_size=18)
         self.map_scene.unit_selected.connect(self._select_row_for_unit)
+        self.phaseplay = PhasePlaybackController(
+            self.map_scene,
+            on_hint=self._set_phaseplay_hint,
+            logger=self._log_phaseplay,
+        )
 
         self.status_round = QtWidgets.QLabel("Раунд: —")
         self.status_turn = QtWidgets.QLabel("Ход: —")
@@ -49,6 +55,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.points_vp_model = QtWidgets.QLabel("Model VP: —")
         self.points_cp_player = QtWidgets.QLabel("Player CP: —")
         self.points_cp_model = QtWidgets.QLabel("Model CP: —")
+        self.phaseplay_hint = QtWidgets.QLabel("")
+        self.phaseplay_hint.setStyleSheet(f"color: {Theme.muted.name()};")
 
         self.units_table = QtWidgets.QTableWidget(0, 5)
         self.units_table.setHorizontalHeaderLabels(["Сторона", "ID", "Имя", "HP", "Модели"])
@@ -149,6 +157,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._apply_dark_theme()
         self._build_toolbar()
+        self._install_enter_shortcuts()
         self._fit_view()
         app = QtWidgets.QApplication.instance()
         if app is not None:
@@ -204,6 +213,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.status_turn)
         layout.addWidget(self.status_phase)
         layout.addWidget(self.status_active)
+        layout.addWidget(self.phaseplay_hint)
         return box
 
     def _group_points(self):
@@ -493,7 +503,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._apply_state(self.state_watcher.state)
 
     def _apply_state(self, state):
-        board = state.get("board", {})
+        suppress_auto = self.phaseplay.should_suppress_auto_animation(state)
+        self.map_scene.set_phase_playback_enabled(suppress_auto)
         self.map_scene.update_state(state)
 
         self._units_by_key = {}
@@ -518,7 +529,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._update_log(state.get("log_tail", []))
         self._update_model_events(state.get("model_events", []))
         self._drain_event_queue()
-        self._refresh_active_context()
+        self.phaseplay.on_state_applied(state)
+        if not self.phaseplay.is_overriding_context():
+            self._refresh_active_context()
 
     def _populate_units_table(self, units):
         self.units_table.setRowCount(len(units))
@@ -979,6 +992,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return unit_id, None
 
     def _refresh_active_context(self):
+        if self.phaseplay.is_overriding_context():
+            return
         unit_id, side = self._resolve_active_unit()
         self._active_unit_id = unit_id
         self._active_unit_side = side
@@ -1003,6 +1018,33 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if self.state_watcher and self.state_watcher.state
             else None,
         )
+
+    def _set_phaseplay_hint(self, text: str) -> None:
+        self.phaseplay_hint.setText(text)
+
+    def _log_phaseplay(self, message: str) -> None:
+        self.add_log_line(message)
+
+    def _install_enter_shortcuts(self) -> None:
+        for key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+            action = QtGui.QAction(self)
+            action.setShortcut(QtGui.QKeySequence(key))
+            action.setShortcutContext(QtCore.Qt.ApplicationShortcut)
+            action.triggered.connect(self._handle_enter_shortcut)
+            self.addAction(action)
+
+    def _handle_enter_shortcut(self) -> None:
+        if self._pending_request:
+            return
+        focus = QtWidgets.QApplication.focusWidget()
+        if isinstance(focus, QtWidgets.QLineEdit):
+            if focus is self.command_input:
+                if self.command_input.text().strip():
+                    return
+            else:
+                if focus.text().strip():
+                    return
+        self.phaseplay.on_enter()
 
     def _is_movement_phase(self, phase):
         phase_text = str(phase or "").lower()
