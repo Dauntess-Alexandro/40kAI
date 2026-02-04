@@ -90,6 +90,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
             get_event_bus().subscribe(self._on_event_bus_event)
         except Exception:
             pass
+        self._demo_queue = []
+        self._demo_context_key = None
+        self._demo_running = False
+        self._demo_step_delay_ms = 750
+        self._demo_timer = QtCore.QTimer(self)
+        self._demo_timer.setSingleShot(True)
+        self._demo_timer.timeout.connect(self._run_demo_step)
 
         fit_button = QtWidgets.QPushButton("Fit")
         fit_button.clicked.connect(self._fit_view)
@@ -518,7 +525,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._update_log(state.get("log_tail", []))
         self._update_model_events(state.get("model_events", []))
         self._drain_event_queue()
-        self._refresh_active_context()
+        if not self._demo_running:
+            self._refresh_active_context()
+        self._maybe_start_demo(state)
 
     def _populate_units_table(self, units):
         self.units_table.setRowCount(len(units))
@@ -1003,6 +1012,81 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if self.state_watcher and self.state_watcher.state
             else None,
         )
+
+    def _resolve_demo_unit(self, state):
+        unit_id, side = self._resolve_active_unit()
+        if unit_id is not None:
+            if side is None:
+                side = "model"
+            return unit_id, side
+        for unit in state.get("units", []) or []:
+            if unit.get("side") == "model":
+                return unit.get("id"), "model"
+        return None, None
+
+    def _maybe_start_demo(self, state):
+        if state.get("active") != "model":
+            if self._demo_running:
+                self._stop_demo()
+            return
+        unit_id, side = self._resolve_demo_unit(state)
+        if unit_id is None:
+            return
+        context_key = (state.get("round"), state.get("turn"), unit_id, side)
+        if self._demo_running and context_key == self._demo_context_key:
+            return
+        self._demo_context_key = context_key
+        self._demo_queue = [
+            "Командование (демо ИИ)",
+            "Движение (демо ИИ)",
+            "Стрельба (демо ИИ)",
+            "Атака (демо ИИ)",
+            "Ближний бой (демо ИИ)",
+        ]
+        self._demo_running = True
+        if self._demo_timer.isActive():
+            self._demo_timer.stop()
+        self._run_demo_step()
+
+    def _stop_demo(self):
+        self._demo_running = False
+        self._demo_queue = []
+        self._demo_context_key = None
+        if self._demo_timer.isActive():
+            self._demo_timer.stop()
+        self._refresh_active_context()
+
+    def _run_demo_step(self):
+        if not self._demo_running:
+            return
+        if not self._demo_queue:
+            self._stop_demo()
+            return
+        phase = self._demo_queue.pop(0)
+        unit_id, side = self._resolve_demo_unit(self.state_watcher.state or {})
+        if unit_id is None:
+            self._stop_demo()
+            return
+        active_unit = self._units_by_key.get((side, unit_id))
+        move_range = None
+        shoot_range = None
+        if self._is_movement_phase(phase):
+            move_range = self._resolve_move_range(active_unit)
+        if self._is_shooting_phase(phase):
+            shoot_range = self._resolve_weapon_range(active_unit)
+        self.map_scene.set_active_context(
+            active_unit_id=unit_id,
+            active_unit_side=side,
+            phase=phase,
+            move_range=move_range,
+            shoot_range=shoot_range,
+            show_objective_radius=self._show_objective_radius,
+            targets=self.state_watcher.state.get("available_targets")
+            if self.state_watcher and self.state_watcher.state
+            else None,
+        )
+        if self._demo_queue:
+            self._demo_timer.start(self._demo_step_delay_ms)
 
     def _is_movement_phase(self, phase):
         phase_text = str(phase or "").lower()
