@@ -231,8 +231,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         layout.addLayout(self._legend_row("Игрок", Theme.player))
         layout.addLayout(self._legend_row("Модель", Theme.model))
         layout.addLayout(self._legend_row("Цель", Theme.objective))
-        layout.addLayout(self._legend_row("Подсветка хода", Theme.selection))
-        layout.addLayout(self._legend_row("Подсветка стрельбы", Theme.accent))
         return box
 
     def _legend_row(self, label, color):
@@ -949,7 +947,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _extract_unit_id(self, prompt):
         if not prompt:
             return None
-        match = re.search(r"(?:юнит|unit)\\s*#?\\s*(\\d+)", prompt, re.IGNORECASE)
+        match = re.search(r"(?:юнит|unit)\s*#?\s*(\d+)", prompt, re.IGNORECASE)
         if match:
             return int(match.group(1))
         return None
@@ -985,10 +983,30 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 return unit_id, side
         return unit_id, None
 
+    def _select_row_for_unit_id(self, unit_id, side=None):
+        if unit_id is None:
+            return
+        row = None
+        if side is not None:
+            unit_key = (side, unit_id)
+            row = self._unit_row_by_key.get(unit_key)
+            if row is None:
+                row = self._find_row_for_unit(unit_key)
+        else:
+            for (candidate_side, candidate_id), candidate_row in self._unit_row_by_key.items():
+                if candidate_id == unit_id:
+                    row = candidate_row
+                    break
+        if row is None:
+            return
+        self.units_table.selectRow(row)
+
     def _refresh_active_context(self):
         unit_id, side = self._resolve_active_unit()
         self._active_unit_id = unit_id
         self._active_unit_side = side
+        if unit_id is not None:
+            self._select_row_for_unit_id(unit_id, side=side)
         active_unit = self._units_by_key.get((side, unit_id))
         phase = None
         if self.state_watcher and self.state_watcher.state:
