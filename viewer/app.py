@@ -35,6 +35,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._show_objective_radius = True
         self._units_by_key = {}
         self._unit_row_by_key = {}
+        self._last_auto_unit_key = None
 
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = OpenGLBoardWidget(cell_size=18)
@@ -1010,6 +1011,32 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if self.state_watcher and self.state_watcher.state
             else None,
         )
+        self._auto_select_active_unit_row(unit_id, side)
+
+    def _auto_select_active_unit_row(self, unit_id, side):
+        if unit_id is None or not side:
+            self._last_auto_unit_key = None
+            return
+        unit_key = (side, unit_id)
+        if unit_key == self._last_auto_unit_key:
+            return
+        self._last_auto_unit_key = unit_key
+        row = self._unit_row_by_key.get(unit_key)
+        if row is None:
+            row = self._find_row_for_unit(unit_key)
+        if row is None:
+            return
+        selection_model = self.units_table.selectionModel()
+        if selection_model is None:
+            return
+        selected = selection_model.selectedRows()
+        if selected:
+            current_row = selected[0].row()
+            current_item = self.units_table.item(current_row, 0)
+            if current_item and current_item.data(QtCore.Qt.UserRole) == unit_key:
+                return
+        with QtCore.QSignalBlocker(selection_model):
+            self.units_table.selectRow(row)
 
     def _auto_switch_log_tab(self, active_side):
         if active_side not in ("player", "model"):
