@@ -10,6 +10,7 @@ Viewer tech findings ("Играть в GUI"):
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import math
 from pathlib import Path
 import random
@@ -20,6 +21,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from viewer.styles import Theme
+from viewer.tooltip import UnitTooltipWidget
 
 
 @dataclass
@@ -173,9 +175,26 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._target_cell: Optional[Tuple[int, int]] = None
         self._hover_cell: Optional[Tuple[int, int]] = None
         self._hover_unit_key: Optional[Tuple[str, int]] = None
-        self._hover_tooltip_text: Optional[str] = None
+        self._hover_tooltip_text: Optional[Dict] = None
         self._hover_tooltip_ts: float = 0.0
         self._hover_tooltip_interval_s = 1.0 / 30.0
+        self._hover_candidate_key: Optional[Tuple[str, int]] = None
+        self._hover_candidate_pos = QtCore.QPoint()
+        self._hover_candidate_mods = QtCore.Qt.KeyboardModifiers()
+        self._hover_timer = QtCore.QTimer(self)
+        self._hover_timer.setSingleShot(True)
+        self._hover_timer.setInterval(150)
+        self._hover_timer.timeout.connect(self._show_hover_tooltip)
+        self._tooltip_target_pos = QtCore.QPoint()
+        self._tooltip_follow_timer = QtCore.QTimer(self)
+        self._tooltip_follow_timer.setInterval(25)
+        self._tooltip_follow_timer.timeout.connect(self._tick_tooltip_follow)
+        self._tooltip_pinned = False
+        self._tooltip_widget = UnitTooltipWidget(self)
+        self._unit_data = self._load_unit_data()
+        self._unit_data_by_name = self._index_unit_data(self._unit_data)
+        self._weapon_data = self._load_weapon_data()
+        self._weapon_data_by_name = self._index_weapon_data(self._weapon_data)
         self._t0: Optional[float] = None
         self._fx_timer = QtCore.QTimer(self)
         self._fx_timer.setInterval(16)
@@ -207,7 +226,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             )
             return
         self.set_error_message(None)
-        self._clear_hover_tooltip()
+        self._clear_hover_tooltip(force=True)
         board = self._state.get("board", {})
         width = int(board.get("width") or 60)
         height = int(board.get("height") or 40)
@@ -724,6 +743,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._dragging = True
             self._drag_start = QtCore.QPointF(event.position())
             self._drag_distance = 0.0
+        if event.button() == QtCore.Qt.RightButton:
+            world = self._map_to_world(QtCore.QPointF(event.position()))
+            unit_key = self._unit_key_at_world(world)
+            if unit_key:
+                self._tooltip_pinned = not self._tooltip_pinned
+                self._tooltip_widget.set_pinned(self._tooltip_pinned)
+                if self._tooltip_pinned:
+                    self._hover_candidate_key = unit_key
+                    self._hover_candidate_pos = event.globalPosition().toPoint()
+                    self._show_hover_tooltip()
+                else:
+                    self._clear_hover_tooltip(force=True)
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
@@ -761,6 +792,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return
         if key == QtCore.Qt.Key_D:
             self._debug_overlay = not self._debug_overlay
+            self._tooltip_widget.set_debug_mode(self._debug_overlay)
             self.update()
             return
         super().keyPressEvent(event)
@@ -782,12 +814,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self.unit_selected.emit(closest_key[0], closest_key[1])
         self.update()
 
-    def _clear_hover_tooltip(self) -> None:
+    def _clear_hover_tooltip(self, force: bool = False) -> None:
+        if self._hover_timer.isActive():
+            self._hover_timer.stop()
+        if self._tooltip_pinned and not force:
+            return
         if self._hover_unit_key is None and not self._hover_tooltip_text:
             return
         self._hover_unit_key = None
         self._hover_tooltip_text = None
-        QtWidgets.QToolTip.hideText()
+        self._hover_candidate_key = None
+        self._tooltip_widget.hide_animated()
+        if self._tooltip_follow_timer.isActive():
+            self._tooltip_follow_timer.stop()
 
     def paintGL(self) -> None:
         painter = QtGui.QPainter(self)
@@ -1591,21 +1630,38 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if unit_key is None:
             self._clear_hover_tooltip()
             return
+        if self._tooltip_pinned and self._hover_unit_key is not None:
+            return
         now = monotonic()
         needs_refresh = unit_key != self._hover_unit_key
         if not needs_refresh and now - self._hover_tooltip_ts < self._hover_tooltip_interval_s:
+            anchor = self._tooltip_anchor_for_cursor(event.globalPosition().toPoint())
+            self._set_tooltip_target(anchor)
             return
         unit = self._state_unit(unit_key)
         if not unit:
             self._clear_hover_tooltip()
             return
-        tooltip_text = self._build_unit_tooltip(unit)
-        if needs_refresh or tooltip_text != self._hover_tooltip_text:
-            self._hover_tooltip_text = tooltip_text
-        self._hover_unit_key = unit_key
-        self._hover_tooltip_ts = now
-        anchor = self._tooltip_anchor_for_unit(unit_key, event.globalPosition().toPoint())
-        QtWidgets.QToolTip.showText(anchor, tooltip_text, self)
+        anchor = self._tooltip_anchor_for_cursor(event.globalPosition().toPoint())
+        self._set_tooltip_target(anchor)
+        if unit_key != self._hover_candidate_key:
+            self._hover_candidate_key = unit_key
+            self._hover_candidate_pos = event.globalPosition().toPoint()
+            self._hover_candidate_mods = event.modifiers()
+            self._hover_timer.start()
+        elif self._hover_timer.isActive():
+            self._hover_candidate_pos = event.globalPosition().toPoint()
+            self._hover_candidate_mods = event.modifiers()
+        if needs_refresh:
+            tooltip_payload = self._build_unit_tooltip_payload(unit)
+            if self._tooltip_widget.isVisible():
+                self._hover_tooltip_text = tooltip_payload
+                self._hover_unit_key = unit_key
+                self._hover_tooltip_ts = now
+                accent = self._unit_accent_color(unit)
+                self._tooltip_widget.set_pinned(self._tooltip_pinned)
+                self._tooltip_widget.set_debug_mode(self._debug_overlay)
+                self._tooltip_widget.update_content(tooltip_payload, accent)
 
     def _unit_key_at_world(self, world: QtCore.QPointF) -> Optional[Tuple[str, int]]:
         if self._board_rect.isEmpty():
@@ -1658,25 +1714,363 @@ class OpenGLBoardWidget(QOpenGLWidget):
         offset = QtCore.QPoint(12, -12)
         return self.mapToGlobal(QtCore.QPoint(int(screen_pos.x()), int(screen_pos.y()))) + offset
 
-    def _build_unit_tooltip(self, unit: dict) -> str:
+    def _tooltip_anchor_for_cursor(self, cursor_pos: QtCore.QPoint) -> QtCore.QPoint:
+        offset = QtCore.QPoint(14, 18)
+        return cursor_pos + offset
+
+    def _load_weapon_data(self) -> List[dict]:
+        base_dir = Path(__file__).resolve().parents[1]
+        data_path = base_dir / "gym_mod" / "gym_mod" / "engine" / "unitData.json"
+        if not data_path.exists():
+            return []
+        try:
+            with data_path.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            return []
+        weapon_data = data.get("WeaponData", [])
+        if isinstance(weapon_data, list):
+            return weapon_data
+        return []
+
+    def _load_unit_data(self) -> List[dict]:
+        base_dir = Path(__file__).resolve().parents[1]
+        data_path = base_dir / "gym_mod" / "gym_mod" / "engine" / "unitData.json"
+        if not data_path.exists():
+            return []
+        try:
+            with data_path.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            return []
+        unit_data = data.get("UnitData", [])
+        if isinstance(unit_data, list):
+            return unit_data
+        return []
+
+    def _index_unit_data(self, unit_data: List[dict]) -> Dict[str, List[dict]]:
+        index: Dict[str, List[dict]] = {}
+        for entry in unit_data:
+            name = str(entry.get("Name") or "").strip().lower()
+            if not name:
+                continue
+            index.setdefault(name, []).append(entry)
+        return index
+
+    def _index_weapon_data(self, weapon_data: List[dict]) -> Dict[str, List[dict]]:
+        index: Dict[str, List[dict]] = {}
+        for entry in weapon_data:
+            name = str(entry.get("Name") or "").strip().lower()
+            if not name:
+                continue
+            index.setdefault(name, []).append(entry)
+        return index
+
+    def _unit_profile(self, unit: dict) -> Optional[dict]:
+        name_candidates = [
+            unit.get("name"),
+            unit.get("unit_name"),
+            unit.get("type"),
+            unit.get("unit_type"),
+        ]
+        for name in name_candidates:
+            label = str(name or "").strip()
+            if not label:
+                continue
+            matches = self._unit_data_by_name.get(label.lower())
+            if matches:
+                return matches[0]
+        return None
+
+    def _unit_weapon_names(self, unit: dict) -> List[str]:
+        names: List[str] = []
+        for key in ("weapon_name", "weapon", "weapons", "weapon_names", "ranged_weapon", "melee_weapon"):
+            value = unit.get(key)
+            if not value:
+                continue
+            if isinstance(value, list):
+                names.extend(value)
+            elif isinstance(value, dict):
+                maybe_name = value.get("Name") or value.get("name")
+                if maybe_name:
+                    names.append(maybe_name)
+            else:
+                names.append(value)
+        cleaned = []
+        seen = set()
+        for name in names:
+            label = str(name).strip()
+            if not label or label in seen:
+                continue
+            seen.add(label)
+            cleaned.append(label)
+        if not cleaned:
+            profile = self._unit_profile(unit)
+            if profile:
+                weapons = profile.get("Weapons")
+                if isinstance(weapons, list):
+                    for name in weapons:
+                        label = str(name).strip()
+                        if label and label not in seen:
+                            seen.add(label)
+                            cleaned.append(label)
+        return cleaned
+
+    def _get_weapon_by_type(self, unit: dict, weapon_type: str) -> Optional[dict]:
+        names = self._unit_weapon_names(unit)
+        if not names:
+            return None
+        army = str(unit.get("army") or unit.get("faction") or "").lower()
+        weapon_type = weapon_type.lower()
+        for name in names:
+            matches = [
+                entry
+                for entry in self._weapon_data_by_name.get(name.lower(), [])
+                if str(entry.get("Type") or "").lower() == weapon_type
+            ]
+            if not matches:
+                continue
+            if army:
+                for entry in matches:
+                    if str(entry.get("Army") or "").lower() == army:
+                        return entry
+            return matches[0]
+        return None
+
+    def _get_primary_ranged_weapon(self, unit: dict) -> Optional[dict]:
+        return self._get_weapon_by_type(unit, "ranged")
+
+    def _get_primary_melee_weapon(self, unit: dict) -> Optional[dict]:
+        return self._get_weapon_by_type(unit, "melee")
+
+    def _format_skill_value(self, value: object) -> str:
+        if value is None:
+            return "—"
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return "—"
+            if text.endswith("+"):
+                return text
+            try:
+                return f"{int(float(text))}+"
+            except ValueError:
+                return text
+        if isinstance(value, (int, float)):
+            return f"{int(value)}+"
+        return str(value)
+
+    def _format_stat_value(self, value: object) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            text = value.strip()
+            return text if text else None
+        return str(value)
+
+    def _build_unit_tooltip_payload(self, unit: dict) -> Dict:
         title = self._unit_display_name(unit)
         models = unit.get("models", "—")
-        wounds = unit.get("wounds", unit.get("hp", "—"))
+        wounds_value = self._coerce_number(unit.get("wounds", unit.get("hp")))
+        wounds_max = self._coerce_number(
+            unit.get("max_wounds", unit.get("wounds_max", unit.get("wounds", unit.get("hp"))))
+        )
+        wounds_label = "—"
+        if wounds_value is not None and wounds_max is not None:
+            wounds_label = f"{int(wounds_value)}/{int(wounds_max)}"
+        elif wounds_value is not None:
+            wounds_label = str(int(wounds_value))
         cover = self._tooltip_cover_status(unit)
-        weapon_line = self._tooltip_weapon_line(unit)
+        ranged_profile = self._get_primary_ranged_weapon(unit)
+        melee_profile = self._get_primary_melee_weapon(unit)
+        ranged_name = (
+            ranged_profile.get("Name")
+            if ranged_profile
+            else self._tooltip_weapon_name(unit)
+        ) or "—"
+        melee_name = melee_profile.get("Name") if melee_profile else "—"
         unit_id = unit.get("id", "—")
         los = self._tooltip_los_status(unit)
         mods = self._tooltip_mods_status(unit)
-        lines = [
-            title,
-            f"Models / Wounds: {models} / {wounds}",
-            f"Cover: {cover}",
-            weapon_line,
-            f"Unit ID: {unit_id}",
-            f"LOS: {los}",
-            f"Mods: {mods}",
-        ]
-        return "\n".join(lines)
+        weapon_range = (
+            ranged_profile.get("Range")
+            if ranged_profile and ranged_profile.get("Range") is not None
+            else self._resolve_weapon_range(unit)
+        )
+        bs_value = (
+            ranged_profile.get("BS")
+            if ranged_profile and ranged_profile.get("BS") is not None
+            else unit.get("bs") or unit.get("BS") or unit.get("ballistic_skill")
+        )
+        ws_value = (
+            melee_profile.get("WS")
+            if melee_profile and melee_profile.get("WS") is not None
+            else unit.get("ws") or unit.get("WS") or unit.get("weapon_skill")
+        )
+        ranged_attacks = self._format_stat_value(
+            ranged_profile.get("A") if ranged_profile else None
+        )
+        ranged_strength = self._format_stat_value(
+            ranged_profile.get("S") if ranged_profile else None
+        )
+        ranged_ap = self._format_stat_value(
+            ranged_profile.get("AP") if ranged_profile else None
+        )
+        ranged_damage = self._format_stat_value(
+            ranged_profile.get("Damage") if ranged_profile else None
+        )
+        melee_attacks = self._format_stat_value(
+            melee_profile.get("A") if melee_profile else None
+        )
+        melee_strength = self._format_stat_value(
+            melee_profile.get("S") if melee_profile else None
+        )
+        melee_ap = self._format_stat_value(
+            melee_profile.get("AP") if melee_profile else None
+        )
+        melee_damage = self._format_stat_value(
+            melee_profile.get("Damage") if melee_profile else None
+        )
+        return {
+            "title": title,
+            "unit_id": unit_id,
+            "models": models,
+            "wounds": wounds_label,
+            "wounds_value": wounds_value,
+            "wounds_max": wounds_max,
+            "ranged_name": ranged_name,
+            "ranged_range": weapon_range if weapon_range is not None else "—",
+            "ranged_bs": self._format_skill_value(bs_value),
+            "ranged_attacks": ranged_attacks,
+            "ranged_strength": ranged_strength,
+            "ranged_ap": ranged_ap,
+            "ranged_damage": ranged_damage,
+            "melee_name": melee_name,
+            "melee_ws": self._format_skill_value(ws_value),
+            "melee_attacks": melee_attacks,
+            "melee_strength": melee_strength,
+            "melee_ap": melee_ap,
+            "melee_damage": melee_damage,
+            "cover": cover,
+            "los": los,
+            "mods": mods,
+        }
+
+    def _coerce_number(self, value: object) -> Optional[float]:
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                return None
+        return None
+
+    def _unit_accent_color(self, unit: dict) -> QtGui.QColor:
+        army = str(unit.get("army") or unit.get("faction") or "").lower()
+        side = str(unit.get("side") or "").lower()
+        if "necron" in army or "некрон" in army:
+            return QtGui.QColor("#6fbf7a")
+        if side == "player":
+            return Theme.player
+        if side == "model":
+            return Theme.model
+        return Theme.accent
+
+    def _position_tooltip(self, anchor: QtCore.QPoint, animate: bool = True) -> None:
+        if not self._tooltip_widget:
+            return
+        widget = self._tooltip_widget
+        widget.adjustSize()
+        pos = self._clamp_tooltip_pos(anchor, widget.size())
+        self._tooltip_target_pos = pos
+        widget.show_at(pos, animate=animate)
+        if not self._tooltip_follow_timer.isActive():
+            self._tooltip_follow_timer.start()
+
+    def _clamp_tooltip_pos(self, anchor: QtCore.QPoint, size: QtCore.QSize) -> QtCore.QPoint:
+        padding = 12
+        pos = QtCore.QPoint(anchor)
+        screen = self.screen() or self.window().screen()
+        available = screen.availableGeometry() if screen else self.rect()
+        if pos.x() + size.width() + padding > available.right():
+            pos.setX(pos.x() - size.width() - padding)
+        if pos.y() + size.height() + padding > available.bottom():
+            pos.setY(pos.y() - size.height() - padding)
+        if pos.x() < padding:
+            pos.setX(padding)
+        if pos.y() < padding:
+            pos.setY(padding)
+        return pos
+
+    def _refresh_tooltip_anchor(self) -> None:
+        if self._hover_unit_key is None:
+            return
+        unit = self._state_unit(self._hover_unit_key)
+        if not unit:
+            self._clear_hover_tooltip(force=True)
+            return
+        anchor = self._tooltip_anchor_for_unit(self._hover_unit_key, self.mapToGlobal(QtCore.QPoint(0, 0)))
+        accent = self._unit_accent_color(unit)
+        payload = self._build_unit_tooltip_payload(unit)
+        self._tooltip_widget.update_content(payload, accent)
+        self._position_tooltip(anchor)
+
+    def _set_tooltip_target(self, anchor: QtCore.QPoint) -> None:
+        if not self._tooltip_widget:
+            return
+        self._tooltip_widget.adjustSize()
+        self._tooltip_target_pos = self._clamp_tooltip_pos(anchor, self._tooltip_widget.size())
+        if not self._tooltip_follow_timer.isActive() and self._tooltip_widget.isVisible():
+            self._tooltip_follow_timer.start()
+
+    def _tick_tooltip_follow(self) -> None:
+        widget = self._tooltip_widget
+        if not widget.isVisible():
+            self._tooltip_follow_timer.stop()
+            return
+        if self._tooltip_pinned and self._hover_unit_key is not None:
+            anchor = self._tooltip_anchor_for_unit(
+                self._hover_unit_key,
+                self.mapToGlobal(QtCore.QPoint(0, 0)),
+            )
+            self._set_tooltip_target(anchor)
+        current = widget.pos()
+        target = self._tooltip_target_pos
+        dx = target.x() - current.x()
+        dy = target.y() - current.y()
+        if abs(dx) < 1 and abs(dy) < 1:
+            widget.move(target)
+            return
+        step = 0.35
+        next_pos = QtCore.QPoint(
+            int(current.x() + dx * step),
+            int(current.y() + dy * step),
+        )
+        widget.move(next_pos)
+
+    def _show_hover_tooltip(self) -> None:
+        if not self._hover_candidate_key:
+            return
+        unit = self._state_unit(self._hover_candidate_key)
+        if not unit:
+            self._clear_hover_tooltip()
+            return
+        if self._hover_candidate_mods & (QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier):
+            self._tooltip_pinned = True
+        self._tooltip_widget.set_pinned(self._tooltip_pinned)
+        self._tooltip_widget.set_debug_mode(self._debug_overlay)
+        tooltip_payload = self._build_unit_tooltip_payload(unit)
+        self._hover_tooltip_text = tooltip_payload
+        self._hover_unit_key = self._hover_candidate_key
+        self._hover_tooltip_ts = monotonic()
+        accent = self._unit_accent_color(unit)
+        self._tooltip_widget.update_content(tooltip_payload, accent)
+        if self._tooltip_pinned:
+            anchor = self._tooltip_anchor_for_unit(self._hover_unit_key, self._hover_candidate_pos)
+        else:
+            anchor = self._tooltip_anchor_for_cursor(self._hover_candidate_pos)
+        self._position_tooltip(anchor, animate=True)
 
     def _unit_display_name(self, unit: dict) -> str:
         name = str(unit.get("name") or "").strip()
@@ -1690,18 +2084,16 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return "Юнит"
 
     def _tooltip_cover_status(self, unit: dict) -> str:
-        return "открыт"
+        return "—"
 
-    def _tooltip_weapon_line(self, unit: dict) -> str:
-        weapon_name = (
-            unit.get("weapon_name")
-            or unit.get("weapon")
-            or unit.get("weapons")
-            or "—"
-        )
-        weapon_range = self._resolve_weapon_range(unit) or "—"
-        bs = unit.get("bs") or unit.get("BS") or unit.get("ballistic_skill") or "—"
-        return f"Weapon: {weapon_name} | Range {weapon_range} | BS {bs}"
+    def _tooltip_weapon_name(self, unit: dict) -> str:
+        weapon_name = unit.get("weapon_name") or unit.get("weapon") or unit.get("weapons")
+        if isinstance(weapon_name, list):
+            if weapon_name:
+                weapon_name = weapon_name[0]
+            else:
+                weapon_name = None
+        return weapon_name or "—"
 
     def _resolve_weapon_range(self, unit: dict) -> Optional[int]:
         for key in ("range", "weapon_range", "shoot_range", "shooting_range"):
@@ -1711,7 +2103,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return None
 
     def _tooltip_los_status(self, unit: dict) -> str:
-        return "TBD"
+        return "—"
 
     def _tooltip_mods_status(self, unit: dict) -> str:
         return "—"
