@@ -5,7 +5,7 @@ import re
 import sys
 import time
 from collections import OrderedDict, deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Deque, Optional, Tuple
 from datetime import datetime
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -44,6 +44,22 @@ class FxShotEvent:
     target_id: int
     weapon_name: str
     damage: float
+
+
+@dataclass
+class PhaseBuffer:
+    phase: str
+    active_side: str
+    unit_actions: list = field(default_factory=list)
+    summary: Optional[dict] = None
+    snapshot: Optional[dict] = None
+
+
+@dataclass
+class PhaseScriptStep:
+    kind: str
+    payload: dict = field(default_factory=dict)
+    duration_s: float = 0.0
 
 
 class FxLogParser:
@@ -157,6 +173,57 @@ class FxLogParser:
         self._pending.pop()
 
 
+class PhaseScriptPlayer(QtCore.QObject):
+    def __init__(self, owner: "ViewerWindow") -> None:
+        super().__init__()
+        self._owner = owner
+        self._queue: Deque[list[PhaseScriptStep]] = deque()
+        self._active_script: list[PhaseScriptStep] = []
+        self._step_index = 0
+        self._playing = False
+        self._checkpoint_seen = False
+        self._timer = QtCore.QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self._play_next_step)
+
+    def enqueue(self, script: list[PhaseScriptStep]) -> None:
+        if not script:
+            return
+        self._queue.append(script)
+        if not self._playing:
+            self._start_next_script()
+
+    def _start_next_script(self) -> None:
+        if not self._queue:
+            self._playing = False
+            return
+        self._active_script = self._queue.popleft()
+        self._step_index = 0
+        self._playing = True
+        self._checkpoint_seen = False
+        self._play_next_step()
+
+    def _play_next_step(self) -> None:
+        if self._step_index >= len(self._active_script):
+            if not self._checkpoint_seen:
+                self._owner._apply_phase_checkpoint()
+            self._start_next_script()
+            return
+        step = self._active_script[self._step_index]
+        self._step_index += 1
+        duration_ms = max(0, int(step.duration_s * 1000))
+        if step.kind == "checkpoint":
+            self._checkpoint_seen = True
+            self._owner._apply_phase_checkpoint(step.payload.get("snapshot"))
+            QtCore.QTimer.singleShot(0, self._play_next_step)
+            return
+        self._owner._execute_phase_step(step)
+        if duration_ms <= 0:
+            QtCore.QTimer.singleShot(0, self._play_next_step)
+        else:
+            self._timer.start(duration_ms)
+
+
 class ViewerWindow(QtWidgets.QMainWindow):
     def __init__(self, state_path, model_path=None):
         super().__init__()
@@ -219,6 +286,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_tab_indices = {}
         self._log_tab_programmatic_switch = False
         self._last_manual_log_tab_index = None
+        self._last_state = None
+        self._phase_buffer: Optional[PhaseBuffer] = None
+        self._phase_player = PhaseScriptPlayer(self)
+        self._model_event_cursor: Optional[int] = None
+        self._cinematic_active = False
         self._fx_shot_queue: Deque[FxShotEvent] = deque()
         self._fx_parser = FxLogParser(self._enqueue_fx_event, self._fx_debug, seen_max=400)
         self._log_tab_defs = [
@@ -256,6 +328,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         command_group = QtWidgets.QGroupBox("КОМАНДЫ")
         command_layout = QtWidgets.QVBoxLayout(command_group)
+        self.cinematic_label = QtWidgets.QLabel("")
+        self.cinematic_label.setWordWrap(True)
+        self.cinematic_label.setStyleSheet(f"color: {Theme.accent.name()}; font-weight: 600;")
+        command_layout.addWidget(self.cinematic_label)
         self.command_prompt = QtWidgets.QLabel("Ожидаю команду...")
         self.command_prompt.setWordWrap(True)
         command_layout.addWidget(self.command_prompt)
@@ -666,7 +742,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         if self._model_log_source in (None, "stream"):
             self._model_log_source = "stream"
-            self._model_events_stream.extend(self._filter_model_events(drained))
+            filtered = self._filter_model_events(drained)
+            self._consume_model_events(filtered)
+            self._model_events_stream.extend(filtered)
             self._model_events_current = list(self._model_events_stream)
             self._refresh_model_log_view()
 
@@ -745,6 +823,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._apply_state(self.state_watcher.state)
 
     def _apply_state(self, state):
+        self._last_state = state
         board = state.get("board", {})
         self.map_scene.update_state(state)
 
@@ -759,6 +838,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         active_label = "Игрок" if active == "player" else "Модель" if active == "model" else "—"
         self.status_active.setText(f"Активен: {active_label}")
         self._auto_switch_log_tab(active)
+        if active != "model" and self._cinematic_active:
+            self._cinematic_active = False
+            self.cinematic_label.setText("")
 
         vp = state.get("vp", {})
         cp = state.get("cp", {})
@@ -821,6 +903,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if self._model_events_snapshot == events:
                 return
             filtered = self._filter_model_events(events)
+            self._consume_model_events(filtered)
             self._model_events_snapshot = list(events)
             self._model_log_source = "state"
             self._model_events_current = list(filtered)
@@ -837,6 +920,260 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if side in ("enemy", "model"):
                 filtered.append(event)
         return filtered
+
+    def _consume_model_events(self, events):
+        if not events:
+            return
+        ordered = list(events)
+        if any(event.get("event_id") is not None for event in ordered):
+            ordered.sort(key=lambda item: int(item.get("event_id", 0)))
+        for event in ordered:
+            event_id = event.get("event_id")
+            if event_id is not None:
+                try:
+                    event_id = int(event_id)
+                except (TypeError, ValueError):
+                    event_id = None
+            if event_id is not None and self._model_event_cursor is not None:
+                if event_id <= self._model_event_cursor:
+                    continue
+            if event_id is not None:
+                self._model_event_cursor = max(self._model_event_cursor or 0, event_id)
+            self._process_phase_event(event)
+
+    def _process_phase_event(self, event: dict) -> None:
+        if not self._is_model_cinematic_event(event):
+            return
+        event_type = str(event.get("type") or "")
+        phase = str(event.get("phase") or "")
+        if event_type == "phase_start":
+            self._phase_buffer = PhaseBuffer(
+                phase=phase,
+                active_side=str(event.get("active_side") or "model"),
+            )
+            self.add_log_line(f"FX: buffer phase {phase} (model)")
+            return
+        if event_type == "unit_action":
+            if self._phase_buffer and self._phase_buffer.phase == phase:
+                self._phase_buffer.unit_actions.append(event)
+            return
+        if event_type == "phase_summary":
+            if self._phase_buffer and self._phase_buffer.phase == phase:
+                self._phase_buffer.summary = event
+            return
+        if event_type == "phase_end":
+            if not self._phase_buffer:
+                return
+            if phase and self._phase_buffer.phase != phase:
+                return
+            snapshot = event.get("snapshot")
+            if snapshot is None and isinstance(event.get("data"), dict):
+                snapshot = event.get("data", {}).get("snapshot")
+            if snapshot is not None:
+                self._phase_buffer.snapshot = snapshot
+            script = self._build_phase_script(self._phase_buffer)
+            unit_count = len(self._phase_buffer.unit_actions)
+            self.add_log_line(f"FX: enqueue phase script {phase}: units={unit_count}")
+            self._phase_player.enqueue(script)
+            self._phase_buffer = None
+
+    def _is_model_cinematic_event(self, event: dict) -> bool:
+        if str(event.get("active_side") or "").lower() != "model":
+            return False
+        return str(event.get("type") or "") in {
+            "phase_start",
+            "unit_action",
+            "phase_summary",
+            "phase_end",
+        }
+
+    def _build_phase_script(self, buffer: PhaseBuffer) -> list[PhaseScriptStep]:
+        steps: list[PhaseScriptStep] = []
+        steps.append(
+            PhaseScriptStep(
+                kind="phase_header",
+                payload={"phase": buffer.phase},
+                duration_s=0.0,
+            )
+        )
+        steps.append(
+            PhaseScriptStep(
+                kind="summary",
+                payload={
+                    "phase": buffer.phase,
+                    "summary": buffer.summary or {},
+                },
+                duration_s=1.0,
+            )
+        )
+        for event in buffer.unit_actions:
+            steps.append(
+                PhaseScriptStep(
+                    kind="unit_action",
+                    payload=event,
+                    duration_s=1.0,
+                )
+            )
+        steps.append(
+            PhaseScriptStep(
+                kind="checkpoint",
+                payload={"snapshot": buffer.snapshot},
+                duration_s=0.0,
+            )
+        )
+        return steps
+
+    def _execute_phase_step(self, step: PhaseScriptStep) -> None:
+        kind = step.kind
+        payload = step.payload or {}
+        if kind == "phase_header":
+            phase = payload.get("phase") or ""
+            label = self._phase_label(phase)
+            self._set_cinematic_text([label])
+            self.map_scene.set_active_phase(phase)
+            return
+        if kind == "summary":
+            phase = payload.get("phase") or ""
+            summary_text = self._format_phase_summary(phase, payload.get("summary") or {})
+            self._set_cinematic_text([self._phase_label(phase), f"📌 Итог: {summary_text}"])
+            self.add_log_line(f"FX: show summary {phase} {summary_text}")
+            return
+        if kind == "unit_action":
+            unit_id = payload.get("unit_id")
+            unit_name = payload.get("unit_name") or "—"
+            action = payload.get("action")
+            reason = payload.get("reason")
+            title = f"Unit {unit_id} — {unit_name}"
+            detail = self._format_unit_action_line(payload)
+            self._set_cinematic_text([title, detail])
+            self._play_unit_action_fx(payload)
+            if unit_id is not None:
+                self.add_log_line(f"FX: play unit_action unit={unit_id} action={action}")
+            return
+
+    def _set_cinematic_text(self, lines: list[str]) -> None:
+        self._cinematic_active = True
+        text = "\n".join([line for line in lines if line])
+        self.cinematic_label.setText(text)
+
+    def _play_unit_action_fx(self, payload: dict) -> None:
+        unit_id = payload.get("unit_id")
+        if unit_id is not None:
+            self.map_scene.set_active_unit(unit_id)
+            self.map_scene.select_unit("model", unit_id)
+            self.map_scene.focus_unit(unit_id)
+            self._select_row_for_unit_id(unit_id, side="model")
+        action = payload.get("action")
+        movement = payload.get("movement") or {}
+        shooting = payload.get("shooting") or {}
+        charge = payload.get("charge") or {}
+        fight = payload.get("fight") or {}
+        target_id = (
+            shooting.get("target_id")
+            or charge.get("target_id")
+            or fight.get("target_id")
+        )
+        if target_id is not None:
+            self.map_scene.set_target_unit(target_id)
+        else:
+            self.map_scene.clear_target_selection()
+        if action == "move":
+            dest = movement.get("to")
+            if isinstance(dest, (list, tuple)) and len(dest) >= 2:
+                self.map_scene.set_target_cell((int(dest[0]), int(dest[1])))
+        if action == "shoot":
+            weapon_name = shooting.get("weapon_name")
+            damage = shooting.get("damage")
+            if unit_id is not None and target_id is not None and weapon_name:
+                event = FxShotEvent(
+                    ts=datetime.utcnow().isoformat(),
+                    report_type="shooting",
+                    attacker_id=int(unit_id),
+                    target_id=int(target_id),
+                    weapon_name=str(weapon_name),
+                    damage=float(damage) if damage is not None else 0.0,
+                )
+                self._spawn_fx_for_event(event)
+
+    def _apply_phase_checkpoint(self, snapshot: Optional[dict] = None) -> None:
+        state = snapshot if isinstance(snapshot, dict) else self._last_state
+        if not state:
+            return
+        self.map_scene.update_state(state)
+
+    def _phase_label(self, phase: str) -> str:
+        mapping = {
+            "command": "ФАЗА КОМАНДОВАНИЯ",
+            "movement": "ФАЗА ДВИЖЕНИЯ",
+            "shooting": "ФАЗА СТРЕЛЬБЫ",
+            "charge": "ФАЗА ЧАРДЖА",
+            "fight": "ФАЗА БОЯ",
+        }
+        return mapping.get(str(phase), f"ФАЗА {str(phase).upper()}")
+
+    def _format_phase_summary(self, phase: str, summary: dict) -> str:
+        if phase == "command":
+            vp = summary.get("vp", 0)
+            cp = summary.get("cp", 0)
+            return f"VP={vp}, CP={cp}"
+        if phase == "movement":
+            moved = summary.get("moved", 0)
+            total = summary.get("total_units", 0)
+            advanced = summary.get("advanced_count", 0)
+            dist = summary.get("dist_total", 0.0)
+            return f"двигались {moved}/{total}, advance={advanced}, dist={dist:.1f}"
+        if phase in ("shooting", "charge", "fight"):
+            main_label = "shots" if phase == "shooting" else "charges" if phase == "charge" else "fights"
+            main_value = summary.get(main_label, 0)
+            skipped = summary.get("skipped", 0)
+            reasons = summary.get("reasons", {}) or {}
+            reasons_text = ", ".join(f"{key}={value}" for key, value in sorted(reasons.items()))
+            reason_part = f", причины: {reasons_text}" if reasons_text else ""
+            return f"{main_label}={main_value}, skip={skipped}{reason_part}"
+        return "нет данных"
+
+    def _format_unit_action_line(self, payload: dict) -> str:
+        action = payload.get("action")
+        reason = payload.get("reason")
+        reason_text = f" ({reason})" if reason else ""
+        if action == "no_move":
+            return f"⏭️ Без движения{reason_text}"
+        if action == "move":
+            movement = payload.get("movement") or {}
+            dist = movement.get("dist", 0)
+            advanced = "да" if movement.get("advanced") else "нет"
+            start = movement.get("from")
+            end = movement.get("to")
+            if isinstance(start, (list, tuple)) and isinstance(end, (list, tuple)):
+                return f"🚶 Движение: {start} → {end}, dist={dist}, advance={advanced}"
+            return f"🚶 Движение: dist={dist}, advance={advanced}"
+        if action == "skip_shoot":
+            return f"⏭️ Пропуск стрельбы{reason_text}"
+        if action == "shoot":
+            shooting = payload.get("shooting") or {}
+            target = shooting.get("target_id")
+            weapon = shooting.get("weapon_name") or "—"
+            damage = shooting.get("damage")
+            damage_text = f"{damage:.1f}" if isinstance(damage, (int, float)) else "0.0"
+            target_text = f"Unit {target}" if target is not None else "—"
+            return f"🎯 Стрельба: цель {target_text}, {weapon}, урон={damage_text}"
+        if action == "skip_charge":
+            return f"⏭️ Пропуск чарджа{reason_text}"
+        if action == "charge":
+            charge = payload.get("charge") or {}
+            target = charge.get("target_id")
+            result = charge.get("result") or "—"
+            target_text = f"Unit {target}" if target is not None else "—"
+            return f"⚡ Чардж: цель {target_text}, результат={result}"
+        if action == "skip_fight":
+            return f"⏭️ Пропуск боя{reason_text}"
+        if action == "fight":
+            fight = payload.get("fight") or {}
+            target = fight.get("target_id")
+            result = fight.get("result") or "атака"
+            target_text = f"Unit {target}" if target is not None else "—"
+            return f"⚔️ Бой: цель {target_text}, {result}"
+        return f"⏭️ Действие пропущено{reason_text}"
 
     def _select_row_for_unit(self, side, unit_id):
         unit_key = (side, unit_id)
@@ -1201,6 +1538,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_events_snapshot = None
         self._model_events_stream = []
         self._model_events_current = []
+        self._phase_buffer = None
+        self._model_event_cursor = None
         self._fx_shot_queue.clear()
         self._fx_parser.reset(preserve_seen=False)
         for view in self._log_tabs.values():

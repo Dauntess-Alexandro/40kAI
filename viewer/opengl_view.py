@@ -380,6 +380,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.refresh_overlays()
         self.update()
 
+    def focus_unit(self, unit_id: Optional[int], zoom: Optional[float] = None) -> None:
+        if unit_id is None:
+            return
+        unit = self._find_unit_by_id(unit_id)
+        render = self._unit_render_for_unit(unit) if unit is not None else None
+        if render is None:
+            return
+        view_center = QtCore.QPointF(self.width() / 2, self.height() / 2)
+        scale = zoom if zoom is not None else self._scale
+        pan = view_center - render.center * scale
+        self._set_target_view(scale=scale, pan=pan, immediate=False)
+        self.update()
+
     def set_objective_radius_visible(self, visible: bool) -> None:
         self._show_objective_radius = bool(visible)
         self.update()
