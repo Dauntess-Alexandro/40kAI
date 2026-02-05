@@ -4,7 +4,9 @@ import queue
 import re
 import sys
 import time
-from typing import Optional
+from collections import OrderedDict, deque
+from dataclasses import dataclass
+from typing import Callable, Deque, Optional, Tuple
 from datetime import datetime
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -24,6 +26,137 @@ from gym_mod.engine.game_io import parse_dice_values
 from gym_mod.engine.event_bus import get_event_bus
 
 
+@dataclass
+class PendingReport:
+    ts: str
+    report_type: str
+    attacker_id: Optional[int] = None
+    target_id: Optional[int] = None
+    weapon_name: Optional[str] = None
+    damage: Optional[float] = None
+
+
+@dataclass
+class FxShotEvent:
+    ts: str
+    report_type: str
+    attacker_id: int
+    target_id: int
+    weapon_name: str
+    damage: float
+
+
+class FxLogParser:
+    def __init__(
+        self,
+        on_event: Callable[[FxShotEvent], None],
+        debug: Callable[[str], None],
+        seen_max: int = 300,
+    ) -> None:
+        self._on_event = on_event
+        self._debug = debug
+        self._pending: Deque[PendingReport] = deque()
+        self._seen: OrderedDict[Tuple, None] = OrderedDict()
+        self._seen_max = seen_max
+
+    def reset(self, preserve_seen: bool = True) -> None:
+        self._pending.clear()
+        if not preserve_seen:
+            self._seen.clear()
+
+    def replay_lines(self, lines) -> None:
+        if not lines:
+            return
+        self._debug(f"FX: перепроигрываю {len(lines)} строк(и) лога.")
+        for line in lines:
+            self.consume_line(str(line))
+
+    def consume_line(self, line: str) -> None:
+        if not line:
+            return
+        ts, text = self._split_timestamp(line)
+        if "📌 --- ОТЧЁТ ПО" in text:
+            report_type = "overwatch" if "OVERWATCH" in text.upper() else "shooting"
+            self._pending.append(PendingReport(ts=ts, report_type=report_type))
+            self._debug(f"FX: старт отчёта ({report_type}), ts={ts}.")
+            return
+
+        if not self._pending:
+            return
+        current = self._pending[-1]
+
+        shot_match = re.search(r"Стреляет:\s*Unit\s+(\d+).*?цель:\s*Unit\s+(\d+)", text, re.IGNORECASE)
+        if shot_match:
+            current.attacker_id = int(shot_match.group(1))
+            current.target_id = int(shot_match.group(2))
+            self._debug(
+                "FX: найдена строка стрельбы "
+                f"(attacker={current.attacker_id}, target={current.target_id})."
+            )
+            return
+
+        weapon_match = re.search(r"Оружие:\s*(.+)", text, re.IGNORECASE)
+        if weapon_match:
+            current.weapon_name = weapon_match.group(1).strip()
+            self._debug(f"FX: найдена строка оружия: {current.weapon_name}.")
+            return
+
+        damage_match = re.search(r"Итог по движку:.*?=\s*([-+]?\d+(?:\.\d+)?)", text)
+        if damage_match:
+            current.damage = float(damage_match.group(1))
+            self._debug(f"FX: найден итог урона = {current.damage}.")
+            self._finalize_report(current, reason="damage")
+            return
+
+        if "📌 -------------------------" in text:
+            if current.damage is None:
+                self._debug("FX: разделитель отчёта без итога, используем урон 0.0.")
+            self._finalize_report(current, reason="separator")
+
+    def _split_timestamp(self, line: str) -> Tuple[str, str]:
+        match = re.match(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*\|\s*(.+)$", line)
+        if match:
+            return match.group(1), match.group(2)
+        return "no-ts", line
+
+    def _finalize_report(self, report: PendingReport, reason: str) -> None:
+        if report.attacker_id is None or report.target_id is None or not report.weapon_name:
+            self._debug("FX: отчёт неполный, эффект пропущен.")
+            self._pending.pop()
+            return
+        damage = report.damage if report.damage is not None else 0.0
+        event = FxShotEvent(
+            ts=report.ts,
+            report_type=report.report_type,
+            attacker_id=report.attacker_id,
+            target_id=report.target_id,
+            weapon_name=report.weapon_name,
+            damage=damage,
+        )
+        key = (
+            event.ts,
+            event.report_type,
+            event.attacker_id,
+            event.target_id,
+            event.weapon_name,
+            event.damage,
+        )
+        if key in self._seen:
+            self._debug("FX: дубликат отчёта, эффект не создаём.")
+            self._pending.pop()
+            return
+        self._seen[key] = None
+        if len(self._seen) > self._seen_max:
+            self._seen.popitem(last=False)
+        self._debug(
+            "FX: создан FxShotEvent "
+            f"(attacker={event.attacker_id}, target={event.target_id}, "
+            f"weapon={event.weapon_name}, damage={event.damage})."
+        )
+        self._on_event(event)
+        self._pending.pop()
+
+
 class ViewerWindow(QtWidgets.QMainWindow):
     def __init__(self, state_path, model_path=None):
         super().__init__()
@@ -33,8 +166,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self.controller = GameController(model_path=model_path, state_path=state_path)
         self._pending_request = None
+        self._pending_requests: Deque = deque()
+        self._awaiting_player_action = False
         self._active_unit_id = None
         self._active_unit_side = None
+        self._current_target_id = None
+        self._last_shooter_id = None
         self._show_objective_radius = True
         self._units_by_key = {}
         self._unit_row_by_key = {}
@@ -82,7 +219,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_tab_indices = {}
         self._log_tab_programmatic_switch = False
         self._last_manual_log_tab_index = None
-        self._shoot_fx_context = None
+        self._fx_shot_queue: Deque[FxShotEvent] = deque()
+        self._fx_parser = FxLogParser(self._enqueue_fx_event, self._fx_debug, seen_max=400)
         self._log_tab_defs = [
             ("player", "Все ходы игрока"),
             ("model", "Все ходы модели"),
@@ -321,7 +459,35 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.command_stack.setCurrentIndex(self._command_pages["text"])
 
     def _set_request(self, request):
+        if request is None and self._pending_requests:
+            next_request = self._pending_requests.popleft()
+            current_unit = self._extract_unit_id(getattr(self._pending_request, "prompt", ""))
+            next_unit = self._extract_unit_id(getattr(next_request, "prompt", ""))
+            if current_unit is not None or next_unit is not None:
+                current_label = self._format_unit_label(current_unit)
+                next_label = self._format_unit_label(next_unit)
+                self.add_log_line(
+                    f"REQ: finished request for Unit {current_label}, "
+                    f"dequeued next request Unit {next_label}"
+                )
+            self._pending_request = None
+            self._awaiting_player_action = False
+            self._set_request(next_request)
+            return
+        if request is not None and self._awaiting_player_action:
+            current_unit = self._extract_unit_id(getattr(self._pending_request, "prompt", ""))
+            next_unit = self._extract_unit_id(getattr(request, "prompt", ""))
+            if current_unit is not None or next_unit is not None:
+                current_label = self._format_unit_label(current_unit)
+                next_label = self._format_unit_label(next_unit)
+                self.add_log_line(
+                    f"REQ: queued request for Unit {next_label} (waiting for Unit {current_label})"
+                )
+            self._pending_requests.append(request)
+            return
+
         self._pending_request = request
+        self._awaiting_player_action = request is not None
         if request is None:
             if self.controller.is_finished:
                 self.command_prompt.setText("Игра завершена.")
@@ -332,6 +498,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._refresh_active_context()
             return
 
+        self._maybe_reset_target_for_request(request)
         self.command_prompt.setText(request.prompt)
         self.command_stack.setEnabled(True)
         kind = getattr(request, "kind", "text")
@@ -372,6 +539,64 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_stack.setCurrentIndex(self._command_pages["text"])
         self._update_command_hint(kind)
         self._refresh_active_context()
+
+    def _finish_active_request(self) -> None:
+        self._awaiting_player_action = False
+
+    def _is_target_request(self, request) -> bool:
+        if request is None:
+            return False
+        prompt = str(getattr(request, "prompt", "")).lower()
+        if "ход юнита" in prompt:
+            return True
+        return ("цель" in prompt and ("стрель" in prompt or "shoot" in prompt)) or "выберите цель" in prompt
+
+    def _maybe_reset_target_for_request(self, request) -> None:
+        if not self._is_target_request(request):
+            self._set_confirm_enabled(True)
+            return
+        shooter_id = self._extract_unit_id(getattr(request, "prompt", ""))
+        if shooter_id != self._last_shooter_id:
+            previous = self._last_shooter_id
+            if shooter_id is not None and previous is not None:
+                previous_label = self._format_unit_label(previous)
+                shooter_label = self._format_unit_label(shooter_id)
+                self.add_log_line(
+                    f"REQ: shooter changed Unit {previous_label}->Unit {shooter_label}, target reset"
+                )
+            self._last_shooter_id = shooter_id
+        self._reset_target_selection()
+        self._set_confirm_enabled(False)
+
+    def _reset_target_selection(self) -> None:
+        self._current_target_id = None
+        self.map_scene.clear_target_selection()
+
+    def _format_unit_label(self, unit_id: Optional[int]) -> str:
+        if unit_id is None:
+            return "—"
+        return str(unit_id)
+
+    def _set_confirm_enabled(self, enabled: bool) -> None:
+        self.command_send.setEnabled(enabled)
+        self.command_input.setEnabled(enabled)
+        self.bool_yes.setEnabled(enabled)
+        self.bool_no.setEnabled(enabled)
+        self.int_spin.setEnabled(enabled)
+        self.int_ok.setEnabled(enabled)
+        self.choice_combo.setEnabled(enabled)
+        self.choice_ok.setEnabled(enabled)
+
+    def _on_target_selected(self, unit_id: int) -> None:
+        if not self._is_target_request(self._pending_request):
+            return
+        if unit_id is None:
+            return
+        self._current_target_id = unit_id
+        self.map_scene.set_target_unit(unit_id)
+        self._set_confirm_enabled(True)
+        target_label = self._format_unit_label(unit_id)
+        self.add_log_line(f"REQ: target selected Unit {target_label}, confirm enabled")
 
     def _update_command_hint(self, kind):
         if kind == "direction":
@@ -453,6 +678,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _submit_text(self):
         text = self.command_input.text().strip()
+        if self._is_target_request(self._pending_request) and self._current_target_id is None:
+            return
         if not text:
             return
         if self._pending_request and getattr(self._pending_request, "kind", "") == "dice":
@@ -477,15 +704,31 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._submit_answer(text)
 
     def _submit_choice(self):
+        if self._is_target_request(self._pending_request) and self._current_target_id is None:
+            return
         value = self.choice_combo.currentText()
         self._submit_answer(value)
 
     def _submit_answer(self, value):
         if self._pending_request is None:
             return
+        finished_request = self._pending_request
+        self._finish_active_request()
         messages, request = self.controller.answer(value)
         self._append_log(messages)
-        self._set_request(request)
+        if self._pending_requests:
+            if request is not None:
+                queued_unit = self._extract_unit_id(getattr(request, "prompt", ""))
+                waiting_unit = self._extract_unit_id(getattr(finished_request, "prompt", ""))
+                self._pending_requests.append(request)
+                queued_label = self._format_unit_label(queued_unit)
+                waiting_label = self._format_unit_label(waiting_unit)
+                self.add_log_line(
+                    f"REQ: queued request for Unit {queued_label} (waiting for Unit {waiting_label})"
+                )
+            self._set_request(None)
+        else:
+            self._set_request(request)
         self._poll_state()
 
     def _fit_view(self):
@@ -566,11 +809,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if len(text_lines) >= len(existing) and text_lines[: len(existing)] == existing:
                 for line in text_lines[len(existing) :]:
                     self.add_log_line(line)
-                    self._handle_fx_log_line(line)
                 self._log_tail_snapshot = text_lines
                 return
             self._reset_log_lines(text_lines, write_to_file=False)
-            self._replay_fx_from_log_lines(text_lines)
             self._log_tail_snapshot = text_lines
 
     def _update_model_events(self, events):
@@ -607,6 +848,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.units_table.selectRow(row)
         unit_name = self._units_by_key.get(unit_key, {}).get("name", "—")
         self._append_log([f"Выбрано на карте: unit_id={unit_id}, name={unit_name}"])
+        self._on_target_selected(unit_id)
 
     def _sync_selection_from_table(self):
         selected = self.units_table.selectionModel().selectedRows()
@@ -623,6 +865,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if side and unit_id is not None:
             self.map_scene.select_unit(side, unit_id)
             self._append_log([f"Выбрано в таблице: row={row} -> unit_id={unit_id}"])
+            self._on_target_selected(unit_id)
 
     def add_log_line(self, line: str):
         raw_text = str(line)
@@ -639,6 +882,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         }
         self._log_entries.append(entry)
         self._append_log_to_file(raw_text)
+        self._fx_parser.consume_line(raw_text)
+        self._drain_fx_queue()
         if len(self._log_entries) > self._max_log_lines:
             self._log_entries = self._log_entries[-self._max_log_lines :]
             self._refresh_log_views()
@@ -941,13 +1186,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if not write_to_file:
             self._replay_fx_from_log_lines(lines)
 
-    def _replay_fx_from_log_lines(self, lines, limit: int = 40) -> None:
+    def _replay_fx_from_log_lines(self, lines) -> None:
         if not lines:
             return
-        tail = list(lines[-limit:])
-        self._fx_debug(f"FX: перепроигрываю последние {len(tail)} строк(и) лога.")
-        for line in tail:
-            self._handle_fx_log_line(str(line))
+        self._fx_parser.reset(preserve_seen=True)
+        self._fx_parser.replay_lines(lines)
+        self._drain_fx_queue()
 
     def _clear_log_viewer(self):
         self._log_entries = []
@@ -957,6 +1201,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_events_snapshot = None
         self._model_events_stream = []
         self._model_events_current = []
+        self._fx_shot_queue.clear()
+        self._fx_parser.reset(preserve_seen=False)
         for view in self._log_tabs.values():
             view.clear()
 
@@ -1111,88 +1357,35 @@ class ViewerWindow(QtWidgets.QMainWindow):
             else None,
         )
 
-    def _handle_fx_log_line(self, line: str) -> None:
-        # FX: ищем связку "Стреляет -> Оружие", чтобы привязать визуальный эффект к выстрелу.
-        if not line:
-            return
-        now = time.monotonic()
-        if self._shoot_fx_context and now - self._shoot_fx_context["t0"] > 2.0:
-            self._fx_debug(
-                "FX: контекст выстрела устарел, ожидаем новую пару строк (Стреляет/Оружие)."
-            )
-            self._shoot_fx_context = None
+    def _enqueue_fx_event(self, event: FxShotEvent) -> None:
+        self._fx_shot_queue.append(event)
 
-        if "ОТЧЁТ ПО СТРЕЛЬБЕ" in line:
-            self._shoot_fx_context = {
-                "t0": now,
-                "report_active": True,
-                "attacker_id": None,
-                "target_id": None,
-                "weapon_name": None,
-                "line": "",
-            }
-            self._fx_debug("FX: старт отчёта по стрельбе, ждём строки Стреляет/Оружие.")
-            return
+    def _drain_fx_queue(self) -> None:
+        while self._fx_shot_queue:
+            event = self._fx_shot_queue.popleft()
+            self._spawn_fx_for_event(event)
 
-        shot_match = re.search(r"Стреляет:\s*Unit\s+(\d+).*?цель:\s*Unit\s+(\d+)", line, re.IGNORECASE)
-        if shot_match:
-            if not self._shoot_fx_context:
-                self._shoot_fx_context = {"t0": now, "report_active": False}
-            self._shoot_fx_context = {
-                **self._shoot_fx_context,
-                "attacker_id": int(shot_match.group(1)),
-                "target_id": int(shot_match.group(2)),
-                "line": line,
-                "t0": now,
-            }
-            self._fx_debug(
-                "FX: найдена строка стрельбы "
-                f"(attacker={self._shoot_fx_context['attacker_id']}, "
-                f"target={self._shoot_fx_context['target_id']})."
-            )
-            return
-
-        weapon_match = re.search(r"Оружие:\s*(.+)", line, re.IGNORECASE)
-        if not weapon_match:
-            if "✅ Итог по движку" in line:
-                context = self._shoot_fx_context
-                if context and context.get("weapon_name") and context.get("attacker_id") and context.get("target_id"):
-                    if "gauss" in context["weapon_name"].lower():
-                        if "necron" in (context.get("line") or "").lower():
-                            self._spawn_gauss_effect(context["attacker_id"], context["target_id"])
-                            self._fx_debug("FX: gauss-эффект создан после строки итогов.")
-                        else:
-                            self._fx_debug("FX: итог есть, но в строке стрельбы нет Necron.")
-                    else:
-                        self._fx_debug("FX: итог есть, но оружие не gauss.")
-                self._shoot_fx_context = None
-            return
-        weapon_name = weapon_match.group(1).strip()
-        self._fx_debug(f"FX: найдена строка оружия: {weapon_name}.")
-        if not self._shoot_fx_context:
-            self._shoot_fx_context = {"t0": now, "report_active": False}
-        self._shoot_fx_context["weapon_name"] = weapon_name
-        if "gauss" not in weapon_name.lower():
+    def _spawn_fx_for_event(self, event: FxShotEvent) -> None:
+        if "gauss flayer" not in event.weapon_name.lower():
             self._fx_debug("FX: оружие не gauss, эффект пропущен.")
             return
-        context = self._shoot_fx_context
-        if not context:
-            self._fx_debug("FX: нет контекста стрельбы для gauss, эффект пропущен.")
-            return
-        if not context.get("report_active"):
-            self._fx_debug("FX: gauss найден, ждём строку итогов для запуска эффекта.")
-
-    def _spawn_gauss_effect(self, attacker_id: int, target_id: int) -> None:
-        start = self._unit_world_center(attacker_id)
-        end = self._unit_world_center(target_id)
+        attacker_side = self._side_from_unit_id(event.attacker_id)
+        target_side = self._side_from_unit_id(event.target_id)
+        start = self._unit_world_center_by_key(attacker_side, event.attacker_id)
+        end = self._unit_world_center_by_key(target_side, event.target_id)
         if start is None or end is None:
             self._fx_debug(
                 "FX: не удалось получить координаты для эффекта "
-                f"(attacker={attacker_id}, target={target_id})."
+                f"(attacker={event.attacker_id}, target={event.target_id})."
             )
             return
+        self._spawn_gauss_effect(start, end, event)
+
+    def _spawn_gauss_effect(
+        self, start: QtCore.QPointF, end: QtCore.QPointF, event: FxShotEvent
+    ) -> None:
         t0 = time.monotonic()
-        seed = hash((attacker_id, target_id, int(t0 * 1000))) & 0xFFFFFFFF
+        seed = hash((event.attacker_id, event.target_id, int(t0 * 1000))) & 0xFFFFFFFF
         config = get_gun_fx_config("Gauss flayer")
         duration = float(config.get("duration", 6.5))
         effect = self.map_scene.build_gauss_effect(
@@ -1209,17 +1402,42 @@ class ViewerWindow(QtWidgets.QMainWindow):
             f"start=({start.x():.1f},{start.y():.1f}) "
             f"end=({end.x():.1f},{end.y():.1f})."
         )
+        self._fx_debug(
+            "FX: эффект добавлен в рендер "
+            f"(attacker={event.attacker_id}, target={event.target_id})."
+        )
+
+    def _unit_world_center_by_key(
+        self, side: Optional[str], unit_id: int
+    ) -> Optional[QtCore.QPointF]:
+        if side:
+            unit = self._units_by_key.get((side, unit_id))
+            if unit:
+                return self._unit_to_world_center(unit)
+        return self._unit_world_center(unit_id)
 
     def _unit_world_center(self, unit_id: int) -> Optional[QtCore.QPointF]:
         cell = self.map_scene.cell_size
         for (_, candidate_id), unit in self._units_by_key.items():
             if candidate_id != unit_id:
                 continue
-            x = unit.get("x")
-            y = unit.get("y")
-            if x is None or y is None:
-                return None
-            return QtCore.QPointF(x * cell + cell / 2, y * cell + cell / 2)
+            return self._unit_to_world_center(unit)
+        return None
+
+    def _unit_to_world_center(self, unit: dict) -> Optional[QtCore.QPointF]:
+        cell = self.map_scene.cell_size
+        x = unit.get("x")
+        y = unit.get("y")
+        if x is None or y is None:
+            return None
+        return QtCore.QPointF(x * cell + cell / 2, y * cell + cell / 2)
+
+    def _side_from_unit_id(self, unit_id: int) -> Optional[str]:
+        unit_str = str(unit_id)
+        if unit_str.startswith("1"):
+            return "player"
+        if unit_str.startswith("2"):
+            return "model"
         return None
 
     def _fx_debug(self, message: str) -> None:
