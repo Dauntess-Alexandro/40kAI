@@ -108,6 +108,7 @@ class GaussTracerEffect:
 
 class OpenGLBoardWidget(QOpenGLWidget):
     unit_selected = QtCore.Signal(str, int)
+    unit_animation_finished = QtCore.Signal()
 
     def __init__(self, cell_size: int = 18, parent: Optional[QtWidgets.QWidget] = None):
         super().__init__(parent)
@@ -131,7 +132,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._unit_anim_timer.setInterval(16)
         self._unit_anim_timer.timeout.connect(self._animate_unit_step)
         self._unit_anim_clock = QtCore.QElapsedTimer()
-        self._unit_anim_duration_ms = 180
+        self._unit_anim_base_ms = 180
+        self._unit_anim_duration_ms = self._unit_anim_base_ms
+        self._unit_anim_restore_ms: Optional[int] = None
 
         self._move_highlights: List[QtCore.QRectF] = []
         self._target_highlights: List[Tuple[QtCore.QPointF, float]] = []
@@ -380,6 +383,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.refresh_overlays()
         self.update()
 
+    def focus_on_world(self, world: QtCore.QPointF) -> None:
+        view_center = QtCore.QPointF(self.width() / 2, self.height() / 2)
+        target_pan = view_center - world * self._scale
+        self._set_target_view(pan=target_pan)
+
+    def focus_on_cell(self, cell: Tuple[int, int]) -> None:
+        world = QtCore.QPointF(
+            cell[0] * self.cell_size + self.cell_size / 2,
+            cell[1] * self.cell_size + self.cell_size / 2,
+        )
+        self.focus_on_world(world)
+
     def set_objective_radius_visible(self, visible: bool) -> None:
         self._show_objective_radius = bool(visible)
         self.update()
@@ -394,6 +409,35 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if key in self._unit_by_key:
             self._selected_unit_key = key
             self.update()
+
+    def select_unit_id(self, unit_id: int) -> Optional[QtCore.QPointF]:
+        for key, render in self._unit_by_key.items():
+            if key[1] == unit_id:
+                self._selected_unit_key = key
+                self.update()
+                return render.center
+        return None
+
+    def animate_unit_move(
+        self,
+        unit_id: int,
+        from_cell: Tuple[int, int],
+        to_cell: Tuple[int, int],
+        duration_ms: int,
+    ) -> bool:
+        key = None
+        for unit in self._units_state:
+            if unit.get("id") == unit_id:
+                key = (unit.get("side"), unit_id)
+                break
+        if key is None:
+            return False
+        self._prev_unit_positions[key] = QtCore.QPointF(float(from_cell[0]), float(from_cell[1]))
+        self._curr_unit_positions[key] = QtCore.QPointF(float(to_cell[0]), float(to_cell[1]))
+        self._unit_anim_duration_ms = max(int(duration_ms), 0)
+        self._unit_anim_restore_ms = self._unit_anim_base_ms
+        self._start_unit_animation()
+        return True
 
     def fit_to_view(self) -> None:
         if self._board_rect.isEmpty():
@@ -501,6 +545,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 self._unit_anim_timer.stop()
             self.refresh_overlays()
             self.update()
+            self.unit_animation_finished.emit()
             return
         if not self._unit_anim_timer.isActive():
             self._unit_anim_timer.start()
@@ -518,6 +563,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.update()
         if factor >= 1.0 and self._unit_anim_timer.isActive():
             self._unit_anim_timer.stop()
+            if self._unit_anim_restore_ms is not None:
+                self._unit_anim_duration_ms = self._unit_anim_restore_ms
+                self._unit_anim_restore_ms = None
+            self.unit_animation_finished.emit()
 
     def _rebuild_units(self, factor: float) -> None:
         self._units = []

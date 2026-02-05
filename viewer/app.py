@@ -6,7 +6,7 @@ import sys
 import time
 from collections import OrderedDict, deque
 from dataclasses import dataclass
-from typing import Callable, Deque, Optional, Tuple
+from typing import Callable, Deque, List, Optional, Tuple
 from datetime import datetime
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -20,6 +20,7 @@ from viewer.gun_fx import get_gun_fx_config
 from viewer.state import StateWatcher
 from viewer.styles import Theme
 from viewer.model_log_tree import render_model_log_flat
+from viewer.timeline import TimelineBuilder, TimelinePlayer, TimelineEvent
 
 from gym_mod.engine.game_controller import GameController
 from gym_mod.engine.game_io import parse_dice_values
@@ -184,6 +185,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.status_turn = QtWidgets.QLabel("Ход: —")
         self.status_phase = QtWidgets.QLabel("Фаза: —")
         self.status_active = QtWidgets.QLabel("Активен: —")
+        self.status_timeline = QtWidgets.QLabel("Пофазовое проигрывание: выкл.")
 
         self.points_vp_player = QtWidgets.QLabel("Player VP: —")
         self.points_vp_model = QtWidgets.QLabel("Model VP: —")
@@ -230,6 +232,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS.md")
         self._log_file_max_bytes = 5 * 1024 * 1024
         self._last_active_side = None
+        self._timeline_builder = TimelineBuilder()
+        self._timeline_player = TimelinePlayer()
+        self._timeline_player.event_started.connect(self._on_timeline_event_started)
+        self._timeline_player.event_finished.connect(self._on_timeline_event_finished)
+        self._timeline_player.queue_changed.connect(self._on_timeline_queue_changed)
+        self._timeline_player.set_enabled(True)
+        self._timeline_player.set_auto_play(True)
+        self._timeline_speed = 1.0
+        self.map_scene.unit_animation_finished.connect(self._timeline_player.complete_current)
         self._init_log_viewer()
         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
@@ -296,6 +307,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._apply_dark_theme()
         self._build_toolbar()
+        self._toggle_timeline(True)
         self._fit_view()
         app = QtWidgets.QApplication.instance()
         if app is not None:
@@ -318,10 +330,91 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.toggle_objective_radius.toggled.connect(self._toggle_objective_radius)
         toolbar.addAction(self.toggle_objective_radius)
 
+        toolbar.addSeparator()
+        self.toggle_timeline = QtGui.QAction("Пофазово", self)
+        self.toggle_timeline.setCheckable(True)
+        self.toggle_timeline.setChecked(True)
+        self.toggle_timeline.toggled.connect(self._toggle_timeline)
+        toolbar.addAction(self.toggle_timeline)
+
+        self.toggle_step_mode = QtGui.QAction("Шаговый режим", self)
+        self.toggle_step_mode.setCheckable(True)
+        self.toggle_step_mode.setChecked(False)
+        self.toggle_step_mode.toggled.connect(self._toggle_timeline_step)
+        toolbar.addAction(self.toggle_step_mode)
+
+        speed_widget = QtWidgets.QWidget()
+        speed_layout = QtWidgets.QHBoxLayout(speed_widget)
+        speed_layout.setContentsMargins(4, 0, 4, 0)
+        speed_label = QtWidgets.QLabel("Скорость:")
+        self.timeline_speed_combo = QtWidgets.QComboBox()
+        self.timeline_speed_combo.addItems(["0.5x", "1x", "1.5x", "2x"])
+        self.timeline_speed_combo.setCurrentText("1x")
+        self.timeline_speed_combo.currentTextChanged.connect(self._set_timeline_speed)
+        speed_layout.addWidget(speed_label)
+        speed_layout.addWidget(self.timeline_speed_combo)
+        toolbar.addWidget(speed_widget)
+
     def _toggle_objective_radius(self, checked):
         self._show_objective_radius = checked
         self.map_scene.set_objective_radius_visible(checked)
         self.map_scene.refresh_overlays()
+
+    def _toggle_timeline(self, checked):
+        enabled = bool(checked)
+        self._timeline_player.set_enabled(enabled)
+        if not enabled:
+            self.status_timeline.setText("Пофазовое проигрывание: выкл.")
+        else:
+            self.status_timeline.setText("Пофазовое проигрывание: активно")
+
+    def _toggle_timeline_step(self, checked):
+        self._timeline_player.set_step_mode(bool(checked))
+        if checked:
+            self.status_timeline.setText("Пофазовое проигрывание: шаговый режим")
+        else:
+            self.status_timeline.setText("Пофазовое проигрывание: авто")
+
+    def _set_timeline_speed(self, text: str):
+        speed_text = str(text).replace("x", "")
+        try:
+            speed = float(speed_text)
+        except ValueError:
+            return
+        self._timeline_speed = speed
+        self._timeline_player.set_speed(speed)
+
+    def _on_timeline_queue_changed(self, count: int) -> None:
+        if not self._timeline_player.enabled:
+            return
+        mode = "шаговый режим" if self._timeline_player.step_mode else "авто"
+        self.status_timeline.setText(f"Пофазовое проигрывание: {mode}, очередь {count}")
+
+    def _on_timeline_event_started(self, event: TimelineEvent) -> None:
+        if event.kind == "phase_start":
+            self.map_scene.set_active_phase(event.phase)
+            self.status_phase.setText(f"Фаза: {event.message or event.phase or '—'}")
+        if event.kind == "unit_start" and event.unit_id is not None:
+            center = self.map_scene.select_unit_id(event.unit_id)
+            if center is not None:
+                self.map_scene.focus_on_world(center)
+        if event.kind == "move" and event.unit_id is not None and event.from_cell and event.to_cell:
+            self.map_scene.animate_unit_move(
+                event.unit_id,
+                event.from_cell,
+                event.to_cell,
+                event.duration_ms or 800,
+            )
+            self.map_scene.focus_on_cell(event.to_cell)
+        if event.kind == "action" and event.unit_id is not None:
+            center = self.map_scene.select_unit_id(event.unit_id)
+            if center is not None:
+                self.map_scene.focus_on_world(center)
+        if event.kind == "round_end":
+            self.status_phase.setText(event.message or "Конец раунда")
+
+    def _on_timeline_event_finished(self, event: TimelineEvent) -> None:
+        return
 
     def _apply_dark_theme(self):
         palette = self.palette()
@@ -351,6 +444,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.status_turn)
         layout.addWidget(self.status_phase)
         layout.addWidget(self.status_active)
+        layout.addWidget(self.status_timeline)
         return box
 
     def _group_points(self):
@@ -664,11 +758,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 break
         if not drained:
             return
+        filtered_drained = self._filter_model_events(drained)
         if self._model_log_source in (None, "stream"):
             self._model_log_source = "stream"
-            self._model_events_stream.extend(self._filter_model_events(drained))
+            self._model_events_stream.extend(filtered_drained)
             self._model_events_current = list(self._model_events_stream)
             self._refresh_model_log_view()
+        events = self._timeline_builder.ingest_model_events(filtered_drained)
+        if events:
+            self._timeline_player.enqueue(events)
 
     def _start_controller(self):
         messages, request = self.controller.start()
@@ -804,15 +902,27 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if not self._log_entries:
                 self._reset_log_lines(text_lines, write_to_file=True)
                 self._log_tail_snapshot = text_lines
+                self._ingest_timeline_log_lines(text_lines, reset=True)
                 return
             existing = [entry["raw"] for entry in self._log_entries]
             if len(text_lines) >= len(existing) and text_lines[: len(existing)] == existing:
+                new_lines = text_lines[len(existing) :]
                 for line in text_lines[len(existing) :]:
                     self.add_log_line(line)
                 self._log_tail_snapshot = text_lines
+                if new_lines:
+                    self._ingest_timeline_log_lines(new_lines, reset=False)
                 return
             self._reset_log_lines(text_lines, write_to_file=False)
             self._log_tail_snapshot = text_lines
+            self._ingest_timeline_log_lines(text_lines, reset=True)
+
+    def _ingest_timeline_log_lines(self, lines: List[str], reset: bool) -> None:
+        if reset:
+            self._timeline_builder.reset_log_cache()
+        events = self._timeline_builder.ingest_log_lines(lines, self._current_turn_number)
+        if events:
+            self._timeline_player.enqueue(events)
 
     def _update_model_events(self, events):
         if not isinstance(events, list):
@@ -825,6 +935,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_log_source = "state"
             self._model_events_current = list(filtered)
             self._refresh_model_log_view()
+            timeline_events = self._timeline_builder.ingest_model_events(filtered)
+            if timeline_events:
+                self._timeline_player.enqueue(timeline_events)
         elif self._model_log_source is None:
             self._drain_event_queue()
 
@@ -1474,9 +1587,18 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return "shoot" in phase_text or "стрел" in phase_text or "shooting" in phase_text
 
     def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.KeyPress:
+            key = event.key()
+            if (
+                self._pending_request is None
+                and self._timeline_player.enabled
+                and self._timeline_player.step_mode
+                and key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter)
+            ):
+                self._timeline_player.next_event()
+                return True
         if event.type() == QtCore.QEvent.KeyPress and self._pending_request:
             kind = getattr(self._pending_request, "kind", "")
-            key = event.key()
             text = event.text().lower()
             if kind == "direction":
                 if key == QtCore.Qt.Key_Up:
