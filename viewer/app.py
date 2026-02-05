@@ -182,6 +182,8 @@ class PhaseScriptPlayer(QtCore.QObject):
         self._step_index = 0
         self._playing = False
         self._checkpoint_seen = False
+        self._waiting = False
+        self._paused = False
         self._timer = QtCore.QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._play_next_step)
@@ -201,9 +203,13 @@ class PhaseScriptPlayer(QtCore.QObject):
         self._step_index = 0
         self._playing = True
         self._checkpoint_seen = False
+        self._waiting = False
+        self._paused = False
         self._play_next_step()
 
     def _play_next_step(self) -> None:
+        if self._paused:
+            return
         if self._step_index >= len(self._active_script):
             if not self._checkpoint_seen:
                 self._owner._apply_phase_checkpoint()
@@ -211,17 +217,55 @@ class PhaseScriptPlayer(QtCore.QObject):
             return
         step = self._active_script[self._step_index]
         self._step_index += 1
-        duration_ms = max(0, int(step.duration_s * 1000))
+        manual = self._owner._is_cinematic_manual()
+        duration_ms = 0 if manual else max(0, int(step.duration_s * 1000))
         if step.kind == "checkpoint":
             self._checkpoint_seen = True
             self._owner._apply_phase_checkpoint(step.payload.get("snapshot"))
-            QtCore.QTimer.singleShot(0, self._play_next_step)
+            if manual:
+                self._play_next_step()
+            else:
+                QtCore.QTimer.singleShot(0, self._play_next_step)
             return
         self._owner._execute_phase_step(step)
+        if manual and step.kind in ("unit_action", "phase_done"):
+            self._waiting = True
+            next_label = self._next_unit_label() if step.kind == "unit_action" else None
+            self._owner._request_cinematic_continue(
+                reason="unit_done" if step.kind == "unit_action" else "phase_done",
+                next_label=next_label,
+                phase_label=step.payload.get("next_phase_label"),
+            )
+            return
         if duration_ms <= 0:
-            QtCore.QTimer.singleShot(0, self._play_next_step)
+            if manual:
+                self._play_next_step()
+            else:
+                QtCore.QTimer.singleShot(0, self._play_next_step)
         else:
             self._timer.start(duration_ms)
+
+    def _next_unit_label(self) -> Optional[str]:
+        for idx in range(self._step_index, len(self._active_script)):
+            step = self._active_script[idx]
+            if step.kind == "unit_action":
+                payload = step.payload or {}
+                unit_id = payload.get("unit_id")
+                unit_name = payload.get("unit_name") or "—"
+                action_line = self._owner._format_unit_action_line(payload)
+                return f"Unit {unit_id} — {unit_name} ({action_line})"
+        return None
+
+    def continue_play(self, accepted: bool) -> None:
+        if self._waiting:
+            self._waiting = False
+        if not accepted:
+            self._paused = True
+            self._playing = False
+            return
+        self._paused = False
+        self._playing = True
+        self._play_next_step()
 
 
 class ViewerWindow(QtWidgets.QMainWindow):
@@ -291,6 +335,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._phase_player = PhaseScriptPlayer(self)
         self._model_event_cursor: Optional[int] = None
         self._cinematic_active = False
+        self._cinematic_manual = True
+        self._cinematic_waiting = False
+        self._cinematic_lines: list[str] = []
         self._fx_shot_queue: Deque[FxShotEvent] = deque()
         self._fx_parser = FxLogParser(self._enqueue_fx_event, self._fx_debug, seen_max=400)
         self._log_tab_defs = [
@@ -338,6 +385,18 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.command_hint = QtWidgets.QLabel("Горячие клавиши: —")
         self.command_hint.setStyleSheet(f"color: {Theme.muted.name()};")
         command_layout.addWidget(self.command_hint)
+        self.cinematic_controls = QtWidgets.QWidget()
+        cinematic_controls_layout = QtWidgets.QHBoxLayout(self.cinematic_controls)
+        cinematic_controls_layout.setContentsMargins(0, 0, 0, 0)
+        self.cinematic_yes = QtWidgets.QPushButton("Да (Y)")
+        self.cinematic_no = QtWidgets.QPushButton("Нет (N)")
+        self.cinematic_yes.clicked.connect(lambda: self._handle_cinematic_continue(True))
+        self.cinematic_no.clicked.connect(lambda: self._handle_cinematic_continue(False))
+        cinematic_controls_layout.addWidget(self.cinematic_yes)
+        cinematic_controls_layout.addWidget(self.cinematic_no)
+        cinematic_controls_layout.addStretch()
+        command_layout.addWidget(self.cinematic_controls)
+        self._set_cinematic_waiting(False)
 
         self.command_stack = QtWidgets.QStackedWidget()
         self._build_command_pages()
@@ -841,6 +900,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if active != "model" and self._cinematic_active:
             self._cinematic_active = False
             self.cinematic_label.setText("")
+            self._set_cinematic_waiting(False)
 
         vp = state.get("vp", {})
         cp = state.get("cp", {})
@@ -989,6 +1049,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _build_phase_script(self, buffer: PhaseBuffer) -> list[PhaseScriptStep]:
         steps: list[PhaseScriptStep] = []
+        phase_summary_text = self._format_phase_summary(buffer.phase, buffer.summary or {})
+        next_phase_label = self._phase_label(self._next_phase(buffer.phase))
         steps.append(
             PhaseScriptStep(
                 kind="phase_header",
@@ -1002,6 +1064,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 payload={
                     "phase": buffer.phase,
                     "summary": buffer.summary or {},
+                    "summary_text": phase_summary_text,
                 },
                 duration_s=1.0,
             )
@@ -1014,6 +1077,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
                     duration_s=1.0,
                 )
             )
+        steps.append(
+            PhaseScriptStep(
+                kind="phase_done",
+                payload={
+                    "phase": buffer.phase,
+                    "summary_text": phase_summary_text,
+                    "next_phase_label": next_phase_label,
+                },
+                duration_s=0.0,
+            )
+        )
         steps.append(
             PhaseScriptStep(
                 kind="checkpoint",
@@ -1034,7 +1108,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         if kind == "summary":
             phase = payload.get("phase") or ""
-            summary_text = self._format_phase_summary(phase, payload.get("summary") or {})
+            summary_text = payload.get("summary_text") or self._format_phase_summary(phase, payload.get("summary") or {})
             self._set_cinematic_text([self._phase_label(phase), f"📌 Итог: {summary_text}"])
             self.add_log_line(f"FX: show summary {phase} {summary_text}")
             return
@@ -1050,11 +1124,69 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if unit_id is not None:
                 self.add_log_line(f"FX: play unit_action unit={unit_id} action={action}")
             return
+        if kind == "phase_done":
+            summary_text = payload.get("summary_text") or "нет данных"
+            self._set_cinematic_text([f"📌 Итог: {summary_text}"])
+            return
 
     def _set_cinematic_text(self, lines: list[str]) -> None:
         self._cinematic_active = True
-        text = "\n".join([line for line in lines if line])
+        self._cinematic_lines = [line for line in lines if line]
+        text = "\n".join(self._cinematic_lines)
         self.cinematic_label.setText(text)
+
+    def _request_cinematic_continue(
+        self,
+        reason: str,
+        next_label: Optional[str],
+        phase_label: Optional[str] = None,
+    ) -> None:
+        if not self._cinematic_manual:
+            return
+        self._set_cinematic_waiting(True)
+        if reason == "unit_done":
+            prompt = (
+                f"Следующий юнит: {next_label}. Продолжить? (y/n)"
+                if next_label
+                else "Следующий юнит. Продолжить? (y/n)"
+            )
+            self.add_log_line(
+                f"FX: wait_continue reason=unit_done next={next_label or 'unit'}"
+            )
+        else:
+            phase_text = phase_label or "—"
+            prompt = f"Следующая фаза: {phase_text}. Продолжить? (y/n)"
+            self.add_log_line(
+                f"FX: wait_continue reason=phase_done next={phase_text}"
+            )
+        self.cinematic_label.setText("\n".join(self._cinematic_lines + [prompt]))
+
+    def _handle_cinematic_continue(self, accepted: bool) -> None:
+        if not self._cinematic_waiting:
+            return
+        self.add_log_line(f"FX: continue={'Y' if accepted else 'N'}")
+        if not accepted:
+            self._set_cinematic_waiting(False)
+            self._phase_player.continue_play(False)
+            return
+        self._set_cinematic_waiting(False)
+        self._phase_player.continue_play(True)
+
+    def _set_cinematic_waiting(self, waiting: bool) -> None:
+        self._cinematic_waiting = waiting
+        self.cinematic_yes.setEnabled(waiting)
+        self.cinematic_no.setEnabled(waiting)
+
+    def _is_cinematic_manual(self) -> bool:
+        return bool(self._cinematic_manual)
+
+    def _next_phase(self, phase: str) -> str:
+        order = ["command", "movement", "shooting", "charge", "fight"]
+        if phase in order:
+            idx = order.index(phase)
+            if idx + 1 < len(order):
+                return order[idx + 1]
+        return phase
 
     def _play_unit_action_fx(self, payload: dict) -> None:
         unit_id = payload.get("unit_id")
@@ -1128,8 +1260,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             skipped = summary.get("skipped", 0)
             reasons = summary.get("reasons", {}) or {}
             reasons_text = ", ".join(f"{key}={value}" for key, value in sorted(reasons.items()))
-            reason_part = f", причины: {reasons_text}" if reasons_text else ""
-            return f"{main_label}={main_value}, skip={skipped}{reason_part}"
+            reason_part = f" (reasons: {reasons_text})" if reasons_text else ""
+            return f"{main_label}={main_value}, skipped={skipped}{reason_part}"
         return "нет данных"
 
     def _format_unit_action_line(self, payload: dict) -> str:
@@ -1137,7 +1269,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         reason = payload.get("reason")
         reason_text = f" ({reason})" if reason else ""
         if action == "no_move":
-            return f"⏭️ Без движения{reason_text}"
+            movement = payload.get("movement") or {}
+            dist = movement.get("dist", 0)
+            return f"⏭️ No move: dist={dist}{reason_text}"
         if action == "move":
             movement = payload.get("movement") or {}
             dist = movement.get("dist", 0)
@@ -1148,7 +1282,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 return f"🚶 Движение: {start} → {end}, dist={dist}, advance={advanced}"
             return f"🚶 Движение: dist={dist}, advance={advanced}"
         if action == "skip_shoot":
-            return f"⏭️ Пропуск стрельбы{reason_text}"
+            return f"⏭️ Skip shoot{reason_text}"
         if action == "shoot":
             shooting = payload.get("shooting") or {}
             target = shooting.get("target_id")
@@ -1158,7 +1292,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             target_text = f"Unit {target}" if target is not None else "—"
             return f"🎯 Стрельба: цель {target_text}, {weapon}, урон={damage_text}"
         if action == "skip_charge":
-            return f"⏭️ Пропуск чарджа{reason_text}"
+            return f"⏭️ Skip charge{reason_text}"
         if action == "charge":
             charge = payload.get("charge") or {}
             target = charge.get("target_id")
@@ -1166,7 +1300,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             target_text = f"Unit {target}" if target is not None else "—"
             return f"⚡ Чардж: цель {target_text}, результат={result}"
         if action == "skip_fight":
-            return f"⏭️ Пропуск боя{reason_text}"
+            return f"⏭️ Skip fight{reason_text}"
         if action == "fight":
             fight = payload.get("fight") or {}
             target = fight.get("target_id")
@@ -1540,6 +1674,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_events_current = []
         self._phase_buffer = None
         self._model_event_cursor = None
+        self._set_cinematic_waiting(False)
         self._fx_shot_queue.clear()
         self._fx_parser.reset(preserve_seen=False)
         for view in self._log_tabs.values():
@@ -1565,6 +1700,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 log_file.write(f"{timestamp} | {line}\n")
         except OSError:
             pass
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        if self._cinematic_waiting:
+            key = event.key()
+            if key in (QtCore.Qt.Key_Y, QtCore.Qt.Key_Yes):
+                self._handle_cinematic_continue(True)
+                return
+            if key in (QtCore.Qt.Key_N, QtCore.Qt.Key_No):
+                self._handle_cinematic_continue(False)
+                return
+        super().keyPressEvent(event)
 
     def _rotate_log_file_if_needed(self):
         if not os.path.exists(self._log_file_path):
