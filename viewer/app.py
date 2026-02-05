@@ -221,6 +221,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_log_playback_timer = QtCore.QTimer(self)
         self._model_log_playback_timer.setSingleShot(True)
         self._model_log_playback_timer.timeout.connect(self._play_next_model_log_line)
+        self._state_update_queue: Deque[dict] = deque()
+        self._state_update_timer = QtCore.QTimer(self)
+        self._state_update_timer.setSingleShot(True)
+        self._state_update_timer.timeout.connect(self._apply_next_state_update)
+        self._state_update_interval_ms = 1000
+        self._latest_state_snapshot = None
         self._log_tabs = {}
         self._log_tab_indices = {}
         self._log_tab_programmatic_switch = False
@@ -636,9 +642,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self.log_model_verbose = QtWidgets.QCheckBox("Подробно (verbose)")
         self.log_model_verbose.toggled.connect(self._refresh_model_log_view)
-        self.log_model_timed = QtWidgets.QCheckBox("Пошаговый вывод модели")
+        self.log_model_timed = QtWidgets.QCheckBox("Пошаговый вывод модели (лог+карта)")
         self.log_model_timed.setChecked(True)
-        self.log_model_timed.toggled.connect(self._refresh_model_log_view)
+        self.log_model_timed.toggled.connect(self._on_model_timed_toggled)
 
         self.log_copy_turn = QtWidgets.QPushButton("Копировать ход")
         self.log_copy_turn.clicked.connect(self._copy_current_turn)
@@ -752,7 +758,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             )
             return
         if self.state_watcher.load_if_changed():
-            self._apply_state(self.state_watcher.state)
+            self._handle_state_update(self.state_watcher.state)
 
     def _apply_state(self, state):
         board = state.get("board", {})
@@ -782,6 +788,34 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._update_model_events(state.get("model_events", []))
         self._drain_event_queue()
         self._refresh_active_context()
+
+    def _handle_state_update(self, state):
+        if not isinstance(state, dict):
+            return
+        self._latest_state_snapshot = state
+        if self.log_model_timed.isChecked():
+            self._state_update_queue.append(state)
+            if not self._state_update_timer.isActive():
+                self._apply_next_state_update()
+            return
+        self._state_update_queue.clear()
+        self._apply_state(state)
+
+    def _apply_next_state_update(self):
+        if not self._state_update_queue:
+            return
+        state = self._state_update_queue.popleft()
+        self._apply_state(state)
+        if self._state_update_queue:
+            self._state_update_timer.start(self._state_update_interval_ms)
+
+    def _on_model_timed_toggled(self, checked: bool) -> None:
+        if not checked:
+            self._state_update_queue.clear()
+            self._state_update_timer.stop()
+            if self._latest_state_snapshot is not None:
+                self._apply_state(self._latest_state_snapshot)
+        self._refresh_model_log_view()
 
     def _populate_units_table(self, units):
         self.units_table.setRowCount(len(units))
