@@ -166,8 +166,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self.controller = GameController(model_path=model_path, state_path=state_path)
         self._pending_request = None
+        self._pending_requests: Deque = deque()
+        self._awaiting_player_action = False
         self._active_unit_id = None
         self._active_unit_side = None
+        self._current_target_id = None
+        self._last_shooter_id = None
         self._show_objective_radius = True
         self._units_by_key = {}
         self._unit_row_by_key = {}
@@ -455,7 +459,35 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.command_stack.setCurrentIndex(self._command_pages["text"])
 
     def _set_request(self, request):
+        if request is None and self._pending_requests:
+            next_request = self._pending_requests.popleft()
+            current_unit = self._extract_unit_id(getattr(self._pending_request, "prompt", ""))
+            next_unit = self._extract_unit_id(getattr(next_request, "prompt", ""))
+            if current_unit is not None or next_unit is not None:
+                current_label = self._format_unit_label(current_unit)
+                next_label = self._format_unit_label(next_unit)
+                self.add_log_line(
+                    f"REQ: finished request for Unit {current_label}, "
+                    f"dequeued next request Unit {next_label}"
+                )
+            self._pending_request = None
+            self._awaiting_player_action = False
+            self._set_request(next_request)
+            return
+        if request is not None and self._awaiting_player_action:
+            current_unit = self._extract_unit_id(getattr(self._pending_request, "prompt", ""))
+            next_unit = self._extract_unit_id(getattr(request, "prompt", ""))
+            if current_unit is not None or next_unit is not None:
+                current_label = self._format_unit_label(current_unit)
+                next_label = self._format_unit_label(next_unit)
+                self.add_log_line(
+                    f"REQ: queued request for Unit {next_label} (waiting for Unit {current_label})"
+                )
+            self._pending_requests.append(request)
+            return
+
         self._pending_request = request
+        self._awaiting_player_action = request is not None
         if request is None:
             if self.controller.is_finished:
                 self.command_prompt.setText("Игра завершена.")
@@ -466,6 +498,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._refresh_active_context()
             return
 
+        self._maybe_reset_target_for_request(request)
         self.command_prompt.setText(request.prompt)
         self.command_stack.setEnabled(True)
         kind = getattr(request, "kind", "text")
@@ -506,6 +539,64 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_stack.setCurrentIndex(self._command_pages["text"])
         self._update_command_hint(kind)
         self._refresh_active_context()
+
+    def _finish_active_request(self) -> None:
+        self._awaiting_player_action = False
+
+    def _is_target_request(self, request) -> bool:
+        if request is None:
+            return False
+        prompt = str(getattr(request, "prompt", "")).lower()
+        if "ход юнита" in prompt:
+            return True
+        return ("цель" in prompt and ("стрель" in prompt or "shoot" in prompt)) or "выберите цель" in prompt
+
+    def _maybe_reset_target_for_request(self, request) -> None:
+        if not self._is_target_request(request):
+            self._set_confirm_enabled(True)
+            return
+        shooter_id = self._extract_unit_id(getattr(request, "prompt", ""))
+        if shooter_id != self._last_shooter_id:
+            previous = self._last_shooter_id
+            if shooter_id is not None and previous is not None:
+                previous_label = self._format_unit_label(previous)
+                shooter_label = self._format_unit_label(shooter_id)
+                self.add_log_line(
+                    f"REQ: shooter changed Unit {previous_label}->Unit {shooter_label}, target reset"
+                )
+            self._last_shooter_id = shooter_id
+        self._reset_target_selection()
+        self._set_confirm_enabled(False)
+
+    def _reset_target_selection(self) -> None:
+        self._current_target_id = None
+        self.map_scene.clear_target_selection()
+
+    def _format_unit_label(self, unit_id: Optional[int]) -> str:
+        if unit_id is None:
+            return "—"
+        return str(unit_id)
+
+    def _set_confirm_enabled(self, enabled: bool) -> None:
+        self.command_send.setEnabled(enabled)
+        self.command_input.setEnabled(enabled)
+        self.bool_yes.setEnabled(enabled)
+        self.bool_no.setEnabled(enabled)
+        self.int_spin.setEnabled(enabled)
+        self.int_ok.setEnabled(enabled)
+        self.choice_combo.setEnabled(enabled)
+        self.choice_ok.setEnabled(enabled)
+
+    def _on_target_selected(self, unit_id: int) -> None:
+        if not self._is_target_request(self._pending_request):
+            return
+        if unit_id is None:
+            return
+        self._current_target_id = unit_id
+        self.map_scene.set_target_unit(unit_id)
+        self._set_confirm_enabled(True)
+        target_label = self._format_unit_label(unit_id)
+        self.add_log_line(f"REQ: target selected Unit {target_label}, confirm enabled")
 
     def _update_command_hint(self, kind):
         if kind == "direction":
@@ -587,6 +678,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _submit_text(self):
         text = self.command_input.text().strip()
+        if self._is_target_request(self._pending_request) and self._current_target_id is None:
+            return
         if not text:
             return
         if self._pending_request and getattr(self._pending_request, "kind", "") == "dice":
@@ -611,15 +704,31 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._submit_answer(text)
 
     def _submit_choice(self):
+        if self._is_target_request(self._pending_request) and self._current_target_id is None:
+            return
         value = self.choice_combo.currentText()
         self._submit_answer(value)
 
     def _submit_answer(self, value):
         if self._pending_request is None:
             return
+        finished_request = self._pending_request
+        self._finish_active_request()
         messages, request = self.controller.answer(value)
         self._append_log(messages)
-        self._set_request(request)
+        if self._pending_requests:
+            if request is not None:
+                queued_unit = self._extract_unit_id(getattr(request, "prompt", ""))
+                waiting_unit = self._extract_unit_id(getattr(finished_request, "prompt", ""))
+                self._pending_requests.append(request)
+                queued_label = self._format_unit_label(queued_unit)
+                waiting_label = self._format_unit_label(waiting_unit)
+                self.add_log_line(
+                    f"REQ: queued request for Unit {queued_label} (waiting for Unit {waiting_label})"
+                )
+            self._set_request(None)
+        else:
+            self._set_request(request)
         self._poll_state()
 
     def _fit_view(self):
@@ -739,6 +848,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.units_table.selectRow(row)
         unit_name = self._units_by_key.get(unit_key, {}).get("name", "—")
         self._append_log([f"Выбрано на карте: unit_id={unit_id}, name={unit_name}"])
+        self._on_target_selected(unit_id)
 
     def _sync_selection_from_table(self):
         selected = self.units_table.selectionModel().selectedRows()
@@ -755,6 +865,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if side and unit_id is not None:
             self.map_scene.select_unit(side, unit_id)
             self._append_log([f"Выбрано в таблице: row={row} -> unit_id={unit_id}"])
+            self._on_target_selected(unit_id)
 
     def add_log_line(self, line: str):
         raw_text = str(line)

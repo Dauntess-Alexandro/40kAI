@@ -366,6 +366,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._target_unit_id = None
         self.update()
 
+    def clear_target_selection(self) -> None:
+        self._target_unit_id = None
+        self._target_cell = None
+        self.update()
+
     def set_hover_cell(self, cell: Optional[Tuple[int, int]]) -> None:
         self._hover_cell = cell
         self.update()
