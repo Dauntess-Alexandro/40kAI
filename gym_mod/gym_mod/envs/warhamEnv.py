@@ -842,6 +842,8 @@ class Warhammer40kEnv(gym.Env):
         self._phase_event_emitted = False
         self._phase_unit_logged = set()
         self.mission_name = MISSION_NAME
+        self._event_counter = 0
+        self._agent_events_logged = False
 
         self.coordsOfOM = np.array([
             [self.b_len/2 + 8, self.b_hei/2 + 12],
@@ -856,6 +858,9 @@ class Warhammer40kEnv(gym.Env):
         self._agent_log_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "..", "LOGS_FOR_AGENTS.md")
         )
+        if not self._agent_events_logged:
+            self._append_agent_log("EventStream: включены события phase_summary/unit_action.")
+            self._agent_events_logged = True
 
         self.modelOC = []
         self.enemyOC = []
@@ -978,13 +983,102 @@ class Warhammer40kEnv(gym.Env):
     def _emit_event(self, event: dict) -> None:
         if not isinstance(event, dict):
             return
+        self._event_counter += 1
+        event.setdefault("event_id", self._event_counter)
         event.setdefault("battle_round", self.battle_round)
         event.setdefault("turn", self.numTurns)
         event.setdefault("phase", self.phase)
+        event.setdefault("active_side", self._event_active_side())
         event.setdefault("data", {})
         event.setdefault("msg", "")
         event.setdefault("verbosity", "normal")
         get_event_bus().emit(event)
+
+    def _event_active_side(self) -> str:
+        if self.active_side == "model":
+            return "model"
+        if self.active_side == "enemy":
+            return "player"
+        return str(self.active_side)
+
+    def _emit_phase_summary(self, phase: str, summary: dict) -> None:
+        event = {
+            "side": "enemy",
+            "phase": phase,
+            "type": "phase_summary",
+            "msg": "Итог фазы",
+            "unit_id": None,
+            "unit_name": None,
+        }
+        event.update(summary or {})
+        self._emit_event(event)
+
+    def _emit_unit_action(
+        self,
+        unit_idx: int,
+        phase: str,
+        action: str,
+        reason: str | None = None,
+        movement: dict | None = None,
+        shooting: dict | None = None,
+        charge: dict | None = None,
+        fight: dict | None = None,
+    ) -> None:
+        unit_id = self._unit_id("model", unit_idx)
+        unit_name = self._unit_name("model", unit_idx)
+        self._emit_event(
+            {
+                "side": "enemy",
+                "phase": phase,
+                "type": "unit_action",
+                "msg": "",
+                "unit_id": unit_id,
+                "unit_name": unit_name,
+                "action": action,
+                "reason": reason,
+                "movement": movement,
+                "shooting": shooting,
+                "charge": charge,
+                "fight": fight,
+            }
+        )
+
+    def _summary_reason(self, reasons: dict, reason: str | None) -> None:
+        if not reason:
+            return
+        reasons[reason] = reasons.get(reason, 0) + 1
+
+    def _record_fight_action(
+        self,
+        unit_idx: int,
+        action: str,
+        reason: str | None = None,
+        target_id: int | None = None,
+        result: str | None = None,
+    ) -> None:
+        tracker = getattr(self, "_fight_action_tracker", None)
+        if not isinstance(tracker, dict):
+            return
+        acted = tracker.setdefault("acted", set())
+        if unit_idx in acted:
+            return
+        summary = tracker.setdefault("summary", {"fights": 0, "skipped": 0, "reasons": {}})
+        if action == "fight":
+            summary["fights"] += 1
+        else:
+            summary["skipped"] += 1
+            self._summary_reason(summary["reasons"], reason)
+        acted.add(unit_idx)
+        fight_payload = None
+        if action == "fight":
+            fight_payload = {"target_id": target_id, "result": result}
+        self._emit_unit_action(
+            unit_idx,
+            "fight",
+            action=action,
+            reason=reason,
+            fight=fight_payload,
+        )
 
     def _append_agent_log(self, msg: str) -> None:
         if msg is None:
@@ -1752,6 +1846,13 @@ class Warhammer40kEnv(gym.Env):
             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
             apply_end_of_command_phase(self, side="model", dice_fn=dice_fn, log_fn=self._log)
             score_end_of_command_phase(self, "model", log_fn=self._log)
+            self._emit_phase_summary(
+                "command",
+                {
+                    "vp": self.modelVP,
+                    "cp": self.modelCP,
+                },
+            )
             self._emit_event(
                 {
                     "side": "enemy",
@@ -1903,12 +2004,29 @@ class Warhammer40kEnv(gym.Env):
             reward_delta = 0
             objective_hold_delta = 0.0
             objective_proximity_delta = 0.0
+            moved_count = 0
+            advanced_count = 0
+            dist_total = 0.0
+            total_units = len(self.unit_health)
             for i in range(len(self.unit_health)):
                 modelName = i + 21
                 battleSh = battle_shock[i] if battle_shock else False
                 pos_before = tuple(self.unit_coords[i])
                 if self.unit_health[i] <= 0:
                     self._log_unit("MODEL", modelName, i, f"Юнит мертв, движение пропущено. Позиция: {pos_before}")
+                    self._emit_unit_action(
+                        i,
+                        "movement",
+                        action="no_move",
+                        reason="dead",
+                        movement={
+                            "from": list(pos_before),
+                            "to": list(pos_before),
+                            "dist": 0,
+                            "advanced": False,
+                            "advance_roll": None,
+                        },
+                    )
                     continue
                 if self.unitInAttack[i][0] == 0 and self.unit_health[i] > 0:
                     base_m = self.unit_data[i]["Movement"]
@@ -1999,6 +2117,24 @@ class Warhammer40kEnv(gym.Env):
                                 "Reward (VP/объекты): "
                                 f"proximity=+{reward_cfg.VP_OBJECTIVE_PROXIMITY_REWARD:.3f} (obj={j})",
                             )
+                    if advanced:
+                        advanced_count += 1
+                    dist_total += float(actual_movement)
+                    if pos_before != pos_after:
+                        moved_count += 1
+                    self._emit_unit_action(
+                        i,
+                        "movement",
+                        action="no_move" if action["move"] == 4 else "move",
+                        reason="no_move_choice" if action["move"] == 4 else None,
+                        movement={
+                            "from": list(pos_before),
+                            "to": list(pos_after),
+                            "dist": float(actual_movement),
+                            "advanced": bool(advanced),
+                            "advance_roll": advance_roll,
+                        },
+                    )
 
                 elif self.unitInAttack[i][0] == 1 and self.unit_health[i] > 0:
                     idOfE = self.unitInAttack[i][1]
@@ -2020,6 +2156,19 @@ class Warhammer40kEnv(gym.Env):
                             modelName,
                             i,
                             f"Цель в ближнем бою мертва ({self._format_unit_label('enemy', idOfE)}), юнит выходит из боя. Позиция: {pos_before}",
+                        )
+                        self._emit_unit_action(
+                            i,
+                            "movement",
+                            action="no_move",
+                            reason="melee_target_dead",
+                            movement={
+                                "from": list(pos_before),
+                                "to": list(pos_before),
+                                "dist": 0,
+                                "advanced": False,
+                                "advance_roll": None,
+                            },
                         )
                     else:
                         if action["attack"] == 0:
@@ -2058,6 +2207,23 @@ class Warhammer40kEnv(gym.Env):
                                     phase="movement",
                                     manual=os.getenv("MANUAL_DICE", "0") == "1",
                                 )
+                            dist_moved = float(distance(pos_before, pos_after))
+                            dist_total += dist_moved
+                            if pos_before != pos_after:
+                                moved_count += 1
+                            self._emit_unit_action(
+                                i,
+                                "movement",
+                                action="move",
+                                reason="fall_back",
+                                movement={
+                                    "from": list(pos_before),
+                                    "to": list(pos_after),
+                                    "dist": dist_moved,
+                                    "advanced": False,
+                                    "advance_roll": None,
+                                },
+                            )
                         else:
                             reward_delta += reward_cfg.MOVEMENT_MELEE_STAY_BONUS
                             self._log_reward_unit(
@@ -2073,12 +2239,35 @@ class Warhammer40kEnv(gym.Env):
                             i,
                             f"Остаётся в ближнем бою с {self._format_unit_label('enemy', idOfE)}, движение пропущено.",
                         )
+                        if action["attack"] != 0:
+                            self._emit_unit_action(
+                                i,
+                                "movement",
+                                action="no_move",
+                                reason="in_melee",
+                                movement={
+                                    "from": list(pos_before),
+                                    "to": list(pos_before),
+                                    "dist": 0,
+                                    "advanced": False,
+                                    "advance_roll": None,
+                                },
+                            )
             if objective_hold_delta != 0 or objective_proximity_delta != 0:
                 total_obj_delta = objective_hold_delta + objective_proximity_delta
                 self._log_reward(
                     "Reward (VP/объекты, движение): "
                     f"hold={objective_hold_delta:.3f}, proximity={objective_proximity_delta:.3f}, total={total_obj_delta:.3f}"
                 )
+            self._emit_phase_summary(
+                "movement",
+                {
+                    "moved": moved_count,
+                    "total_units": total_units,
+                    "advanced_count": advanced_count,
+                    "dist_total": dist_total,
+                },
+            )
             self._emit_event(
                 {
                     "side": "enemy",
@@ -2393,23 +2582,71 @@ class Warhammer40kEnv(gym.Env):
         if side == "model":
             self._log_phase("MODEL", "shooting")
             reward_delta = 0
+            shots_count = 0
+            skipped_count = 0
+            reasons = {}
             for i in range(len(self.unit_health)):
                 modelName = i + 21
                 advanced = advanced_flags[i] if advanced_flags else False
                 if self.unit_health[i] <= 0:
                     self._log_unit("MODEL", modelName, i, "Юнит мертв, стрельба пропущена.")
+                    skipped_count += 1
+                    self._summary_reason(reasons, "dead")
+                    self._emit_unit_action(
+                        i,
+                        "shooting",
+                        action="skip_shoot",
+                        reason="dead",
+                        shooting=None,
+                    )
                     continue
                 if self.unitFellBack[i]:
                     self._log_unit("MODEL", modelName, i, "Fall Back в этом ходу — стрельба недоступна.")
+                    skipped_count += 1
+                    self._summary_reason(reasons, "fell_back")
+                    self._emit_unit_action(
+                        i,
+                        "shooting",
+                        action="skip_shoot",
+                        reason="fell_back",
+                        shooting=None,
+                    )
                     continue
                 if self.unitInAttack[i][0] == 1:
                     self._log_unit("MODEL", modelName, i, "Юнит в ближнем бою, стрельба недоступна.")
+                    skipped_count += 1
+                    self._summary_reason(reasons, "in_melee")
+                    self._emit_unit_action(
+                        i,
+                        "shooting",
+                        action="skip_shoot",
+                        reason="in_melee",
+                        shooting=None,
+                    )
                     continue
                 if self.unit_weapon[i] == "None":
                     self._log_unit("MODEL", modelName, i, "Нет дальнобойного оружия, стрельба пропущена.")
+                    skipped_count += 1
+                    self._summary_reason(reasons, "no_weapon")
+                    self._emit_unit_action(
+                        i,
+                        "shooting",
+                        action="skip_shoot",
+                        reason="no_weapon",
+                        shooting=None,
+                    )
                     continue
                 if advanced and not weapon_is_assault(self.unit_weapon[i]):
                     self._log_unit("MODEL", modelName, i, "Advance без Assault — стрельба пропущена.")
+                    skipped_count += 1
+                    self._summary_reason(reasons, "advanced_no_assault")
+                    self._emit_unit_action(
+                        i,
+                        "shooting",
+                        action="skip_shoot",
+                        reason="advanced_no_assault",
+                        shooting=None,
+                    )
                     continue
 
                 shootAbleUnits = []
@@ -2606,6 +2843,22 @@ class Warhammer40kEnv(gym.Env):
                                 attacker_label=self._format_unit_label("model", i),
                                 defender_label=self._format_unit_label("enemy", idOfE),
                             )
+                        shots_count += 1
+                        self._emit_unit_action(
+                            i,
+                            "shooting",
+                            action="shoot",
+                            reason=None,
+                            shooting={
+                                "target_id": self._unit_id("enemy", idOfE),
+                                "weapon_name": (
+                                    self.unit_weapon[i].get("Name")
+                                    if isinstance(self.unit_weapon[i], dict)
+                                    else str(self.unit_weapon[i])
+                                ),
+                                "damage": float(np.sum(dmg)),
+                            },
+                        )
                     else:
                         penalty = 0.5 + reward_cfg.SHOOT_REWARD_SKIP_PENALTY
                         reward_delta -= penalty
@@ -2625,11 +2878,37 @@ class Warhammer40kEnv(gym.Env):
                         if _verbose_logs_enabled():
                             self._log(
                                 f"[MODEL][SHOOT] Невалидный выбор цели: raw={raw}, доступные={valid_target_ids} (ожидался индекс 0..{len(valid_target_ids) - 1}). Стрельба пропущена."
-                            )
+                        )
                         if self.trunc is False:
                             self._log(f"{self._format_unit_label('model', i)} не смог стрелять: выбранная цель недоступна.")
+                        skipped_count += 1
+                        self._summary_reason(reasons, "invalid_target")
+                        self._emit_unit_action(
+                            i,
+                            "shooting",
+                            action="skip_shoot",
+                            reason="invalid_target",
+                            shooting=None,
+                        )
                 else:
                     self._log_unit("MODEL", modelName, i, "Нет целей в дальности, стрельба пропущена.")
+                    skipped_count += 1
+                    self._summary_reason(reasons, "no_targets")
+                    self._emit_unit_action(
+                        i,
+                        "shooting",
+                        action="skip_shoot",
+                        reason="no_targets",
+                        shooting=None,
+                    )
+            self._emit_phase_summary(
+                "shooting",
+                {
+                    "shots": shots_count,
+                    "skipped": skipped_count,
+                    "reasons": reasons,
+                },
+            )
             self._emit_event(
                 {
                     "side": "enemy",
@@ -2869,21 +3148,60 @@ class Warhammer40kEnv(gym.Env):
             self._log_phase("MODEL", "charge")
             reward_delta = 0
             any_charge_targets = False
+            charges_count = 0
+            skipped_count = 0
+            reasons = {}
             for i in range(len(self.unit_health)):
                 modelName = i + 21
                 advanced = advanced_flags[i] if advanced_flags else False
                 pos_before = tuple(self.unit_coords[i])
                 if self.unit_health[i] <= 0:
                     self._log_unit("MODEL", modelName, i, "Юнит мертв, чардж пропущен.")
+                    skipped_count += 1
+                    self._summary_reason(reasons, "dead")
+                    self._emit_unit_action(
+                        i,
+                        "charge",
+                        action="skip_charge",
+                        reason="dead",
+                        charge=None,
+                    )
                     continue
                 if self.unitFellBack[i]:
                     self._log_unit("MODEL", modelName, i, "Fall Back в этом ходу — чардж невозможен.")
+                    skipped_count += 1
+                    self._summary_reason(reasons, "fell_back")
+                    self._emit_unit_action(
+                        i,
+                        "charge",
+                        action="skip_charge",
+                        reason="fell_back",
+                        charge=None,
+                    )
                     continue
                 if self.unitInAttack[i][0] == 1:
                     self._log_unit("MODEL", modelName, i, "Уже в ближнем бою, чардж невозможен.")
+                    skipped_count += 1
+                    self._summary_reason(reasons, "already_in_melee")
+                    self._emit_unit_action(
+                        i,
+                        "charge",
+                        action="skip_charge",
+                        reason="already_in_melee",
+                        charge=None,
+                    )
                     continue
                 if advanced:
                     self._log_unit("MODEL", modelName, i, "Advance — чардж невозможен.")
+                    skipped_count += 1
+                    self._summary_reason(reasons, "advanced_no_charge")
+                    self._emit_unit_action(
+                        i,
+                        "charge",
+                        action="skip_charge",
+                        reason="advanced_no_charge",
+                        charge=None,
+                    )
                 else:
                     potential_targets = []
                     for j in range(len(self.enemy_health)):
@@ -2902,6 +3220,16 @@ class Warhammer40kEnv(gym.Env):
                             )
                         else:
                             self._log_unit("MODEL", modelName, i, "Нет целей в 12\", чардж пропущен.")
+                        skipped_count += 1
+                        reason = "skip_choice" if potential_targets else "no_targets"
+                        self._summary_reason(reasons, reason)
+                        self._emit_unit_action(
+                            i,
+                            "charge",
+                            action="skip_charge",
+                            reason=reason,
+                            charge=None,
+                        )
                         continue
                     chargeAble = []
                     dice_vals = dice(num=2)
@@ -2965,6 +3293,17 @@ class Warhammer40kEnv(gym.Env):
                                 "Reward (чардж): "
                                 f"success_bonus=+{reward_cfg.CHARGE_SUCCESS_REWARD:.3f}",
                             )
+                            charges_count += 1
+                            self._emit_unit_action(
+                                i,
+                                "charge",
+                                action="charge",
+                                reason=None,
+                                charge={
+                                    "target_id": self._unit_id("enemy", idOfE),
+                                    "result": "success",
+                                },
+                            )
                         else:
                             reason = "цель вне досягаемости" if idOfE in potential_targets else "цель недоступна"
                             if idOfE in potential_targets:
@@ -2991,6 +3330,18 @@ class Warhammer40kEnv(gym.Env):
                                 "Reward (чардж): "
                                 f"fail_penalty=-{reward_cfg.CHARGE_FAIL_PENALTY:.3f}",
                             )
+                            charges_count += 1
+                            fail_reason = "target_unreachable" if idOfE in potential_targets else "invalid_target"
+                            self._emit_unit_action(
+                                i,
+                                "charge",
+                                action="charge",
+                                reason=fail_reason,
+                                charge={
+                                    "target_id": self._unit_id("enemy", idOfE),
+                                    "result": "fail",
+                                },
+                            )
                     else:
                         if potential_targets:
                             target_list = self._format_unit_choices("enemy", potential_targets)
@@ -3006,8 +3357,26 @@ class Warhammer40kEnv(gym.Env):
                             )
                         else:
                             self._log_unit("MODEL", modelName, i, "Нет целей в 12\", чардж пропущен.")
+                        skipped_count += 1
+                        reason = "no_reachable_targets" if potential_targets else "no_targets"
+                        self._summary_reason(reasons, reason)
+                        self._emit_unit_action(
+                            i,
+                            "charge",
+                            action="skip_charge",
+                            reason=reason,
+                            charge=None,
+                        )
             if not any_charge_targets:
                 self._log("[MODEL] Чардж: нет доступных целей")
+            self._emit_phase_summary(
+                "charge",
+                {
+                    "charges": charges_count,
+                    "skipped": skipped_count,
+                    "reasons": reasons,
+                },
+            )
             self._emit_event(
                 {
                     "side": "enemy",
@@ -3306,6 +3675,18 @@ class Warhammer40kEnv(gym.Env):
         strength_term = 0.0
         if side == "model":
             self._log_phase("MODEL", "fight")
+            self._fight_action_tracker = {
+                "acted": set(),
+                "summary": {"fights": 0, "skipped": 0, "reasons": {}},
+                "skip_reasons": {},
+            }
+            for i in range(len(self.unit_health)):
+                if self.unit_health[i] <= 0:
+                    self._fight_action_tracker["skip_reasons"][i] = "dead"
+                elif self.unitInAttack[i][0] != 1:
+                    self._fight_action_tracker["skip_reasons"][i] = "no_attacks"
+                else:
+                    self._fight_action_tracker["skip_reasons"][i] = None
             engaged_model = [i for i in range(len(self.unit_health)) if self.unit_health[i] > 0 and self.unitInAttack[i][0] == 1]
             engaged_enemy = [i for i in range(len(self.enemy_health)) if self.enemy_health[i] > 0 and self.enemyInAttack[i][0] == 1]
             if not engaged_model and not engaged_enemy:
@@ -3451,6 +3832,21 @@ class Warhammer40kEnv(gym.Env):
                 f"objectives={obj_term:.3f} (delta={obj_delta}), total={reward_delta:.3f}"
             )
         if side == "model":
+            for i in range(len(self.unit_health)):
+                tracker = self._fight_action_tracker
+                if i in tracker.get("acted", set()):
+                    continue
+                reason = tracker.get("skip_reasons", {}).get(i) or "no_attacks"
+                self._record_fight_action(i, "skip_fight", reason=reason)
+            summary = self._fight_action_tracker.get("summary", {"fights": 0, "skipped": 0, "reasons": {}})
+            self._emit_phase_summary(
+                "fight",
+                {
+                    "fights": summary.get("fights", 0),
+                    "skipped": summary.get("skipped", 0),
+                    "reasons": summary.get("reasons", {}),
+                },
+            )
             self._emit_event(
                 {
                     "side": "enemy",
@@ -3552,6 +3948,7 @@ class Warhammer40kEnv(gym.Env):
         self._objective_hold_streaks = [0] * len(self.coordsOfOM)
         self._phase_event_emitted = False
         self._phase_unit_logged = set()
+        self._event_counter = 0
         get_event_recorder().clear()
 
         for i in range(len(self.enemy_data)):
@@ -3659,12 +4056,17 @@ class Warhammer40kEnv(gym.Env):
             """
             # проверка жив/в бою
             if att_side == "model":
-                if self.unit_health[att_idx] <= 0 or self.unitInAttack[att_idx][0] != 1:
+                if self.unit_health[att_idx] <= 0:
+                    self._record_fight_action(att_idx, "skip_fight", reason="dead")
+                    return False
+                if self.unitInAttack[att_idx][0] != 1:
+                    self._record_fight_action(att_idx, "skip_fight", reason="no_attacks")
                     return False
                 def_idx = self.unitInAttack[att_idx][1]
                 if def_idx < 0 or def_idx >= len(self.enemy_health) or self.enemy_health[def_idx] <= 0:
                     # цель мертва/невалидна — снимаем бой
                     self.unitInAttack[att_idx] = [0, 0]
+                    self._record_fight_action(att_idx, "skip_fight", reason="no_target")
                     return False
                 self._log_unit_phase(
                     "MODEL",
@@ -3739,6 +4141,13 @@ class Warhammer40kEnv(gym.Env):
                     self.enemyInAttack[def_idx] = [0, 0]
                     self.unitInAttack[att_idx] = [0, 0]
 
+                self._record_fight_action(
+                    att_idx,
+                    "fight",
+                    reason=None,
+                    target_id=self._unit_id("enemy", def_idx),
+                    result="attack",
+                )
                 return True
 
             else:  # att_side == "enemy"
