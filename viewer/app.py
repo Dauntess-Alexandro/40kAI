@@ -237,9 +237,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._timeline_player.event_started.connect(self._on_timeline_event_started)
         self._timeline_player.event_finished.connect(self._on_timeline_event_finished)
         self._timeline_player.queue_changed.connect(self._on_timeline_queue_changed)
-        self._timeline_player.set_enabled(True)
+        self._timeline_player.set_enabled(False)
         self._timeline_player.set_auto_play(True)
         self._timeline_speed = 1.0
+        self._timeline_allow_auto_enable = True
         self.map_scene.unit_animation_finished.connect(self._timeline_player.complete_current)
         self._init_log_viewer()
         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
@@ -307,7 +308,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._apply_dark_theme()
         self._build_toolbar()
-        self._toggle_timeline(True)
         self._fit_view()
         app = QtWidgets.QApplication.instance()
         if app is not None:
@@ -333,7 +333,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         toolbar.addSeparator()
         self.toggle_timeline = QtGui.QAction("Пофазово", self)
         self.toggle_timeline.setCheckable(True)
-        self.toggle_timeline.setChecked(True)
+        self.toggle_timeline.setChecked(False)
         self.toggle_timeline.toggled.connect(self._toggle_timeline)
         toolbar.addAction(self.toggle_timeline)
 
@@ -362,11 +362,20 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _toggle_timeline(self, checked):
         enabled = bool(checked)
+        if not enabled:
+            self._timeline_allow_auto_enable = False
         self._timeline_player.set_enabled(enabled)
         if not enabled:
             self.status_timeline.setText("Пофазовое проигрывание: выкл.")
         else:
             self.status_timeline.setText("Пофазовое проигрывание: активно")
+
+    def _activate_timeline_if_ready(self) -> None:
+        if not self._timeline_allow_auto_enable:
+            return
+        if self._timeline_player.enabled:
+            return
+        self.toggle_timeline.setChecked(True)
 
     def _toggle_timeline_step(self, checked):
         self._timeline_player.set_step_mode(bool(checked))
@@ -767,6 +776,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         events = self._timeline_builder.ingest_model_events(filtered_drained)
         if events:
             self._timeline_player.enqueue(events)
+            self._activate_timeline_if_ready()
 
     def _start_controller(self):
         messages, request = self.controller.start()
@@ -923,6 +933,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         events = self._timeline_builder.ingest_log_lines(lines, self._current_turn_number)
         if events:
             self._timeline_player.enqueue(events)
+            self._activate_timeline_if_ready()
 
     def _update_model_events(self, events):
         if not isinstance(events, list):
@@ -938,6 +949,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             timeline_events = self._timeline_builder.ingest_model_events(filtered)
             if timeline_events:
                 self._timeline_player.enqueue(timeline_events)
+                self._activate_timeline_if_ready()
         elif self._model_log_source is None:
             self._drain_event_queue()
 
