@@ -4,6 +4,7 @@ import queue
 import re
 import sys
 import time
+import copy
 from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from typing import Callable, Deque, Optional, Tuple
@@ -198,6 +199,7 @@ class PhaseScriptPlayer(QtCore.QObject):
     def _start_next_script(self) -> None:
         if not self._queue:
             self._playing = False
+            self._owner._end_cinematic_playback()
             return
         self._active_script = self._queue.popleft()
         self._step_index = 0
@@ -338,6 +340,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._cinematic_manual = True
         self._cinematic_waiting = False
         self._cinematic_lines: list[str] = []
+        self._cinematic_playback_active = False
+        self._visual_state: Optional[dict] = None
+        self._pending_snapshot: Optional[dict] = None
+        self._cinematic_history: Deque[str] = deque(maxlen=30)
         self._fx_shot_queue: Deque[FxShotEvent] = deque()
         self._fx_parser = FxLogParser(self._enqueue_fx_event, self._fx_debug, seen_max=400)
         self._log_tab_defs = [
@@ -388,6 +394,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.cinematic_controls = QtWidgets.QWidget()
         cinematic_controls_layout = QtWidgets.QHBoxLayout(self.cinematic_controls)
         cinematic_controls_layout.setContentsMargins(0, 0, 0, 0)
+        self.cinematic_prompt = QtWidgets.QLabel("")
+        self.cinematic_prompt.setStyleSheet(f"color: {Theme.muted.name()};")
+        cinematic_controls_layout.addWidget(self.cinematic_prompt)
         self.cinematic_yes = QtWidgets.QPushButton("Да (Y)")
         self.cinematic_no = QtWidgets.QPushButton("Нет (N)")
         self.cinematic_yes.clicked.connect(lambda: self._handle_cinematic_continue(True))
@@ -397,6 +406,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         cinematic_controls_layout.addStretch()
         command_layout.addWidget(self.cinematic_controls)
         self._set_cinematic_waiting(False)
+
+        self.cinematic_history_group = QtWidgets.QGroupBox("History")
+        self.cinematic_history_group.setCheckable(True)
+        self.cinematic_history_group.setChecked(False)
+        history_layout = QtWidgets.QVBoxLayout(self.cinematic_history_group)
+        self.cinematic_history_view = QtWidgets.QPlainTextEdit()
+        self.cinematic_history_view.setReadOnly(True)
+        history_layout.addWidget(self.cinematic_history_view)
+        command_layout.addWidget(self.cinematic_history_group)
 
         self.command_stack = QtWidgets.QStackedWidget()
         self._build_command_pages()
@@ -884,10 +902,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _apply_state(self, state):
         self._last_state = state
         board = state.get("board", {})
-        self.map_scene.update_state(state)
+        if not self._cinematic_playback_active or not self._cinematic_manual:
+            self._visual_state = copy.deepcopy(state)
+            self.map_scene.update_state(self._visual_state)
+        elif self._visual_state is None:
+            self._visual_state = copy.deepcopy(state)
+            self.map_scene.update_state(self._visual_state)
 
+        state_for_ui = self._visual_state or state
         self._units_by_key = {}
-        for unit in state.get("units", []) or []:
+        for unit in state_for_ui.get("units", []) or []:
             self._units_by_key[(unit.get("side"), unit.get("id"))] = unit
 
         self.status_round.setText(f"Раунд: {state.get('round', '—')}")
@@ -909,7 +933,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.points_cp_player.setText(f"Player CP: {cp.get('player', '—')}")
         self.points_cp_model.setText(f"Model CP: {cp.get('model', '—')}")
 
-        self._populate_units_table(state.get("units", []))
+        self._populate_units_table(state_for_ui.get("units", []))
         self._update_log(state.get("log_tail", []))
         self._update_model_events(state.get("model_events", []))
         self._drain_event_queue()
@@ -1011,6 +1035,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 phase=phase,
                 active_side=str(event.get("active_side") or "model"),
             )
+            self._cinematic_playback_active = True
+            if self._visual_state is None and self._last_state:
+                self._visual_state = copy.deepcopy(self._last_state)
+                self.map_scene.update_state(self._visual_state)
             self.add_log_line(f"FX: buffer phase {phase} (model)")
             return
         if event_type == "unit_action":
@@ -1031,6 +1059,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 snapshot = event.get("data", {}).get("snapshot")
             if snapshot is not None:
                 self._phase_buffer.snapshot = snapshot
+                self._pending_snapshot = snapshot
             script = self._build_phase_script(self._phase_buffer)
             unit_count = len(self._phase_buffer.unit_actions)
             self.add_log_line(f"FX: enqueue phase script {phase}: units={unit_count}")
@@ -1103,14 +1132,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if kind == "phase_header":
             phase = payload.get("phase") or ""
             label = self._phase_label(phase)
-            self._set_cinematic_text([label])
+            self._set_cinematic_text([f"Фаза: {label}"])
             self.map_scene.set_active_phase(phase)
             return
         if kind == "summary":
             phase = payload.get("phase") or ""
             summary_text = payload.get("summary_text") or self._format_phase_summary(phase, payload.get("summary") or {})
-            self._set_cinematic_text([self._phase_label(phase), f"📌 Итог: {summary_text}"])
+            phase_label = self._phase_label(phase)
+            self._set_cinematic_text([f"Фаза: {phase_label}", f"📌 Итог: {summary_text}"])
             self.add_log_line(f"FX: show summary {phase} {summary_text}")
+            self._record_cinematic_history([f"Фаза: {phase_label}", f"📌 Итог: {summary_text}"])
             return
         if kind == "unit_action":
             unit_id = payload.get("unit_id")
@@ -1119,14 +1150,20 @@ class ViewerWindow(QtWidgets.QMainWindow):
             reason = payload.get("reason")
             title = f"Unit {unit_id} — {unit_name}"
             detail = self._format_unit_action_line(payload)
-            self._set_cinematic_text([title, detail])
+            phase_label = self._phase_label(payload.get("phase") or "")
+            summary_text = self._format_phase_summary(payload.get("phase") or "", payload.get("summary") or {})
+            lines = [f"Фаза: {phase_label}", f"📌 Итог: {summary_text}", title, detail]
+            self._set_cinematic_text(lines)
             self._play_unit_action_fx(payload)
             if unit_id is not None:
                 self.add_log_line(f"FX: play unit_action unit={unit_id} action={action}")
+            self._record_cinematic_history([title, detail])
             return
         if kind == "phase_done":
             summary_text = payload.get("summary_text") or "нет данных"
-            self._set_cinematic_text([f"📌 Итог: {summary_text}"])
+            phase_label = self._phase_label(payload.get("phase") or "")
+            self._set_cinematic_text([f"Фаза: {phase_label}", f"📌 Итог: {summary_text}"])
+            self._record_cinematic_history([f"Фаза: {phase_label}", f"📌 Итог: {summary_text}"])
             return
 
     def _set_cinematic_text(self, lines: list[str]) -> None:
@@ -1134,6 +1171,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._cinematic_lines = [line for line in lines if line]
         text = "\n".join(self._cinematic_lines)
         self.cinematic_label.setText(text)
+        if not self._cinematic_waiting:
+            self.cinematic_prompt.setText("")
 
     def _request_cinematic_continue(
         self,
@@ -1159,7 +1198,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.add_log_line(
                 f"FX: wait_continue reason=phase_done next={phase_text}"
             )
-        self.cinematic_label.setText("\n".join(self._cinematic_lines + [prompt]))
+        self.cinematic_prompt.setText(f"{prompt} | Hotkeys: Y/N")
 
     def _handle_cinematic_continue(self, accepted: bool) -> None:
         if not self._cinematic_waiting:
@@ -1176,6 +1215,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._cinematic_waiting = waiting
         self.cinematic_yes.setEnabled(waiting)
         self.cinematic_no.setEnabled(waiting)
+        if not waiting:
+            self.cinematic_prompt.setText("")
+
+    def _record_cinematic_history(self, lines: list[str]) -> None:
+        for line in lines:
+            self._cinematic_history.append(line)
+        if self.cinematic_history_group.isChecked():
+            self.cinematic_history_view.setPlainText("\n".join(self._cinematic_history))
 
     def _is_cinematic_manual(self) -> bool:
         return bool(self._cinematic_manual)
@@ -1200,6 +1247,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         shooting = payload.get("shooting") or {}
         charge = payload.get("charge") or {}
         fight = payload.get("fight") or {}
+        if action == "move":
+            self._apply_visual_unit_move(unit_id, movement)
         target_id = (
             shooting.get("target_id")
             or charge.get("target_id")
@@ -1231,7 +1280,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         state = snapshot if isinstance(snapshot, dict) else self._last_state
         if not state:
             return
+        self._visual_state = copy.deepcopy(state)
         self.map_scene.update_state(state)
+        self._pending_snapshot = None
+        self._cinematic_playback_active = False
+
+    def _end_cinematic_playback(self) -> None:
+        self._cinematic_playback_active = False
 
     def _phase_label(self, phase: str) -> str:
         mapping = {
@@ -1242,6 +1297,19 @@ class ViewerWindow(QtWidgets.QMainWindow):
             "fight": "ФАЗА БОЯ",
         }
         return mapping.get(str(phase), f"ФАЗА {str(phase).upper()}")
+
+    def _apply_visual_unit_move(self, unit_id: Optional[int], movement: dict) -> None:
+        if unit_id is None or not self._visual_state:
+            return
+        dest = movement.get("to")
+        if not (isinstance(dest, (list, tuple)) and len(dest) >= 2):
+            return
+        for unit in self._visual_state.get("units", []) or []:
+            if unit.get("id") == unit_id and unit.get("side") == "model":
+                unit["x"] = int(dest[0])
+                unit["y"] = int(dest[1])
+                break
+        self.map_scene.update_unit_position("model", unit_id, int(dest[0]), int(dest[1]))
 
     def _format_phase_summary(self, phase: str, summary: dict) -> str:
         if phase == "command":
@@ -1675,6 +1743,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._phase_buffer = None
         self._model_event_cursor = None
         self._set_cinematic_waiting(False)
+        self._cinematic_playback_active = False
+        self._visual_state = None
+        self._pending_snapshot = None
+        self._cinematic_history.clear()
         self._fx_shot_queue.clear()
         self._fx_parser.reset(preserve_seen=False)
         for view in self._log_tabs.values():

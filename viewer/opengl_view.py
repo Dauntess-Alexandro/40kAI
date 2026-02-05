@@ -393,6 +393,24 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._set_target_view(scale=scale, pan=pan, immediate=False)
         self.update()
 
+    def update_unit_position(self, side: str, unit_id: int, x: int, y: int) -> None:
+        key = (side, unit_id)
+        found = False
+        for unit in self._units_state:
+            if (unit.get("side"), unit.get("id")) == key:
+                unit["x"] = x
+                unit["y"] = y
+                found = True
+                break
+        if not found:
+            return
+        current = self._curr_unit_positions.get(key)
+        if current is None:
+            current = QtCore.QPointF(float(x), float(y))
+        self._prev_unit_positions[key] = QtCore.QPointF(current)
+        self._curr_unit_positions[key] = QtCore.QPointF(float(x), float(y))
+        self._start_unit_animation()
+
     def set_objective_radius_visible(self, visible: bool) -> None:
         self._show_objective_radius = bool(visible)
         self.update()
