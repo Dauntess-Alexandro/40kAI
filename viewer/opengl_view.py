@@ -217,6 +217,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._error_message = message
         self.update()
 
+    def is_animating(self) -> bool:
+        return self._unit_anim_timer.isActive() or self._view_anim_timer.isActive()
+
     def update_state(self, state: Optional[Dict]) -> None:
         self._state = state or {}
         if not state:

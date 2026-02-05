@@ -20,6 +20,7 @@ from viewer.gun_fx import get_gun_fx_config
 from viewer.state import StateWatcher
 from viewer.styles import Theme
 from viewer.model_log_tree import render_model_log_flat
+from viewer.phase_player import PhasePlayer
 
 from gym_mod.engine.game_controller import GameController
 from gym_mod.engine.game_io import parse_dice_values
@@ -179,6 +180,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = OpenGLBoardWidget(cell_size=18)
         self.map_scene.unit_selected.connect(self._select_row_for_unit)
+        self._phase_player = PhasePlayer(
+            self._apply_state_now,
+            is_animating=self.map_scene.is_animating,
+        )
 
         self.status_round = QtWidgets.QLabel("Раунд: —")
         self.status_turn = QtWidgets.QLabel("Ход: —")
@@ -745,6 +750,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._apply_state(self.state_watcher.state)
 
     def _apply_state(self, state):
+        if self._phase_player:
+            self._phase_player.enqueue(state)
+            return
+        self._apply_state_now(state)
+
+    def _apply_state_now(self, state):
         board = state.get("board", {})
         self.map_scene.update_state(state)
 
