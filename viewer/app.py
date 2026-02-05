@@ -215,6 +215,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_log_source = None
         self._model_events_stream = []
         self._model_events_current = []
+        self._model_log_text_snapshot = None
+        self._model_log_playback_queue: Deque[Tuple[str, float]] = deque()
+        self._model_log_playback_generation = 0
+        self._model_log_playback_timer = QtCore.QTimer(self)
+        self._model_log_playback_timer.setSingleShot(True)
+        self._model_log_playback_timer.timeout.connect(self._play_next_model_log_line)
         self._log_tabs = {}
         self._log_tab_indices = {}
         self._log_tab_programmatic_switch = False
@@ -630,6 +636,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self.log_model_verbose = QtWidgets.QCheckBox("Подробно (verbose)")
         self.log_model_verbose.toggled.connect(self._refresh_model_log_view)
+        self.log_model_timed = QtWidgets.QCheckBox("Пошаговый вывод модели")
+        self.log_model_timed.setChecked(True)
+        self.log_model_timed.toggled.connect(self._refresh_model_log_view)
 
         self.log_copy_turn = QtWidgets.QPushButton("Копировать ход")
         self.log_copy_turn.clicked.connect(self._copy_current_turn)
@@ -639,6 +648,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_controls_layout = QtWidgets.QHBoxLayout()
         self._log_controls_layout.addWidget(self.log_only_current_turn)
         self._log_controls_layout.addWidget(self.log_model_verbose)
+        self._log_controls_layout.addWidget(self.log_model_timed)
         self._log_controls_layout.addStretch()
         self._log_controls_layout.addWidget(self.log_copy_turn)
         self._log_controls_layout.addWidget(self.log_clear)
@@ -1157,9 +1167,95 @@ class ViewerWindow(QtWidgets.QMainWindow):
             include_verbose=include_verbose,
             only_round=only_round,
         )
-        view.setPlainText(text if text else "Пока нет событий модели.")
+        if not text:
+            self._stop_model_log_playback()
+            view.setPlainText("Пока нет событий модели.")
+            scrollbar = view.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
+            self._model_log_text_snapshot = None
+            return
+        if not self.log_model_timed.isChecked():
+            self._stop_model_log_playback()
+            view.setPlainText(text)
+            scrollbar = view.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
+            self._model_log_text_snapshot = text
+            return
+        if text == self._model_log_text_snapshot:
+            return
+        self._model_log_text_snapshot = text
+        lines = text.split("\n")
+        self._start_model_log_playback(view, lines)
+
+    def _start_model_log_playback(self, view: QtWidgets.QPlainTextEdit, lines: list[str]) -> None:
+        self._model_log_playback_generation += 1
+        self._model_log_playback_queue = deque(self._build_model_log_playback(lines))
+        view.clear()
+        self._model_log_playback_timer.stop()
+        self._play_next_model_log_line()
+
+    def _stop_model_log_playback(self) -> None:
+        self._model_log_playback_queue.clear()
+        self._model_log_playback_timer.stop()
+        self._model_log_playback_generation += 1
+
+    def _play_next_model_log_line(self) -> None:
+        view = self._log_tabs.get("model")
+        if view is None:
+            return
+        if not self._model_log_playback_queue:
+            scrollbar = view.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
+            return
+        line, delay = self._model_log_playback_queue.popleft()
         scrollbar = view.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+        at_bottom = scrollbar.value() >= scrollbar.maximum()
+        view.appendPlainText(line)
+        if at_bottom:
+            scrollbar.setValue(scrollbar.maximum())
+        delay_ms = int(max(0.0, delay) * 1000)
+        self._model_log_playback_timer.start(delay_ms)
+
+    def _build_model_log_playback(self, lines: list[str]) -> list[Tuple[str, float]]:
+        phase = None
+        awaiting_unit_action = False
+        queued: list[Tuple[str, float]] = []
+        for line in lines:
+            stripped = line.strip()
+            delay = 0.0
+            detected_phase = self._detect_phase_label(stripped)
+            if detected_phase:
+                phase = detected_phase
+                awaiting_unit_action = False
+            if stripped.startswith("📌 Итог:"):
+                if "нет данных" in stripped.lower():
+                    delay = 0.0
+                elif phase in {"command", "charge", "fight"}:
+                    delay = 1.0
+                awaiting_unit_action = False
+            elif stripped.startswith("Unit "):
+                awaiting_unit_action = True
+            elif awaiting_unit_action and stripped:
+                if phase in {"movement", "shooting"}:
+                    delay = 1.0
+                awaiting_unit_action = False
+            queued.append((line, delay))
+        return queued
+
+    def _detect_phase_label(self, line: str) -> Optional[str]:
+        if not line:
+            return None
+        if "ФАЗА КОМАНДОВАНИЯ" in line:
+            return "command"
+        if "ФАЗА ДВИЖЕНИЯ" in line:
+            return "movement"
+        if "ФАЗА СТРЕЛЬБЫ" in line:
+            return "shooting"
+        if "ФАЗА ЧАРДЖА" in line:
+            return "charge"
+        if "ФАЗА БОЯ" in line:
+            return "fight"
+        return None
 
     def _reset_log_lines(self, lines, write_to_file: bool):
         self._log_entries = []
