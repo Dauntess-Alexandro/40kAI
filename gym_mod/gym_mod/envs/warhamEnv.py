@@ -5,6 +5,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import datetime
+import json
 import os
 import random
 import re
@@ -24,9 +25,10 @@ from gym_mod.engine.mission import (
 )
 from gym_mod.engine.skills import apply_end_of_command_phase
 from gym_mod.engine.logging_utils import format_unit
-from gym_mod.engine.state_export import write_state_json
+from gym_mod.engine.state_export import write_state_json, DEFAULT_STATE_PATH
 from gym_mod.engine.game_io import get_active_io
 from gym_mod.engine.event_bus import get_event_bus, get_event_recorder
+from gym_mod.engine.event_stream import EventStream
 
 # ============================================================
 # 🔧 FIX: resolve string weapons like "Bolt pistol [PISTOL]"
@@ -856,6 +858,8 @@ class Warhammer40kEnv(gym.Env):
         self._agent_log_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "..", "LOGS_FOR_AGENTS.md")
         )
+        self.event_stream = self._init_event_stream()
+        self._log_event_stream_startup()
 
         self.modelOC = []
         self.enemyOC = []
@@ -986,6 +990,29 @@ class Warhammer40kEnv(gym.Env):
         event.setdefault("verbosity", "normal")
         get_event_bus().emit(event)
 
+    def _init_event_stream(self) -> EventStream:
+        enabled = os.getenv("EVENTS_ENABLED", "0") == "1"
+        run_dir = os.getenv("EVENTS_DIR")
+        if not run_dir:
+            state_path = os.getenv("STATE_JSON_PATH", DEFAULT_STATE_PATH)
+            run_dir = os.path.dirname(os.path.abspath(state_path))
+        return EventStream(run_dir=run_dir, enabled=enabled)
+
+    def _log_event_stream_startup(self) -> None:
+        if getattr(self, "_event_stream_logged", False):
+            return
+        self._event_stream_logged = True
+        stream = getattr(self, "event_stream", None)
+        if stream is None:
+            return
+        events_path = os.path.join(stream.run_dir, "events.jsonl")
+        snapshots_on = os.getenv("EVENTS_SNAPSHOTS", "0") == "1"
+        status = "включён" if stream.enabled else "выключен"
+        snapshots_status = "включены" if snapshots_on else "выключены"
+        self._append_agent_log(
+            f"[EventStream] events.jsonl: {events_path} ({status}), снапшоты: {snapshots_status}"
+        )
+
     def _append_agent_log(self, msg: str) -> None:
         if msg is None:
             return
@@ -996,6 +1023,107 @@ class Warhammer40kEnv(gym.Env):
                 log_file.write(full_line + "\n")
         except Exception:
             return
+
+    def _event_stream_enabled(self) -> bool:
+        return bool(getattr(self, "event_stream", None)) and self.event_stream.enabled
+
+    def _update_event_stream_context(self) -> None:
+        if not self._event_stream_enabled():
+            return
+        self.event_stream.update_context(
+            battle_round=self.battle_round,
+            turn=self.numTurns,
+            phase=self.phase,
+            active_side=self.active_side,
+        )
+
+    def _emit_stream(self, event_type: str, **payload) -> None:
+        if not self._event_stream_enabled():
+            return
+        self._update_event_stream_context()
+        self.event_stream.emit(event_type, **payload)
+
+    def _emit_phase_end(self, phase: str) -> None:
+        self._emit_stream("phase_end", phase=phase)
+        self._maybe_snapshot_state(phase=phase)
+
+    def _maybe_snapshot_state(self, phase: str) -> None:
+        if not self._event_stream_enabled():
+            return
+        if os.getenv("EVENTS_SNAPSHOTS", "0") != "1":
+            return
+        payload = write_state_json(self)
+        snapshot_dir = os.path.join(self.event_stream.run_dir, "state_snapshots")
+        os.makedirs(snapshot_dir, exist_ok=True)
+        side = self.event_stream.normalize_active_side(self.active_side)
+        event_id = self.event_stream.last_event_id or 0
+        filename = f"br{self.battle_round}_turn{self.numTurns}_{side}_{phase}_{event_id}.json"
+        snapshot_path = os.path.join(snapshot_dir, filename)
+        with open(snapshot_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+    def _weapon_name(self, weapon) -> str:
+        if isinstance(weapon, dict):
+            return weapon.get("Name", "оружие")
+        if weapon is None:
+            return "оружие"
+        return str(weapon)
+
+    def _emit_unit_activate(self, unit_id: int) -> None:
+        self._emit_stream("unit_activate", unit_id=unit_id)
+
+    def _emit_move_event(
+        self,
+        unit_id: int,
+        pos_from: tuple,
+        pos_to: tuple,
+        advance_roll: Optional[int] = None,
+        distance_value: Optional[float] = None,
+    ) -> None:
+        payload = {
+            "unit_id": unit_id,
+            "from": [pos_from[0], pos_from[1]],
+            "to": [pos_to[0], pos_to[1]],
+        }
+        if advance_roll is not None:
+            payload["advance_roll"] = int(advance_roll)
+        if distance_value is not None:
+            payload["distance"] = float(distance_value)
+        self._emit_stream("move", **payload)
+
+    def _emit_shoot_event(
+        self,
+        mode: str,
+        attacker_id: int,
+        target_id: int,
+        weapon,
+        damage: float,
+    ) -> None:
+        self._emit_stream(
+            "shoot",
+            mode=mode,
+            attacker_id=attacker_id,
+            target_id=target_id,
+            weapon_name=self._weapon_name(weapon),
+            damage=float(damage),
+        )
+
+    def _emit_damage_event(
+        self,
+        target_id: int,
+        amount: float,
+        hp_before: Optional[float] = None,
+        hp_after: Optional[float] = None,
+    ) -> None:
+        payload = {
+            "target_id": target_id,
+            "amount": float(amount),
+        }
+        if hp_before is not None:
+            payload["hp_before"] = float(hp_before)
+        if hp_after is not None:
+            payload["hp_after"] = float(hp_after)
+        self._emit_stream("damage", **payload)
 
     def _log_reward(self, msg: str, unit_id: int | None = None, unit_name: str | None = None) -> None:
         self._log(msg)
@@ -1239,6 +1367,8 @@ class Warhammer40kEnv(gym.Env):
         verbose_only: bool = False,
     ):
         rule_msg = f"Правило/стратагема «{rule_name}»: {details}"
+        unit_id = self._unit_id(side, unit_idx)
+        self._emit_stream("ability", unit_id=unit_id, name=rule_name, details=details)
         self._log_action(side, unit_idx, rule_msg, phase=phase, verbose_only=verbose_only)
 
     def _log_range(self, weapon: dict, dist: float, weapon_range: float, half_range: float, rapid_fire_on: bool):
@@ -1483,6 +1613,7 @@ class Warhammer40kEnv(gym.Env):
             target_data = self.unit_data if moving_unit_side == "model" else self.enemy_data
             target_coords = self.unit_coords if moving_unit_side == "model" else self.enemy_coords
 
+        target_hp_prev = target_health[moving_idx]
         distance_to_target = distance(
             self.unit_coords[chosen] if defender_side == "model" else self.enemy_coords[chosen],
             target_coords[moving_idx],
@@ -1513,6 +1644,22 @@ class Warhammer40kEnv(gym.Env):
             )
 
         target_health[moving_idx] = modHealth
+        damage_dealt = max(0.0, float(target_hp_prev - modHealth))
+        attacker_id = self._unit_id(defender_side, chosen)
+        target_id = self._unit_id(moving_unit_side, moving_idx)
+        self._emit_shoot_event(
+            "overwatch",
+            attacker_id=attacker_id,
+            target_id=target_id,
+            weapon=attacker_weapon[chosen],
+            damage=damage_dealt,
+        )
+        self._emit_damage_event(
+            target_id=target_id,
+            amount=damage_dealt,
+            hp_before=target_hp_prev,
+            hp_after=modHealth,
+        )
         self._log_rule(
             defender_side,
             chosen,
@@ -1615,6 +1762,12 @@ class Warhammer40kEnv(gym.Env):
             chosen,
             f"Выбран для Heroic Intervention. Переместился: {pos_before} -> {pos_after}, entered_in_engagement=True.",
         )
+        self._emit_move_event(
+            chosen + (21 if defender_side == "model" else 11),
+            pos_before,
+            pos_after,
+            distance_value=distance(pos_before, pos_after),
+        )
 
     def _prompt_int(self, prompt: str, min_val: int, max_val: int, allow_quit: bool = True):
         while True:
@@ -1634,6 +1787,9 @@ class Warhammer40kEnv(gym.Env):
         self.phase = phase
         self._phase_event_emitted = False
         self._phase_unit_logged = set()
+        if phase == "command":
+            self._emit_stream("turn_start", side=side)
+        self._emit_stream("phase_start", phase=phase)
         if not self._round_banner_shown:
             self._log(f"=== БОЕВОЙ РАУНД {self.battle_round} ===")
             self._round_banner_shown = True
@@ -1705,6 +1861,7 @@ class Warhammer40kEnv(gym.Env):
             battle_shock = [False] * len(self.unit_health)
             for i in range(len(self.unit_health)):
                 unit_label = self._format_unit_label("model", i)
+                self._emit_unit_activate(i + 21)
                 if self.unit_health[i] <= 0:
                     self.modelOC[i] = 0
                     continue
@@ -1763,6 +1920,7 @@ class Warhammer40kEnv(gym.Env):
                     "data": {"vp": self.modelVP, "cp": self.modelCP},
                 }
             )
+            self._emit_phase_end("command")
             return battle_shock, reward_delta
 
         if side == "enemy" and action is not None and not manual:
@@ -1773,6 +1931,7 @@ class Warhammer40kEnv(gym.Env):
             use_cp = action.get("use_cp", 0) if isinstance(action, dict) else 0
             for i in range(len(self.enemy_health)):
                 unit_label = self._format_unit_label("enemy", i)
+                self._emit_unit_activate(i + 11)
                 if self.enemy_health[i] <= 0:
                     self.enemyOC[i] = 0
                     battle_shock[i] = False
@@ -1803,6 +1962,7 @@ class Warhammer40kEnv(gym.Env):
             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
             apply_end_of_command_phase(self, side="enemy", dice_fn=dice_fn, log_fn=self._log)
             score_end_of_command_phase(self, "enemy", log_fn=self._log)
+            self._emit_phase_end("command")
             return battle_shock
 
         if side == "enemy" and manual:
@@ -1813,6 +1973,7 @@ class Warhammer40kEnv(gym.Env):
                 playerName = i + 11
                 battleSh = False
                 unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
+                self._emit_unit_activate(playerName)
                 if self.enemy_health[i] <= 0:
                     self.enemyOC[i] = 0
                     battle_shock[i] = False
@@ -1848,6 +2009,7 @@ class Warhammer40kEnv(gym.Env):
             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
             apply_end_of_command_phase(self, side="enemy", dice_fn=dice_fn, log_fn=self._log)
             score_end_of_command_phase(self, "enemy", log_fn=self._log)
+            self._emit_phase_end("command")
             return battle_shock
 
         if side == "enemy":
@@ -1861,6 +2023,7 @@ class Warhammer40kEnv(gym.Env):
             for i in range(len(self.enemy_health)):
                 battleSh = False
                 unit_label = self._format_unit_label("enemy", i)
+                self._emit_unit_activate(i + 11)
                 if self.enemy_health[i] <= 0:
                     self.enemyOC[i] = 0
                     battle_shock[i] = False
@@ -1891,6 +2054,7 @@ class Warhammer40kEnv(gym.Env):
             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
             apply_end_of_command_phase(self, side="enemy", dice_fn=dice_fn, log_fn=self._log)
             score_end_of_command_phase(self, "enemy", log_fn=self._log)
+            self._emit_phase_end("command")
             return battle_shock
 
         return None
@@ -1907,6 +2071,7 @@ class Warhammer40kEnv(gym.Env):
                 modelName = i + 21
                 battleSh = battle_shock[i] if battle_shock else False
                 pos_before = tuple(self.unit_coords[i])
+                self._emit_unit_activate(modelName)
                 if self.unit_health[i] <= 0:
                     self._log_unit("MODEL", modelName, i, f"Юнит мертв, движение пропущено. Позиция: {pos_before}")
                     continue
@@ -1979,6 +2144,14 @@ class Warhammer40kEnv(gym.Env):
                     else:
                         self._log_unit("MODEL", modelName, i, f"Позиция после: {pos_after}")
 
+                    self._emit_move_event(
+                        modelName,
+                        pos_before,
+                        pos_after,
+                        advance_roll=advance_roll,
+                        distance_value=actual_movement,
+                    )
+
                     if pos_before != pos_after:
                         self._resolve_overwatch(
                             defender_side="enemy",
@@ -2050,6 +2223,12 @@ class Warhammer40kEnv(gym.Env):
                             self.enemyInAttack[idOfE][1] = 0
                             pos_after = tuple(self.unit_coords[i])
                             self._log_unit("MODEL", modelName, i, f"Отступление завершено. Позиция после: {pos_after}")
+                            self._emit_move_event(
+                                modelName,
+                                pos_before,
+                                pos_after,
+                                distance_value=distance(pos_before, pos_after),
+                            )
                             if pos_before != pos_after:
                                 self._resolve_overwatch(
                                     defender_side="enemy",
@@ -2090,6 +2269,7 @@ class Warhammer40kEnv(gym.Env):
                     "data": {"reward_delta": reward_delta},
                 }
             )
+            self._emit_phase_end("movement")
             return advanced_flags, reward_delta
 
         if side == "enemy" and action is not None and not manual:
@@ -2101,6 +2281,7 @@ class Warhammer40kEnv(gym.Env):
                 unit_id = i + 11
                 battleSh = battle_shock[i] if battle_shock else False
                 pos_before = tuple(self.enemy_coords[i])
+                self._emit_unit_activate(unit_id)
                 if self.enemy_health[i] <= 0:
                     self._log_unit("enemy", unit_id, i, f"Юнит мертв, движение пропущено. Позиция: {pos_before}")
                     continue
@@ -2155,6 +2336,14 @@ class Warhammer40kEnv(gym.Env):
                     else:
                         self._log_unit("enemy", unit_id, i, f"Позиция после: {pos_after}")
 
+                    self._emit_move_event(
+                        unit_id,
+                        pos_before,
+                        pos_after,
+                        advance_roll=advance_roll,
+                        distance_value=actual_movement,
+                    )
+
                     if pos_before != pos_after:
                         self._resolve_overwatch(
                             defender_side="model",
@@ -2197,6 +2386,12 @@ class Warhammer40kEnv(gym.Env):
                             self.unitInAttack[idOfM][1] = 0
                             pos_after = tuple(self.enemy_coords[i])
                             self._log_unit("enemy", unit_id, i, f"Отступление завершено. Позиция после: {pos_after}")
+                            self._emit_move_event(
+                                unit_id,
+                                pos_before,
+                                pos_after,
+                                distance_value=distance(pos_before, pos_after),
+                            )
                             if pos_before != pos_after:
                                 self._resolve_overwatch(
                                     defender_side="model",
@@ -2212,6 +2407,7 @@ class Warhammer40kEnv(gym.Env):
                                 i,
                                 f"Остаётся в ближнем бою с {self._format_unit_label('model', idOfM)}, движение пропущено.",
                             )
+            self._emit_phase_end("movement")
             return advanced_flags
 
         if side == "enemy" and manual:
@@ -2223,6 +2419,7 @@ class Warhammer40kEnv(gym.Env):
                 battleSh = battle_shock[i] if battle_shock else False
                 unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
                 pos_before = tuple(self.enemy_coords[i])
+                self._emit_unit_activate(playerName)
                 if self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
                     fall_back = self._prompt_yes_no(f"{unit_label}. Отступить (fallback)? (y/n): ")
                     if fall_back is None:
@@ -2243,6 +2440,12 @@ class Warhammer40kEnv(gym.Env):
                         self.unitInAttack[idOfE][1] = 0
                         pos_after = tuple(self.enemy_coords[i])
                         self._log(f"{unit_label}: отступление завершено. Позиция после: {pos_after}")
+                        self._emit_move_event(
+                            playerName,
+                            pos_before,
+                            pos_after,
+                            distance_value=distance(pos_before, pos_after),
+                        )
                         self.updateBoard()
                         self.showBoard()
                     else:
@@ -2314,6 +2517,12 @@ class Warhammer40kEnv(gym.Env):
 
                     pos_after = tuple(self.enemy_coords[i])
                     if pos_before != pos_after:
+                        self._emit_move_event(
+                            playerName,
+                            pos_before,
+                            pos_after,
+                            distance_value=move_num,
+                        )
                         self._resolve_overwatch(
                             defender_side="model",
                             moving_unit_side="enemy",
@@ -2324,6 +2533,7 @@ class Warhammer40kEnv(gym.Env):
 
                     self.updateBoard()
                     self.showBoard()
+            self._emit_phase_end("movement")
             return advanced_flags
 
         if side == "enemy":
@@ -2332,6 +2542,7 @@ class Warhammer40kEnv(gym.Env):
             use_cp = getattr(self, "_enemy_use_cp", None)
             for i in range(len(self.enemy_health)):
                 pos_before = tuple(self.enemy_coords[i])
+                self._emit_unit_activate(i + 11)
                 if self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
                     decide = np.random.randint(0, 10)
                     if decide == 5:
@@ -2376,6 +2587,12 @@ class Warhammer40kEnv(gym.Env):
                     advanced_flags[i] = advanced
 
                     pos_after = tuple(self.enemy_coords[i])
+                    self._emit_move_event(
+                        i + 11,
+                        pos_before,
+                        pos_after,
+                        distance_value=distance(pos_before, pos_after),
+                    )
                     if pos_before != pos_after:
                         self._resolve_overwatch(
                             defender_side="model",
@@ -2384,6 +2601,7 @@ class Warhammer40kEnv(gym.Env):
                             phase="movement",
                             manual=False,
                         )
+            self._emit_phase_end("movement")
             return advanced_flags
 
         return None
@@ -2396,6 +2614,7 @@ class Warhammer40kEnv(gym.Env):
             for i in range(len(self.unit_health)):
                 modelName = i + 21
                 advanced = advanced_flags[i] if advanced_flags else False
+                self._emit_unit_activate(modelName)
                 if self.unit_health[i] <= 0:
                     self._log_unit("MODEL", modelName, i, "Юнит мертв, стрельба пропущена.")
                     continue
@@ -2475,6 +2694,20 @@ class Warhammer40kEnv(gym.Env):
                             )
                         self.enemy_health[idOfE] = modHealth
                         damage_dealt = max(0.0, float(target_hp_prev - modHealth))
+                        target_id = self._unit_id("enemy", idOfE)
+                        self._emit_shoot_event(
+                            "shooting",
+                            attacker_id=modelName,
+                            target_id=target_id,
+                            weapon=self.unit_weapon[i],
+                            damage=damage_dealt,
+                        )
+                        self._emit_damage_event(
+                            target_id=target_id,
+                            amount=damage_dealt,
+                            hp_before=target_hp_prev,
+                            hp_after=modHealth,
+                        )
                         normalized_damage = damage_dealt / max(1.0, float(self.enemy_hp_max_total))
                         damage_term = reward_cfg.SHOOT_REWARD_DAMAGE_SCALE * normalized_damage
                         reward_delta += damage_term
@@ -2641,12 +2874,14 @@ class Warhammer40kEnv(gym.Env):
                     "data": {"reward_delta": reward_delta},
                 }
             )
+            self._emit_phase_end("shooting")
             return reward_delta
         elif side == "enemy" and action is not None and not manual:
             self._log_phase(self._display_side("enemy"), "shooting")
             for i in range(len(self.enemy_health)):
                 unit_id = i + 11
                 advanced = advanced_flags[i] if advanced_flags else False
+                self._emit_unit_activate(unit_id)
                 if self.enemy_health[i] <= 0:
                     self._log_unit("enemy", unit_id, i, "Юнит мертв, стрельба пропущена.")
                     continue
@@ -2676,6 +2911,7 @@ class Warhammer40kEnv(gym.Env):
                     raw = action.get("shoot", 0) if isinstance(action, dict) else 0
                     if 0 <= raw < len(valid_target_ids):
                         idOfM = valid_target_ids[raw]
+                        target_hp_prev = self.unit_health[idOfM]
                         target_list = self._format_unit_choices("model", valid_target_ids)
                         self._log_unit(
                             "enemy",
@@ -2714,6 +2950,21 @@ class Warhammer40kEnv(gym.Env):
                                 distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfM]),
                             )
                         self.unit_health[idOfM] = modHealth
+                        damage_dealt = max(0.0, float(target_hp_prev - modHealth))
+                        target_id = self._unit_id("model", idOfM)
+                        self._emit_shoot_event(
+                            "shooting",
+                            attacker_id=unit_id,
+                            target_id=target_id,
+                            weapon=self.enemy_weapon[i],
+                            damage=damage_dealt,
+                        )
+                        self._emit_damage_event(
+                            target_id=target_id,
+                            amount=damage_dealt,
+                            hp_before=target_hp_prev,
+                            hp_after=modHealth,
+                        )
                         self._log_unit(
                             "enemy",
                             unit_id,
@@ -2756,11 +3007,13 @@ class Warhammer40kEnv(gym.Env):
                             self._log(f"{self._format_unit_label('enemy', i)} не смог стрелять: выбранная цель недоступна.")
                 else:
                     self._log_unit("enemy", unit_id, i, "Нет целей в дальности, стрельба пропущена.")
+            self._emit_phase_end("shooting")
         elif side == "enemy" and manual:
             for i in range(len(self.enemy_health)):
                 playerName = i + 11
                 unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
                 advanced = advanced_flags[i] if advanced_flags else False
+                self._emit_unit_activate(playerName)
                 if self.enemyFellBack[i]:
                     self._log(f"{unit_label}: отступил в этом ходу — стрельба пропущена.")
                     continue
@@ -2787,6 +3040,7 @@ class Warhammer40kEnv(gym.Env):
                                 shoot_value = str(shoot).strip()
                                 if is_num(shoot_value) is True and int(shoot_value) - 21 in shootAble:
                                     idOfE = int(shoot_value) - 21
+                                    target_hp_prev = self.unit_health[idOfE]
                                     effect = self._maybe_use_smokescreen(
                                         defender_side="model",
                                         defender_idx=idOfE,
@@ -2806,6 +3060,21 @@ class Warhammer40kEnv(gym.Env):
                                         roller=logger.roll,
                                     )
                                     self.unit_health[idOfE] = modHealth
+                                    damage_dealt = max(0.0, float(target_hp_prev - modHealth))
+                                    target_id = self._unit_id("model", idOfE)
+                                    self._emit_shoot_event(
+                                        "shooting",
+                                        attacker_id=playerName,
+                                        target_id=target_id,
+                                        weapon=self.enemy_weapon[i],
+                                        damage=damage_dealt,
+                                    )
+                                    self._emit_damage_event(
+                                        target_id=target_id,
+                                        amount=damage_dealt,
+                                        hp_before=target_hp_prev,
+                                        hp_after=modHealth,
+                                    )
                                     self._log(
                                         f"{unit_label} нанёс {sum(dmg)} урона по {self._format_unit_label('model', idOfE)}"
                                     )
@@ -2823,9 +3092,11 @@ class Warhammer40kEnv(gym.Env):
                                     self._log("Недоступная цель, попробуйте снова.")
                 else:
                     self._log("Нет доступного оружия для стрельбы.")
+            self._emit_phase_end("shooting")
         elif side == "enemy":
             for i in range(len(self.enemy_health)):
                 advanced = advanced_flags[i] if advanced_flags else False
+                self._emit_unit_activate(i + 11)
                 if self.enemyFellBack[i]:
                     if self.trunc is False:
                         self._log(f"{self._format_unit_label('enemy', i)}: отступил — стрельба пропущена.")
@@ -2841,6 +3112,7 @@ class Warhammer40kEnv(gym.Env):
                                 shootAbleUnits.append(j)
                         if len(shootAbleUnits) > 0:
                             idOfM = np.random.choice(shootAbleUnits)
+                            target_hp_prev = self.unit_health[idOfM]
                             effect = self._maybe_use_smokescreen(
                                 defender_side="model",
                                 defender_idx=idOfM,
@@ -2857,10 +3129,26 @@ class Warhammer40kEnv(gym.Env):
                                 distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfM]),
                             )
                             self.unit_health[idOfM] = modHealth
+                            damage_dealt = max(0.0, float(target_hp_prev - modHealth))
+                            target_id = self._unit_id("model", idOfM)
+                            self._emit_shoot_event(
+                                "shooting",
+                                attacker_id=self._unit_id("enemy", i),
+                                target_id=target_id,
+                                weapon=self.enemy_weapon[i],
+                                damage=damage_dealt,
+                            )
+                            self._emit_damage_event(
+                                target_id=target_id,
+                                amount=damage_dealt,
+                                hp_before=target_hp_prev,
+                                hp_after=modHealth,
+                            )
                             if self.trunc is False:
                                 self._log(
                                     f"{self._format_unit_label('enemy', i)} стреляет по {self._format_unit_label('model', idOfM)}: урон {float(np.sum(dmg))}."
                                 )
+            self._emit_phase_end("shooting")
         return None
 
     def charge_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False):
@@ -2873,6 +3161,7 @@ class Warhammer40kEnv(gym.Env):
                 modelName = i + 21
                 advanced = advanced_flags[i] if advanced_flags else False
                 pos_before = tuple(self.unit_coords[i])
+                self._emit_unit_activate(modelName)
                 if self.unit_health[i] <= 0:
                     self._log_unit("MODEL", modelName, i, "Юнит мертв, чардж пропущен.")
                     continue
@@ -2949,6 +3238,12 @@ class Warhammer40kEnv(gym.Env):
                                 i,
                                 f"Движение чарджа: {pos_before} -> {pos_after}, в контакте={self.unitInAttack[i][0] == 1}.",
                             )
+                            self._emit_move_event(
+                                modelName,
+                                pos_before,
+                                pos_after,
+                                distance_value=distance(pos_before, pos_after),
+                            )
                             # 10e: Heroic Intervention доступен защитнику после успешного charge move.
                             self._resolve_heroic_intervention(
                                 defender_side="enemy",
@@ -3019,6 +3314,7 @@ class Warhammer40kEnv(gym.Env):
                     "data": {"reward_delta": reward_delta},
                 }
             )
+            self._emit_phase_end("charge")
             return reward_delta
         elif side == "enemy" and action is not None and not manual:
             self._log_phase(self._display_side("enemy"), "charge")
@@ -3027,6 +3323,7 @@ class Warhammer40kEnv(gym.Env):
                 unit_id = i + 11
                 advanced = advanced_flags[i] if advanced_flags else False
                 pos_before = tuple(self.enemy_coords[i])
+                self._emit_unit_activate(unit_id)
                 if self.enemy_health[i] <= 0:
                     self._log_unit("enemy", unit_id, i, "Юнит мертв, чардж пропущен.")
                     continue
@@ -3102,6 +3399,12 @@ class Warhammer40kEnv(gym.Env):
                                 i,
                                 f"Движение чарджа: {pos_before} -> {pos_after}, в контакте={self.enemyInAttack[i][0] == 1}.",
                             )
+                            self._emit_move_event(
+                                unit_id,
+                                pos_before,
+                                pos_after,
+                                distance_value=distance(pos_before, pos_after),
+                            )
                             self._resolve_heroic_intervention(
                                 defender_side="model",
                                 charging_side="enemy",
@@ -3144,6 +3447,7 @@ class Warhammer40kEnv(gym.Env):
                             self._log_unit("enemy", unit_id, i, "Нет целей в 12\", чардж пропущен.")
             if not any_charge_targets:
                 self._log("[PLAYER] Чардж: нет доступных целей")
+            self._emit_phase_end("charge")
         elif side == "enemy" and manual:
             any_chargeable = False
             battle_shock = getattr(self, "_manual_enemy_battle_shock", None)
@@ -3152,6 +3456,7 @@ class Warhammer40kEnv(gym.Env):
                 unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
                 advanced = advanced_flags[i] if advanced_flags else False
                 pos_before = tuple(self.enemy_coords[i])
+                self._emit_unit_activate(playerName)
                 if self.enemyFellBack[i]:
                     self._log(f"{unit_label}: отступил в этом ходу — чардж пропущен.")
                     continue
@@ -3216,6 +3521,12 @@ class Warhammer40kEnv(gym.Env):
                                     i,
                                     f"Движение чарджа: {pos_before} -> {pos_after}, в контакте={self.enemyInAttack[i][0] == 1}.",
                                 )
+                                self._emit_move_event(
+                                    playerName,
+                                    pos_before,
+                                    pos_after,
+                                    distance_value=distance(pos_before, pos_after),
+                                )
                                 # 10e: Heroic Intervention доступен защитнику после успешного charge move.
                                 self._resolve_heroic_intervention(
                                     defender_side="model",
@@ -3230,10 +3541,12 @@ class Warhammer40kEnv(gym.Env):
                             self._log("Недоступная цель.")
             if not any_chargeable:
                 self._log("Нет доступных целей для чарджа.")
+            self._emit_phase_end("charge")
         elif side == "enemy":
             for i in range(len(self.enemy_health)):
                 advanced = advanced_flags[i] if advanced_flags else False
                 pos_before = tuple(self.enemy_coords[i])
+                self._emit_unit_activate(i + 11)
                 if self.enemyFellBack[i]:
                     if self.trunc is False:
                         self._log(f"{self._format_unit_label('enemy', i)}: отступил — чардж невозможен.")
@@ -3280,6 +3593,12 @@ class Warhammer40kEnv(gym.Env):
                                 i,
                                 f"Charge move: from {pos_before} -> {pos_after}, ended_in_engagement={self.enemyInAttack[i][0] == 1}.",
                             )
+                            self._emit_move_event(
+                                i + 11,
+                                pos_before,
+                                pos_after,
+                                distance_value=distance(pos_before, pos_after),
+                            )
                             # 10e: Heroic Intervention доступен защитнику после успешного charge move.
                             self._resolve_heroic_intervention(
                                 defender_side="model",
@@ -3292,6 +3611,7 @@ class Warhammer40kEnv(gym.Env):
                             self._log(
                                 f"{self._format_unit_label('enemy', i)} не смог зачарджить {self._format_unit_label('model', idOfM)} (бросок {diceRoll} vs нужно {required:.1f})"
                             )
+            self._emit_phase_end("charge")
         return None
 
     def fight_phase(self, side: str):
@@ -3462,6 +3782,7 @@ class Warhammer40kEnv(gym.Env):
                     "data": {"reward_delta": reward_delta},
                 }
             )
+        self._emit_phase_end("fight")
         return reward_delta
 
     def refresh_objective_control(self):
@@ -3553,6 +3874,9 @@ class Warhammer40kEnv(gym.Env):
         self._phase_event_emitted = False
         self._phase_unit_logged = set()
         get_event_recorder().clear()
+        if self._event_stream_enabled():
+            self.event_stream.reset()
+            self._update_event_stream_context()
 
         for i in range(len(self.enemy_data)):
             self.enemy_coords.append([self.enemy[i].showCoords()[0], self.enemy[i].showCoords()[1]])
@@ -3666,6 +3990,7 @@ class Warhammer40kEnv(gym.Env):
                     # цель мертва/невалидна — снимаем бой
                     self.unitInAttack[att_idx] = [0, 0]
                     return False
+                self._emit_unit_activate(att_idx + 21)
                 self._log_unit_phase(
                     "MODEL",
                     "fight",
@@ -3748,6 +4073,7 @@ class Warhammer40kEnv(gym.Env):
                 if def_idx < 0 or def_idx >= len(self.unit_health) or self.unit_health[def_idx] <= 0:
                     self.enemyInAttack[att_idx] = [0, 0]
                     return False
+                self._emit_unit_activate(att_idx + 11)
                 enemy_label = self._side_label("enemy", manual=os.getenv("MANUAL_DICE", "0") == "1")
                 self._log_unit_phase(
                     enemy_label,

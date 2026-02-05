@@ -1,4 +1,5 @@
 import torch
+import json
 import os
 import queue
 import re
@@ -17,7 +18,7 @@ if GYM_PATH not in sys.path:
 
 from viewer.opengl_view import OpenGLBoardWidget
 from viewer.gun_fx import get_gun_fx_config
-from viewer.state import StateWatcher
+from viewer.state import StateWatcher, load_state
 from viewer.styles import Theme
 from viewer.model_log_tree import render_model_log_flat
 
@@ -157,6 +158,152 @@ class FxLogParser:
         self._pending.pop()
 
 
+class EventsTailReader(QtCore.QObject):
+    def __init__(
+        self,
+        path: str,
+        debug: Callable[[str], None],
+        *,
+        interval_ms: int = 80,
+        seen_max: int = 2000,
+        parent: Optional[QtCore.QObject] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.path = path
+        self._debug = debug
+        self._offset = 0
+        self._buffer = ""
+        self._queue: Deque[dict] = deque()
+        self._seen: OrderedDict[int, None] = OrderedDict()
+        self._seen_max = seen_max
+        self._timer = QtCore.QTimer(self)
+        self._timer.setInterval(interval_ms)
+        self._timer.timeout.connect(self._poll)
+
+    def start(self) -> None:
+        if not self._timer.isActive():
+            self._timer.start()
+
+    def stop(self) -> None:
+        if self._timer.isActive():
+            self._timer.stop()
+
+    def reset(self) -> None:
+        self._offset = 0
+        self._buffer = ""
+        self._queue.clear()
+        self._seen.clear()
+
+    def pop_event(self) -> Optional[dict]:
+        if self._queue:
+            return self._queue.popleft()
+        return None
+
+    def _poll(self) -> None:
+        if not self.path or not os.path.exists(self.path):
+            return
+        try:
+            size = os.path.getsize(self.path)
+            if size < self._offset:
+                self._offset = 0
+                self._buffer = ""
+            with open(self.path, "r", encoding="utf-8", errors="ignore") as handle:
+                handle.seek(self._offset)
+                chunk = handle.read()
+                if not chunk:
+                    return
+                self._offset = handle.tell()
+        except Exception as exc:
+            self._debug(f"FX: ошибка чтения events.jsonl: {exc}")
+            return
+
+        data = self._buffer + chunk
+        lines = data.split("\n")
+        self._buffer = lines.pop() if lines else ""
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except Exception:
+                self._debug("FX: строка events.jsonl не распознана, пропуск.")
+                continue
+            event_id = event.get("event_id")
+            if isinstance(event_id, int):
+                if event_id in self._seen:
+                    continue
+                self._seen[event_id] = None
+                if len(self._seen) > self._seen_max:
+                    self._seen.popitem(last=False)
+            self._queue.append(event)
+
+
+class PhasePlayer(QtCore.QObject):
+    def __init__(
+        self,
+        reader: EventsTailReader,
+        host: "ViewerWindow",
+        *,
+        interval_ms: int = 60,
+        parent: Optional[QtCore.QObject] = None,
+    ) -> None:
+        super().__init__(parent)
+        self._reader = reader
+        self._host = host
+        self._pause_until = 0.0
+        self._timer = QtCore.QTimer(self)
+        self._timer.setInterval(interval_ms)
+        self._timer.timeout.connect(self._tick)
+
+    def start(self) -> None:
+        if not self._timer.isActive():
+            self._timer.start()
+
+    def stop(self) -> None:
+        if self._timer.isActive():
+            self._timer.stop()
+
+    def _pause(self, seconds: float) -> None:
+        self._pause_until = max(self._pause_until, time.monotonic() + seconds)
+
+    def _tick(self) -> None:
+        if time.monotonic() < self._pause_until:
+            return
+        event = self._reader.pop_event()
+        if not event:
+            return
+        event_type = event.get("type")
+        if event_type == "turn_start":
+            self._host._playback_turn_start(event)
+            self._pause(0.4)
+            return
+        if event_type == "phase_start":
+            self._host._playback_phase_start(event)
+            self._pause(0.6)
+            return
+        if event_type == "unit_activate":
+            self._host._playback_unit_activate(event)
+            self._pause(0.35)
+            return
+        if event_type == "move":
+            self._host._playback_move(event)
+            self._pause(0.4)
+            return
+        if event_type == "shoot":
+            self._host._playback_shoot(event)
+            self._pause(0.25)
+            return
+        if event_type == "damage":
+            self._host._playback_damage(event)
+            self._pause(0.2)
+            return
+        if event_type == "phase_end":
+            self._host._playback_phase_end(event)
+            self._pause(0.4)
+            return
+        self._host._playback_misc(event)
+
 class ViewerWindow(QtWidgets.QMainWindow):
     def __init__(self, state_path, model_path=None):
         super().__init__()
@@ -177,6 +324,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._unit_row_by_key = {}
 
         self.state_watcher = StateWatcher(self.state_path)
+        self._run_dir = os.path.dirname(os.path.abspath(self.state_path))
+        self._events_path = os.path.join(self._run_dir, "events.jsonl")
+        self._snapshots_dir = os.path.join(self._run_dir, "state_snapshots")
+        self._events_reader = EventsTailReader(self._events_path, self.add_log_line, parent=self)
+        self._phase_player = PhasePlayer(self._events_reader, self, parent=self)
+        self._playback_mode = False
+        self._allow_live_state = True
+        self._state_loaded = False
+        self._damage_flash_timer = QtCore.QTimer(self)
+        self._damage_flash_timer.setSingleShot(True)
+        self._damage_flash_timer.timeout.connect(self._clear_damage_flash)
         self.map_scene = OpenGLBoardWidget(cell_size=18)
         self.map_scene.unit_selected.connect(self._select_row_for_unit)
 
@@ -734,7 +892,23 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _fit_view(self):
         self.map_scene.fit_to_view()
 
+    def _ensure_playback_mode(self) -> None:
+        if self._playback_mode:
+            return
+        if not self._events_path:
+            return
+        if not os.path.exists(self._events_path):
+            return
+        self._playback_mode = True
+        self._allow_live_state = not self._state_loaded
+        self._events_reader.start()
+        self._phase_player.start()
+        self.add_log_line(f"FX: events.jsonl найден, playback включен ({self._events_path}).")
+
     def _poll_state(self):
+        self._ensure_playback_mode()
+        if self._playback_mode and not self._allow_live_state and self._state_loaded:
+            return
         if not os.path.exists(self.state_watcher.path):
             self.map_scene.set_error_message(
                 "Состояние игры недоступно. Где: viewer/state.json. "
@@ -742,9 +916,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
             )
             return
         if self.state_watcher.load_if_changed():
-            self._apply_state(self.state_watcher.state)
+            self._apply_state(self.state_watcher.state, origin="live")
 
-    def _apply_state(self, state):
+    def _apply_state(self, state, origin: str = "live"):
+        self._state_loaded = True
         board = state.get("board", {})
         self.map_scene.update_state(state)
 
@@ -772,6 +947,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._update_model_events(state.get("model_events", []))
         self._drain_event_queue()
         self._refresh_active_context()
+        if origin == "live" and self._playback_mode:
+            self._allow_live_state = False
 
     def _populate_units_table(self, units):
         self.units_table.setRowCount(len(units))
@@ -1357,6 +1534,120 @@ class ViewerWindow(QtWidgets.QMainWindow):
             else None,
         )
 
+    def _snapshot_path_for_event(self, event: dict) -> Optional[str]:
+        battle_round = event.get("battle_round")
+        turn = event.get("turn")
+        phase = event.get("phase")
+        active_side = event.get("active_side")
+        event_id = event.get("event_id")
+        if not all([battle_round, turn, phase, active_side, event_id]):
+            return None
+        filename = f"br{battle_round}_turn{turn}_{active_side}_{phase}_{event_id}.json"
+        return os.path.join(self._snapshots_dir, filename)
+
+    def _apply_snapshot_state(self, snapshot_path: str) -> bool:
+        if not snapshot_path or not os.path.exists(snapshot_path):
+            return False
+        snapshot_state = load_state(snapshot_path)
+        self._apply_state(snapshot_state, origin="snapshot")
+        return True
+
+    def _force_apply_state_from_disk(self) -> None:
+        if not os.path.exists(self.state_watcher.path):
+            return
+        state = load_state(self.state_watcher.path)
+        self._apply_state(state, origin="live")
+
+    def _clear_damage_flash(self) -> None:
+        self.map_scene.clear_target_selection()
+
+    def _playback_turn_start(self, event: dict) -> None:
+        turn = event.get("turn")
+        side = event.get("side") or event.get("active_side")
+        if turn is not None:
+            self.status_turn.setText(f"Ход: {turn}")
+        active_label = "Игрок" if side == "player" else "Модель" if side == "model" else "—"
+        self.status_active.setText(f"Активен: {active_label}")
+        self.add_log_line(f"FX: turn_start side={side}, turn={turn}.")
+
+    def _playback_phase_start(self, event: dict) -> None:
+        phase = event.get("phase")
+        if phase:
+            self.status_phase.setText(f"Фаза: {phase}")
+        self.map_scene.set_active_phase(phase)
+        self.add_log_line(f"FX: phase_start {phase}.")
+
+    def _playback_unit_activate(self, event: dict) -> None:
+        unit_id = event.get("unit_id")
+        if unit_id is None:
+            return
+        self.map_scene.set_active_unit(unit_id)
+        self.map_scene.focus_on_unit(unit_id, immediate=False)
+        self._select_row_for_unit_id(unit_id)
+        self.add_log_line(f"FX: unit_activate unit_id={unit_id}.")
+
+    def _playback_move(self, event: dict) -> None:
+        unit_id = event.get("unit_id")
+        to_pos = event.get("to")
+        if unit_id is not None:
+            self.map_scene.set_active_unit(unit_id)
+            self.map_scene.focus_on_unit(unit_id, immediate=False)
+        if isinstance(to_pos, (list, tuple)) and len(to_pos) == 2:
+            try:
+                cell = (int(to_pos[1]), int(to_pos[0]))
+            except Exception:
+                cell = None
+            if cell is not None:
+                self.map_scene.set_target_cell(cell)
+        self.add_log_line(f"FX: move unit_id={unit_id}, to={to_pos}.")
+
+    def _playback_shoot(self, event: dict) -> None:
+        attacker_id = event.get("attacker_id")
+        target_id = event.get("target_id")
+        weapon_name = event.get("weapon_name") or ""
+        damage = event.get("damage")
+        self.add_log_line(
+            f"FX: shoot attacker={attacker_id}, target={target_id}, "
+            f"weapon={weapon_name}, damage={damage}."
+        )
+        if attacker_id is None or target_id is None:
+            return
+        shot = FxShotEvent(
+            ts=str(event.get("ts", "")),
+            report_type=str(event.get("mode", "shooting")),
+            attacker_id=int(attacker_id),
+            target_id=int(target_id),
+            weapon_name=str(weapon_name),
+            damage=float(damage) if damage is not None else 0.0,
+        )
+        self._spawn_fx_for_shoot_event(shot)
+
+    def _playback_damage(self, event: dict) -> None:
+        target_id = event.get("target_id")
+        amount = event.get("amount")
+        hp_before = event.get("hp_before")
+        hp_after = event.get("hp_after")
+        if target_id is not None:
+            self.map_scene.set_target_unit(int(target_id))
+            self._damage_flash_timer.start(200)
+        self.add_log_line(
+            f"FX: damage target={target_id}, amount={amount}, "
+            f"hp_before={hp_before}, hp_after={hp_after}."
+        )
+
+    def _playback_phase_end(self, event: dict) -> None:
+        phase = event.get("phase")
+        snapshot_path = self._snapshot_path_for_event(event)
+        if snapshot_path and self._apply_snapshot_state(snapshot_path):
+            self.add_log_line(f"FX: phase_end {phase}, snapshot={snapshot_path}.")
+            return
+        self.add_log_line(f"FX: phase_end {phase}, snapshot не найден.")
+        self._force_apply_state_from_disk()
+
+    def _playback_misc(self, event: dict) -> None:
+        event_type = event.get("type")
+        self.add_log_line(f"FX: событие {event_type} без обработчика.")
+
     def _enqueue_fx_event(self, event: FxShotEvent) -> None:
         self._fx_shot_queue.append(event)
 
@@ -1382,11 +1673,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._spawn_gauss_effect(start, end, event)
 
     def _spawn_gauss_effect(
-        self, start: QtCore.QPointF, end: QtCore.QPointF, event: FxShotEvent
+        self,
+        start: QtCore.QPointF,
+        end: QtCore.QPointF,
+        event: FxShotEvent,
+        config: Optional[dict] = None,
     ) -> None:
         t0 = time.monotonic()
         seed = hash((event.attacker_id, event.target_id, int(t0 * 1000))) & 0xFFFFFFFF
-        config = get_gun_fx_config("Gauss flayer")
+        config = config or get_gun_fx_config("Gauss flayer")
         duration = float(config.get("duration", 6.5))
         effect = self.map_scene.build_gauss_effect(
             start,
@@ -1404,6 +1699,30 @@ class ViewerWindow(QtWidgets.QMainWindow):
         )
         self._fx_debug(
             "FX: эффект добавлен в рендер "
+            f"(attacker={event.attacker_id}, target={event.target_id})."
+        )
+
+    def _spawn_fx_for_shoot_event(self, event: FxShotEvent) -> None:
+        config = get_gun_fx_config(event.weapon_name)
+        if not config:
+            self.add_log_line(
+                f"FX: оружие без эффекта ({event.weapon_name}), "
+                f"attacker={event.attacker_id}, target={event.target_id}."
+            )
+            return
+        attacker_side = self._side_from_unit_id(event.attacker_id)
+        target_side = self._side_from_unit_id(event.target_id)
+        start = self._unit_world_center_by_key(attacker_side, event.attacker_id)
+        end = self._unit_world_center_by_key(target_side, event.target_id)
+        if start is None or end is None:
+            self.add_log_line(
+                "FX: координаты эффекта не найдены "
+                f"(attacker={event.attacker_id}, target={event.target_id})."
+            )
+            return
+        self._spawn_gauss_effect(start, end, event, config=config)
+        self.add_log_line(
+            "FX: эффект выстрела применён "
             f"(attacker={event.attacker_id}, target={event.target_id})."
         )
 

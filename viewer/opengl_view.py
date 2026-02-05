@@ -356,6 +356,23 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.refresh_overlays()
         self.update()
 
+    def focus_on_unit(self, unit_id: Optional[int], *, immediate: bool = False) -> None:
+        unit = self._find_unit_by_id(unit_id) if unit_id is not None else None
+        if not unit:
+            return
+        x = unit.get("x")
+        y = unit.get("y")
+        if x is None or y is None:
+            return
+        world = QtCore.QPointF(
+            float(x) * self.cell_size + self.cell_size / 2,
+            float(y) * self.cell_size + self.cell_size / 2,
+        )
+        view_center = QtCore.QPointF(self.width() / 2, self.height() / 2)
+        pan = view_center - world * self._scale
+        self._set_target_view(pan=pan, immediate=immediate)
+        self.update()
+
     def set_target_unit(self, unit_id: Optional[int]) -> None:
         self._target_unit_id = unit_id
         self._target_cell = None
