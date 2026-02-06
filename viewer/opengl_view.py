@@ -748,14 +748,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def _snap_world_to_cell(self, world: QtCore.QPointF) -> QtCore.QPointF:
         if self._board_rect.isEmpty():
             return world
-        col = int(world.x() // self.cell_size)
-        row = int(world.y() // self.cell_size)
-        col = max(0, min(self._board_width - 1, col))
-        row = max(0, min(self._board_height - 1, row))
-        return QtCore.QPointF(
-            col * self.cell_size + self.cell_size / 2,
-            row * self.cell_size + self.cell_size / 2,
-        )
+        col, row = self.world_to_grid(world, clamp=True)
+        return self.grid_to_world(col, row)
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
         if self._board_rect.isEmpty():
@@ -1642,17 +1636,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.restore()
 
     def _cell_center(self, col: int, row: int) -> QtCore.QPointF:
-        return QtCore.QPointF(
-            col * self.cell_size + self.cell_size / 2,
-            row * self.cell_size + self.cell_size / 2,
-        )
+        return self.grid_to_world(col, row)
 
     def _update_hover_cell(self, world: QtCore.QPointF) -> None:
         if self._board_rect.isEmpty():
             self._hover_cell = None
             return
-        col = int(world.x() // self.cell_size)
-        row = int(world.y() // self.cell_size)
+        col, row = self.world_to_grid(world, clamp=False)
         if col < 0 or row < 0 or col >= self._board_width or row >= self._board_height:
             self._hover_cell = None
             return
@@ -1702,8 +1692,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def _unit_key_at_world(self, world: QtCore.QPointF) -> Optional[Tuple[str, int]]:
         if self._board_rect.isEmpty():
             return None
-        col = int(world.x() // self.cell_size)
-        row = int(world.y() // self.cell_size)
+        col, row = self.world_to_grid(world, clamp=False)
         if col < 0 or row < 0 or col >= self._board_width or row >= self._board_height:
             return None
         candidates = [
@@ -1737,6 +1726,24 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     closest_dist = distance
                     closest_key = render.key
         return closest_key
+
+    def grid_to_world(self, x: int, y: int) -> QtCore.QPointF:
+        return QtCore.QPointF(
+            x * self.cell_size + self.cell_size / 2,
+            y * self.cell_size + self.cell_size / 2,
+        )
+
+    def world_to_grid(
+        self, world: QtCore.QPointF, *, clamp: bool = False
+    ) -> Tuple[int, int]:
+        if self.cell_size <= 0:
+            return 0, 0
+        x = int(world.x() // self.cell_size)
+        y = int(world.y() // self.cell_size)
+        if clamp:
+            x = max(0, min(self._board_width - 1, x))
+            y = max(0, min(self._board_height - 1, y))
+        return x, y
 
     def _tooltip_anchor_for_unit(
         self,

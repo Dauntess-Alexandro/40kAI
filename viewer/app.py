@@ -914,11 +914,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._pending_state_json = copy.deepcopy(state)
             self.add_log_line("FX: state update deferred during playback")
         if not defer_state_update:
-            self._visual_state = copy.deepcopy(state)
-            self.map_scene.update_state(self._visual_state)
+            self._apply_visual_state(state)
         elif self._visual_state is None:
-            self._visual_state = copy.deepcopy(state)
-            self.map_scene.update_state(self._visual_state)
+            self._apply_visual_state(state)
         self._process_deferred_moves()
 
         state_for_ui = state if defer_state_update else (self._visual_state or state)
@@ -1311,8 +1309,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         state = snapshot if isinstance(snapshot, dict) else self._last_state
         if not state:
             return
-        self._visual_state = copy.deepcopy(state)
-        self.map_scene.update_state(state)
+        self._apply_visual_state(state)
         self._pending_snapshot = None
         self._cinematic_playback_active = False
         self._apply_pending_state_after_playback()
@@ -1325,8 +1322,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if not self._pending_state_json:
             return
         self.add_log_line("FX: apply pending state after playback end")
-        self._visual_state = copy.deepcopy(self._pending_state_json)
-        self.map_scene.update_state(self._visual_state)
+        self._apply_visual_state(self._pending_state_json)
         self._pending_state_json = None
 
     def _phase_label(self, phase: str) -> str:
@@ -1365,8 +1361,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if not render_found:
             self._defer_move(payload, movement, event_id=event_id)
             return
-        x_grid = int(dest[0])
-        y_grid = int(dest[1])
+        normalized = self._normalize_grid_xy(dest[0], dest[1])
+        if normalized is None:
+            return
+        x_grid, y_grid = normalized
         before = None
         for unit in self._visual_state.get("units", []) or []:
             if unit.get("id") == unit_id and unit.get("side") == side:
@@ -1374,10 +1372,20 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 unit["x"] = x_grid
                 unit["y"] = y_grid
                 break
+        stored_grid = None
+        for unit in self._visual_state.get("units", []) or []:
+            if unit.get("id") == unit_id and unit.get("side") == side:
+                stored_grid = (unit.get("x"), unit.get("y"))
+                break
         self.add_log_line(
             "FX: move applied "
             f"unit={unit_id} from={src} to={dest} stored_grid=({x_grid},{y_grid})"
         )
+        if stored_grid is not None and stored_grid != (x_grid, y_grid):
+            self.add_log_line(
+                "WARNING: move stored_grid mismatch "
+                f"key=({side},{unit_id}) expected=({x_grid},{y_grid}) actual={stored_grid}"
+            )
         self.add_log_line(
             "FX: move write "
             f"unit_id={unit_id} side={side} grid=({x_grid},{y_grid}) "
@@ -2076,7 +2084,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return self._unit_world_center(unit_id)
 
     def _unit_world_center(self, unit_id: int) -> Optional[QtCore.QPointF]:
-        cell = self.map_scene.cell_size
         for (_, candidate_id), unit in self._units_by_key.items():
             if candidate_id != unit_id:
                 continue
@@ -2084,12 +2091,40 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return None
 
     def _unit_to_world_center(self, unit: dict) -> Optional[QtCore.QPointF]:
-        cell = self.map_scene.cell_size
         x = unit.get("x")
         y = unit.get("y")
         if x is None or y is None:
             return None
-        return QtCore.QPointF(x * cell + cell / 2, y * cell + cell / 2)
+        normalized = self._normalize_grid_xy(x, y)
+        if normalized is None:
+            return None
+        x_grid, y_grid = normalized
+        return self.map_scene.grid_to_world(x_grid, y_grid)
+
+    def _apply_visual_state(self, state: dict) -> None:
+        self._visual_state = copy.deepcopy(state)
+        self._normalize_units_grid_positions(self._visual_state)
+        self.map_scene.update_state(self._visual_state)
+
+    def _normalize_units_grid_positions(self, state: dict) -> None:
+        units = state.get("units", []) or []
+        for unit in units:
+            x = unit.get("x")
+            y = unit.get("y")
+            normalized = self._normalize_grid_xy(x, y)
+            if normalized is None:
+                continue
+            unit["x"], unit["y"] = normalized
+
+    def _normalize_grid_xy(
+        self, x_value: Optional[float], y_value: Optional[float]
+    ) -> Optional[Tuple[int, int]]:
+        if x_value is None or y_value is None:
+            return None
+        try:
+            return int(x_value), int(y_value)
+        except (TypeError, ValueError):
+            return None
 
     def _side_from_unit_id(self, unit_id: int) -> Optional[str]:
         unit_str = str(unit_id)
