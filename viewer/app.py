@@ -1079,12 +1079,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 snapshot = event.get("data", {}).get("snapshot")
             if isinstance(snapshot, dict):
                 self._phase_buffer.start_snapshot = snapshot
-                self._visual_state = copy.deepcopy(snapshot)
-                self.map_scene.update_state(self._visual_state)
-                self._units_by_key = {
-                    (unit.get("side"), unit.get("id")): unit
-                    for unit in (self._visual_state.get("units", []) or [])
-                }
+                if self._visual_state is None:
+                    self._visual_state = copy.deepcopy(snapshot)
+                    self.map_scene.update_state(self._visual_state)
+                    self._units_by_key = {
+                        (unit.get("side"), unit.get("id")): unit
+                        for unit in (self._visual_state.get("units", []) or [])
+                    }
             self._cinematic_playback_active = True
             if self._visual_state is None and self._last_state:
                 self._visual_state = copy.deepcopy(self._last_state)

@@ -1,0 +1,68 @@
+diff --git a/viewer/app.py b/viewer/app.py
+index db4ec6e864942bf435279afe84930802a8c80907..c10616184c2ce08f56bb590fb6b3e42e02bc572f 100644
+--- a/viewer/app.py
++++ b/viewer/app.py
+@@ -1057,56 +1057,57 @@ class ViewerWindow(QtWidgets.QMainWindow):
+                     event_id = int(event_id)
+                 except (TypeError, ValueError):
+                     event_id = None
+             if event_id is not None and self._model_event_cursor is not None:
+                 if event_id <= self._model_event_cursor:
+                     continue
+             if event_id is not None:
+                 self._model_event_cursor = max(self._model_event_cursor or 0, event_id)
+             self._process_phase_event(event)
+ 
+     def _process_phase_event(self, event: dict) -> None:
+         if not self._is_model_cinematic_event(event):
+             return
+         event_type = str(event.get("type") or "")
+         phase = str(event.get("phase") or "")
+         if event_type == "phase_start":
+             self._phase_buffer = PhaseBuffer(
+                 phase=phase,
+                 active_side=str(event.get("active_side") or "model"),
+             )
+             snapshot = event.get("snapshot")
+             if snapshot is None and isinstance(event.get("data"), dict):
+                 snapshot = event.get("data", {}).get("snapshot")
+             if isinstance(snapshot, dict):
+                 self._phase_buffer.start_snapshot = snapshot
+-                self._visual_state = copy.deepcopy(snapshot)
+-                self.map_scene.update_state(self._visual_state)
+-                self._units_by_key = {
+-                    (unit.get("side"), unit.get("id")): unit
+-                    for unit in (self._visual_state.get("units", []) or [])
+-                }
++                if self._visual_state is None:
++                    self._visual_state = copy.deepcopy(snapshot)
++                    self.map_scene.update_state(self._visual_state)
++                    self._units_by_key = {
++                        (unit.get("side"), unit.get("id")): unit
++                        for unit in (self._visual_state.get("units", []) or [])
++                    }
+             self._cinematic_playback_active = True
+             if self._visual_state is None and self._last_state:
+                 self._visual_state = copy.deepcopy(self._last_state)
+                 self.map_scene.update_state(self._visual_state)
+             self.add_log_line(f"FX: buffer phase {phase} (model)")
+             return
+         if event_type == "unit_action":
+             if self._phase_buffer and self._phase_buffer.phase == phase:
+                 self._phase_buffer.unit_actions.append(event)
+             return
+         if event_type == "phase_summary":
+             if self._phase_buffer and self._phase_buffer.phase == phase:
+                 self._phase_buffer.summary = event
+             return
+         if event_type == "phase_end":
+             if not self._phase_buffer:
+                 return
+             if phase and self._phase_buffer.phase != phase:
+                 return
+             snapshot = event.get("snapshot")
+             if snapshot is None and isinstance(event.get("data"), dict):
+                 snapshot = event.get("data", {}).get("snapshot")
+             if snapshot is not None:
+                 self._phase_buffer.snapshot = snapshot
+                 self._pending_snapshot = snapshot
