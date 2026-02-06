@@ -344,6 +344,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._visual_state: Optional[dict] = None
         self._pending_snapshot: Optional[dict] = None
         self._cinematic_history: Deque[str] = deque(maxlen=30)
+        self._deferred_moves: list[dict] = []
         self._fx_shot_queue: Deque[FxShotEvent] = deque()
         self._fx_parser = FxLogParser(self._enqueue_fx_event, self._fx_debug, seen_max=400)
         self._log_tab_defs = [
@@ -902,12 +903,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _apply_state(self, state):
         self._last_state = state
         board = state.get("board", {})
+        if self._cinematic_playback_active and self._cinematic_manual:
+            self.add_log_line("FX: apply_state during playback (ignored)")
         if not self._cinematic_playback_active or not self._cinematic_manual:
             self._visual_state = copy.deepcopy(state)
             self.map_scene.update_state(self._visual_state)
         elif self._visual_state is None:
             self._visual_state = copy.deepcopy(state)
             self.map_scene.update_state(self._visual_state)
+        self._process_deferred_moves()
 
         state_for_ui = self._visual_state or state
         self._units_by_key = {}
@@ -1237,6 +1241,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _play_unit_action_fx(self, payload: dict) -> None:
         unit_id = payload.get("unit_id")
+        event_id = payload.get("event_id")
         if unit_id is not None:
             self.map_scene.set_active_unit(unit_id)
             self.map_scene.select_unit("model", unit_id)
@@ -1248,7 +1253,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         charge = payload.get("charge") or {}
         fight = payload.get("fight") or {}
         if action == "move":
-            self._apply_visual_unit_move(unit_id, movement)
+            self._apply_visual_unit_move(payload, movement, event_id=event_id)
         target_id = (
             shooting.get("target_id")
             or charge.get("target_id")
@@ -1261,7 +1266,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if action == "move":
             dest = movement.get("to")
             if isinstance(dest, (list, tuple)) and len(dest) >= 2:
-                self.map_scene.set_target_cell((int(dest[0]), int(dest[1])))
+                self.map_scene.set_target_cell((int(dest[1]), int(dest[0])))
         if action == "shoot":
             weapon_name = shooting.get("weapon_name")
             damage = shooting.get("damage")
@@ -1298,18 +1303,73 @@ class ViewerWindow(QtWidgets.QMainWindow):
         }
         return mapping.get(str(phase), f"ФАЗА {str(phase).upper()}")
 
-    def _apply_visual_unit_move(self, unit_id: Optional[int], movement: dict) -> None:
+    def _apply_visual_unit_move(self, payload: dict, movement: dict, event_id: Optional[int] = None) -> None:
+        unit_id_raw = payload.get("unit_id")
+        side = self._side_from_unit_id(unit_id_raw) if unit_id_raw is not None else "model"
+        try:
+            unit_id = int(unit_id_raw) if unit_id_raw is not None else None
+        except (TypeError, ValueError):
+            unit_id = None
         if unit_id is None or not self._visual_state:
             return
+        src = movement.get("from")
         dest = movement.get("to")
+        src_types = (type(src[0]).__name__, type(src[1]).__name__) if isinstance(src, (list, tuple)) and len(src) >= 2 else None
+        dest_types = (type(dest[0]).__name__, type(dest[1]).__name__) if isinstance(dest, (list, tuple)) and len(dest) >= 2 else None
+        key = (side, unit_id)
+        render_found = key in getattr(self.map_scene, "_unit_by_key", {})
+        self.add_log_line(
+            "FX: move apply "
+            f"event_id={event_id} unit_id={unit_id} side={side} action={payload.get('action')} "
+            f"from={src} types={src_types} to={dest} types={dest_types} "
+            f"key={key} render_found={int(render_found)}"
+        )
         if not (isinstance(dest, (list, tuple)) and len(dest) >= 2):
             return
+        if not render_found:
+            self._defer_move(payload, movement, event_id=event_id)
+            return
+        x_grid = int(dest[1])
+        y_grid = int(dest[0])
+        before = None
         for unit in self._visual_state.get("units", []) or []:
-            if unit.get("id") == unit_id and unit.get("side") == "model":
-                unit["x"] = int(dest[0])
-                unit["y"] = int(dest[1])
+            if unit.get("id") == unit_id and unit.get("side") == side:
+                before = (unit.get("x"), unit.get("y"))
+                unit["x"] = x_grid
+                unit["y"] = y_grid
                 break
-        self.map_scene.update_unit_position("model", unit_id, int(dest[0]), int(dest[1]))
+        self.add_log_line(
+            "FX: move write "
+            f"unit_id={unit_id} side={side} grid=({x_grid},{y_grid}) "
+            f"before={before} after=({x_grid},{y_grid}) cell_size={self.map_scene.cell_size} "
+            "conversion=grid->world(cell_size)"
+        )
+        self.map_scene.update_unit_position(side, unit_id, x_grid, y_grid)
+
+    def _defer_move(self, payload: dict, movement: dict, event_id: Optional[int] = None) -> None:
+        attempts = payload.get("_defer_attempts", 0) + 1
+        payload["_defer_attempts"] = attempts
+        self._deferred_moves.append({"payload": payload, "movement": movement, "event_id": event_id})
+        unit_id = payload.get("unit_id")
+        self.add_log_line(f"FX: defer move (missing render unit) unit={unit_id} attempts={attempts}")
+
+    def _process_deferred_moves(self) -> None:
+        if not self._deferred_moves:
+            return
+        pending = list(self._deferred_moves)
+        self._deferred_moves = []
+        remaining = []
+        for item in pending:
+            payload = item.get("payload", {})
+            attempts = payload.get("_defer_attempts", 0)
+            if attempts >= 3:
+                unit_id = payload.get("unit_id")
+                self.add_log_line(f"FX: drop deferred move unit={unit_id} attempts={attempts}")
+                continue
+            self._apply_visual_unit_move(payload, item.get("movement", {}), event_id=item.get("event_id"))
+            if payload.get("_defer_attempts", 0) <= attempts:
+                remaining.append(item)
+        self._deferred_moves = remaining
 
     def _format_phase_summary(self, phase: str, summary: dict) -> str:
         if phase == "command":
