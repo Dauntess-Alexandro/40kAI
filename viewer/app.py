@@ -1474,6 +1474,20 @@ class ViewerWindow(QtWidgets.QMainWindow):
                     "FX: движение уже применено, "
                     f"дельта отсутствует unit={unit_id} from={src} to={dest}."
                 )
+        current_render_pos = getattr(self.map_scene, "_curr_unit_positions", {}).get(key)
+        if current_render_pos is None and before_override is None and src_cell:
+            before_override = src_cell
+            self.add_log_line(
+                "FX: нет текущей позиции в рендере, "
+                f"используем from={src_cell} для плавной анимации."
+            )
+        elif before_override is None and src_cell and current_render_pos is not None:
+            if int(current_render_pos.x()) == x_grid and int(current_render_pos.y()) == y_grid:
+                before_override = src_cell
+                self.add_log_line(
+                    "FX: рендер уже в точке назначения, "
+                    f"используем from={src_cell} для плавной анимации."
+                )
         if before_override is None and src_cell and (before is None or before == (x_grid, y_grid)):
             before_override = src_cell
             self.add_log_line(
