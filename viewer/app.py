@@ -916,20 +916,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _apply_state(self, state):
         self._last_state = state
         board = state.get("board", {})
-        if self._cinematic_playback_active and self._cinematic_manual:
-            self.add_log_line("FX: apply_state during playback (ignored)")
-        if not self._cinematic_playback_active or not self._cinematic_manual:
-            self._visual_state = copy.deepcopy(state)
-            self.map_scene.update_state(self._visual_state)
-        elif self._visual_state is None:
-            self._visual_state = copy.deepcopy(state)
-            self.map_scene.update_state(self._visual_state)
-        self._process_deferred_moves()
-
-        state_for_ui = self._visual_state or state
-        self._units_by_key = {}
-        for unit in state_for_ui.get("units", []) or []:
-            self._units_by_key[(unit.get("side"), unit.get("id"))] = unit
 
         self.status_round.setText(f"Раунд: {state.get('round', '—')}")
         self.status_turn.setText(f"Ход: {state.get('turn', '—')}")
@@ -950,10 +936,25 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.points_cp_player.setText(f"Player CP: {cp.get('player', '—')}")
         self.points_cp_model.setText(f"Model CP: {cp.get('model', '—')}")
 
-        self._populate_units_table(state_for_ui.get("units", []))
         self._update_log(state.get("log_tail", []))
         self._update_model_events(state.get("model_events", []))
         self._drain_event_queue()
+
+        if self._cinematic_playback_active and self._cinematic_manual:
+            self.add_log_line("FX: apply_state during playback (ignored)")
+        if not self._cinematic_playback_active or not self._cinematic_manual:
+            self._visual_state = copy.deepcopy(state)
+            self.map_scene.update_state(self._visual_state)
+        elif self._visual_state is None:
+            self._visual_state = copy.deepcopy(state)
+            self.map_scene.update_state(self._visual_state)
+        self._process_deferred_moves()
+
+        state_for_ui = self._visual_state or state
+        self._units_by_key = {}
+        for unit in state_for_ui.get("units", []) or []:
+            self._units_by_key[(unit.get("side"), unit.get("id"))] = unit
+        self._populate_units_table(state_for_ui.get("units", []))
         self._refresh_active_context()
 
     def _populate_units_table(self, units):
