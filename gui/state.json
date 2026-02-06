@@ -8,7 +8,7 @@
   "phase": "movement",
   "active": "player",
   "vp": {
-    "player": 0,
+    "player": 1,
     "model": 0
   },
   "cp": {
@@ -22,8 +22,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 31,
-      "y": 37
+      "x": 35,
+      "y": 31
     },
     {
       "side": "player",
@@ -31,8 +31,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 11,
-      "y": 31
+      "x": 57,
+      "y": 35
     },
     {
       "side": "model",
@@ -40,8 +40,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 46,
-      "y": 8
+      "x": 55,
+      "y": 1
     },
     {
       "side": "model",
@@ -49,8 +49,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 12,
-      "y": 8
+      "x": 52,
+      "y": 2
     }
   ],
   "objectives": [
@@ -76,27 +76,27 @@
     }
   ],
   "log_tail": [
-    "--- ФАЗА ДВИЖЕНИЯ ---",
-    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (53, 8). Выбор: up, advance=да, бросок=2, макс=7, distance=7",
-    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (46, 8)",
-    "[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.",
-    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (20, 8). Выбор: up, advance=да, бросок=6, макс=11, distance=8",
-    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (12, 8)",
-    "[PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 22 — Necrons Necron Warriors (x10 моделей).",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (52, 2). Выбор: none, advance=нет, distance=0",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Движение пропущено (no move). Позиция после: (52, 2)",
+    "Reward (VP/объекты, движение): hold=-4.000, proximity=0.000, total=-4.000",
+    "Reward (шаг): движение delta=-4.000",
     "--- ФАЗА СТРЕЛЬБЫ ---",
     "--- ФАЗА СТРЕЛЬБЫ ---",
-    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.",
-    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.",
+    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.",
     "--- ФАЗА ЧАРДЖА ---",
     "--- ФАЗА ЧАРДЖА ---",
-    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.",
-    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.",
+    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12\", чардж пропущен.",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в 12\", чардж пропущен.",
     "[MODEL] Чардж: нет доступных целей",
     "--- ФАЗА БОЯ ---",
     "--- ФАЗА БОЯ ---",
     "[MODEL] Ближний бой: нет доступных атак",
+    "Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=15.231546211727817->15.231546211727817",
     "=== КОНЕЦ БОЕВОГО РАУНДА 1 ===",
-    "Итерация 0 завершена с наградой tensor([0], device='cuda:0'), здоровье игрока [10.0, 10.0], здоровье модели [10.0, 10.0]",
+    "Итерация 0 завершена с наградой tensor([-4.0500], device='cuda:0'), здоровье игрока [10.0, 10.0], здоровье модели [10.0, 10.0]",
     "{'model health': [10.0, 10.0], 'player health': [10.0, 10.0], 'modelCP': 2, 'playerCP': 2, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}",
     "Здоровье MODEL: [10.0, 10.0], здоровье PLAYER: [10.0, 10.0]",
     "CP MODEL: 2, CP PLAYER: 2",
@@ -104,10 +104,27 @@
     "=== БОЕВОЙ РАУНД 2 ===",
     "--- ХОД PLAYER ---",
     "--- ФАЗА КОМАНДОВАНИЯ ---",
-    "[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0",
+    "[ENEMY] Only War: end of Command phase -> controlled=1, gained=1, VP: 0 -> 1, objectives=[0]",
     "--- ФАЗА ДВИЖЕНИЯ ---"
   ],
   "model_events": [
+    {
+      "side": "enemy",
+      "phase": "movement",
+      "type": "scan",
+      "msg": "Overwatch невозможен: нет доступных стреляющих юнитов.",
+      "data": {
+        "raw": "Overwatch невозможен: нет доступных стреляющих юнитов."
+      },
+      "unit_id": null,
+      "unit_name": null,
+      "verbosity": "normal",
+      "event_id": 1,
+      "battle_round": 1,
+      "turn": 1,
+      "active_side": "player",
+      "ts": 1770362946.8740728
+    },
     {
       "side": "enemy",
       "phase": "command",
@@ -118,12 +135,12 @@
       },
       "unit_id": null,
       "unit_name": null,
-      "event_id": 1,
+      "event_id": 2,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362233.897431
+      "ts": 1770362947.0600693
     },
     {
       "side": "enemy",
@@ -135,12 +152,12 @@
       "data": {
         "phase": "command"
       },
-      "event_id": 2,
+      "event_id": 3,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362233.897431
+      "ts": 1770362947.0610695
     },
     {
       "side": "enemy",
@@ -151,13 +168,13 @@
       "unit_name": null,
       "vp": 0,
       "cp": 2,
-      "event_id": 3,
+      "event_id": 4,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770362233.897431
+      "ts": 1770362947.0610695
     },
     {
       "side": "enemy",
@@ -170,12 +187,12 @@
         "vp": 0,
         "cp": 2
       },
-      "event_id": 4,
+      "event_id": 5,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362233.897431
+      "ts": 1770362947.0610695
     },
     {
       "side": "enemy",
@@ -187,12 +204,12 @@
       },
       "unit_id": null,
       "unit_name": null,
-      "event_id": 5,
+      "event_id": 6,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362233.8984308
+      "ts": 1770362947.0610695
     },
     {
       "side": "enemy",
@@ -204,29 +221,80 @@
       "data": {
         "phase": "movement"
       },
-      "event_id": 6,
-      "battle_round": 1,
-      "turn": 1,
-      "active_side": "model",
-      "verbosity": "normal",
-      "ts": 1770362233.8984308
-    },
-    {
-      "side": "enemy",
-      "phase": "movement",
-      "type": "dice",
-      "msg": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (53, 8). Выбор: up, advance=да, бросок=2, макс=7, distance=7",
-      "data": {
-        "raw": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (53, 8). Выбор: up, advance=да, бросок=2, макс=7, distance=7"
-      },
-      "unit_id": null,
-      "unit_name": null,
-      "verbosity": "normal",
       "event_id": 7,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770362233.8984308
+      "verbosity": "normal",
+      "ts": 1770362947.0610695
+    },
+    {
+      "side": "enemy",
+      "phase": "movement",
+      "type": "reward",
+      "msg": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=0)",
+      "data": {
+        "raw": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=0)"
+      },
+      "unit_id": 21,
+      "unit_name": "Necron Warriors",
+      "event_id": 8,
+      "battle_round": 1,
+      "turn": 1,
+      "active_side": "model",
+      "verbosity": "normal",
+      "ts": 1770362947.0620694
+    },
+    {
+      "side": "enemy",
+      "phase": "movement",
+      "type": "reward",
+      "msg": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=1)",
+      "data": {
+        "raw": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=1)"
+      },
+      "unit_id": 21,
+      "unit_name": "Necron Warriors",
+      "event_id": 9,
+      "battle_round": 1,
+      "turn": 1,
+      "active_side": "model",
+      "verbosity": "normal",
+      "ts": 1770362947.0620694
+    },
+    {
+      "side": "enemy",
+      "phase": "movement",
+      "type": "reward",
+      "msg": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)",
+      "data": {
+        "raw": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)"
+      },
+      "unit_id": 21,
+      "unit_name": "Necron Warriors",
+      "event_id": 10,
+      "battle_round": 1,
+      "turn": 1,
+      "active_side": "model",
+      "verbosity": "normal",
+      "ts": 1770362947.0620694
+    },
+    {
+      "side": "enemy",
+      "phase": "movement",
+      "type": "reward",
+      "msg": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)",
+      "data": {
+        "raw": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)"
+      },
+      "unit_id": 21,
+      "unit_name": "Necron Warriors",
+      "event_id": 11,
+      "battle_round": 1,
+      "turn": 1,
+      "active_side": "model",
+      "verbosity": "normal",
+      "ts": 1770362947.0630696
     },
     {
       "side": "enemy",
@@ -236,46 +304,46 @@
       "unit_id": 21,
       "unit_name": "Necron Warriors",
       "data": {},
-      "event_id": 8,
+      "event_id": 12,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362233.8984308
+      "ts": 1770362947.0630696
     },
     {
       "side": "enemy",
       "phase": "movement",
-      "type": "dice",
-      "msg": "Позиция до: (53, 8). Выбор: up, advance=да, бросок=2, макс=7, distance=7",
+      "type": "scan",
+      "msg": "Позиция до: (55, 1). Выбор: none, advance=нет, distance=0",
       "data": {
-        "raw": "Позиция до: (53, 8). Выбор: up, advance=да, бросок=2, макс=7, distance=7"
+        "raw": "Позиция до: (55, 1). Выбор: none, advance=нет, distance=0"
       },
       "unit_id": 21,
       "unit_name": "Necron Warriors",
       "verbosity": "normal",
-      "event_id": 9,
+      "event_id": 13,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770362233.8984308
+      "ts": 1770362947.0630696
     },
     {
       "side": "enemy",
       "phase": "movement",
-      "type": "move",
-      "msg": "Позиция после: (46, 8)",
+      "type": "skip",
+      "msg": "Движение пропущено (no move). Позиция после: (55, 1)",
       "data": {
-        "raw": "Позиция после: (46, 8)"
+        "raw": "Движение пропущено (no move). Позиция после: (55, 1)"
       },
       "unit_id": 21,
       "unit_name": "Necron Warriors",
       "verbosity": "normal",
-      "event_id": 10,
+      "event_id": 14,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770362233.8984308
+      "ts": 1770362947.0630696
     },
     {
       "side": "enemy",
@@ -284,48 +352,99 @@
       "msg": "",
       "unit_id": 21,
       "unit_name": "Necron Warriors",
-      "action": "move",
-      "reason": null,
+      "action": "no_move",
+      "reason": "no_move_choice",
       "movement": {
         "from": [
-          53,
-          8
+          55,
+          1
         ],
         "to": [
-          46,
-          8
+          55,
+          1
         ],
-        "dist": 7.0,
-        "advanced": true,
-        "advance_roll": 2
+        "dist": 0.0,
+        "advanced": false,
+        "advance_roll": null
       },
       "shooting": null,
       "charge": null,
       "fight": null,
-      "event_id": 11,
+      "event_id": 15,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770362233.8994308
+      "ts": 1770362947.0630696
     },
     {
       "side": "enemy",
       "phase": "movement",
-      "type": "dice",
-      "msg": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (20, 8). Выбор: up, advance=да, бросок=6, макс=11, distance=8",
+      "type": "reward",
+      "msg": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=0)",
       "data": {
-        "raw": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (20, 8). Выбор: up, advance=да, бросок=6, макс=11, distance=8"
+        "raw": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=0)"
       },
-      "unit_id": null,
-      "unit_name": null,
-      "verbosity": "normal",
-      "event_id": 12,
+      "unit_id": 22,
+      "unit_name": "Necron Warriors",
+      "event_id": 16,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770362233.8994308
+      "verbosity": "normal",
+      "ts": 1770362947.0630696
+    },
+    {
+      "side": "enemy",
+      "phase": "movement",
+      "type": "reward",
+      "msg": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=1)",
+      "data": {
+        "raw": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=1)"
+      },
+      "unit_id": 22,
+      "unit_name": "Necron Warriors",
+      "event_id": 17,
+      "battle_round": 1,
+      "turn": 1,
+      "active_side": "model",
+      "verbosity": "normal",
+      "ts": 1770362947.0640693
+    },
+    {
+      "side": "enemy",
+      "phase": "movement",
+      "type": "reward",
+      "msg": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)",
+      "data": {
+        "raw": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)"
+      },
+      "unit_id": 22,
+      "unit_name": "Necron Warriors",
+      "event_id": 18,
+      "battle_round": 1,
+      "turn": 1,
+      "active_side": "model",
+      "verbosity": "normal",
+      "ts": 1770362947.0640693
+    },
+    {
+      "side": "enemy",
+      "phase": "movement",
+      "type": "reward",
+      "msg": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)",
+      "data": {
+        "raw": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)"
+      },
+      "unit_id": 22,
+      "unit_name": "Necron Warriors",
+      "event_id": 19,
+      "battle_round": 1,
+      "turn": 1,
+      "active_side": "model",
+      "verbosity": "normal",
+      "ts": 1770362947.0640693
     },
     {
       "side": "enemy",
@@ -335,46 +454,46 @@
       "unit_id": 22,
       "unit_name": "Necron Warriors",
       "data": {},
-      "event_id": 13,
+      "event_id": 20,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362233.8994308
+      "ts": 1770362947.0640693
     },
     {
       "side": "enemy",
       "phase": "movement",
-      "type": "dice",
-      "msg": "Позиция до: (20, 8). Выбор: up, advance=да, бросок=6, макс=11, distance=8",
+      "type": "scan",
+      "msg": "Позиция до: (52, 2). Выбор: none, advance=нет, distance=0",
       "data": {
-        "raw": "Позиция до: (20, 8). Выбор: up, advance=да, бросок=6, макс=11, distance=8"
+        "raw": "Позиция до: (52, 2). Выбор: none, advance=нет, distance=0"
       },
       "unit_id": 22,
       "unit_name": "Necron Warriors",
       "verbosity": "normal",
-      "event_id": 14,
+      "event_id": 21,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770362233.8994308
+      "ts": 1770362947.0640693
     },
     {
       "side": "enemy",
       "phase": "movement",
-      "type": "move",
-      "msg": "Позиция после: (12, 8)",
+      "type": "skip",
+      "msg": "Движение пропущено (no move). Позиция после: (52, 2)",
       "data": {
-        "raw": "Позиция после: (12, 8)"
+        "raw": "Движение пропущено (no move). Позиция после: (52, 2)"
       },
       "unit_id": 22,
       "unit_name": "Necron Warriors",
       "verbosity": "normal",
-      "event_id": 15,
+      "event_id": 22,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770362233.8994308
+      "ts": 1770362947.0650697
     },
     {
       "side": "enemy",
@@ -383,31 +502,48 @@
       "msg": "",
       "unit_id": 22,
       "unit_name": "Necron Warriors",
-      "action": "move",
-      "reason": null,
+      "action": "no_move",
+      "reason": "no_move_choice",
       "movement": {
         "from": [
-          20,
-          8
+          52,
+          2
         ],
         "to": [
-          12,
-          8
+          52,
+          2
         ],
-        "dist": 8.0,
-        "advanced": true,
-        "advance_roll": 6
+        "dist": 0.0,
+        "advanced": false,
+        "advance_roll": null
       },
       "shooting": null,
       "charge": null,
       "fight": null,
-      "event_id": 16,
+      "event_id": 23,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770362235.6067119
+      "ts": 1770362947.0650697
+    },
+    {
+      "side": "enemy",
+      "phase": "movement",
+      "type": "reward",
+      "msg": "Reward (VP/объекты, движение): hold=-4.000, proximity=0.000, total=-4.000",
+      "data": {
+        "raw": "Reward (VP/объекты, движение): hold=-4.000, proximity=0.000, total=-4.000"
+      },
+      "unit_id": null,
+      "unit_name": null,
+      "event_id": 24,
+      "battle_round": 1,
+      "turn": 1,
+      "active_side": "model",
+      "verbosity": "normal",
+      "ts": 1770362947.0650697
     },
     {
       "side": "enemy",
@@ -416,17 +552,17 @@
       "msg": "Итог фазы",
       "unit_id": null,
       "unit_name": null,
-      "moved": 2,
+      "moved": 0,
       "total_units": 2,
-      "advanced_count": 2,
-      "dist_total": 15.0,
-      "event_id": 17,
+      "advanced_count": 0,
+      "dist_total": 0.0,
+      "event_id": 25,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770362235.6067119
+      "ts": 1770362947.0650697
     },
     {
       "side": "enemy",
@@ -436,14 +572,31 @@
       "unit_id": null,
       "unit_name": null,
       "data": {
-        "reward_delta": 0
+        "reward_delta": -4.0
       },
-      "event_id": 18,
+      "event_id": 26,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362235.6067119
+      "ts": 1770362947.0650697
+    },
+    {
+      "side": "enemy",
+      "phase": "movement",
+      "type": "reward",
+      "msg": "Reward (шаг): движение delta=-4.000",
+      "data": {
+        "raw": "Reward (шаг): движение delta=-4.000"
+      },
+      "unit_id": null,
+      "unit_name": null,
+      "event_id": 27,
+      "battle_round": 1,
+      "turn": 1,
+      "active_side": "model",
+      "verbosity": "normal",
+      "ts": 1770362947.0650697
     },
     {
       "side": "enemy",
@@ -455,12 +608,12 @@
       },
       "unit_id": null,
       "unit_name": null,
-      "event_id": 19,
+      "event_id": 28,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362235.6077101
+      "ts": 1770362947.0650697
     },
     {
       "side": "enemy",
@@ -472,12 +625,12 @@
       "data": {
         "phase": "shooting"
       },
-      "event_id": 20,
+      "event_id": 29,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362235.6077101
+      "ts": 1770362947.0650697
     },
     {
       "side": "enemy",
@@ -487,29 +640,29 @@
       "unit_id": 21,
       "unit_name": "Necron Warriors",
       "data": {},
-      "event_id": 21,
+      "event_id": 30,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362235.6077101
+      "ts": 1770362947.0660696
     },
     {
       "side": "enemy",
       "phase": "shooting",
       "type": "skip",
-      "msg": "Advance без Assault — стрельба пропущена.",
+      "msg": "Нет целей в дальности, стрельба пропущена.",
       "data": {
-        "raw": "Advance без Assault — стрельба пропущена."
+        "raw": "Нет целей в дальности, стрельба пропущена."
       },
       "unit_id": 21,
       "unit_name": "Necron Warriors",
       "verbosity": "normal",
-      "event_id": 22,
+      "event_id": 31,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770362235.6077101
+      "ts": 1770362947.0660696
     },
     {
       "side": "enemy",
@@ -519,18 +672,18 @@
       "unit_id": 21,
       "unit_name": "Necron Warriors",
       "action": "skip_shoot",
-      "reason": "advanced_no_assault",
+      "reason": "no_targets",
       "movement": null,
       "shooting": null,
       "charge": null,
       "fight": null,
-      "event_id": 23,
+      "event_id": 32,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770362235.6077101
+      "ts": 1770362947.0660696
     },
     {
       "side": "enemy",
@@ -540,29 +693,29 @@
       "unit_id": 22,
       "unit_name": "Necron Warriors",
       "data": {},
-      "event_id": 24,
+      "event_id": 33,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362235.6077101
+      "ts": 1770362947.0660696
     },
     {
       "side": "enemy",
       "phase": "shooting",
       "type": "skip",
-      "msg": "Advance без Assault — стрельба пропущена.",
+      "msg": "Нет целей в дальности, стрельба пропущена.",
       "data": {
-        "raw": "Advance без Assault — стрельба пропущена."
+        "raw": "Нет целей в дальности, стрельба пропущена."
       },
       "unit_id": 22,
       "unit_name": "Necron Warriors",
       "verbosity": "normal",
-      "event_id": 25,
+      "event_id": 34,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770362235.6077101
+      "ts": 1770362947.0660696
     },
     {
       "side": "enemy",
@@ -572,18 +725,18 @@
       "unit_id": 22,
       "unit_name": "Necron Warriors",
       "action": "skip_shoot",
-      "reason": "advanced_no_assault",
+      "reason": "no_targets",
       "movement": null,
       "shooting": null,
       "charge": null,
       "fight": null,
-      "event_id": 26,
+      "event_id": 35,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770362235.6077101
+      "ts": 1770362947.0660696
     },
     {
       "side": "enemy",
@@ -595,15 +748,15 @@
       "shots": 0,
       "skipped": 2,
       "reasons": {
-        "advanced_no_assault": 2
+        "no_targets": 2
       },
-      "event_id": 27,
+      "event_id": 36,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770362235.6077101
+      "ts": 1770362947.0660696
     },
     {
       "side": "enemy",
@@ -615,12 +768,12 @@
       "data": {
         "reward_delta": 0
       },
-      "event_id": 28,
+      "event_id": 37,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362235.6077101
+      "ts": 1770362947.0660696
     },
     {
       "side": "enemy",
@@ -632,12 +785,12 @@
       },
       "unit_id": null,
       "unit_name": null,
-      "event_id": 29,
+      "event_id": 38,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362235.6087108
+      "ts": 1770362947.0660696
     },
     {
       "side": "enemy",
@@ -649,12 +802,12 @@
       "data": {
         "phase": "charge"
       },
-      "event_id": 30,
+      "event_id": 39,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362235.6087108
+      "ts": 1770362947.0660696
     },
     {
       "side": "enemy",
@@ -664,29 +817,29 @@
       "unit_id": 21,
       "unit_name": "Necron Warriors",
       "data": {},
-      "event_id": 31,
+      "event_id": 40,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362235.6087108
+      "ts": 1770362947.0670698
     },
     {
       "side": "enemy",
       "phase": "charge",
-      "type": "charge",
-      "msg": "Advance — чардж невозможен.",
+      "type": "skip",
+      "msg": "Нет целей в 12\", чардж пропущен.",
       "data": {
-        "raw": "Advance — чардж невозможен."
+        "raw": "Нет целей в 12\", чардж пропущен."
       },
       "unit_id": 21,
       "unit_name": "Necron Warriors",
       "verbosity": "normal",
-      "event_id": 32,
+      "event_id": 41,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770362235.6087108
+      "ts": 1770362947.0670698
     },
     {
       "side": "enemy",
@@ -696,18 +849,18 @@
       "unit_id": 21,
       "unit_name": "Necron Warriors",
       "action": "skip_charge",
-      "reason": "advanced_no_charge",
+      "reason": "no_targets",
       "movement": null,
       "shooting": null,
       "charge": null,
       "fight": null,
-      "event_id": 33,
+      "event_id": 42,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770362235.6087108
+      "ts": 1770362947.0670698
     },
     {
       "side": "enemy",
@@ -717,29 +870,29 @@
       "unit_id": 22,
       "unit_name": "Necron Warriors",
       "data": {},
-      "event_id": 34,
+      "event_id": 43,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362235.6087108
+      "ts": 1770362947.0670698
     },
     {
       "side": "enemy",
       "phase": "charge",
-      "type": "charge",
-      "msg": "Advance — чардж невозможен.",
+      "type": "skip",
+      "msg": "Нет целей в 12\", чардж пропущен.",
       "data": {
-        "raw": "Advance — чардж невозможен."
+        "raw": "Нет целей в 12\", чардж пропущен."
       },
       "unit_id": 22,
       "unit_name": "Necron Warriors",
       "verbosity": "normal",
-      "event_id": 35,
+      "event_id": 44,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770362235.6087108
+      "ts": 1770362947.0670698
     },
     {
       "side": "enemy",
@@ -749,18 +902,18 @@
       "unit_id": 22,
       "unit_name": "Necron Warriors",
       "action": "skip_charge",
-      "reason": "advanced_no_charge",
+      "reason": "no_targets",
       "movement": null,
       "shooting": null,
       "charge": null,
       "fight": null,
-      "event_id": 36,
+      "event_id": 45,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770362235.6087108
+      "ts": 1770362947.0670698
     },
     {
       "side": "enemy",
@@ -772,15 +925,15 @@
       "charges": 0,
       "skipped": 2,
       "reasons": {
-        "advanced_no_charge": 2
+        "no_targets": 2
       },
-      "event_id": 37,
+      "event_id": 46,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770362235.6087108
+      "ts": 1770362947.0670698
     },
     {
       "side": "enemy",
@@ -792,12 +945,12 @@
       "data": {
         "reward_delta": 0
       },
-      "event_id": 38,
+      "event_id": 47,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362235.6087108
+      "ts": 1770362947.0670698
     },
     {
       "side": "enemy",
@@ -809,12 +962,12 @@
       },
       "unit_id": null,
       "unit_name": null,
-      "event_id": 39,
+      "event_id": 48,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362235.6097105
+      "ts": 1770362947.0670698
     },
     {
       "side": "enemy",
@@ -826,12 +979,12 @@
       "data": {
         "phase": "fight"
       },
-      "event_id": 40,
+      "event_id": 49,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362235.6097105
+      "ts": 1770362947.0670698
     },
     {
       "side": "enemy",
@@ -846,13 +999,13 @@
       "shooting": null,
       "charge": null,
       "fight": null,
-      "event_id": 41,
+      "event_id": 50,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770362235.6097105
+      "ts": 1770362947.0680695
     },
     {
       "side": "enemy",
@@ -867,13 +1020,13 @@
       "shooting": null,
       "charge": null,
       "fight": null,
-      "event_id": 42,
+      "event_id": 51,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770362235.6097105
+      "ts": 1770362947.0680695
     },
     {
       "side": "enemy",
@@ -887,13 +1040,13 @@
       "reasons": {
         "no_attacks": 2
       },
-      "event_id": 43,
+      "event_id": 52,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770362235.6097105
+      "ts": 1770362947.0680695
     },
     {
       "side": "enemy",
@@ -905,12 +1058,29 @@
       "data": {
         "reward_delta": 0.0
       },
-      "event_id": 44,
+      "event_id": 53,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362235.6097105
+      "ts": 1770362947.0680695
+    },
+    {
+      "side": "enemy",
+      "phase": "fight",
+      "type": "reward",
+      "msg": "Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=15.231546211727817->15.231546211727817",
+      "data": {
+        "raw": "Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=15.231546211727817->15.231546211727817"
+      },
+      "unit_id": null,
+      "unit_name": null,
+      "event_id": 54,
+      "battle_round": 1,
+      "turn": 1,
+      "active_side": "model",
+      "verbosity": "normal",
+      "ts": 1770362947.0680695
     },
     {
       "side": "enemy",
@@ -920,13 +1090,13 @@
       "unit_id": null,
       "unit_name": null,
       "data": {},
-      "event_id": 45,
+      "event_id": 55,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770362235.6097105
+      "ts": 1770362947.0680695
     }
   ],
-  "generated_at": "2026-02-06T07:17:18.148607Z"
+  "generated_at": "2026-02-06T07:29:12.690045Z"
 }
