@@ -24,7 +24,7 @@ from gym_mod.engine.mission import (
 )
 from gym_mod.engine.skills import apply_end_of_command_phase
 from gym_mod.engine.logging_utils import format_unit
-from gym_mod.engine.state_export import write_state_json
+from gym_mod.engine.state_export import build_state_payload, write_state_json
 from gym_mod.engine.game_io import get_active_io
 from gym_mod.engine.event_bus import get_event_bus, get_event_recorder
 
@@ -1204,7 +1204,14 @@ class Warhammer40kEnv(gym.Env):
                         "phase": phase,
                         "type": "phase_start",
                         "msg": phase_title,
-                        "data": {"title": phase_title},
+                        "data": {
+                            "title": phase_title,
+                            "snapshot": build_state_payload(
+                                self,
+                                include_log_tail=False,
+                                include_events=False,
+                            ),
+                        },
                         "unit_id": None,
                         "unit_name": None,
                     }
@@ -1861,7 +1868,15 @@ class Warhammer40kEnv(gym.Env):
                     "msg": f"Командование завершено: VP={self.modelVP}, CP={self.modelCP}",
                     "unit_id": None,
                     "unit_name": None,
-                    "data": {"vp": self.modelVP, "cp": self.modelCP},
+                    "data": {
+                        "vp": self.modelVP,
+                        "cp": self.modelCP,
+                        "snapshot": build_state_payload(
+                            self,
+                            include_log_tail=False,
+                            include_events=False,
+                        ),
+                    },
                 }
             )
             return battle_shock, reward_delta
@@ -2276,7 +2291,14 @@ class Warhammer40kEnv(gym.Env):
                     "msg": "Движение завершено.",
                     "unit_id": None,
                     "unit_name": None,
-                    "data": {"reward_delta": reward_delta},
+                    "data": {
+                        "reward_delta": reward_delta,
+                        "snapshot": build_state_payload(
+                            self,
+                            include_log_tail=False,
+                            include_events=False,
+                        ),
+                    },
                 }
             )
             return advanced_flags, reward_delta
@@ -2917,7 +2939,14 @@ class Warhammer40kEnv(gym.Env):
                     "msg": "Стрельба завершена.",
                     "unit_id": None,
                     "unit_name": None,
-                    "data": {"reward_delta": reward_delta},
+                    "data": {
+                        "reward_delta": reward_delta,
+                        "snapshot": build_state_payload(
+                            self,
+                            include_log_tail=False,
+                            include_events=False,
+                        ),
+                    },
                 }
             )
             return reward_delta
@@ -3385,7 +3414,14 @@ class Warhammer40kEnv(gym.Env):
                     "msg": "Чардж завершён.",
                     "unit_id": None,
                     "unit_name": None,
-                    "data": {"reward_delta": reward_delta},
+                    "data": {
+                        "reward_delta": reward_delta,
+                        "snapshot": build_state_payload(
+                            self,
+                            include_log_tail=False,
+                            include_events=False,
+                        ),
+                    },
                 }
             )
             return reward_delta
@@ -3855,7 +3891,14 @@ class Warhammer40kEnv(gym.Env):
                     "msg": "Фаза боя завершена.",
                     "unit_id": None,
                     "unit_name": None,
-                    "data": {"reward_delta": reward_delta},
+                    "data": {
+                        "reward_delta": reward_delta,
+                        "snapshot": build_state_payload(
+                            self,
+                            include_log_tail=False,
+                            include_events=False,
+                        ),
+                    },
                 }
             )
         return reward_delta

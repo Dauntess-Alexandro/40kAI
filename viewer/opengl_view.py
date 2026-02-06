@@ -393,7 +393,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._set_target_view(scale=scale, pan=pan, immediate=False)
         self.update()
 
-    def update_unit_position(self, side: str, unit_id: int, x: int, y: int) -> None:
+    def update_unit_position(
+        self,
+        side: str,
+        unit_id: int,
+        x: int,
+        y: int,
+        prev_cell: Optional[Tuple[int, int]] = None,
+    ) -> None:
         key = (side, unit_id)
         found = False
         for unit in self._units_state:
@@ -404,9 +411,12 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 break
         if not found:
             return
-        current = self._curr_unit_positions.get(key)
-        if current is None:
-            current = QtCore.QPointF(float(x), float(y))
+        if prev_cell is not None:
+            current = QtCore.QPointF(float(prev_cell[0]), float(prev_cell[1]))
+        else:
+            current = self._curr_unit_positions.get(key)
+            if current is None:
+                current = QtCore.QPointF(float(x), float(y))
         self._prev_unit_positions[key] = QtCore.QPointF(current)
         self._curr_unit_positions[key] = QtCore.QPointF(float(x), float(y))
         self._start_unit_animation()
