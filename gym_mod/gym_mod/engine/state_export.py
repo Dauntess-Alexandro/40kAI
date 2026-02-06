@@ -58,10 +58,7 @@ def _unit_payload(side, unit_id, unit_data, coords, hp):
     }
 
 
-def write_state_json(env, path=None):
-    state_path = path or os.getenv("STATE_JSON_PATH", DEFAULT_STATE_PATH)
-    os.makedirs(os.path.dirname(state_path), exist_ok=True)
-
+def build_state_payload(env, *, include_log_tail: bool = True, include_events: bool = True) -> dict:
     units = []
     for idx, coords in enumerate(getattr(env, "enemy_coords", [])):
         unit_id = env._unit_id("enemy", idx)
@@ -102,10 +99,19 @@ def write_state_json(env, path=None):
                "model": _safe_int(getattr(env, "modelCP", None), None)},
         "units": units,
         "objectives": objectives,
-        "log_tail": _read_log_tail(),
-        "model_events": _read_event_tail(),
+        "log_tail": _read_log_tail() if include_log_tail else [],
+        "model_events": _read_event_tail() if include_events else [],
         "generated_at": datetime.utcnow().isoformat() + "Z",
     }
+
+    return payload
+
+
+def write_state_json(env, path=None):
+    state_path = path or os.getenv("STATE_JSON_PATH", DEFAULT_STATE_PATH)
+    os.makedirs(os.path.dirname(state_path), exist_ok=True)
+
+    payload = build_state_payload(env)
 
     with open(state_path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2)

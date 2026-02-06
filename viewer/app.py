@@ -54,6 +54,7 @@ class PhaseBuffer:
     unit_actions: list = field(default_factory=list)
     summary: Optional[dict] = None
     snapshot: Optional[dict] = None
+    start_snapshot: Optional[dict] = None
 
 
 @dataclass
@@ -1073,6 +1074,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 phase=phase,
                 active_side=str(event.get("active_side") or "model"),
             )
+            snapshot = event.get("snapshot")
+            if snapshot is None and isinstance(event.get("data"), dict):
+                snapshot = event.get("data", {}).get("snapshot")
+            if isinstance(snapshot, dict):
+                self._phase_buffer.start_snapshot = snapshot
+                self._visual_state = copy.deepcopy(snapshot)
+                self.map_scene.update_state(self._visual_state)
+                self._units_by_key = {
+                    (unit.get("side"), unit.get("id")): unit
+                    for unit in (self._visual_state.get("units", []) or [])
+                }
             self._cinematic_playback_active = True
             if self._visual_state is None and self._last_state:
                 self._visual_state = copy.deepcopy(self._last_state)
@@ -1374,19 +1386,41 @@ class ViewerWindow(QtWidgets.QMainWindow):
         x_grid = int(dest[0])
         y_grid = int(dest[1])
         before = None
+        before_override = None
+        src_cell = None
+        if isinstance(src, (list, tuple)) and len(src) >= 2:
+            src_cell = (int(src[0]), int(src[1]))
         for unit in self._visual_state.get("units", []) or []:
             if unit.get("id") == unit_id and unit.get("side") == side:
                 before = (unit.get("x"), unit.get("y"))
                 unit["x"] = x_grid
                 unit["y"] = y_grid
                 break
+        if before == (x_grid, y_grid):
+            if src_cell and src_cell != (x_grid, y_grid):
+                before_override = src_cell
+                self.add_log_line(
+                    "FX: движение уже применено, "
+                    f"принудительно используем from={src_cell} для анимации."
+                )
+            else:
+                self.add_log_line(
+                    "FX: движение уже применено, "
+                    f"дельта отсутствует unit={unit_id} from={src} to={dest}."
+                )
         self.add_log_line(
             "FX: move write "
             f"unit_id={unit_id} side={side} grid=({x_grid},{y_grid}) "
             f"before={before} after=({x_grid},{y_grid}) cell_size={self.map_scene.cell_size} "
             "conversion=grid->world(cell_size)"
         )
-        self.map_scene.update_unit_position(side, unit_id, x_grid, y_grid)
+        self.map_scene.update_unit_position(
+            side,
+            unit_id,
+            x_grid,
+            y_grid,
+            prev_cell=before_override,
+        )
 
     def _defer_move(self, payload: dict, movement: dict, event_id: Optional[int] = None) -> None:
         attempts = payload.get("_defer_attempts", 0) + 1
