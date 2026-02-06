@@ -920,7 +920,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._apply_visual_state(state)
         self._process_deferred_moves()
 
-        state_for_ui = state if defer_state_update else (self._visual_state or state)
+        if defer_state_update and self._visual_state is not None:
+            state_for_ui = self._visual_state
+            self.add_log_line("FX: UI/FX используют визуальное состояние во время playback")
+        else:
+            state_for_ui = state if defer_state_update else (self._visual_state or state)
         self._units_by_key = {}
         for unit in state_for_ui.get("units", []) or []:
             self._units_by_key[(unit.get("side"), unit.get("id"))] = unit
@@ -1381,26 +1385,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 unit["y"] = y_grid
                 break
         if before is not None and src_xy is not None and before != src_xy:
-            swapped_before = (before[1], before[0])
-            if swapped_before == src_xy or (dest_xy is not None and swapped_before == dest_xy):
-                if self._grid_axes_swapped is not True:
-                    self._grid_axes_swapped = True
-                    self.add_log_line(
-                        "WARNING: обнаружен swap осей grid, корректирую визуальное состояние"
-                    )
-                self._swap_state_axes(self._visual_state)
-                self.map_scene.update_state(self._visual_state)
-                for unit in self._visual_state.get("units", []) or []:
-                    if unit.get("id") == unit_id and unit.get("side") == side:
-                        before = (unit.get("x"), unit.get("y"))
-                        break
             if before == dest_xy:
+                self.add_log_line(
+                    "WARNING: move state mismatch "
+                    f"key=({side},{unit_id}) before={before} ожидается from={src_xy} "
+                    "причина=уже_на_цели"
+                )
+            else:
                 self.add_log_line(
                     "WARNING: move state mismatch "
                     f"key=({side},{unit_id}) before={before} ожидается from={src_xy}"
                 )
-                self._set_unit_position_to_source(side, unit_id, src_xy)
-                before = src_xy
         stored_grid = None
         for unit in self._visual_state.get("units", []) or []:
             if unit.get("id") == unit_id and unit.get("side") == side:
@@ -1420,6 +1415,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
             f"unit_id={unit_id} side={side} grid=({x_grid},{y_grid}) "
             f"before={before} after=({x_grid},{y_grid}) cell_size={self.map_scene.cell_size} "
             "conversion=grid->world(cell_size)"
+        )
+        dest_world = self.map_scene.grid_to_world(x_grid, y_grid)
+        self.add_log_line(
+            "FX: move grid->world "
+            f"raw_from={src} raw_to={dest} normalized=({x_grid},{y_grid}) "
+            f"world=({dest_world.x():.1f},{dest_world.y():.1f})"
         )
         self.map_scene.update_unit_position(side, unit_id, x_grid, y_grid)
 
@@ -2067,6 +2068,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         attacker_side = self._side_from_unit_id(event.attacker_id)
         target_side = self._side_from_unit_id(event.target_id)
+        attacker_unit = self._units_by_key.get((attacker_side, event.attacker_id))
+        target_unit = self._units_by_key.get((target_side, event.target_id))
+        attacker_grid = None
+        target_grid = None
+        if attacker_unit is not None:
+            attacker_grid = self._normalize_grid_xy(attacker_unit.get("x"), attacker_unit.get("y"))
+        if target_unit is not None:
+            target_grid = self._normalize_grid_xy(target_unit.get("x"), target_unit.get("y"))
         start = self._unit_world_center_by_key(attacker_side, event.attacker_id)
         end = self._unit_world_center_by_key(target_side, event.target_id)
         if start is None or end is None:
@@ -2075,6 +2084,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 f"(attacker={event.attacker_id}, target={event.target_id})."
             )
             return
+        if attacker_grid is not None or target_grid is not None:
+            self.add_log_line(
+                "FX: shot grid->world "
+                f"attacker_grid={attacker_grid} target_grid={target_grid} "
+                f"start=({start.x():.1f},{start.y():.1f}) end=({end.x():.1f},{end.y():.1f})"
+            )
         self._spawn_gauss_effect(start, end, event)
 
     def _spawn_gauss_effect(
