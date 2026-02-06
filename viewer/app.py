@@ -915,13 +915,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _apply_state(self, state):
         self._last_state = state
+        model_events = state.get("model_events") or []
         board = state.get("board", {})
         if self._cinematic_playback_active and self._cinematic_manual:
             self.add_log_line("FX: apply_state during playback (ignored)")
-        if not self._cinematic_playback_active or not self._cinematic_manual:
+        skip_visual_update = self._has_model_cinematic_events(model_events)
+        if skip_visual_update:
+            self.add_log_line("FX: cinematic events detected, skip immediate state apply")
+        if (not self._cinematic_playback_active or not self._cinematic_manual) and not skip_visual_update:
             self._visual_state = copy.deepcopy(state)
             self.map_scene.update_state(self._visual_state)
-        elif self._visual_state is None:
+        elif self._visual_state is None and not skip_visual_update:
             self._visual_state = copy.deepcopy(state)
             self.map_scene.update_state(self._visual_state)
         self._process_deferred_moves()
@@ -952,9 +956,22 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._populate_units_table(state_for_ui.get("units", []))
         self._update_log(state.get("log_tail", []))
-        self._update_model_events(state.get("model_events", []))
+        self._update_model_events(model_events)
         self._drain_event_queue()
         self._refresh_active_context()
+
+    def _has_model_cinematic_events(self, events: list[dict]) -> bool:
+        for event in events or []:
+            if str(event.get("active_side") or "").lower() != "model":
+                continue
+            if str(event.get("type") or "") in {
+                "phase_start",
+                "unit_action",
+                "phase_summary",
+                "phase_end",
+            }:
+                return True
+        return False
 
     def _populate_units_table(self, units):
         self.units_table.setRowCount(len(units))
