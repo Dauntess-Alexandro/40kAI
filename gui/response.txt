@@ -8491,3 +8491,69 @@ VP MODEL: 0, VP PLAYER: 0
 --- ФАЗА КОМАНДОВАНИЯ ---
 [ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
 --- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] pickle=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-3-407495.pickle
+[MODEL] checkpoint=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-3-407495.pth
+[MODEL] pickle=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-3-407495.pickle
+[MODEL] checkpoint=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-3-407495.pth
+Roll-off Attacker/Defender: enemy=1 model=4 -> attacker=model
+Юниты: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]
+[DEPLOY] Order: model first, alternating
+[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (45,1)
+[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (4,39)
+[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (31,2)
+[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (29,36)
+[MISSION Only War] Post-deploy: currently no post-deploy units supported
+[MODEL] Архитектура сети: dueling (источник: net_type)
+
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+{'model health': [10, 10], 'player health': [10, 10], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+Здоровье MODEL: [10, 10], здоровье PLAYER: [10, 10]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 1 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+Бросок 1D6 на Advance...
+Бросок: 6
+[MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+--- ФАЗА СТРЕЛЬБЫ ---
+Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+Нет доступных целей для чарджа.
+--- ФАЗА БОЯ ---
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (45, 1). Выбор: up, advance=да, бросок=3, макс=8, distance=8
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (37, 1)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (31, 2). Выбор: up, advance=да, бросок=3, макс=8, distance=8
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (23, 2)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Чардж: нет доступных целей
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: нет доступных атак
+=== КОНЕЦ БОЕВОГО РАУНДА 1 ===
+Итерация 0 завершена с наградой tensor([0], device='cuda:0'), здоровье игрока [10.0, 10.0], здоровье модели [10.0, 10.0]
+{'model health': [10.0, 10.0], 'player health': [10.0, 10.0], 'modelCP': 2, 'playerCP': 2, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+Здоровье MODEL: [10.0, 10.0], здоровье PLAYER: [10.0, 10.0]
+CP MODEL: 2, CP PLAYER: 2
+VP MODEL: 0, VP PLAYER: 0
