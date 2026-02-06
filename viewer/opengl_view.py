@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import math
+import os
 from pathlib import Path
 import random
 from time import monotonic, perf_counter
@@ -22,6 +23,8 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from viewer.styles import Theme
 from viewer.tooltip import UnitTooltipWidget
+
+WALK_ANIM_DURATION_MS = 300
 
 
 @dataclass
@@ -127,11 +130,12 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._units_state: List[dict] = []
         self._prev_unit_positions: Dict[Tuple[str, int], QtCore.QPointF] = {}
         self._curr_unit_positions: Dict[Tuple[str, int], QtCore.QPointF] = {}
+        self._viewer_debug = os.getenv("VIEWER_DEBUG") == "1"
         self._unit_anim_timer = QtCore.QTimer(self)
         self._unit_anim_timer.setInterval(16)
         self._unit_anim_timer.timeout.connect(self._animate_unit_step)
         self._unit_anim_clock = QtCore.QElapsedTimer()
-        self._unit_anim_duration_ms = 180
+        self._unit_anim_duration_ms = WALK_ANIM_DURATION_MS
 
         self._move_highlights: List[QtCore.QRectF] = []
         self._target_highlights: List[Tuple[QtCore.QPointF, float]] = []
@@ -551,6 +555,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def _start_unit_animation(self) -> None:
         self._unit_anim_clock.restart()
+        if self._viewer_debug:
+            for key, curr_pos in self._curr_unit_positions.items():
+                prev_pos = self._prev_unit_positions.get(key, curr_pos)
+                if prev_pos.x() == curr_pos.x() and prev_pos.y() == curr_pos.y():
+                    continue
+                side, unit_id = key
+                print(
+                    "VIEWER_DEBUG: walk_anim_start "
+                    f"side={side} unit_id={unit_id} duration_ms={self._unit_anim_duration_ms} "
+                    f"start_pos=({prev_pos.x():.1f},{prev_pos.y():.1f}) "
+                    f"end_pos=({curr_pos.x():.1f},{curr_pos.y():.1f})"
+                )
         if self._unit_anim_duration_ms <= 0:
             self._rebuild_units(1.0)
             if self._unit_anim_timer.isActive():

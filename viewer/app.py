@@ -303,6 +303,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = OpenGLBoardWidget(cell_size=18)
         self.map_scene.unit_selected.connect(self._select_row_for_unit)
+        self._viewer_debug = os.getenv("VIEWER_DEBUG") == "1"
+        self._auto_focus_enabled = False
 
         self.status_round = QtWidgets.QLabel("Раунд: —")
         self.status_turn = QtWidgets.QLabel("Ход: —")
@@ -1364,7 +1366,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if unit_id is not None:
             self.map_scene.set_active_unit(unit_id)
             self.map_scene.select_unit("model", unit_id)
-            self.map_scene.focus_unit(unit_id)
+            self._auto_focus_unit(
+                unit_id=unit_id,
+                side="model",
+                source=f"unit_action phase={payload.get('phase') or '—'}",
+            )
             self._select_row_for_unit_id(unit_id, side="model")
         action = payload.get("action")
         movement = payload.get("movement") or {}
@@ -2217,6 +2223,19 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if unit_str.startswith("2"):
             return "model"
         return None
+
+    def _auto_focus_unit(self, unit_id: Optional[int], side: Optional[str], source: str) -> None:
+        if unit_id is None:
+            return
+        if self._viewer_debug:
+            enabled = 1 if self._auto_focus_enabled else 0
+            self.add_log_line(
+                "FX: autocenter "
+                f"source={source} unit_id={unit_id} side={side or '—'} enabled={enabled}"
+            )
+        if not self._auto_focus_enabled:
+            return
+        self.map_scene.focus_unit(unit_id)
 
     def _fx_debug(self, message: str) -> None:
         if not message:
