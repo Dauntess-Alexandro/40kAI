@@ -1,230 +1,492 @@
-2026-02-06 12:11:28 | [VIEWER] Рендер: OpenGL (QOpenGLWidget).
-2026-02-06 12:11:28 | [VIEWER] Фоллбэк-рендер не активирован.
-2026-02-06 12:11:28 | FX: перепроигрываю 30 строк(и) лога.
-2026-02-06 12:11:29 | [MODEL] pickle=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-3-407495.pickle
-2026-02-06 12:11:29 | [MODEL] checkpoint=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-3-407495.pth
-2026-02-06 12:11:44 | Roll-off Attacker/Defender: enemy=1 model=2 -> attacker=model
-2026-02-06 12:11:44 | Юниты: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]
-2026-02-06 12:11:44 | [DEPLOY] Order: model first, alternating
-2026-02-06 12:11:44 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (12,2)
-2026-02-06 12:11:44 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (4,30)
-2026-02-06 12:11:44 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (11,9)
-2026-02-06 12:11:44 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (50,33)
-2026-02-06 12:11:44 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
-2026-02-06 12:11:44 | [MODEL] Архитектура сети: dueling (источник: net_type)
-2026-02-06 12:11:44 | 
+2026-02-06 14:32:09 | [VIEWER] Рендер: OpenGL (QOpenGLWidget).
+2026-02-06 14:32:09 | [VIEWER] Фоллбэк-рендер не активирован.
+2026-02-06 14:32:09 | FX: cinematic events detected, skip immediate state apply
+2026-02-06 14:32:09 | FX: перепроигрываю 30 строк(и) лога.
+2026-02-06 14:32:09 | FX: старт GUI — пропускаю накопленные события модели, подхват с event_id=50.
+2026-02-06 14:32:09 | [MODEL] pickle=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-3-407495.pickle
+2026-02-06 14:32:09 | [MODEL] checkpoint=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-3-407495.pth
+2026-02-06 14:32:12 | Roll-off Attacker/Defender: enemy=1 model=3 -> attacker=model
+2026-02-06 14:32:12 | Юниты: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]
+2026-02-06 14:32:12 | [DEPLOY] Order: model first, alternating
+2026-02-06 14:32:12 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (59,3)
+2026-02-06 14:32:12 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (51,39)
+2026-02-06 14:32:12 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (13,3)
+2026-02-06 14:32:12 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (17,37)
+2026-02-06 14:32:12 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
+2026-02-06 14:32:12 | [MODEL] Архитектура сети: dueling (источник: net_type)
+2026-02-06 14:32:12 | 
 Инструкции:
 Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
 Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
 
-2026-02-06 12:11:44 | {'model health': [10, 10], 'player health': [10, 10], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
-2026-02-06 12:11:44 | Здоровье MODEL: [10, 10], здоровье PLAYER: [10, 10]
+2026-02-06 14:32:12 | {'model health': [10, 10], 'player health': [10, 10], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+2026-02-06 14:32:12 | Здоровье MODEL: [10, 10], здоровье PLAYER: [10, 10]
 CP MODEL: 0, CP PLAYER: 0
 VP MODEL: 0, VP PLAYER: 0
 
-2026-02-06 12:11:44 | FX: перепроигрываю 30 строк(и) лога.
-2026-02-06 12:11:45 | === БОЕВОЙ РАУНД 1 ===
-2026-02-06 12:11:45 | --- ХОД PLAYER ---
-2026-02-06 12:11:45 | --- ФАЗА КОМАНДОВАНИЯ ---
-2026-02-06 12:11:45 | [ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
-2026-02-06 12:11:45 | --- ФАЗА ДВИЖЕНИЯ ---
-2026-02-06 12:11:45 | Выбрано в таблице: row=2 -> unit_id=11
-2026-02-06 12:11:45 | REQ: target selected Unit 11, confirm enabled
-2026-02-06 12:11:45 | FX: перепроигрываю 30 строк(и) лога.
-2026-02-06 12:11:45 | Выбрано в таблице: row=2 -> unit_id=11
-2026-02-06 12:11:45 | REQ: target selected Unit 11, confirm enabled
-2026-02-06 12:11:51 | [MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 11 — Necrons Necron Warriors (x10 моделей).
-2026-02-06 12:11:51 | 
+2026-02-06 14:32:12 | FX: перепроигрываю 30 строк(и) лога.
+2026-02-06 14:32:14 | === БОЕВОЙ РАУНД 1 ===
+2026-02-06 14:32:14 | --- ХОД PLAYER ---
+2026-02-06 14:32:14 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-02-06 14:32:14 | [ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+2026-02-06 14:32:14 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-02-06 14:32:14 | Выбрано в таблице: row=2 -> unit_id=11
+2026-02-06 14:32:14 | REQ: target selected Unit 11, confirm enabled
+2026-02-06 14:32:14 | FX: перепроигрываю 30 строк(и) лога.
+2026-02-06 14:32:14 | Выбрано в таблице: row=2 -> unit_id=11
+2026-02-06 14:32:14 | REQ: target selected Unit 11, confirm enabled
+2026-02-06 14:32:17 | Бросок 1D6 на Advance...
+2026-02-06 14:32:19 | Бросок: 6
+2026-02-06 14:32:20 | [MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+2026-02-06 14:32:20 | REQ: shooter changed Unit 11->Unit 12, target reset
+2026-02-06 14:32:20 | Выбрано в таблице: row=3 -> unit_id=12
+2026-02-06 14:32:20 | REQ: target selected Unit 12, confirm enabled
+2026-02-06 14:32:20 | FX: перепроигрываю 30 строк(и) лога.
+2026-02-06 14:32:20 | FX: сброс курсора событий модели — обнаружен сброс event_id (1 < 50).
+2026-02-06 14:32:20 | FX: старт GUI — пропускаю накопленные события модели, подхват с event_id=1.
+2026-02-06 14:32:20 | Выбрано в таблице: row=3 -> unit_id=12
+2026-02-06 14:32:20 | REQ: target selected Unit 12, confirm enabled
+2026-02-06 14:32:24 | Бросок 1D6 на Advance...
+2026-02-06 14:32:25 | Бросок: 6
+2026-02-06 14:32:26 | Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=10.295630140987->12.083045973594572
+2026-02-06 14:32:26 | [MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 12 — Necrons Necron Warriors (x10 моделей).
+2026-02-06 14:32:26 | 
 🎲 Бросок на попадание (to hit): 10D6
-2026-02-06 12:11:51 | [MODEL] [MOVEMENT] Unit 22 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 11 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 0.0.
-2026-02-06 12:11:51 | 
+2026-02-06 14:32:26 | 
+🎲 Бросок на ранение (to wound): 2D6
+2026-02-06 14:32:26 | [MODEL] [MOVEMENT] Unit 22 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 12 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 1.0.
+2026-02-06 14:32:26 | 
 📌 --- ОТЧЁТ ПО OVERWATCH ---
-2026-02-06 12:11:51 | FX: старт отчёта (overwatch), ts=no-ts.
-2026-02-06 12:11:51 | Стреляет: Unit 22 — Necrons Necron Warriors (x10 моделей); цель: Unit 11 — Necrons Necron Warriors (x10 моделей)
-2026-02-06 12:11:51 | FX: найдена строка стрельбы (attacker=22, target=11).
-2026-02-06 12:11:51 | Оружие: Gauss flayer
-2026-02-06 12:11:51 | FX: найдена строка оружия: Gauss flayer.
-2026-02-06 12:11:51 | BS оружия: 4+
-2026-02-06 12:11:51 | S vs T: 4 vs 4  -> базово ранение на 4+
-2026-02-06 12:11:51 | Save цели: 4+ (invul: нет)
-2026-02-06 12:11:51 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
-2026-02-06 12:11:51 | Правило: Lethal Hits (крит-хиты авто-ранят)
-2026-02-06 12:11:51 | Правило: Overwatch: попадания только на 6+
-2026-02-06 12:11:51 | Hit rolls:    [3, 2, 1, 3, 4, 1, 1, 5, 4, 4]  -> hits: 4
-2026-02-06 12:11:51 | 
-✅ Итог по движку: прошло урона = 0.0
-2026-02-06 12:11:51 | FX: найден итог урона = 0.0.
-2026-02-06 12:11:51 | FX: создан FxShotEvent (attacker=22, target=11, weapon=Gauss flayer, damage=0.0).
-2026-02-06 12:11:51 | FX: shot grid attacker=(11,9) target=(4,30) cell_size=18
-2026-02-06 12:11:51 | FX: позиция эффекта start=(207.0,171.0) end=(81.0,549.0).
-2026-02-06 12:11:51 | FX: эффект добавлен в рендер (attacker=22, target=11).
-2026-02-06 12:11:51 | 📌 -------------------------
-
-2026-02-06 12:11:51 | REQ: shooter changed Unit 11->Unit 12, target reset
-2026-02-06 12:11:51 | Выбрано в таблице: row=3 -> unit_id=12
-2026-02-06 12:11:51 | REQ: target selected Unit 12, confirm enabled
-2026-02-06 12:11:51 | FX: перепроигрываю 30 строк(и) лога.
-2026-02-06 12:11:51 | FX: старт отчёта (overwatch), ts=no-ts.
-2026-02-06 12:11:51 | FX: найдена строка стрельбы (attacker=22, target=11).
-2026-02-06 12:11:51 | FX: найдена строка оружия: Gauss flayer.
-2026-02-06 12:11:51 | FX: найден итог урона = 0.0.
-2026-02-06 12:11:51 | FX: дубликат отчёта, эффект не создаём.
-2026-02-06 12:11:51 | FX: старт GUI — пропускаю накопленные события модели, подхват с event_id=3.
-2026-02-06 12:11:51 | Выбрано в таблице: row=3 -> unit_id=12
-2026-02-06 12:11:51 | REQ: target selected Unit 12, confirm enabled
-2026-02-06 12:11:55 | --- ФАЗА СТРЕЛЬБЫ ---
-2026-02-06 12:11:55 | REQ: shooter changed Unit 12->Unit 11, target reset
-2026-02-06 12:11:55 | Выбрано в таблице: row=2 -> unit_id=11
-2026-02-06 12:11:55 | REQ: target selected Unit 11, confirm enabled
-2026-02-06 12:11:55 | Выбрано в таблице: row=2 -> unit_id=11
-2026-02-06 12:11:55 | REQ: target selected Unit 11, confirm enabled
-2026-02-06 12:11:57 | 
-🎲 Бросок на попадание (to hit): 10D6
-2026-02-06 12:12:02 | 
-🎲 Бросок на ранение (to wound): 7D6
-2026-02-06 12:12:04 | 
-🎲 Бросок сейвы (save): 2D6
-2026-02-06 12:12:06 | Unit 11 — Necrons Necron Warriors (x10 моделей) нанёс 1.0 урона по Unit 22 — Necrons Necron Warriors (x10 моделей)
-2026-02-06 12:12:06 | 
-📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
-2026-02-06 12:12:06 | FX: старт отчёта (shooting), ts=no-ts.
-2026-02-06 12:12:06 | Стреляет: Unit 11 — Necrons Necron Warriors (x10 моделей); цель: Unit 22 — Necrons Necron Warriors (x10 моделей)
-2026-02-06 12:12:06 | FX: найдена строка стрельбы (attacker=11, target=22).
-2026-02-06 12:12:06 | Оружие: Gauss flayer
-2026-02-06 12:12:06 | FX: найдена строка оружия: Gauss flayer.
-2026-02-06 12:12:06 | BS оружия: 4+
-2026-02-06 12:12:06 | S vs T: 4 vs 4  -> базово ранение на 4+
-2026-02-06 12:12:06 | Save цели: 4+ (invul: нет)
-2026-02-06 12:12:06 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
-2026-02-06 12:12:06 | Правило: Lethal Hits (крит-хиты авто-ранят)
-2026-02-06 12:12:06 | Hit rolls:    [2, 3, 4, 5, 5, 5, 5, 5, 5, 3]  -> hits: 7
-2026-02-06 12:12:06 | Wound rolls:  [3, 4, 1, 2, 3, 4, 1]  (цель 4+) -> wounds: 2
-2026-02-06 12:12:06 | Save rolls:   [3, 4]  (цель 4+) -> failed saves: 1
-2026-02-06 12:12:06 | 
+2026-02-06 14:32:26 | FX: старт отчёта (overwatch), ts=no-ts.
+2026-02-06 14:32:26 | Стреляет: Unit 22 — Necrons Necron Warriors (x10 моделей); цель: Unit 12 — Necrons Necron Warriors (x10 моделей)
+2026-02-06 14:32:26 | FX: найдена строка стрельбы (attacker=22, target=12).
+2026-02-06 14:32:26 | Оружие: Gauss flayer
+2026-02-06 14:32:26 | FX: найдена строка оружия: Gauss flayer.
+2026-02-06 14:32:26 | BS оружия: 4+
+2026-02-06 14:32:26 | S vs T: 4 vs 4  -> базово ранение на 4+
+2026-02-06 14:32:26 | Save цели: 4+ (invul: нет)
+2026-02-06 14:32:26 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+2026-02-06 14:32:26 | Правило: Lethal Hits (крит-хиты авто-ранят)
+2026-02-06 14:32:26 | Правило: Overwatch: попадания только на 6+
+2026-02-06 14:32:26 | Hit rolls:    [5, 6, 1, 4, 2, 2, 3, 3, 6, 2]  -> hits: 4 (crits: 2)
+2026-02-06 14:32:26 | Wound rolls:  [6, 1]  (цель 4+) -> rolled wounds: 1 + auto(w/LETHAL): 2 = 3
+2026-02-06 14:32:26 | 
 ✅ Итог по движку: прошло урона = 1.0
-2026-02-06 12:12:06 | FX: найден итог урона = 1.0.
-2026-02-06 12:12:06 | FX: создан FxShotEvent (attacker=11, target=22, weapon=Gauss flayer, damage=1.0).
-2026-02-06 12:12:06 | FX: shot grid attacker=(4,25) target=(11,9) cell_size=18
-2026-02-06 12:12:06 | FX: позиция эффекта start=(81.0,459.0) end=(207.0,171.0).
-2026-02-06 12:12:06 | FX: эффект добавлен в рендер (attacker=11, target=22).
-2026-02-06 12:12:06 | 📌 -------------------------
+2026-02-06 14:32:26 | FX: найден итог урона = 1.0.
+2026-02-06 14:32:26 | FX: создан FxShotEvent (attacker=22, target=12, weapon=Gauss flayer, damage=1.0).
+2026-02-06 14:32:26 | FX: shot grid attacker=(13,3) target=(17,37) cell_size=18
+2026-02-06 14:32:26 | FX: позиция эффекта start=(243.0,63.0) end=(315.0,675.0).
+2026-02-06 14:32:26 | FX: эффект добавлен в рендер (attacker=22, target=12).
+2026-02-06 14:32:26 | 📌 -------------------------
 
-2026-02-06 12:12:06 | --- ФАЗА ЧАРДЖА ---
-2026-02-06 12:12:06 | Нет доступных целей для чарджа.
-2026-02-06 12:12:06 | --- ФАЗА БОЯ ---
-2026-02-06 12:12:06 | --- ХОД MODEL ---
-2026-02-06 12:12:06 | --- ФАЗА КОМАНДОВАНИЯ ---
-2026-02-06 12:12:06 | --- ФАЗА КОМАНДОВАНИЯ ---
-2026-02-06 12:12:06 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
-2026-02-06 12:12:06 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 2
-2026-02-06 12:12:06 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) До: моделей=9, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1] всего=9
-2026-02-06 12:12:06 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
-2026-02-06 12:12:06 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) После:  моделей=10, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1] всего=10
-2026-02-06 12:12:06 | [MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
-2026-02-06 12:12:06 | --- ФАЗА ДВИЖЕНИЯ ---
-2026-02-06 12:12:06 | --- ФАЗА ДВИЖЕНИЯ ---
-2026-02-06 12:12:06 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (12, 2). Выбор: up, advance=да, бросок=6, макс=11, distance=11
-2026-02-06 12:12:06 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (1, 2)
-2026-02-06 12:12:06 | [PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 21 — Necrons Necron Warriors (x10 моделей).
-2026-02-06 12:12:06 | FX: перепроигрываю 30 строк(и) лога.
-2026-02-06 12:12:06 | FX: старт отчёта (shooting), ts=no-ts.
-2026-02-06 12:12:06 | FX: найдена строка стрельбы (attacker=11, target=22).
-2026-02-06 12:12:06 | FX: найдена строка оружия: Gauss flayer.
-2026-02-06 12:12:06 | FX: найден итог урона = 1.0.
-2026-02-06 12:12:06 | FX: дубликат отчёта, эффект не создаём.
-2026-02-06 12:12:06 | Выбрано в таблице: row=2 -> unit_id=11
-2026-02-06 12:12:08 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (11, 9). Выбор: up, advance=да, бросок=2, макс=7, distance=7
-2026-02-06 12:12:08 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (4, 9)
-2026-02-06 12:12:08 | [PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 22 — Necrons Necron Warriors (x10 моделей).
-2026-02-06 12:12:10 | Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=11.045361017187261->18.027756377319946
-2026-02-06 12:12:10 | --- ФАЗА СТРЕЛЬБЫ ---
-2026-02-06 12:12:10 | --- ФАЗА СТРЕЛЬБЫ ---
-2026-02-06 12:12:10 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
-2026-02-06 12:12:10 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
-2026-02-06 12:12:10 | --- ФАЗА ЧАРДЖА ---
-2026-02-06 12:12:10 | --- ФАЗА ЧАРДЖА ---
-2026-02-06 12:12:10 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
-2026-02-06 12:12:10 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
-2026-02-06 12:12:10 | [MODEL] Чардж: нет доступных целей
-2026-02-06 12:12:10 | --- ФАЗА БОЯ ---
-2026-02-06 12:12:10 | --- ФАЗА БОЯ ---
-2026-02-06 12:12:10 | [MODEL] Ближний бой: нет доступных атак
-2026-02-06 12:12:10 | Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=11.045361017187261->18.027756377319946
-2026-02-06 12:12:10 | === КОНЕЦ БОЕВОГО РАУНДА 1 ===
-2026-02-06 12:12:10 | Итерация 0 завершена с наградой tensor([-0.0500], device='cuda:0'), здоровье игрока [10.0, 10.0], здоровье модели [10.0, 10.0]
-2026-02-06 12:12:10 | {'model health': [10.0, 10.0], 'player health': [10.0, 10.0], 'modelCP': 1, 'playerCP': 2, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
-2026-02-06 12:12:10 | Здоровье MODEL: [10.0, 10.0], здоровье PLAYER: [10.0, 10.0]
+2026-02-06 14:32:26 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-02-06 14:32:26 | Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+2026-02-06 14:32:26 | Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+2026-02-06 14:32:26 | --- ФАЗА ЧАРДЖА ---
+2026-02-06 14:32:26 | Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+2026-02-06 14:32:26 | Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+2026-02-06 14:32:26 | Нет доступных целей для чарджа.
+2026-02-06 14:32:26 | --- ФАЗА БОЯ ---
+2026-02-06 14:32:26 | --- ХОД MODEL ---
+2026-02-06 14:32:26 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-02-06 14:32:26 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-02-06 14:32:26 | [MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+2026-02-06 14:32:26 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-02-06 14:32:26 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-02-06 14:32:26 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (59, 3). Выбор: up, advance=да, бросок=5, макс=10, distance=10
+2026-02-06 14:32:26 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (49, 3)
+2026-02-06 14:32:26 | [PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+2026-02-06 14:32:26 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (13, 3). Выбор: up, advance=да, бросок=6, макс=11, distance=11
+2026-02-06 14:32:26 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (2, 3)
+2026-02-06 14:32:26 | [PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+2026-02-06 14:32:26 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-02-06 14:32:26 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-02-06 14:32:26 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+2026-02-06 14:32:26 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+2026-02-06 14:32:26 | --- ФАЗА ЧАРДЖА ---
+2026-02-06 14:32:26 | --- ФАЗА ЧАРДЖА ---
+2026-02-06 14:32:26 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+2026-02-06 14:32:26 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+2026-02-06 14:32:26 | [MODEL] Чардж: нет доступных целей
+2026-02-06 14:32:26 | --- ФАЗА БОЯ ---
+2026-02-06 14:32:26 | --- ФАЗА БОЯ ---
+2026-02-06 14:32:26 | [MODEL] Ближний бой: нет доступных атак
+2026-02-06 14:32:26 | Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=10.295630140987->12.083045973594572
+2026-02-06 14:32:26 | === КОНЕЦ БОЕВОГО РАУНДА 1 ===
+2026-02-06 14:32:26 | Итерация 0 завершена с наградой tensor([-0.0500], device='cuda:0'), здоровье игрока [10.0, 9.0], здоровье модели [10.0, 10.0]
+2026-02-06 14:32:26 | {'model health': [10.0, 10.0], 'player health': [10.0, 9.0], 'modelCP': 1, 'playerCP': 2, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+2026-02-06 14:32:26 | Здоровье MODEL: [10.0, 10.0], здоровье PLAYER: [10.0, 9.0]
 CP MODEL: 1, CP PLAYER: 2
 VP MODEL: 0, VP PLAYER: 0
 
-2026-02-06 12:12:10 | FX: перепроигрываю 30 строк(и) лога.
-2026-02-06 12:12:10 | FX: buffer phase command (model)
-2026-02-06 12:12:10 | FX: enqueue phase script command: units=0
-2026-02-06 12:12:10 | FX: show summary command VP=0, CP=1
-2026-02-06 12:12:10 | FX: wait_continue reason=phase_done next=ФАЗА ДВИЖЕНИЯ
-2026-02-06 12:12:10 | FX: buffer phase movement (model)
-2026-02-06 12:12:10 | FX: enqueue phase script movement: units=2
-2026-02-06 12:12:10 | FX: buffer phase shooting (model)
-2026-02-06 12:12:10 | FX: enqueue phase script shooting: units=2
-2026-02-06 12:12:10 | FX: buffer phase charge (model)
-2026-02-06 12:12:10 | FX: enqueue phase script charge: units=2
-2026-02-06 12:12:10 | FX: buffer phase fight (model)
-2026-02-06 12:12:10 | FX: enqueue phase script fight: units=2
-2026-02-06 12:12:15 | FX: continue=Y
-2026-02-06 12:12:15 | FX: show summary movement двигались 2/2, advance=2, dist=18.0
-2026-02-06 12:12:15 | FX: move apply event_id=15 unit_id=21 side=model action=move from=[12, 2] types=('int', 'int') to=[1, 2] types=('int', 'int') key=('model', 21) render_found=1
-2026-02-06 12:12:15 | FX: move write unit_id=21 side=model grid=(1,2) before=(12, 2) after=(1,2) cell_size=18 conversion=grid->world(cell_size)
-2026-02-06 12:12:15 | FX: play unit_action unit=21 action=move
-2026-02-06 12:12:15 | FX: wait_continue reason=unit_done next=Unit 22 — Necron Warriors (🚶 Движение: [11, 9] → [4, 9], dist=7.0, advance=да)
-2026-02-06 12:12:18 | FX: continue=Y
-2026-02-06 12:12:18 | Выбрано в таблице: row=1 -> unit_id=22
-2026-02-06 12:12:18 | FX: move apply event_id=20 unit_id=22 side=model action=move from=[11, 9] types=('int', 'int') to=[4, 9] types=('int', 'int') key=('model', 22) render_found=1
-2026-02-06 12:12:18 | FX: move write unit_id=22 side=model grid=(4,9) before=(11, 9) after=(4,9) cell_size=18 conversion=grid->world(cell_size)
-2026-02-06 12:12:18 | FX: play unit_action unit=22 action=move
-2026-02-06 12:12:18 | FX: wait_continue reason=unit_done next=unit
-2026-02-06 12:12:21 | FX: continue=Y
-2026-02-06 12:12:21 | FX: wait_continue reason=phase_done next=ФАЗА СТРЕЛЬБЫ
-2026-02-06 12:12:23 | FX: continue=Y
-2026-02-06 12:12:23 | FX: show summary shooting shots=0, skipped=2 (reasons: advanced_no_assault=2)
-2026-02-06 12:12:23 | Выбрано в таблице: row=0 -> unit_id=21
-2026-02-06 12:12:23 | FX: play unit_action unit=21 action=skip_shoot
-2026-02-06 12:12:23 | FX: wait_continue reason=unit_done next=Unit 22 — Necron Warriors (⏭️ Skip shoot (advanced_no_assault))
-2026-02-06 12:12:24 | FX: continue=Y
-2026-02-06 12:12:24 | Выбрано в таблице: row=1 -> unit_id=22
-2026-02-06 12:12:24 | FX: play unit_action unit=22 action=skip_shoot
-2026-02-06 12:12:24 | FX: wait_continue reason=unit_done next=unit
-2026-02-06 12:12:25 | FX: continue=Y
-2026-02-06 12:12:25 | FX: wait_continue reason=phase_done next=ФАЗА ЧАРДЖА
-2026-02-06 12:12:25 | FX: continue=Y
-2026-02-06 12:12:25 | FX: show summary charge charges=0, skipped=2 (reasons: advanced_no_charge=2)
-2026-02-06 12:12:25 | Выбрано в таблице: row=0 -> unit_id=21
-2026-02-06 12:12:25 | FX: play unit_action unit=21 action=skip_charge
-2026-02-06 12:12:25 | FX: wait_continue reason=unit_done next=Unit 22 — Necron Warriors (⏭️ Skip charge (advanced_no_charge))
-2026-02-06 12:12:25 | FX: continue=Y
-2026-02-06 12:12:25 | Выбрано в таблице: row=1 -> unit_id=22
-2026-02-06 12:12:25 | FX: play unit_action unit=22 action=skip_charge
-2026-02-06 12:12:25 | FX: wait_continue reason=unit_done next=unit
-2026-02-06 12:12:26 | FX: continue=Y
-2026-02-06 12:12:26 | FX: wait_continue reason=phase_done next=ФАЗА БОЯ
-2026-02-06 12:12:26 | FX: continue=Y
-2026-02-06 12:12:26 | FX: show summary fight fights=0, skipped=2 (reasons: no_attacks=2)
-2026-02-06 12:12:26 | Выбрано в таблице: row=0 -> unit_id=21
-2026-02-06 12:12:26 | FX: play unit_action unit=21 action=skip_fight
-2026-02-06 12:12:26 | FX: wait_continue reason=unit_done next=Unit 22 — Necron Warriors (⏭️ Skip fight (no_attacks))
-2026-02-06 12:12:26 | FX: continue=Y
-2026-02-06 12:12:26 | Выбрано в таблице: row=1 -> unit_id=22
-2026-02-06 12:12:26 | FX: play unit_action unit=22 action=skip_fight
-2026-02-06 12:12:26 | FX: wait_continue reason=unit_done next=unit
-2026-02-06 12:12:26 | FX: continue=Y
-2026-02-06 12:12:26 | FX: wait_continue reason=phase_done next=ФАЗА БОЯ
-2026-02-06 12:12:27 | FX: continue=Y
-2026-02-06 12:12:27 | === БОЕВОЙ РАУНД 2 ===
-2026-02-06 12:12:27 | --- ХОД PLAYER ---
-2026-02-06 12:12:27 | --- ФАЗА КОМАНДОВАНИЯ ---
-2026-02-06 12:12:27 | [ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
-2026-02-06 12:12:27 | --- ФАЗА ДВИЖЕНИЯ ---
-2026-02-06 12:12:27 | Выбрано в таблице: row=2 -> unit_id=11
-2026-02-06 12:12:27 | REQ: target selected Unit 11, confirm enabled
-2026-02-06 12:12:27 | FX: перепроигрываю 30 строк(и) лога.
-2026-02-06 12:12:27 | Выбрано в таблице: row=2 -> unit_id=11
-2026-02-06 12:12:27 | REQ: target selected Unit 11, confirm enabled
+2026-02-06 14:32:26 | FX: cinematic events detected, skip immediate state apply
+2026-02-06 14:32:26 | FX: перепроигрываю 30 строк(и) лога.
+2026-02-06 14:32:26 | FX: buffer phase command (model)
+2026-02-06 14:32:26 | FX: enqueue phase script command: units=0
+2026-02-06 14:32:26 | FX: show summary command VP=0, CP=1
+2026-02-06 14:32:26 | FX: wait_continue reason=phase_done next=ФАЗА ДВИЖЕНИЯ
+2026-02-06 14:32:26 | FX: buffer phase movement (model)
+2026-02-06 14:32:26 | FX: enqueue phase script movement: units=2
+2026-02-06 14:32:26 | FX: buffer phase shooting (model)
+2026-02-06 14:32:26 | FX: enqueue phase script shooting: units=2
+2026-02-06 14:32:26 | FX: buffer phase charge (model)
+2026-02-06 14:32:26 | FX: enqueue phase script charge: units=2
+2026-02-06 14:32:26 | FX: buffer phase fight (model)
+2026-02-06 14:32:26 | FX: enqueue phase script fight: units=2
+2026-02-06 14:32:34 | FX: continue=Y
+2026-02-06 14:32:34 | FX: show summary movement двигались 2/2, advance=2, dist=21.0
+2026-02-06 14:32:34 | Выбрано в таблице: row=0 -> unit_id=21
+2026-02-06 14:32:34 | FX: move apply event_id=15 unit_id=21 side=model action=move from=[59, 3] types=('int', 'int') to=[49, 3] types=('int', 'int') key=('model', 21) render_found=1
+2026-02-06 14:32:34 | FX: move write unit_id=21 side=model grid=(49,3) before=(59, 3) after=(49,3) cell_size=18 conversion=grid->world(cell_size)
+2026-02-06 14:32:34 | FX: play unit_action unit=21 action=move
+2026-02-06 14:32:34 | FX: wait_continue reason=unit_done next=Unit 22 — Necron Warriors (🚶 Движение: [13, 3] → [2, 3], dist=11.0, advance=да)
+2026-02-06 14:32:39 | FX: continue=Y
+2026-02-06 14:32:39 | Выбрано в таблице: row=1 -> unit_id=22
+2026-02-06 14:32:39 | FX: move apply event_id=20 unit_id=22 side=model action=move from=[13, 3] types=('int', 'int') to=[2, 3] types=('int', 'int') key=('model', 22) render_found=1
+2026-02-06 14:32:39 | FX: move write unit_id=22 side=model grid=(2,3) before=(13, 3) after=(2,3) cell_size=18 conversion=grid->world(cell_size)
+2026-02-06 14:32:39 | FX: play unit_action unit=22 action=move
+2026-02-06 14:32:39 | FX: wait_continue reason=unit_done next=unit
+2026-02-06 14:32:47 | FX: continue=Y
+2026-02-06 14:32:47 | FX: wait_continue reason=phase_done next=ФАЗА СТРЕЛЬБЫ
+2026-02-06 14:32:59 | Выбрано в таблице: row=0 -> unit_id=21
+2026-02-06 14:32:59 | Выбрано на карте: unit_id=21, name=Necron Warriors
+2026-02-06 14:33:09 | FX: continue=Y
+2026-02-06 14:33:09 | FX: show summary shooting shots=0, skipped=2 (reasons: advanced_no_assault=2)
+2026-02-06 14:33:09 | FX: play unit_action unit=21 action=skip_shoot
+2026-02-06 14:33:09 | FX: wait_continue reason=unit_done next=Unit 22 — Necron Warriors (⏭️ Skip shoot (advanced_no_assault))
+2026-02-06 14:33:10 | FX: continue=Y
+2026-02-06 14:33:10 | Выбрано в таблице: row=1 -> unit_id=22
+2026-02-06 14:33:10 | FX: play unit_action unit=22 action=skip_shoot
+2026-02-06 14:33:10 | FX: wait_continue reason=unit_done next=unit
+2026-02-06 14:33:11 | FX: continue=Y
+2026-02-06 14:33:11 | FX: wait_continue reason=phase_done next=ФАЗА ЧАРДЖА
+2026-02-06 14:33:11 | FX: continue=Y
+2026-02-06 14:33:11 | FX: show summary charge charges=0, skipped=2 (reasons: advanced_no_charge=2)
+2026-02-06 14:33:11 | Выбрано в таблице: row=0 -> unit_id=21
+2026-02-06 14:33:11 | FX: play unit_action unit=21 action=skip_charge
+2026-02-06 14:33:11 | FX: wait_continue reason=unit_done next=Unit 22 — Necron Warriors (⏭️ Skip charge (advanced_no_charge))
+2026-02-06 14:33:12 | FX: continue=Y
+2026-02-06 14:33:12 | Выбрано в таблице: row=1 -> unit_id=22
+2026-02-06 14:33:12 | FX: play unit_action unit=22 action=skip_charge
+2026-02-06 14:33:12 | FX: wait_continue reason=unit_done next=unit
+2026-02-06 14:33:13 | FX: continue=Y
+2026-02-06 14:33:13 | FX: wait_continue reason=phase_done next=ФАЗА БОЯ
+2026-02-06 14:33:13 | FX: continue=Y
+2026-02-06 14:33:13 | FX: show summary fight fights=0, skipped=2 (reasons: no_attacks=2)
+2026-02-06 14:33:13 | Выбрано в таблице: row=0 -> unit_id=21
+2026-02-06 14:33:13 | FX: play unit_action unit=21 action=skip_fight
+2026-02-06 14:33:13 | FX: wait_continue reason=unit_done next=Unit 22 — Necron Warriors (⏭️ Skip fight (no_attacks))
+2026-02-06 14:33:14 | FX: continue=Y
+2026-02-06 14:33:14 | Выбрано в таблице: row=1 -> unit_id=22
+2026-02-06 14:33:14 | FX: play unit_action unit=22 action=skip_fight
+2026-02-06 14:33:14 | FX: wait_continue reason=unit_done next=unit
+2026-02-06 14:33:15 | FX: continue=Y
+2026-02-06 14:33:15 | FX: wait_continue reason=phase_done next=ФАЗА БОЯ
+2026-02-06 14:33:16 | FX: continue=Y
+2026-02-06 14:33:17 | === БОЕВОЙ РАУНД 2 ===
+2026-02-06 14:33:17 | --- ХОД PLAYER ---
+2026-02-06 14:33:17 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-02-06 14:33:17 | [PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) Используется способность: Reanimation Protocols
+2026-02-06 14:33:19 | [PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) Reanimation Protocols: бросок D3 = 1
+2026-02-06 14:33:19 | [PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) До: моделей=9, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1] всего=9
+2026-02-06 14:33:19 | [PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) Возвращена уничтоженная модель с 1 раной
+2026-02-06 14:33:19 | [PLAYER] Unit 12 — Necrons Necron Warriors (x10 моделей) После:  моделей=10, раны=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1] всего=10
+2026-02-06 14:33:19 | [ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+2026-02-06 14:33:19 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-02-06 14:33:19 | REQ: shooter changed Unit 12->Unit 11, target reset
+2026-02-06 14:33:19 | Выбрано в таблице: row=2 -> unit_id=11
+2026-02-06 14:33:19 | REQ: target selected Unit 11, confirm enabled
+2026-02-06 14:33:19 | FX: cinematic events detected, skip immediate state apply
+2026-02-06 14:33:19 | FX: перепроигрываю 30 строк(и) лога.
+2026-02-06 14:33:19 | Выбрано в таблице: row=2 -> unit_id=11
+2026-02-06 14:33:19 | REQ: target selected Unit 11, confirm enabled
+2026-02-06 14:33:24 | [MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 11 — Necrons Necron Warriors (x10 моделей).
+2026-02-06 14:33:24 | 
+🎲 Бросок на попадание (to hit): 10D6
+2026-02-06 14:33:24 | [MODEL] [MOVEMENT] Unit 21 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 11 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 0.0.
+2026-02-06 14:33:24 | 
+📌 --- ОТЧЁТ ПО OVERWATCH ---
+2026-02-06 14:33:24 | FX: старт отчёта (overwatch), ts=no-ts.
+2026-02-06 14:33:24 | Стреляет: Unit 21 — Necrons Necron Warriors (x10 моделей); цель: Unit 11 — Necrons Necron Warriors (x10 моделей)
+2026-02-06 14:33:24 | FX: найдена строка стрельбы (attacker=21, target=11).
+2026-02-06 14:33:24 | Оружие: Gauss flayer
+2026-02-06 14:33:24 | FX: найдена строка оружия: Gauss flayer.
+2026-02-06 14:33:24 | BS оружия: 4+
+2026-02-06 14:33:24 | S vs T: 4 vs 4  -> базово ранение на 4+
+2026-02-06 14:33:24 | Save цели: 4+ (invul: нет)
+2026-02-06 14:33:24 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+2026-02-06 14:33:24 | Правило: Lethal Hits (крит-хиты авто-ранят)
+2026-02-06 14:33:24 | Правило: Overwatch: попадания только на 6+
+2026-02-06 14:33:24 | Hit rolls:    [3, 2, 3, 2, 2, 2, 4, 1, 1, 1]  -> hits: 1
+2026-02-06 14:33:24 | 
+✅ Итог по движку: прошло урона = 0.0
+2026-02-06 14:33:24 | FX: найден итог урона = 0.0.
+2026-02-06 14:33:24 | FX: создан FxShotEvent (attacker=21, target=11, weapon=Gauss flayer, damage=0.0).
+2026-02-06 14:33:24 | FX: shot grid attacker=(49,3) target=(51,28) cell_size=18
+2026-02-06 14:33:24 | FX: позиция эффекта start=(891.0,63.0) end=(927.0,513.0).
+2026-02-06 14:33:24 | FX: эффект добавлен в рендер (attacker=21, target=11).
+2026-02-06 14:33:24 | 📌 -------------------------
+
+2026-02-06 14:33:24 | REQ: shooter changed Unit 11->Unit 12, target reset
+2026-02-06 14:33:24 | Выбрано в таблице: row=3 -> unit_id=12
+2026-02-06 14:33:24 | REQ: target selected Unit 12, confirm enabled
+2026-02-06 14:33:24 | FX: cinematic events detected, skip immediate state apply
+2026-02-06 14:33:24 | FX: перепроигрываю 30 строк(и) лога.
+2026-02-06 14:33:24 | FX: старт отчёта (overwatch), ts=no-ts.
+2026-02-06 14:33:24 | FX: найдена строка стрельбы (attacker=21, target=11).
+2026-02-06 14:33:24 | FX: найдена строка оружия: Gauss flayer.
+2026-02-06 14:33:24 | FX: найден итог урона = 0.0.
+2026-02-06 14:33:24 | FX: дубликат отчёта, эффект не создаём.
+2026-02-06 14:33:24 | Выбрано в таблице: row=3 -> unit_id=12
+2026-02-06 14:33:24 | REQ: target selected Unit 12, confirm enabled
+2026-02-06 14:33:31 | [MODEL][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 12 — Necrons Necron Warriors (x10 моделей).
+2026-02-06 14:33:31 | 
+🎲 Бросок на попадание (to hit): 10D6
+2026-02-06 14:33:31 | 
+🎲 Бросок на ранение (to wound): 1D6
+2026-02-06 14:33:31 | [MODEL] [MOVEMENT] Unit 22 — Necrons Necron Warriors (x10 моделей): Правило/стратагема «Overwatch»: Цель: Unit 12 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 0.0.
+2026-02-06 14:33:31 | 
+📌 --- ОТЧЁТ ПО OVERWATCH ---
+2026-02-06 14:33:31 | FX: старт отчёта (overwatch), ts=no-ts.
+2026-02-06 14:33:31 | Стреляет: Unit 22 — Necrons Necron Warriors (x10 моделей); цель: Unit 12 — Necrons Necron Warriors (x10 моделей)
+2026-02-06 14:33:31 | FX: найдена строка стрельбы (attacker=22, target=12).
+2026-02-06 14:33:31 | Оружие: Gauss flayer
+2026-02-06 14:33:31 | FX: найдена строка оружия: Gauss flayer.
+2026-02-06 14:33:31 | BS оружия: 4+
+2026-02-06 14:33:31 | S vs T: 4 vs 4  -> базово ранение на 4+
+2026-02-06 14:33:31 | Save цели: 4+ (invul: нет)
+2026-02-06 14:33:31 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+2026-02-06 14:33:31 | Правило: Lethal Hits (крит-хиты авто-ранят)
+2026-02-06 14:33:31 | Правило: Overwatch: попадания только на 6+
+2026-02-06 14:33:31 | Hit rolls:    [1, 5, 1, 6, 4, 4, 1, 1, 2, 3]  -> hits: 4 (crits: 1)
+2026-02-06 14:33:31 | Wound rolls:  [6]  (цель 4+) -> rolled wounds: 1 + auto(w/LETHAL): 1 = 2
+2026-02-06 14:33:31 | 
+✅ Итог по движку: прошло урона = 0.0
+2026-02-06 14:33:31 | FX: найден итог урона = 0.0.
+2026-02-06 14:33:31 | FX: создан FxShotEvent (attacker=22, target=12, weapon=Gauss flayer, damage=0.0).
+2026-02-06 14:33:31 | FX: shot grid attacker=(2,3) target=(17,26) cell_size=18
+2026-02-06 14:33:31 | FX: позиция эффекта start=(45.0,63.0) end=(315.0,477.0).
+2026-02-06 14:33:31 | FX: эффект добавлен в рендер (attacker=22, target=12).
+2026-02-06 14:33:31 | 📌 -------------------------
+
+2026-02-06 14:33:31 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-02-06 14:33:31 | REQ: shooter changed Unit 12->Unit 11, target reset
+2026-02-06 14:33:31 | Выбрано в таблице: row=2 -> unit_id=11
+2026-02-06 14:33:31 | REQ: target selected Unit 11, confirm enabled
+2026-02-06 14:33:31 | FX: cinematic events detected, skip immediate state apply
+2026-02-06 14:33:31 | FX: перепроигрываю 30 строк(и) лога.
+2026-02-06 14:33:31 | FX: старт отчёта (overwatch), ts=no-ts.
+2026-02-06 14:33:31 | FX: найдена строка стрельбы (attacker=22, target=12).
+2026-02-06 14:33:31 | FX: найдена строка оружия: Gauss flayer.
+2026-02-06 14:33:31 | FX: найден итог урона = 0.0.
+2026-02-06 14:33:31 | FX: дубликат отчёта, эффект не создаём.
+2026-02-06 14:33:31 | Выбрано в таблице: row=2 -> unit_id=11
+2026-02-06 14:33:31 | REQ: target selected Unit 11, confirm enabled
+2026-02-06 14:33:39 | 
+🎲 Бросок на попадание (to hit): 10D6
+2026-02-06 14:33:47 | Unit 11 — Necrons Necron Warriors (x10 моделей) нанёс 0 урона по Unit 21 — Necrons Necron Warriors (x10 моделей)
+2026-02-06 14:33:47 | 
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+2026-02-06 14:33:47 | FX: старт отчёта (shooting), ts=no-ts.
+2026-02-06 14:33:47 | Стреляет: Unit 11 — Necrons Necron Warriors (x10 моделей); цель: Unit 21 — Necrons Necron Warriors (x10 моделей)
+2026-02-06 14:33:47 | FX: найдена строка стрельбы (attacker=11, target=21).
+2026-02-06 14:33:47 | Оружие: Gauss flayer
+2026-02-06 14:33:47 | FX: найдена строка оружия: Gauss flayer.
+2026-02-06 14:33:47 | BS оружия: 4+
+2026-02-06 14:33:47 | S vs T: 4 vs 4  -> базово ранение на 4+
+2026-02-06 14:33:47 | Save цели: 4+ (invul: нет)
+2026-02-06 14:33:47 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+2026-02-06 14:33:47 | Правило: Lethal Hits (крит-хиты авто-ранят)
+2026-02-06 14:33:47 | Hit rolls:    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]  -> hits: 0
+2026-02-06 14:33:47 | 
+✅ Итог по движку: прошло урона = 0.0
+2026-02-06 14:33:47 | FX: найден итог урона = 0.0.
+2026-02-06 14:33:47 | FX: создан FxShotEvent (attacker=11, target=21, weapon=Gauss flayer, damage=0.0).
+2026-02-06 14:33:47 | FX: shot grid attacker=(51,28) target=(49,3) cell_size=18
+2026-02-06 14:33:47 | FX: позиция эффекта start=(927.0,513.0) end=(891.0,63.0).
+2026-02-06 14:33:47 | FX: эффект добавлен в рендер (attacker=11, target=21).
+2026-02-06 14:33:47 | 📌 -------------------------
+
+2026-02-06 14:33:47 | REQ: shooter changed Unit 11->Unit 12, target reset
+2026-02-06 14:33:47 | Выбрано в таблице: row=3 -> unit_id=12
+2026-02-06 14:33:47 | REQ: target selected Unit 12, confirm enabled
+2026-02-06 14:33:47 | 
+🎲 Бросок на попадание (to hit): 10D6
+2026-02-06 14:33:52 | Unit 12 — Necrons Necron Warriors (x10 моделей) нанёс 0 урона по Unit 22 — Necrons Necron Warriors (x10 моделей)
+2026-02-06 14:33:52 | 
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+2026-02-06 14:33:52 | FX: старт отчёта (shooting), ts=no-ts.
+2026-02-06 14:33:52 | Стреляет: Unit 12 — Necrons Necron Warriors (x10 моделей); цель: Unit 22 — Necrons Necron Warriors (x10 моделей)
+2026-02-06 14:33:52 | FX: найдена строка стрельбы (attacker=12, target=22).
+2026-02-06 14:33:52 | Оружие: Gauss flayer
+2026-02-06 14:33:52 | FX: найдена строка оружия: Gauss flayer.
+2026-02-06 14:33:52 | BS оружия: 4+
+2026-02-06 14:33:52 | S vs T: 4 vs 4  -> базово ранение на 4+
+2026-02-06 14:33:52 | Save цели: 4+ (invul: нет)
+2026-02-06 14:33:52 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+2026-02-06 14:33:52 | Правило: Lethal Hits (крит-хиты авто-ранят)
+2026-02-06 14:33:52 | Hit rolls:    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]  -> hits: 0
+2026-02-06 14:33:52 | 
+✅ Итог по движку: прошло урона = 0.0
+2026-02-06 14:33:52 | FX: найден итог урона = 0.0.
+2026-02-06 14:33:52 | FX: создан FxShotEvent (attacker=12, target=22, weapon=Gauss flayer, damage=0.0).
+2026-02-06 14:33:52 | FX: shot grid attacker=(17,26) target=(2,3) cell_size=18
+2026-02-06 14:33:52 | FX: позиция эффекта start=(315.0,477.0) end=(45.0,63.0).
+2026-02-06 14:33:52 | FX: эффект добавлен в рендер (attacker=12, target=22).
+2026-02-06 14:33:52 | 📌 -------------------------
+
+2026-02-06 14:33:52 | --- ФАЗА ЧАРДЖА ---
+2026-02-06 14:33:52 | Нет доступных целей для чарджа.
+2026-02-06 14:33:52 | --- ФАЗА БОЯ ---
+2026-02-06 14:33:52 | --- ХОД MODEL ---
+2026-02-06 14:33:52 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-02-06 14:33:52 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-02-06 14:33:52 | [MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+2026-02-06 14:33:52 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-02-06 14:33:52 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-02-06 14:33:52 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (49, 3). Выбор: right, advance=нет, distance=2
+2026-02-06 14:33:52 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (49, 5)
+2026-02-06 14:33:52 | [PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 21 — Necrons Necron Warriors (x10 моделей).
+2026-02-06 14:33:52 | Выбрано в таблице: row=2 -> unit_id=11
+2026-02-06 14:33:52 | FX: cinematic events detected, skip immediate state apply
+2026-02-06 14:33:52 | FX: перепроигрываю 30 строк(и) лога.
+2026-02-06 14:33:52 | FX: старт отчёта (shooting), ts=no-ts.
+2026-02-06 14:33:52 | FX: найдена строка стрельбы (attacker=12, target=22).
+2026-02-06 14:33:52 | FX: найдена строка оружия: Gauss flayer.
+2026-02-06 14:33:52 | FX: найден итог урона = 0.0.
+2026-02-06 14:33:52 | FX: дубликат отчёта, эффект не создаём.
+2026-02-06 14:33:52 | Выбрано в таблице: row=2 -> unit_id=11
+2026-02-06 14:33:53 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (2, 3). Выбор: right, advance=да, бросок=4, макс=9, distance=6
+2026-02-06 14:33:53 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (2, 9)
+2026-02-06 14:33:53 | [PLAYER][MOVEMENT] Триггер Overwatch: цель переместилась. Цель: Unit 22 — Necrons Necron Warriors (x10 моделей).
+2026-02-06 14:33:53 | Выбрано в таблице: row=3 -> unit_id=12
+2026-02-06 14:33:54 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage_term=+0.030 (norm=0.050, dealt=1.00)
+2026-02-06 14:33:54 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): quality_bonus=+0.050
+2026-02-06 14:33:54 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.030 (norm=0.050, dealt=1.00), kill=0.000, overkill=-0.000, quality=0.050, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.080
+2026-02-06 14:33:54 | Reward (шаг): стрельба delta=+0.080
+2026-02-06 14:33:54 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-02-06 14:33:54 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-02-06 14:33:54 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Цели в дальности: Unit 11 — Necrons Necron Warriors (x10 моделей), выбрана: Unit 11 — Necrons Necron Warriors (x10 моделей) (причина: самая близкая)
+2026-02-06 14:33:54 | 
+🎲 Бросок на попадание (to hit): 10D6
+2026-02-06 14:33:54 | 
+🎲 Бросок на ранение (to wound): 1D6
+2026-02-06 14:33:54 | 
+🎲 Бросок сейвы (save): 2D6
+2026-02-06 14:33:54 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage_term=+0.030 (norm=0.050, dealt=1.00)
+2026-02-06 14:33:54 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): quality_bonus=+0.050
+2026-02-06 14:33:54 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.030 (norm=0.050, dealt=1.00), kill=0.000, overkill=-0.000, quality=0.050, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.080
+2026-02-06 14:33:54 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Итог урона по Unit 11 — Necrons Necron Warriors (x10 моделей): 1.0
+2026-02-06 14:33:54 | 
+📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---
+2026-02-06 14:33:54 | FX: старт отчёта (shooting), ts=no-ts.
+2026-02-06 14:33:54 | Стреляет: Unit 21 — Necrons Necron Warriors (x10 моделей); цель: Unit 11 — Necrons Necron Warriors (x10 моделей)
+2026-02-06 14:33:54 | FX: найдена строка стрельбы (attacker=21, target=11).
+2026-02-06 14:33:54 | Оружие: Gauss flayer
+2026-02-06 14:33:54 | FX: найдена строка оружия: Gauss flayer.
+2026-02-06 14:33:54 | BS оружия: 4+
+2026-02-06 14:33:54 | S vs T: 4 vs 4  -> базово ранение на 4+
+2026-02-06 14:33:54 | Save цели: 4+ (invul: нет)
+2026-02-06 14:33:54 | Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)
+2026-02-06 14:33:54 | Правило: Lethal Hits (крит-хиты авто-ранят)
+2026-02-06 14:33:54 | Hit rolls:    [6, 2, 2, 2, 3, 4, 3, 1, 3, 6]  -> hits: 3 (crits: 2)
+2026-02-06 14:33:54 | Wound rolls:  [3]  (цель 4+) -> rolled wounds: 0 + auto(w/LETHAL): 2 = 2
+2026-02-06 14:33:54 | Save rolls:   [2, 6]  (цель 4+) -> failed saves: 1
+2026-02-06 14:33:54 | 
+✅ Итог по движку: прошло урона = 1.0
+2026-02-06 14:33:54 | FX: найден итог урона = 1.0.
+2026-02-06 14:33:54 | FX: создан FxShotEvent (attacker=21, target=11, weapon=Gauss flayer, damage=1.0).
+2026-02-06 14:33:54 | FX: shot grid attacker=(49,3) target=(51,28) cell_size=18
+2026-02-06 14:33:54 | FX: позиция эффекта start=(891.0,63.0) end=(927.0,513.0).
+2026-02-06 14:33:54 | FX: эффект добавлен в рендер (attacker=21, target=11).
+2026-02-06 14:33:55 | 📌 -------------------------
+
+2026-02-06 14:33:55 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+2026-02-06 14:33:55 | Reward (шаг): стрельба delta=+0.080
+2026-02-06 14:33:55 | --- ФАЗА ЧАРДЖА ---
+2026-02-06 14:33:55 | --- ФАЗА ЧАРДЖА ---
+2026-02-06 14:33:55 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+2026-02-06 14:33:55 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+2026-02-06 14:33:55 | [MODEL] Чардж: нет доступных целей
+2026-02-06 14:33:55 | --- ФАЗА БОЯ ---
+2026-02-06 14:33:55 | --- ФАЗА БОЯ ---
+2026-02-06 14:33:55 | [MODEL] Ближний бой: нет доступных атак
+2026-02-06 14:33:55 | === КОНЕЦ БОЕВОГО РАУНДА 2 ===
+2026-02-06 14:33:55 | Итерация 1 завершена с наградой tensor([0.0800], device='cuda:0'), здоровье игрока [9.0, 10.0], здоровье модели [10.0, 10.0]
+2026-02-06 14:33:55 | {'model health': [10.0, 10.0], 'player health': [9.0, 10.0], 'modelCP': 1, 'playerCP': 4, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 3, 'battle round': 3, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+2026-02-06 14:33:55 | Здоровье MODEL: [10.0, 10.0], здоровье PLAYER: [9.0, 10.0]
+CP MODEL: 1, CP PLAYER: 4
+VP MODEL: 0, VP PLAYER: 0
+Unit 21 — Necrons Necron Warriors (x10 моделей) стреляет по Unit 11 — Necrons Necron Warriors (x10 моделей) 1.0 раз(а)
+
+2026-02-06 14:33:55 | FX: cinematic events detected, skip immediate state apply
+2026-02-06 14:33:55 | FX: перепроигрываю 30 строк(и) лога.
+2026-02-06 14:33:55 | FX: старт отчёта (shooting), ts=no-ts.
+2026-02-06 14:33:55 | FX: найдена строка стрельбы (attacker=21, target=11).
+2026-02-06 14:33:55 | FX: найдена строка оружия: Gauss flayer.
+2026-02-06 14:33:55 | FX: найден итог урона = 1.0.
+2026-02-06 14:33:55 | FX: дубликат отчёта, эффект не создаём.
+2026-02-06 14:33:55 | FX: buffer phase command (model)
+2026-02-06 14:33:55 | FX: enqueue phase script command: units=0
+2026-02-06 14:33:55 | FX: show summary command VP=0, CP=1
+2026-02-06 14:33:55 | FX: wait_continue reason=phase_done next=ФАЗА ДВИЖЕНИЯ
+2026-02-06 14:33:55 | FX: buffer phase movement (model)
+2026-02-06 14:33:55 | FX: enqueue phase script movement: units=2
+2026-02-06 14:33:55 | FX: buffer phase shooting (model)
+2026-02-06 14:33:55 | FX: enqueue phase script shooting: units=2
+2026-02-06 14:33:55 | FX: buffer phase charge (model)
+2026-02-06 14:33:55 | FX: enqueue phase script charge: units=2
+2026-02-06 14:33:55 | FX: buffer phase fight (model)
+2026-02-06 14:33:55 | FX: enqueue phase script fight: units=2
+2026-02-06 14:33:56 | FX: continue=Y
+2026-02-06 14:33:56 | FX: show summary movement двигались 2/2, advance=1, dist=8.0
+2026-02-06 14:33:56 | Выбрано в таблице: row=0 -> unit_id=21
+2026-02-06 14:33:56 | FX: move apply event_id=66 unit_id=21 side=model action=move from=[49, 3] types=('int', 'int') to=[49, 5] types=('int', 'int') key=('model', 21) render_found=1
+2026-02-06 14:33:56 | FX: move write unit_id=21 side=model grid=(49,5) before=(49, 3) after=(49,5) cell_size=18 conversion=grid->world(cell_size)
+2026-02-06 14:33:56 | FX: play unit_action unit=21 action=move
+2026-02-06 14:33:56 | FX: wait_continue reason=unit_done next=Unit 22 — Necron Warriors (🚶 Движение: [2, 3] → [2, 9], dist=6.0, advance=да)
+2026-02-06 14:33:59 | FX: continue=Y
+2026-02-06 14:33:59 | Выбрано в таблице: row=1 -> unit_id=22
+2026-02-06 14:33:59 | FX: move apply event_id=71 unit_id=22 side=model action=move from=[2, 3] types=('int', 'int') to=[2, 9] types=('int', 'int') key=('model', 22) render_found=1
+2026-02-06 14:33:59 | FX: move write unit_id=22 side=model grid=(2,9) before=(2, 3) after=(2,9) cell_size=18 conversion=grid->world(cell_size)
+2026-02-06 14:33:59 | FX: play unit_action unit=22 action=move
+2026-02-06 14:33:59 | FX: wait_continue reason=unit_done next=unit
+2026-02-06 14:34:12 | FX: continue=Y
+2026-02-06 14:34:12 | FX: wait_continue reason=phase_done next=ФАЗА СТРЕЛЬБЫ
+2026-02-06 14:34:16 | FX: continue=Y
+2026-02-06 14:34:16 | FX: show summary shooting shots=1, skipped=1 (reasons: advanced_no_assault=1)
+2026-02-06 14:34:16 | Выбрано в таблице: row=0 -> unit_id=21
+2026-02-06 14:34:16 | FX: shot grid attacker=(49,3) target=(51,28) cell_size=18
+2026-02-06 14:34:16 | FX: позиция эффекта start=(891.0,63.0) end=(927.0,513.0).
+2026-02-06 14:34:16 | FX: эффект добавлен в рендер (attacker=21, target=11).
+2026-02-06 14:34:16 | FX: play unit_action unit=21 action=shoot
+2026-02-06 14:34:16 | FX: wait_continue reason=unit_done next=Unit 22 — Necron Warriors (⏭️ Skip shoot (advanced_no_assault))
+2026-02-06 14:34:20 | FX: continue=Y
+2026-02-06 14:34:20 | Выбрано в таблице: row=1 -> unit_id=22
+2026-02-06 14:34:20 | FX: play unit_action unit=22 action=skip_shoot
+2026-02-06 14:34:20 | FX: wait_continue reason=unit_done next=unit
+2026-02-06 14:34:21 | FX: continue=Y
+2026-02-06 14:34:21 | FX: wait_continue reason=phase_done next=ФАЗА ЧАРДЖА
+2026-02-06 14:34:22 | FX: continue=Y
+2026-02-06 14:34:22 | FX: show summary charge charges=0, skipped=2 (reasons: advanced_no_charge=1, no_targets=1)
+2026-02-06 14:34:22 | Выбрано в таблице: row=0 -> unit_id=21
+2026-02-06 14:34:22 | FX: play unit_action unit=21 action=skip_charge
+2026-02-06 14:34:22 | FX: wait_continue reason=unit_done next=Unit 22 — Necron Warriors (⏭️ Skip charge (advanced_no_charge))
+2026-02-06 14:34:24 | FX: continue=Y
+2026-02-06 14:34:24 | Выбрано в таблице: row=1 -> unit_id=22
+2026-02-06 14:34:24 | FX: play unit_action unit=22 action=skip_charge
+2026-02-06 14:34:24 | FX: wait_continue reason=unit_done next=unit
+2026-02-06 14:34:25 | FX: continue=Y
+2026-02-06 14:34:25 | FX: wait_continue reason=phase_done next=ФАЗА БОЯ
+2026-02-06 14:34:26 | FX: continue=Y
+2026-02-06 14:34:26 | FX: show summary fight fights=0, skipped=2 (reasons: no_attacks=2)
+2026-02-06 14:34:26 | Выбрано в таблице: row=0 -> unit_id=21
+2026-02-06 14:34:26 | FX: play unit_action unit=21 action=skip_fight
+2026-02-06 14:34:26 | FX: wait_continue reason=unit_done next=Unit 22 — Necron Warriors (⏭️ Skip fight (no_attacks))
+2026-02-06 14:34:27 | FX: continue=Y
+2026-02-06 14:34:27 | Выбрано в таблице: row=1 -> unit_id=22
+2026-02-06 14:34:27 | FX: play unit_action unit=22 action=skip_fight
+2026-02-06 14:34:27 | FX: wait_continue reason=unit_done next=unit
+2026-02-06 14:34:28 | FX: continue=Y
+2026-02-06 14:34:28 | FX: wait_continue reason=phase_done next=ФАЗА БОЯ
+2026-02-06 14:34:29 | FX: continue=Y
