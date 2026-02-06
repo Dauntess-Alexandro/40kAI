@@ -53,8 +53,8 @@ def _unit_payload(side, unit_id, unit_data, coords, hp):
         "name": name,
         "models": models,
         "hp": _safe_float(hp, None),
-        "x": _safe_int(coords[1], None) if coords is not None else None,
-        "y": _safe_int(coords[0], None) if coords is not None else None,
+        "x": _safe_int(coords[0], None) if coords is not None else None,
+        "y": _safe_int(coords[1], None) if coords is not None else None,
     }
 
 
@@ -79,8 +79,8 @@ def write_state_json(env, path=None):
     for idx, coords in enumerate(getattr(env, "coordsOfOM", [])):
         objectives.append({
             "id": idx + 1,
-            "x": _safe_int(coords[1], None),
-            "y": _safe_int(coords[0], None),
+            "x": _safe_int(coords[0], None),
+            "y": _safe_int(coords[1], None),
         })
 
     active_side = getattr(env, "active_side", None)
@@ -90,8 +90,8 @@ def write_state_json(env, path=None):
         active_side = "model"
 
     payload = {
-        "board": {"width": _safe_int(getattr(env, "b_hei", None), None),
-                  "height": _safe_int(getattr(env, "b_len", None), None)},
+        "board": {"width": _safe_int(getattr(env, "b_len", None), None),
+                  "height": _safe_int(getattr(env, "b_hei", None), None)},
         "turn": _safe_int(getattr(env, "numTurns", None), None),
         "round": _safe_int(getattr(env, "battle_round", None), None),
         "phase": getattr(env, "phase", None),

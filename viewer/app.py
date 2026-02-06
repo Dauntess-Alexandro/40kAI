@@ -1274,7 +1274,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if action == "move":
             dest = movement.get("to")
             if isinstance(dest, (list, tuple)) and len(dest) >= 2:
-                self.map_scene.set_target_cell((int(dest[1]), int(dest[0])))
+                self.map_scene.set_target_cell((int(dest[0]), int(dest[1])))
         if action == "shoot":
             weapon_name = shooting.get("weapon_name")
             damage = shooting.get("damage")
@@ -1337,8 +1337,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if not render_found:
             self._defer_move(payload, movement, event_id=event_id)
             return
-        x_grid = int(dest[1])
-        y_grid = int(dest[0])
+        x_grid = int(dest[0])
+        y_grid = int(dest[1])
         before = None
         for unit in self._visual_state.get("units", []) or []:
             if unit.get("id") == unit_id and unit.get("side") == side:
@@ -1996,6 +1996,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         attacker_side = self._side_from_unit_id(event.attacker_id)
         target_side = self._side_from_unit_id(event.target_id)
+        attacker_unit = self._units_by_key.get((attacker_side, event.attacker_id))
+        if attacker_unit is None:
+            attacker_unit = self._units_by_key.get((None, event.attacker_id))
+        target_unit = self._units_by_key.get((target_side, event.target_id))
+        if target_unit is None:
+            target_unit = self._units_by_key.get((None, event.target_id))
         start = self._unit_world_center_by_key(attacker_side, event.attacker_id)
         end = self._unit_world_center_by_key(target_side, event.target_id)
         if start is None or end is None:
@@ -2004,6 +2010,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 f"(attacker={event.attacker_id}, target={event.target_id})."
             )
             return
+        if attacker_unit and target_unit:
+            self.add_log_line(
+                "FX: shot grid "
+                f"attacker=({attacker_unit.get('x')},{attacker_unit.get('y')}) "
+                f"target=({target_unit.get('x')},{target_unit.get('y')}) "
+                f"cell_size={self.map_scene.cell_size}"
+            )
         self._spawn_gauss_effect(start, end, event)
 
     def _spawn_gauss_effect(
