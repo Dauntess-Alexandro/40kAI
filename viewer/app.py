@@ -408,7 +408,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         command_layout.addWidget(self.cinematic_controls)
         self._set_cinematic_waiting(False)
 
-        self.cinematic_history_group = QtWidgets.QGroupBox("History")
+        self.cinematic_history_group = QtWidgets.QGroupBox("История")
         self.cinematic_history_group.setCheckable(True)
         self.cinematic_history_group.setChecked(False)
         history_layout = QtWidgets.QVBoxLayout(self.cinematic_history_group)
@@ -1217,9 +1217,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _set_cinematic_waiting(self, waiting: bool) -> None:
         self._cinematic_waiting = waiting
+        self.cinematic_controls.setVisible(waiting)
         self.cinematic_yes.setEnabled(waiting)
         self.cinematic_no.setEnabled(waiting)
-        if not waiting:
+        if waiting:
+            self.command_stack.setEnabled(False)
+        else:
+            self.command_stack.setEnabled(self._pending_request is not None)
             self.cinematic_prompt.setText("")
 
     def _record_cinematic_history(self, lines: list[str]) -> None:
