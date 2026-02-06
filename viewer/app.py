@@ -833,6 +833,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._poll_state()
 
     def _submit_text(self):
+        if self._cinematic_waiting:
+            return
         text = self.command_input.text().strip()
         if self._is_target_request(self._pending_request) and self._current_target_id is None:
             return
@@ -991,6 +993,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if self._model_events_snapshot == events:
                 return
             filtered = self._filter_model_events(events)
+            if self._model_event_cursor is None and self._model_log_source is None:
+                self._bootstrap_model_events(filtered)
+                self._model_events_snapshot = list(events)
+                self._model_log_source = "state"
+                self._model_events_current = list(filtered)
+                self._refresh_model_log_view()
+                return
             self._consume_model_events(filtered)
             self._model_events_snapshot = list(events)
             self._model_log_source = "state"
@@ -1008,6 +1017,31 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if side in ("enemy", "model"):
                 filtered.append(event)
         return filtered
+
+    def _bootstrap_model_events(self, events) -> None:
+        if not events:
+            return
+        last_id = None
+        for event in events:
+            event_id = event.get("event_id")
+            if event_id is None:
+                continue
+            try:
+                event_id = int(event_id)
+            except (TypeError, ValueError):
+                continue
+            last_id = event_id if last_id is None else max(last_id, event_id)
+        if last_id is not None:
+            self._model_event_cursor = last_id
+            self.add_log_line(
+                "FX: старт GUI — пропускаю накопленные события модели, "
+                f"подхват с event_id={last_id}."
+            )
+        else:
+            self.add_log_line(
+                "FX: старт GUI — пропускаю накопленные события модели "
+                "(event_id не найден)."
+            )
 
     def _consume_model_events(self, events):
         if not events:
@@ -2116,6 +2150,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
             kind = getattr(self._pending_request, "kind", "")
             key = event.key()
             text = event.text().lower()
+            if self._cinematic_waiting:
+                if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+                    return True
+                return False
             if kind == "direction":
                 if key == QtCore.Qt.Key_Up:
                     self._submit_answer("up")
