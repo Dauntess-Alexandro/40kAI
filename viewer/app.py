@@ -1474,6 +1474,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
                     "FX: движение уже применено, "
                     f"дельта отсутствует unit={unit_id} from={src} to={dest}."
                 )
+        if before_override is None and src_cell and (before is None or before == (x_grid, y_grid)):
+            before_override = src_cell
+            self.add_log_line(
+                "FX: движение без предыдущей позиции, "
+                f"используем from={src_cell} для плавной анимации."
+            )
         self.add_log_line(
             "FX: move write "
             f"unit_id={unit_id} side={side} grid=({x_grid},{y_grid}) "
