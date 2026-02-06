@@ -2118,8 +2118,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
             kind = getattr(self._pending_request, "kind", "")
             key = event.key()
             text = event.text().lower()
-            if self._cinematic_waiting and key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
-                return True
+            if self._cinematic_waiting:
+                if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+                    return True
+                return False
             if kind == "direction":
                 if key == QtCore.Qt.Key_Up:
                     self._submit_answer("up")
