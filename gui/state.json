@@ -21,9 +21,9 @@
       "id": 11,
       "name": "Necron Warriors",
       "models": 10,
-      "hp": 9.0,
-      "x": 51,
-      "y": 23
+      "hp": 1.0,
+      "x": 0,
+      "y": 15
     },
     {
       "side": "player",
@@ -31,8 +31,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 17,
-      "y": 21
+      "x": 2,
+      "y": 18
     },
     {
       "side": "model",
@@ -40,8 +40,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 49,
-      "y": 5
+      "x": 4,
+      "y": 10
     },
     {
       "side": "model",
@@ -49,8 +49,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 2,
-      "y": 9
+      "x": 6,
+      "y": 10
     }
   ],
   "objectives": [
@@ -76,45 +76,45 @@
     }
   ],
   "log_tail": [
-    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): quality_bonus=+0.050",
-    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.030 (norm=0.050, dealt=1.00), kill=0.000, overkill=-0.000, quality=0.050, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.080",
-    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Итог урона по Unit 11 — Necrons Necron Warriors (x10 моделей): 1.0",
+    "🎲 Бросок сейвы (save): 11D6",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage_term=+0.210 (norm=0.350, dealt=7.00)",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): quality_bonus=+0.050",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.210 (norm=0.350, dealt=7.00), kill=0.000, overkill=-0.000, quality=0.050, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.260",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Итог урона по Unit 11 — Necrons Necron Warriors (x10 моделей): 7.0",
     "",
     "📌 --- ОТЧЁТ ПО СТРЕЛЬБЕ ---",
-    "Стреляет: Unit 21 — Necrons Necron Warriors (x10 моделей); цель: Unit 11 — Necrons Necron Warriors (x10 моделей)",
+    "Стреляет: Unit 22 — Necrons Necron Warriors (x10 моделей); цель: Unit 11 — Necrons Necron Warriors (x10 моделей)",
     "Оружие: Gauss flayer",
     "BS оружия: 4+",
     "S vs T: 4 vs 4  -> базово ранение на 4+",
     "Save цели: 4+ (invul: нет)",
     "Правило: Rapid Fire 1 (если цель в половине дальности: +1 атак)",
     "Правило: Lethal Hits (крит-хиты авто-ранят)",
-    "Hit rolls:    [6, 2, 2, 2, 3, 4, 3, 1, 3, 6]  -> hits: 3 (crits: 2)",
-    "Wound rolls:  [3]  (цель 4+) -> rolled wounds: 0 + auto(w/LETHAL): 2 = 2",
-    "Save rolls:   [2, 6]  (цель 4+) -> failed saves: 1",
+    "Hit rolls:    [5, 6, 6, 6, 4, 5, 4, 6, 6, 3, 4, 1, 6, 1, 5, 6, 3, 3, 3, 3]  -> hits: 13 (crits: 7)",
+    "Wound rolls:  [5, 5, 1, 3, 5, 4]  (цель 4+) -> rolled wounds: 4 + auto(w/LETHAL): 7 = 11",
+    "Save rolls:   [1, 2, 3, 1, 2, 4, 4, 5, 1, 2, 4]  (цель 4+) -> failed saves: 7",
     "",
-    "✅ Итог по движку: прошло урона = 1.0",
+    "✅ Итог по движку: прошло урона = 7.0",
     "📌 -------------------------",
-    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.",
-    "Reward (шаг): стрельба delta=+0.080",
+    "Reward (шаг): стрельба delta=+0.260",
     "--- ФАЗА ЧАРДЖА ---",
     "--- ФАЗА ЧАРДЖА ---",
-    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12\", чардж пропущен.",
-    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.",
-    "[MODEL] Чардж: нет доступных целей",
+    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.",
+    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Цели в 12\": Unit 11 — Necrons Necron Warriors (x10 моделей), Unit 12 — Necrons Necron Warriors (x10 моделей). бросок: 1 + 1 = 2. Нет достижимых целей.",
     "--- ФАЗА БОЯ ---",
     "--- ФАЗА БОЯ ---",
     "[MODEL] Ближний бой: нет доступных атак",
     "=== КОНЕЦ БОЕВОГО РАУНДА 2 ===",
-    "Итерация 1 завершена с наградой tensor([0.0800], device='cuda:0'), здоровье игрока [9.0, 10.0], здоровье модели [10.0, 10.0]"
+    "Итерация 1 завершена с наградой tensor([0.2600], device='cuda:0'), здоровье игрока [1.0, 10.0], здоровье модели [10.0, 10.0]"
   ],
   "model_events": [
     {
       "side": "enemy",
       "phase": "movement",
-      "type": "scan",
-      "msg": "Overwatch невозможен: нет доступных стреляющих юнитов.",
+      "type": "move",
+      "msg": "Триггер Overwatch: цель переместилась. Цель: Unit 11 — Necrons Necron Warriors (x10 моделей).",
       "data": {
-        "raw": "Overwatch невозможен: нет доступных стреляющих юнитов."
+        "raw": "Триггер Overwatch: цель переместилась. Цель: Unit 11 — Necrons Necron Warriors (x10 моделей)."
       },
       "unit_id": null,
       "unit_name": null,
@@ -123,56 +123,56 @@
       "battle_round": 1,
       "turn": 1,
       "active_side": "player",
-      "ts": 1770377540.1050591
-    },
-    {
-      "side": "enemy",
-      "phase": "movement",
-      "type": "move",
-      "msg": "Триггер Overwatch: цель переместилась. Цель: Unit 12 — Necrons Necron Warriors (x10 моделей).",
-      "data": {
-        "raw": "Триггер Overwatch: цель переместилась. Цель: Unit 12 — Necrons Necron Warriors (x10 моделей)."
-      },
-      "unit_id": null,
-      "unit_name": null,
-      "verbosity": "normal",
-      "event_id": 2,
-      "battle_round": 1,
-      "turn": 1,
-      "active_side": "player",
-      "ts": 1770377546.4709916
+      "ts": 1770378327.1670372
     },
     {
       "side": "enemy",
       "phase": "movement",
       "type": "unit_start",
-      "msg": "Юнит 22 — Necron Warriors",
-      "unit_id": 22,
+      "msg": "Юнит 21 — Necron Warriors",
+      "unit_id": 21,
       "unit_name": "Necron Warriors",
       "data": {},
-      "event_id": 3,
+      "event_id": 2,
       "battle_round": 1,
       "turn": 1,
       "active_side": "player",
       "verbosity": "normal",
-      "ts": 1770377546.4719915
+      "ts": 1770378327.1670372
     },
     {
       "side": "enemy",
       "phase": "movement",
       "type": "vp",
-      "msg": "Правило/стратагема «Overwatch»: Цель: Unit 12 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 1.0.",
+      "msg": "Правило/стратагема «Overwatch»: Цель: Unit 11 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 1.0.",
       "data": {
-        "raw": "Правило/стратагема «Overwatch»: Цель: Unit 12 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 1.0."
+        "raw": "Правило/стратагема «Overwatch»: Цель: Unit 11 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 1.0."
       },
-      "unit_id": 22,
+      "unit_id": 21,
       "unit_name": "Necron Warriors",
+      "verbosity": "normal",
+      "event_id": 3,
+      "battle_round": 1,
+      "turn": 1,
+      "active_side": "player",
+      "ts": 1770378327.1670372
+    },
+    {
+      "side": "enemy",
+      "phase": "movement",
+      "type": "vp",
+      "msg": "Overwatch невозможен: недостаточно CP.",
+      "data": {
+        "raw": "Overwatch невозможен: недостаточно CP."
+      },
+      "unit_id": null,
+      "unit_name": null,
       "verbosity": "normal",
       "event_id": 4,
       "battle_round": 1,
       "turn": 1,
       "active_side": "player",
-      "ts": 1770377546.4719915
+      "ts": 1770378333.4562316
     },
     {
       "side": "enemy",
@@ -204,18 +204,18 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 10.0,
-              "x": 51,
-              "y": 28
+              "hp": 9.0,
+              "x": 0,
+              "y": 20
             },
             {
               "side": "player",
               "id": 12,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 9.0,
-              "x": 17,
-              "y": 26
+              "hp": 10.0,
+              "x": 2,
+              "y": 23
             },
             {
               "side": "model",
@@ -223,8 +223,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 59,
-              "y": 3
+              "x": 11,
+              "y": 4
             },
             {
               "side": "model",
@@ -232,8 +232,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 13,
-              "y": 3
+              "x": 12,
+              "y": 8
             }
           ],
           "objectives": [
@@ -260,7 +260,7 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:32:26.662991Z"
+          "generated_at": "2026-02-06T11:45:33.635231Z"
         }
       },
       "unit_id": null,
@@ -270,7 +270,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6629915
+      "ts": 1770378333.6352315
     },
     {
       "side": "enemy",
@@ -287,7 +287,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6629915
+      "ts": 1770378333.6362348
     },
     {
       "side": "enemy",
@@ -304,7 +304,7 @@
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377546.6629915
+      "ts": 1770378333.6362348
     },
     {
       "side": "enemy",
@@ -339,18 +339,18 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 10.0,
-              "x": 51,
-              "y": 28
+              "hp": 9.0,
+              "x": 0,
+              "y": 20
             },
             {
               "side": "player",
               "id": 12,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 9.0,
-              "x": 17,
-              "y": 26
+              "hp": 10.0,
+              "x": 2,
+              "y": 23
             },
             {
               "side": "model",
@@ -358,8 +358,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 59,
-              "y": 3
+              "x": 11,
+              "y": 4
             },
             {
               "side": "model",
@@ -367,8 +367,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 13,
-              "y": 3
+              "x": 12,
+              "y": 8
             }
           ],
           "objectives": [
@@ -395,7 +395,7 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:32:26.662991Z"
+          "generated_at": "2026-02-06T11:45:33.636234Z"
         }
       },
       "event_id": 8,
@@ -403,7 +403,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6629915
+      "ts": 1770378333.6362348
     },
     {
       "side": "enemy",
@@ -435,18 +435,18 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 10.0,
-              "x": 51,
-              "y": 28
+              "hp": 9.0,
+              "x": 0,
+              "y": 20
             },
             {
               "side": "player",
               "id": 12,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 9.0,
-              "x": 17,
-              "y": 26
+              "hp": 10.0,
+              "x": 2,
+              "y": 23
             },
             {
               "side": "model",
@@ -454,8 +454,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 59,
-              "y": 3
+              "x": 11,
+              "y": 4
             },
             {
               "side": "model",
@@ -463,8 +463,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 13,
-              "y": 3
+              "x": 12,
+              "y": 8
             }
           ],
           "objectives": [
@@ -491,7 +491,7 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:32:26.663991Z"
+          "generated_at": "2026-02-06T11:45:33.636234Z"
         }
       },
       "unit_id": null,
@@ -501,7 +501,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6639917
+      "ts": 1770378333.6362348
     },
     {
       "side": "enemy",
@@ -518,15 +518,15 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6639917
+      "ts": 1770378333.6362348
     },
     {
       "side": "enemy",
       "phase": "movement",
       "type": "dice",
-      "msg": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (59, 3). Выбор: up, advance=да, бросок=5, макс=10, distance=10",
+      "msg": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (11, 4). Выбор: up, advance=да, бросок=2, макс=7, distance=7",
       "data": {
-        "raw": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (59, 3). Выбор: up, advance=да, бросок=5, макс=10, distance=10"
+        "raw": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (11, 4). Выбор: up, advance=да, бросок=2, макс=7, distance=7"
       },
       "unit_id": null,
       "unit_name": null,
@@ -535,7 +535,7 @@
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770377546.6639917
+      "ts": 1770378333.6372352
     },
     {
       "side": "enemy",
@@ -550,15 +550,15 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6639917
+      "ts": 1770378333.6372352
     },
     {
       "side": "enemy",
       "phase": "movement",
       "type": "dice",
-      "msg": "Позиция до: (59, 3). Выбор: up, advance=да, бросок=5, макс=10, distance=10",
+      "msg": "Позиция до: (11, 4). Выбор: up, advance=да, бросок=2, макс=7, distance=7",
       "data": {
-        "raw": "Позиция до: (59, 3). Выбор: up, advance=да, бросок=5, макс=10, distance=10"
+        "raw": "Позиция до: (11, 4). Выбор: up, advance=да, бросок=2, макс=7, distance=7"
       },
       "unit_id": 21,
       "unit_name": "Necron Warriors",
@@ -567,15 +567,15 @@
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770377546.6639917
+      "ts": 1770378333.6372352
     },
     {
       "side": "enemy",
       "phase": "movement",
       "type": "move",
-      "msg": "Позиция после: (49, 3)",
+      "msg": "Позиция после: (4, 4)",
       "data": {
-        "raw": "Позиция после: (49, 3)"
+        "raw": "Позиция после: (4, 4)"
       },
       "unit_id": 21,
       "unit_name": "Necron Warriors",
@@ -584,7 +584,7 @@
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770377546.6639917
+      "ts": 1770378333.6372352
     },
     {
       "side": "enemy",
@@ -597,16 +597,16 @@
       "reason": null,
       "movement": {
         "from": [
-          59,
-          3
+          11,
+          4
         ],
         "to": [
-          49,
-          3
+          4,
+          4
         ],
-        "dist": 10.0,
+        "dist": 7.0,
         "advanced": true,
-        "advance_roll": 5
+        "advance_roll": 2
       },
       "shooting": null,
       "charge": null,
@@ -617,15 +617,15 @@
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377546.6639917
+      "ts": 1770378335.2044623
     },
     {
       "side": "enemy",
       "phase": "movement",
       "type": "dice",
-      "msg": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (13, 3). Выбор: up, advance=да, бросок=6, макс=11, distance=11",
+      "msg": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (12, 8). Выбор: up, advance=да, бросок=1, макс=6, distance=6",
       "data": {
-        "raw": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (13, 3). Выбор: up, advance=да, бросок=6, макс=11, distance=11"
+        "raw": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (12, 8). Выбор: up, advance=да, бросок=1, макс=6, distance=6"
       },
       "unit_id": null,
       "unit_name": null,
@@ -634,7 +634,7 @@
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770377546.6649919
+      "ts": 1770378335.2044623
     },
     {
       "side": "enemy",
@@ -649,15 +649,15 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6649919
+      "ts": 1770378335.2044623
     },
     {
       "side": "enemy",
       "phase": "movement",
       "type": "dice",
-      "msg": "Позиция до: (13, 3). Выбор: up, advance=да, бросок=6, макс=11, distance=11",
+      "msg": "Позиция до: (12, 8). Выбор: up, advance=да, бросок=1, макс=6, distance=6",
       "data": {
-        "raw": "Позиция до: (13, 3). Выбор: up, advance=да, бросок=6, макс=11, distance=11"
+        "raw": "Позиция до: (12, 8). Выбор: up, advance=да, бросок=1, макс=6, distance=6"
       },
       "unit_id": 22,
       "unit_name": "Necron Warriors",
@@ -666,15 +666,15 @@
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770377546.6649919
+      "ts": 1770378335.2044623
     },
     {
       "side": "enemy",
       "phase": "movement",
       "type": "move",
-      "msg": "Позиция после: (2, 3)",
+      "msg": "Позиция после: (6, 8)",
       "data": {
-        "raw": "Позиция после: (2, 3)"
+        "raw": "Позиция после: (6, 8)"
       },
       "unit_id": 22,
       "unit_name": "Necron Warriors",
@@ -683,7 +683,7 @@
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770377546.6649919
+      "ts": 1770378335.2054641
     },
     {
       "side": "enemy",
@@ -696,16 +696,16 @@
       "reason": null,
       "movement": {
         "from": [
-          13,
-          3
+          12,
+          8
         ],
         "to": [
-          2,
-          3
+          6,
+          8
         ],
-        "dist": 11.0,
+        "dist": 6.0,
         "advanced": true,
-        "advance_roll": 6
+        "advance_roll": 1
       },
       "shooting": null,
       "charge": null,
@@ -716,7 +716,7 @@
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377546.6649919
+      "ts": 1770378337.6735568
     },
     {
       "side": "enemy",
@@ -728,14 +728,14 @@
       "moved": 2,
       "total_units": 2,
       "advanced_count": 2,
-      "dist_total": 21.0,
+      "dist_total": 13.0,
       "event_id": 21,
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377546.6649919
+      "ts": 1770378337.6735568
     },
     {
       "side": "enemy",
@@ -769,18 +769,18 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 10.0,
-              "x": 51,
-              "y": 28
+              "hp": 9.0,
+              "x": 0,
+              "y": 20
             },
             {
               "side": "player",
               "id": 12,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 9.0,
-              "x": 17,
-              "y": 26
+              "hp": 10.0,
+              "x": 2,
+              "y": 23
             },
             {
               "side": "model",
@@ -788,8 +788,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 49,
-              "y": 3
+              "x": 4,
+              "y": 4
             },
             {
               "side": "model",
@@ -797,8 +797,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 2,
-              "y": 3
+              "x": 6,
+              "y": 8
             }
           ],
           "objectives": [
@@ -825,7 +825,7 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:32:26.664991Z"
+          "generated_at": "2026-02-06T11:45:37.673556Z"
         }
       },
       "event_id": 22,
@@ -833,7 +833,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6649919
+      "ts": 1770378337.6735568
     },
     {
       "side": "enemy",
@@ -865,18 +865,18 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 10.0,
-              "x": 51,
-              "y": 28
+              "hp": 9.0,
+              "x": 0,
+              "y": 20
             },
             {
               "side": "player",
               "id": 12,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 9.0,
-              "x": 17,
-              "y": 26
+              "hp": 10.0,
+              "x": 2,
+              "y": 23
             },
             {
               "side": "model",
@@ -884,8 +884,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 49,
-              "y": 3
+              "x": 4,
+              "y": 4
             },
             {
               "side": "model",
@@ -893,8 +893,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 2,
-              "y": 3
+              "x": 6,
+              "y": 8
             }
           ],
           "objectives": [
@@ -921,7 +921,7 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:32:26.664991Z"
+          "generated_at": "2026-02-06T11:45:37.673556Z"
         }
       },
       "unit_id": null,
@@ -931,7 +931,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6649919
+      "ts": 1770378337.6735568
     },
     {
       "side": "enemy",
@@ -948,7 +948,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6649919
+      "ts": 1770378337.6735568
     },
     {
       "side": "enemy",
@@ -963,7 +963,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6649919
+      "ts": 1770378337.6745641
     },
     {
       "side": "enemy",
@@ -980,7 +980,7 @@
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770377546.6649919
+      "ts": 1770378337.6745641
     },
     {
       "side": "enemy",
@@ -1001,7 +1001,7 @@
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377546.6649919
+      "ts": 1770378337.6745641
     },
     {
       "side": "enemy",
@@ -1016,7 +1016,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6659918
+      "ts": 1770378337.6745641
     },
     {
       "side": "enemy",
@@ -1033,7 +1033,7 @@
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770377546.6659918
+      "ts": 1770378337.6745641
     },
     {
       "side": "enemy",
@@ -1054,7 +1054,7 @@
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377546.6659918
+      "ts": 1770378337.6745641
     },
     {
       "side": "enemy",
@@ -1074,7 +1074,7 @@
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377546.6659918
+      "ts": 1770378337.6745641
     },
     {
       "side": "enemy",
@@ -1108,18 +1108,18 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 10.0,
-              "x": 51,
-              "y": 28
+              "hp": 9.0,
+              "x": 0,
+              "y": 20
             },
             {
               "side": "player",
               "id": 12,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 9.0,
-              "x": 17,
-              "y": 26
+              "hp": 10.0,
+              "x": 2,
+              "y": 23
             },
             {
               "side": "model",
@@ -1127,8 +1127,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 49,
-              "y": 3
+              "x": 4,
+              "y": 4
             },
             {
               "side": "model",
@@ -1136,8 +1136,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 2,
-              "y": 3
+              "x": 6,
+              "y": 8
             }
           ],
           "objectives": [
@@ -1164,7 +1164,7 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:32:26.665991Z"
+          "generated_at": "2026-02-06T11:45:37.674564Z"
         }
       },
       "event_id": 32,
@@ -1172,7 +1172,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6659918
+      "ts": 1770378337.6745641
     },
     {
       "side": "enemy",
@@ -1204,18 +1204,18 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 10.0,
-              "x": 51,
-              "y": 28
+              "hp": 9.0,
+              "x": 0,
+              "y": 20
             },
             {
               "side": "player",
               "id": 12,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 9.0,
-              "x": 17,
-              "y": 26
+              "hp": 10.0,
+              "x": 2,
+              "y": 23
             },
             {
               "side": "model",
@@ -1223,8 +1223,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 49,
-              "y": 3
+              "x": 4,
+              "y": 4
             },
             {
               "side": "model",
@@ -1232,8 +1232,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 2,
-              "y": 3
+              "x": 6,
+              "y": 8
             }
           ],
           "objectives": [
@@ -1260,7 +1260,7 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:32:26.665991Z"
+          "generated_at": "2026-02-06T11:45:37.674564Z"
         }
       },
       "unit_id": null,
@@ -1270,7 +1270,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6659918
+      "ts": 1770378337.6745641
     },
     {
       "side": "enemy",
@@ -1287,7 +1287,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6659918
+      "ts": 1770378337.6745641
     },
     {
       "side": "enemy",
@@ -1302,7 +1302,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6659918
+      "ts": 1770378337.6755636
     },
     {
       "side": "enemy",
@@ -1319,7 +1319,7 @@
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770377546.6659918
+      "ts": 1770378337.6755636
     },
     {
       "side": "enemy",
@@ -1340,7 +1340,7 @@
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377546.6659918
+      "ts": 1770378337.6755636
     },
     {
       "side": "enemy",
@@ -1355,7 +1355,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6659918
+      "ts": 1770378337.6755636
     },
     {
       "side": "enemy",
@@ -1372,7 +1372,7 @@
       "battle_round": 1,
       "turn": 1,
       "active_side": "model",
-      "ts": 1770377546.6659918
+      "ts": 1770378337.6755636
     },
     {
       "side": "enemy",
@@ -1393,7 +1393,7 @@
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377546.6659918
+      "ts": 1770378337.6755636
     },
     {
       "side": "enemy",
@@ -1413,7 +1413,7 @@
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377546.6659918
+      "ts": 1770378337.6755636
     },
     {
       "side": "enemy",
@@ -1447,18 +1447,18 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 10.0,
-              "x": 51,
-              "y": 28
+              "hp": 9.0,
+              "x": 0,
+              "y": 20
             },
             {
               "side": "player",
               "id": 12,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 9.0,
-              "x": 17,
-              "y": 26
+              "hp": 10.0,
+              "x": 2,
+              "y": 23
             },
             {
               "side": "model",
@@ -1466,8 +1466,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 49,
-              "y": 3
+              "x": 4,
+              "y": 4
             },
             {
               "side": "model",
@@ -1475,8 +1475,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 2,
-              "y": 3
+              "x": 6,
+              "y": 8
             }
           ],
           "objectives": [
@@ -1503,7 +1503,7 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:32:26.666991Z"
+          "generated_at": "2026-02-06T11:45:37.675563Z"
         }
       },
       "event_id": 42,
@@ -1511,7 +1511,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6669917
+      "ts": 1770378337.6755636
     },
     {
       "side": "enemy",
@@ -1543,18 +1543,18 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 10.0,
-              "x": 51,
-              "y": 28
+              "hp": 9.0,
+              "x": 0,
+              "y": 20
             },
             {
               "side": "player",
               "id": 12,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 9.0,
-              "x": 17,
-              "y": 26
+              "hp": 10.0,
+              "x": 2,
+              "y": 23
             },
             {
               "side": "model",
@@ -1562,8 +1562,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 49,
-              "y": 3
+              "x": 4,
+              "y": 4
             },
             {
               "side": "model",
@@ -1571,8 +1571,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 2,
-              "y": 3
+              "x": 6,
+              "y": 8
             }
           ],
           "objectives": [
@@ -1599,7 +1599,7 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:32:26.666991Z"
+          "generated_at": "2026-02-06T11:45:37.675563Z"
         }
       },
       "unit_id": null,
@@ -1609,7 +1609,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6669917
+      "ts": 1770378337.6755636
     },
     {
       "side": "enemy",
@@ -1626,7 +1626,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6669917
+      "ts": 1770378337.6755636
     },
     {
       "side": "enemy",
@@ -1647,7 +1647,7 @@
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377546.6669917
+      "ts": 1770378337.6755636
     },
     {
       "side": "enemy",
@@ -1668,7 +1668,7 @@
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377546.6669917
+      "ts": 1770378337.6755636
     },
     {
       "side": "enemy",
@@ -1688,7 +1688,7 @@
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377546.6669917
+      "ts": 1770378337.6755636
     },
     {
       "side": "enemy",
@@ -1722,18 +1722,18 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 10.0,
-              "x": 51,
-              "y": 28
+              "hp": 9.0,
+              "x": 0,
+              "y": 20
             },
             {
               "side": "player",
               "id": 12,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 9.0,
-              "x": 17,
-              "y": 26
+              "hp": 10.0,
+              "x": 2,
+              "y": 23
             },
             {
               "side": "model",
@@ -1741,8 +1741,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 49,
-              "y": 3
+              "x": 4,
+              "y": 4
             },
             {
               "side": "model",
@@ -1750,8 +1750,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 2,
-              "y": 3
+              "x": 6,
+              "y": 8
             }
           ],
           "objectives": [
@@ -1778,7 +1778,7 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:32:26.666991Z"
+          "generated_at": "2026-02-06T11:45:37.675563Z"
         }
       },
       "event_id": 48,
@@ -1786,15 +1786,15 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6669917
+      "ts": 1770378337.6755636
     },
     {
       "side": "enemy",
       "phase": "fight",
       "type": "reward",
-      "msg": "Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=10.295630140987->12.083045973594572",
+      "msg": "Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=10.0->16.0",
       "data": {
-        "raw": "Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=10.295630140987->12.083045973594572"
+        "raw": "Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=10.0->16.0"
       },
       "unit_id": null,
       "unit_name": null,
@@ -1803,7 +1803,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.6669917
+      "ts": 1770378337.6765633
     },
     {
       "side": "enemy",
@@ -1818,7 +1818,7 @@
       "turn": 1,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377546.667992
+      "ts": 1770378337.6765633
     },
     {
       "side": "enemy",
@@ -1835,7 +1835,7 @@
       "battle_round": 2,
       "turn": 2,
       "active_side": "player",
-      "ts": 1770377604.086894
+      "ts": 1770378383.6604526
     },
     {
       "side": "enemy",
@@ -1850,15 +1850,15 @@
       "turn": 2,
       "active_side": "player",
       "verbosity": "normal",
-      "ts": 1770377604.086894
+      "ts": 1770378383.6604526
     },
     {
       "side": "enemy",
       "phase": "movement",
       "type": "vp",
-      "msg": "Правило/стратагема «Overwatch»: Цель: Unit 11 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 0.0.",
+      "msg": "Правило/стратагема «Overwatch»: Цель: Unit 11 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 2.0.",
       "data": {
-        "raw": "Правило/стратагема «Overwatch»: Цель: Unit 11 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 0.0."
+        "raw": "Правило/стратагема «Overwatch»: Цель: Unit 11 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 2.0."
       },
       "unit_id": 21,
       "unit_name": "Necron Warriors",
@@ -1867,7 +1867,7 @@
       "battle_round": 2,
       "turn": 2,
       "active_side": "player",
-      "ts": 1770377604.086894
+      "ts": 1770378383.6604526
     },
     {
       "side": "enemy",
@@ -1884,22 +1884,7 @@
       "battle_round": 2,
       "turn": 2,
       "active_side": "player",
-      "ts": 1770377611.1411164
-    },
-    {
-      "side": "enemy",
-      "phase": "movement",
-      "type": "unit_start",
-      "msg": "Юнит 22 — Necron Warriors",
-      "unit_id": 22,
-      "unit_name": "Necron Warriors",
-      "data": {},
-      "event_id": 55,
-      "battle_round": 2,
-      "turn": 2,
-      "active_side": "player",
-      "verbosity": "normal",
-      "ts": 1770377611.1411164
+      "ts": 1770378388.2012544
     },
     {
       "side": "enemy",
@@ -1909,14 +1894,14 @@
       "data": {
         "raw": "Правило/стратагема «Overwatch»: Цель: Unit 12 — Necrons Necron Warriors (x10 моделей). Стоимость: -1 CP. Итоговый урон: 0.0."
       },
-      "unit_id": 22,
+      "unit_id": 21,
       "unit_name": "Necron Warriors",
       "verbosity": "normal",
-      "event_id": 56,
+      "event_id": 55,
       "battle_round": 2,
       "turn": 2,
       "active_side": "player",
-      "ts": 1770377611.1411164
+      "ts": 1770378388.2012544
     },
     {
       "side": "enemy",
@@ -1948,9 +1933,9 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 10.0,
-              "x": 51,
-              "y": 23
+              "hp": 8.0,
+              "x": 0,
+              "y": 15
             },
             {
               "side": "player",
@@ -1958,8 +1943,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 17,
-              "y": 21
+              "x": 2,
+              "y": 18
             },
             {
               "side": "model",
@@ -1967,8 +1952,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 49,
-              "y": 3
+              "x": 4,
+              "y": 4
             },
             {
               "side": "model",
@@ -1976,8 +1961,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 2,
-              "y": 3
+              "x": 6,
+              "y": 8
             }
           ],
           "objectives": [
@@ -2004,17 +1989,17 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:33:52.466188Z"
+          "generated_at": "2026-02-06T11:46:43.047247Z"
         }
       },
       "unit_id": null,
       "unit_name": null,
-      "event_id": 57,
+      "event_id": 56,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377632.4661882
+      "ts": 1770378403.0472476
     },
     {
       "side": "enemy",
@@ -2026,12 +2011,12 @@
       "data": {
         "phase": "command"
       },
-      "event_id": 58,
+      "event_id": 57,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377632.4661882
+      "ts": 1770378403.0472476
     },
     {
       "side": "enemy",
@@ -2042,13 +2027,13 @@
       "unit_name": null,
       "vp": 0,
       "cp": 1,
-      "event_id": 59,
+      "event_id": 58,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377632.4661882
+      "ts": 1770378403.0472476
     },
     {
       "side": "enemy",
@@ -2083,9 +2068,9 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 10.0,
-              "x": 51,
-              "y": 23
+              "hp": 8.0,
+              "x": 0,
+              "y": 15
             },
             {
               "side": "player",
@@ -2093,8 +2078,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 17,
-              "y": 21
+              "x": 2,
+              "y": 18
             },
             {
               "side": "model",
@@ -2102,8 +2087,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 49,
-              "y": 3
+              "x": 4,
+              "y": 4
             },
             {
               "side": "model",
@@ -2111,8 +2096,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 2,
-              "y": 3
+              "x": 6,
+              "y": 8
             }
           ],
           "objectives": [
@@ -2139,15 +2124,15 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:33:52.466188Z"
+          "generated_at": "2026-02-06T11:46:43.047247Z"
         }
       },
-      "event_id": 60,
+      "event_id": 59,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377632.4661882
+      "ts": 1770378403.0472476
     },
     {
       "side": "enemy",
@@ -2179,9 +2164,9 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 10.0,
-              "x": 51,
-              "y": 23
+              "hp": 8.0,
+              "x": 0,
+              "y": 15
             },
             {
               "side": "player",
@@ -2189,8 +2174,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 17,
-              "y": 21
+              "x": 2,
+              "y": 18
             },
             {
               "side": "model",
@@ -2198,8 +2183,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 49,
-              "y": 3
+              "x": 4,
+              "y": 4
             },
             {
               "side": "model",
@@ -2207,8 +2192,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 2,
-              "y": 3
+              "x": 6,
+              "y": 8
             }
           ],
           "objectives": [
@@ -2235,17 +2220,17 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:33:52.466188Z"
+          "generated_at": "2026-02-06T11:46:43.048247Z"
         }
       },
       "unit_id": null,
       "unit_name": null,
-      "event_id": 61,
+      "event_id": 60,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377632.4661882
+      "ts": 1770378403.0482476
     },
     {
       "side": "enemy",
@@ -2257,12 +2242,29 @@
       "data": {
         "phase": "movement"
       },
-      "event_id": 62,
+      "event_id": 61,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377632.4661882
+      "ts": 1770378403.0482476
+    },
+    {
+      "side": "enemy",
+      "phase": "movement",
+      "type": "dice",
+      "msg": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (4, 4). Выбор: right, advance=да, бросок=1, макс=6, distance=6",
+      "data": {
+        "raw": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (4, 4). Выбор: right, advance=да, бросок=1, макс=6, distance=6"
+      },
+      "unit_id": null,
+      "unit_name": null,
+      "verbosity": "normal",
+      "event_id": 62,
+      "battle_round": 2,
+      "turn": 2,
+      "active_side": "model",
+      "ts": 1770378403.0482476
     },
     {
       "side": "enemy",
@@ -2277,15 +2279,15 @@
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377632.4671946
+      "ts": 1770378403.0482476
     },
     {
       "side": "enemy",
       "phase": "movement",
-      "type": "scan",
-      "msg": "Позиция до: (49, 3). Выбор: right, advance=нет, distance=2",
+      "type": "dice",
+      "msg": "Позиция до: (4, 4). Выбор: right, advance=да, бросок=1, макс=6, distance=6",
       "data": {
-        "raw": "Позиция до: (49, 3). Выбор: right, advance=нет, distance=2"
+        "raw": "Позиция до: (4, 4). Выбор: right, advance=да, бросок=1, макс=6, distance=6"
       },
       "unit_id": 21,
       "unit_name": "Necron Warriors",
@@ -2294,15 +2296,15 @@
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
-      "ts": 1770377632.4671946
+      "ts": 1770378403.0482476
     },
     {
       "side": "enemy",
       "phase": "movement",
       "type": "move",
-      "msg": "Позиция после: (49, 5)",
+      "msg": "Позиция после: (4, 10)",
       "data": {
-        "raw": "Позиция после: (49, 5)"
+        "raw": "Позиция после: (4, 10)"
       },
       "unit_id": 21,
       "unit_name": "Necron Warriors",
@@ -2311,7 +2313,7 @@
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
-      "ts": 1770377632.4671946
+      "ts": 1770378403.0482476
     },
     {
       "side": "enemy",
@@ -2324,16 +2326,16 @@
       "reason": null,
       "movement": {
         "from": [
-          49,
-          3
+          4,
+          4
         ],
         "to": [
-          49,
-          5
+          4,
+          10
         ],
-        "dist": 2.0,
-        "advanced": false,
-        "advance_roll": null
+        "dist": 6.0,
+        "advanced": true,
+        "advance_roll": 1
       },
       "shooting": null,
       "charge": null,
@@ -2344,24 +2346,7 @@
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377633.548817
-    },
-    {
-      "side": "enemy",
-      "phase": "movement",
-      "type": "dice",
-      "msg": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (2, 3). Выбор: right, advance=да, бросок=4, макс=9, distance=6",
-      "data": {
-        "raw": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (2, 3). Выбор: right, advance=да, бросок=4, макс=9, distance=6"
-      },
-      "unit_id": null,
-      "unit_name": null,
-      "verbosity": "normal",
-      "event_id": 67,
-      "battle_round": 2,
-      "turn": 2,
-      "active_side": "model",
-      "ts": 1770377633.548817
+      "ts": 1770378404.3672018
     },
     {
       "side": "enemy",
@@ -2371,20 +2356,37 @@
       "unit_id": 22,
       "unit_name": "Necron Warriors",
       "data": {},
-      "event_id": 68,
+      "event_id": 67,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377633.548817
+      "ts": 1770378404.368202
     },
     {
       "side": "enemy",
       "phase": "movement",
-      "type": "dice",
-      "msg": "Позиция до: (2, 3). Выбор: right, advance=да, бросок=4, макс=9, distance=6",
+      "type": "scan",
+      "msg": "Позиция до: (6, 8). Выбор: right, advance=нет, distance=2",
       "data": {
-        "raw": "Позиция до: (2, 3). Выбор: right, advance=да, бросок=4, макс=9, distance=6"
+        "raw": "Позиция до: (6, 8). Выбор: right, advance=нет, distance=2"
+      },
+      "unit_id": 22,
+      "unit_name": "Necron Warriors",
+      "verbosity": "normal",
+      "event_id": 68,
+      "battle_round": 2,
+      "turn": 2,
+      "active_side": "model",
+      "ts": 1770378404.368202
+    },
+    {
+      "side": "enemy",
+      "phase": "movement",
+      "type": "move",
+      "msg": "Позиция после: (6, 10)",
+      "data": {
+        "raw": "Позиция после: (6, 10)"
       },
       "unit_id": 22,
       "unit_name": "Necron Warriors",
@@ -2393,24 +2395,7 @@
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
-      "ts": 1770377633.548817
-    },
-    {
-      "side": "enemy",
-      "phase": "movement",
-      "type": "move",
-      "msg": "Позиция после: (2, 9)",
-      "data": {
-        "raw": "Позиция после: (2, 9)"
-      },
-      "unit_id": 22,
-      "unit_name": "Necron Warriors",
-      "verbosity": "normal",
-      "event_id": 70,
-      "battle_round": 2,
-      "turn": 2,
-      "active_side": "model",
-      "ts": 1770377633.548817
+      "ts": 1770378404.368202
     },
     {
       "side": "enemy",
@@ -2423,27 +2408,27 @@
       "reason": null,
       "movement": {
         "from": [
-          2,
-          3
+          6,
+          8
         ],
         "to": [
-          2,
-          9
+          6,
+          10
         ],
-        "dist": 6.0,
-        "advanced": true,
-        "advance_roll": 4
+        "dist": 2.0,
+        "advanced": false,
+        "advance_roll": null
       },
       "shooting": null,
       "charge": null,
       "fight": null,
-      "event_id": 71,
+      "event_id": 70,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377634.9198022
+      "ts": 1770378405.7757716
     },
     {
       "side": "enemy",
@@ -2456,13 +2441,13 @@
       "total_units": 2,
       "advanced_count": 1,
       "dist_total": 8.0,
-      "event_id": 72,
+      "event_id": 71,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377634.9198022
+      "ts": 1770378405.7757716
     },
     {
       "side": "enemy",
@@ -2496,9 +2481,9 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 10.0,
-              "x": 51,
-              "y": 23
+              "hp": 8.0,
+              "x": 0,
+              "y": 15
             },
             {
               "side": "player",
@@ -2506,8 +2491,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 17,
-              "y": 21
+              "x": 2,
+              "y": 18
             },
             {
               "side": "model",
@@ -2515,8 +2500,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 49,
-              "y": 5
+              "x": 4,
+              "y": 10
             },
             {
               "side": "model",
@@ -2524,8 +2509,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 2,
-              "y": 9
+              "x": 6,
+              "y": 10
             }
           ],
           "objectives": [
@@ -2552,15 +2537,15 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:33:54.919802Z"
+          "generated_at": "2026-02-06T11:46:45.775771Z"
         }
       },
-      "event_id": 73,
+      "event_id": 72,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377634.9198022
+      "ts": 1770378405.7757716
     },
     {
       "side": "enemy",
@@ -2592,9 +2577,9 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 10.0,
-              "x": 51,
-              "y": 23
+              "hp": 8.0,
+              "x": 0,
+              "y": 15
             },
             {
               "side": "player",
@@ -2602,8 +2587,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 17,
-              "y": 21
+              "x": 2,
+              "y": 18
             },
             {
               "side": "model",
@@ -2611,8 +2596,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 49,
-              "y": 5
+              "x": 4,
+              "y": 10
             },
             {
               "side": "model",
@@ -2620,8 +2605,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 2,
-              "y": 9
+              "x": 6,
+              "y": 10
             }
           ],
           "objectives": [
@@ -2648,17 +2633,17 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:33:54.920801Z"
+          "generated_at": "2026-02-06T11:46:45.775771Z"
         }
       },
       "unit_id": null,
       "unit_name": null,
-      "event_id": 74,
+      "event_id": 73,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377634.9208019
+      "ts": 1770378405.7757716
     },
     {
       "side": "enemy",
@@ -2670,12 +2655,12 @@
       "data": {
         "phase": "shooting"
       },
-      "event_id": 75,
+      "event_id": 74,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377634.9208019
+      "ts": 1770378405.7757716
     },
     {
       "side": "enemy",
@@ -2685,137 +2670,12 @@
       "unit_id": 21,
       "unit_name": "Necron Warriors",
       "data": {},
-      "event_id": 76,
+      "event_id": 75,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377634.9208019
-    },
-    {
-      "side": "enemy",
-      "phase": "shooting",
-      "type": "scan",
-      "msg": "Цели в дальности: Unit 11 — Necrons Necron Warriors (x10 моделей), выбрана: Unit 11 — Necrons Necron Warriors (x10 моделей) (причина: самая близкая)",
-      "data": {
-        "raw": "Цели в дальности: Unit 11 — Necrons Necron Warriors (x10 моделей), выбрана: Unit 11 — Necrons Necron Warriors (x10 моделей) (причина: самая близкая)"
-      },
-      "unit_id": 21,
-      "unit_name": "Necron Warriors",
-      "verbosity": "normal",
-      "event_id": 77,
-      "battle_round": 2,
-      "turn": 2,
-      "active_side": "model",
-      "ts": 1770377634.9208019
-    },
-    {
-      "side": "enemy",
-      "phase": "shooting",
-      "type": "reward",
-      "msg": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage_term=+0.030 (norm=0.050, dealt=1.00)",
-      "data": {
-        "raw": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage_term=+0.030 (norm=0.050, dealt=1.00)"
-      },
-      "unit_id": 21,
-      "unit_name": "Necron Warriors",
-      "event_id": 78,
-      "battle_round": 2,
-      "turn": 2,
-      "active_side": "model",
-      "verbosity": "normal",
-      "ts": 1770377634.9218016
-    },
-    {
-      "side": "enemy",
-      "phase": "shooting",
-      "type": "reward",
-      "msg": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): quality_bonus=+0.050",
-      "data": {
-        "raw": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): quality_bonus=+0.050"
-      },
-      "unit_id": 21,
-      "unit_name": "Necron Warriors",
-      "event_id": 79,
-      "battle_round": 2,
-      "turn": 2,
-      "active_side": "model",
-      "verbosity": "normal",
-      "ts": 1770377634.9218016
-    },
-    {
-      "side": "enemy",
-      "phase": "shooting",
-      "type": "reward",
-      "msg": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.030 (norm=0.050, dealt=1.00), kill=0.000, overkill=-0.000, quality=0.050, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.080",
-      "data": {
-        "raw": "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.030 (norm=0.050, dealt=1.00), kill=0.000, overkill=-0.000, quality=0.050, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.080"
-      },
-      "unit_id": 21,
-      "unit_name": "Necron Warriors",
-      "event_id": 80,
-      "battle_round": 2,
-      "turn": 2,
-      "active_side": "model",
-      "verbosity": "normal",
-      "ts": 1770377634.9228015
-    },
-    {
-      "side": "enemy",
-      "phase": "shooting",
-      "type": "shoot",
-      "msg": "Итог урона по Unit 11 — Necrons Necron Warriors (x10 моделей): 1.0",
-      "data": {
-        "raw": "Итог урона по Unit 11 — Necrons Necron Warriors (x10 моделей): 1.0"
-      },
-      "unit_id": 21,
-      "unit_name": "Necron Warriors",
-      "verbosity": "normal",
-      "event_id": 81,
-      "battle_round": 2,
-      "turn": 2,
-      "active_side": "model",
-      "ts": 1770377634.9228015
-    },
-    {
-      "side": "enemy",
-      "phase": "shooting",
-      "type": "unit_action",
-      "msg": "",
-      "unit_id": 21,
-      "unit_name": "Necron Warriors",
-      "action": "shoot",
-      "reason": null,
-      "movement": null,
-      "shooting": {
-        "target_id": 11,
-        "weapon_name": "Gauss flayer",
-        "damage": 1.0
-      },
-      "charge": null,
-      "fight": null,
-      "event_id": 82,
-      "battle_round": 2,
-      "turn": 2,
-      "active_side": "model",
-      "data": {},
-      "verbosity": "normal",
-      "ts": 1770377634.9248013
-    },
-    {
-      "side": "enemy",
-      "phase": "shooting",
-      "type": "unit_start",
-      "msg": "Юнит 22 — Necron Warriors",
-      "unit_id": 22,
-      "unit_name": "Necron Warriors",
-      "data": {},
-      "event_id": 83,
-      "battle_round": 2,
-      "turn": 2,
-      "active_side": "model",
-      "verbosity": "normal",
-      "ts": 1770377634.9248013
+      "ts": 1770378405.7767723
     },
     {
       "side": "enemy",
@@ -2825,14 +2685,135 @@
       "data": {
         "raw": "Advance без Assault — стрельба пропущена."
       },
-      "unit_id": 22,
+      "unit_id": 21,
       "unit_name": "Necron Warriors",
       "verbosity": "normal",
-      "event_id": 84,
+      "event_id": 76,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
-      "ts": 1770377634.9248013
+      "ts": 1770378405.7767723
+    },
+    {
+      "side": "enemy",
+      "phase": "shooting",
+      "type": "unit_action",
+      "msg": "",
+      "unit_id": 21,
+      "unit_name": "Necron Warriors",
+      "action": "skip_shoot",
+      "reason": "advanced_no_assault",
+      "movement": null,
+      "shooting": null,
+      "charge": null,
+      "fight": null,
+      "event_id": 77,
+      "battle_round": 2,
+      "turn": 2,
+      "active_side": "model",
+      "data": {},
+      "verbosity": "normal",
+      "ts": 1770378405.7767723
+    },
+    {
+      "side": "enemy",
+      "phase": "shooting",
+      "type": "unit_start",
+      "msg": "Юнит 22 — Necron Warriors",
+      "unit_id": 22,
+      "unit_name": "Necron Warriors",
+      "data": {},
+      "event_id": 78,
+      "battle_round": 2,
+      "turn": 2,
+      "active_side": "model",
+      "verbosity": "normal",
+      "ts": 1770378405.7767723
+    },
+    {
+      "side": "enemy",
+      "phase": "shooting",
+      "type": "scan",
+      "msg": "Цели в дальности: Unit 11 — Necrons Necron Warriors (x10 моделей), Unit 12 — Necrons Necron Warriors (x10 моделей), выбрана: Unit 11 — Necrons Necron Warriors (x10 моделей) (причина: самая близкая)",
+      "data": {
+        "raw": "Цели в дальности: Unit 11 — Necrons Necron Warriors (x10 моделей), Unit 12 — Necrons Necron Warriors (x10 моделей), выбрана: Unit 11 — Necrons Necron Warriors (x10 моделей) (причина: самая близкая)"
+      },
+      "unit_id": 22,
+      "unit_name": "Necron Warriors",
+      "verbosity": "normal",
+      "event_id": 79,
+      "battle_round": 2,
+      "turn": 2,
+      "active_side": "model",
+      "ts": 1770378405.7767723
+    },
+    {
+      "side": "enemy",
+      "phase": "shooting",
+      "type": "reward",
+      "msg": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage_term=+0.210 (norm=0.350, dealt=7.00)",
+      "data": {
+        "raw": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage_term=+0.210 (norm=0.350, dealt=7.00)"
+      },
+      "unit_id": 22,
+      "unit_name": "Necron Warriors",
+      "event_id": 80,
+      "battle_round": 2,
+      "turn": 2,
+      "active_side": "model",
+      "verbosity": "normal",
+      "ts": 1770378405.777773
+    },
+    {
+      "side": "enemy",
+      "phase": "shooting",
+      "type": "reward",
+      "msg": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): quality_bonus=+0.050",
+      "data": {
+        "raw": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): quality_bonus=+0.050"
+      },
+      "unit_id": 22,
+      "unit_name": "Necron Warriors",
+      "event_id": 81,
+      "battle_round": 2,
+      "turn": 2,
+      "active_side": "model",
+      "verbosity": "normal",
+      "ts": 1770378405.777773
+    },
+    {
+      "side": "enemy",
+      "phase": "shooting",
+      "type": "reward",
+      "msg": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.210 (norm=0.350, dealt=7.00), kill=0.000, overkill=-0.000, quality=0.050, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.260",
+      "data": {
+        "raw": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (стрельба): damage=0.210 (norm=0.350, dealt=7.00), kill=0.000, overkill=-0.000, quality=0.050, obj_damage=0.000, obj_kill=0.000, action=0.000, total=0.260"
+      },
+      "unit_id": 22,
+      "unit_name": "Necron Warriors",
+      "event_id": 82,
+      "battle_round": 2,
+      "turn": 2,
+      "active_side": "model",
+      "verbosity": "normal",
+      "ts": 1770378405.7787726
+    },
+    {
+      "side": "enemy",
+      "phase": "shooting",
+      "type": "shoot",
+      "msg": "Итог урона по Unit 11 — Necrons Necron Warriors (x10 моделей): 7.0",
+      "data": {
+        "raw": "Итог урона по Unit 11 — Necrons Necron Warriors (x10 моделей): 7.0"
+      },
+      "unit_id": 22,
+      "unit_name": "Necron Warriors",
+      "verbosity": "normal",
+      "event_id": 83,
+      "battle_round": 2,
+      "turn": 2,
+      "active_side": "model",
+      "ts": 1770378405.7787726
     },
     {
       "side": "enemy",
@@ -2841,19 +2822,23 @@
       "msg": "",
       "unit_id": 22,
       "unit_name": "Necron Warriors",
-      "action": "skip_shoot",
-      "reason": "advanced_no_assault",
+      "action": "shoot",
+      "reason": null,
       "movement": null,
-      "shooting": null,
+      "shooting": {
+        "target_id": 11,
+        "weapon_name": "Gauss flayer",
+        "damage": 7.0
+      },
       "charge": null,
       "fight": null,
-      "event_id": 85,
+      "event_id": 84,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377634.9248013
+      "ts": 1770378405.7807739
     },
     {
       "side": "enemy",
@@ -2867,13 +2852,13 @@
       "reasons": {
         "advanced_no_assault": 1
       },
-      "event_id": 86,
+      "event_id": 85,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377634.9248013
+      "ts": 1770378405.7807739
     },
     {
       "side": "enemy",
@@ -2883,7 +2868,7 @@
       "unit_id": null,
       "unit_name": null,
       "data": {
-        "reward_delta": 0.08,
+        "reward_delta": 0.26,
         "snapshot": {
           "board": {
             "width": 60,
@@ -2907,9 +2892,9 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 9.0,
-              "x": 51,
-              "y": 23
+              "hp": 1.0,
+              "x": 0,
+              "y": 15
             },
             {
               "side": "player",
@@ -2917,8 +2902,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 17,
-              "y": 21
+              "x": 2,
+              "y": 18
             },
             {
               "side": "model",
@@ -2926,8 +2911,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 49,
-              "y": 5
+              "x": 4,
+              "y": 10
             },
             {
               "side": "model",
@@ -2935,8 +2920,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 2,
-              "y": 9
+              "x": 6,
+              "y": 10
             }
           ],
           "objectives": [
@@ -2963,32 +2948,32 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:33:54.924801Z"
+          "generated_at": "2026-02-06T11:46:45.780773Z"
         }
       },
-      "event_id": 87,
+      "event_id": 86,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377634.9248013
+      "ts": 1770378405.7807739
     },
     {
       "side": "enemy",
       "phase": "shooting",
       "type": "reward",
-      "msg": "Reward (шаг): стрельба delta=+0.080",
+      "msg": "Reward (шаг): стрельба delta=+0.260",
       "data": {
-        "raw": "Reward (шаг): стрельба delta=+0.080"
+        "raw": "Reward (шаг): стрельба delta=+0.260"
       },
       "unit_id": null,
       "unit_name": null,
-      "event_id": 88,
+      "event_id": 87,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377634.9258013
+      "ts": 1770378405.7807739
     },
     {
       "side": "enemy",
@@ -3020,9 +3005,9 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 9.0,
-              "x": 51,
-              "y": 23
+              "hp": 1.0,
+              "x": 0,
+              "y": 15
             },
             {
               "side": "player",
@@ -3030,8 +3015,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 17,
-              "y": 21
+              "x": 2,
+              "y": 18
             },
             {
               "side": "model",
@@ -3039,8 +3024,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 49,
-              "y": 5
+              "x": 4,
+              "y": 10
             },
             {
               "side": "model",
@@ -3048,8 +3033,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 2,
-              "y": 9
+              "x": 6,
+              "y": 10
             }
           ],
           "objectives": [
@@ -3076,17 +3061,17 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:33:54.925801Z"
+          "generated_at": "2026-02-06T11:46:45.781774Z"
         }
       },
       "unit_id": null,
       "unit_name": null,
-      "event_id": 89,
+      "event_id": 88,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377634.9258013
+      "ts": 1770378405.7817745
     },
     {
       "side": "enemy",
@@ -3098,12 +3083,12 @@
       "data": {
         "phase": "charge"
       },
-      "event_id": 90,
+      "event_id": 89,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377634.9258013
+      "ts": 1770378405.7817745
     },
     {
       "side": "enemy",
@@ -3113,29 +3098,29 @@
       "unit_id": 21,
       "unit_name": "Necron Warriors",
       "data": {},
-      "event_id": 91,
+      "event_id": 90,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377634.9258013
+      "ts": 1770378405.7817745
     },
     {
       "side": "enemy",
       "phase": "charge",
-      "type": "skip",
-      "msg": "Нет целей в 12\", чардж пропущен.",
+      "type": "charge",
+      "msg": "Advance — чардж невозможен.",
       "data": {
-        "raw": "Нет целей в 12\", чардж пропущен."
+        "raw": "Advance — чардж невозможен."
       },
       "unit_id": 21,
       "unit_name": "Necron Warriors",
       "verbosity": "normal",
-      "event_id": 92,
+      "event_id": 91,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
-      "ts": 1770377634.9258013
+      "ts": 1770378405.7817745
     },
     {
       "side": "enemy",
@@ -3145,18 +3130,35 @@
       "unit_id": 21,
       "unit_name": "Necron Warriors",
       "action": "skip_charge",
-      "reason": "no_targets",
+      "reason": "advanced_no_charge",
       "movement": null,
       "shooting": null,
       "charge": null,
       "fight": null,
-      "event_id": 93,
+      "event_id": 92,
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377634.9258013
+      "ts": 1770378405.7817745
+    },
+    {
+      "side": "enemy",
+      "phase": "charge",
+      "type": "dice",
+      "msg": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Цели в 12\": Unit 11 — Necrons Necron Warriors (x10 моделей), Unit 12 — Necrons Necron Warriors (x10 моделей). бросок: 1 + 1 = 2. Нет достижимых целей.",
+      "data": {
+        "raw": "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Цели в 12\": Unit 11 — Necrons Necron Warriors (x10 моделей), Unit 12 — Necrons Necron Warriors (x10 моделей). бросок: 1 + 1 = 2. Нет достижимых целей."
+      },
+      "unit_id": null,
+      "unit_name": null,
+      "verbosity": "normal",
+      "event_id": 93,
+      "battle_round": 2,
+      "turn": 2,
+      "active_side": "model",
+      "ts": 1770378405.7817745
     },
     {
       "side": "enemy",
@@ -3171,15 +3173,15 @@
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377634.9258013
+      "ts": 1770378405.7817745
     },
     {
       "side": "enemy",
       "phase": "charge",
-      "type": "charge",
-      "msg": "Advance — чардж невозможен.",
+      "type": "dice",
+      "msg": "Цели в 12\": Unit 11 — Necrons Necron Warriors (x10 моделей), Unit 12 — Necrons Necron Warriors (x10 моделей). бросок: 1 + 1 = 2. Нет достижимых целей.",
       "data": {
-        "raw": "Advance — чардж невозможен."
+        "raw": "Цели в 12\": Unit 11 — Necrons Necron Warriors (x10 моделей), Unit 12 — Necrons Necron Warriors (x10 моделей). бросок: 1 + 1 = 2. Нет достижимых целей."
       },
       "unit_id": 22,
       "unit_name": "Necron Warriors",
@@ -3188,7 +3190,7 @@
       "battle_round": 2,
       "turn": 2,
       "active_side": "model",
-      "ts": 1770377634.9258013
+      "ts": 1770378405.7817745
     },
     {
       "side": "enemy",
@@ -3198,7 +3200,7 @@
       "unit_id": 22,
       "unit_name": "Necron Warriors",
       "action": "skip_charge",
-      "reason": "advanced_no_charge",
+      "reason": "no_reachable_targets",
       "movement": null,
       "shooting": null,
       "charge": null,
@@ -3209,7 +3211,7 @@
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377634.9258013
+      "ts": 1770378405.7817745
     },
     {
       "side": "enemy",
@@ -3221,8 +3223,8 @@
       "charges": 0,
       "skipped": 2,
       "reasons": {
-        "no_targets": 1,
-        "advanced_no_charge": 1
+        "advanced_no_charge": 1,
+        "no_reachable_targets": 1
       },
       "event_id": 97,
       "battle_round": 2,
@@ -3230,7 +3232,7 @@
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377634.9258013
+      "ts": 1770378405.7817745
     },
     {
       "side": "enemy",
@@ -3264,9 +3266,9 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 9.0,
-              "x": 51,
-              "y": 23
+              "hp": 1.0,
+              "x": 0,
+              "y": 15
             },
             {
               "side": "player",
@@ -3274,8 +3276,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 17,
-              "y": 21
+              "x": 2,
+              "y": 18
             },
             {
               "side": "model",
@@ -3283,8 +3285,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 49,
-              "y": 5
+              "x": 4,
+              "y": 10
             },
             {
               "side": "model",
@@ -3292,8 +3294,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 2,
-              "y": 9
+              "x": 6,
+              "y": 10
             }
           ],
           "objectives": [
@@ -3320,7 +3322,7 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:33:54.926803Z"
+          "generated_at": "2026-02-06T11:46:45.781774Z"
         }
       },
       "event_id": 98,
@@ -3328,7 +3330,7 @@
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377634.926803
+      "ts": 1770378405.7817745
     },
     {
       "side": "enemy",
@@ -3360,9 +3362,9 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 9.0,
-              "x": 51,
-              "y": 23
+              "hp": 1.0,
+              "x": 0,
+              "y": 15
             },
             {
               "side": "player",
@@ -3370,8 +3372,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 17,
-              "y": 21
+              "x": 2,
+              "y": 18
             },
             {
               "side": "model",
@@ -3379,8 +3381,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 49,
-              "y": 5
+              "x": 4,
+              "y": 10
             },
             {
               "side": "model",
@@ -3388,8 +3390,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 2,
-              "y": 9
+              "x": 6,
+              "y": 10
             }
           ],
           "objectives": [
@@ -3416,7 +3418,7 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:33:54.926803Z"
+          "generated_at": "2026-02-06T11:46:45.781774Z"
         }
       },
       "unit_id": null,
@@ -3426,7 +3428,7 @@
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377634.926803
+      "ts": 1770378405.7817745
     },
     {
       "side": "enemy",
@@ -3443,7 +3445,7 @@
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377634.926803
+      "ts": 1770378405.7827735
     },
     {
       "side": "enemy",
@@ -3464,7 +3466,7 @@
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377634.926803
+      "ts": 1770378405.7827735
     },
     {
       "side": "enemy",
@@ -3485,7 +3487,7 @@
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377634.926803
+      "ts": 1770378405.7827735
     },
     {
       "side": "enemy",
@@ -3505,7 +3507,7 @@
       "active_side": "model",
       "data": {},
       "verbosity": "normal",
-      "ts": 1770377634.926803
+      "ts": 1770378405.7827735
     },
     {
       "side": "enemy",
@@ -3539,9 +3541,9 @@
               "id": 11,
               "name": "Necron Warriors",
               "models": 10,
-              "hp": 9.0,
-              "x": 51,
-              "y": 23
+              "hp": 1.0,
+              "x": 0,
+              "y": 15
             },
             {
               "side": "player",
@@ -3549,8 +3551,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 17,
-              "y": 21
+              "x": 2,
+              "y": 18
             },
             {
               "side": "model",
@@ -3558,8 +3560,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 49,
-              "y": 5
+              "x": 4,
+              "y": 10
             },
             {
               "side": "model",
@@ -3567,8 +3569,8 @@
               "name": "Necron Warriors",
               "models": 10,
               "hp": 10.0,
-              "x": 2,
-              "y": 9
+              "x": 6,
+              "y": 10
             }
           ],
           "objectives": [
@@ -3595,7 +3597,7 @@
           ],
           "log_tail": [],
           "model_events": [],
-          "generated_at": "2026-02-06T11:33:54.926803Z"
+          "generated_at": "2026-02-06T11:46:45.782773Z"
         }
       },
       "event_id": 104,
@@ -3603,7 +3605,7 @@
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377634.926803
+      "ts": 1770378405.7827735
     },
     {
       "side": "enemy",
@@ -3618,8 +3620,8 @@
       "turn": 2,
       "active_side": "model",
       "verbosity": "normal",
-      "ts": 1770377634.926803
+      "ts": 1770378405.7827735
     }
   ],
-  "generated_at": "2026-02-06T11:33:54.988801Z"
+  "generated_at": "2026-02-06T11:46:45.845773Z"
 }
