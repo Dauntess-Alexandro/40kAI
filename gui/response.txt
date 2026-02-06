@@ -8253,3 +8253,116 @@ Reward (VP diff): prev=1, curr=2, delta=1, reward=+0.050, penalty=-0.000
 Здоровье MODEL: [10.0, 10.0], здоровье PLAYER: [10.0, 10.0]
 CP MODEL: 6, CP PLAYER: 6
 VP MODEL: 2, VP PLAYER: 0
+[MODEL] pickle=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-25-533289.pickle
+[MODEL] checkpoint=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-25-533289.pth
+Roll-off Attacker/Defender: enemy=1 model=6 -> attacker=model
+Юниты: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]
+[DEPLOY] Order: model first, alternating
+[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (51,6)
+[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (20,34)
+[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (58,2)
+[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (13,34)
+[MISSION Only War] Post-deploy: currently no post-deploy units supported
+[MODEL] Архитектура сети: dueling (источник: net_type)
+
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+{'model health': [10, 10], 'player health': [10, 10], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+Здоровье MODEL: [10, 10], здоровье PLAYER: [10, 10]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 1 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=1, gained=0, VP: 0 -> 0, objectives=[1]
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА ЧАРДЖА ---
+Нет доступных целей для чарджа.
+--- ФАЗА БОЯ ---
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=0)
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=1)
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (51, 6). Выбор: none, advance=нет, distance=0
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Движение пропущено (no move). Позиция после: (51, 6)
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=0)
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=1)
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=2)
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.500 (obj=3)
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (58, 2). Выбор: none, advance=нет, distance=0
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Движение пропущено (no move). Позиция после: (58, 2)
+Reward (VP/объекты, движение): hold=-4.000, proximity=0.000, total=-4.000
+Reward (шаг): движение delta=-4.000
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+[MODEL] Чардж: нет доступных целей
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: нет доступных атак
+Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=13.152946437965905->13.152946437965905
+=== КОНЕЦ БОЕВОГО РАУНДА 1 ===
+Итерация 0 завершена с наградой tensor([-4.0500], device='cuda:0'), здоровье игрока [10.0, 10.0], здоровье модели [10.0, 10.0]
+{'model health': [10.0, 10.0], 'player health': [10.0, 10.0], 'modelCP': 2, 'playerCP': 2, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+Здоровье MODEL: [10.0, 10.0], здоровье PLAYER: [10.0, 10.0]
+CP MODEL: 2, CP PLAYER: 2
+VP MODEL: 0, VP PLAYER: 0
+=== БОЕВОЙ РАУНД 2 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=1, gained=1, VP: 0 -> 1, objectives=[1]
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА ЧАРДЖА ---
+Нет доступных целей для чарджа.
+--- ФАЗА БОЯ ---
+--- ХОД MODEL ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0
+--- ФАЗА ДВИЖЕНИЯ ---
+--- ФАЗА ДВИЖЕНИЯ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (51, 6). Выбор: right, advance=да, бросок=5, макс=10, distance=10
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (51, 16)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (58, 2). Выбор: right, advance=да, бросок=2, макс=7, distance=7
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (58, 9)
+[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+--- ФАЗА СТРЕЛЬБЫ ---
+--- ФАЗА СТРЕЛЬБЫ ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.
+--- ФАЗА ЧАРДЖА ---
+--- ФАЗА ЧАРДЖА ---
+[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.
+[MODEL] Чардж: нет доступных целей
+--- ФАЗА БОЯ ---
+--- ФАЗА БОЯ ---
+[MODEL] Ближний бой: нет доступных атак
+Reward (VP diff): prev=0, curr=-1, delta=-1, reward=+0.000, penalty=-0.050
+Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=13.152946437965905->15.264337522473747
+=== КОНЕЦ БОЕВОГО РАУНДА 2 ===
+Итерация 1 завершена с наградой tensor([-0.1000], device='cuda:0'), здоровье игрока [10.0, 10.0], здоровье модели [10.0, 10.0]
+{'model health': [10.0, 10.0], 'player health': [10.0, 10.0], 'modelCP': 4, 'playerCP': 4, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 1, 'mission': 'Only War', 'turn': 3, 'battle round': 3, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+Здоровье MODEL: [10.0, 10.0], здоровье PLAYER: [10.0, 10.0]
+CP MODEL: 4, CP PLAYER: 4
+VP MODEL: 0, VP PLAYER: 1
+=== БОЕВОЙ РАУНД 3 ===
+--- ХОД PLAYER ---
+--- ФАЗА КОМАНДОВАНИЯ ---
+[ENEMY] Only War: end of Command phase -> controlled=1, gained=1, VP: 1 -> 2, objectives=[1]
+--- ФАЗА ДВИЖЕНИЯ ---
