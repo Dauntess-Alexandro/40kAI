@@ -344,6 +344,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._visual_state: Optional[dict] = None
         self._pending_snapshot: Optional[dict] = None
         self._pending_state_json: Optional[dict] = None
+        self._grid_axes_swapped: Optional[bool] = None
         self._cinematic_history: Deque[str] = deque(maxlen=30)
         self._deferred_moves: list[dict] = []
         self._fx_shot_queue: Deque[FxShotEvent] = deque()
@@ -1346,6 +1347,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         src = movement.get("from")
         dest = movement.get("to")
+        src_xy = (
+            self._normalize_grid_xy(src[0], src[1])
+            if isinstance(src, (list, tuple)) and len(src) >= 2
+            else None
+        )
+        dest_xy = (
+            self._normalize_grid_xy(dest[0], dest[1])
+            if isinstance(dest, (list, tuple)) and len(dest) >= 2
+            else None
+        )
         src_types = (type(src[0]).__name__, type(src[1]).__name__) if isinstance(src, (list, tuple)) and len(src) >= 2 else None
         dest_types = (type(dest[0]).__name__, type(dest[1]).__name__) if isinstance(dest, (list, tuple)) and len(dest) >= 2 else None
         key = (side, unit_id)
@@ -1356,15 +1367,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
             f"from={src} types={src_types} to={dest} types={dest_types} "
             f"key={key} render_found={int(render_found)}"
         )
-        if not (isinstance(dest, (list, tuple)) and len(dest) >= 2):
+        if dest_xy is None:
             return
         if not render_found:
             self._defer_move(payload, movement, event_id=event_id)
             return
-        normalized = self._normalize_grid_xy(dest[0], dest[1])
-        if normalized is None:
-            return
-        x_grid, y_grid = normalized
+        x_grid, y_grid = dest_xy
         before = None
         for unit in self._visual_state.get("units", []) or []:
             if unit.get("id") == unit_id and unit.get("side") == side:
@@ -1372,6 +1380,27 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 unit["x"] = x_grid
                 unit["y"] = y_grid
                 break
+        if before is not None and src_xy is not None and before != src_xy:
+            swapped_before = (before[1], before[0])
+            if swapped_before == src_xy or (dest_xy is not None and swapped_before == dest_xy):
+                if self._grid_axes_swapped is not True:
+                    self._grid_axes_swapped = True
+                    self.add_log_line(
+                        "WARNING: обнаружен swap осей grid, корректирую визуальное состояние"
+                    )
+                self._swap_state_axes(self._visual_state)
+                self.map_scene.update_state(self._visual_state)
+                for unit in self._visual_state.get("units", []) or []:
+                    if unit.get("id") == unit_id and unit.get("side") == side:
+                        before = (unit.get("x"), unit.get("y"))
+                        break
+            if before == dest_xy:
+                self.add_log_line(
+                    "WARNING: move state mismatch "
+                    f"key=({side},{unit_id}) before={before} ожидается from={src_xy}"
+                )
+                self._set_unit_position_to_source(side, unit_id, src_xy)
+                before = src_xy
         stored_grid = None
         for unit in self._visual_state.get("units", []) or []:
             if unit.get("id") == unit_id and unit.get("side") == side:
@@ -2103,6 +2132,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _apply_visual_state(self, state: dict) -> None:
         self._visual_state = copy.deepcopy(state)
+        if self._grid_axes_swapped:
+            self._swap_state_axes(self._visual_state)
         self._normalize_units_grid_positions(self._visual_state)
         self.map_scene.update_state(self._visual_state)
 
@@ -2116,6 +2147,20 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 continue
             unit["x"], unit["y"] = normalized
 
+    def _swap_state_axes(self, state: dict) -> None:
+        for unit in state.get("units", []) or []:
+            x = unit.get("x")
+            y = unit.get("y")
+            if x is None or y is None:
+                continue
+            unit["x"], unit["y"] = y, x
+        for objective in state.get("objectives", []) or []:
+            x = objective.get("x")
+            y = objective.get("y")
+            if x is None or y is None:
+                continue
+            objective["x"], objective["y"] = y, x
+
     def _normalize_grid_xy(
         self, x_value: Optional[float], y_value: Optional[float]
     ) -> Optional[Tuple[int, int]]:
@@ -2125,6 +2170,19 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return int(x_value), int(y_value)
         except (TypeError, ValueError):
             return None
+
+    def _set_unit_position_to_source(
+        self, side: str, unit_id: int, src_xy: Optional[Tuple[int, int]]
+    ) -> None:
+        if src_xy is None or not self._visual_state:
+            return
+        src_x, src_y = src_xy
+        for unit in self._visual_state.get("units", []) or []:
+            if unit.get("id") == unit_id and unit.get("side") == side:
+                unit["x"] = src_x
+                unit["y"] = src_y
+                break
+        self.map_scene.set_unit_position_immediate(side, unit_id, src_x, src_y)
 
     def _side_from_unit_id(self, unit_id: int) -> Optional[str]:
         unit_str = str(unit_id)

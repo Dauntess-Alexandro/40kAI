@@ -411,6 +411,20 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._curr_unit_positions[key] = QtCore.QPointF(float(x), float(y))
         self._start_unit_animation()
 
+    def set_unit_position_immediate(self, side: str, unit_id: int, x: int, y: int) -> None:
+        key = (side, unit_id)
+        for unit in self._units_state:
+            if (unit.get("side"), unit.get("id")) == key:
+                unit["x"] = x
+                unit["y"] = y
+                break
+        point = QtCore.QPointF(float(x), float(y))
+        self._curr_unit_positions[key] = QtCore.QPointF(point)
+        self._prev_unit_positions[key] = QtCore.QPointF(point)
+        self._rebuild_units(1.0)
+        self.refresh_overlays()
+        self.update()
+
     def set_objective_radius_visible(self, visible: bool) -> None:
         self._show_objective_radius = bool(visible)
         self.update()
