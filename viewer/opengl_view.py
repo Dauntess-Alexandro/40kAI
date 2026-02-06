@@ -209,6 +209,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._fx_target_flash_until = 0.0
         self._fx_target_flash_unit_id: Optional[int] = None
         self._fx_target_flash_cell: Optional[Tuple[int, int]] = None
+        self._model_pending_positions: Dict[Tuple[str, int], QtCore.QPointF] = {}
+        self._model_animating_units: set[Tuple[str, int]] = set()
 
         self.setMouseTracking(True)
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
@@ -243,7 +245,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._ensure_grid_cache(width, height)
 
         self._units_state = list(self._state.get("units", []) or [])
-        self._prev_unit_positions = dict(self._curr_unit_positions)
+        phase_text = str(self._state.get("phase") or self._phase or "")
+        is_movement_phase = self._is_movement_phase(phase_text)
+        prev_positions = dict(self._curr_unit_positions)
+        self._prev_unit_positions = dict(prev_positions)
         self._curr_unit_positions = {}
         for unit in self._units_state:
             key = (unit.get("side"), unit.get("id"))
@@ -251,7 +256,45 @@ class OpenGLBoardWidget(QOpenGLWidget):
             y = unit.get("y")
             if key[0] is None or key[1] is None or x is None or y is None:
                 continue
-            self._curr_unit_positions[key] = QtCore.QPointF(float(x), float(y))
+            incoming = QtCore.QPointF(float(x), float(y))
+            if key[0] == "model":
+                existing = prev_positions.get(key)
+                if not is_movement_phase and existing is not None:
+                    self._model_pending_positions[key] = incoming
+                    self._curr_unit_positions[key] = QtCore.QPointF(existing)
+                    if self._viewer_debug:
+                        if existing != incoming:
+                            print(
+                                "VIEWER_DEBUG: WARNING: MODEL_MOVED_IN_COMMAND "
+                                f"phase={phase_text} unit_id={key[1]} "
+                                f"pos=({incoming.x():.1f},{incoming.y():.1f}) callsite=update_state"
+                            )
+                        print(
+                            "VIEWER_DEBUG: MODEL_SYNC_SKIPPED "
+                            f"reason=phase_not_movement unit_id={key[1]} "
+                            f"incoming_pos=({incoming.x():.1f},{incoming.y():.1f})"
+                        )
+                    continue
+                if key in self._model_animating_units and existing is not None:
+                    if incoming != existing:
+                        prev_pos = prev_positions.get(key)
+                        if prev_pos is None or incoming != prev_pos:
+                            self._model_pending_positions[key] = incoming
+                        if self._viewer_debug:
+                            print(
+                                "VIEWER_DEBUG: MODEL_SYNC_SKIPPED "
+                                f"reason=animating unit_id={key[1]} "
+                                f"incoming_pos=({incoming.x():.1f},{incoming.y():.1f})"
+                            )
+                    self._curr_unit_positions[key] = QtCore.QPointF(existing)
+                    continue
+                if self._viewer_debug and existing is not None and incoming != existing:
+                    print(
+                        "VIEWER_DEBUG: MODEL_DIRECT_SETPOS "
+                        f"phase={phase_text} unit_id={key[1]} "
+                        f"pos=({incoming.x():.1f},{incoming.y():.1f}) source=state_sync"
+                    )
+            self._curr_unit_positions[key] = QtCore.QPointF(incoming)
 
         for key, point in self._curr_unit_positions.items():
             self._prev_unit_positions.setdefault(key, QtCore.QPointF(point))
@@ -436,6 +479,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
             current = self._curr_unit_positions.get(key)
             if current is None:
                 current = QtCore.QPointF(float(x), float(y))
+        if side == "model" and self._viewer_debug:
+            if current.x() != float(x) or current.y() != float(y):
+                print(
+                    "VIEWER_DEBUG: START_MODEL_MOVE_ANIM "
+                    f"unit_id={unit_id} from=({current.x():.1f},{current.y():.1f}) "
+                    f"to=({float(x):.1f},{float(y):.1f}) duration_ms={self._unit_anim_duration_ms}"
+                )
         self._prev_unit_positions[key] = QtCore.QPointF(current)
         self._curr_unit_positions[key] = QtCore.QPointF(float(x), float(y))
         self._start_unit_animation()
@@ -555,6 +605,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def _start_unit_animation(self) -> None:
         self._unit_anim_clock.restart()
+        self._model_animating_units = set()
+        for key, curr_pos in self._curr_unit_positions.items():
+            prev_pos = self._prev_unit_positions.get(key, curr_pos)
+            if prev_pos.x() == curr_pos.x() and prev_pos.y() == curr_pos.y():
+                continue
+            if key[0] == "model":
+                self._model_animating_units.add(key)
         if self._viewer_debug:
             for key, curr_pos in self._curr_unit_positions.items():
                 prev_pos = self._prev_unit_positions.get(key, curr_pos)
@@ -590,6 +647,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.update()
         if factor >= 1.0 and self._unit_anim_timer.isActive():
             self._unit_anim_timer.stop()
+            finished = set(self._model_animating_units)
+            self._model_animating_units.clear()
+            if finished:
+                self._apply_pending_model_positions(finished)
 
     def _rebuild_units(self, factor: float) -> None:
         self._units = []
@@ -645,11 +706,50 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def _should_show_movement(self) -> bool:
         phase = str(self._phase or "").lower()
-        return "move" in phase or "движ" in phase or "movement" in phase or self._move_range is not None
+        return self._is_movement_phase(phase) or self._move_range is not None
 
     def _should_show_shooting(self) -> bool:
         phase = str(self._phase or "").lower()
         return "shoot" in phase or "стрел" in phase or "shooting" in phase
+
+    def _is_movement_phase(self, phase_text: str) -> bool:
+        phase = str(phase_text or "").lower()
+        return (
+            "move" in phase
+            or "движ" in phase
+            or "movement" in phase
+            or "walk" in phase
+        )
+
+    def _apply_pending_model_positions(self, keys: set[Tuple[str, int]]) -> None:
+        if not keys:
+            return
+        applied = False
+        for key in keys:
+            pending = self._model_pending_positions.pop(key, None)
+            if pending is None:
+                continue
+            if key in self._curr_unit_positions:
+                current = self._curr_unit_positions[key]
+                if current == pending:
+                    continue
+            for unit in self._units_state:
+                if (unit.get("side"), unit.get("id")) == key:
+                    unit["x"] = int(pending.x())
+                    unit["y"] = int(pending.y())
+                    break
+            self._prev_unit_positions[key] = QtCore.QPointF(pending)
+            self._curr_unit_positions[key] = QtCore.QPointF(pending)
+            applied = True
+            if self._viewer_debug:
+                print(
+                    "VIEWER_DEBUG: MODEL_APPLY_PENDING "
+                    f"unit_id={key[1]} pos=({pending.x():.1f},{pending.y():.1f})"
+                )
+        if applied:
+            self._rebuild_units(1.0)
+            self.refresh_overlays()
+            self.update()
 
     def _draw_movement_overlay(self, unit: dict) -> None:
         move_range = self._move_range

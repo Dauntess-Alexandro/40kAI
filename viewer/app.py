@@ -1252,6 +1252,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             label = self._phase_label(phase)
             self._set_cinematic_text([f"Фаза: {label}"])
             self.map_scene.set_active_phase(phase)
+            if self._viewer_debug:
+                self.add_log_line(f"PHASE_ENTER side=model phase={phase}")
             return
         if kind == "summary":
             phase = payload.get("phase") or ""
