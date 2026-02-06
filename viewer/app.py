@@ -1419,10 +1419,47 @@ class ViewerWindow(QtWidgets.QMainWindow):
             state = self._last_state
         if not state:
             return
-        self._visual_state = copy.deepcopy(state)
-        self.map_scene.update_state(state)
+        merged_state = self._merge_model_positions_from_visual(state)
+        self._visual_state = copy.deepcopy(merged_state)
+        self.map_scene.update_state(merged_state)
         self._pending_snapshot = None
         self._cinematic_playback_active = False
+
+    def _merge_model_positions_from_visual(self, snapshot: dict) -> dict:
+        if not self._visual_state:
+            return snapshot
+        visual_units = {}
+        for unit in self._visual_state.get("units", []) or []:
+            if unit.get("side") != "model":
+                continue
+            unit_id = unit.get("id")
+            x = unit.get("x")
+            y = unit.get("y")
+            if unit_id is None or x is None or y is None:
+                continue
+            visual_units[("model", unit_id)] = (int(x), int(y))
+        if not visual_units:
+            return snapshot
+        merged = copy.deepcopy(snapshot)
+        adjusted = []
+        for unit in merged.get("units", []) or []:
+            if unit.get("side") != "model":
+                continue
+            key = ("model", unit.get("id"))
+            coords = visual_units.get(key)
+            if coords is None:
+                continue
+            current = (unit.get("x"), unit.get("y"))
+            if current != coords:
+                unit["x"], unit["y"] = coords
+                if self._viewer_debug:
+                    adjusted.append((unit.get("id"), current, coords))
+        if adjusted and self._viewer_debug:
+            self.add_log_line(
+                "VIEWER_DEBUG: model snapshot positions overridden "
+                f"count={len(adjusted)}"
+            )
+        return merged
 
     def _end_cinematic_playback(self) -> None:
         self._cinematic_playback_active = False
