@@ -202,6 +202,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._fx_pixmaps: Dict[str, QtGui.QPixmap] = {}
         self._fx_tinted_cache: Dict[Tuple[str, int], QtGui.QPixmap] = {}
         self._fx_initialized = False
+        self._fx_target_flash_until = 0.0
+        self._fx_target_flash_unit_id: Optional[int] = None
+        self._fx_target_flash_cell: Optional[Tuple[int, int]] = None
 
         self.setMouseTracking(True)
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
@@ -364,6 +367,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def set_target_cell(self, cell: Optional[Tuple[int, int]]) -> None:
         self._target_cell = cell
         self._target_unit_id = None
+        self.update()
+
+    def flash_target(
+        self,
+        unit_id: Optional[int] = None,
+        cell: Optional[Tuple[int, int]] = None,
+        duration_s: float = 0.6,
+    ) -> None:
+        now = perf_counter()
+        self._fx_target_flash_until = max(now, self._fx_target_flash_until) + max(0.1, duration_s)
+        self._fx_target_flash_unit_id = unit_id
+        self._fx_target_flash_cell = cell
         self.update()
 
     def clear_target_selection(self) -> None:
@@ -1109,6 +1124,29 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 rotation_deg=angle,
             )
             painter.restore()
+
+        flash_target_unit = self._find_unit_by_id(self._fx_target_flash_unit_id)
+        flash_render = self._unit_render_for_unit(flash_target_unit)
+        flash_center = None
+        flash_radius = None
+        if flash_render:
+            flash_center = flash_render.center
+            flash_radius = flash_render.radius
+        elif self._fx_target_flash_cell is not None:
+            flash_center = self._cell_center(*self._fx_target_flash_cell)
+            flash_radius = self.cell_size * 0.55
+        if flash_center is not None and flash_radius is not None:
+            now = perf_counter()
+            if now <= self._fx_target_flash_until:
+                flash_color, flash_strength = self._fx_color_for_unit(flash_target_unit)
+                ring_pixmap = self._tinted_pixmap("ring_soft", flash_color)
+                flash_phase = min(1.0, max(0.0, (self._fx_target_flash_until - now) / 0.6))
+                flash_alpha = 0.9 * (0.6 + 0.4 * pulse) * flash_strength * (0.5 + 0.5 * flash_phase)
+                flash_size = flash_radius * 6.2 * (0.9 + 0.3 * pulse)
+                painter.save()
+                painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+                self._draw_fx_sprite(painter, ring_pixmap, flash_center, flash_size, flash_alpha)
+                painter.restore()
 
         if self._hover_cell is not None:
             hover_center = self._cell_center(*self._hover_cell)

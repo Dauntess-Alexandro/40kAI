@@ -1325,6 +1325,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             weapon_name = shooting.get("weapon_name")
             damage = shooting.get("damage")
             if unit_id is not None and target_id is not None and weapon_name:
+                self.map_scene.flash_target(unit_id=int(target_id))
                 event = FxShotEvent(
                     ts=datetime.utcnow().isoformat(),
                     report_type="shooting",
