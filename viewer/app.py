@@ -343,6 +343,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._cinematic_playback_active = False
         self._visual_state: Optional[dict] = None
         self._pending_snapshot: Optional[dict] = None
+        self._pending_state_json: Optional[dict] = None
         self._cinematic_history: Deque[str] = deque(maxlen=30)
         self._deferred_moves: list[dict] = []
         self._fx_shot_queue: Deque[FxShotEvent] = deque()
@@ -902,10 +903,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _apply_state(self, state):
         self._last_state = state
-        board = state.get("board", {})
-        if self._cinematic_playback_active and self._cinematic_manual:
-            self.add_log_line("FX: apply_state during playback (ignored)")
-        if not self._cinematic_playback_active or not self._cinematic_manual:
+        active = state.get("active") or state.get("active_side")
+        active_side = str(active or "").lower()
+        defer_state_update = (
+            self._cinematic_playback_active
+            and self._cinematic_manual
+            and active_side in ("model", "enemy")
+        )
+        if defer_state_update:
+            self._pending_state_json = copy.deepcopy(state)
+            self.add_log_line("FX: state update deferred during playback")
+        if not defer_state_update:
             self._visual_state = copy.deepcopy(state)
             self.map_scene.update_state(self._visual_state)
         elif self._visual_state is None:
@@ -913,7 +921,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.map_scene.update_state(self._visual_state)
         self._process_deferred_moves()
 
-        state_for_ui = self._visual_state or state
+        state_for_ui = state if defer_state_update else (self._visual_state or state)
         self._units_by_key = {}
         for unit in state_for_ui.get("units", []) or []:
             self._units_by_key[(unit.get("side"), unit.get("id"))] = unit
@@ -1143,9 +1151,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
             phase = payload.get("phase") or ""
             summary_text = payload.get("summary_text") or self._format_phase_summary(phase, payload.get("summary") or {})
             phase_label = self._phase_label(phase)
-            self._set_cinematic_text([f"Фаза: {phase_label}", f"📌 Итог: {summary_text}"])
-            self.add_log_line(f"FX: show summary {phase} {summary_text}")
-            self._record_cinematic_history([f"Фаза: {phase_label}", f"📌 Итог: {summary_text}"])
+            lines = [f"Фаза: {phase_label}"]
+            if summary_text:
+                lines.append(f"📌 Итог: {summary_text}")
+            self._set_cinematic_text(lines)
+            if summary_text:
+                self.add_log_line(f"FX: show summary {phase} {summary_text}")
+            self._record_cinematic_history(lines)
             return
         if kind == "unit_action":
             unit_id = payload.get("unit_id")
@@ -1156,7 +1168,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
             detail = self._format_unit_action_line(payload)
             phase_label = self._phase_label(payload.get("phase") or "")
             summary_text = self._format_phase_summary(payload.get("phase") or "", payload.get("summary") or {})
-            lines = [f"Фаза: {phase_label}", f"📌 Итог: {summary_text}", title, detail]
+            lines = [f"Фаза: {phase_label}"]
+            if summary_text:
+                lines.append(f"📌 Итог: {summary_text}")
+            lines.extend([title, detail])
             self._set_cinematic_text(lines)
             self._play_unit_action_fx(payload)
             if unit_id is not None:
@@ -1164,10 +1179,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._record_cinematic_history([title, detail])
             return
         if kind == "phase_done":
-            summary_text = payload.get("summary_text") or "нет данных"
+            summary_text = payload.get("summary_text") or ""
             phase_label = self._phase_label(payload.get("phase") or "")
-            self._set_cinematic_text([f"Фаза: {phase_label}", f"📌 Итог: {summary_text}"])
-            self._record_cinematic_history([f"Фаза: {phase_label}", f"📌 Итог: {summary_text}"])
+            lines = [f"Фаза: {phase_label}"]
+            if summary_text:
+                lines.append(f"📌 Итог: {summary_text}")
+            self._set_cinematic_text(lines)
+            self._record_cinematic_history(lines)
             return
 
     def _set_cinematic_text(self, lines: list[str]) -> None:
@@ -1274,7 +1292,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if action == "move":
             dest = movement.get("to")
             if isinstance(dest, (list, tuple)) and len(dest) >= 2:
-                self.map_scene.set_target_cell((int(dest[1]), int(dest[0])))
+                self.map_scene.set_target_cell((int(dest[0]), int(dest[1])))
         if action == "shoot":
             weapon_name = shooting.get("weapon_name")
             damage = shooting.get("damage")
@@ -1297,9 +1315,19 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.map_scene.update_state(state)
         self._pending_snapshot = None
         self._cinematic_playback_active = False
+        self._apply_pending_state_after_playback()
 
     def _end_cinematic_playback(self) -> None:
         self._cinematic_playback_active = False
+        self._apply_pending_state_after_playback()
+
+    def _apply_pending_state_after_playback(self) -> None:
+        if not self._pending_state_json:
+            return
+        self.add_log_line("FX: apply pending state after playback end")
+        self._visual_state = copy.deepcopy(self._pending_state_json)
+        self.map_scene.update_state(self._visual_state)
+        self._pending_state_json = None
 
     def _phase_label(self, phase: str) -> str:
         mapping = {
@@ -1337,8 +1365,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if not render_found:
             self._defer_move(payload, movement, event_id=event_id)
             return
-        x_grid = int(dest[1])
-        y_grid = int(dest[0])
+        x_grid = int(dest[0])
+        y_grid = int(dest[1])
         before = None
         for unit in self._visual_state.get("units", []) or []:
             if unit.get("id") == unit_id and unit.get("side") == side:
@@ -1346,6 +1374,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 unit["x"] = x_grid
                 unit["y"] = y_grid
                 break
+        self.add_log_line(
+            "FX: move applied "
+            f"unit={unit_id} from={src} to={dest} stored_grid=({x_grid},{y_grid})"
+        )
         self.add_log_line(
             "FX: move write "
             f"unit_id={unit_id} side={side} grid=({x_grid},{y_grid}) "
@@ -1389,6 +1421,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             total = summary.get("total_units", 0)
             advanced = summary.get("advanced_count", 0)
             dist = summary.get("dist_total", 0.0)
+            if total == 0:
+                return ""
             return f"двигались {moved}/{total}, advance={advanced}, dist={dist:.1f}"
         if phase in ("shooting", "charge", "fight"):
             main_label = "shots" if phase == "shooting" else "charges" if phase == "charge" else "fights"
@@ -1398,7 +1432,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             reasons_text = ", ".join(f"{key}={value}" for key, value in sorted(reasons.items()))
             reason_part = f" (reasons: {reasons_text})" if reasons_text else ""
             return f"{main_label}={main_value}, skipped={skipped}{reason_part}"
-        return "нет данных"
+        return ""
 
     def _format_unit_action_line(self, payload: dict) -> str:
         action = payload.get("action")
