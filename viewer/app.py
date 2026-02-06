@@ -1220,6 +1220,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.cinematic_controls.setVisible(waiting)
         self.cinematic_yes.setEnabled(waiting)
         self.cinematic_no.setEnabled(waiting)
+        if not hasattr(self, "command_stack"):
+            if not waiting:
+                self.cinematic_prompt.setText("")
+            return
         if waiting:
             self.command_stack.setEnabled(False)
         else:
