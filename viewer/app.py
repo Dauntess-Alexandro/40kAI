@@ -190,6 +190,16 @@ class PhaseScriptPlayer(QtCore.QObject):
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._play_next_step)
 
+    def reset(self) -> None:
+        self._timer.stop()
+        self._queue.clear()
+        self._active_script = []
+        self._step_index = 0
+        self._playing = False
+        self._checkpoint_seen = False
+        self._waiting = False
+        self._paused = False
+
     def enqueue(self, script: list[PhaseScriptStep]) -> None:
         if not script:
             return
@@ -991,6 +1001,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if not isinstance(events, list):
             return
         if events:
+            max_event_id = self._max_event_id(events)
+            if (
+                max_event_id is not None
+                and self._model_event_cursor is not None
+                and max_event_id < self._model_event_cursor
+            ):
+                self._reset_model_event_tracking(
+                    f"обнаружен сброс event_id ({max_event_id} < {self._model_event_cursor})"
+                )
             if self._model_events_snapshot == events:
                 return
             filtered = self._filter_model_events(events)
@@ -1018,6 +1037,34 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if side in ("enemy", "model"):
                 filtered.append(event)
         return filtered
+
+    def _max_event_id(self, events: list[dict]) -> Optional[int]:
+        max_id = None
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            event_id = event.get("event_id")
+            if event_id is None:
+                continue
+            try:
+                event_id = int(event_id)
+            except (TypeError, ValueError):
+                continue
+            max_id = event_id if max_id is None else max(max_id, event_id)
+        return max_id
+
+    def _reset_model_event_tracking(self, reason: str) -> None:
+        self.add_log_line(f"FX: сброс курсора событий модели — {reason}.")
+        self._model_event_cursor = None
+        self._model_events_snapshot = None
+        self._model_log_source = None
+        self._model_events_stream = []
+        self._model_events_current = []
+        self._phase_buffer = None
+        self._cinematic_playback_active = False
+        self._set_cinematic_waiting(False)
+        self._phase_player.reset()
+        self._cinematic_history.clear()
 
     def _bootstrap_model_events(self, events) -> None:
         if not events:
