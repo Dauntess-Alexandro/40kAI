@@ -918,9 +918,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._last_state = state
         model_events = state.get("model_events") or []
         board = state.get("board", {})
+        active = state.get("active") or state.get("active_side")
         if self._cinematic_playback_active and self._cinematic_manual:
             self.add_log_line("FX: apply_state during playback (ignored)")
         skip_visual_update = self._has_model_cinematic_events(model_events)
+        if str(active).lower() == "player":
+            skip_visual_update = False
         if skip_visual_update:
             self.add_log_line("FX: cinematic events detected, skip immediate state apply")
         if (not self._cinematic_playback_active or not self._cinematic_manual) and not skip_visual_update:
@@ -939,7 +942,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.status_round.setText(f"Раунд: {state.get('round', '—')}")
         self.status_turn.setText(f"Ход: {state.get('turn', '—')}")
         self.status_phase.setText(f"Фаза: {state.get('phase', '—')}")
-        active = state.get("active") or state.get("active_side")
         active_label = "Игрок" if active == "player" else "Модель" if active == "model" else "—"
         self.status_active.setText(f"Активен: {active_label}")
         self._auto_switch_log_tab(active)
