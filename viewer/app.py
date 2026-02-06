@@ -231,7 +231,7 @@ class PhaseScriptPlayer(QtCore.QObject):
         step = self._active_script[self._step_index]
         self._step_index += 1
         manual = self._owner._is_cinematic_manual()
-        duration_ms = 0 if manual else max(0, int(step.duration_s * 1000))
+        duration_ms = max(0, int(step.duration_s * 1000))
         if step.kind == "checkpoint":
             self._checkpoint_seen = True
             self._owner._apply_phase_checkpoint(step.payload.get("snapshot"))
@@ -241,12 +241,11 @@ class PhaseScriptPlayer(QtCore.QObject):
                 QtCore.QTimer.singleShot(0, self._play_next_step)
             return
         self._owner._execute_phase_step(step)
-        if manual and step.kind in ("unit_action", "phase_done"):
+        if manual and step.kind == "phase_done":
             self._waiting = True
-            next_label = self._next_unit_label() if step.kind == "unit_action" else None
             self._owner._request_cinematic_continue(
-                reason="unit_done" if step.kind == "unit_action" else "phase_done",
-                next_label=next_label,
+                reason="phase_done",
+                next_label=None,
                 phase_label=step.payload.get("next_phase_label"),
             )
             return
@@ -1408,7 +1407,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 self._spawn_fx_for_event(event)
 
     def _apply_phase_checkpoint(self, snapshot: Optional[dict] = None) -> None:
-        state = snapshot if isinstance(snapshot, dict) else self._last_state
+        if isinstance(snapshot, dict):
+            state = snapshot
+        elif isinstance(self._pending_snapshot, dict):
+            state = self._pending_snapshot
+        else:
+            state = self._last_state
         if not state:
             return
         self._visual_state = copy.deepcopy(state)
