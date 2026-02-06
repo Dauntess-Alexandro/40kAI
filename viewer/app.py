@@ -833,6 +833,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._poll_state()
 
     def _submit_text(self):
+        if self._cinematic_waiting:
+            return
         text = self.command_input.text().strip()
         if self._is_target_request(self._pending_request) and self._current_target_id is None:
             return
@@ -2116,6 +2118,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             kind = getattr(self._pending_request, "kind", "")
             key = event.key()
             text = event.text().lower()
+            if self._cinematic_waiting and key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+                return True
             if kind == "direction":
                 if key == QtCore.Qt.Key_Up:
                     self._submit_answer("up")
