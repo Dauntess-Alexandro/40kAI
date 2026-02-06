@@ -904,7 +904,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._last_state = state
         board = state.get("board", {})
         if self._cinematic_playback_active and self._cinematic_manual:
-            self.add_log_line("FX: apply_state during playback (ignored)")
+            unit_preview = []
+            for unit in (state.get("units", []) or [])[:3]:
+                unit_preview.append(
+                    f"{unit.get('side')}:{unit.get('id')}@({unit.get('x')},{unit.get('y')})"
+                )
+            preview_text = ", ".join(unit_preview) if unit_preview else "нет данных"
+            self.add_log_line(
+                "FX: apply_state during playback (ignored) "
+                f"units={len(state.get('units', []) or [])} preview=[{preview_text}]"
+            )
         if not self._cinematic_playback_active or not self._cinematic_manual:
             self._visual_state = copy.deepcopy(state)
             self.map_scene.update_state(self._visual_state)
@@ -1293,6 +1302,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
         state = snapshot if isinstance(snapshot, dict) else self._last_state
         if not state:
             return
+        unit_preview = []
+        for unit in (state.get("units", []) or [])[:3]:
+            unit_preview.append(
+                f"{unit.get('side')}:{unit.get('id')}@({unit.get('x')},{unit.get('y')})"
+            )
+        preview_text = ", ".join(unit_preview) if unit_preview else "нет данных"
+        self.add_log_line(
+            "FX: apply checkpoint "
+            f"units={len(state.get('units', []) or [])} preview=[{preview_text}]"
+        )
         self._visual_state = copy.deepcopy(state)
         self.map_scene.update_state(state)
         self._pending_snapshot = None
@@ -1359,7 +1378,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         payload["_defer_attempts"] = attempts
         self._deferred_moves.append({"payload": payload, "movement": movement, "event_id": event_id})
         unit_id = payload.get("unit_id")
-        self.add_log_line(f"FX: defer move (missing render unit) unit={unit_id} attempts={attempts}")
+        src = movement.get("from")
+        dest = movement.get("to")
+        self.add_log_line(
+            "FX: defer move (missing render unit) "
+            f"unit={unit_id} attempts={attempts} from={src} to={dest}"
+        )
 
     def _process_deferred_moves(self) -> None:
         if not self._deferred_moves:
@@ -1844,6 +1868,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
         if self._cinematic_waiting:
             key = event.key()
+            if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+                self._handle_cinematic_continue(True)
+                return
             if key in (QtCore.Qt.Key_Y, QtCore.Qt.Key_Yes):
                 self._handle_cinematic_continue(True)
                 return
