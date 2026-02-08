@@ -25,6 +25,7 @@ from gym_mod.engine.mission import (
 from gym_mod.engine.skills import apply_end_of_command_phase
 from gym_mod.engine.logging_utils import format_unit
 from gym_mod.engine.state_export import write_state_json
+from gym_mod.engine import viewer_export
 from gym_mod.engine.game_io import get_active_io
 from gym_mod.engine.event_bus import get_event_bus, get_event_recorder
 
@@ -1270,6 +1271,30 @@ class Warhammer40kEnv(gym.Env):
             include_instance_id=self._is_verbose(),
         )
 
+    def _viewer_enabled(self) -> bool:
+        return os.getenv("VIEWER_EXPORT", "0") == "1"
+
+    def _viewer_snapshot(self) -> None:
+        if not self._viewer_enabled():
+            return
+        payload = viewer_export.build_snapshot_from_env(self)
+        viewer_export.write_snapshot(payload)
+
+    def _viewer_move_event(self, side: str, unit_id: int, pos_before: tuple, pos_after: tuple) -> None:
+        if not self._viewer_enabled():
+            return
+        side_label = "player" if side == "enemy" else "model"
+        event = {
+            "tick": int(getattr(self, "numTurns", 0) or 0),
+            "type": "move",
+            "unit_id": unit_id,
+            "side": side_label,
+            "from": [int(pos_before[1]), int(pos_before[0])],
+            "to": [int(pos_after[1]), int(pos_after[0])],
+            "duration_ms": 250,
+        }
+        viewer_export.append_event(event)
+
     def _format_unit_choices(self, side: str, indices: list[int]) -> str:
         return ", ".join(self._format_unit_label(side, idx) for idx in indices)
 
@@ -1667,6 +1692,7 @@ class Warhammer40kEnv(gym.Env):
                     "data": {"phase": phase},
                 }
             )
+        self._viewer_snapshot()
 
     def _end_battle_round(self):
         self._log(f"=== КОНЕЦ БОЕВОГО РАУНДА {self.battle_round} ===")
@@ -1763,6 +1789,7 @@ class Warhammer40kEnv(gym.Env):
                     "data": {"vp": self.modelVP, "cp": self.modelCP},
                 }
             )
+            self._viewer_snapshot()
             return battle_shock, reward_delta
 
         if side == "enemy" and action is not None and not manual:
@@ -1803,6 +1830,7 @@ class Warhammer40kEnv(gym.Env):
             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
             apply_end_of_command_phase(self, side="enemy", dice_fn=dice_fn, log_fn=self._log)
             score_end_of_command_phase(self, "enemy", log_fn=self._log)
+            self._viewer_snapshot()
             return battle_shock
 
         if side == "enemy" and manual:
@@ -1848,6 +1876,7 @@ class Warhammer40kEnv(gym.Env):
             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
             apply_end_of_command_phase(self, side="enemy", dice_fn=dice_fn, log_fn=self._log)
             score_end_of_command_phase(self, "enemy", log_fn=self._log)
+            self._viewer_snapshot()
             return battle_shock
 
         if side == "enemy":
@@ -1891,6 +1920,7 @@ class Warhammer40kEnv(gym.Env):
             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
             apply_end_of_command_phase(self, side="enemy", dice_fn=dice_fn, log_fn=self._log)
             score_end_of_command_phase(self, "enemy", log_fn=self._log)
+            self._viewer_snapshot()
             return battle_shock
 
         return None
@@ -1980,6 +2010,7 @@ class Warhammer40kEnv(gym.Env):
                         self._log_unit("MODEL", modelName, i, f"Позиция после: {pos_after}")
 
                     if pos_before != pos_after:
+                        self._viewer_move_event("model", self._unit_id("model", i), pos_before, pos_after)
                         self._resolve_overwatch(
                             defender_side="enemy",
                             moving_unit_side="model",
@@ -2090,6 +2121,7 @@ class Warhammer40kEnv(gym.Env):
                     "data": {"reward_delta": reward_delta},
                 }
             )
+            self._viewer_snapshot()
             return advanced_flags, reward_delta
 
         if side == "enemy" and action is not None and not manual:
@@ -2156,6 +2188,7 @@ class Warhammer40kEnv(gym.Env):
                         self._log_unit("enemy", unit_id, i, f"Позиция после: {pos_after}")
 
                     if pos_before != pos_after:
+                        self._viewer_move_event("enemy", self._unit_id("enemy", i), pos_before, pos_after)
                         self._resolve_overwatch(
                             defender_side="model",
                             moving_unit_side="enemy",
@@ -2212,6 +2245,7 @@ class Warhammer40kEnv(gym.Env):
                                 i,
                                 f"Остаётся в ближнем бою с {self._format_unit_label('model', idOfM)}, движение пропущено.",
                             )
+            self._viewer_snapshot()
             return advanced_flags
 
         if side == "enemy" and manual:
@@ -2243,6 +2277,8 @@ class Warhammer40kEnv(gym.Env):
                         self.unitInAttack[idOfE][1] = 0
                         pos_after = tuple(self.enemy_coords[i])
                         self._log(f"{unit_label}: отступление завершено. Позиция после: {pos_after}")
+                        if pos_before != pos_after:
+                            self._viewer_move_event("enemy", self._unit_id("enemy", i), pos_before, pos_after)
                         self.updateBoard()
                         self.showBoard()
                     else:
@@ -2314,6 +2350,7 @@ class Warhammer40kEnv(gym.Env):
 
                     pos_after = tuple(self.enemy_coords[i])
                     if pos_before != pos_after:
+                        self._viewer_move_event("enemy", self._unit_id("enemy", i), pos_before, pos_after)
                         self._resolve_overwatch(
                             defender_side="model",
                             moving_unit_side="enemy",
@@ -2324,6 +2361,7 @@ class Warhammer40kEnv(gym.Env):
 
                     self.updateBoard()
                     self.showBoard()
+            self._viewer_snapshot()
             return advanced_flags
 
         if side == "enemy":
@@ -2377,6 +2415,7 @@ class Warhammer40kEnv(gym.Env):
 
                     pos_after = tuple(self.enemy_coords[i])
                     if pos_before != pos_after:
+                        self._viewer_move_event("enemy", self._unit_id("enemy", i), pos_before, pos_after)
                         self._resolve_overwatch(
                             defender_side="model",
                             moving_unit_side="enemy",
@@ -2384,6 +2423,7 @@ class Warhammer40kEnv(gym.Env):
                             phase="movement",
                             manual=False,
                         )
+            self._viewer_snapshot()
             return advanced_flags
 
         return None
@@ -2641,6 +2681,7 @@ class Warhammer40kEnv(gym.Env):
                     "data": {"reward_delta": reward_delta},
                 }
             )
+            self._viewer_snapshot()
             return reward_delta
         elif side == "enemy" and action is not None and not manual:
             self._log_phase(self._display_side("enemy"), "shooting")
@@ -2861,6 +2902,7 @@ class Warhammer40kEnv(gym.Env):
                                 self._log(
                                     f"{self._format_unit_label('enemy', i)} стреляет по {self._format_unit_label('model', idOfM)}: урон {float(np.sum(dmg))}."
                                 )
+        self._viewer_snapshot()
         return None
 
     def charge_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False):
@@ -3019,6 +3061,7 @@ class Warhammer40kEnv(gym.Env):
                     "data": {"reward_delta": reward_delta},
                 }
             )
+            self._viewer_snapshot()
             return reward_delta
         elif side == "enemy" and action is not None and not manual:
             self._log_phase(self._display_side("enemy"), "charge")
@@ -3292,6 +3335,7 @@ class Warhammer40kEnv(gym.Env):
                             self._log(
                                 f"{self._format_unit_label('enemy', i)} не смог зачарджить {self._format_unit_label('model', idOfM)} (бросок {diceRoll} vs нужно {required:.1f})"
                             )
+        self._viewer_snapshot()
         return None
 
     def fight_phase(self, side: str):
@@ -3462,6 +3506,7 @@ class Warhammer40kEnv(gym.Env):
                     "data": {"reward_delta": reward_delta},
                 }
             )
+        self._viewer_snapshot()
         return reward_delta
 
     def refresh_objective_control(self):
