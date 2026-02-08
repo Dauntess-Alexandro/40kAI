@@ -195,6 +195,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._step_phase_events = {}
         self._step_phase_units = {}
         self._step_freeze_state = False
+        self._step_phase_start_positions = {}
+        self._step_phase_unit_positions = {}
+        self._latest_state = None
 
         self.points_vp_player = QtWidgets.QLabel("Player VP: —")
         self.points_vp_model = QtWidgets.QLabel("Model VP: —")
@@ -782,6 +785,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _apply_state(self, state):
         board = state.get("board", {})
+        self._latest_state = state
         if not self._step_freeze_state:
             self.map_scene.update_state(state)
 
@@ -930,6 +934,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 self._step_unit_index = max(0, len(self._step_unit_keys) - 1)
         else:
             self._step_unit_index = 0
+        self._build_step_positions()
         self._update_step_buttons()
 
     def _apply_step_filter(self):
@@ -938,6 +943,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._refresh_model_log_view()
             self._update_step_buttons()
             self._step_freeze_state = False
+            self._apply_step_state()
             return
 
         phase_key = self._step_phase_keys[self._step_phase_index]
@@ -962,6 +968,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._sync_unit_selection_from_step()
         self._update_step_buttons()
         self._step_freeze_state = not self._is_at_latest_step()
+        self._apply_step_state()
 
     def _is_at_latest_step(self):
         if not self._step_phase_keys:
@@ -971,6 +978,96 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if self._step_unit_keys and self._step_unit_index != len(self._step_unit_keys) - 1:
             return False
         return True
+
+    def _build_step_positions(self):
+        self._step_phase_start_positions = {}
+        self._step_phase_unit_positions = {}
+        if not self._latest_state or not self._step_phase_keys:
+            return
+
+        positions = {}
+        for unit in self._latest_state.get("units", []) or []:
+            key = (unit.get("side"), unit.get("id"))
+            x = unit.get("x")
+            y = unit.get("y")
+            if key[0] is None or key[1] is None or x is None or y is None:
+                continue
+            positions[key] = (float(x), float(y))
+
+        current_phase_key = None
+        for event in reversed(self._model_events_stream):
+            if not isinstance(event, dict):
+                continue
+            phase_key = (
+                event.get("battle_round"),
+                event.get("turn"),
+                event.get("phase"),
+            )
+            if current_phase_key is None:
+                current_phase_key = phase_key
+            if phase_key != current_phase_key:
+                self._step_phase_start_positions[current_phase_key] = dict(positions)
+                current_phase_key = phase_key
+            move_data = event.get("data") or {}
+            if "from" in move_data and event.get("unit_id") is not None:
+                unit_key = ("model", event.get("unit_id"))
+                pos_from = move_data.get("from")
+                if isinstance(pos_from, (list, tuple)) and len(pos_from) == 2:
+                    positions[unit_key] = (float(pos_from[0]), float(pos_from[1]))
+
+        if current_phase_key is not None:
+            self._step_phase_start_positions[current_phase_key] = dict(positions)
+
+        for phase_key, phase_events in self._step_phase_events.items():
+            base_positions = dict(self._step_phase_start_positions.get(phase_key, positions))
+            unit_keys = self._step_phase_units.get(phase_key, [])
+            move_targets = {}
+            for event in phase_events:
+                move_data = event.get("data") or {}
+                unit_id = event.get("unit_id")
+                if unit_id is None:
+                    continue
+                if "to" in move_data:
+                    pos_to = move_data.get("to")
+                    if isinstance(pos_to, (list, tuple)) and len(pos_to) == 2:
+                        move_targets[unit_id] = (float(pos_to[0]), float(pos_to[1]))
+            step_positions = []
+            positions_snapshot = dict(base_positions)
+            for unit_id in unit_keys:
+                if unit_id is not None and unit_id in move_targets:
+                    positions_snapshot[("model", unit_id)] = move_targets[unit_id]
+                step_positions.append(dict(positions_snapshot))
+            self._step_phase_unit_positions[phase_key] = step_positions
+
+    def _apply_step_state(self):
+        if not self._latest_state:
+            return
+        if not self._step_freeze_state:
+            self.map_scene.update_state(self._latest_state)
+            return
+        if not self._step_phase_keys:
+            return
+        phase_key = self._step_phase_keys[self._step_phase_index]
+        step_positions = self._step_phase_unit_positions.get(phase_key)
+        positions = None
+        if step_positions and self._step_unit_index < len(step_positions):
+            positions = step_positions[self._step_unit_index]
+        else:
+            positions = self._step_phase_start_positions.get(phase_key)
+        if not positions:
+            return
+        new_units = []
+        for unit in self._latest_state.get("units", []) or []:
+            unit_copy = dict(unit)
+            key = (unit_copy.get("side"), unit_copy.get("id"))
+            pos = positions.get(key)
+            if pos:
+                unit_copy["x"] = pos[0]
+                unit_copy["y"] = pos[1]
+            new_units.append(unit_copy)
+        step_state = dict(self._latest_state)
+        step_state["units"] = new_units
+        self.map_scene.update_state(step_state)
 
     def _update_step_buttons(self):
         has_phases = len(self._step_phase_keys) > 0
@@ -1397,6 +1494,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._step_phase_index = 0
         self._step_unit_index = 0
         self._step_freeze_state = False
+        self._step_phase_start_positions = {}
+        self._step_phase_unit_positions = {}
         self._update_step_buttons()
         self._fx_shot_queue.clear()
         self._fx_parser.reset(preserve_seen=False)

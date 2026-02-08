@@ -1978,6 +1978,22 @@ class Warhammer40kEnv(gym.Env):
                         self._log_unit("MODEL", modelName, i, f"Движение пропущено (no move). Позиция после: {pos_after}")
                     else:
                         self._log_unit("MODEL", modelName, i, f"Позиция после: {pos_after}")
+                    self._emit_event(
+                        {
+                            "side": "enemy",
+                            "phase": "movement",
+                            "type": "move",
+                            "msg": f"Позиция: {pos_before} -> {pos_after}",
+                            "unit_id": modelName,
+                            "unit_name": self._unit_name("model", i),
+                            "data": {
+                                "from": pos_before,
+                                "to": pos_after,
+                                "direction": direction,
+                                "distance": actual_movement,
+                            },
+                        }
+                    )
 
                     if pos_before != pos_after:
                         self._resolve_overwatch(
