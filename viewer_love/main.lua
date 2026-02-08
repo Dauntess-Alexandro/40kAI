@@ -5,6 +5,7 @@ local json = require("json")
 -- Wheel = zoom
 -- R = reset view (center 0,0; zoom=1)
 -- F = fit to units (center on bbox + zoom to fit)
+-- Enter = allow next model phase (phase_step_mode)
 
 local snapshot_path = "../viewer_out/snapshot.json"
 local events_path = "../viewer_out/events.jsonl"
@@ -22,7 +23,27 @@ local drag_start = { x = 0, y = 0 }
 local camera_start = { x = 0, y = 0 }
 local did_initial_fit = false
 
-local move_anims = {}
+local truth_state = {
+  tick = 0,
+  active_side = "-",
+  phase = "-",
+  unitsById = {},
+  fx = {},
+}
+
+local visual_state = {
+  unitsById = {},
+  fx = {},
+}
+
+local anims = {}
+local pending_truth = nil
+
+local phase_step_mode = {
+  pending_phase = nil,
+  allow_next = true,
+  buffered_events = {},
+}
 
 local function clamp(value, min_value, max_value)
   if value < min_value then
@@ -38,6 +59,105 @@ local function lerp(a, b, t)
   return a + (b - a) * t
 end
 
+local function debug_log(message)
+  if os.getenv("VIEWER_DEBUG", "0") == "1" then
+    print(message)
+  end
+end
+
+local function copy_unit(unit)
+  return {
+    id = unit.id,
+    x = unit.x,
+    y = unit.y,
+    hp = unit.hp,
+    side = unit.side,
+    name = unit.name,
+  }
+end
+
+local function build_truth_state(data)
+  local units_by_id = {}
+  local units = data.units or {}
+  for _, unit in ipairs(units) do
+    if unit.id ~= nil then
+      units_by_id[tonumber(unit.id)] = {
+        id = tonumber(unit.id),
+        x = unit.x,
+        y = unit.y,
+        hp = unit.hp,
+        side = unit.side,
+        name = unit.name,
+      }
+    end
+  end
+
+  return {
+    tick = data.tick or 0,
+    active_side = data.active_side or data.active or "-",
+    phase = data.phase or "-",
+    unitsById = units_by_id,
+    fx = data.fx or {},
+  }
+end
+
+local function ensure_visual_unit(unit_id, truth_unit)
+  if not visual_state.unitsById[unit_id] and truth_unit then
+    visual_state.unitsById[unit_id] = copy_unit(truth_unit)
+  end
+end
+
+local function remove_missing_visual_units()
+  for unit_id, _ in pairs(visual_state.unitsById) do
+    if not truth_state.unitsById[unit_id] then
+      visual_state.unitsById[unit_id] = nil
+    end
+  end
+end
+
+local function sync_visual_with_truth()
+  for unit_id, truth_unit in pairs(truth_state.unitsById) do
+    ensure_visual_unit(unit_id, truth_unit)
+    local visual_unit = visual_state.unitsById[unit_id]
+    if anims[unit_id] then
+      debug_log(string.format("[viewer] sync skip anim unit=%s", tostring(unit_id)))
+    elseif visual_unit then
+      visual_unit.x = truth_unit.x
+      visual_unit.y = truth_unit.y
+      visual_unit.hp = truth_unit.hp
+      visual_unit.side = truth_unit.side
+      visual_unit.name = truth_unit.name
+    end
+  end
+  remove_missing_visual_units()
+end
+
+local function update_truth_state(data)
+  truth_state = build_truth_state(data)
+  pending_truth = truth_state
+  debug_log(string.format(
+    "[viewer] snapshot tick=%s phase=%s units=%d",
+    tostring(truth_state.tick),
+    tostring(truth_state.phase),
+    (function()
+      local count = 0
+      for _ in pairs(truth_state.unitsById) do
+        count = count + 1
+      end
+      return count
+    end)()
+  ))
+  sync_visual_with_truth()
+end
+
+local function unit_visual_pos(unit_id)
+  local unit = visual_state.unitsById[unit_id]
+  if not unit then
+    return nil
+  end
+  return unit.x or 0, unit.y or 0
+end
+
 local function read_snapshot()
   local file = io.open(snapshot_path, "r")
   if not file then
@@ -51,6 +171,7 @@ local function read_snapshot()
   local ok, data = pcall(json.decode, content)
   if ok and data then
     snapshot = data
+    update_truth_state(data)
   end
 end
 
@@ -72,37 +193,91 @@ local function read_events()
   file:close()
 end
 
-local function start_move_animation(event)
-  local unit_id = tostring(event.unit_id)
-  local duration = (event.duration_ms or 250) / 1000
-  move_anims[unit_id] = {
-    from = event.from or { 0, 0 },
-    to = event.to or { 0, 0 },
-    t = 0,
-    duration = math.max(duration, 0.05),
-  }
-end
-
 local function process_events()
   if #event_queue == 0 then
     return
   end
   for _, event in ipairs(event_queue) do
-    if event.type == "move" then
-      start_move_animation(event)
-    end
+    table.insert(phase_step_mode.buffered_events, event)
   end
   event_queue = {}
+end
+
+local function should_buffer_event(event)
+  if not event then
+    return false
+  end
+  if truth_state.active_side ~= "model" then
+    return false
+  end
+  if phase_step_mode.allow_next then
+    return false
+  end
+  return true
+end
+
+local function apply_move_event(event)
+  if not event or not event.unit_id then
+    return
+  end
+  local unit_id = tonumber(event.unit_id)
+  local visual_unit = visual_state.unitsById[unit_id]
+  if not visual_unit then
+    ensure_visual_unit(unit_id, truth_state.unitsById[unit_id])
+    visual_unit = visual_state.unitsById[unit_id]
+  end
+  if not visual_unit then
+    return
+  end
+  local from_x, from_y = unit_visual_pos(unit_id)
+  local to = event.to or { from_x, from_y }
+  local duration = (event.duration_ms or 450) / 1000
+  anims[unit_id] = {
+    type = "move",
+    from = { from_x, from_y },
+    to = { to[1] or from_x, to[2] or from_y },
+    t = 0,
+    dur = math.max(duration, 0.05),
+  }
+  debug_log(string.format(
+    "[viewer] move unit=%s from=(%s,%s) to=(%s,%s) dur=%.2f",
+    tostring(unit_id),
+    tostring(from_x),
+    tostring(from_y),
+    tostring(anims[unit_id].to[1]),
+    tostring(anims[unit_id].to[2]),
+    anims[unit_id].dur
+  ))
+end
+
+local function apply_event(event)
+  if event.type == "move" then
+    apply_move_event(event)
+  end
+end
+
+local function drain_buffered_events()
+  if #phase_step_mode.buffered_events == 0 then
+    return
+  end
+  local remaining = {}
+  for _, event in ipairs(phase_step_mode.buffered_events) do
+    if should_buffer_event(event) then
+      table.insert(remaining, event)
+    else
+      apply_event(event)
+    end
+  end
+  phase_step_mode.buffered_events = remaining
 end
 
 local function get_unit_position(unit)
   if not unit then
     return nil
   end
-  local unit_id = tostring(unit.id or "")
-  local anim = move_anims[unit_id]
+  local anim = anims[unit.id]
   if anim then
-    local t = clamp(anim.t / anim.duration, 0, 1)
+    local t = clamp(anim.t / anim.dur, 0, 1)
     local x = lerp(anim.from[1] or 0, anim.to[1] or 0, t)
     local y = lerp(anim.from[2] or 0, anim.to[2] or 0, t)
     return x, y
@@ -159,12 +334,16 @@ local function reset_view()
 end
 
 local function fit_to_units()
-  if not snapshot or not snapshot.units or #snapshot.units == 0 then
+  local count = 0
+  for _ in pairs(visual_state.unitsById) do
+    count = count + 1
+  end
+  if count == 0 then
     return
   end
   local min_x, max_x = nil, nil
   local min_y, max_y = nil, nil
-  for _, unit in ipairs(snapshot.units) do
+  for _, unit in pairs(visual_state.unitsById) do
     if unit.x ~= nil and unit.y ~= nil then
       min_x = min_x and math.min(min_x, unit.x) or unit.x
       max_x = max_x and math.max(max_x, unit.x) or unit.x
@@ -202,14 +381,31 @@ function love.update(dt)
     read_events()
   end
 
-  for unit_id, anim in pairs(move_anims) do
+  process_events()
+  drain_buffered_events()
+
+  for unit_id, anim in pairs(anims) do
     anim.t = anim.t + dt
-    if anim.t >= anim.duration then
-      move_anims[unit_id] = nil
+    local unit = visual_state.unitsById[unit_id]
+    if unit then
+      local t = clamp(anim.t / anim.dur, 0, 1)
+      unit.x = lerp(anim.from[1] or unit.x, anim.to[1] or unit.x, t)
+      unit.y = lerp(anim.from[2] or unit.y, anim.to[2] or unit.y, t)
+      if t >= 1 then
+        unit.x = anim.to[1] or unit.x
+        unit.y = anim.to[2] or unit.y
+        anims[unit_id] = nil
+        debug_log(string.format("[viewer] anim done unit=%s", tostring(unit_id)))
+        if pending_truth and pending_truth.unitsById[unit_id] then
+          local truth_unit = pending_truth.unitsById[unit_id]
+          unit.x = truth_unit.x
+          unit.y = truth_unit.y
+        end
+      end
+    else
+      anims[unit_id] = nil
     end
   end
-
-  process_events()
 
   if snapshot and not did_initial_fit then
     fit_to_units()
@@ -225,8 +421,7 @@ function love.draw()
   local units_count = 0
   local min_x, max_x = nil, nil
   local min_y, max_y = nil, nil
-  if snapshot and snapshot.units then
-    for _, unit in ipairs(snapshot.units) do
+  for _, unit in pairs(visual_state.unitsById) do
       if unit.x ~= nil and unit.y ~= nil then
         units_count = units_count + 1
         min_x = min_x and math.min(min_x, unit.x) or unit.x
@@ -247,7 +442,6 @@ function love.draw()
       love.graphics.circle("line", sx, sy, radius)
       love.graphics.setColor(1, 1, 1, 0.9)
       love.graphics.print(tostring(unit.id or "?"), sx + radius + 2, sy - radius - 2)
-    end
   end
 
   love.graphics.setColor(1, 1, 1, 1)
@@ -259,9 +453,9 @@ function love.draw()
     local cam_cx, cam_cy = to_world(love.graphics.getWidth() / 2, love.graphics.getHeight() / 2)
     status = string.format(
       "tick=%s | active=%s | phase=%s | cam=(%.2f,%.2f) zoom=%.2f | units=%d | min=(%s,%s) max=(%s,%s)",
-      tostring(snapshot.tick or "-"),
-      tostring(snapshot.active_side or "-"),
-      tostring(snapshot.phase or "-"),
+      tostring(truth_state.tick or "-"),
+      tostring(truth_state.active_side or "-"),
+      tostring(truth_state.phase or "-"),
       cam_cx,
       cam_cy,
       camera.zoom,
@@ -311,5 +505,8 @@ function love.keypressed(key)
     reset_view()
   elseif key == "f" then
     fit_to_units()
+  elseif key == "return" or key == "kpenter" then
+    phase_step_mode.allow_next = not phase_step_mode.allow_next
+    debug_log(string.format("[viewer] phase_step allow_next=%s", tostring(phase_step_mode.allow_next)))
   end
 end
