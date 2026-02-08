@@ -10,3 +10,5 @@ board.txt
 *.log
 core
 *.core
+!lua_core/core/
+!lua_core/core/**
