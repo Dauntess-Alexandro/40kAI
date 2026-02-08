@@ -219,6 +219,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._error_message = message
         self.update()
 
+    def set_unit_anim_duration(self, duration_ms: int) -> None:
+        self._unit_anim_duration_ms = max(0, int(duration_ms))
+
     def current_state(self) -> Dict:
         return dict(self._state or {})
 

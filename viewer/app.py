@@ -954,6 +954,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         events = unit_entry["events"]
         self._model_events_current = list(events)
         self._refresh_model_log_view()
+        if self._truth_state:
+            self.map_scene.set_unit_anim_duration(320)
+            self.map_scene.update_state(self._truth_state)
+            self._render_state = self.map_scene.current_state()
         unit_id = unit_entry.get("unit_id")
         unit_side = self._side_from_unit_id(unit_id) if unit_id is not None else None
         if unit_side and unit_id is not None:
