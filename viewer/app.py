@@ -828,6 +828,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_log_source = "state"
             self._model_events_current = list(filtered)
             self._refresh_model_log_view()
+            if os.getenv("RENDER_STATE_V2", "0") == "1":
+                self._replay_fx_from_model_events(filtered)
         elif self._model_log_source is None:
             self._drain_event_queue()
 
@@ -1188,6 +1190,28 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._refresh_log_views()
         if not write_to_file and os.getenv("RENDER_STATE_V2", "0") != "1":
             self._replay_fx_from_log_lines(lines)
+
+    def _replay_fx_from_model_events(self, events) -> None:
+        if not events:
+            return
+        lines = []
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            msg = event.get("msg")
+            if not msg:
+                continue
+            ts = event.get("ts")
+            if isinstance(ts, (int, float)):
+                ts_label = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                ts_label = "no-ts"
+            lines.append(f"{ts_label} | {msg}")
+        if not lines:
+            return
+        self._fx_parser.reset(preserve_seen=True)
+        self._fx_parser.replay_lines(lines)
+        self._drain_fx_queue()
 
     def _replay_fx_from_log_lines(self, lines) -> None:
         if not lines:
