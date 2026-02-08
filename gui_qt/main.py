@@ -45,6 +45,7 @@ class GUIController(QtCore.QObject):
     playModelPathChanged = QtCore.Signal(str)
     playModelLabelChanged = QtCore.Signal(str)
     boardTextChanged = QtCore.Signal(str)
+    stateSummaryChanged = QtCore.Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -85,6 +86,7 @@ class GUIController(QtCore.QObject):
         self._play_model_path = ""
         self._play_model_label = "Модель не выбрана"
         self._board_text = "ASCII карта будет доступна после запуска игры."
+        self._state_summary = "Состояние игры будет доступно после запуска."
 
         self._load_available_units()
         self._load_rosters_from_file()
@@ -182,6 +184,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=boardTextChanged)
     def boardText(self) -> str:
         return self._board_text
+
+    @QtCore.Property(str, notify=stateSummaryChanged)
+    def stateSummary(self) -> str:
+        return self._state_summary
 
     @QtCore.Property(str, constant=True)
     def modelsFolderUrl(self) -> str:
@@ -443,6 +449,7 @@ class GUIController(QtCore.QObject):
         env["MODEL_PATH"] = model_path
         env["FIGHT_REPORT"] = "1"
         env["PLAY_NO_EXPLORATION"] = "1"
+        env["STATE_JSON_PATH"] = os.path.join(self._repo_root, "gui", "state.json")
         command = self._build_script_command(script, [])
         subprocess.Popen(
             command,
@@ -483,6 +490,12 @@ class GUIController(QtCore.QObject):
         board_path = os.path.join(self._repo_root, "board.txt")
         self._board_text = self._render_board_ascii(board_path)
         self.boardTextChanged.emit(self._board_text)
+
+    @QtCore.Slot()
+    def refresh_state_summary(self) -> None:
+        state_path = os.path.join(self._repo_root, "gui", "state.json")
+        self._state_summary = self._render_state_summary(state_path)
+        self.stateSummaryChanged.emit(self._state_summary)
 
     def _set_running(self, value: bool) -> None:
         if self._running != value:
@@ -850,6 +863,67 @@ class GUIController(QtCore.QObject):
                 full.append("_ ")
             last = ch
         return "".join(full)
+
+    def _render_state_summary(self, state_path: str) -> str:
+        if not os.path.exists(state_path):
+            return "Файл состояния не найден. Запустите игру и попробуйте снова."
+        try:
+            with open(state_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except json.JSONDecodeError as exc:
+            return (
+                "Файл состояния повреждён (JSON). "
+                f"Где: {state_path}. Что делать: пересоздать игру. Детали: {exc}"
+            )
+        except OSError as exc:
+            return f"Не удалось прочитать состояние: {exc}"
+
+        board = payload.get("board", {})
+        phase = payload.get("phase", "—")
+        active = payload.get("active", "—")
+        turn = payload.get("turn", "—")
+        battle_round = payload.get("round", "—")
+        vp = payload.get("vp", {})
+        cp = payload.get("cp", {})
+        units = payload.get("units", [])
+        objectives = payload.get("objectives", [])
+        log_tail = payload.get("log_tail", [])
+        model_events = payload.get("model_events", [])
+
+        summary_lines = [
+            "Снимок состояния",
+            f"Фаза: {phase}",
+            f"Активная сторона: {active}",
+            f"Ход: {turn}",
+            f"Раунд: {battle_round}",
+            f"Размер поля: {board.get('width', '—')} x {board.get('height', '—')}",
+            f"VP: игрок {vp.get('player', '—')} / модель {vp.get('model', '—')}",
+            f"CP: игрок {cp.get('player', '—')} / модель {cp.get('model', '—')}",
+            f"Юниты: {len(units)}",
+            f"Объекты: {len(objectives)}",
+            "",
+            "Последние события (model_events):",
+        ]
+
+        if model_events:
+            for event in model_events[-10:]:
+                summary_lines.append(f"- {event}")
+        else:
+            summary_lines.append("—")
+
+        summary_lines.append("")
+        summary_lines.append("Хвост логов:")
+        if log_tail:
+            summary_lines.extend([f"- {line}" for line in log_tail[-10:]])
+        else:
+            summary_lines.append("—")
+
+        generated_at = payload.get("generated_at")
+        if generated_at:
+            summary_lines.append("")
+            summary_lines.append(f"Сгенерировано: {generated_at}")
+
+        return "\n".join(summary_lines)
 
     def _refresh_metrics_paths(self, force: bool = False) -> None:
         changed = False

@@ -638,6 +638,10 @@ ApplicationWindow {
                                     text: "Показать ASCII карту"
                                     onClicked: asciiBoardDialog.open()
                                 }
+                                Button {
+                                    text: "Состояние игры"
+                                    onClicked: gameStateDialog.open()
+                                }
                             }
                         }
                     }
@@ -714,6 +718,37 @@ ApplicationWindow {
             repeat: true
             running: asciiBoardDialog.visible
             onTriggered: controller.refresh_board_text()
+        }
+    }
+
+    Dialog {
+        id: gameStateDialog
+        title: "Состояние игры"
+        modal: true
+        standardButtons: Dialog.Close
+        width: root.dialogWidthLg
+        height: root.dialogHeightMd
+        onOpened: controller.refresh_state_summary()
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: root.spacingSm
+
+            TextArea {
+                text: controller.stateSummary
+                readOnly: true
+                wrapMode: TextEdit.NoWrap
+                font.family: "monospace"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+            }
+        }
+
+        Timer {
+            interval: 1000
+            repeat: true
+            running: gameStateDialog.visible
+            onTriggered: controller.refresh_state_summary()
         }
     }
 

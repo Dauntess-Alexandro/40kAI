@@ -89,6 +89,14 @@ def write_state_json(env, path=None):
     elif active_side == "model":
         active_side = "model"
 
+    model_events = []
+    for idx, event in enumerate(_read_event_tail()):
+        if not isinstance(event, dict):
+            continue
+        enriched = dict(event)
+        enriched.setdefault("event_id", idx)
+        model_events.append(enriched)
+
     payload = {
         "board": {"width": _safe_int(getattr(env, "b_hei", None), None),
                   "height": _safe_int(getattr(env, "b_len", None), None)},
@@ -103,7 +111,7 @@ def write_state_json(env, path=None):
         "units": units,
         "objectives": objectives,
         "log_tail": _read_log_tail(),
-        "model_events": _read_event_tail(),
+        "model_events": model_events,
         "generated_at": datetime.utcnow().isoformat() + "Z",
     }
 

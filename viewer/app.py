@@ -184,6 +184,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.status_turn = QtWidgets.QLabel("Ход: —")
         self.status_phase = QtWidgets.QLabel("Фаза: —")
         self.status_active = QtWidgets.QLabel("Активен: —")
+        self.step_prev_phase = QtWidgets.QToolButton()
+        self.step_next_phase = QtWidgets.QToolButton()
+        self.step_prev_unit = QtWidgets.QToolButton()
+        self.step_next_unit = QtWidgets.QToolButton()
+        self._step_phase_index = 0
+        self._step_unit_index = 0
+        self._step_phase_keys = []
+        self._step_unit_keys = []
+        self._step_phase_events = {}
+        self._step_phase_units = {}
 
         self.points_vp_player = QtWidgets.QLabel("Player VP: —")
         self.points_vp_model = QtWidgets.QLabel("Model VP: —")
@@ -230,6 +240,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS.md")
         self._log_file_max_bytes = 5 * 1024 * 1024
         self._last_active_side = None
+        self._init_step_buttons()
         self._init_log_viewer()
         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
@@ -344,9 +355,33 @@ class ViewerWindow(QtWidgets.QMainWindow):
         header.setFont(header_font)
         self.units_table.verticalHeader().setDefaultSectionSize(22)
 
+    def _init_step_buttons(self):
+        self.step_prev_phase.setText("⏮")
+        self.step_next_phase.setText("⏭")
+        self.step_prev_unit.setText("◀")
+        self.step_next_unit.setText("▶")
+        self.step_prev_phase.setToolTip("Предыдущая фаза")
+        self.step_next_phase.setToolTip("Следующая фаза")
+        self.step_prev_unit.setToolTip("Предыдущий юнит/событие в фазе")
+        self.step_next_unit.setToolTip("Следующий юнит/событие в фазе")
+        self.step_prev_phase.clicked.connect(self._step_prev_phase)
+        self.step_next_phase.clicked.connect(self._step_next_phase)
+        self.step_prev_unit.clicked.connect(self._step_prev_unit)
+        self.step_next_unit.clicked.connect(self._step_next_unit)
+        self._update_step_buttons()
+
     def _group_status(self):
         box = QtWidgets.QGroupBox("СТАТУС")
         layout = QtWidgets.QVBoxLayout(box)
+        step_row = QtWidgets.QHBoxLayout()
+        step_row.addWidget(QtWidgets.QLabel("Шаги:"))
+        step_row.addWidget(self.step_prev_phase)
+        step_row.addWidget(self.step_next_phase)
+        step_row.addSpacing(6)
+        step_row.addWidget(self.step_prev_unit)
+        step_row.addWidget(self.step_next_unit)
+        step_row.addStretch()
+        layout.addLayout(step_row)
         layout.addWidget(self.status_round)
         layout.addWidget(self.status_turn)
         layout.addWidget(self.status_phase)
@@ -667,8 +702,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if self._model_log_source in (None, "stream"):
             self._model_log_source = "stream"
             self._model_events_stream.extend(self._filter_model_events(drained))
-            self._model_events_current = list(self._model_events_stream)
-            self._refresh_model_log_view()
+            self._rebuild_step_index()
+            self._apply_step_filter()
 
     def _start_controller(self):
         messages, request = self.controller.start()
@@ -823,8 +858,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             filtered = self._filter_model_events(events)
             self._model_events_snapshot = list(events)
             self._model_log_source = "state"
-            self._model_events_current = list(filtered)
-            self._refresh_model_log_view()
+            self._model_events_stream = list(filtered)
+            self._rebuild_step_index()
+            self._apply_step_filter()
         elif self._model_log_source is None:
             self._drain_event_queue()
 
@@ -837,6 +873,142 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if side in ("enemy", "model"):
                 filtered.append(event)
         return filtered
+
+    def _rebuild_step_index(self):
+        current_phase_key = None
+        current_unit_key = None
+        if self._step_phase_keys:
+            current_phase_key = self._step_phase_keys[self._step_phase_index]
+            if self._step_unit_keys:
+                current_unit_key = self._step_unit_keys[self._step_unit_index]
+
+        phase_keys = []
+        phase_events = {}
+        phase_units = {}
+        for event in self._model_events_stream:
+            if not isinstance(event, dict):
+                continue
+            phase_key = (
+                event.get("battle_round"),
+                event.get("turn"),
+                event.get("phase"),
+            )
+            if phase_key not in phase_events:
+                phase_keys.append(phase_key)
+                phase_events[phase_key] = []
+                phase_units[phase_key] = []
+            phase_events[phase_key].append(event)
+            unit_id = event.get("unit_id")
+            if unit_id not in phase_units[phase_key]:
+                phase_units[phase_key].append(unit_id)
+
+        self._step_phase_keys = phase_keys
+        self._step_phase_events = phase_events
+        self._step_phase_units = phase_units
+
+        if not self._step_phase_keys:
+            self._step_phase_index = 0
+            self._step_unit_index = 0
+            self._step_unit_keys = []
+            self._update_step_buttons()
+            return
+
+        if current_phase_key in self._step_phase_keys:
+            self._step_phase_index = self._step_phase_keys.index(current_phase_key)
+        else:
+            self._step_phase_index = max(0, len(self._step_phase_keys) - 1)
+
+        self._step_unit_keys = self._step_phase_units.get(
+            self._step_phase_keys[self._step_phase_index], []
+        )
+        if self._step_unit_keys:
+            if current_unit_key in self._step_unit_keys:
+                self._step_unit_index = self._step_unit_keys.index(current_unit_key)
+            else:
+                self._step_unit_index = max(0, len(self._step_unit_keys) - 1)
+        else:
+            self._step_unit_index = 0
+        self._update_step_buttons()
+
+    def _apply_step_filter(self):
+        if not self._step_phase_keys:
+            self._model_events_current = list(self._model_events_stream)
+            self._refresh_model_log_view()
+            self._update_step_buttons()
+            return
+
+        phase_key = self._step_phase_keys[self._step_phase_index]
+        phase_events = self._step_phase_events.get(phase_key, [])
+        self._step_unit_keys = self._step_phase_units.get(phase_key, [])
+        if self._step_unit_keys:
+            self._step_unit_index = max(
+                0, min(self._step_unit_index, len(self._step_unit_keys) - 1)
+            )
+            unit_key = self._step_unit_keys[self._step_unit_index]
+            if unit_key is None:
+                filtered = [event for event in phase_events if event.get("unit_id") is None]
+            else:
+                filtered = [
+                    event for event in phase_events if event.get("unit_id") == unit_key
+                ]
+        else:
+            filtered = list(phase_events)
+
+        self._model_events_current = filtered
+        self._refresh_model_log_view()
+        self._sync_unit_selection_from_step()
+        self._update_step_buttons()
+
+    def _update_step_buttons(self):
+        has_phases = len(self._step_phase_keys) > 0
+        self.step_prev_phase.setEnabled(has_phases and self._step_phase_index > 0)
+        self.step_next_phase.setEnabled(
+            has_phases and self._step_phase_index < len(self._step_phase_keys) - 1
+        )
+        has_units = len(self._step_unit_keys) > 0
+        self.step_prev_unit.setEnabled(has_units and self._step_unit_index > 0)
+        self.step_next_unit.setEnabled(
+            has_units and self._step_unit_index < len(self._step_unit_keys) - 1
+        )
+
+    def _step_prev_phase(self):
+        if self._step_phase_index <= 0:
+            return
+        self._step_phase_index -= 1
+        self._step_unit_index = 0
+        self._apply_step_filter()
+
+    def _step_next_phase(self):
+        if self._step_phase_index >= len(self._step_phase_keys) - 1:
+            return
+        self._step_phase_index += 1
+        self._step_unit_index = 0
+        self._apply_step_filter()
+
+    def _step_prev_unit(self):
+        if self._step_unit_index <= 0:
+            return
+        self._step_unit_index -= 1
+        self._apply_step_filter()
+
+    def _step_next_unit(self):
+        if self._step_unit_index >= len(self._step_unit_keys) - 1:
+            return
+        self._step_unit_index += 1
+        self._apply_step_filter()
+
+    def _sync_unit_selection_from_step(self):
+        if not self._step_unit_keys:
+            return
+        unit_id = self._step_unit_keys[self._step_unit_index]
+        if unit_id is None:
+            return
+        unit_key = ("model", unit_id)
+        row = self._unit_row_by_key.get(unit_key)
+        if row is None:
+            row = self._find_row_for_unit(unit_key)
+        if row is not None:
+            self.units_table.selectRow(row)
 
     def _select_row_for_unit(self, side, unit_id):
         unit_key = (side, unit_id)
@@ -1201,6 +1373,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_events_snapshot = None
         self._model_events_stream = []
         self._model_events_current = []
+        self._step_phase_keys = []
+        self._step_unit_keys = []
+        self._step_phase_events = {}
+        self._step_phase_units = {}
+        self._step_phase_index = 0
+        self._step_unit_index = 0
+        self._update_step_buttons()
         self._fx_shot_queue.clear()
         self._fx_parser.reset(preserve_seen=False)
         for view in self._log_tabs.values():
