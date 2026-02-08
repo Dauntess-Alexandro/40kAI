@@ -180,6 +180,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._step_groups = []
         self._step_phase_index = 0
         self._step_unit_index = 0
+        self._step_mode_active = False
 
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = OpenGLBoardWidget(cell_size=18)
@@ -767,8 +768,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _apply_state(self, state):
         self._truth_state = state
-        self.map_scene.update_state(state)
-        self._render_state = self.map_scene.current_state()
+        if not self._step_mode_active:
+            self.map_scene.update_state(state)
+            self._render_state = self.map_scene.current_state()
 
         self._units_by_key = {}
         for unit in state.get("units", []) or []:
@@ -918,6 +920,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _step_phase(self, delta: int) -> None:
         if not self._step_groups:
             return
+        self._step_mode_active = True
         new_index = self._step_phase_index + delta
         new_index = max(0, min(new_index, len(self._step_groups) - 1))
         if new_index == self._step_phase_index:
@@ -929,6 +932,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _step_unit(self, delta: int) -> None:
         if not self._step_groups:
             return
+        self._step_mode_active = True
         units = self._step_groups[self._step_phase_index]["units"]
         if not units:
             return
