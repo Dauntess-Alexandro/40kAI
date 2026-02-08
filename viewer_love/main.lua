@@ -1,5 +1,11 @@
 local json = require("json")
 
+-- Controls:
+-- LMB drag = pan
+-- Wheel = zoom
+-- R = reset view (center 0,0; zoom=1)
+-- F = fit to units (center on bbox + zoom to fit)
+
 local snapshot_path = "../viewer_out/snapshot.json"
 local events_path = "../viewer_out/events.jsonl"
 
@@ -14,6 +20,7 @@ local camera = { x = 0, y = 0, zoom = 1 }
 local dragging = false
 local drag_start = { x = 0, y = 0 }
 local camera_start = { x = 0, y = 0 }
+local did_initial_fit = false
 
 local move_anims = {}
 
@@ -109,18 +116,78 @@ local function to_screen(wx, wy)
   return px, py
 end
 
-local function draw_grid(max_x, max_y)
+local function to_world(px, py)
+  local wx = (px / camera.zoom - camera.x) / cell_size
+  local wy = (py / camera.zoom - camera.y) / cell_size
+  return wx, wy
+end
+
+local function draw_grid()
+  local w = love.graphics.getWidth()
+  local h = love.graphics.getHeight()
+  local wx0, wy0 = to_world(0, 0)
+  local wx1, wy1 = to_world(w, h)
+  local min_x = math.floor(math.min(wx0, wx1))
+  local max_x = math.ceil(math.max(wx0, wx1))
+  local min_y = math.floor(math.min(wy0, wy1))
+  local max_y = math.ceil(math.max(wy0, wy1))
+
   love.graphics.setColor(0.2, 0.2, 0.2, 1)
-  for x = 0, max_x do
-    local sx1, sy1 = to_screen(x, 0)
+  for x = min_x, max_x do
+    local sx1, sy1 = to_screen(x, min_y)
     local sx2, sy2 = to_screen(x, max_y)
     love.graphics.line(sx1, sy1, sx2, sy2)
   end
-  for y = 0, max_y do
-    local sx1, sy1 = to_screen(0, y)
+  for y = min_y, max_y do
+    local sx1, sy1 = to_screen(min_x, y)
     local sx2, sy2 = to_screen(max_x, y)
     love.graphics.line(sx1, sy1, sx2, sy2)
   end
+end
+
+local function set_camera_center(cx, cy)
+  local w = love.graphics.getWidth()
+  local h = love.graphics.getHeight()
+  camera.x = w / 2 / camera.zoom - cx * cell_size
+  camera.y = h / 2 / camera.zoom - cy * cell_size
+end
+
+local function reset_view()
+  camera.zoom = 1
+  camera.x = 0
+  camera.y = 0
+end
+
+local function fit_to_units()
+  if not snapshot or not snapshot.units or #snapshot.units == 0 then
+    return
+  end
+  local min_x, max_x = nil, nil
+  local min_y, max_y = nil, nil
+  for _, unit in ipairs(snapshot.units) do
+    if unit.x ~= nil and unit.y ~= nil then
+      min_x = min_x and math.min(min_x, unit.x) or unit.x
+      max_x = max_x and math.max(max_x, unit.x) or unit.x
+      min_y = min_y and math.min(min_y, unit.y) or unit.y
+      max_y = max_y and math.max(max_y, unit.y) or unit.y
+    end
+  end
+  if not min_x or not min_y then
+    return
+  end
+
+  local w = love.graphics.getWidth()
+  local h = love.graphics.getHeight()
+  local padding_cells = 3
+  local span_x = math.max(1, (max_x - min_x) + padding_cells * 2)
+  local span_y = math.max(1, (max_y - min_y) + padding_cells * 2)
+  local zoom_x = w / (span_x * cell_size)
+  local zoom_y = h / (span_y * cell_size)
+  camera.zoom = clamp(math.min(zoom_x, zoom_y), 0.2, 4)
+
+  local center_x = (min_x + max_x) / 2
+  local center_y = (min_y + max_y) / 2
+  set_camera_center(center_x, center_y)
 end
 
 function love.load()
@@ -143,32 +210,30 @@ function love.update(dt)
   end
 
   process_events()
+
+  if snapshot and not did_initial_fit then
+    fit_to_units()
+    did_initial_fit = true
+  end
 end
 
 function love.draw()
   love.graphics.clear(0.08, 0.08, 0.1, 1)
 
-  local max_x = 20
-  local max_y = 20
+  draw_grid()
+
+  local units_count = 0
+  local min_x, max_x = nil, nil
+  local min_y, max_y = nil, nil
   if snapshot and snapshot.units then
     for _, unit in ipairs(snapshot.units) do
-      local ux = unit.x or 0
-      local uy = unit.y or 0
-      if ux > max_x then
-        max_x = ux
+      if unit.x ~= nil and unit.y ~= nil then
+        units_count = units_count + 1
+        min_x = min_x and math.min(min_x, unit.x) or unit.x
+        max_x = max_x and math.max(max_x, unit.x) or unit.x
+        min_y = min_y and math.min(min_y, unit.y) or unit.y
+        max_y = max_y and math.max(max_y, unit.y) or unit.y
       end
-      if uy > max_y then
-        max_y = uy
-      end
-    end
-  end
-  max_x = max_x + 5
-  max_y = max_y + 5
-
-  draw_grid(max_x, max_y)
-
-  if snapshot and snapshot.units then
-    for _, unit in ipairs(snapshot.units) do
       local ux, uy = get_unit_position(unit)
       local sx, sy = to_screen(ux + 0.5, uy + 0.5)
       local radius = (cell_size * 0.35) * camera.zoom
@@ -180,17 +245,31 @@ function love.draw()
       love.graphics.circle("fill", sx, sy, radius)
       love.graphics.setColor(0, 0, 0, 0.6)
       love.graphics.circle("line", sx, sy, radius)
+      love.graphics.setColor(1, 1, 1, 0.9)
+      love.graphics.print(tostring(unit.id or "?"), sx + radius + 2, sy - radius - 2)
     end
   end
 
   love.graphics.setColor(1, 1, 1, 1)
-  local status = "Ожидание данных..."
+  local status = string.format(
+    "NO SNAPSHOT. Waiting... path=%s",
+    snapshot_path
+  )
   if snapshot then
+    local cam_cx, cam_cy = to_world(love.graphics.getWidth() / 2, love.graphics.getHeight() / 2)
     status = string.format(
-      "tick=%s | active=%s | phase=%s",
-      tostring(snapshot.tick or "—"),
-      tostring(snapshot.active_side or "—"),
-      tostring(snapshot.phase or "—")
+      "tick=%s | active=%s | phase=%s | cam=(%.2f,%.2f) zoom=%.2f | units=%d | min=(%s,%s) max=(%s,%s)",
+      tostring(snapshot.tick or "-"),
+      tostring(snapshot.active_side or "-"),
+      tostring(snapshot.phase or "-"),
+      cam_cx,
+      cam_cy,
+      camera.zoom,
+      units_count,
+      min_x and tostring(min_x) or "-",
+      min_y and tostring(min_y) or "-",
+      max_x and tostring(max_x) or "-",
+      max_y and tostring(max_y) or "-"
     )
   end
   love.graphics.print(status, 12, 12)
@@ -225,4 +304,12 @@ function love.wheelmoved(_, y)
   end
   local zoom = camera.zoom * (1 + y * 0.1)
   camera.zoom = clamp(zoom, 0.2, 4)
+end
+
+function love.keypressed(key)
+  if key == "r" then
+    reset_view()
+  elseif key == "f" then
+    fit_to_units()
+  end
 end
