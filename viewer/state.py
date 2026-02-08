@@ -19,6 +19,15 @@ def _default_state() -> Dict[str, Any]:
     }
 
 
+def _load_state_v2(payload: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        from gym_mod.engine.state_v2 import GameStateV2
+    except Exception:
+        return payload
+    state_v2 = GameStateV2.from_dict(payload)
+    return state_v2.to_dict()
+
+
 def load_state(path: str) -> Dict[str, Any]:
     if not os.path.exists(path):
         return _default_state()
@@ -26,6 +35,8 @@ def load_state(path: str) -> Dict[str, Any]:
         data = json.load(handle)
     state = _default_state()
     if isinstance(data, dict):
+        if os.getenv("STATE_V2", "0") == "1":
+            data = _load_state_v2(data)
         state.update(data)
     return state
 

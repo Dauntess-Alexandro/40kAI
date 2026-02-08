@@ -175,6 +175,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._show_objective_radius = True
         self._units_by_key = {}
         self._unit_row_by_key = {}
+        self._truth_state = None
+        self._render_state = None
+        self._step_groups = []
+        self._step_phase_index = 0
+        self._step_unit_index = 0
 
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = OpenGLBoardWidget(cell_size=18)
@@ -184,6 +189,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.status_turn = QtWidgets.QLabel("Ход: —")
         self.status_phase = QtWidgets.QLabel("Фаза: —")
         self.status_active = QtWidgets.QLabel("Активен: —")
+        self._step_prev_phase = self._make_step_button("⏮", "Предыдущая фаза")
+        self._step_next_phase = self._make_step_button("⏭", "Следующая фаза")
+        self._step_prev_unit = self._make_step_button("◀", "Предыдущий юнит")
+        self._step_next_unit = self._make_step_button("▶", "Следующий юнит")
+        self._step_prev_phase.clicked.connect(lambda: self._step_phase(-1))
+        self._step_next_phase.clicked.connect(lambda: self._step_phase(1))
+        self._step_prev_unit.clicked.connect(lambda: self._step_unit(-1))
+        self._step_next_unit.clicked.connect(lambda: self._step_unit(1))
 
         self.points_vp_player = QtWidgets.QLabel("Player VP: —")
         self.points_vp_model = QtWidgets.QLabel("Model VP: —")
@@ -347,6 +360,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _group_status(self):
         box = QtWidgets.QGroupBox("СТАТУС")
         layout = QtWidgets.QVBoxLayout(box)
+        step_row = QtWidgets.QHBoxLayout()
+        step_row.addWidget(self._step_prev_phase)
+        step_row.addWidget(self._step_next_phase)
+        step_row.addSpacing(6)
+        step_row.addWidget(self._step_prev_unit)
+        step_row.addWidget(self._step_next_unit)
+        step_row.addStretch()
+        layout.addLayout(step_row)
         layout.addWidget(self.status_round)
         layout.addWidget(self.status_turn)
         layout.addWidget(self.status_phase)
@@ -745,8 +766,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._apply_state(self.state_watcher.state)
 
     def _apply_state(self, state):
-        board = state.get("board", {})
+        self._truth_state = state
         self.map_scene.update_state(state)
+        self._render_state = self.map_scene.current_state()
 
         self._units_by_key = {}
         for unit in state.get("units", []) or []:
@@ -825,8 +847,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_log_source = "state"
             self._model_events_current = list(filtered)
             self._refresh_model_log_view()
+            self._rebuild_step_groups(filtered)
+            self._sync_step_buttons()
+            if os.getenv("RENDER_STATE_V2", "0") == "1":
+                self._replay_fx_from_model_events(filtered)
         elif self._model_log_source is None:
             self._drain_event_queue()
+            self._rebuild_step_groups([])
+            self._sync_step_buttons()
 
     def _filter_model_events(self, events):
         filtered = []
@@ -837,6 +865,104 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if side in ("enemy", "model"):
                 filtered.append(event)
         return filtered
+
+    def _rebuild_step_groups(self, events):
+        phases = []
+        phase_index = {}
+        for event in events:
+            phase = str(event.get("phase") or "—")
+            unit_id = event.get("unit_id")
+            unit_name = event.get("unit_name")
+            key = (phase, unit_id)
+            if phase not in phase_index:
+                phase_index[phase] = len(phases)
+                phases.append({"phase": phase, "units": [], "unit_index": {}})
+            phase_entry = phases[phase_index[phase]]
+            if key not in phase_entry["unit_index"]:
+                unit_entry = {
+                    "unit_id": unit_id,
+                    "unit_name": unit_name,
+                    "events": [],
+                }
+                phase_entry["unit_index"][key] = len(phase_entry["units"])
+                phase_entry["units"].append(unit_entry)
+            unit_entry = phase_entry["units"][phase_entry["unit_index"][key]]
+            unit_entry["events"].append(event)
+        self._step_groups = phases
+        if phases:
+            self._step_phase_index = min(self._step_phase_index, len(phases) - 1)
+            unit_count = len(phases[self._step_phase_index]["units"])
+            self._step_unit_index = min(self._step_unit_index, max(0, unit_count - 1))
+        else:
+            self._step_phase_index = 0
+            self._step_unit_index = 0
+
+    def _sync_step_buttons(self):
+        has_steps = bool(self._step_groups)
+        if not has_steps:
+            for button in (
+                self._step_prev_phase,
+                self._step_next_phase,
+                self._step_prev_unit,
+                self._step_next_unit,
+            ):
+                button.setEnabled(False)
+            return
+        phase_count = len(self._step_groups)
+        unit_count = len(self._step_groups[self._step_phase_index]["units"])
+        self._step_prev_phase.setEnabled(self._step_phase_index > 0)
+        self._step_next_phase.setEnabled(self._step_phase_index < phase_count - 1)
+        self._step_prev_unit.setEnabled(unit_count > 0 and self._step_unit_index > 0)
+        self._step_next_unit.setEnabled(unit_count > 0 and self._step_unit_index < unit_count - 1)
+
+    def _step_phase(self, delta: int) -> None:
+        if not self._step_groups:
+            return
+        new_index = self._step_phase_index + delta
+        new_index = max(0, min(new_index, len(self._step_groups) - 1))
+        if new_index == self._step_phase_index:
+            return
+        self._step_phase_index = new_index
+        self._step_unit_index = 0
+        self._apply_step_view()
+
+    def _step_unit(self, delta: int) -> None:
+        if not self._step_groups:
+            return
+        units = self._step_groups[self._step_phase_index]["units"]
+        if not units:
+            return
+        new_index = self._step_unit_index + delta
+        new_index = max(0, min(new_index, len(units) - 1))
+        if new_index == self._step_unit_index:
+            return
+        self._step_unit_index = new_index
+        self._apply_step_view()
+
+    def _apply_step_view(self) -> None:
+        if not self._step_groups:
+            return
+        phase_entry = self._step_groups[self._step_phase_index]
+        units = phase_entry["units"]
+        if not units:
+            return
+        unit_entry = units[self._step_unit_index]
+        events = unit_entry["events"]
+        self._model_events_current = list(events)
+        self._refresh_model_log_view()
+        unit_id = unit_entry.get("unit_id")
+        unit_side = self._side_from_unit_id(unit_id) if unit_id is not None else None
+        if unit_side and unit_id is not None:
+            self.map_scene.select_unit(unit_side, unit_id)
+        self._sync_step_buttons()
+
+    def _make_step_button(self, label: str, tooltip: str) -> QtWidgets.QToolButton:
+        button = QtWidgets.QToolButton()
+        button.setText(label)
+        button.setToolTip(tooltip)
+        button.setEnabled(False)
+        button.setFixedSize(28, 24)
+        return button
 
     def _select_row_for_unit(self, side, unit_id):
         unit_key = (side, unit_id)
@@ -1183,8 +1309,30 @@ class ViewerWindow(QtWidgets.QMainWindow):
                     }
                 )
         self._refresh_log_views()
-        if not write_to_file:
+        if not write_to_file and os.getenv("RENDER_STATE_V2", "0") != "1":
             self._replay_fx_from_log_lines(lines)
+
+    def _replay_fx_from_model_events(self, events) -> None:
+        if not events:
+            return
+        lines = []
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            msg = event.get("msg")
+            if not msg:
+                continue
+            ts = event.get("ts")
+            if isinstance(ts, (int, float)):
+                ts_label = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                ts_label = "no-ts"
+            lines.append(f"{ts_label} | {msg}")
+        if not lines:
+            return
+        self._fx_parser.reset(preserve_seen=True)
+        self._fx_parser.replay_lines(lines)
+        self._drain_fx_queue()
 
     def _replay_fx_from_log_lines(self, lines) -> None:
         if not lines:
