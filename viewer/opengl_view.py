@@ -219,6 +219,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._error_message = message
         self.update()
 
+    def current_state(self) -> Dict:
+        return dict(self._state or {})
+
     def update_state(self, state: Optional[Dict]) -> None:
         if os.getenv("RENDER_STATE_V2", "0") == "1" and self._unit_anim_timer.isActive():
             self._pending_state = state

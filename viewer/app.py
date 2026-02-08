@@ -175,6 +175,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._show_objective_radius = True
         self._units_by_key = {}
         self._unit_row_by_key = {}
+        self._truth_state = None
+        self._render_state = None
 
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = OpenGLBoardWidget(cell_size=18)
@@ -745,8 +747,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._apply_state(self.state_watcher.state)
 
     def _apply_state(self, state):
-        board = state.get("board", {})
+        self._truth_state = state
         self.map_scene.update_state(state)
+        self._render_state = self.map_scene.current_state()
 
         self._units_by_key = {}
         for unit in state.get("units", []) or []:
@@ -1183,7 +1186,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                     }
                 )
         self._refresh_log_views()
-        if not write_to_file:
+        if not write_to_file and os.getenv("RENDER_STATE_V2", "0") != "1":
             self._replay_fx_from_log_lines(lines)
 
     def _replay_fx_from_log_lines(self, lines) -> None:
