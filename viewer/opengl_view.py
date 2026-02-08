@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import math
+import os
 from pathlib import Path
 import random
 from time import monotonic, perf_counter
@@ -132,6 +133,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._unit_anim_timer.timeout.connect(self._animate_unit_step)
         self._unit_anim_clock = QtCore.QElapsedTimer()
         self._unit_anim_duration_ms = 180
+        self._pending_state: Optional[Dict] = None
 
         self._move_highlights: List[QtCore.QRectF] = []
         self._target_highlights: List[Tuple[QtCore.QPointF, float]] = []
@@ -218,6 +220,12 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.update()
 
     def update_state(self, state: Optional[Dict]) -> None:
+        if os.getenv("RENDER_STATE_V2", "0") == "1" and self._unit_anim_timer.isActive():
+            self._pending_state = state
+            return
+        self._apply_state_snapshot(state)
+
+    def _apply_state_snapshot(self, state: Optional[Dict]) -> None:
         self._state = state or {}
         if not state:
             self.set_error_message(
@@ -518,6 +526,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.update()
         if factor >= 1.0 and self._unit_anim_timer.isActive():
             self._unit_anim_timer.stop()
+            if self._pending_state is not None:
+                pending = self._pending_state
+                self._pending_state = None
+                self._apply_state_snapshot(pending)
 
     def _rebuild_units(self, factor: float) -> None:
         self._units = []
