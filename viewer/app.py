@@ -194,6 +194,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._step_unit_keys = []
         self._step_phase_events = {}
         self._step_phase_units = {}
+        self._step_freeze_state = False
 
         self.points_vp_player = QtWidgets.QLabel("Player VP: —")
         self.points_vp_model = QtWidgets.QLabel("Model VP: —")
@@ -781,7 +782,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _apply_state(self, state):
         board = state.get("board", {})
-        self.map_scene.update_state(state)
+        if not self._step_freeze_state:
+            self.map_scene.update_state(state)
 
         self._units_by_key = {}
         for unit in state.get("units", []) or []:
@@ -935,6 +937,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_events_current = list(self._model_events_stream)
             self._refresh_model_log_view()
             self._update_step_buttons()
+            self._step_freeze_state = False
             return
 
         phase_key = self._step_phase_keys[self._step_phase_index]
@@ -958,6 +961,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._refresh_model_log_view()
         self._sync_unit_selection_from_step()
         self._update_step_buttons()
+        self._step_freeze_state = not self._is_at_latest_step()
+
+    def _is_at_latest_step(self):
+        if not self._step_phase_keys:
+            return True
+        if self._step_phase_index != len(self._step_phase_keys) - 1:
+            return False
+        if self._step_unit_keys and self._step_unit_index != len(self._step_unit_keys) - 1:
+            return False
+        return True
 
     def _update_step_buttons(self):
         has_phases = len(self._step_phase_keys) > 0
@@ -976,6 +989,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         self._step_phase_index -= 1
         self._step_unit_index = 0
+        self._step_freeze_state = True
         self._apply_step_filter()
 
     def _step_next_phase(self):
@@ -983,18 +997,21 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         self._step_phase_index += 1
         self._step_unit_index = 0
+        self._step_freeze_state = True
         self._apply_step_filter()
 
     def _step_prev_unit(self):
         if self._step_unit_index <= 0:
             return
         self._step_unit_index -= 1
+        self._step_freeze_state = True
         self._apply_step_filter()
 
     def _step_next_unit(self):
         if self._step_unit_index >= len(self._step_unit_keys) - 1:
             return
         self._step_unit_index += 1
+        self._step_freeze_state = True
         self._apply_step_filter()
 
     def _sync_unit_selection_from_step(self):
@@ -1379,6 +1396,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._step_phase_units = {}
         self._step_phase_index = 0
         self._step_unit_index = 0
+        self._step_freeze_state = False
         self._update_step_buttons()
         self._fx_shot_queue.clear()
         self._fx_parser.reset(preserve_seen=False)
