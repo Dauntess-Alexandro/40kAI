@@ -837,6 +837,13 @@ def main():
                 print(err_msg)
                 append_agent_log(err_msg)
                 raise
+            def _normalize_state_dict(state_dict: dict) -> dict:
+                if not state_dict:
+                    return state_dict
+                if any(key.startswith("_orig_mod.") for key in state_dict.keys()):
+                    return {key.replace("_orig_mod.", "", 1): value for key, value in state_dict.items()}
+                return state_dict
+
             if isinstance(checkpoint, dict) and "policy_net" in checkpoint:
                 checkpoint_net_type = checkpoint.get("net_type", "basic")
                 if checkpoint_net_type != NET_TYPE:
@@ -848,7 +855,9 @@ def main():
                     print(warn_msg)
                     append_agent_log(warn_msg)
                 else:
-                    opponent_policy_net.load_state_dict(checkpoint["policy_net"])
+                    opponent_policy_net.load_state_dict(
+                        _normalize_state_dict(checkpoint["policy_net"])
+                    )
             else:
                 if NET_TYPE != "basic":
                     warn_msg = (
@@ -858,7 +867,7 @@ def main():
                     print(warn_msg)
                     append_agent_log(warn_msg)
                 else:
-                    opponent_policy_net.load_state_dict(checkpoint)
+                    opponent_policy_net.load_state_dict(_normalize_state_dict(checkpoint))
             append_agent_log(
                 f"[SELFPLAY] fixed_checkpoint path={SELF_PLAY_FIXED_PATH}"
             )
