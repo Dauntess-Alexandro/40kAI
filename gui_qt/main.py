@@ -564,14 +564,15 @@ class GUIController(QtCore.QObject):
             env_overrides["SELF_PLAY_ENABLED"] = "1"
 
         if mode == "selfplay" and self._self_play_from_checkpoint:
-            model_path = self._resolve_play_model_path()
-            if model_path == "None":
+            checkpoint_path = self._find_latest_checkpoint_file()
+            if not checkpoint_path:
                 self._emit_status(
-                    "Сохранённые модели не найдены. Снимите галочку или обучите модель."
+                    "Чекпойнты .pth не найдены. "
+                    "Снимите галочку или включите сохранение чекпойнтов."
                 )
                 return
             env_overrides["SELF_PLAY_OPPONENT_MODE"] = "fixed_checkpoint"
-            env_overrides["SELF_PLAY_FIXED_PATH"] = model_path
+            env_overrides["SELF_PLAY_FIXED_PATH"] = checkpoint_path
 
         self._emit_log(f"[GUI] Запуск {status_prefix.lower()}...", level="INFO")
         self._emit_status(f"{status_prefix}...")
@@ -973,6 +974,28 @@ class GUIController(QtCore.QObject):
                 if not name.endswith(".pickle"):
                     continue
                 if "model-" not in name:
+                    continue
+                path = os.path.join(root, name)
+                try:
+                    mtime = os.path.getmtime(path)
+                except OSError:
+                    continue
+                if mtime > latest_mtime:
+                    latest_mtime = mtime
+                    latest_path = path
+        return latest_path
+
+    def _find_latest_checkpoint_file(self) -> Optional[str]:
+        models_path = os.path.join(self._repo_root, "models")
+        if not os.path.isdir(models_path):
+            return None
+        latest_path = None
+        latest_mtime = -1.0
+        for root, _, files in os.walk(models_path):
+            for name in files:
+                if not name.startswith("checkpoint_ep"):
+                    continue
+                if not name.endswith(".pth"):
                     continue
                 path = os.path.join(root, name)
                 try:
