@@ -123,4 +123,7 @@ def iter_json_lines(lines: Iterable[str]) -> Iterable[Dict[str, Any]]:
         text = line.strip()
         if not text:
             continue
-        yield json.loads(text)
+        try:
+            yield json.loads(text)
+        except json.JSONDecodeError:
+            continue
