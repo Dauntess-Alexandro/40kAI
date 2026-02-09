@@ -1,0 +1,19 @@
+{
+  "camera": {"x": 640, "y": 360, "zoom": 1.0},
+  "ground": {"tile": "ground_01.png"},
+  "units": [
+    {"id": 1, "x": 520, "y": 310, "sprite": "necron_01.png", "shadow": "shadow_small.png", "dir": 90},
+    {"id": 2, "x": 740, "y": 420, "sprite": "necron_02.png", "shadow": "shadow_small.png", "dir": 180}
+  ],
+  "props": [
+    {"x": 400, "y": 520, "sprite": "tree_01.png", "shadow": "shadow_medium.png"},
+    {"x": 860, "y": 280, "sprite": "crate_01.png", "shadow": "shadow_small.png"}
+  ],
+  "fx": [
+    {"type": "smoke_01.png", "x": 540, "y": 300, "scale": 1.2}
+  ],
+  "decals": [
+    {"type": "blood_01.png", "x": 480, "y": 290, "rotation": 0.2, "scale": 1.0},
+    {"type": "scorch_01.png", "x": 700, "y": 460, "rotation": 1.1, "scale": 1.3}
+  ]
+}
