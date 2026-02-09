@@ -820,7 +820,23 @@ def main():
                 raise FileNotFoundError(
                     f"SELF_PLAY_FIXED_PATH не найден: {SELF_PLAY_FIXED_PATH}. Проверь путь."
                 )
-            checkpoint = torch.load(SELF_PLAY_FIXED_PATH, map_location=device)
+            try:
+                checkpoint = torch.load(
+                    SELF_PLAY_FIXED_PATH, map_location=device, weights_only=False
+                )
+            except TypeError:
+                checkpoint = torch.load(SELF_PLAY_FIXED_PATH, map_location=device)
+            except Exception as exc:
+                err_msg = (
+                    "[SELFPLAY][ERROR] Не удалось загрузить fixed_checkpoint. "
+                    "Где: train.py (torch.load). "
+                    "Что делать: убедитесь, что файл модели доверенный и целый, "
+                    "или пересохраните чекпойнт текущей версией PyTorch. "
+                    f"Детали: {exc}"
+                )
+                print(err_msg)
+                append_agent_log(err_msg)
+                raise
             if isinstance(checkpoint, dict) and "policy_net" in checkpoint:
                 checkpoint_net_type = checkpoint.get("net_type", "basic")
                 if checkpoint_net_type != NET_TYPE:
