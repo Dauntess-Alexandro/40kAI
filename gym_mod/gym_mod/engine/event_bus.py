@@ -15,14 +15,19 @@ class EventBus:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._subscribers: List[Callable[[Event], None]] = []
+        self._seq = 0
 
     def subscribe(self, callback: Callable[[Event], None]) -> None:
         with self._lock:
             self._subscribers.append(callback)
 
     def emit(self, event: Event) -> None:
-        if "ts" not in event:
-            event["ts"] = time.time()
+        with self._lock:
+            if "ts" not in event:
+                event["ts"] = time.time()
+            if "seq" not in event:
+                self._seq += 1
+                event["seq"] = self._seq
         subscribers = []
         with self._lock:
             subscribers = list(self._subscribers)
@@ -46,16 +51,22 @@ class EventRecorder:
         self._lock = threading.Lock()
         self._events: List[Event] = []
         self._max_events = max(100, max_events)
+        self._seq = 0
 
     def record(self, event: Event) -> None:
         with self._lock:
-            self._events.append(dict(event))
+            payload = dict(event)
+            if "seq" not in payload:
+                self._seq += 1
+                payload["seq"] = self._seq
+            self._events.append(payload)
             if len(self._events) > self._max_events:
                 self._events = self._events[-self._max_events :]
 
     def clear(self) -> None:
         with self._lock:
             self._events = []
+            self._seq = 0
 
     def snapshot(self, limit: Optional[int] = None) -> List[Event]:
         with self._lock:

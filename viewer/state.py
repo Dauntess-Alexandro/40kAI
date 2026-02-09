@@ -10,12 +10,15 @@ def _default_state() -> Dict[str, Any]:
         "turn": None,
         "round": None,
         "phase": None,
+        "phase_id": None,
         "active": None,
         "vp": {"player": None, "model": None},
         "cp": {"player": None, "model": None},
         "units": [],
         "objectives": [],
         "log_tail": [],
+        "model_events": [],
+        "phase_timeline": [],
     }
 
 

@@ -1,5 +1,6 @@
 import json
 import os
+from collections import OrderedDict
 from datetime import datetime
 
 from gym_mod.engine.event_bus import get_event_recorder
@@ -38,6 +39,66 @@ def _read_log_tail(max_lines=30):
 def _read_event_tail(max_events=2000):
     recorder = get_event_recorder()
     return recorder.snapshot(limit=max_events)
+
+
+def _sort_events(events):
+    indexed = []
+    for idx, event in enumerate(events):
+        if not isinstance(event, dict):
+            continue
+        seq = _safe_int(event.get("seq"), None)
+        ts = _safe_float(event.get("ts"), None)
+        if seq is not None:
+            key = (0, seq, ts or 0, idx)
+        else:
+            key = (1, ts or 0, idx)
+        indexed.append((key, event))
+    indexed.sort(key=lambda item: item[0])
+    return [event for _, event in indexed]
+
+
+def _build_phase_timeline(events):
+    phases: "OrderedDict[str, dict]" = OrderedDict()
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        phase_id = event.get("phase_id")
+        if not phase_id:
+            phase_id = (
+                f"{event.get('battle_round', '—')}:"
+                f"{event.get('turn', '—')}:"
+                f"{event.get('side', '—')}:"
+                f"{event.get('phase', 'unknown')}"
+            )
+        if phase_id not in phases:
+            phases[phase_id] = {
+                "phase_id": phase_id,
+                "phase": event.get("phase"),
+                "turn": event.get("turn"),
+                "battle_round": event.get("battle_round"),
+                "side": event.get("side"),
+                "events": [],
+                "start_seq": None,
+                "end_seq": None,
+            }
+        phase_entry = phases[phase_id]
+        seq = _safe_int(event.get("seq"), None)
+        phase_entry["events"].append(
+            {
+                "seq": seq,
+                "type": event.get("type"),
+                "msg": event.get("msg"),
+                "unit_id": event.get("unit_id"),
+                "unit_name": event.get("unit_name"),
+                "verbosity": event.get("verbosity"),
+            }
+        )
+        if seq is not None:
+            if phase_entry["start_seq"] is None or seq < phase_entry["start_seq"]:
+                phase_entry["start_seq"] = seq
+            if phase_entry["end_seq"] is None or seq > phase_entry["end_seq"]:
+                phase_entry["end_seq"] = seq
+    return list(phases.values())
 
 
 def _unit_payload(side, unit_id, unit_data, coords, hp):
@@ -89,12 +150,15 @@ def write_state_json(env, path=None):
     elif active_side == "model":
         active_side = "model"
 
+    event_tail = _read_event_tail()
+    sorted_events = _sort_events(event_tail)
     payload = {
         "board": {"width": _safe_int(getattr(env, "b_hei", None), None),
                   "height": _safe_int(getattr(env, "b_len", None), None)},
         "turn": _safe_int(getattr(env, "numTurns", None), None),
         "round": _safe_int(getattr(env, "battle_round", None), None),
         "phase": getattr(env, "phase", None),
+        "phase_id": getattr(env, "_phase_id", None),
         "active": active_side,
         "vp": {"player": _safe_int(getattr(env, "enemyVP", None), None),
                "model": _safe_int(getattr(env, "modelVP", None), None)},
@@ -103,7 +167,8 @@ def write_state_json(env, path=None):
         "units": units,
         "objectives": objectives,
         "log_tail": _read_log_tail(),
-        "model_events": _read_event_tail(),
+        "model_events": sorted_events,
+        "phase_timeline": _build_phase_timeline(sorted_events),
         "generated_at": datetime.utcnow().isoformat() + "Z",
     }
 

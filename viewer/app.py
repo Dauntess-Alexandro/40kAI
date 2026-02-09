@@ -821,6 +821,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if self._model_events_snapshot == events:
                 return
             filtered = self._filter_model_events(events)
+            filtered = self._sort_model_events(filtered)
             self._model_events_snapshot = list(events)
             self._model_log_source = "state"
             self._model_events_current = list(filtered)
@@ -837,6 +838,18 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if side in ("enemy", "model"):
                 filtered.append(event)
         return filtered
+
+    def _sort_model_events(self, events):
+        def sort_key(item):
+            seq = item.get("seq")
+            ts = item.get("ts")
+            if isinstance(seq, (int, float)):
+                return (0, seq, ts or 0)
+            if isinstance(ts, (int, float)):
+                return (1, ts, 0)
+            return (2, 0, 0)
+
+        return sorted(events, key=sort_key)
 
     def _select_row_for_unit(self, side, unit_id):
         unit_key = (side, unit_id)
