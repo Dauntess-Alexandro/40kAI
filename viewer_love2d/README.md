@@ -52,3 +52,8 @@
 python viewer_love2d/export_viewer_state.py
 ```
 Скрипт будет каждые ~0.15 сек записывать `viewer_state.json`. Love2D автоматически подхватит изменения.
+
+### Если не видно юнитов/объектов
+1. Проверь, что в `viewer_love2d/assets/units` и `viewer_love2d/assets/props` реально лежат PNG.
+2. Запусти `python viewer_love2d/export_viewer_state.py` — он подхватит реальные имена файлов из ассетов и запишет их в `viewer_state.json`.
+3. Перезапусти Love2D viewer.
