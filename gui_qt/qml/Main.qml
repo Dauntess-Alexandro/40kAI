@@ -239,6 +239,14 @@ ApplicationWindow {
                                     rowSpacing: root.spacingSm
                                     anchors.fill: parent
 
+                                    CheckBox {
+                                        text: "Самообучение от старой модели"
+                                        checked: controller.selfPlayFromCheckpoint
+                                        enabled: !controller.running
+                                        Layout.columnSpan: 2
+                                        onToggled: controller.set_self_play_from_checkpoint(checked)
+                                    }
+
                                     Button {
                                         text: "Тренировка 8х"
                                         enabled: !controller.running
@@ -246,9 +254,9 @@ ApplicationWindow {
                                     }
 
                                     Button {
-                                        text: "Самообучение 8х"
+                                        text: "Самообучение"
                                         enabled: !controller.running
-                                        onClicked: controller.start_self_play_8x()
+                                        onClicked: controller.start_self_play()
                                     }
 
                                     Button {
