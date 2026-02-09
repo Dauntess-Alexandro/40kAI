@@ -3,10 +3,8 @@ import os
 import queue
 import re
 import sys
-import time
-from collections import OrderedDict, deque
-from dataclasses import dataclass
-from typing import Callable, Deque, Optional, Tuple
+from collections import deque
+from typing import Deque, Optional, Tuple
 from datetime import datetime
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -16,7 +14,7 @@ if GYM_PATH not in sys.path:
     sys.path.insert(0, GYM_PATH)
 
 from viewer.opengl_view import OpenGLBoardWidget
-from viewer.gun_fx import get_gun_fx_config
+from viewer.playback_engine import PlaybackEngine
 from viewer.state import StateWatcher
 from viewer.styles import Theme
 from viewer.model_log_tree import render_model_log_flat
@@ -24,137 +22,6 @@ from viewer.model_log_tree import render_model_log_flat
 from gym_mod.engine.game_controller import GameController
 from gym_mod.engine.game_io import parse_dice_values
 from gym_mod.engine.event_bus import get_event_bus
-
-
-@dataclass
-class PendingReport:
-    ts: str
-    report_type: str
-    attacker_id: Optional[int] = None
-    target_id: Optional[int] = None
-    weapon_name: Optional[str] = None
-    damage: Optional[float] = None
-
-
-@dataclass
-class FxShotEvent:
-    ts: str
-    report_type: str
-    attacker_id: int
-    target_id: int
-    weapon_name: str
-    damage: float
-
-
-class FxLogParser:
-    def __init__(
-        self,
-        on_event: Callable[[FxShotEvent], None],
-        debug: Callable[[str], None],
-        seen_max: int = 300,
-    ) -> None:
-        self._on_event = on_event
-        self._debug = debug
-        self._pending: Deque[PendingReport] = deque()
-        self._seen: OrderedDict[Tuple, None] = OrderedDict()
-        self._seen_max = seen_max
-
-    def reset(self, preserve_seen: bool = True) -> None:
-        self._pending.clear()
-        if not preserve_seen:
-            self._seen.clear()
-
-    def replay_lines(self, lines) -> None:
-        if not lines:
-            return
-        self._debug(f"FX: перепроигрываю {len(lines)} строк(и) лога.")
-        for line in lines:
-            self.consume_line(str(line))
-
-    def consume_line(self, line: str) -> None:
-        if not line:
-            return
-        ts, text = self._split_timestamp(line)
-        if "📌 --- ОТЧЁТ ПО" in text:
-            report_type = "overwatch" if "OVERWATCH" in text.upper() else "shooting"
-            self._pending.append(PendingReport(ts=ts, report_type=report_type))
-            self._debug(f"FX: старт отчёта ({report_type}), ts={ts}.")
-            return
-
-        if not self._pending:
-            return
-        current = self._pending[-1]
-
-        shot_match = re.search(r"Стреляет:\s*Unit\s+(\d+).*?цель:\s*Unit\s+(\d+)", text, re.IGNORECASE)
-        if shot_match:
-            current.attacker_id = int(shot_match.group(1))
-            current.target_id = int(shot_match.group(2))
-            self._debug(
-                "FX: найдена строка стрельбы "
-                f"(attacker={current.attacker_id}, target={current.target_id})."
-            )
-            return
-
-        weapon_match = re.search(r"Оружие:\s*(.+)", text, re.IGNORECASE)
-        if weapon_match:
-            current.weapon_name = weapon_match.group(1).strip()
-            self._debug(f"FX: найдена строка оружия: {current.weapon_name}.")
-            return
-
-        damage_match = re.search(r"Итог по движку:.*?=\s*([-+]?\d+(?:\.\d+)?)", text)
-        if damage_match:
-            current.damage = float(damage_match.group(1))
-            self._debug(f"FX: найден итог урона = {current.damage}.")
-            self._finalize_report(current, reason="damage")
-            return
-
-        if "📌 -------------------------" in text:
-            if current.damage is None:
-                self._debug("FX: разделитель отчёта без итога, используем урон 0.0.")
-            self._finalize_report(current, reason="separator")
-
-    def _split_timestamp(self, line: str) -> Tuple[str, str]:
-        match = re.match(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*\|\s*(.+)$", line)
-        if match:
-            return match.group(1), match.group(2)
-        return "no-ts", line
-
-    def _finalize_report(self, report: PendingReport, reason: str) -> None:
-        if report.attacker_id is None or report.target_id is None or not report.weapon_name:
-            self._debug("FX: отчёт неполный, эффект пропущен.")
-            self._pending.pop()
-            return
-        damage = report.damage if report.damage is not None else 0.0
-        event = FxShotEvent(
-            ts=report.ts,
-            report_type=report.report_type,
-            attacker_id=report.attacker_id,
-            target_id=report.target_id,
-            weapon_name=report.weapon_name,
-            damage=damage,
-        )
-        key = (
-            event.ts,
-            event.report_type,
-            event.attacker_id,
-            event.target_id,
-            event.weapon_name,
-            event.damage,
-        )
-        if key in self._seen:
-            self._debug("FX: дубликат отчёта, эффект не создаём.")
-            self._pending.pop()
-            return
-        self._seen[key] = None
-        if len(self._seen) > self._seen_max:
-            self._seen.popitem(last=False)
-        self._debug(
-            "FX: создан FxShotEvent "
-            f"(attacker={event.attacker_id}, target={event.target_id}, "
-            f"weapon={event.weapon_name}, damage={event.damage})."
-        )
-        self._on_event(event)
-        self._pending.pop()
 
 
 class ViewerWindow(QtWidgets.QMainWindow):
@@ -177,12 +44,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._unit_row_by_key = {}
 
         self.state_watcher = StateWatcher(self.state_path)
+        self.playback_engine = PlaybackEngine(debug=self._playback_debug)
         self.map_scene = OpenGLBoardWidget(cell_size=18)
         self.map_scene.unit_selected.connect(self._select_row_for_unit)
 
         self.status_round = QtWidgets.QLabel("Раунд: —")
         self.status_turn = QtWidgets.QLabel("Ход: —")
         self.status_phase = QtWidgets.QLabel("Фаза: —")
+        self.status_events = QtWidgets.QLabel("События: 0/0")
         self.status_active = QtWidgets.QLabel("Активен: —")
 
         self.points_vp_player = QtWidgets.QLabel("Player VP: —")
@@ -219,8 +88,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_tab_indices = {}
         self._log_tab_programmatic_switch = False
         self._last_manual_log_tab_index = None
-        self._fx_shot_queue: Deque[FxShotEvent] = deque()
-        self._fx_parser = FxLogParser(self._enqueue_fx_event, self._fx_debug, seen_max=400)
         self._log_tab_defs = [
             ("player", "Все ходы игрока"),
             ("model", "Все ходы модели"),
@@ -237,6 +104,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
             get_event_bus().subscribe(self._on_event_bus_event)
         except Exception:
             pass
+
+        self.playback_engine.sig_apply_snapshot.connect(self._on_snapshot_applied)
+        self.playback_engine.sig_event.connect(self._on_playback_event)
+        self.playback_engine.sig_phase_changed.connect(self._on_playback_phase_changed)
+        self.playback_engine.sig_cursor_changed.connect(self._on_playback_cursor_changed)
 
         fit_button = QtWidgets.QPushButton("Fit")
         fit_button.clicked.connect(self._fit_view)
@@ -350,6 +222,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.status_round)
         layout.addWidget(self.status_turn)
         layout.addWidget(self.status_phase)
+        layout.addWidget(self.status_events)
         layout.addWidget(self.status_active)
         return box
 
@@ -742,10 +615,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
             )
             return
         if self.state_watcher.load_if_changed():
-            self._apply_state(self.state_watcher.state)
+            self.playback_engine.ingest_snapshot(self.state_watcher.state)
+        for event in self.state_watcher.drain_events():
+            self.playback_engine.ingest_event(event)
 
-    def _apply_state(self, state):
-        board = state.get("board", {})
+    def _on_snapshot_applied(self, state):
         self.map_scene.update_state(state)
 
         self._units_by_key = {}
@@ -772,6 +646,50 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._update_model_events(state.get("model_events", []))
         self._drain_event_queue()
         self._refresh_active_context()
+
+    def _on_playback_event(self, event: dict) -> None:
+        if not isinstance(event, dict):
+            return
+        event_type = str(event.get("type") or "")
+        if event_type in ("unit_hp", "unit_move", "unit_killed"):
+            unit_id = event.get("unit_id")
+            if unit_id is not None:
+                unit = None
+                side_guess = self._side_from_unit_id(unit_id)
+                if side_guess:
+                    unit = self._units_by_key.get((side_guess, unit_id))
+                if unit is None:
+                    for (_, candidate_id), candidate in self._units_by_key.items():
+                        if candidate_id == unit_id:
+                            unit = candidate
+                            break
+                if unit:
+                    if event_type == "unit_hp":
+                        unit["hp"] = event.get("hp_after", unit.get("hp"))
+                    if event_type == "unit_move":
+                        to_pos = event.get("to") or {}
+                        if "x" in to_pos:
+                            unit["x"] = to_pos.get("x")
+                        if "y" in to_pos:
+                            unit["y"] = to_pos.get("y")
+                    if event_type == "unit_killed":
+                        self._units_by_key.pop((unit.get("side"), unit.get("id")), None)
+                self._populate_units_table(list(self._units_by_key.values()))
+        self.map_scene.apply_event(event)
+
+    def _on_playback_phase_changed(self, phase: str, idx: int) -> None:
+        _ = idx
+        self.status_phase.setText(f"Фаза: {phase}")
+        self._playback_debug(f"Фаза: {phase}")
+
+    def _on_playback_cursor_changed(self, cursor: int, total: int) -> None:
+        self.status_events.setText(f"События: {cursor}/{total}")
+        self._playback_debug(f"Cursor: {cursor}/{total}")
+
+    def _playback_debug(self, message: str) -> None:
+        if os.getenv("GUI_DEBUG", "0") != "1":
+            return
+        self.add_log_line(f"[PLAYBACK] {message}")
 
     def _populate_units_table(self, units):
         self.units_table.setRowCount(len(units))
@@ -882,8 +800,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         }
         self._log_entries.append(entry)
         self._append_log_to_file(raw_text)
-        self._fx_parser.consume_line(raw_text)
-        self._drain_fx_queue()
         if len(self._log_entries) > self._max_log_lines:
             self._log_entries = self._log_entries[-self._max_log_lines :]
             self._refresh_log_views()
@@ -1183,15 +1099,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
                     }
                 )
         self._refresh_log_views()
-        if not write_to_file:
-            self._replay_fx_from_log_lines(lines)
-
-    def _replay_fx_from_log_lines(self, lines) -> None:
-        if not lines:
-            return
-        self._fx_parser.reset(preserve_seen=True)
-        self._fx_parser.replay_lines(lines)
-        self._drain_fx_queue()
 
     def _clear_log_viewer(self):
         self._log_entries = []
@@ -1201,8 +1108,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_events_snapshot = None
         self._model_events_stream = []
         self._model_events_current = []
-        self._fx_shot_queue.clear()
-        self._fx_parser.reset(preserve_seen=False)
         for view in self._log_tabs.values():
             view.clear()
 
@@ -1337,7 +1242,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._select_row_for_unit_id(unit_id, side=side)
         active_unit = self._units_by_key.get((side, unit_id))
         phase = None
-        if self.state_watcher and self.state_watcher.state:
+        if self.playback_engine.phase_list:
+            phase = self.playback_engine.phase_list[self.playback_engine.phase_index]
+        elif self.state_watcher and self.state_watcher.state:
             phase = self.state_watcher.state.get("phase")
         move_range = None
         shoot_range = None
@@ -1357,81 +1264,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
             else None,
         )
 
-    def _enqueue_fx_event(self, event: FxShotEvent) -> None:
-        self._fx_shot_queue.append(event)
-
-    def _drain_fx_queue(self) -> None:
-        while self._fx_shot_queue:
-            event = self._fx_shot_queue.popleft()
-            self._spawn_fx_for_event(event)
-
-    def _spawn_fx_for_event(self, event: FxShotEvent) -> None:
-        if "gauss flayer" not in event.weapon_name.lower():
-            self._fx_debug("FX: оружие не gauss, эффект пропущен.")
-            return
-        attacker_side = self._side_from_unit_id(event.attacker_id)
-        target_side = self._side_from_unit_id(event.target_id)
-        start = self._unit_world_center_by_key(attacker_side, event.attacker_id)
-        end = self._unit_world_center_by_key(target_side, event.target_id)
-        if start is None or end is None:
-            self._fx_debug(
-                "FX: не удалось получить координаты для эффекта "
-                f"(attacker={event.attacker_id}, target={event.target_id})."
-            )
-            return
-        self._spawn_gauss_effect(start, end, event)
-
-    def _spawn_gauss_effect(
-        self, start: QtCore.QPointF, end: QtCore.QPointF, event: FxShotEvent
-    ) -> None:
-        t0 = time.monotonic()
-        seed = hash((event.attacker_id, event.target_id, int(t0 * 1000))) & 0xFFFFFFFF
-        config = get_gun_fx_config("Gauss flayer")
-        duration = float(config.get("duration", 6.5))
-        effect = self.map_scene.build_gauss_effect(
-            start,
-            end,
-            t0=t0,
-            duration=duration,
-            seed=seed,
-            config=config,
-        )
-        self.map_scene.add_effect(effect)
-        self._fx_debug(
-            "FX: позиция эффекта "
-            f"start=({start.x():.1f},{start.y():.1f}) "
-            f"end=({end.x():.1f},{end.y():.1f})."
-        )
-        self._fx_debug(
-            "FX: эффект добавлен в рендер "
-            f"(attacker={event.attacker_id}, target={event.target_id})."
-        )
-
-    def _unit_world_center_by_key(
-        self, side: Optional[str], unit_id: int
-    ) -> Optional[QtCore.QPointF]:
-        if side:
-            unit = self._units_by_key.get((side, unit_id))
-            if unit:
-                return self._unit_to_world_center(unit)
-        return self._unit_world_center(unit_id)
-
-    def _unit_world_center(self, unit_id: int) -> Optional[QtCore.QPointF]:
-        cell = self.map_scene.cell_size
-        for (_, candidate_id), unit in self._units_by_key.items():
-            if candidate_id != unit_id:
-                continue
-            return self._unit_to_world_center(unit)
-        return None
-
-    def _unit_to_world_center(self, unit: dict) -> Optional[QtCore.QPointF]:
-        cell = self.map_scene.cell_size
-        x = unit.get("x")
-        y = unit.get("y")
-        if x is None or y is None:
-            return None
-        return QtCore.QPointF(x * cell + cell / 2, y * cell + cell / 2)
-
     def _side_from_unit_id(self, unit_id: int) -> Optional[str]:
         unit_str = str(unit_id)
         if unit_str.startswith("1"):
@@ -1439,11 +1271,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if unit_str.startswith("2"):
             return "model"
         return None
-
-    def _fx_debug(self, message: str) -> None:
-        if not message:
-            return
-        self._append_log_to_file(message)
 
     def _auto_switch_log_tab(self, active_side):
         if active_side not in ("player", "model"):
@@ -1472,6 +1299,28 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _is_shooting_phase(self, phase):
         phase_text = str(phase or "").lower()
         return "shoot" in phase_text or "стрел" in phase_text or "shooting" in phase_text
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        if self._pending_request:
+            super().keyPressEvent(event)
+            return
+        key = event.key()
+        if key == QtCore.Qt.Key_Left:
+            self.playback_engine.prev_phase()
+            return
+        if key == QtCore.Qt.Key_Right:
+            self.playback_engine.next_phase()
+            return
+        if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter, QtCore.Qt.Key_Space):
+            self.playback_engine.step_event()
+            return
+        if key == QtCore.Qt.Key_Up:
+            self.playback_engine.set_speed(self.playback_engine.speed + 0.25)
+            return
+        if key == QtCore.Qt.Key_Down:
+            self.playback_engine.set_speed(self.playback_engine.speed - 0.25)
+            return
+        super().keyPressEvent(event)
 
     def eventFilter(self, obj, event):
         if event.type() == QtCore.QEvent.KeyPress and self._pending_request:

@@ -90,6 +90,7 @@ def write_state_json(env, path=None):
         active_side = "model"
 
     payload = {
+        "version": 2,
         "board": {"width": _safe_int(getattr(env, "b_hei", None), None),
                   "height": _safe_int(getattr(env, "b_len", None), None)},
         "turn": _safe_int(getattr(env, "numTurns", None), None),

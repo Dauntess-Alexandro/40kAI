@@ -20,6 +20,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
+from viewer.gun_fx import get_gun_fx_config
 from viewer.styles import Theme
 from viewer.tooltip import UnitTooltipWidget
 
@@ -106,6 +107,39 @@ class GaussTracerEffect:
     edge_specks: List[EdgeSpeckBlueprint]
 
 
+@dataclass
+class CameraController:
+    target_center: QtCore.QPointF
+    target_zoom: float
+    current_center: QtCore.QPointF
+    current_zoom: float
+    smoothing: float = 6.0
+    active: bool = False
+
+    def update(self, dt: float) -> bool:
+        if not self.active:
+            return False
+        alpha = 1.0 - math.exp(-self.smoothing * max(0.0, dt))
+        delta = self.target_center - self.current_center
+        self.current_center += delta * alpha
+        self.current_zoom += (self.target_zoom - self.current_zoom) * alpha
+        done = (
+            abs(delta.x()) < 0.05
+            and abs(delta.y()) < 0.05
+            and abs(self.target_zoom - self.current_zoom) < 0.005
+        )
+        if done:
+            self.current_center = QtCore.QPointF(self.target_center)
+            self.current_zoom = float(self.target_zoom)
+            self.active = False
+        return True
+
+    def set_target(self, center: QtCore.QPointF, zoom: float) -> None:
+        self.target_center = QtCore.QPointF(center)
+        self.target_zoom = float(zoom)
+        self.active = True
+
+
 class OpenGLBoardWidget(QOpenGLWidget):
     unit_selected = QtCore.Signal(str, int)
 
@@ -160,6 +194,15 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._pan = QtCore.QPointF(0, 0)
         self._target_scale = self._scale
         self._target_pan = QtCore.QPointF(0, 0)
+        self._camera = CameraController(
+            target_center=QtCore.QPointF(0, 0),
+            target_zoom=self._scale,
+            current_center=QtCore.QPointF(0, 0),
+            current_zoom=self._scale,
+        )
+        self._camera_last_ts: Optional[float] = None
+        self._auto_focus_until = 0.0
+        self._auto_focus_cooldown_s = 2.0
         self._view_anim_timer = QtCore.QTimer(self)
         self._view_anim_timer.setInterval(16)
         self._view_anim_timer.timeout.connect(self._animate_view_step)
@@ -289,7 +332,206 @@ class OpenGLBoardWidget(QOpenGLWidget):
             )
 
         self.refresh_overlays()
+        self._camera.current_center = self._view_center_world()
+        self._camera.current_zoom = self._scale
+        self._camera.target_center = QtCore.QPointF(self._camera.current_center)
+        self._camera.target_zoom = self._scale
         self.update()
+
+    def apply_event(self, evt: Dict) -> None:
+        if not isinstance(evt, dict):
+            return
+        event_type = str(evt.get("type") or "")
+        if event_type == "unit_selected":
+            unit_id = evt.get("unit_id")
+            if unit_id is not None:
+                self.set_active_unit(int(unit_id))
+                if self._can_auto_focus() and not evt.get("_fast"):
+                    self.focus_on_unit(int(unit_id))
+            return
+        if event_type == "unit_move":
+            unit_id = evt.get("unit_id")
+            if unit_id is None:
+                return
+            from_xy = evt.get("from")
+            to_xy = evt.get("to")
+            if not from_xy or not to_xy:
+                return
+            self._apply_unit_move(int(unit_id), from_xy, to_xy, fast=bool(evt.get("_fast")))
+            return
+        if event_type == "shot":
+            self._apply_shot_event(evt)
+            return
+        if event_type == "unit_hp":
+            unit_id = evt.get("unit_id")
+            if unit_id is None:
+                return
+            unit = self._find_unit_by_id(int(unit_id))
+            if unit is None:
+                return
+            unit["hp"] = evt.get("hp_after", unit.get("hp"))
+            self.update()
+            return
+        if event_type == "unit_killed":
+            unit_id = evt.get("unit_id")
+            if unit_id is None:
+                return
+            self._schedule_unit_removal(int(unit_id))
+            return
+        if event_type == "camera_focus":
+            if not self._can_auto_focus():
+                return
+            target_unit = evt.get("unit_id")
+            pos = evt.get("pos")
+            zoom = evt.get("zoom")
+            if target_unit is not None:
+                self.focus_on_unit(int(target_unit), zoom=zoom)
+            elif pos:
+                self.focus_on_pos(pos.get("x"), pos.get("y"), zoom=zoom)
+            return
+
+    def focus_on_unit(self, unit_id: int, zoom: Optional[float] = None) -> None:
+        unit = self._find_unit_by_id(unit_id)
+        if unit is None:
+            return
+        center = self._unit_to_world_center(unit)
+        if center is None:
+            return
+        self._focus_on_world(center, zoom=zoom)
+
+    def focus_on_pos(self, x: Optional[float], y: Optional[float], zoom: Optional[float] = None) -> None:
+        if x is None or y is None:
+            return
+        cell = self.cell_size
+        center = QtCore.QPointF(x * cell + cell / 2, y * cell + cell / 2)
+        self._focus_on_world(center, zoom=zoom)
+
+    def nudge_pan(self, dx: float, dy: float) -> None:
+        self._pause_auto_focus()
+        self._set_target_view(pan=self._target_pan + QtCore.QPointF(dx, dy))
+
+    def zoom_to(self, zoom: float) -> None:
+        self._pause_auto_focus()
+        zoom = max(self._min_scale, min(self._max_scale, float(zoom)))
+        self._set_target_view(scale=zoom)
+
+    def _focus_on_world(self, center: QtCore.QPointF, zoom: Optional[float] = None) -> None:
+        if self._board_rect.isEmpty():
+            return
+        self._camera.current_center = self._view_center_world()
+        self._camera.current_zoom = self._scale
+        target_zoom = self._scale if zoom is None else max(self._min_scale, min(self._max_scale, float(zoom)))
+        self._camera.set_target(center, target_zoom)
+        if not self._view_anim_timer.isActive():
+            self._view_anim_timer.start()
+
+    def _pause_auto_focus(self) -> None:
+        self._auto_focus_until = monotonic() + self._auto_focus_cooldown_s
+
+    def _can_auto_focus(self) -> bool:
+        return monotonic() >= self._auto_focus_until
+
+    def _view_center_world(self) -> QtCore.QPointF:
+        view_center = QtCore.QPointF(self.width() / 2, self.height() / 2)
+        if self._scale == 0:
+            return QtCore.QPointF()
+        return (view_center - self._pan) / self._scale
+
+    def _apply_unit_move(self, unit_id: int, from_xy: Dict, to_xy: Dict, *, fast: bool = False) -> None:
+        unit = self._find_unit_by_id(unit_id)
+        if unit is None:
+            return
+        unit["x"] = to_xy.get("x")
+        unit["y"] = to_xy.get("y")
+        key = (unit.get("side"), unit.get("id"))
+        if key[0] is None or key[1] is None:
+            return
+        from_pos = QtCore.QPointF(float(from_xy.get("x")), float(from_xy.get("y")))
+        to_pos = QtCore.QPointF(float(to_xy.get("x")), float(to_xy.get("y")))
+        if fast:
+            self._prev_unit_positions[key] = QtCore.QPointF(to_pos)
+            self._curr_unit_positions[key] = QtCore.QPointF(to_pos)
+        else:
+            self._prev_unit_positions[key] = QtCore.QPointF(from_pos)
+            self._curr_unit_positions[key] = QtCore.QPointF(to_pos)
+        self._start_unit_animation()
+
+    def _schedule_unit_removal(self, unit_id: int, delay_ms: int = 220) -> None:
+        def _remove() -> None:
+            self._remove_unit_by_id(unit_id)
+        QtCore.QTimer.singleShot(delay_ms, _remove)
+
+    def _remove_unit_by_id(self, unit_id: int) -> None:
+        units = self._state.get("units", []) or []
+        self._state["units"] = [unit for unit in units if unit.get("id") != unit_id]
+        self._units_state = list(self._state.get("units", []))
+        self._curr_unit_positions = {
+            key: pos for key, pos in self._curr_unit_positions.items() if key[1] != unit_id
+        }
+        self._prev_unit_positions = {
+            key: pos for key, pos in self._prev_unit_positions.items() if key[1] != unit_id
+        }
+        self._start_unit_animation()
+
+    def _apply_shot_event(self, evt: Dict) -> None:
+        if evt.get("_fast"):
+            return
+        weapon_name = str(evt.get("weapon") or "")
+        config = get_gun_fx_config(weapon_name)
+        if not config:
+            return
+        line = evt.get("line") or {}
+        start = line.get("start")
+        end = line.get("end")
+        start_pt = self._xy_to_world_center(start) if start else None
+        end_pt = self._xy_to_world_center(end) if end else None
+        if start_pt is None or end_pt is None:
+            shooter = evt.get("shooter")
+            target = evt.get("target")
+            if shooter is not None:
+                start_pt = self._unit_world_center(int(shooter))
+            if target is not None:
+                end_pt = self._unit_world_center(int(target))
+        if start_pt is None or end_pt is None:
+            return
+        t0 = monotonic()
+        seed = hash((evt.get("event_id"), weapon_name, int(t0 * 1000))) & 0xFFFFFFFF
+        duration = float(config.get("duration", 3.5))
+        effect = self.build_gauss_effect(
+            start_pt,
+            end_pt,
+            t0=t0,
+            duration=duration,
+            seed=seed,
+            config=config,
+        )
+        self.add_effect(effect)
+        if self._can_auto_focus():
+            self._focus_on_world(end_pt)
+
+    def _xy_to_world_center(self, xy: Optional[Dict]) -> Optional[QtCore.QPointF]:
+        if not xy:
+            return None
+        x = xy.get("x")
+        y = xy.get("y")
+        if x is None or y is None:
+            return None
+        cell = self.cell_size
+        return QtCore.QPointF(float(x) * cell + cell / 2, float(y) * cell + cell / 2)
+
+    def _unit_world_center(self, unit_id: int) -> Optional[QtCore.QPointF]:
+        unit = self._find_unit_by_id(unit_id)
+        if unit is None:
+            return None
+        return self._unit_to_world_center(unit)
+
+    def _unit_to_world_center(self, unit: dict) -> Optional[QtCore.QPointF]:
+        x = unit.get("x")
+        y = unit.get("y")
+        if x is None or y is None:
+            return None
+        cell = self.cell_size
+        return QtCore.QPointF(float(x) * cell + cell / 2, float(y) * cell + cell / 2)
 
     def set_active_context(
         self,
@@ -678,6 +920,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         *,
         immediate: bool = False,
     ) -> None:
+        self._camera.active = False
+        self._camera_last_ts = None
         if scale is not None:
             self._target_scale = scale
         if pan is not None:
@@ -685,6 +929,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if immediate:
             self._scale = self._target_scale
             self._pan = QtCore.QPointF(self._target_pan)
+            self._camera.current_center = self._view_center_world()
+            self._camera.current_zoom = self._scale
+            self._camera.target_center = QtCore.QPointF(self._camera.current_center)
+            self._camera.target_zoom = self._scale
             if self._view_anim_timer.isActive():
                 self._view_anim_timer.stop()
             return
@@ -692,6 +940,16 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._view_anim_timer.start()
 
     def _animate_view_step(self) -> None:
+        now = monotonic()
+        dt = 0.0 if self._camera_last_ts is None else max(0.0, now - self._camera_last_ts)
+        self._camera_last_ts = now
+        if self._camera.update(dt):
+            self._apply_camera_view(self._camera.current_center, self._camera.current_zoom)
+            if not self._camera.active:
+                self._camera_last_ts = None
+                self._view_anim_timer.stop()
+            self.update()
+            return
         smoothing = 0.2
         scale_delta = self._target_scale - self._scale
         pan_delta = self._target_pan - self._pan
@@ -705,7 +963,17 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._scale = self._target_scale
             self._pan = QtCore.QPointF(self._target_pan)
             self._view_anim_timer.stop()
+        self._camera.current_center = self._view_center_world()
+        self._camera.current_zoom = self._scale
         self.update()
+
+    def _apply_camera_view(self, center: QtCore.QPointF, zoom: float) -> None:
+        view_center = QtCore.QPointF(self.width() / 2, self.height() / 2)
+        pan = view_center - center * zoom
+        self._scale = zoom
+        self._pan = QtCore.QPointF(pan)
+        self._target_scale = zoom
+        self._target_pan = QtCore.QPointF(pan)
 
     def _map_to_world(self, pos: QtCore.QPointF) -> QtCore.QPointF:
         transform = self._view_transform()
@@ -732,6 +1000,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         delta = event.angleDelta().y()
         if delta == 0:
             return
+        self._pause_auto_focus()
         cursor = event.position()
         world_before = self._map_to_world(cursor)
         factor = 1.15 if delta > 0 else 1 / 1.15
@@ -748,6 +1017,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._dragging = True
             self._drag_start = QtCore.QPointF(event.position())
             self._drag_distance = 0.0
+            self._pause_auto_focus()
         if event.button() == QtCore.Qt.RightButton:
             world = self._map_to_world(QtCore.QPointF(event.position()))
             unit_key = self._unit_key_at_world(world)
