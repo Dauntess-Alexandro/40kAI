@@ -23,6 +23,10 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from viewer.styles import Theme
 from viewer.tooltip import UnitTooltipWidget
 
+GL_BLEND = 0x0BE2
+GL_SRC_ALPHA = 0x0302
+GL_ONE_MINUS_SRC_ALPHA = 0x0303
+
 
 @dataclass
 class UnitRender:
@@ -288,8 +292,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         functions = context.functions()
         if functions is None:
             return
-        functions.glEnable(functions.GL_BLEND)
-        functions.glBlendFunc(functions.GL_SRC_ALPHA, functions.GL_ONE_MINUS_SRC_ALPHA)
+        functions.glEnable(GL_BLEND)
+        functions.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
     def _load_environment_assets(self) -> None:
         self._ground_textures = []
