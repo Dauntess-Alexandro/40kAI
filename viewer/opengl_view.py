@@ -515,7 +515,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return
         scale_x = view_size.width() / self._board_rect.width()
         scale_y = view_size.height() / self._board_rect.height()
-        self._scale = max(self._min_scale, min(self._max_scale, min(scale_x, scale_y) * 0.95))
+        self._scale = max(self._min_scale, min(self._max_scale, min(scale_x, scale_y) * 0.99))
         self._center_board()
         self._set_target_view(self._scale, self._pan, immediate=True)
         self.update()
