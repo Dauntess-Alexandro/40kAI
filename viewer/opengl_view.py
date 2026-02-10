@@ -213,6 +213,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._min_scale = 0.2
         self._max_scale = 6.0
         self._fit_zoom_boost = max(0.5, float(fit_zoom_boost))
+        self._fit_reference_cell_size = 24.0
         self._unit_icon_scale = max(0.5, float(unit_icon_scale))
         self._pan = QtCore.QPointF(0, 0)
         self._target_scale = self._scale
@@ -517,7 +518,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return
         scale_x = view_size.width() / self._board_rect.width()
         scale_y = view_size.height() / self._board_rect.height()
-        fit_scale = min(scale_x, scale_y) * 0.99 * self._fit_zoom_boost
+        cell_factor = self.cell_size / max(self._fit_reference_cell_size, 0.001)
+        cell_factor = max(0.35, min(3.0, cell_factor))
+        fit_scale = min(scale_x, scale_y) * 0.99 * self._fit_zoom_boost * cell_factor
         self._scale = max(self._min_scale, min(self._max_scale, fit_scale))
         self._center_board()
         self._set_target_view(self._scale, self._pan, immediate=True)
