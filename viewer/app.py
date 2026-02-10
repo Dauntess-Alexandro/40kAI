@@ -175,6 +175,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._show_objective_radius = True
         self._units_by_key = {}
         self._unit_row_by_key = {}
+        self._did_initial_fit = False
 
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = OpenGLBoardWidget(cell_size=24)
@@ -277,30 +278,30 @@ class ViewerWindow(QtWidgets.QMainWindow):
         right_top_layout.addWidget(command_group)
         right_top_layout.addStretch()
 
-        right_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
-        right_splitter.addWidget(right_top_widget)
-        right_splitter.addWidget(log_group)
-        right_splitter.setStretchFactor(0, 3)
-        right_splitter.setStretchFactor(1, 2)
-        right_splitter.setChildrenCollapsible(False)
+        self._right_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self._right_splitter.addWidget(right_top_widget)
+        self._right_splitter.addWidget(log_group)
+        self._right_splitter.setStretchFactor(0, 3)
+        self._right_splitter.setStretchFactor(1, 2)
+        self._right_splitter.setChildrenCollapsible(False)
 
-        top_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        top_splitter.addWidget(left_widget)
-        top_splitter.addWidget(right_splitter)
-        top_splitter.setStretchFactor(0, 7)
-        top_splitter.setStretchFactor(1, 2)
-        top_splitter.setChildrenCollapsible(False)
-        right_splitter.setMinimumWidth(340)
-        right_splitter.setMaximumWidth(520)
+        self._top_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self._top_splitter.addWidget(left_widget)
+        self._top_splitter.addWidget(self._right_splitter)
+        self._top_splitter.setStretchFactor(0, 7)
+        self._top_splitter.setStretchFactor(1, 2)
+        self._top_splitter.setChildrenCollapsible(False)
+        self._right_splitter.setMinimumWidth(340)
+        self._right_splitter.setMaximumWidth(520)
 
         central = QtWidgets.QWidget()
         central_layout = QtWidgets.QVBoxLayout(central)
-        central_layout.addWidget(top_splitter)
+        central_layout.addWidget(self._top_splitter)
         self.setCentralWidget(central)
 
         self._apply_dark_theme()
         self._build_toolbar()
-        self._fit_view()
+        QtCore.QTimer.singleShot(0, self._apply_initial_splitter_sizes)
         app = QtWidgets.QApplication.instance()
         if app is not None:
             app.installEventFilter(self)
@@ -735,6 +736,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._set_request(request)
         self._poll_state()
 
+    def _apply_initial_splitter_sizes(self) -> None:
+        total_w = max(self.width(), 1200)
+        right_w = max(340, min(420, int(total_w * 0.24)))
+        left_w = max(640, total_w - right_w)
+        self._top_splitter.setSizes([left_w, right_w])
+
+        total_h = max(self.height(), 800)
+        top_h = int(total_h * 0.72)
+        bottom_h = max(180, total_h - top_h)
+        self._right_splitter.setSizes([top_h, bottom_h])
+
     def _fit_view(self):
         self.map_scene.fit_to_view()
 
@@ -751,6 +763,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _apply_state(self, state):
         board = state.get("board", {})
         self.map_scene.update_state(state)
+        if not self._did_initial_fit:
+            self._did_initial_fit = True
+            QtCore.QTimer.singleShot(0, self._fit_view)
 
         self._units_by_key = {}
         for unit in state.get("units", []) or []:
