@@ -1,4 +1,5 @@
 import torch
+import json
 import os
 import queue
 import re
@@ -11,9 +12,27 @@ from datetime import datetime
 from PySide6 import QtCore, QtGui, QtWidgets
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+VIEWER_CONFIG_PATH = os.path.join(ROOT_DIR, "viewer", "viewer_config.json")
 GYM_PATH = os.path.join(ROOT_DIR, "gym_mod")
 if GYM_PATH not in sys.path:
     sys.path.insert(0, GYM_PATH)
+
+
+def load_viewer_config() -> dict:
+    defaults = {
+        "cell_size": 24,
+        "unit_icon_scale": 2.75,
+    }
+    try:
+        with open(VIEWER_CONFIG_PATH, "r", encoding="utf-8") as handle:
+            loaded = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return defaults
+    if not isinstance(loaded, dict):
+        return defaults
+    cfg = dict(defaults)
+    cfg.update(loaded)
+    return cfg
 
 from viewer.opengl_view import OpenGLBoardWidget
 from viewer.gun_fx import get_gun_fx_config
@@ -177,8 +196,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._unit_row_by_key = {}
         self._did_initial_fit = False
 
+        self._viewer_config = load_viewer_config()
+        cell_size = int(self._viewer_config.get("cell_size", 24))
+        unit_icon_scale = float(self._viewer_config.get("unit_icon_scale", 2.75))
+
         self.state_watcher = StateWatcher(self.state_path)
-        self.map_scene = OpenGLBoardWidget(cell_size=24)
+        self.map_scene = OpenGLBoardWidget(
+            cell_size=max(8, cell_size),
+            unit_icon_scale=max(0.5, unit_icon_scale),
+        )
         self.map_scene.unit_selected.connect(self._select_row_for_unit)
 
         self.status_round = QtWidgets.QLabel("Раунд: —")
