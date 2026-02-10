@@ -164,7 +164,7 @@ class TextureManager:
 class OpenGLBoardWidget(QOpenGLWidget):
     unit_selected = QtCore.Signal(str, int)
 
-    def __init__(self, cell_size: int = 18, parent: Optional[QtWidgets.QWidget] = None):
+    def __init__(self, cell_size: int = 24, parent: Optional[QtWidgets.QWidget] = None):
         super().__init__(parent)
         self.cell_size = cell_size
         self._state: Dict = {}
@@ -1280,7 +1280,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if render.icon is None or render.icon.isNull():
                 continue
 
-            icon_size = marker_radius * 2.25
+            icon_size = marker_radius * 2.75
             rect = QtCore.QRectF(
                 render.center.x() - icon_size / 2,
                 render.center.y() - icon_size / 2,
