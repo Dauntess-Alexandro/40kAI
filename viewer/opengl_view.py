@@ -39,6 +39,7 @@ class UnitRender:
     radius: float
     color: QtGui.QColor
     label: str
+    icon: Optional[QtGui.QPixmap] = None
 
 
 @dataclass
@@ -259,6 +260,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
         assets_root = resolve_asset_path("")
         self._texture_manager = TextureManager(assets_root)
+        self._unit_icon_by_name = self._build_unit_icon_map()
         self._ground_textures: List[QtGui.QPixmap] = []
         self._prop_textures: Dict[str, QtGui.QPixmap] = {}
         self._shadow_textures: Dict[str, QtGui.QPixmap] = {}
@@ -796,12 +798,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
             center_y = interp_y * self.cell_size + self.cell_size / 2 - offset
             color = Theme.player if unit.get("side") == "player" else Theme.model
             radius = self.cell_size * 0.35
+            unit_name = str(unit.get("name") or "")
             render = UnitRender(
                 key=key,
                 center=QtCore.QPointF(center_x, center_y),
                 radius=radius,
                 color=color,
                 label=str(unit.get("id", "")),
+                icon=self._icon_for_unit_name(unit_name),
             )
             self._units.append(render)
             if key[0] is not None and key[1] is not None:
@@ -1268,9 +1272,22 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def _draw_units_layer(self, painter: QtGui.QPainter) -> None:
         for render in self._units:
+            marker_radius = render.radius
             painter.setBrush(Theme.brush(render.color))
             painter.setPen(Theme.pen(Theme.outline, 0.8))
-            painter.drawEllipse(render.center, render.radius, render.radius)
+            painter.drawEllipse(render.center, marker_radius, marker_radius)
+
+            if render.icon is None or render.icon.isNull():
+                continue
+
+            icon_size = marker_radius * 2.25
+            rect = QtCore.QRectF(
+                render.center.x() - icon_size / 2,
+                render.center.y() - icon_size / 2,
+                icon_size,
+                icon_size,
+            )
+            painter.drawPixmap(rect, render.icon, QtCore.QRectF(render.icon.rect()))
 
     def _draw_selection_layer(self, painter: QtGui.QPainter) -> None:
         if self._selected_unit_key in self._unit_by_key:
@@ -1352,6 +1369,51 @@ class OpenGLBoardWidget(QOpenGLWidget):
         faction = str(unit.get("faction") or "")
         name = str(unit.get("name") or "")
         return faction.lower() == "necrons" or "necron" in name.lower()
+
+    def _normalize_unit_name(self, unit_name: str) -> str:
+        normalized = unit_name.strip().lower().replace("-", " ")
+        return " ".join(normalized.split())
+
+    def _build_unit_icon_map(self) -> Dict[str, QtGui.QPixmap]:
+        icon_links = {
+            "Necron Warriors": "icons/necron_warriors_icon.png",
+            "Royal Warden": "icons/royal_warden_icon.png",
+            "Canoptek Scarab Swarms": "icons/canoptek_scarab_swarms_icon.png",
+        }
+        name_aliases = {
+            "warriors": "Necron Warriors",
+            "necron warrior": "Necron Warriors",
+            "royal warden": "Royal Warden",
+            "canoptek scarab swarm": "Canoptek Scarab Swarms",
+            "scarab swarms": "Canoptek Scarab Swarms",
+        }
+
+        icon_map: Dict[str, QtGui.QPixmap] = {}
+        for raw_name, rel_path in icon_links.items():
+            pixmap = self._texture_manager.load_png(rel_path)
+            if pixmap is None or pixmap.isNull():
+                continue
+            normalized = self._normalize_unit_name(raw_name)
+            icon_map[normalized] = pixmap
+
+        for alias, canonical in name_aliases.items():
+            canonical_key = self._normalize_unit_name(canonical)
+            if canonical_key not in icon_map:
+                continue
+            icon_map[self._normalize_unit_name(alias)] = icon_map[canonical_key]
+
+        return icon_map
+
+    def _icon_for_unit_name(self, unit_name: str) -> Optional[QtGui.QPixmap]:
+        key = self._normalize_unit_name(unit_name)
+        if key in self._unit_icon_by_name:
+            return self._unit_icon_by_name[key]
+
+        # Fallback: иконка подтягивается даже при небольшом расхождении имени из ростера.
+        for known_key, pixmap in self._unit_icon_by_name.items():
+            if known_key and (known_key in key or key in known_key):
+                return pixmap
+        return None
 
     def _fx_color_for_unit(self, unit: Optional[dict]) -> Tuple[QtGui.QColor, float]:
         if self._is_necron(unit):
