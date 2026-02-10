@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import math
+import os
 from pathlib import Path
 import random
 from time import monotonic, perf_counter
@@ -26,6 +27,8 @@ from viewer.tooltip import UnitTooltipWidget
 GL_BLEND = 0x0BE2
 GL_SRC_ALPHA = 0x0302
 GL_ONE_MINUS_SRC_ALPHA = 0x0303
+ENV_BOARD_WIDTH = 60
+ENV_BOARD_HEIGHT = 40
 
 
 def resolve_asset_path(rel_path: str) -> Path:
@@ -170,6 +173,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._state: Dict = {}
         self._board_width = 0
         self._board_height = 0
+        self._state_board_width: Optional[int] = None
+        self._state_board_height: Optional[int] = None
+        self._swap_axes = False
+        self._rotate90 = False
+        self._board_debug_logged = False
         self._board_rect = QtCore.QRectF()
         self._grid_picture: Optional[QtGui.QPicture] = None
         self._grid_size: Tuple[int, int] = (0, 0)
@@ -212,7 +220,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._scale = 1.0
         self._min_scale = 0.2
         self._max_scale = 6.0
-        self._fit_zoom_boost = 1.15
+        self._fit_padding = 0.96
         self._unit_icon_scale = max(0.5, float(unit_icon_scale))
         self._pan = QtCore.QPointF(0, 0)
         self._target_scale = self._scale
@@ -337,8 +345,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.set_error_message(None)
         self._clear_hover_tooltip(force=True)
         board = self._state.get("board", {})
-        width = int(board.get("width") or 60)
-        height = int(board.get("height") or 40)
+        raw_units = list(self._state.get("units", []) or [])
+        width, height = self._resolve_board_dims(board, raw_units)
         self._board_width = width
         self._board_height = height
         self._board_rect = QtCore.QRectF(0, 0, width * self.cell_size, height * self.cell_size)
@@ -349,16 +357,16 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 self._props_initialized = False
             self._ensure_props()
 
-        self._units_state = list(self._state.get("units", []) or [])
+        self._units_state = raw_units
         self._prev_unit_positions = dict(self._curr_unit_positions)
         self._curr_unit_positions = {}
         for unit in self._units_state:
             key = (unit.get("side"), unit.get("id"))
-            x = unit.get("x")
-            y = unit.get("y")
-            if key[0] is None or key[1] is None or x is None or y is None:
+            view_cell = self._state_to_view_cell(unit.get("x"), unit.get("y"))
+            if key[0] is None or key[1] is None or view_cell is None:
                 continue
-            self._curr_unit_positions[key] = QtCore.QPointF(float(x), float(y))
+            view_x, view_y = view_cell
+            self._curr_unit_positions[key] = QtCore.QPointF(float(view_x), float(view_y))
 
         for key, point in self._curr_unit_positions.items():
             self._prev_unit_positions.setdefault(key, QtCore.QPointF(point))
@@ -368,14 +376,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._objectives = []
         self._objective_labels = []
         for objective in self._state.get("objectives", []) or []:
-            x = objective.get("x")
-            y = objective.get("y")
-            if x is None or y is None:
+            view_cell = self._state_to_view_cell(objective.get("x"), objective.get("y"))
+            if view_cell is None:
                 continue
+            view_x, view_y = view_cell
             radius = self.cell_size * 0.2
             center = QtCore.QPointF(
-                x * self.cell_size + self.cell_size / 2,
-                y * self.cell_size + self.cell_size / 2,
+                view_x * self.cell_size + self.cell_size / 2,
+                view_y * self.cell_size + self.cell_size / 2,
             )
             owner = objective.get("owner")
             owner_color = Theme.objective
@@ -403,7 +411,83 @@ class OpenGLBoardWidget(QOpenGLWidget):
             )
 
         self.refresh_overlays()
+        if not self._board_debug_logged:
+            self._board_debug_logged = True
+            print(
+                "[VIEWER DEBUG] board state/raw="
+                f"{self._state_board_width}x{self._state_board_height}, "
+                f"renderer={self._board_width}x{self._board_height}, "
+                f"swap_axes={self._swap_axes}, rotate90={self._rotate90}"
+            )
         self.update()
+
+    @staticmethod
+    def _safe_int(value: object) -> Optional[int]:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _state_to_view_cell(self, x: object, y: object) -> Optional[Tuple[int, int]]:
+        state_x = self._safe_int(x)
+        state_y = self._safe_int(y)
+        if state_x is None or state_y is None:
+            return None
+        if self._swap_axes:
+            return state_y, state_x
+        return state_x, state_y
+
+    def _resolve_board_dims(self, board: dict, units: List[dict]) -> Tuple[int, int]:
+        """Viewer contract: env coordinates are x in [0..W-1], y in [0..H-1]."""
+        board = board or {}
+        width = self._safe_int(board.get("width"))
+        height = self._safe_int(board.get("height"))
+
+        if width is None:
+            width = self._safe_int(board.get("board_w"))
+        if height is None:
+            height = self._safe_int(board.get("board_h"))
+
+        cols = self._safe_int(board.get("cols"))
+        rows = self._safe_int(board.get("rows"))
+        if width is None and cols is not None:
+            width = cols
+        if height is None and rows is not None:
+            height = rows
+
+        width = width or ENV_BOARD_WIDTH
+        height = height or ENV_BOARD_HEIGHT
+        self._state_board_width = width
+        self._state_board_height = height
+        self._swap_axes = False
+        self._rotate90 = False
+
+        if (width, height) == (ENV_BOARD_HEIGHT, ENV_BOARD_WIDTH):
+            self._swap_axes = True
+
+        x_values = [self._safe_int(unit.get("x")) for unit in units if isinstance(unit, dict)]
+        y_values = [self._safe_int(unit.get("y")) for unit in units if isinstance(unit, dict)]
+        max_x = max((x for x in x_values if x is not None), default=-1)
+        max_y = max((y for y in y_values if y is not None), default=-1)
+        if max_x >= 0 and max_y >= 0:
+            clearly_out_of_bounds = max_x >= width or max_y >= height
+            fits_if_swapped = max_x < height and max_y < width
+            if clearly_out_of_bounds and fits_if_swapped:
+                self._swap_axes = True
+
+        if self._swap_axes:
+            width, height = height, width
+        return width, height
+
+    def board_debug_info(self) -> Dict[str, object]:
+        return {
+            "state_board_width": self._state_board_width,
+            "state_board_height": self._state_board_height,
+            "renderer_board_width": self._board_width,
+            "renderer_board_height": self._board_height,
+            "swap_axes": self._swap_axes,
+            "rotate90": self._rotate90,
+        }
 
     def set_active_context(
         self,
@@ -512,15 +596,38 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def fit_to_view(self) -> None:
         if self._board_rect.isEmpty():
             return
-        view_size = self.size()
-        if view_size.width() <= 0 or view_size.height() <= 0:
+        viewport_w = float(self.width())
+        viewport_h = float(self.height())
+        if viewport_w <= 0 or viewport_h <= 0:
             return
-        scale_x = view_size.width() / self._board_rect.width()
-        scale_y = view_size.height() / self._board_rect.height()
-        fit_scale = min(scale_x, scale_y) * 0.99 * self._fit_zoom_boost
-        self._scale = max(self._min_scale, min(self._max_scale, fit_scale))
-        self._center_board()
+
+        board_px_w = float(self._board_width * self.cell_size)
+        board_px_h = float(self._board_height * self.cell_size)
+        if board_px_w <= 0 or board_px_h <= 0:
+            return
+
+        fit_scale = self._fit_padding * min(viewport_w / board_px_w, viewport_h / board_px_h)
+        fit_scale = max(self._min_scale, min(self._max_scale, fit_scale))
+
+        center_x = board_px_w * 0.5
+        center_y = board_px_h * 0.5
+        pan = QtCore.QPointF(
+            viewport_w * 0.5 - center_x * fit_scale,
+            viewport_h * 0.5 - center_y * fit_scale,
+        )
+
+        self._scale = fit_scale
+        self._pan = pan
         self._set_target_view(self._scale, self._pan, immediate=True)
+
+        if os.getenv("GUI_DEBUG") == "1":
+            print(
+                "[VIEWER FIT] "
+                f"viewport={int(viewport_w)}x{int(viewport_h)}, "
+                f"board_px={int(board_px_w)}x{int(board_px_h)}, "
+                f"cell_px={self.cell_size}, zoom={self._scale:.4f}"
+            )
+
         self.update()
 
     def center_view(self) -> None:
@@ -836,10 +943,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         move_range = self._move_range
         if move_range is None:
             return
-        x = unit.get("x")
-        y = unit.get("y")
-        if x is None or y is None:
+        view_cell = self._state_to_view_cell(unit.get("x"), unit.get("y"))
+        if view_cell is None:
             return
+        x, y = view_cell
         for dx in range(-move_range, move_range + 1):
             for dy in range(-move_range, move_range + 1):
                 if abs(dx) + abs(dy) > move_range:
@@ -865,9 +972,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         shoot_range = self._shoot_range
         if shoot_range is None:
             return
-        source_x = unit.get("x")
-        source_y = unit.get("y")
-        if source_x is None or source_y is None:
+        if self._state_to_view_cell(unit.get("x"), unit.get("y")) is None:
             return
         target_keys = self._resolve_targets(unit, shoot_range)
         for key in target_keys:
@@ -2109,11 +2214,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
         row = int(world.y() // self.cell_size)
         if col < 0 or row < 0 or col >= self._board_width or row >= self._board_height:
             return None
-        candidates = [
-            unit
-            for unit in self._units_state
-            if int(unit.get("x", -1)) == col and int(unit.get("y", -1)) == row
-        ]
+        candidates = []
+        for unit in self._units_state:
+            view_cell = self._state_to_view_cell(unit.get("x"), unit.get("y"))
+            if view_cell == (col, row):
+                candidates.append(unit)
         closest_key = None
         closest_dist = None
         for unit in candidates:
