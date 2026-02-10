@@ -164,7 +164,7 @@ class TextureManager:
 class OpenGLBoardWidget(QOpenGLWidget):
     unit_selected = QtCore.Signal(str, int)
 
-    def __init__(self, cell_size: int = 24, unit_icon_scale: float = 2.75, parent: Optional[QtWidgets.QWidget] = None):
+    def __init__(self, cell_size: int = 24, unit_icon_scale: float = 2.75, fit_zoom_boost: float = 1.15, parent: Optional[QtWidgets.QWidget] = None):
         super().__init__(parent)
         self.cell_size = cell_size
         self._state: Dict = {}
@@ -212,7 +212,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._scale = 1.0
         self._min_scale = 0.2
         self._max_scale = 6.0
-        self._fit_zoom_boost = 1.15
+        self._fit_zoom_boost = max(0.5, float(fit_zoom_boost))
         self._unit_icon_scale = max(0.5, float(unit_icon_scale))
         self._pan = QtCore.QPointF(0, 0)
         self._target_scale = self._scale

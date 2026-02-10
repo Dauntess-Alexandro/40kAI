@@ -22,6 +22,7 @@ def load_viewer_config() -> dict:
     defaults = {
         "cell_size": 24,
         "unit_icon_scale": 2.75,
+        "fit_zoom_boost": 1.15,
     }
     try:
         with open(VIEWER_CONFIG_PATH, "r", encoding="utf-8") as handle:
@@ -33,6 +34,20 @@ def load_viewer_config() -> dict:
     cfg = dict(defaults)
     cfg.update(loaded)
     return cfg
+
+
+def _cfg_int(cfg: dict, key: str, default: int) -> int:
+    try:
+        return int(float(cfg.get(key, default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _cfg_float(cfg: dict, key: str, default: float) -> float:
+    try:
+        return float(cfg.get(key, default))
+    except (TypeError, ValueError):
+        return default
 
 from viewer.opengl_view import OpenGLBoardWidget
 from viewer.gun_fx import get_gun_fx_config
@@ -197,15 +212,20 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._did_initial_fit = False
 
         self._viewer_config = load_viewer_config()
-        cell_size = int(self._viewer_config.get("cell_size", 24))
-        unit_icon_scale = float(self._viewer_config.get("unit_icon_scale", 2.75))
+        cell_size = max(8, _cfg_int(self._viewer_config, "cell_size", 24))
+        unit_icon_scale = max(0.5, _cfg_float(self._viewer_config, "unit_icon_scale", 2.75))
+        fit_zoom_boost = max(0.5, _cfg_float(self._viewer_config, "fit_zoom_boost", 1.15))
 
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = OpenGLBoardWidget(
-            cell_size=max(8, cell_size),
-            unit_icon_scale=max(0.5, unit_icon_scale),
+            cell_size=cell_size,
+            unit_icon_scale=unit_icon_scale,
+            fit_zoom_boost=fit_zoom_boost,
         )
         self.map_scene.unit_selected.connect(self._select_row_for_unit)
+        self._viewer_cell_size = cell_size
+        self._viewer_icon_scale = unit_icon_scale
+        self._viewer_fit_zoom_boost = fit_zoom_boost
 
         self.status_round = QtWidgets.QLabel("Раунд: —")
         self.status_turn = QtWidgets.QLabel("Ход: —")
@@ -260,6 +280,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._init_log_viewer()
         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
+        self.add_log_line(
+            f"[VIEWER] Config: cell_size={self._viewer_cell_size}, "
+            f"unit_icon_scale={self._viewer_icon_scale:.2f}, "
+            f"fit_zoom_boost={self._viewer_fit_zoom_boost:.2f}"
+        )
         try:
             get_event_bus().subscribe(self._on_event_bus_event)
         except Exception:
