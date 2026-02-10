@@ -26,6 +26,8 @@ from viewer.tooltip import UnitTooltipWidget
 GL_BLEND = 0x0BE2
 GL_SRC_ALPHA = 0x0302
 GL_ONE_MINUS_SRC_ALPHA = 0x0303
+ENV_BOARD_WIDTH = 60
+ENV_BOARD_HEIGHT = 40
 
 
 def resolve_asset_path(rel_path: str) -> Path:
@@ -170,6 +172,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._state: Dict = {}
         self._board_width = 0
         self._board_height = 0
+        self._state_board_width: Optional[int] = None
+        self._state_board_height: Optional[int] = None
+        self._swap_axes = False
+        self._rotate90 = False
+        self._board_debug_logged = False
         self._board_rect = QtCore.QRectF()
         self._grid_picture: Optional[QtGui.QPicture] = None
         self._grid_size: Tuple[int, int] = (0, 0)
@@ -337,8 +344,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.set_error_message(None)
         self._clear_hover_tooltip(force=True)
         board = self._state.get("board", {})
-        width = int(board.get("width") or 60)
-        height = int(board.get("height") or 40)
+        raw_units = list(self._state.get("units", []) or [])
+        width, height = self._resolve_board_dims(board, raw_units)
         self._board_width = width
         self._board_height = height
         self._board_rect = QtCore.QRectF(0, 0, width * self.cell_size, height * self.cell_size)
@@ -349,7 +356,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 self._props_initialized = False
             self._ensure_props()
 
-        self._units_state = list(self._state.get("units", []) or [])
+        self._units_state = raw_units
         self._prev_unit_positions = dict(self._curr_unit_positions)
         self._curr_unit_positions = {}
         for unit in self._units_state:
@@ -403,7 +410,74 @@ class OpenGLBoardWidget(QOpenGLWidget):
             )
 
         self.refresh_overlays()
+        if not self._board_debug_logged:
+            self._board_debug_logged = True
+            print(
+                "[VIEWER DEBUG] board state/raw="
+                f"{self._state_board_width}x{self._state_board_height}, "
+                f"renderer={self._board_width}x{self._board_height}, "
+                f"swap_axes={self._swap_axes}, rotate90={self._rotate90}"
+            )
         self.update()
+
+    @staticmethod
+    def _safe_int(value: object) -> Optional[int]:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _resolve_board_dims(self, board: dict, units: List[dict]) -> Tuple[int, int]:
+        """Viewer contract: env coordinates are x in [0..W-1], y in [0..H-1]."""
+        board = board or {}
+        width = self._safe_int(board.get("width"))
+        height = self._safe_int(board.get("height"))
+
+        if width is None:
+            width = self._safe_int(board.get("board_w"))
+        if height is None:
+            height = self._safe_int(board.get("board_h"))
+
+        cols = self._safe_int(board.get("cols"))
+        rows = self._safe_int(board.get("rows"))
+        if width is None and cols is not None:
+            width = cols
+        if height is None and rows is not None:
+            height = rows
+
+        width = width or ENV_BOARD_WIDTH
+        height = height or ENV_BOARD_HEIGHT
+        self._state_board_width = width
+        self._state_board_height = height
+        self._swap_axes = False
+        self._rotate90 = False
+
+        if (width, height) == (ENV_BOARD_HEIGHT, ENV_BOARD_WIDTH):
+            self._swap_axes = True
+
+        x_values = [self._safe_int(unit.get("x")) for unit in units if isinstance(unit, dict)]
+        y_values = [self._safe_int(unit.get("y")) for unit in units if isinstance(unit, dict)]
+        max_x = max((x for x in x_values if x is not None), default=-1)
+        max_y = max((y for y in y_values if y is not None), default=-1)
+        if max_x >= 0 and max_y >= 0:
+            clearly_out_of_bounds = max_x >= width or max_y >= height
+            fits_if_swapped = max_x < height and max_y < width
+            if clearly_out_of_bounds and fits_if_swapped:
+                self._swap_axes = True
+
+        if self._swap_axes:
+            width, height = height, width
+        return width, height
+
+    def board_debug_info(self) -> Dict[str, object]:
+        return {
+            "state_board_width": self._state_board_width,
+            "state_board_height": self._state_board_height,
+            "renderer_board_width": self._board_width,
+            "renderer_board_height": self._board_height,
+            "swap_axes": self._swap_axes,
+            "rotate90": self._rotate90,
+        }
 
     def set_active_context(
         self,

@@ -195,6 +195,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._units_by_key = {}
         self._unit_row_by_key = {}
         self._did_initial_fit = False
+        self._board_debug_logged = False
 
         self._viewer_config = load_viewer_config()
         cell_size = int(self._viewer_config.get("cell_size", 24))
@@ -787,8 +788,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._apply_state(self.state_watcher.state)
 
     def _apply_state(self, state):
-        board = state.get("board", {})
         self.map_scene.update_state(state)
+        if not self._board_debug_logged:
+            self._board_debug_logged = True
+            debug = self.map_scene.board_debug_info()
+            self.add_log_line(
+                "[VIEWER DEBUG] board state/raw="
+                f"{debug.get('state_board_width')}x{debug.get('state_board_height')}, "
+                f"renderer={debug.get('renderer_board_width')}x{debug.get('renderer_board_height')}, "
+                f"swap_axes={debug.get('swap_axes')}, rotate90={debug.get('rotate90')}"
+            )
         if not self._did_initial_fit:
             self._did_initial_fit = True
             QtCore.QTimer.singleShot(0, self._fit_view)
