@@ -361,11 +361,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._curr_unit_positions = {}
         for unit in self._units_state:
             key = (unit.get("side"), unit.get("id"))
-            x = unit.get("x")
-            y = unit.get("y")
-            if key[0] is None or key[1] is None or x is None or y is None:
+            view_cell = self._state_to_view_cell(unit.get("x"), unit.get("y"))
+            if key[0] is None or key[1] is None or view_cell is None:
                 continue
-            self._curr_unit_positions[key] = QtCore.QPointF(float(x), float(y))
+            view_x, view_y = view_cell
+            self._curr_unit_positions[key] = QtCore.QPointF(float(view_x), float(view_y))
 
         for key, point in self._curr_unit_positions.items():
             self._prev_unit_positions.setdefault(key, QtCore.QPointF(point))
@@ -375,14 +375,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._objectives = []
         self._objective_labels = []
         for objective in self._state.get("objectives", []) or []:
-            x = objective.get("x")
-            y = objective.get("y")
-            if x is None or y is None:
+            view_cell = self._state_to_view_cell(objective.get("x"), objective.get("y"))
+            if view_cell is None:
                 continue
+            view_x, view_y = view_cell
             radius = self.cell_size * 0.2
             center = QtCore.QPointF(
-                x * self.cell_size + self.cell_size / 2,
-                y * self.cell_size + self.cell_size / 2,
+                view_x * self.cell_size + self.cell_size / 2,
+                view_y * self.cell_size + self.cell_size / 2,
             )
             owner = objective.get("owner")
             owner_color = Theme.objective
@@ -426,6 +426,15 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return int(value)
         except (TypeError, ValueError):
             return None
+
+    def _state_to_view_cell(self, x: object, y: object) -> Optional[Tuple[int, int]]:
+        state_x = self._safe_int(x)
+        state_y = self._safe_int(y)
+        if state_x is None or state_y is None:
+            return None
+        if self._swap_axes:
+            return state_y, state_x
+        return state_x, state_y
 
     def _resolve_board_dims(self, board: dict, units: List[dict]) -> Tuple[int, int]:
         """Viewer contract: env coordinates are x in [0..W-1], y in [0..H-1]."""
@@ -910,10 +919,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         move_range = self._move_range
         if move_range is None:
             return
-        x = unit.get("x")
-        y = unit.get("y")
-        if x is None or y is None:
+        view_cell = self._state_to_view_cell(unit.get("x"), unit.get("y"))
+        if view_cell is None:
             return
+        x, y = view_cell
         for dx in range(-move_range, move_range + 1):
             for dy in range(-move_range, move_range + 1):
                 if abs(dx) + abs(dy) > move_range:
@@ -939,9 +948,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         shoot_range = self._shoot_range
         if shoot_range is None:
             return
-        source_x = unit.get("x")
-        source_y = unit.get("y")
-        if source_x is None or source_y is None:
+        if self._state_to_view_cell(unit.get("x"), unit.get("y")) is None:
             return
         target_keys = self._resolve_targets(unit, shoot_range)
         for key in target_keys:
@@ -2183,11 +2190,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
         row = int(world.y() // self.cell_size)
         if col < 0 or row < 0 or col >= self._board_width or row >= self._board_height:
             return None
-        candidates = [
-            unit
-            for unit in self._units_state
-            if int(unit.get("x", -1)) == col and int(unit.get("y", -1)) == row
-        ]
+        candidates = []
+        for unit in self._units_state:
+            view_cell = self._state_to_view_cell(unit.get("x"), unit.get("y"))
+            if view_cell == (col, row):
+                candidates.append(unit)
         closest_key = None
         closest_dist = None
         for unit in candidates:
