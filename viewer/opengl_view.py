@@ -28,6 +28,10 @@ GL_SRC_ALPHA = 0x0302
 GL_ONE_MINUS_SRC_ALPHA = 0x0303
 
 
+def resolve_asset_path(rel_path: str) -> Path:
+    return Path(__file__).resolve().parent / "assets" / rel_path
+
+
 @dataclass
 class UnitRender:
     key: Tuple[str, int]
@@ -253,7 +257,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._fx_tinted_cache: Dict[Tuple[str, int], QtGui.QPixmap] = {}
         self._fx_initialized = False
 
-        assets_root = Path(__file__).resolve().parents[1] / "gt_gui" / "assets40k"
+        assets_root = resolve_asset_path("")
         self._texture_manager = TextureManager(assets_root)
         self._ground_textures: List[QtGui.QPixmap] = []
         self._prop_textures: Dict[str, QtGui.QPixmap] = {}
@@ -267,10 +271,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._props_initialized = False
         self._props_seed = 613
         self._props_board_size: Tuple[int, int] = (0, 0)
-        self._show_ground = True
-        self._show_props = True
-        self._show_decals = True
-        self._show_fx = True
+        self.render_terrain = False
+        self.render_decals = False
+        self.render_prop_shadows = False
+        self.render_fx = True
         self._cursor_world_raw: Optional[QtCore.QPointF] = None
 
         self.setMouseTracking(True)
@@ -303,32 +307,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 self._ground_textures.append(pixmap)
 
         self._prop_textures.clear()
-        props_dir = self._texture_manager._base_dir / "props"
-        if props_dir.exists():
-            for path in props_dir.glob("*.png"):
-                pixmap = self._texture_manager.load_png(f"props/{path.name}")
-                if pixmap is not None:
-                    self._prop_textures[path.stem] = pixmap
-
         self._shadow_textures.clear()
-        shadows_dir = self._texture_manager._base_dir / "shadows"
-        if shadows_dir.exists():
-            for path in shadows_dir.glob("*.png"):
-                pixmap = self._texture_manager.load_png(f"shadows/{path.name}")
-                if pixmap is None:
-                    continue
-                name = path.stem
-                if name.endswith("_shadow"):
-                    name = name[: -len("_shadow")]
-                self._shadow_textures[name] = pixmap
-
         self._decal_textures.clear()
-        decals_dir = self._texture_manager._base_dir / "decals"
-        if decals_dir.exists():
-            for path in decals_dir.glob("*.png"):
-                pixmap = self._texture_manager.load_png(f"decals/{path.name}")
-                if pixmap is not None:
-                    self._decal_textures[path.stem] = pixmap
 
         self._fx_particle_textures.clear()
         fx_dir = self._texture_manager._base_dir / "fx"
@@ -359,10 +339,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._board_height = height
         self._board_rect = QtCore.QRectF(0, 0, width * self.cell_size, height * self.cell_size)
         self._ensure_grid_cache(width, height)
-        if (width, height) != self._props_board_size:
-            self._props_board_size = (width, height)
-            self._props_initialized = False
-        self._ensure_props()
+        if self.render_terrain:
+            if (width, height) != self._props_board_size:
+                self._props_board_size = (width, height)
+                self._props_initialized = False
+            self._ensure_props()
 
         self._units_state = list(self._state.get("units", []) or [])
         self._prev_unit_positions = dict(self._curr_unit_positions)
@@ -569,6 +550,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._grid_size = (width, height)
 
     def _ensure_props(self) -> None:
+        if not self.render_terrain:
+            return
         if self._props_initialized and self._props:
             return
         if self._board_rect.isEmpty():
@@ -694,6 +677,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.restore()
 
     def _add_decal(self, kind: str, center: QtCore.QPointF) -> None:
+        if not self.render_decals:
+            return
         texture_key = self._resolve_decal_key(kind)
         if texture_key is None:
             return
@@ -1066,28 +1051,6 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._tooltip_widget.set_debug_mode(self._debug_overlay)
             self.update()
             return
-        if key == QtCore.Qt.Key_F1:
-            self._show_ground = not self._show_ground
-            self.update()
-            return
-        if key == QtCore.Qt.Key_F2:
-            self._show_props = not self._show_props
-            self.update()
-            return
-        if key == QtCore.Qt.Key_F3:
-            self._show_decals = not self._show_decals
-            self.update()
-            return
-        if key == QtCore.Qt.Key_F4:
-            self._show_fx = not self._show_fx
-            self.update()
-            return
-        if key in (QtCore.Qt.Key_B, QtCore.Qt.Key_N, QtCore.Qt.Key_M):
-            if self._cursor_world_raw is not None:
-                kind = "blood" if key == QtCore.Qt.Key_B else "scorch" if key == QtCore.Qt.Key_N else "track"
-                self._add_decal(kind, self._cursor_world_raw)
-                self.update()
-            return
         super().keyPressEvent(event)
 
     def _select_unit_at(self, pos: QtCore.QPointF) -> None:
@@ -1172,17 +1135,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
             prop_pixmap = self._prop_textures.get(prop.kind)
             if prop_pixmap is None:
                 continue
-            shadow_pixmap = self._shadow_textures.get(prop.kind)
-            if shadow_pixmap is not None:
-                shadow_center = prop.center + QtCore.QPointF(8.0, 12.0)
-                self._draw_sprite(
-                    painter,
-                    shadow_pixmap,
-                    shadow_center,
-                    rotation_deg=prop.rotation_deg,
-                    scale=prop.scale,
-                    alpha=0.7,
-                )
+            if self.render_prop_shadows:
+                shadow_pixmap = self._shadow_textures.get(prop.kind)
+                if shadow_pixmap is not None:
+                    shadow_center = prop.center + QtCore.QPointF(8.0, 12.0)
+                    self._draw_sprite(
+                        painter,
+                        shadow_pixmap,
+                        shadow_center,
+                        rotation_deg=prop.rotation_deg,
+                        scale=prop.scale,
+                        alpha=0.7,
+                    )
             self._draw_sprite(
                 painter,
                 prop_pixmap,
@@ -1240,21 +1204,16 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return
 
         painter.setTransform(self._view_transform())
-        if self._show_ground:
-            self._draw_ground_layer(painter)
-        if self._show_decals:
-            self._draw_decals_layer(painter)
+        self._draw_ground_layer(painter)
         painter.setTransform(QtGui.QTransform())
         self._draw_grid(painter)
         painter.setTransform(self._view_transform())
-        if self._show_props:
-            self._draw_props_layer(painter)
         self._draw_movement_layer(painter)
         self._draw_objective_layer(painter)
         self._draw_units_layer(painter)
         self._draw_selection_layer(painter)
         self._draw_shooting_layer(painter)
-        if self._show_fx:
+        if self.render_fx:
             self._draw_fx_layer(painter)
         self._draw_labels_layer(painter)
 
@@ -1262,9 +1221,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if self._debug_overlay:
             debug_lines = [
                 "DEBUG: (0,0) вверху слева",
-                f"Слои: земля={'on' if self._show_ground else 'off'}, "
-                f"пропсы={len(self._props)}, декали={len(self._decals)}, "
-                f"частицы={len(self._particles)}",
+                f"Слои: terrain={'on' if self.render_terrain else 'off'}, "
+                f"decals={'on' if self.render_decals else 'off'}, "
+                f"fx={'on' if self.render_fx else 'off'}",
             ]
             if self._cursor_world is not None:
                 col = int(self._cursor_world.x() // self.cell_size)
@@ -1361,7 +1320,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def _load_fx_assets(self) -> None:
         if self._fx_initialized:
             return
-        assets_dir = Path(__file__).resolve().parent / "assets" / "fx"
+        assets_dir = resolve_asset_path("fx")
         for name in ("glow_soft", "ring_soft", "tesseract_segments"):
             path = assets_dir / f"{name}.png"
             if not path.exists():
