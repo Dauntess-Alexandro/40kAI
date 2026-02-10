@@ -177,6 +177,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._state_board_height: Optional[int] = None
         self._swap_axes = False
         self._rotate90 = False
+        self._state_coords_row_col = True
         self._board_debug_logged = False
         self._board_rect = QtCore.QRectF()
         self._grid_picture: Optional[QtGui.QPicture] = None
@@ -417,7 +418,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 "[VIEWER DEBUG] board state/raw="
                 f"{self._state_board_width}x{self._state_board_height}, "
                 f"renderer={self._board_width}x{self._board_height}, "
-                f"swap_axes={self._swap_axes}, rotate90={self._rotate90}"
+                f"swap_axes={self._swap_axes}, rotate90={self._rotate90}, "
+                f"state_coords=row_col->{"col,row" if self._state_coords_row_col else "x,y"}"
             )
         self.update()
 
@@ -433,12 +435,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
         state_y = self._safe_int(y)
         if state_x is None or state_y is None:
             return None
-        if self._swap_axes:
+        # Контракт viewer: state/env position хранится как (row, col).
+        # Для рендера Qt нужно (x=col, y=row).
+        if self._state_coords_row_col:
             return state_y, state_x
         return state_x, state_y
 
-    def _resolve_board_dims(self, board: dict, units: List[dict]) -> Tuple[int, int]:
-        """Viewer contract: env coordinates are x in [0..W-1], y in [0..H-1]."""
+    def _resolve_board_dims(self, board: dict, _units: List[dict]) -> Tuple[int, int]:
+        """Board dims: renderer uses width=W, height=H; state coords are handled separately."""
         board = board or {}
         width = self._safe_int(board.get("width"))
         height = self._safe_int(board.get("height"))
@@ -461,19 +465,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._state_board_height = height
         self._swap_axes = False
         self._rotate90 = False
+        self._state_coords_row_col = True
 
         if (width, height) == (ENV_BOARD_HEIGHT, ENV_BOARD_WIDTH):
             self._swap_axes = True
-
-        x_values = [self._safe_int(unit.get("x")) for unit in units if isinstance(unit, dict)]
-        y_values = [self._safe_int(unit.get("y")) for unit in units if isinstance(unit, dict)]
-        max_x = max((x for x in x_values if x is not None), default=-1)
-        max_y = max((y for y in y_values if y is not None), default=-1)
-        if max_x >= 0 and max_y >= 0:
-            clearly_out_of_bounds = max_x >= width or max_y >= height
-            fits_if_swapped = max_x < height and max_y < width
-            if clearly_out_of_bounds and fits_if_swapped:
-                self._swap_axes = True
 
         if self._swap_axes:
             width, height = height, width
@@ -487,7 +482,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
             "renderer_board_height": self._board_height,
             "swap_axes": self._swap_axes,
             "rotate90": self._rotate90,
+            "state_coords_row_col": self._state_coords_row_col,
         }
+
+    def state_to_world_center(self, x: object, y: object) -> Optional[QtCore.QPointF]:
+        view_cell = self._state_to_view_cell(x, y)
+        if view_cell is None:
+            return None
+        col, row = view_cell
+        return QtCore.QPointF(
+            col * self.cell_size + self.cell_size / 2,
+            row * self.cell_size + self.cell_size / 2,
+        )
 
     def set_active_context(
         self,

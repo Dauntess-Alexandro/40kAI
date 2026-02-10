@@ -808,7 +808,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 "[VIEWER DEBUG] board state/raw="
                 f"{debug.get('state_board_width')}x{debug.get('state_board_height')}, "
                 f"renderer={debug.get('renderer_board_width')}x{debug.get('renderer_board_height')}, "
-                f"swap_axes={debug.get('swap_axes')}, rotate90={debug.get('rotate90')}"
+                f"swap_axes={debug.get('swap_axes')}, rotate90={debug.get('rotate90')}, "
+                f"state_coords_row_col={debug.get('state_coords_row_col')}"
             )
         if not self._did_initial_fit:
             self._did_initial_fit = True
@@ -1491,12 +1492,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return None
 
     def _unit_to_world_center(self, unit: dict) -> Optional[QtCore.QPointF]:
-        cell = self.map_scene.cell_size
-        x = unit.get("x")
-        y = unit.get("y")
-        if x is None or y is None:
-            return None
-        return QtCore.QPointF(x * cell + cell / 2, y * cell + cell / 2)
+        return self.map_scene.state_to_world_center(unit.get("x"), unit.get("y"))
 
     def _side_from_unit_id(self, unit_id: int) -> Optional[str]:
         unit_str = str(unit_id)
