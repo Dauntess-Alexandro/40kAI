@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import math
+import os
 from pathlib import Path
 import random
 from time import monotonic, perf_counter
@@ -219,7 +220,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._scale = 1.0
         self._min_scale = 0.2
         self._max_scale = 6.0
-        self._fit_zoom_boost = 1.15
+        self._fit_padding = 0.96
         self._unit_icon_scale = max(0.5, float(unit_icon_scale))
         self._pan = QtCore.QPointF(0, 0)
         self._target_scale = self._scale
@@ -595,15 +596,38 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def fit_to_view(self) -> None:
         if self._board_rect.isEmpty():
             return
-        view_size = self.size()
-        if view_size.width() <= 0 or view_size.height() <= 0:
+        viewport_w = float(self.width())
+        viewport_h = float(self.height())
+        if viewport_w <= 0 or viewport_h <= 0:
             return
-        scale_x = view_size.width() / self._board_rect.width()
-        scale_y = view_size.height() / self._board_rect.height()
-        fit_scale = min(scale_x, scale_y) * 0.99 * self._fit_zoom_boost
-        self._scale = max(self._min_scale, min(self._max_scale, fit_scale))
-        self._center_board()
+
+        board_px_w = float(self._board_width * self.cell_size)
+        board_px_h = float(self._board_height * self.cell_size)
+        if board_px_w <= 0 or board_px_h <= 0:
+            return
+
+        fit_scale = self._fit_padding * min(viewport_w / board_px_w, viewport_h / board_px_h)
+        fit_scale = max(self._min_scale, min(self._max_scale, fit_scale))
+
+        center_x = board_px_w * 0.5
+        center_y = board_px_h * 0.5
+        pan = QtCore.QPointF(
+            viewport_w * 0.5 - center_x * fit_scale,
+            viewport_h * 0.5 - center_y * fit_scale,
+        )
+
+        self._scale = fit_scale
+        self._pan = pan
         self._set_target_view(self._scale, self._pan, immediate=True)
+
+        if os.getenv("GUI_DEBUG") == "1":
+            print(
+                "[VIEWER FIT] "
+                f"viewport={int(viewport_w)}x{int(viewport_h)}, "
+                f"board_px={int(board_px_w)}x{int(board_px_h)}, "
+                f"cell_px={self.cell_size}, zoom={self._scale:.4f}"
+            )
+
         self.update()
 
     def center_view(self) -> None:

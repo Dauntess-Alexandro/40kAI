@@ -181,7 +181,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.state_path = state_path
         self.setWindowTitle("40kAI Viewer")
-        self.resize(1200, 800)
+        self.resize(2560, 1440)
 
         self.controller = GameController(model_path=model_path, state_path=state_path)
         self._pending_request = None
@@ -205,6 +205,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.map_scene = OpenGLBoardWidget(
             cell_size=max(8, cell_size),
             unit_icon_scale=max(0.5, unit_icon_scale),
+        )
+        self.map_scene.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Expanding,
         )
         self.map_scene.unit_selected.connect(self._select_row_for_unit)
 
@@ -270,9 +274,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         fit_button.clicked.connect(self._fit_view)
 
         left_widget = QtWidgets.QWidget()
+        left_widget.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Expanding,
+        )
         left_layout = QtWidgets.QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(6)
         left_layout.addWidget(fit_button, alignment=QtCore.Qt.AlignLeft)
-        left_layout.addWidget(self.map_scene)
+        left_layout.addWidget(self.map_scene, 1)
 
         log_group = QtWidgets.QGroupBox("ЖУРНАЛ")
         log_layout = QtWidgets.QVBoxLayout(log_group)
@@ -315,14 +325,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._top_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         self._top_splitter.addWidget(left_widget)
         self._top_splitter.addWidget(self._right_splitter)
-        self._top_splitter.setStretchFactor(0, 7)
-        self._top_splitter.setStretchFactor(1, 2)
+        self._top_splitter.setStretchFactor(0, 1)
+        self._top_splitter.setStretchFactor(1, 0)
         self._top_splitter.setChildrenCollapsible(False)
-        self._right_splitter.setMinimumWidth(340)
-        self._right_splitter.setMaximumWidth(520)
+        self._right_splitter.setMinimumWidth(380)
+        self._right_splitter.setMaximumWidth(450)
 
         central = QtWidgets.QWidget()
         central_layout = QtWidgets.QVBoxLayout(central)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
         central_layout.addWidget(self._top_splitter)
         self.setCentralWidget(central)
 
@@ -764,9 +776,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._poll_state()
 
     def _apply_initial_splitter_sizes(self) -> None:
-        total_w = max(self.width(), 1200)
-        right_w = max(340, min(420, int(total_w * 0.24)))
-        left_w = max(640, total_w - right_w)
+        total_w = max(self.width(), 2560)
+        right_w = max(380, min(450, int(total_w * 0.2)))
+        left_w = max(1400, total_w - right_w)
         self._top_splitter.setSizes([left_w, right_w])
 
         total_h = max(self.height(), 800)
@@ -1572,5 +1584,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
 def launch(state_path, model_path=None):
     app = QtWidgets.QApplication([])
     window = ViewerWindow(state_path, model_path=model_path)
+    window.setGeometry(0, 0, 2560, 1440)
     window.showMaximized()
     app.exec()
