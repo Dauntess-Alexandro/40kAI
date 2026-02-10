@@ -6601,3 +6601,19 @@ Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control
 Здоровье MODEL: [5.0, 10.0], здоровье PLAYER: [9.0, 4.0]
 CP MODEL: 1, CP PLAYER: 6
 VP MODEL: 0, VP PLAYER: 0
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
