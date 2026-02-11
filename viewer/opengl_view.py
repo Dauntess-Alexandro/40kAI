@@ -371,6 +371,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
         for key, point in self._curr_unit_positions.items():
             self._prev_unit_positions.setdefault(key, QtCore.QPointF(point))
 
+        if os.getenv("GUI_DEBUG") == "1":
+            for unit in self._units_state:
+                view_cell = self._state_to_view_cell(unit.get("x"), unit.get("y"))
+                if view_cell is None:
+                    continue
+                print(
+                    "[VIEWER DEBUG] "
+                    f"Unit {unit.get('id')} raw=({unit.get('x')}, {unit.get('y')}) "
+                    f"-> view=({view_cell[0]}, {view_cell[1]})"
+                )
+                break
+
         self._start_unit_animation()
 
         self._objectives = []
@@ -410,6 +422,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 )
             )
 
+        if os.getenv("GUI_DEBUG") == "1":
+            for objective in self._state.get("objectives", []) or []:
+                view_cell = self._state_to_view_cell(objective.get("x"), objective.get("y"))
+                if view_cell is None:
+                    continue
+                print(
+                    "[VIEWER DEBUG] "
+                    f"Obj {objective.get('id')} raw=({objective.get('x')}, {objective.get('y')}) "
+                    f"-> view=({view_cell[0]}, {view_cell[1]})"
+                )
+                break
+
         self.refresh_overlays()
         if not self._board_debug_logged:
             self._board_debug_logged = True
@@ -428,14 +452,24 @@ class OpenGLBoardWidget(QOpenGLWidget):
         except (TypeError, ValueError):
             return None
 
-    def _state_to_view_cell(self, x: object, y: object) -> Optional[Tuple[int, int]]:
-        state_x = self._safe_int(x)
-        state_y = self._safe_int(y)
-        if state_x is None or state_y is None:
+    def state_pos_to_xy(self, pos: object) -> Optional[Tuple[int, int]]:
+        if not isinstance(pos, (tuple, list)) or len(pos) < 2:
             return None
-        if self._swap_axes:
-            return state_y, state_x
-        return state_x, state_y
+        row = self._safe_int(pos[0])
+        col = self._safe_int(pos[1])
+        if row is None or col is None:
+            return None
+        return col, row
+
+    def xy_to_state_pos(self, x: object, y: object) -> Optional[Tuple[int, int]]:
+        col = self._safe_int(x)
+        row = self._safe_int(y)
+        if col is None or row is None:
+            return None
+        return row, col
+
+    def _state_to_view_cell(self, x: object, y: object) -> Optional[Tuple[int, int]]:
+        return self.state_pos_to_xy((x, y))
 
     def _resolve_board_dims(self, board: dict, units: List[dict]) -> Tuple[int, int]:
         """Viewer contract: env coordinates are x in [0..W-1], y in [0..H-1]."""
@@ -560,7 +594,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.update()
 
     def set_target_cell(self, cell: Optional[Tuple[int, int]]) -> None:
-        self._target_cell = cell
+        self._target_cell = self.state_pos_to_xy(cell) if cell is not None else None
         self._target_unit_id = None
         self.update()
 
@@ -570,7 +604,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.update()
 
     def set_hover_cell(self, cell: Optional[Tuple[int, int]]) -> None:
-        self._hover_cell = cell
+        self._hover_cell = self.state_pos_to_xy(cell) if cell is not None else None
         self.update()
 
     def set_active_phase(self, phase: Optional[str]) -> None:
@@ -1338,9 +1372,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 f"fx={'on' if self.render_fx else 'off'}",
             ]
             if self._cursor_world is not None:
-                col = int(self._cursor_world.x() // self.cell_size)
-                row = int(self._cursor_world.y() // self.cell_size)
-                debug_lines.append(f"Курсор: row={row}, col={col}")
+                state_pos = self._world_to_state_pos(self._cursor_world)
+                if state_pos is not None:
+                    debug_lines.append(f"Курсор: row={state_pos[0]}, col={state_pos[1]}")
             painter.setPen(Theme.text)
             painter.setFont(Theme.font(size=9, bold=False))
             painter.drawText(
@@ -2155,16 +2189,23 @@ class OpenGLBoardWidget(QOpenGLWidget):
             row * self.cell_size + self.cell_size / 2,
         )
 
-    def _update_hover_cell(self, world: QtCore.QPointF) -> None:
+    def _world_to_view_cell(self, world: QtCore.QPointF) -> Optional[Tuple[int, int]]:
         if self._board_rect.isEmpty():
-            self._hover_cell = None
-            return
+            return None
         col = int(world.x() // self.cell_size)
         row = int(world.y() // self.cell_size)
         if col < 0 or row < 0 or col >= self._board_width or row >= self._board_height:
-            self._hover_cell = None
-            return
-        self._hover_cell = (col, row)
+            return None
+        return col, row
+
+    def _world_to_state_pos(self, world: QtCore.QPointF) -> Optional[Tuple[int, int]]:
+        view_cell = self._world_to_view_cell(world)
+        if view_cell is None:
+            return None
+        return self.xy_to_state_pos(*view_cell)
+
+    def _update_hover_cell(self, world: QtCore.QPointF) -> None:
+        self._hover_cell = self._world_to_view_cell(world)
 
     def _update_hover_tooltip(self, event: QtGui.QMouseEvent, world: QtCore.QPointF) -> None:
         if self._board_rect.isEmpty():
@@ -2208,12 +2249,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 self._tooltip_widget.update_content(tooltip_payload, accent)
 
     def _unit_key_at_world(self, world: QtCore.QPointF) -> Optional[Tuple[str, int]]:
-        if self._board_rect.isEmpty():
+        view_cell = self._world_to_view_cell(world)
+        if view_cell is None:
             return None
-        col = int(world.x() // self.cell_size)
-        row = int(world.y() // self.cell_size)
-        if col < 0 or row < 0 or col >= self._board_width or row >= self._board_height:
-            return None
+        col, row = view_cell
         candidates = []
         for unit in self._units_state:
             view_cell = self._state_to_view_cell(unit.get("x"), unit.get("y"))
