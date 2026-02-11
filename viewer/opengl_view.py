@@ -378,7 +378,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     continue
                 print(
                     "[VIEWER DEBUG] "
-                    f"Unit {unit.get('id')} raw=({unit.get('x')}, {unit.get('y')}) "
+                    f"Unit {unit.get('id')} raw=(x={unit.get('x')}, y={unit.get('y')}) "
                     f"-> view=({view_cell[0]}, {view_cell[1]})"
                 )
                 break
@@ -429,7 +429,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     continue
                 print(
                     "[VIEWER DEBUG] "
-                    f"Obj {objective.get('id')} raw=({objective.get('x')}, {objective.get('y')}) "
+                    f"Obj {objective.get('id')} raw=(x={objective.get('x')}, y={objective.get('y')}) "
                     f"-> view=({view_cell[0]}, {view_cell[1]})"
                 )
                 break
@@ -453,6 +453,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return None
 
     def state_pos_to_xy(self, pos: object) -> Optional[Tuple[int, int]]:
+        """Map env/grid position (row, col) to view (x, y)."""
         if not isinstance(pos, (tuple, list)) or len(pos) < 2:
             return None
         row = self._safe_int(pos[0])
@@ -462,14 +463,23 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return col, row
 
     def xy_to_state_pos(self, x: object, y: object) -> Optional[Tuple[int, int]]:
+        """Map view (x, y) to env/grid position (row, col)."""
         col = self._safe_int(x)
         row = self._safe_int(y)
         if col is None or row is None:
             return None
         return row, col
 
+    def _state_xy_to_view_xy(self, x: object, y: object) -> Optional[Tuple[int, int]]:
+        """state.json stores coordinates as x=col, y=row (already in view axes)."""
+        state_x = self._safe_int(x)
+        state_y = self._safe_int(y)
+        if state_x is None or state_y is None:
+            return None
+        return state_x, state_y
+
     def _state_to_view_cell(self, x: object, y: object) -> Optional[Tuple[int, int]]:
-        return self.state_pos_to_xy((x, y))
+        return self._state_xy_to_view_xy(x, y)
 
     def _resolve_board_dims(self, board: dict, units: List[dict]) -> Tuple[int, int]:
         """Viewer contract: env coordinates are x in [0..W-1], y in [0..H-1]."""
@@ -594,7 +604,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.update()
 
     def set_target_cell(self, cell: Optional[Tuple[int, int]]) -> None:
-        self._target_cell = self.state_pos_to_xy(cell) if cell is not None else None
+        self._target_cell = self._state_xy_to_view_xy(cell[0], cell[1]) if cell is not None else None
         self._target_unit_id = None
         self.update()
 
@@ -604,7 +614,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.update()
 
     def set_hover_cell(self, cell: Optional[Tuple[int, int]]) -> None:
-        self._hover_cell = self.state_pos_to_xy(cell) if cell is not None else None
+        self._hover_cell = self._state_xy_to_view_xy(cell[0], cell[1]) if cell is not None else None
         self.update()
 
     def set_active_phase(self, phase: Optional[str]) -> None:
@@ -1374,7 +1384,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if self._cursor_world is not None:
                 state_pos = self._world_to_state_pos(self._cursor_world)
                 if state_pos is not None:
-                    debug_lines.append(f"Курсор: row={state_pos[0]}, col={state_pos[1]}")
+                    debug_lines.append(f"Курсор: x={state_pos[1]}, y={state_pos[0]}")
             painter.setPen(Theme.text)
             painter.setFont(Theme.font(size=9, bold=False))
             painter.drawText(

@@ -1492,7 +1492,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _unit_to_world_center(self, unit: dict) -> Optional[QtCore.QPointF]:
         cell = self.map_scene.cell_size
-        view_xy = self.map_scene.state_pos_to_xy((unit.get("x"), unit.get("y")))
+        view_xy = self.map_scene._state_xy_to_view_xy(unit.get("x"), unit.get("y"))
         if view_xy is None:
             return None
         x, y = view_xy
