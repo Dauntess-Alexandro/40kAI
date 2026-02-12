@@ -207,6 +207,68 @@ def moving_avg(values, window=50):
     return out
 
 
+def parse_clip_reward_config(raw_value: str):
+    """
+    CLIP_REWARD варианты:
+      - off/none/0/false -> отключено
+      - "1" -> симметричный клип [-1, +1]
+      - "-1,1" -> явный диапазон [min, max]
+    """
+    text = str(raw_value).strip().lower()
+    if text in ("", "off", "none", "false", "0"):
+        return False, None, None
+
+    if "," in text:
+        parts = [p.strip() for p in text.split(",") if p.strip()]
+        if len(parts) != 2:
+            warn_msg = (
+                "[TRAIN][WARN] Неверный формат CLIP_REWARD. "
+                "Где: train.py (parse_clip_reward_config). "
+                "Что делать: используйте off, число (например 1) или диапазон min,max (например -1,1). "
+                f"Получено: {raw_value}. Клиппинг отключен."
+            )
+            print(warn_msg)
+            append_agent_log(warn_msg)
+            return False, None, None
+        try:
+            lo, hi = float(parts[0]), float(parts[1])
+        except ValueError:
+            warn_msg = (
+                "[TRAIN][WARN] CLIP_REWARD содержит нечисловые границы. "
+                "Где: train.py (parse_clip_reward_config). "
+                "Что делать: задайте диапазон числами, например -1,1. "
+                f"Получено: {raw_value}. Клиппинг отключен."
+            )
+            print(warn_msg)
+            append_agent_log(warn_msg)
+            return False, None, None
+    else:
+        try:
+            bound = abs(float(text))
+        except ValueError:
+            warn_msg = (
+                "[TRAIN][WARN] CLIP_REWARD не является числом. "
+                "Где: train.py (parse_clip_reward_config). "
+                "Что делать: используйте off, число (например 1) или диапазон min,max (например -1,1). "
+                f"Получено: {raw_value}. Клиппинг отключен."
+            )
+            print(warn_msg)
+            append_agent_log(warn_msg)
+            return False, None, None
+        lo, hi = -bound, bound
+
+    if lo > hi:
+        lo, hi = hi, lo
+    return True, float(lo), float(hi)
+
+
+def maybe_clip_reward(value: float, enabled: bool, lo=None, hi=None):
+    if not enabled or lo is None or hi is None:
+        return float(value), False
+    clipped = float(np.clip(float(value), lo, hi))
+    return clipped, clipped != float(value)
+
+
 def _load_checkpoint_payload(checkpoint_path: str):
     try:
         return torch.load(checkpoint_path, map_location=device, weights_only=False)
@@ -709,6 +771,7 @@ def main():
     global USE_SUBPROC_ENVS
     print("\nTraining...\n")
     train_start_time = time.perf_counter()
+    clip_reward_enabled, clip_reward_min, clip_reward_max = parse_clip_reward_config(CLIP_REWARD)
     
     end = False
     trunc = True
@@ -731,6 +794,10 @@ def main():
         USE_SUBPROC_ENVS = False
     
     if TRAIN_LOG_ENABLED:
+        if clip_reward_enabled:
+            clip_reward_mode = f"on[{clip_reward_min:.3f},{clip_reward_max:.3f}]"
+        else:
+            clip_reward_mode = "off"
         train_start_line = (
             "[TRAIN][START] "
             f"DoubleDQN={int(DOUBLE_DQN_ENABLED)} "
@@ -738,7 +805,7 @@ def main():
             f"PER={int(PER_ENABLED)} "
             f"N_STEP={N_STEP} "
             f"LR={LR} "
-            f"clip_reward={CLIP_REWARD} "
+            f"clip_reward={clip_reward_mode} "
             f"grad_clip={GRAD_CLIP_VALUE} "
             f"NUM_ENVS={vec_env_count} "
             f"BATCH_ACT={int(BATCH_ACT)} "
@@ -1085,6 +1152,7 @@ def main():
     perf_counts = {
         "env_steps": 0,
         "updates": 0,
+        "reward_clipped": 0,
     }
     primary_env_unwrapped = unwrap_env(primary_ctx["env"]) if not USE_SUBPROC_ENVS else None
     if primary_env_unwrapped is not None:
@@ -1179,7 +1247,16 @@ def main():
                 next_observation, reward, done, res, info = ctx["env"].step(action_dict)
             perf_stats["env_step_s"] += time.perf_counter() - step_start
             perf_counts["env_steps"] += 1
-            ctx["rew_arr"].append(float(reward))
+            raw_reward = float(reward)
+            ctx["rew_arr"].append(raw_reward)
+            reward_for_buffer, reward_was_clipped = maybe_clip_reward(
+                raw_reward,
+                clip_reward_enabled,
+                clip_reward_min,
+                clip_reward_max,
+            )
+            if reward_was_clipped:
+                perf_counts["reward_clipped"] += 1
     
             unit_health = info["model health"]
             enemy_health = info["player health"]
@@ -1219,7 +1296,7 @@ def main():
                 else:
                     next_shoot_mask = build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG)
     
-            ctx["n_step_buffer"].append((state_t, actions[idx], float(reward), next_state_t, done, next_shoot_mask))
+            ctx["n_step_buffer"].append((state_t, actions[idx], reward_for_buffer, next_state_t, done, next_shoot_mask))
             if len(ctx["n_step_buffer"]) >= N_STEP:
                 reward_sum, n_step_next_state, n_step_next_mask, n_step_count = build_n_step_transition(
                     ctx["n_step_buffer"], GAMMA
@@ -1575,12 +1652,14 @@ def main():
                 f"train_bwd_ms={1000.0 * perf_stats['train_backward_s'] / updates:.3f} "
                 f"log_ms={1000.0 * perf_stats['logging_s'] / steps:.3f}"
             )
+            if clip_reward_enabled:
+                perf_line += f" reward_clip_events={perf_counts['reward_clipped']}"
             if TRAIN_LOG_TO_FILE:
                 append_agent_log(perf_line)
             if TRAIN_LOG_TO_CONSOLE:
                 print(perf_line)
             perf_stats = {k: 0.0 for k in perf_stats}
-            perf_counts = {"env_steps": 0, "updates": 0}
+            perf_counts = {"env_steps": 0, "updates": 0, "reward_clipped": 0}
     
         global_step += vec_env_count
     
