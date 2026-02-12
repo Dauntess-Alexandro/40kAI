@@ -387,7 +387,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
         self._objectives = []
         self._objective_labels = []
-        for objective in self._state.get("objectives", []) or []:
+        for objective in (self._state.get("objectives", []) or [])[:1]:
             view_cell = self._state_to_view_cell(objective.get("x"), objective.get("y"))
             if view_cell is None:
                 continue
@@ -423,7 +423,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             )
 
         if os.getenv("GUI_DEBUG") == "1":
-            for objective in self._state.get("objectives", []) or []:
+            for objective in (self._state.get("objectives", []) or [])[:1]:
                 view_cell = self._state_to_view_cell(objective.get("x"), objective.get("y"))
                 if view_cell is None:
                     continue

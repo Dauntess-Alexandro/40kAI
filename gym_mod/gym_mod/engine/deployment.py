@@ -9,8 +9,8 @@ from gym_mod.engine.logging_utils import format_unit
 DEPLOY_DEPTH_RATIO = 0.25
 
 
-def deploy_depth(b_hei: int) -> int:
-    return max(1, int(b_hei * DEPLOY_DEPTH_RATIO))
+def deploy_depth(board_width: int) -> int:
+    return max(1, int(board_width * DEPLOY_DEPTH_RATIO))
 
 
 def _in_bounds(coord: Sequence[int], b_len: int, b_hei: int) -> bool:
@@ -21,32 +21,40 @@ def _in_bounds(coord: Sequence[int], b_len: int, b_hei: int) -> bool:
 def is_in_deploy_zone(side: str, coord: Sequence[int], b_len: int, b_hei: int) -> bool:
     """
     Check if coord is wholly within the deployment zone for the given side.
-    Coordinates are treated as [x, y] with x in [0, b_len), y in [0, b_hei).
+    Coordinates are treated as [row, col].
+    Only War deployment is left/right, so we check X=col axis (0..b_hei-1).
     """
     if side not in ("model", "enemy"):
         raise ValueError(f"Unknown side: {side}")
     if not _in_bounds(coord, b_len, b_hei):
         return False
-    _, y = int(coord[0]), int(coord[1])
+    x = int(coord[1])
     depth = deploy_depth(b_hei)
     if side == "enemy":
-        return y >= b_hei - depth
-    return y <= depth - 1
+        return x >= b_hei - depth
+    return x <= depth - 1
 
 
 def _zone_coords(side: str, b_len: int, b_hei: int) -> List[Tuple[int, int]]:
     depth = deploy_depth(b_hei)
     coords: List[Tuple[int, int]] = []
     if side == "enemy":
-        y_min = max(0, b_hei - depth)
-        y_max = b_hei - 1
+        x_min = max(0, b_hei - depth)
+        x_max = b_hei - 1
     else:
-        y_min = 0
-        y_max = max(0, depth - 1)
-    for x in range(b_len):
-        for y in range(y_min, y_max + 1):
-            coords.append((x, y))
+        x_min = 0
+        x_max = max(0, depth - 1)
+    for row in range(b_len):
+        for col in range(x_min, x_max + 1):
+            coords.append((row, col))
     return coords
+
+
+def _zone_bounds_for_side(side: str, b_hei: int) -> Tuple[int, int]:
+    depth = deploy_depth(b_hei)
+    if side == "enemy":
+        return max(0, b_hei - depth), b_hei - 1
+    return 0, max(0, depth - 1)
 
 
 def get_random_free_deploy_coord(
@@ -93,13 +101,26 @@ def deploy_only_war(
         raise ValueError(f"Unknown attacker side: {attacker_side}")
 
     defender_side = "enemy" if attacker_side == "model" else "model"
+    attacker_zone_side = "model"
+    defender_zone_side = "enemy"
+    side_to_zone = {
+        attacker_side: attacker_zone_side,
+        defender_side: defender_zone_side,
+    }
     if log_fn is not None:
+        left_min_x, left_max_x = _zone_bounds_for_side(attacker_zone_side, b_hei)
+        right_min_x, right_max_x = _zone_bounds_for_side(defender_zone_side, b_hei)
+        log_fn(
+            f"[DEPLOY][Only War] attacker={attacker_side} -> LEFT x={left_min_x}..{left_max_x}; "
+            f"defender={defender_side} -> RIGHT x={right_min_x}..{right_max_x}"
+        )
         log_fn(f"[DEPLOY] Order: {attacker_side} first, alternating")
 
     occupied: set[Tuple[int, int]] = set()
 
     def _place_unit(unit, side: str, unit_idx: int):
-        coord = get_random_free_deploy_coord(side, b_len, b_hei, occupied)
+        zone_side = side_to_zone[side]
+        coord = get_random_free_deploy_coord(zone_side, b_len, b_hei, occupied)
         unit.unit_coords = [coord[0], coord[1]]
         occupied.add(coord)
         _log_deploy(log_fn, side, unit_idx, coord, unit=unit)

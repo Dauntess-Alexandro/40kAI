@@ -17,6 +17,7 @@ from tqdm import tqdm
 from gym_mod.envs.warhamEnv import *
 from gym_mod.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
 from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
+from gym_mod.engine.mission import ONLY_WAR_BOARD_WIDTH_INCH, ONLY_WAR_BOARD_HEIGHT_INCH
 from gymnasium import spaces
 
 from model.DQN import *
@@ -403,8 +404,8 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
 def _load_roster_config():
     config = {
         "totLifeT": 10,
-        "b_len": 60,
-        "b_hei": 40,
+        "b_len": int(ONLY_WAR_BOARD_HEIGHT_INCH),
+        "b_hei": int(ONLY_WAR_BOARD_WIDTH_INCH),
         "enemy_faction": "Necrons",
         "model_faction": "Necrons",
         "enemy_units": [
@@ -476,6 +477,10 @@ def _load_roster_config():
 
         config["enemy_units"] = enemy_units
         config["model_units"] = model_units
+
+    # Only War uses a fixed 60"x40" board; env grid is [row, col] => [40, 60].
+    config["b_len"] = int(ONLY_WAR_BOARD_HEIGHT_INCH)
+    config["b_hei"] = int(ONLY_WAR_BOARD_WIDTH_INCH)
 
     return config
 

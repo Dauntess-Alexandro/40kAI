@@ -6,6 +6,9 @@ from typing import Callable, List, Tuple
 import reward_config as reward_cfg
 
 MISSION_NAME = "Only War"
+ONLY_WAR_BOARD_WIDTH_INCH = 60
+ONLY_WAR_BOARD_HEIGHT_INCH = 40
+ONLY_WAR_CENTER_OBJECTIVE_ID = 1
 # TODO(Only War): support post-deploy units ("set up after both armies deployed").
 # Currently no post-deploy units supported.
 MAX_BATTLE_ROUNDS = 10
@@ -68,10 +71,38 @@ def score_end_of_command_phase(env, side: str, log_fn: Callable[[str], None] | N
     if log_fn is not None:
         side_label = side.upper()
         cap_note = " (cap)" if gained == VP_CAP_PER_COMMAND and count_controlled > VP_CAP_PER_COMMAND else ""
-        indices_note = f", objectives={indices}" if indices else ""
+        display_indices = [idx + 1 for idx in indices]
+        indices_note = f", objectives={display_indices}" if display_indices else ""
+        objective_id = ONLY_WAR_CENTER_OBJECTIVE_ID
+        center = None
+        if getattr(env, "coordsOfOM", None):
+            center = env.coordsOfOM[0]
+
+        model_oc = int(env.model_obj_oc[0]) if len(getattr(env, "model_obj_oc", [])) > 0 else 0
+        enemy_oc = int(env.enemy_obj_oc[0]) if len(getattr(env, "enemy_obj_oc", [])) > 0 else 0
+        controlled_side = "none"
+        if model_oc > enemy_oc:
+            controlled_side = "model"
+        elif enemy_oc > model_oc:
+            controlled_side = "enemy"
+
+        attacker_side = getattr(env, "attacker_side", None)
+        defender_side = getattr(env, "defender_side", None)
+        controlled_role = controlled_side
+        if controlled_side == attacker_side:
+            controlled_role = "attacker"
+        elif controlled_side == defender_side:
+            controlled_role = "defender"
+
+        center_note = "center=(n/a,n/a)"
+        if center is not None and len(center) >= 2:
+            # env coords are stored as [row, col] -> x=col, y=row
+            center_note = f"center=({int(center[1])},{int(center[0])})"
+
         log_fn(
             f"[{side_label}] {MISSION_NAME}: end of Command phase -> "
-            f"controlled={count_controlled}, gained={gained}{cap_note}, VP: {vp_before} -> {vp_after}{indices_note}"
+            f"controlled={count_controlled}, gained={gained}{cap_note}, VP: {vp_before} -> {vp_after}{indices_note}; "
+            f"objectives=[{objective_id}], {center_note}, controlled_by={controlled_role}"
         )
 
     return gained

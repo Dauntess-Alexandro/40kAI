@@ -18,6 +18,8 @@ from ..engine import utils as engine_utils
 from gym_mod.engine.mission import (
     MISSION_NAME,
     MAX_BATTLE_ROUNDS,
+    ONLY_WAR_BOARD_WIDTH_INCH,
+    ONLY_WAR_BOARD_HEIGHT_INCH,
     score_end_of_command_phase,
     apply_end_of_battle,
     controlled_objectives,
@@ -801,8 +803,11 @@ class Warhammer40kEnv(gym.Env):
         self.iter = 0
         self.restarts = 0
         self.playType = False
-        self.b_len = b_len
-        self.b_hei = b_hei
+        # env stores positions as [row, col], so:
+        # - board height (Y) -> b_len (rows)
+        # - board width (X)  -> b_hei (cols)
+        self.b_len = int(ONLY_WAR_BOARD_HEIGHT_INCH)
+        self.b_hei = int(ONLY_WAR_BOARD_WIDTH_INCH)
         self.board = np.zeros((self.b_len, self.b_hei))
 
         self.unit_weapon = []
@@ -843,14 +848,13 @@ class Warhammer40kEnv(gym.Env):
         self._phase_unit_logged = set()
         self.mission_name = MISSION_NAME
 
+        center_row = self.b_len // 2
+        center_col = self.b_hei // 2
         self.coordsOfOM = np.array([
-            [self.b_len/2 + 8, self.b_hei/2 + 12],
-            [self.b_len/2 - 8, self.b_hei/2 + 12],
-            [self.b_len/2 + 8, self.b_hei/2 - 12],
-            [self.b_len/2 - 8, self.b_hei/2 - 12],
+            [center_row, center_col],
         ])
-        self.model_obj_oc = np.array([0, 0, 0, 0])
-        self.enemy_obj_oc = np.array([0, 0, 0, 0])
+        self.model_obj_oc = np.zeros(len(self.coordsOfOM), dtype=int)
+        self.enemy_obj_oc = np.zeros(len(self.coordsOfOM), dtype=int)
         self._prev_vp_diff = 0
         self._objective_hold_streaks = [0] * len(self.coordsOfOM)
         self._agent_log_path = os.path.abspath(

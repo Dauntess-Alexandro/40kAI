@@ -216,6 +216,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.status_turn = QtWidgets.QLabel("Ход: —")
         self.status_phase = QtWidgets.QLabel("Фаза: —")
         self.status_active = QtWidgets.QLabel("Активен: —")
+        self.status_deployment = QtWidgets.QLabel("Деплой: —")
 
         self.points_vp_player = QtWidgets.QLabel("Player VP: —")
         self.points_vp_model = QtWidgets.QLabel("Model VP: —")
@@ -395,6 +396,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.status_turn)
         layout.addWidget(self.status_phase)
         layout.addWidget(self.status_active)
+        layout.addWidget(self.status_deployment)
         return box
 
     def _group_points(self):
@@ -824,6 +826,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
         active = state.get("active") or state.get("active_side")
         active_label = "Игрок" if active == "player" else "Модель" if active == "model" else "—"
         self.status_active.setText(f"Активен: {active_label}")
+
+        deployment = state.get("deployment", {}) if isinstance(state.get("deployment", {}), dict) else {}
+        attacker = deployment.get("attacker") or state.get("attacker_side")
+        defender = deployment.get("defender") or state.get("defender_side")
+        attacker_label = "Модель" if attacker == "model" else "Игрок" if attacker == "enemy" else "—"
+        defender_label = "Модель" if defender == "model" else "Игрок" if defender == "enemy" else "—"
+        self.status_deployment.setText(f"Деплой: атакующий слева — {attacker_label}, защитник справа — {defender_label}")
+
         self._auto_switch_log_tab(active)
 
         vp = state.get("vp", {})

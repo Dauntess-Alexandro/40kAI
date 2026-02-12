@@ -4,7 +4,7 @@ import sys
 
 def makeFile(numIters, modelFaction, enemyFaction, modelUnits, enemyUnits, modelW, enemyW,
              modelCounts=None, enemyCounts=None, modelInstanceIds=None, enemyInstanceIds=None,
-             boardx = 60, boardy = 44):
+             boardx = 60, boardy = 40):
     if modelCounts is None:
         modelCounts = []
     if enemyCounts is None:
