@@ -121,7 +121,7 @@ def _zone_bounds_for_side(side: str, b_hei: int) -> Tuple[int, int]:
     return 0, max(0, depth - 1)
 
 
-def _get_random_free_deploy_coord(
+def get_random_free_deploy_coord(
     side: str,
     b_len: int,
     b_hei: int,
@@ -180,7 +180,7 @@ def deploy_only_war(
 
     def _place_unit(unit, side: str, unit_idx: int):
         zone_side = side_to_zone[side]
-        coord = _get_random_free_deploy_coord(zone_side, b_len, b_hei, occupied)
+        coord = get_random_free_deploy_coord(zone_side, b_len, b_hei, occupied)
         unit.unit_coords = [coord[0], coord[1]]
         occupied.add(coord)
         _log_deploy(log_fn, side, unit_idx, coord, unit=unit)
