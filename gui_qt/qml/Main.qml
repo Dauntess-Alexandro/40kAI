@@ -133,7 +133,7 @@ ApplicationWindow {
 
                                     RowLayout {
                                         spacing: root.spacingSm
-                                        Label { text: "# of Games in Training:" }
+                                        Label { text: "Кол-во эпизодов для Тренировки:" }
                                         TextField {
                                             id: numGamesField
                                             text: controller.numGames.toString()
@@ -150,13 +150,13 @@ ApplicationWindow {
 
                                     RowLayout {
                                         spacing: root.spacingSm
-                                        Label { text: "Model Faction:" }
+                                        Label { text: "Фракция Модели:" }
                                         RadioButton { text: "Necrons"; checked: true }
                                     }
 
                                     RowLayout {
                                         spacing: root.spacingSm
-                                        Label { text: "Player Faction:" }
+                                        Label { text: "Фракция Игрока:" }
                                         RadioButton { text: "Necrons"; checked: true }
                                     }
                                 }
