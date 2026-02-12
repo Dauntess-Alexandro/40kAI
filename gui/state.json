@@ -26,8 +26,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 5,
-      "y": 20
+      "x": 12,
+      "y": 17
     },
     {
       "side": "player",
@@ -35,8 +35,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 10,
-      "y": 31
+      "x": 11,
+      "y": 4
     },
     {
       "side": "model",
@@ -44,8 +44,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 45,
-      "y": 1
+      "x": 50,
+      "y": 21
     },
     {
       "side": "model",
@@ -53,8 +53,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 58,
-      "y": 2
+      "x": 55,
+      "y": 23
     }
   ],
   "objectives": [
@@ -64,44 +64,44 @@
       "y": 20
     }
   ],
-  "attacker_side": "enemy",
-  "defender_side": "model",
+  "attacker_side": null,
+  "defender_side": null,
   "deployment": {
-    "attacker": "enemy",
-    "defender": "model"
+    "attacker": null,
+    "defender": null
   },
   "log_tail": [
-    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (0, 20). Выбор: left, advance=да, бросок=1, макс=6, distance=6",
-    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (0, 14)",
-    "[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.",
-    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (24, 17). Выбор: left, advance=нет, distance=4",
-    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (24, 13)",
-    "[PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.",
-    "--- ФАЗА СТРЕЛЬБЫ ---",
-    "--- ФАЗА СТРЕЛЬБЫ ---",
-    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance без Assault — стрельба пропущена.",
-    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.",
-    "--- ФАЗА ЧАРДЖА ---",
-    "--- ФАЗА ЧАРДЖА ---",
-    "[MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Advance — чардж невозможен.",
-    "[MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в 12\", чардж пропущен.",
-    "[MODEL] Чардж: нет доступных целей",
-    "--- ФАЗА БОЯ ---",
-    "--- ФАЗА БОЯ ---",
-    "[MODEL] Ближний бой: нет доступных атак",
-    "Reward (idle вне цели): penalty=-0.050, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=13.601470508735444->17.46424919657298",
-    "=== КОНЕЦ БОЕВОГО РАУНДА 3 ===",
-    "Итерация 2 завершена с наградой tensor([-0.0500], device='cuda:0'), здоровье игрока [10.0, 10.0], здоровье модели [10.0, 10.0]",
-    "{'model health': [10.0, 10.0], 'player health': [10.0, 10.0], 'modelCP': 6, 'playerCP': 6, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 4, 'battle round': 4, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}",
-    "Здоровье MODEL: [10.0, 10.0], здоровье PLAYER: [10.0, 10.0]",
-    "CP MODEL: 6, CP PLAYER: 6",
-    "VP MODEL: 0, VP PLAYER: 0",
-    "=== БОЕВОЙ РАУНД 4 ===",
-    "--- ХОД PLAYER ---",
-    "--- ФАЗА КОМАНДОВАНИЯ ---",
-    "[ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0; objectives=[1], center=(30,20), controlled_by=none",
-    "--- ФАЗА ДВИЖЕНИЯ ---"
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
+    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])"
   ],
   "model_events": [],
-  "generated_at": "2026-02-12T13:49:24.126977Z"
+  "generated_at": "2026-02-12T14:59:40.645262Z"
 }
