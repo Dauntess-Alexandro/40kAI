@@ -371,17 +371,6 @@ class OpenGLBoardWidget(QOpenGLWidget):
         for key, point in self._curr_unit_positions.items():
             self._prev_unit_positions.setdefault(key, QtCore.QPointF(point))
 
-        if os.getenv("GUI_DEBUG") == "1":
-            for unit in self._units_state:
-                view_cell = self._state_to_view_cell(unit.get("x"), unit.get("y"))
-                if view_cell is None:
-                    continue
-                print(
-                    "[VIEWER DEBUG] "
-                    f"Unit {unit.get('id')} raw=(x={unit.get('x')}, y={unit.get('y')}) "
-                    f"-> view=({view_cell[0]}, {view_cell[1]})"
-                )
-                break
 
         self._start_unit_animation()
 
@@ -422,27 +411,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 )
             )
 
-        if os.getenv("GUI_DEBUG") == "1":
-            for objective in (self._state.get("objectives", []) or [])[:1]:
-                view_cell = self._state_to_view_cell(objective.get("x"), objective.get("y"))
-                if view_cell is None:
-                    continue
-                print(
-                    "[VIEWER DEBUG] "
-                    f"Obj {objective.get('id')} raw=(x={objective.get('x')}, y={objective.get('y')}) "
-                    f"-> view=({view_cell[0]}, {view_cell[1]})"
-                )
-                break
 
         self.refresh_overlays()
-        if not self._board_debug_logged:
-            self._board_debug_logged = True
-            print(
-                "[VIEWER DEBUG] board state/raw="
-                f"{self._state_board_width}x{self._state_board_height}, "
-                f"renderer={self._board_width}x{self._board_height}, "
-                f"swap_axes={self._swap_axes}, rotate90={self._rotate90}"
-            )
         self.update()
 
     @staticmethod

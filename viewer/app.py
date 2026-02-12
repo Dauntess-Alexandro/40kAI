@@ -216,7 +216,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.status_turn = QtWidgets.QLabel("Ход: —")
         self.status_phase = QtWidgets.QLabel("Фаза: —")
         self.status_active = QtWidgets.QLabel("Активен: —")
-        self.status_deployment = QtWidgets.QLabel("Деплой: —")
+        self.status_deployment = QtWidgets.QLabel("Деплой: ожидание ролл-оффа")
 
         self.points_vp_player = QtWidgets.QLabel("Player VP: —")
         self.points_vp_model = QtWidgets.QLabel("Model VP: —")
@@ -803,15 +803,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _apply_state(self, state):
         self.map_scene.update_state(state)
-        if not self._board_debug_logged:
-            self._board_debug_logged = True
-            debug = self.map_scene.board_debug_info()
-            self.add_log_line(
-                "[VIEWER DEBUG] board state/raw="
-                f"{debug.get('state_board_width')}x{debug.get('state_board_height')}, "
-                f"renderer={debug.get('renderer_board_width')}x{debug.get('renderer_board_height')}, "
-                f"swap_axes={debug.get('swap_axes')}, rotate90={debug.get('rotate90')}"
-            )
         if not self._did_initial_fit:
             self._did_initial_fit = True
             QtCore.QTimer.singleShot(0, self._fit_view)
@@ -830,9 +821,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
         deployment = state.get("deployment", {}) if isinstance(state.get("deployment", {}), dict) else {}
         attacker = deployment.get("attacker") or state.get("attacker_side")
         defender = deployment.get("defender") or state.get("defender_side")
-        attacker_label = "Модель" if attacker == "model" else "Игрок" if attacker == "enemy" else "—"
-        defender_label = "Модель" if defender == "model" else "Игрок" if defender == "enemy" else "—"
-        self.status_deployment.setText(f"Деплой: атакующий слева — {attacker_label}, защитник справа — {defender_label}")
+        attacker_label = "Модель" if attacker == "model" else "Игрок" if attacker == "enemy" else None
+        defender_label = "Модель" if defender == "model" else "Игрок" if defender == "enemy" else None
+        if attacker_label and defender_label:
+            self.status_deployment.setText(
+                f"Деплой: атакующий слева — {attacker_label}, защитник справа — {defender_label}"
+            )
+        else:
+            self.status_deployment.setText("Деплой: ожидание ролл-оффа")
 
         self._auto_switch_log_tab(active)
 
