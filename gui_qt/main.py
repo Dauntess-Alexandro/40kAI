@@ -1,3 +1,4 @@
+import ast
 import json
 import os
 import re
@@ -993,6 +994,27 @@ class GUIController(QtCore.QObject):
             key: value
             for key, value in re.findall(r"([a-zA-Z_]+)=([^=]+?)(?=\s+[a-zA-Z_]+=|$)", payload)
         }
+
+        reason_labels = {
+            "turn_limit": "Лимит ходов",
+            "wipeout_enemy": "Уничтожение армии противника",
+            "wipeout_model": "Уничтожение армии модели",
+            "auto": "Авто-завершение",
+            "unknown": "Неизвестно",
+        }
+
+        reason_text = pairs.get('end_reasons', '{}')
+        try:
+            reason_dict = ast.literal_eval(reason_text)
+            if isinstance(reason_dict, dict):
+                pretty_reasons = {
+                    reason_labels.get(str(key), str(key)): value
+                    for key, value in reason_dict.items()
+                }
+                reason_text = str(pretty_reasons)
+        except (ValueError, SyntaxError):
+            pass
+
         lines = ["Подробный результат оценки:"]
         lines.append(f"- Победы: {pairs.get('wins', '?')}")
         lines.append(f"- Поражения: {pairs.get('losses', '?')}")
@@ -1001,13 +1023,7 @@ class GUIController(QtCore.QObject):
         lines.append(f"- Winrate (без ничьих): {pairs.get('winrate_no_draw', '?')}")
         lines.append(f"- Средний VP diff: {pairs.get('avg_vp_diff', '?')}")
         lines.append(f"- Медианный VP diff: {pairs.get('median_vp_diff', '?')}")
-        reasons = pairs.get('end_reasons', '{}')
-        lines.append(f"- Причины завершения: {reasons}")
-        lines.append("")
-        lines.append("Что делать дальше:")
-        lines.append("1) Сравните winrate_no_draw между моделями.")
-        lines.append("2) Проверьте причины завершения: есть ли частые auto/time-limit.")
-        lines.append("3) Если VP diff отрицательный — продолжайте обучение и повторите eval.")
+        lines.append(f"- Причины завершения: {reason_text}")
         return "\n".join(lines)
 
     def _format_duration(self, seconds: int) -> str:

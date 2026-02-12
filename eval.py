@@ -334,6 +334,13 @@ def main():
     negative_vp_games = sum(1 for value in vp_diffs if value < 0)
     neutral_vp_games = sum(1 for value in vp_diffs if value == 0)
     sorted_reasons = sorted(end_reasons.items(), key=lambda item: (-item[1], item[0]))
+    reason_labels = {
+        "turn_limit": "Лимит ходов",
+        "wipeout_enemy": "Уничтожение армии противника",
+        "wipeout_model": "Уничтожение армии модели",
+        "auto": "Авто-завершение",
+        "unknown": "Неизвестно",
+    }
 
     log(
         "[SUMMARY] "
@@ -358,7 +365,8 @@ def main():
     if sorted_reasons:
         log("[DETAIL] Причины завершения (по частоте):")
         for reason, count in sorted_reasons:
-            log(f"[DETAIL]   - {reason}: {count}")
+            reason_ru = reason_labels.get(reason, reason)
+            log(f"[DETAIL]   - {reason_ru} ({reason}): {count}")
     else:
         log("[DETAIL] Причины завершения: данных нет")
     log("[DETAIL] ------------------------------------------------")
