@@ -92,43 +92,32 @@ ApplicationWindow {
                                         }
                                     }
 
-                                    Frame {
+                                    ColumnLayout {
                                         Layout.fillWidth: true
-                                        padding: root.spacingSm
+                                        spacing: root.spacingXs
 
-                                        background: Rectangle {
-                                            color: "#f5f7fb"
-                                            border.color: "#d7dce5"
-                                            radius: Math.round(6 * root.uiScale)
+                                        Label {
+                                            text: "Only War"
+                                            font.bold: true
                                         }
 
-                                        ColumnLayout {
-                                            anchors.fill: parent
-                                            spacing: root.spacingXs
+                                        GridLayout {
+                                            columns: 2
+                                            columnSpacing: root.spacingMd
+                                            rowSpacing: root.spacingXs
+                                            Layout.fillWidth: true
 
-                                            Label {
-                                                text: "Only War"
-                                                font.bold: true
-                                            }
+                                            Label { text: "Размер стола:"; font.bold: true }
+                                            Label { text: "60×40" }
 
-                                            GridLayout {
-                                                columns: 2
-                                                columnSpacing: root.spacingMd
-                                                rowSpacing: root.spacingXs
-                                                Layout.fillWidth: true
+                                            Label { text: "Objective:"; font.bold: true }
+                                            Label { text: "1, центр (30,20)" }
 
-                                                Label { text: "Размер стола:"; font.bold: true }
-                                                Label { text: "60×40" }
+                                            Label { text: "Деплой:"; font.bold: true }
+                                            Label { text: "Attacker слева / Defender справа"; wrapMode: Text.Wrap }
 
-                                                Label { text: "Objective:"; font.bold: true }
-                                                Label { text: "1, центр (30,20)" }
-
-                                                Label { text: "Деплой:"; font.bold: true }
-                                                Label { text: "Attacker слева / Defender справа"; wrapMode: Text.Wrap }
-
-                                                Label { text: "Примечание:"; font.bold: true }
-                                                Label { text: "roll-off определяет роли"; wrapMode: Text.Wrap }
-                                            }
+                                            Label { text: "Примечание:"; font.bold: true }
+                                            Label { text: "roll-off определяет роли"; wrapMode: Text.Wrap }
                                         }
                                     }
                                 }
