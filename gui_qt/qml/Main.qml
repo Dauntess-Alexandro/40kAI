@@ -37,10 +37,10 @@ ApplicationWindow {
             id: mainTabs
             Layout.fillWidth: true
 
-            TabButton { text: "Главная" }
-            TabButton { text: "Model Metrics" }
-            TabButton { text: "Play" }
-            TabButton { text: "Settings" }
+            TabButton { text: "Контрольная точка" }
+            TabButton { text: "Метрики модели" }
+            TabButton { text: "Игра" }
+            TabButton { text: "Настройки" }
             TabButton { text: "Оценка" }
         }
 
