@@ -37,7 +37,7 @@ ApplicationWindow {
             id: mainTabs
             Layout.fillWidth: true
 
-            TabButton { text: "Контрольная точка" }
+            TabButton { text: "Главная" }
             TabButton { text: "Метрики модели" }
             TabButton { text: "Игра" }
             TabButton { text: "Настройки" }
@@ -110,7 +110,7 @@ ApplicationWindow {
                                             Label { text: "Размер стола:"; font.bold: true }
                                             Label { text: "60×40" }
 
-                                            Label { text: "Objective:"; font.bold: true }
+                                            Label { text: "Контрольная точка:"; font.bold: true }
                                             Label { text: "1, центр (30,20)" }
 
                                             Label { text: "Деплой:"; font.bold: true }
