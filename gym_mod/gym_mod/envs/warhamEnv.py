@@ -1926,8 +1926,16 @@ class Warhammer40kEnv(gym.Env):
                     elif action["move"] == 3:
                         self.unit_coords[i][1] += movement
                     elif action["move"] == 4:
-                        for j in range(len(self.coordsOfOM)):
-                            if distance(self.unit_coords[i], self.coordsOfOM[j]) <= 5:
+                        nearest_obj_idx = None
+                        nearest_obj_dist = None
+                        for j, obj in enumerate(self.coordsOfOM):
+                            curr_dist = distance(self.unit_coords[i], obj)
+                            if nearest_obj_dist is None or curr_dist < nearest_obj_dist:
+                                nearest_obj_dist = curr_dist
+                                nearest_obj_idx = j
+
+                        if nearest_obj_idx is not None and nearest_obj_dist is not None:
+                            if nearest_obj_dist <= 5:
                                 reward_delta += reward_cfg.VP_OBJECTIVE_HOLD_REWARD
                                 objective_hold_delta += reward_cfg.VP_OBJECTIVE_HOLD_REWARD
                                 self._log_reward_unit(
@@ -1935,18 +1943,43 @@ class Warhammer40kEnv(gym.Env):
                                     modelName,
                                     i,
                                     "Reward (VP/объекты): "
-                                    f"hold=+{reward_cfg.VP_OBJECTIVE_HOLD_REWARD:.3f} (obj={j})",
+                                    f"hold=+{reward_cfg.VP_OBJECTIVE_HOLD_REWARD:.3f} "
+                                    f"(obj={nearest_obj_idx}, dist={nearest_obj_dist:.3f})",
                                 )
                             else:
-                                reward_delta -= reward_cfg.VP_OBJECTIVE_HOLD_PENALTY
-                                objective_hold_delta -= reward_cfg.VP_OBJECTIVE_HOLD_PENALTY
-                                self._log_reward_unit(
-                                    "model",
-                                    modelName,
-                                    i,
-                                    "Reward (VP/объекты): "
-                                    f"hold_penalty=-{reward_cfg.VP_OBJECTIVE_HOLD_PENALTY:.3f} (obj={j})",
-                                )
+                                base_m = max(0.0, float(self.unit_data[i].get("Movement", 0)))
+                                max_reach = base_m + 6.0
+                                d_before = float(nearest_obj_dist)
+                                d_best_possible = max(d_before - max_reach, 0.0)
+                                d_after = d_before
+                                could_improve = d_best_possible < d_before
+                                could_reach_control = d_best_possible <= 5.0
+                                if could_improve:
+                                    missed_progress = max(0.0, d_after - d_best_possible)
+                                    norm_base = max(1.0, float(getattr(reward_cfg, "VP_OBJECTIVE_MISSED_PROGRESS_NORM", 6.0)))
+                                    severity = min(1.0, missed_progress / norm_base)
+                                    hold_penalty = reward_cfg.VP_OBJECTIVE_HOLD_PENALTY * severity
+                                    reward_delta -= hold_penalty
+                                    objective_hold_delta -= hold_penalty
+                                    self._log_reward_unit(
+                                        "model",
+                                        modelName,
+                                        i,
+                                        "Reward (VP/объекты): "
+                                        f"hold_penalty=-{hold_penalty:.3f} "
+                                        f"(obj={nearest_obj_idx}, d_before={d_before:.3f}, "
+                                        f"d_best={d_best_possible:.3f}, max_reach={max_reach:.3f}, "
+                                        f"could_reach={int(could_reach_control)}, severity={severity:.3f})",
+                                    )
+                                else:
+                                    self._log_reward_unit(
+                                        "model",
+                                        modelName,
+                                        i,
+                                        "Reward (VP/объекты): hold_penalty=0.000 "
+                                        f"(obj={nearest_obj_idx}, причина=не_мог_улучшить_позицию, "
+                                        f"d_before={d_before:.3f}, max_reach={max_reach:.3f})",
+                                    )
 
                     advanced_flags[i] = advanced
                     direction = {0: "down", 1: "up", 2: "left", 3: "right", 4: "none"}.get(action["move"], "none")

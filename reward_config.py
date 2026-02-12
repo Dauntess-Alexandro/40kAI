@@ -16,8 +16,11 @@ VP_CAP_PER_COMMAND = 3
 
 # Награды, связанные с целями/объектами (VP-компоненты).
 VP_OBJECTIVE_HOLD_REWARD = 0.5
-VP_OBJECTIVE_HOLD_PENALTY = 0.5
+VP_OBJECTIVE_HOLD_PENALTY = 0.2
 VP_OBJECTIVE_PROXIMITY_REWARD = 0.5
+# No-move penalty scaling: apply only when the unit could improve objective approach.
+# penalty = -VP_OBJECTIVE_HOLD_PENALTY * clamp01(missed_progress / VP_OBJECTIVE_MISSED_PROGRESS_NORM)
+VP_OBJECTIVE_MISSED_PROGRESS_NORM = 6.0
 VP_DIFF_REWARD_SCALE = 0.05
 VP_DIFF_PENALTY_SCALE = 0.05
 VP_OBJECTIVE_STREAK_LEN = 2
