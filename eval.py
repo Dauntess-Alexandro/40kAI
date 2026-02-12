@@ -8,8 +8,12 @@ from typing import Optional
 
 import torch
 
-from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
-from gym_mod.engine.mission import check_end_of_battle
+from gym_mod.engine.mission import (
+    check_end_of_battle,
+    normalize_mission_name,
+    deploy_for_mission,
+    post_deploy_setup,
+)
 from gym_mod.envs.warhamEnv import roll_off_attacker_defender
 from model.DQN import DQN
 from model.utils import normalize_state_dict
@@ -103,7 +107,9 @@ def run_episode(env, model_units, enemy_units, policy_net, epsilon, device):
         log_fn=None,
     )
 
-    deploy_only_war(
+    mission_name = normalize_mission_name(getattr(env_unwrapped, "mission_name", None))
+    deploy_for_mission(
+        mission_name,
         model_units=model_units,
         enemy_units=enemy_units,
         b_len=env_unwrapped.b_len,
@@ -184,7 +190,9 @@ def main():
         log_fn=None,
     )
     env_unwrapped = unwrap_env(env)
-    deploy_only_war(
+    mission_name = normalize_mission_name(getattr(env_unwrapped, "mission_name", None))
+    deploy_for_mission(
+        mission_name,
         model_units=model_units,
         enemy_units=enemy_units,
         b_len=env_unwrapped.b_len,

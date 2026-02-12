@@ -4,7 +4,7 @@ import sys
 
 def makeFile(numIters, modelFaction, enemyFaction, modelUnits, enemyUnits, modelW, enemyW,
              modelCounts=None, enemyCounts=None, modelInstanceIds=None, enemyInstanceIds=None,
-             boardx = 60, boardy = 40):
+             boardx = 60, boardy = 40, mission="only_war"):
     if modelCounts is None:
         modelCounts = []
     if enemyCounts is None:
@@ -27,7 +27,8 @@ def makeFile(numIters, modelFaction, enemyFaction, modelUnits, enemyUnits, model
         "enemyWeapons":enemyW,
         "numLife": int(numIters),
         "x": int(boardx),
-        "y": int(boardy)
+        "y": int(boardy),
+        "mission": mission
     }
 
     with open('gui/data.json', 'w') as f:
@@ -202,6 +203,12 @@ def getEnemyW():
 
     return data["enemyWeapons"]
 
+def getMission():
+    with open(os.path.abspath("gui/data.json")) as j:
+        data = json.loads(j.read())
+
+    return data.get("mission", "only_war")
+
 def delFile():
     data_path = os.path.abspath("gui/data.json")
     try:
@@ -216,5 +223,6 @@ def delFile():
 if __name__ == "__main__":
     model, enemy, model_counts, enemy_counts, model_instance_ids, enemy_instance_ids = addingUnits()
     modelw, enemyw = addingWeapons(model, enemy)
+    mission = sys.argv[6] if len(sys.argv) > 6 else "only_war"
     makeFile(sys.argv[1], sys.argv[2], sys.argv[3],model, enemy, modelw, enemyw,
-             model_counts, enemy_counts, model_instance_ids, enemy_instance_ids, sys.argv[4], sys.argv[5])
+             model_counts, enemy_counts, model_instance_ids, enemy_instance_ids, sys.argv[4], sys.argv[5], mission)

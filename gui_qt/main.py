@@ -38,8 +38,7 @@ class GUIController(QtCore.QObject):
     progressTextChanged = QtCore.Signal(str)
     rosterSummaryChanged = QtCore.Signal(str)
     numGamesChanged = QtCore.Signal(int)
-    boardXChanged = QtCore.Signal(int)
-    boardYChanged = QtCore.Signal(int)
+    missionChanged = QtCore.Signal(str)
     metricsChanged = QtCore.Signal()
     metricsLabelChanged = QtCore.Signal(str)
     playModelPathChanged = QtCore.Signal(str)
@@ -60,8 +59,8 @@ class GUIController(QtCore.QObject):
         self._progress_text = "0%"
 
         self._num_games = 100
-        self._board_x = 60
-        self._board_y = 40
+        self._mission_options = ["only_war"]
+        self._selected_mission = "only_war"
 
         self._train_total_episodes = 0
         self._training_samples = deque()
@@ -137,13 +136,13 @@ class GUIController(QtCore.QObject):
     def numGames(self) -> int:
         return self._num_games
 
-    @QtCore.Property(int, notify=boardXChanged)
-    def boardX(self) -> int:
-        return self._board_x
+    @QtCore.Property("QStringList", constant=True)
+    def missionOptions(self):
+        return self._mission_options
 
-    @QtCore.Property(int, notify=boardYChanged)
-    def boardY(self) -> int:
-        return self._board_y
+    @QtCore.Property(str, notify=missionChanged)
+    def selectedMission(self) -> str:
+        return self._selected_mission
 
     @QtCore.Property(str, notify=metricsChanged)
     def metricsRewardPath(self) -> str:
@@ -202,45 +201,19 @@ class GUIController(QtCore.QObject):
             self._num_games = value
             self.numGamesChanged.emit(value)
 
-    @QtCore.Slot(int)
-    def set_board_x(self, value: int) -> None:
-        if value <= 0:
-            self._emit_status("X должен быть больше нуля.")
-            return
-        if self._board_x != value:
-            self._board_x = value
-            self.boardXChanged.emit(value)
+    @QtCore.Slot(str)
+    def set_selected_mission(self, mission: str) -> None:
+        normalized = (mission or "only_war").strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized not in self._mission_options:
+            normalized = "only_war"
+        if self._selected_mission != normalized:
+            self._selected_mission = normalized
+            self.missionChanged.emit(normalized)
 
     @QtCore.Slot(int)
-    def set_board_y(self, value: int) -> None:
-        if value <= 0:
-            self._emit_status("Y должен быть больше нуля.")
-            return
-        if self._board_y != value:
-            self._board_y = value
-            self.boardYChanged.emit(value)
-
-    @QtCore.Slot(bool)
-    def set_self_play_from_checkpoint(self, value: bool) -> None:
-        if self._self_play_from_checkpoint != value:
-            self._self_play_from_checkpoint = value
-            self.selfPlayFromCheckpointChanged.emit(value)
-
-    @QtCore.Slot()
-    def increment_board_x(self) -> None:
-        self.set_board_x(self._board_x + 10)
-
-    @QtCore.Slot()
-    def decrement_board_x(self) -> None:
-        self.set_board_x(max(10, self._board_x - 10))
-
-    @QtCore.Slot()
-    def increment_board_y(self) -> None:
-        self.set_board_y(self._board_y + 10)
-
-    @QtCore.Slot()
-    def decrement_board_y(self) -> None:
-        self.set_board_y(max(10, self._board_y - 10))
+    def set_selected_mission_index(self, index: int) -> None:
+        if 0 <= index < len(self._mission_options):
+            self.set_selected_mission(self._mission_options[index])
 
     @QtCore.Slot(int)
     def add_unit_to_player(self, index: int) -> None:
@@ -424,10 +397,12 @@ class GUIController(QtCore.QObject):
             return
         self._persist_rosters()
         command = self._build_script_command(script, [model_path])
+        env = os.environ.copy()
+        env["MISSION_NAME"] = self._selected_mission
         subprocess.Popen(
             command,
             cwd=self._repo_root,
-            env=os.environ.copy(),
+            env=env,
             start_new_session=True,
         )
         self._emit_status("Запуск игры в терминале.")
@@ -451,6 +426,7 @@ class GUIController(QtCore.QObject):
         env["MODEL_PATH"] = model_path
         env["FIGHT_REPORT"] = "1"
         env["PLAY_NO_EXPLORATION"] = "1"
+        env["MISSION_NAME"] = self._selected_mission
         command = self._build_script_command(script, [])
         subprocess.Popen(
             command,
@@ -586,6 +562,7 @@ class GUIController(QtCore.QObject):
         env.insert("TRAIN_LOG_TO_FILE", "1")
         env.insert("PER_ENABLED", "1")
         env.insert("N_STEP", "3")
+        env.insert("MISSION_NAME", self._selected_mission)
         for key, value in env_overrides.items():
             env.insert(key, value)
         self._process.setProcessEnvironment(env)
@@ -628,8 +605,9 @@ class GUIController(QtCore.QObject):
                 str(self._num_games),
                 "Necrons",
                 "Necrons",
-                str(self._board_x),
-                str(self._board_y),
+                "60",
+                "40",
+                self._selected_mission,
             ]
             command = self._build_script_command(script, args)
             result = subprocess.run(

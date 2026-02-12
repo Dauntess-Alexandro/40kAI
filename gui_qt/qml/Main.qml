@@ -118,49 +118,24 @@ ApplicationWindow {
                             }
 
                             GroupBox {
-                                title: "Размеры поля"
+                                title: "Миссия"
                                 Layout.fillWidth: true
 
                                 ColumnLayout {
                                     spacing: root.spacingSm
                                     anchors.fill: parent
 
-                                    RowLayout {
-                                        spacing: root.spacingXs
-                                        Label { text: "X:" }
-                                        TextField {
-                                            id: boardXField
-                                            text: controller.boardX.toString()
-                                            validator: IntValidator { bottom: 1 }
-                                            Layout.preferredWidth: root.inputWidthSm
-                                            onEditingFinished: {
-                                                var value = parseInt(text)
-                                                if (!isNaN(value)) {
-                                                    controller.set_board_x(value)
-                                                }
-                                            }
-                                        }
-                                        Button { text: "+"; onClicked: controller.increment_board_x() }
-                                        Button { text: "-"; onClicked: controller.decrement_board_x() }
+                                    Label { text: "Выбор миссии" }
+                                    ComboBox {
+                                        id: missionCombo
+                                        Layout.preferredWidth: root.inputWidthMd
+                                        model: controller.missionOptions
+                                        currentIndex: Math.max(0, controller.missionOptions.indexOf(controller.selectedMission))
+                                        onActivated: controller.set_selected_mission_index(currentIndex)
                                     }
-
-                                    RowLayout {
-                                        spacing: root.spacingXs
-                                        Label { text: "Y:" }
-                                        TextField {
-                                            id: boardYField
-                                            text: controller.boardY.toString()
-                                            validator: IntValidator { bottom: 1 }
-                                            Layout.preferredWidth: root.inputWidthSm
-                                            onEditingFinished: {
-                                                var value = parseInt(text)
-                                                if (!isNaN(value)) {
-                                                    controller.set_board_y(value)
-                                                }
-                                            }
-                                        }
-                                        Button { text: "+"; onClicked: controller.increment_board_y() }
-                                        Button { text: "-"; onClicked: controller.decrement_board_y() }
+                                    Label {
+                                        text: "Only War: 60x40, 1 objective по центру, деплой attacker/defender слева/справа"
+                                        wrapMode: Text.Wrap
                                     }
                                 }
                             }
@@ -894,12 +869,6 @@ ApplicationWindow {
         }
         function onNumGamesChanged(value) {
             numGamesField.text = value.toString()
-        }
-        function onBoardXChanged(value) {
-            boardXField.text = value.toString()
-        }
-        function onBoardYChanged(value) {
-            boardYField.text = value.toString()
         }
     }
 

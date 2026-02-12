@@ -16,8 +16,12 @@ import multiprocessing as mp
 from tqdm import tqdm
 from gym_mod.envs.warhamEnv import *
 from gym_mod.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
-from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
-from gym_mod.engine.mission import ONLY_WAR_BOARD_WIDTH_INCH, ONLY_WAR_BOARD_HEIGHT_INCH
+from gym_mod.engine.mission import (
+    normalize_mission_name,
+    board_dims_for_mission,
+    deploy_for_mission,
+    post_deploy_setup,
+)
 from gymnasium import spaces
 
 from model.DQN import *
@@ -311,11 +315,13 @@ def append_agent_log(line: str) -> None:
 def _env_worker(conn, roster_config, b_len, b_hei, trunc):
     try:
         enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+        mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
         attacker_side, defender_side = roll_off_attacker_defender(
             manual_roll_allowed=False,
             log_fn=None,
         )
-        deploy_only_war(
+        deploy_for_mission(
+            mission_name,
             model_units=model,
             enemy_units=enemy,
             b_len=b_len,
@@ -348,11 +354,13 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                 next_observation, reward, done, res, info = env.step(payload)
                 conn.send((next_observation, reward, done, res, info))
             elif cmd == "reset":
+                mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
                 attacker_side, defender_side = roll_off_attacker_defender(
                     manual_roll_allowed=False,
                     log_fn=None,
                 )
-                deploy_only_war(
+                deploy_for_mission(
+                    mission_name,
                     model_units=model,
                     enemy_units=enemy,
                     b_len=b_len,
@@ -404,8 +412,9 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
 def _load_roster_config():
     config = {
         "totLifeT": 10,
-        "b_len": int(ONLY_WAR_BOARD_HEIGHT_INCH),
-        "b_hei": int(ONLY_WAR_BOARD_WIDTH_INCH),
+        "b_len": 40,
+        "b_hei": 60,
+        "mission": DEFAULT_MISSION_NAME,
         "enemy_faction": "Necrons",
         "model_faction": "Necrons",
         "enemy_units": [
@@ -444,6 +453,7 @@ def _load_roster_config():
         config["b_hei"] = initFile.getBoardY()
         config["enemy_faction"] = initFile.getEnemyFaction()
         config["model_faction"] = initFile.getModelFaction()
+        config["mission"] = normalize_mission_name(getattr(initFile, "getMission", lambda: DEFAULT_MISSION_NAME)())
         enemy_counts = initFile.getEnemyUnitCounts()
         model_counts = initFile.getModelUnitCounts()
         enemy_instance_ids = initFile.getEnemyUnitInstanceIds()
@@ -478,9 +488,8 @@ def _load_roster_config():
         config["enemy_units"] = enemy_units
         config["model_units"] = model_units
 
-    # Only War uses a fixed 60"x40" board; env grid is [row, col] => [40, 60].
-    config["b_len"] = int(ONLY_WAR_BOARD_HEIGHT_INCH)
-    config["b_hei"] = int(ONLY_WAR_BOARD_WIDTH_INCH)
+    config["mission"] = normalize_mission_name(config.get("mission", os.getenv("MISSION_NAME", DEFAULT_MISSION_NAME)))
+    config["b_len"], config["b_hei"] = board_dims_for_mission(config["mission"])
 
     return config
 
@@ -691,6 +700,7 @@ def main():
         for env_idx in range(vec_env_count):
             enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
             env_log_fn = log_fn if env_idx == 0 else None
+            mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
             attacker_side, defender_side = roll_off_attacker_defender(
                 manual_roll_allowed=False,
                 log_fn=print if env_idx == 0 else None,
@@ -710,7 +720,8 @@ def main():
                 print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
                 print("Units:", [(u.name, u.instance_id, u.models_count) for u in model])
     
-            deploy_only_war(
+            deploy_for_mission(
+                mission_name,
                 model_units=model,
                 enemy_units=enemy,
                 b_len=b_len,
@@ -1299,6 +1310,7 @@ def main():
                     ctx["conn"].send(("reset", None))
                     ctx["state"], ctx["info"] = ctx["conn"].recv()
                 else:
+                    mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
                     attacker_side, defender_side = roll_off_attacker_defender(
                         manual_roll_allowed=False,
                         log_fn=print if idx == 0 else None,
@@ -1306,7 +1318,8 @@ def main():
                     if verbose and idx == 0:
                         print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
     
-                    deploy_only_war(
+                    deploy_for_mission(
+                        mission_name,
                         model_units=ctx["model"],
                         enemy_units=ctx["enemy"],
                         b_len=b_len,
