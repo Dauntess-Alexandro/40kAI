@@ -1897,6 +1897,10 @@ class Warhammer40kEnv(gym.Env):
             reward_delta = 0
             objective_hold_delta = 0.0
             objective_proximity_delta = 0.0
+            movement_meta = {
+                "applied_hold_penalty": False,
+                "hold_penalty_events": 0,
+            }
             for i in range(len(self.unit_health)):
                 modelName = i + 21
                 battleSh = battle_shock[i] if battle_shock else False
@@ -1961,6 +1965,9 @@ class Warhammer40kEnv(gym.Env):
                                     hold_penalty = reward_cfg.VP_OBJECTIVE_HOLD_PENALTY * severity
                                     reward_delta -= hold_penalty
                                     objective_hold_delta -= hold_penalty
+                                    movement_meta["applied_hold_penalty"] = True
+                                    movement_meta["hold_penalty_events"] += 1
+                                    hold_penalty_reason = "no_move_missed_progress"
                                     self._log_reward_unit(
                                         "model",
                                         modelName,
@@ -1968,17 +1975,20 @@ class Warhammer40kEnv(gym.Env):
                                         "Reward (VP/объекты): "
                                         f"hold_penalty=-{hold_penalty:.3f} "
                                         f"(obj={nearest_obj_idx}, d_before={d_before:.3f}, "
-                                        f"d_best={d_best_possible:.3f}, max_reach={max_reach:.3f}, "
-                                        f"could_reach={int(could_reach_control)}, severity={severity:.3f})",
+                                        f"d_after={d_after:.3f}, d_best={d_best_possible:.3f}, max_reach={max_reach:.3f}, "
+                                        f"could_reach_objective={int(could_reach_control)}, severity={severity:.3f}, "
+                                        f"reason={hold_penalty_reason})",
                                     )
                                 else:
+                                    hold_penalty_reason = "no_move_cannot_improve"
                                     self._log_reward_unit(
                                         "model",
                                         modelName,
                                         i,
                                         "Reward (VP/объекты): hold_penalty=0.000 "
-                                        f"(obj={nearest_obj_idx}, причина=не_мог_улучшить_позицию, "
-                                        f"d_before={d_before:.3f}, max_reach={max_reach:.3f})",
+                                        f"(obj={nearest_obj_idx}, d_before={d_before:.3f}, d_after={d_after:.3f}, "
+                                        f"d_best={d_best_possible:.3f}, max_reach={max_reach:.3f}, "
+                                        f"could_reach_objective={int(could_reach_control)}, reason={hold_penalty_reason})",
                                     )
 
                     advanced_flags[i] = advanced
@@ -2117,7 +2127,7 @@ class Warhammer40kEnv(gym.Env):
                     "data": {"reward_delta": reward_delta},
                 }
             )
-            return advanced_flags, reward_delta
+            return advanced_flags, reward_delta, movement_meta
 
         if side == "enemy" and action is not None and not manual:
             self._log_phase(self._display_side("enemy"), "movement")
@@ -4061,7 +4071,7 @@ class Warhammer40kEnv(gym.Env):
         reward += delta
         if delta != 0:
             self._log_reward(f"Reward (шаг): командование delta={delta:+.3f}")
-        advanced_flags, delta = self.movement_phase("model", action=action, battle_shock=battle_shock)
+        advanced_flags, delta, movement_meta = self.movement_phase("model", action=action, battle_shock=battle_shock)
         reward += delta
         if delta != 0:
             self._log_reward(f"Reward (шаг): движение delta={delta:+.3f}")
@@ -4156,14 +4166,26 @@ class Warhammer40kEnv(gym.Env):
         can_measure_move = min_obj_dist_start is not None and min_obj_dist_end is not None
         if can_measure_move:
             moved_closer = min_obj_dist_end < min_obj_dist_start
-        if (
+        idle_conditions_met = (
             not near_objective
             and not vp_changed
             and not control_changed
             and damage_dealt <= 0
             and kills_dealt <= 0
             and (not moved_closer or not can_measure_move)
-        ):
+        )
+        hold_penalty_applied = bool(movement_meta.get("applied_hold_penalty", False))
+        if idle_conditions_met and hold_penalty_applied:
+            self._log_reward(
+                "Reward (idle вне цели): "
+                "skip, reason=hold_penalty_already_applied, "
+                f"near_obj={int(near_objective)}, vp_changed={int(vp_changed)}, "
+                f"control_changed={int(control_changed)}, damage={damage_dealt:.2f}, "
+                f"kills={kills_dealt}, moved_closer={int(moved_closer)}, "
+                f"min_dist={min_obj_dist_start}->{min_obj_dist_end}, "
+                f"hold_penalty_events={movement_meta.get('hold_penalty_events', 0)}"
+            )
+        elif idle_conditions_met:
             reward -= reward_cfg.IDLE_OUT_OF_OBJECTIVE_PENALTY
             self._log_reward(
                 "Reward (idle вне цели): "
