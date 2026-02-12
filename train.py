@@ -94,6 +94,7 @@ PIN_MEMORY = os.getenv("PIN_MEMORY", "0") == "1"
 USE_AMP = os.getenv("USE_AMP", "1") == "1"
 USE_COMPILE = os.getenv("USE_COMPILE", "0") == "1"
 SAVE_EVERY = int(os.getenv("SAVE_EVERY", "0"))
+RESUME_CHECKPOINT = os.getenv("RESUME_CHECKPOINT", "").strip()
 # Параллелизм через subprocess (только без self-play, маски считаются в воркерах).
 USE_SUBPROC_ENVS = os.getenv("USE_SUBPROC_ENVS", "0") == "1"
 # Рекомендации (включать вручную при наличии GPU/CPU): NUM_ENVS=8..16, BATCH_ACT=1,
@@ -204,6 +205,109 @@ def moving_avg(values, window=50):
         chunk = values[j0:i+1]
         out.append(sum(chunk) / len(chunk))
     return out
+
+
+def _load_checkpoint_payload(checkpoint_path: str):
+    try:
+        return torch.load(checkpoint_path, map_location=device, weights_only=False)
+    except TypeError:
+        return torch.load(checkpoint_path, map_location=device)
+
+
+def _extract_policy_state_dict(checkpoint):
+    if not isinstance(checkpoint, dict):
+        return checkpoint
+    for key in ("policy_net", "model_state_dict", "state_dict"):
+        value = checkpoint.get(key)
+        if isinstance(value, dict):
+            return value
+    if checkpoint and all(hasattr(value, "shape") for value in checkpoint.values()):
+        return checkpoint
+    return None
+
+
+def _resume_from_checkpoint(policy_net, target_net, optimizer, checkpoint_path: str) -> None:
+    if not os.path.isfile(checkpoint_path):
+        err_msg = (
+            "[RESUME][ERROR] Не найден чекпойнт. "
+            "Где: train.py (_resume_from_checkpoint). "
+            "Что делать: проверьте RESUME_CHECKPOINT и укажите существующий файл .pth. "
+            f"Путь: {checkpoint_path}"
+        )
+        print(err_msg)
+        append_agent_log(err_msg)
+        raise FileNotFoundError(err_msg)
+
+    try:
+        checkpoint = _load_checkpoint_payload(checkpoint_path)
+    except Exception as exc:
+        err_msg = (
+            "[RESUME][ERROR] Не удалось загрузить чекпойнт. "
+            "Где: train.py (_load_checkpoint_payload/torch.load). "
+            "Что делать: проверьте целостность файла или пересохраните чекпойнт текущей версией PyTorch. "
+            f"Путь: {checkpoint_path}. Детали: {exc}"
+        )
+        print(err_msg)
+        append_agent_log(err_msg)
+        raise
+
+    policy_state = _extract_policy_state_dict(checkpoint)
+    if not isinstance(policy_state, dict):
+        err_msg = (
+            "[RESUME][ERROR] В чекпойнте нет policy_net state_dict. "
+            "Где: train.py (_extract_policy_state_dict). "
+            "Что делать: укажите корректный checkpoint_ep*.pth с policy_net. "
+            f"Путь: {checkpoint_path}"
+        )
+        print(err_msg)
+        append_agent_log(err_msg)
+        raise ValueError(err_msg)
+
+    policy_net.load_state_dict(normalize_state_dict(policy_state))
+    policy_loaded = 1
+
+    target_loaded = 0
+    target_state = checkpoint.get("target_net") if isinstance(checkpoint, dict) else None
+    if isinstance(target_state, dict):
+        target_net.load_state_dict(normalize_state_dict(target_state))
+        target_loaded = 1
+    else:
+        target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
+
+    optimizer_loaded = 0
+    optimizer_state = checkpoint.get("optimizer") if isinstance(checkpoint, dict) else None
+    if isinstance(optimizer_state, dict):
+        try:
+            optimizer.load_state_dict(optimizer_state)
+            optimizer_loaded = 1
+        except Exception as exc:
+            warn_msg = (
+                "[RESUME][WARN] Не удалось загрузить optimizer state. "
+                "Где: train.py (_resume_from_checkpoint/optimizer.load_state_dict). "
+                "Что делать: обучение продолжится с новым optimizer, при необходимости "
+                "сохраните свежий checkpoint и проверьте совместимость версий. "
+                f"Детали: {exc}"
+            )
+            print(warn_msg)
+            append_agent_log(warn_msg)
+    else:
+        warn_msg = (
+            "[RESUME][WARN] В чекпойнте нет optimizer state. "
+            "Где: train.py (_resume_from_checkpoint). "
+            "Что делать: обучение продолжится с новым optimizer; "
+            "для полного resume сохраняйте checkpoint с optimizer."
+        )
+        print(warn_msg)
+        append_agent_log(warn_msg)
+
+    ok_line = f"[RESUME] loaded checkpoint={checkpoint_path}"
+    details_line = (
+        f"[RESUME] loaded: policy={policy_loaded} target={target_loaded} optimizer={optimizer_loaded}"
+    )
+    print(ok_line)
+    print(details_line)
+    append_agent_log(ok_line)
+    append_agent_log(details_line)
 
 def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
     os.makedirs(metrics_dir, exist_ok=True)
@@ -815,7 +919,13 @@ def main():
     
     policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
     target_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
-    target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
+    optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
+
+    if RESUME_CHECKPOINT:
+        _resume_from_checkpoint(policy_net, target_net, optimizer, RESUME_CHECKPOINT)
+    else:
+        target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
+
     target_net.eval()
     
     if USE_COMPILE and hasattr(torch, "compile"):
@@ -890,7 +1000,6 @@ def main():
         else:
             opponent_policy_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
     
-    optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
     scaler = torch.cuda.amp.GradScaler(enabled=USE_AMP)
     replay_capacity = int(os.getenv("REPLAY_CAPACITY", "100000"))
     if PER_ENABLED:

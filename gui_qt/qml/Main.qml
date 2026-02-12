@@ -222,6 +222,14 @@ ApplicationWindow {
                                         onToggled: controller.set_self_play_from_checkpoint(checked)
                                     }
 
+                                    CheckBox {
+                                        text: "Продолжить обучение (RESUME_CHECKPOINT)"
+                                        checked: controller.resumeFromCheckpoint
+                                        enabled: !controller.running
+                                        Layout.columnSpan: 2
+                                        onToggled: controller.set_resume_from_checkpoint(checked)
+                                    }
+
                                     Button {
                                         text: "Тренировка 8х"
                                         enabled: !controller.running

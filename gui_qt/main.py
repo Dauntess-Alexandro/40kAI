@@ -45,6 +45,7 @@ class GUIController(QtCore.QObject):
     playModelLabelChanged = QtCore.Signal(str)
     boardTextChanged = QtCore.Signal(str)
     selfPlayFromCheckpointChanged = QtCore.Signal(bool)
+    resumeFromCheckpointChanged = QtCore.Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -86,6 +87,7 @@ class GUIController(QtCore.QObject):
         self._play_model_label = "Модель не выбрана"
         self._board_text = "ASCII карта будет доступна после запуска игры."
         self._self_play_from_checkpoint = False
+        self._resume_from_checkpoint = False
 
         self._load_available_units()
         self._load_rosters_from_file()
@@ -187,6 +189,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(bool, notify=selfPlayFromCheckpointChanged)
     def selfPlayFromCheckpoint(self) -> bool:
         return self._self_play_from_checkpoint
+
+    @QtCore.Property(bool, notify=resumeFromCheckpointChanged)
+    def resumeFromCheckpoint(self) -> bool:
+        return self._resume_from_checkpoint
 
     @QtCore.Property(str, constant=True)
     def modelsFolderUrl(self) -> str:
@@ -290,6 +296,22 @@ class GUIController(QtCore.QObject):
     @QtCore.Slot()
     def start_self_play(self) -> None:
         self._start_training(mode="selfplay")
+
+    @QtCore.Slot(bool)
+    def set_self_play_from_checkpoint(self, value: bool) -> None:
+        flag = bool(value)
+        if self._self_play_from_checkpoint == flag:
+            return
+        self._self_play_from_checkpoint = flag
+        self.selfPlayFromCheckpointChanged.emit(flag)
+
+    @QtCore.Slot(bool)
+    def set_resume_from_checkpoint(self, value: bool) -> None:
+        flag = bool(value)
+        if self._resume_from_checkpoint == flag:
+            return
+        self._resume_from_checkpoint = flag
+        self.resumeFromCheckpointChanged.emit(flag)
 
     @QtCore.Slot()
     def stop_process(self) -> None:
@@ -550,6 +572,18 @@ class GUIController(QtCore.QObject):
             env_overrides["SELF_PLAY_OPPONENT_MODE"] = "fixed_checkpoint"
             env_overrides["SELF_PLAY_FIXED_PATH"] = checkpoint_path
 
+        if self._resume_from_checkpoint:
+            resume_path = self._find_latest_resume_file()
+            if not resume_path:
+                self._emit_status(
+                    "Resume включён, но checkpoint_ep*.pth и model-*.pth не найдены. "
+                    "Где: gui_qt/main.py (_start_training). "
+                    "Что делать: сохраните чекпойнт и запустите снова или снимите галочку resume."
+                )
+                return
+            env_overrides["RESUME_CHECKPOINT"] = resume_path
+            self._emit_log(f"[GUI] [RESUME] Использую чекпойнт: {resume_path}", level="INFO")
+
         self._emit_log(f"[GUI] Запуск {status_prefix.lower()}...", level="INFO")
         self._emit_status(f"{status_prefix}...")
 
@@ -678,6 +712,7 @@ class GUIController(QtCore.QObject):
             "[SELFPLAY] Старт",
             "[TRAIN][START]",
             "[DEVICE CHECK]",
+            "[RESUME]",
             "[metrics] saved:",
         )
         allowed_contains = (
@@ -974,6 +1009,31 @@ class GUIController(QtCore.QObject):
                 if not name.startswith("checkpoint_ep"):
                     continue
                 if not name.endswith(".pth"):
+                    continue
+                path = os.path.join(root, name)
+                try:
+                    mtime = os.path.getmtime(path)
+                except OSError:
+                    continue
+                if mtime > latest_mtime:
+                    latest_mtime = mtime
+                    latest_path = path
+        return latest_path
+
+    def _find_latest_resume_file(self) -> Optional[str]:
+        checkpoint_path = self._find_latest_checkpoint_file()
+        if checkpoint_path:
+            return checkpoint_path
+
+        models_path = os.path.join(self._repo_root, "models")
+        if not os.path.isdir(models_path):
+            return None
+
+        latest_path = None
+        latest_mtime = -1.0
+        for root, _, files in os.walk(models_path):
+            for name in files:
+                if not (name.startswith("model-") and name.endswith(".pth")):
                     continue
                 path = os.path.join(root, name)
                 try:
