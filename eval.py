@@ -328,6 +328,13 @@ def main():
     winrate_no_draw = wins / (wins + losses) if (wins + losses) else 0.0
     avg_vp_diff = sum(vp_diffs) / len(vp_diffs) if vp_diffs else 0.0
     median_vp_diff = median(vp_diffs) if vp_diffs else 0.0
+    min_vp_diff = min(vp_diffs) if vp_diffs else 0.0
+    max_vp_diff = max(vp_diffs) if vp_diffs else 0.0
+    positive_vp_games = sum(1 for value in vp_diffs if value > 0)
+    negative_vp_games = sum(1 for value in vp_diffs if value < 0)
+    neutral_vp_games = sum(1 for value in vp_diffs if value == 0)
+    sorted_reasons = sorted(end_reasons.items(), key=lambda item: (-item[1], item[0]))
+
     log(
         "[SUMMARY] "
         f"wins={wins} losses={losses} draws={draws} "
@@ -337,6 +344,24 @@ def main():
         f"median_vp_diff={median_vp_diff:.3f} "
         f"end_reasons={dict(end_reasons)}"
     )
+
+    log("[DETAIL] ---------- Подробный итог оценки ----------")
+    log(f"[DETAIL] Всего игр: {games}")
+    log(f"[DETAIL] Победы/Поражения/Ничьи: {wins}/{losses}/{draws}")
+    log(f"[DETAIL] Winrate (все игры): {winrate_all:.3f}")
+    log(f"[DETAIL] Winrate (без ничьих): {winrate_no_draw:.3f}")
+    log(f"[DETAIL] VP diff (avg/median/min/max): {avg_vp_diff:.3f}/{median_vp_diff:.3f}/{min_vp_diff:.3f}/{max_vp_diff:.3f}")
+    log(
+        "[DETAIL] VP diff по знаку: "
+        f"положительных={positive_vp_games}, отрицательных={negative_vp_games}, нулевых={neutral_vp_games}"
+    )
+    if sorted_reasons:
+        log("[DETAIL] Причины завершения (по частоте):")
+        for reason, count in sorted_reasons:
+            log(f"[DETAIL]   - {reason}: {count}")
+    else:
+        log("[DETAIL] Причины завершения: данных нет")
+    log("[DETAIL] ------------------------------------------------")
     return 0
 
 

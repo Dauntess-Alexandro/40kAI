@@ -46,6 +46,8 @@ class GUIController(QtCore.QObject):
     evalModelPathChanged = QtCore.Signal(str)
     evalModelLabelChanged = QtCore.Signal(str)
     evalGamesChanged = QtCore.Signal(int)
+    evalLogTextChanged = QtCore.Signal(str)
+    evalSummaryTextChanged = QtCore.Signal(str)
     boardTextChanged = QtCore.Signal(str)
     selfPlayFromCheckpointChanged = QtCore.Signal(bool)
     resumeFromCheckpointChanged = QtCore.Signal(bool)
@@ -91,6 +93,8 @@ class GUIController(QtCore.QObject):
         self._eval_model_path = ""
         self._eval_model_label = "Модель не выбрана"
         self._eval_games = 50
+        self._eval_log_text = ""
+        self._eval_summary_text = "Итог оценки появится после завершения eval.py."
         self._active_process_kind = ""
         self._board_text = "ASCII карта будет доступна после запуска игры."
         self._self_play_from_checkpoint = False
@@ -201,6 +205,14 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(int, notify=evalGamesChanged)
     def evalGames(self) -> int:
         return self._eval_games
+
+    @QtCore.Property(str, notify=evalLogTextChanged)
+    def evalLogText(self) -> str:
+        return self._eval_log_text
+
+    @QtCore.Property(str, notify=evalSummaryTextChanged)
+    def evalSummaryText(self) -> str:
+        return self._eval_summary_text
 
     @QtCore.Property(str, notify=boardTextChanged)
     def boardText(self) -> str:
@@ -497,6 +509,9 @@ class GUIController(QtCore.QObject):
         self._process = QtCore.QProcess(self)
         self._process.setWorkingDirectory(self._repo_root)
 
+        self._set_eval_log_text("")
+        self._set_eval_summary_text("Идёт оценка... Итог будет показан после завершения.")
+
         env = QtCore.QProcessEnvironment.systemEnvironment()
         env.insert("FORCE_GREEDY", "1")
         env.insert("EVAL_EPSILON", "0")
@@ -521,6 +536,10 @@ class GUIController(QtCore.QObject):
             f"[EVAL] Старт оценки: игр={self._eval_games}, модель={os.path.basename(model_path)}, "
             "противник=эвристика, exploration=off.",
             level="INFO",
+        )
+        self._append_eval_log_line(
+            f"Старт оценки: игр={self._eval_games}, модель={os.path.basename(model_path)}, "
+            "противник=эвристика, exploration=off."
         )
         self._emit_status("Оценка запущена...")
         self._process.start(sys.executable, args)
@@ -808,6 +827,9 @@ class GUIController(QtCore.QObject):
         data = self._process.readAllStandardOutput().data().decode("utf-8", errors="replace")
         for line in data.splitlines():
             if line.strip():
+                if self._active_process_kind == "eval":
+                    self._append_eval_log_line(line)
+                    self._maybe_update_eval_summary(line)
                 if self._should_show_train_log(line):
                     self._emit_log(line)
                 self._handle_progress_line(line)
@@ -818,6 +840,8 @@ class GUIController(QtCore.QObject):
         data = self._process.readAllStandardError().data().decode("utf-8", errors="replace")
         for line in data.splitlines():
             if line.strip():
+                if self._active_process_kind == "eval":
+                    self._append_eval_log_line(f"[stderr] {line}")
                 if not self._is_tqdm_progress_line(line):
                     self._emit_log(line, level="ERROR")
                 self._handle_progress_line(line)
@@ -903,8 +927,17 @@ class GUIController(QtCore.QObject):
         if self._active_process_kind == "eval":
             if exit_status == QtCore.QProcess.ExitStatus.NormalExit and exit_code == 0:
                 self._emit_status("Оценка завершена.")
+                if not self._eval_summary_text.strip() or "Идёт оценка" in self._eval_summary_text:
+                    self._set_eval_summary_text(
+                        "Оценка завершена, но итоговая строка [SUMMARY] не найдена. "
+                        "Проверьте лог ниже (gui_qt/main.py, _on_finished)."
+                    )
             else:
                 self._emit_status("Оценка завершена с ошибкой. Проверьте лог.")
+                self._set_eval_summary_text(
+                    "Оценка завершена с ошибкой. Где: gui_qt/main.py (_on_finished). "
+                    "Что делать: проверьте лог оценки и traceback внизу."
+                )
         else:
             if exit_status == QtCore.QProcess.ExitStatus.NormalExit:
                 self._emit_status("Обучение завершено.")
@@ -930,6 +963,52 @@ class GUIController(QtCore.QObject):
 
     def _emit_status(self, message: str) -> None:
         self.statusChanged.emit(message)
+
+    def _set_eval_log_text(self, value: str) -> None:
+        self._eval_log_text = value
+        self.evalLogTextChanged.emit(value)
+
+    def _append_eval_log_line(self, line: str) -> None:
+        if not line:
+            return
+        if self._eval_log_text:
+            self._eval_log_text += "\n"
+        self._eval_log_text += line
+        self.evalLogTextChanged.emit(self._eval_log_text)
+
+    def _set_eval_summary_text(self, value: str) -> None:
+        self._eval_summary_text = value
+        self.evalSummaryTextChanged.emit(value)
+
+    def _maybe_update_eval_summary(self, line: str) -> None:
+        normalized = line.strip()
+        summary_prefix = "[EVAL][SUMMARY] "
+        if normalized.startswith(summary_prefix):
+            payload = normalized[len(summary_prefix):]
+            details = self._format_eval_summary(payload)
+            self._set_eval_summary_text(details)
+
+    def _format_eval_summary(self, payload: str) -> str:
+        pairs = {
+            key: value
+            for key, value in re.findall(r"([a-zA-Z_]+)=([^=]+?)(?=\s+[a-zA-Z_]+=|$)", payload)
+        }
+        lines = ["Подробный результат оценки:"]
+        lines.append(f"- Победы: {pairs.get('wins', '?')}")
+        lines.append(f"- Поражения: {pairs.get('losses', '?')}")
+        lines.append(f"- Ничьи: {pairs.get('draws', '?')}")
+        lines.append(f"- Winrate (все игры): {pairs.get('winrate_all', '?')}")
+        lines.append(f"- Winrate (без ничьих): {pairs.get('winrate_no_draw', '?')}")
+        lines.append(f"- Средний VP diff: {pairs.get('avg_vp_diff', '?')}")
+        lines.append(f"- Медианный VP diff: {pairs.get('median_vp_diff', '?')}")
+        reasons = pairs.get('end_reasons', '{}')
+        lines.append(f"- Причины завершения: {reasons}")
+        lines.append("")
+        lines.append("Что делать дальше:")
+        lines.append("1) Сравните winrate_no_draw между моделями.")
+        lines.append("2) Проверьте причины завершения: есть ли частые auto/time-limit.")
+        lines.append("3) Если VP diff отрицательный — продолжайте обучение и повторите eval.")
+        return "\n".join(lines)
 
     def _format_duration(self, seconds: int) -> str:
         minutes, secs = divmod(max(0, seconds), 60)

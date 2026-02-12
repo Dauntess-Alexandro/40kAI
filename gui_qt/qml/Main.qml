@@ -736,6 +736,39 @@ ApplicationWindow {
                                 }
                             }
                         }
+
+                        GroupBox {
+                            title: "Подробный результат"
+                            Layout.fillWidth: true
+
+                            TextArea {
+                                text: controller.evalSummaryText
+                                readOnly: true
+                                wrapMode: TextArea.Wrap
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: Math.round(190 * root.uiScale)
+                            }
+                        }
+
+                        GroupBox {
+                            title: "Лог оценки"
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+
+                            ScrollView {
+                                anchors.fill: parent
+
+                                TextArea {
+                                    id: evalLogArea
+                                    readOnly: true
+                                    wrapMode: TextArea.Wrap
+                                    text: controller.evalLogText
+                                    onTextChanged: {
+                                        cursorPosition = length
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
