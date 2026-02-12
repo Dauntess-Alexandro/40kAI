@@ -815,7 +815,7 @@ def main():
     
     policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
     target_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
-    target_net.load_state_dict(policy_net.state_dict())
+    target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
     target_net.eval()
     
     if USE_COMPILE and hasattr(torch, "compile"):
@@ -888,7 +888,7 @@ def main():
                 f"[SELFPLAY] fixed_checkpoint path={SELF_PLAY_FIXED_PATH}"
             )
         else:
-            opponent_policy_net.load_state_dict(policy_net.state_dict())
+            opponent_policy_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
     
     optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
     scaler = torch.cuda.amp.GradScaler(enabled=USE_AMP)
@@ -1301,7 +1301,7 @@ def main():
     
                 if SELF_PLAY_ENABLED and SELF_PLAY_OPPONENT_MODE == "snapshot":
                     if numLifeT % SELF_PLAY_UPDATE_EVERY_EPISODES == 0:
-                        opponent_policy_net.load_state_dict(policy_net.state_dict())
+                        opponent_policy_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
                         append_agent_log(
                             f"[SELFPLAY] opponent snapshot updated at episode {numLifeT}"
                         )
