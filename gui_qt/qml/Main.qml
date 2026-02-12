@@ -37,7 +37,7 @@ ApplicationWindow {
             id: mainTabs
             Layout.fillWidth: true
 
-            TabButton { text: "Train" }
+            TabButton { text: "Главная" }
             TabButton { text: "Model Metrics" }
             TabButton { text: "Play" }
             TabButton { text: "Settings" }
@@ -62,12 +62,6 @@ ApplicationWindow {
                         anchors.fill: parent
                         spacing: root.spacingMd
 
-                    Text {
-                        text: "Train Model:"
-                        font.pixelSize: Math.round(20 * root.uiScale)
-                        font.bold: true
-                    }
-
                     GridLayout {
                         columns: 2
                         columnSpacing: root.spacingLg
@@ -77,6 +71,68 @@ ApplicationWindow {
                         ColumnLayout {
                             spacing: root.spacingSm
                             Layout.fillWidth: true
+
+                            GroupBox {
+                                title: "Миссия"
+                                Layout.fillWidth: true
+
+                                ColumnLayout {
+                                    spacing: root.spacingSm
+                                    anchors.fill: parent
+
+                                    RowLayout {
+                                        spacing: root.spacingSm
+                                        Label { text: "Выбор миссии" }
+                                        ComboBox {
+                                            id: missionCombo
+                                            Layout.preferredWidth: root.inputWidthMd
+                                            model: controller.missionOptions
+                                            currentIndex: Math.max(0, controller.missionOptions.indexOf(controller.selectedMission))
+                                            onActivated: controller.set_selected_mission_index(currentIndex)
+                                        }
+                                    }
+
+                                    Frame {
+                                        Layout.fillWidth: true
+                                        padding: root.spacingSm
+
+                                        background: Rectangle {
+                                            color: "#f5f7fb"
+                                            border.color: "#d7dce5"
+                                            radius: Math.round(6 * root.uiScale)
+                                        }
+
+                                        ColumnLayout {
+                                            anchors.fill: parent
+                                            spacing: root.spacingXs
+
+                                            Label {
+                                                text: "Only War"
+                                                font.bold: true
+                                            }
+
+                                            GridLayout {
+                                                columns: 2
+                                                columnSpacing: root.spacingMd
+                                                rowSpacing: root.spacingXs
+                                                Layout.fillWidth: true
+
+                                                Label { text: "Размер стола:"; font.bold: true }
+                                                Label { text: "60×40" }
+
+                                                Label { text: "Objective:"; font.bold: true }
+                                                Label { text: "1, центр (30,20)" }
+
+                                                Label { text: "Деплой:"; font.bold: true }
+                                                Label { text: "Attacker слева / Defender справа"; wrapMode: Text.Wrap }
+
+                                                Label { text: "Примечание:"; font.bold: true }
+                                                Label { text: "roll-off определяет роли"; wrapMode: Text.Wrap }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
 
                             GroupBox {
                                 title: "Настройки"
@@ -113,29 +169,6 @@ ApplicationWindow {
                                         spacing: root.spacingSm
                                         Label { text: "Player Faction:" }
                                         RadioButton { text: "Necrons"; checked: true }
-                                    }
-                                }
-                            }
-
-                            GroupBox {
-                                title: "Миссия"
-                                Layout.fillWidth: true
-
-                                ColumnLayout {
-                                    spacing: root.spacingSm
-                                    anchors.fill: parent
-
-                                    Label { text: "Выбор миссии" }
-                                    ComboBox {
-                                        id: missionCombo
-                                        Layout.preferredWidth: root.inputWidthMd
-                                        model: controller.missionOptions
-                                        currentIndex: Math.max(0, controller.missionOptions.indexOf(controller.selectedMission))
-                                        onActivated: controller.set_selected_mission_index(currentIndex)
-                                    }
-                                    Label {
-                                        text: "Only War: 60x40, 1 objective по центру, деплой attacker/defender слева/справа"
-                                        wrapMode: Text.Wrap
                                     }
                                 }
                             }
