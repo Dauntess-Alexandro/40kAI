@@ -27,15 +27,58 @@ def log(message: str) -> None:
         print(f"[EVAL] {message}", flush=True)
 
 
+def _find_checkpoint_for_pickle(pickle_path: str) -> Optional[str]:
+    stem, _ = os.path.splitext(pickle_path)
+    direct_candidate = f"{stem}.pth"
+    if os.path.exists(direct_candidate):
+        return direct_candidate
+
+    parent = os.path.dirname(pickle_path)
+    if not os.path.isdir(parent):
+        return None
+
+    best_path = None
+    best_mtime = -1.0
+    for name in os.listdir(parent):
+        if not name.endswith(".pth"):
+            continue
+        path = os.path.join(parent, name)
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            continue
+        if mtime > best_mtime:
+            best_mtime = mtime
+            best_path = path
+    return best_path
+
+
+def _load_checkpoint_payload(checkpoint_path: str):
+    try:
+        return torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    except TypeError:
+        return torch.load(checkpoint_path, map_location="cpu")
+
+
+def _extract_policy_state_dict(checkpoint):
+    if not isinstance(checkpoint, dict):
+        return checkpoint
+    for key in ("policy_net", "model_state_dict", "state_dict"):
+        value = checkpoint.get(key)
+        if isinstance(value, dict):
+            return value
+    if checkpoint and all(hasattr(value, "shape") for value in checkpoint.values()):
+        return checkpoint
+    return None
+
+
 def load_latest_model(model_path: Optional[str] = None):
     if model_path and model_path != "None":
         pickle_path = model_path
-        checkpoint_path = model_path[:-len("pickle")] + "pth"
     else:
         save_path = "models/"
         folders = os.listdir(save_path) if os.path.isdir(save_path) else []
         envs = []
-        modelpth = []
 
         for folder in folders:
             full = os.path.join(save_path, folder)
@@ -44,22 +87,22 @@ def load_latest_model(model_path: Optional[str] = None):
                 for filename in files:
                     if filename.endswith(".pickle"):
                         envs.append(os.path.join(full, filename))
-                    elif filename.endswith(".pth"):
-                        modelpth.append(os.path.join(full, filename))
 
-        if not envs or not modelpth:
-            return None, None, None, None
+        if not envs:
+            return None, None, None, None, None, None
 
         envs.sort(key=lambda x: os.path.getmtime(x))
-        modelpth.sort()
         pickle_path = envs[-1]
-        checkpoint_path = modelpth[-1]
+
+    checkpoint_path = _find_checkpoint_for_pickle(pickle_path)
+    if checkpoint_path is None:
+        return None, None, None, None, pickle_path, None
 
     with open(pickle_path, "rb") as handle:
         env, model, enemy = pickle.load(handle)
 
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
-    return env, model, enemy, checkpoint
+    checkpoint = _load_checkpoint_payload(checkpoint_path)
+    return env, model, enemy, checkpoint, pickle_path, checkpoint_path
 
 
 def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, shoot_mask=None):
@@ -180,9 +223,16 @@ def main():
 
     os.environ.setdefault("MANUAL_DICE", "0")
 
-    env, model_units, enemy_units, checkpoint = load_latest_model(args.model)
+    env, model_units, enemy_units, checkpoint, pickle_path, checkpoint_path = load_latest_model(args.model)
     if env is None:
-        log("Модель не найдена. Проверьте папку models/ и наличие файлов .pickle/.pth.")
+        if pickle_path and checkpoint_path is None:
+            log(
+                "[ERROR] Не найден checkpoint для выбранной модели. "
+                "Где: eval.py (load_latest_model/_find_checkpoint_for_pickle). "
+                f"Что делать: проверьте .pth рядом с .pickle. model={pickle_path}"
+            )
+        else:
+            log("[ERROR] Модель не найдена. Проверьте папку models/ и наличие файлов .pickle/.pth.")
         return 0
 
     attacker_side, defender_side = roll_off_attacker_defender(
@@ -214,25 +264,37 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    policy_state = _extract_policy_state_dict(checkpoint)
+    if not isinstance(policy_state, dict):
+        log(
+            "[ERROR] В checkpoint отсутствует policy state_dict. "
+            "Где: eval.py (_extract_policy_state_dict). "
+            "Что делать: укажите корректный .pth, сохранённый train.py."
+        )
+        return 0
+
     net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
     dueling = net_type == "dueling"
-    if not dueling and isinstance(checkpoint, dict):
-        policy_state = checkpoint.get("policy_net", {})
+    if not dueling:
         if any(key.startswith("value_heads.") for key in policy_state):
             dueling = True
 
     policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
     target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
-    optimizer = torch.optim.Adam(policy_net.parameters())
-
-    policy_net.load_state_dict(normalize_state_dict(checkpoint["policy_net"]))
-    target_net.load_state_dict(normalize_state_dict(checkpoint["target_net"]))
-    optimizer.load_state_dict(checkpoint["optimizer"])
+    policy_net.load_state_dict(normalize_state_dict(policy_state))
+    target_state = checkpoint.get("target_net") if isinstance(checkpoint, dict) else None
+    if isinstance(target_state, dict):
+        target_net.load_state_dict(normalize_state_dict(target_state))
+    else:
+        target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
 
     policy_net.eval()
     target_net.eval()
 
-    log(f"Старт оценки: игр={games}, epsilon={epsilon:.3f}.")
+    log(
+        f"Старт оценки: игр={games}, epsilon={epsilon:.3f}, "
+        f"модель={os.path.basename(pickle_path)}, checkpoint={os.path.basename(checkpoint_path)}."
+    )
 
     wins = 0
     losses = 0

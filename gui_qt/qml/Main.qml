@@ -647,9 +647,96 @@ ApplicationWindow {
             Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Label {
-                    anchors.centerIn: parent
-                    text: "Скоро"
+                Item {
+                    anchors.fill: parent
+                    anchors.margins: root.spacingLg
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: root.spacingLg
+
+                        Text {
+                            text: "Оценка модели"
+                            font.pixelSize: Math.round(20 * root.uiScale)
+                            font.bold: true
+                        }
+
+                        GroupBox {
+                            title: "Параметры оценки"
+                            Layout.fillWidth: true
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: root.spacingSm
+
+                                RowLayout {
+                                    spacing: root.spacingSm
+                                    Label { text: "Количество игр:" }
+                                    TextField {
+                                        id: evalGamesField
+                                        text: controller.evalGames.toString()
+                                        validator: IntValidator { bottom: 1 }
+                                        Layout.preferredWidth: root.inputWidthMd
+                                        onEditingFinished: {
+                                            var value = parseInt(text)
+                                            if (!isNaN(value)) {
+                                                controller.set_eval_games(value)
+                                                text = controller.evalGames.toString()
+                                            }
+                                        }
+                                    }
+                                }
+
+                                RowLayout {
+                                    spacing: root.spacingSm
+                                    Label { text: "Модель:" }
+                                    Button {
+                                        text: "Выбрать"
+                                        enabled: !controller.running
+                                        onClicked: evalModelDialog.open()
+                                    }
+                                    Button {
+                                        text: "Последняя"
+                                        enabled: !controller.running
+                                        onClicked: controller.select_latest_eval_model()
+                                    }
+                                }
+
+                                Label {
+                                    text: controller.evalModelLabel
+                                    wrapMode: Text.WordWrap
+                                }
+
+                                Label {
+                                    text: "Запуск: модель против эвристики, без исследования (epsilon=0)."
+                                    wrapMode: Text.WordWrap
+                                    color: "#555555"
+                                }
+                            }
+                        }
+
+                        GroupBox {
+                            title: "Действия"
+                            Layout.fillWidth: true
+
+                            RowLayout {
+                                anchors.fill: parent
+                                spacing: root.spacingMd
+
+                                Button {
+                                    text: "Запустить оценку"
+                                    enabled: !controller.running
+                                    onClicked: controller.start_eval()
+                                }
+
+                                Button {
+                                    text: "Остановить"
+                                    enabled: controller.running
+                                    onClicked: controller.stop_process()
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -675,6 +762,14 @@ ApplicationWindow {
         folder: controller.modelsFolderUrl
         nameFilters: ["Pickle Files (*.pickle)", "All Files (*)"]
         onAccepted: controller.select_play_model(playModelDialog.fileUrl)
+    }
+
+    Platform.FileDialog {
+        id: evalModelDialog
+        title: "Выбрать модель для оценки"
+        folder: controller.modelsFolderUrl
+        nameFilters: ["Pickle Files (*.pickle)", "All Files (*)"]
+        onAccepted: controller.select_eval_model(evalModelDialog.fileUrl)
     }
 
     Dialog {

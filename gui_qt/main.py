@@ -43,6 +43,9 @@ class GUIController(QtCore.QObject):
     metricsLabelChanged = QtCore.Signal(str)
     playModelPathChanged = QtCore.Signal(str)
     playModelLabelChanged = QtCore.Signal(str)
+    evalModelPathChanged = QtCore.Signal(str)
+    evalModelLabelChanged = QtCore.Signal(str)
+    evalGamesChanged = QtCore.Signal(int)
     boardTextChanged = QtCore.Signal(str)
     selfPlayFromCheckpointChanged = QtCore.Signal(bool)
     resumeFromCheckpointChanged = QtCore.Signal(bool)
@@ -85,6 +88,10 @@ class GUIController(QtCore.QObject):
 
         self._play_model_path = ""
         self._play_model_label = "Модель не выбрана"
+        self._eval_model_path = ""
+        self._eval_model_label = "Модель не выбрана"
+        self._eval_games = 50
+        self._active_process_kind = ""
         self._board_text = "ASCII карта будет доступна после запуска игры."
         self._self_play_from_checkpoint = False
         self._resume_from_checkpoint = False
@@ -94,6 +101,7 @@ class GUIController(QtCore.QObject):
         self._refresh_models()
         self._select_latest_metrics()
         self._select_latest_play_model(initial=True)
+        self._select_latest_eval_model(initial=True)
         self._update_roster_summary()
 
         self._emit_status("Нажмите «Тренировка 8х» или «Самообучение», чтобы запустить обучение.")
@@ -182,6 +190,18 @@ class GUIController(QtCore.QObject):
     def playModelLabel(self) -> str:
         return self._play_model_label
 
+    @QtCore.Property(str, notify=evalModelPathChanged)
+    def evalModelPath(self) -> str:
+        return self._eval_model_path
+
+    @QtCore.Property(str, notify=evalModelLabelChanged)
+    def evalModelLabel(self) -> str:
+        return self._eval_model_label
+
+    @QtCore.Property(int, notify=evalGamesChanged)
+    def evalGames(self) -> int:
+        return self._eval_games
+
     @QtCore.Property(str, notify=boardTextChanged)
     def boardText(self) -> str:
         return self._board_text
@@ -220,6 +240,19 @@ class GUIController(QtCore.QObject):
     def set_selected_mission_index(self, index: int) -> None:
         if 0 <= index < len(self._mission_options):
             self.set_selected_mission(self._mission_options[index])
+
+    @QtCore.Slot(int)
+    def set_eval_games(self, value: int) -> None:
+        if value <= 0:
+            self._emit_status(
+                "Некорректное значение количества игр для оценки. "
+                "Где: gui_qt/main.py (set_eval_games). "
+                "Что делать: укажите число больше нуля."
+            )
+            return
+        if self._eval_games != value:
+            self._eval_games = value
+            self.evalGamesChanged.emit(value)
 
     @QtCore.Slot(int)
     def add_unit_to_player(self, index: int) -> None:
@@ -405,6 +438,101 @@ class GUIController(QtCore.QObject):
             self._emit_status("Выбрана последняя сохранённая модель.")
         else:
             self._emit_status("Сохранённые модели не найдены.")
+
+    @QtCore.Slot(str)
+    def select_eval_model(self, file_url: str) -> None:
+        path = self._to_local_file(file_url)
+        if not path:
+            self._emit_status("Модель для оценки не выбрана.")
+            return
+        if not os.path.exists(path):
+            self._emit_status(
+                "Файл модели для оценки не найден. "
+                "Где: gui_qt/main.py (select_eval_model). "
+                "Что делать: проверьте путь к .pickle и повторите."
+            )
+            return
+        if not path.endswith(".pickle"):
+            self._emit_status("Для оценки выберите файл модели .pickle.")
+            return
+        self._set_eval_model(path, source="manual")
+        self._emit_status("Модель для оценки обновлена.")
+
+    @QtCore.Slot()
+    def select_latest_eval_model(self) -> None:
+        if self._select_latest_eval_model(initial=False):
+            self._emit_status("Для оценки выбрана последняя сохранённая модель.")
+        else:
+            self._emit_status(
+                "Сохранённые модели для оценки не найдены. "
+                "Что делать: запустите обучение или выберите модель вручную."
+            )
+
+    @QtCore.Slot()
+    def start_eval(self) -> None:
+        if self._process is not None:
+            self._emit_status("Процесс уже запущен. Сначала остановите текущий.")
+            return
+        if not self._check_torch_import():
+            return
+
+        model_path = self._resolve_eval_model_path()
+        if model_path == "None":
+            self._emit_status(
+                "Не удалось запустить оценку: модель не найдена. "
+                "Где: gui_qt/main.py (start_eval). "
+                "Что делать: выберите .pickle вручную или обучите новую модель."
+            )
+            return
+
+        eval_script = os.path.join(self._repo_root, "eval.py")
+        if not os.path.exists(eval_script):
+            self._emit_status(
+                "Не удалось запустить оценку: не найден eval.py. "
+                "Где: gui_qt/main.py (start_eval). "
+                "Что делать: проверьте целостность репозитория и повторите."
+            )
+            return
+
+        self._process = QtCore.QProcess(self)
+        self._process.setWorkingDirectory(self._repo_root)
+
+        env = QtCore.QProcessEnvironment.systemEnvironment()
+        env.insert("FORCE_GREEDY", "1")
+        env.insert("EVAL_EPSILON", "0")
+        env.insert("PYTHONPATH", self._pythonpath_with_gym_mod())
+        env.insert("MISSION_NAME", self._selected_mission)
+        self._process.setProcessEnvironment(env)
+
+        self._process.readyReadStandardOutput.connect(self._read_stdout)
+        self._process.readyReadStandardError.connect(self._read_stderr)
+        self._process.errorOccurred.connect(self._on_error)
+        self._process.finished.connect(self._on_finished)
+
+        self._active_process_kind = "eval"
+        self._train_total_episodes = 0
+        self._reset_training_stats()
+        self._set_progress(0, 0)
+        self._progress_stats = "— it/s • elapsed 00:00"
+        self.progressStatsChanged.emit(self._progress_stats)
+
+        args = ["-u", "eval.py", "--games", str(self._eval_games), "--model", model_path]
+        self._emit_log(
+            f"[EVAL] Старт оценки: игр={self._eval_games}, модель={os.path.basename(model_path)}, "
+            "противник=эвристика, exploration=off.",
+            level="INFO",
+        )
+        self._emit_status("Оценка запущена...")
+        self._process.start(sys.executable, args)
+        if not self._process.waitForStarted(3000):
+            self._emit_log(
+                "[GUI] Не удалось запустить eval.py. Проверьте, что файл доступен и окружение корректно.",
+                level="ERROR",
+            )
+            self._cleanup_process()
+            return
+
+        self._set_running(True)
 
     @QtCore.Slot()
     def play_in_terminal(self) -> None:
@@ -606,6 +734,8 @@ class GUIController(QtCore.QObject):
         self._process.errorOccurred.connect(self._on_error)
         self._process.finished.connect(self._on_finished)
 
+        self._active_process_kind = "train"
+
         self._train_total_episodes = self._num_games
         self._reset_training_stats()
         self._set_progress(0, self._train_total_episodes)
@@ -707,6 +837,7 @@ class GUIController(QtCore.QObject):
         if normalized.startswith("[ERROR]") or normalized.startswith("[WARN]"):
             return True
         allowed_prefixes = (
+            "[EVAL]",
             "[TRAIN8] Старт",
             "[TRAIN] Старт",
             "[SELFPLAY] Старт",
@@ -769,11 +900,17 @@ class GUIController(QtCore.QObject):
     def _on_finished(self, exit_code: int, exit_status: QtCore.QProcess.ExitStatus) -> None:
         status_text = "нормально" if exit_status == QtCore.QProcess.ExitStatus.NormalExit else "с ошибкой"
         self._emit_log(f"[GUI] Процесс завершён ({status_text}), код: {exit_code}.")
-        if exit_status == QtCore.QProcess.ExitStatus.NormalExit:
-            self._emit_status("Обучение завершено.")
+        if self._active_process_kind == "eval":
+            if exit_status == QtCore.QProcess.ExitStatus.NormalExit and exit_code == 0:
+                self._emit_status("Оценка завершена.")
+            else:
+                self._emit_status("Оценка завершена с ошибкой. Проверьте лог.")
         else:
-            self._emit_status("Обучение завершено с ошибкой.")
-        self._select_latest_metrics()
+            if exit_status == QtCore.QProcess.ExitStatus.NormalExit:
+                self._emit_status("Обучение завершено.")
+            else:
+                self._emit_status("Обучение завершено с ошибкой.")
+            self._select_latest_metrics()
         self._cleanup_process()
 
     def _cleanup_process(self) -> None:
@@ -781,6 +918,7 @@ class GUIController(QtCore.QObject):
             return
         self._process.deleteLater()
         self._process = None
+        self._active_process_kind = ""
         self._set_running(False)
 
     def _emit_log(self, message: str, level: str | None = None) -> None:
@@ -822,6 +960,13 @@ class GUIController(QtCore.QObject):
         self.playModelPathChanged.emit(self._play_model_path)
         self.playModelLabelChanged.emit(self._play_model_label)
 
+    def _set_eval_model(self, path: str, source: str) -> None:
+        self._eval_model_path = path
+        label_prefix = "Последняя модель" if source == "latest" else "Выбрана модель"
+        self._eval_model_label = f"{label_prefix}: {os.path.basename(path)}"
+        self.evalModelPathChanged.emit(self._eval_model_path)
+        self.evalModelLabelChanged.emit(self._eval_model_label)
+
     def _select_latest_play_model(self, initial: bool) -> bool:
         latest_model = self._find_latest_model_file()
         if not latest_model:
@@ -842,6 +987,34 @@ class GUIController(QtCore.QObject):
             self._set_play_model(latest, source="latest")
             return latest
         return "None"
+
+    def _select_latest_eval_model(self, initial: bool) -> bool:
+        latest_model = self._find_latest_model_file()
+        if not latest_model:
+            if initial:
+                self._eval_model_path = ""
+                self._eval_model_label = "Модель не найдена"
+                self.evalModelPathChanged.emit(self._eval_model_path)
+                self.evalModelLabelChanged.emit(self._eval_model_label)
+            return False
+        self._set_eval_model(latest_model, source="latest")
+        return True
+
+    def _resolve_eval_model_path(self) -> str:
+        if self._eval_model_path and os.path.exists(self._eval_model_path):
+            return self._eval_model_path
+        latest = self._find_latest_model_file()
+        if latest:
+            self._set_eval_model(latest, source="latest")
+            return latest
+        return "None"
+
+    def _pythonpath_with_gym_mod(self) -> str:
+        gym_mod_path = os.path.join(self._repo_root, "gym_mod")
+        env_path = os.environ.get("PYTHONPATH", "")
+        if not env_path:
+            return gym_mod_path
+        return os.pathsep.join([gym_mod_path, env_path])
 
     def _script_path(self, script_base: str) -> str:
         ext = "bat" if self._is_windows else "sh"
