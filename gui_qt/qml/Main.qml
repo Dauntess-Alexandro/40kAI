@@ -105,6 +105,56 @@ ApplicationWindow {
 
                                     RowLayout {
                                         spacing: root.spacingSm
+                                        Label { text: "Кол-во по-фазовых эпизодов:" }
+                                    }
+
+                                    RowLayout {
+                                        spacing: root.spacingSm
+                                        Label { text: "Фаза 1:" }
+                                        TextField {
+                                            id: phase1Field
+                                            text: controller.phase1Episodes.toString()
+                                            validator: IntValidator { bottom: 0 }
+                                            Layout.preferredWidth: root.inputWidthMd
+                                            onEditingFinished: {
+                                                var value = parseInt(text)
+                                                if (!isNaN(value)) {
+                                                    controller.set_phase1_episodes(value)
+                                                }
+                                            }
+                                        }
+
+                                        Label { text: "Фаза 2:" }
+                                        TextField {
+                                            id: phase2Field
+                                            text: controller.phase2Episodes.toString()
+                                            validator: IntValidator { bottom: 0 }
+                                            Layout.preferredWidth: root.inputWidthMd
+                                            onEditingFinished: {
+                                                var value = parseInt(text)
+                                                if (!isNaN(value)) {
+                                                    controller.set_phase2_episodes(value)
+                                                }
+                                            }
+                                        }
+
+                                        Label { text: "Фаза 3:" }
+                                        TextField {
+                                            id: phase3Field
+                                            text: controller.phase3Episodes.toString()
+                                            validator: IntValidator { bottom: 0 }
+                                            Layout.preferredWidth: root.inputWidthMd
+                                            onEditingFinished: {
+                                                var value = parseInt(text)
+                                                if (!isNaN(value)) {
+                                                    controller.set_phase3_episodes(value)
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    RowLayout {
+                                        spacing: root.spacingSm
                                         Label { text: "Model Faction:" }
                                         RadioButton { text: "Necrons"; checked: true }
                                     }
@@ -232,6 +282,12 @@ ApplicationWindow {
                                         text: "Самообучение"
                                         enabled: !controller.running
                                         onClicked: controller.start_self_play()
+                                    }
+
+                                    Button {
+                                        text: "По-фазовая тренировка"
+                                        enabled: !controller.running
+                                        onClicked: controller.start_phased_training()
                                     }
 
                                     Button {
@@ -869,6 +925,15 @@ ApplicationWindow {
         }
         function onNumGamesChanged(value) {
             numGamesField.text = value.toString()
+        }
+        function onPhase1EpisodesChanged(value) {
+            phase1Field.text = value.toString()
+        }
+        function onPhase2EpisodesChanged(value) {
+            phase2Field.text = value.toString()
+        }
+        function onPhase3EpisodesChanged(value) {
+            phase3Field.text = value.toString()
         }
     }
 

@@ -116,6 +116,17 @@ if SELF_PLAY_OPPONENT_MODE not in ("snapshot", "fixed_checkpoint"):
     )
 # ============================
 
+# ===== phased training config =====
+PHASED_TRAINING_ENABLED = os.getenv("PHASED_TRAINING_ENABLED", "0") == "1"
+PHASE1_EPISODES = int(os.getenv("PHASE1_EPISODES", "0"))
+PHASE2_EPISODES = int(os.getenv("PHASE2_EPISODES", "0"))
+PHASE3_EPISODES = int(os.getenv("PHASE3_EPISODES", "0"))
+PHASE2_FIXED_PATH = os.getenv("PHASE2_FIXED_PATH", "")
+PHASE3_SNAPSHOT_UPDATE_EVERY = int(os.getenv("PHASE3_SNAPSHOT_UPDATE_EVERY", str(SELF_PLAY_UPDATE_EVERY_EPISODES)))
+if PHASE3_SNAPSHOT_UPDATE_EVERY < 1:
+    PHASE3_SNAPSHOT_UPDATE_EVERY = 1
+# ==================================
+
 
 DEFAULT_MISSION_NAME = "only_war"
 
@@ -613,14 +624,51 @@ def main():
     totLifeT = roster_config["totLifeT"]
     b_len = roster_config["b_len"]
     b_hei = roster_config["b_hei"]
-    
+
+    phase_plan = []
+    phase_mode_active = PHASED_TRAINING_ENABLED
+    phase2_fixed_path = PHASE2_FIXED_PATH or SELF_PLAY_FIXED_PATH
+    if phase_mode_active:
+        phase1 = max(0, PHASE1_EPISODES)
+        phase2 = max(0, PHASE2_EPISODES)
+        phase3 = max(0, PHASE3_EPISODES)
+        phase_total = phase1 + phase2 + phase3
+        if phase_total <= 0:
+            raise ValueError(
+                "PHASED_TRAINING_ENABLED=1, но сумма PHASE1_EPISODES/PHASE2_EPISODES/PHASE3_EPISODES равна 0. "
+                "Что делать: задайте значения > 0 хотя бы для одной фазы."
+            )
+        if phase2 > 0 and not phase2_fixed_path:
+            raise ValueError(
+                "Фаза 2 требует fixed checkpoint, но PHASE2_FIXED_PATH не задан. "
+                "Что делать: передайте путь к .pth через PHASE2_FIXED_PATH."
+            )
+        if phase2 > 0 and not os.path.isfile(phase2_fixed_path):
+            raise FileNotFoundError(
+                f"PHASE2_FIXED_PATH не найден: {phase2_fixed_path}. Проверьте путь к .pth модели."
+            )
+
+        cumulative = 0
+        if phase1 > 0:
+            cumulative += phase1
+            phase_plan.append({"name": "phase1_warmup", "until": cumulative, "self_play": False, "mode": "none", "update_every": 0, "fixed_path": ""})
+        if phase2 > 0:
+            cumulative += phase2
+            phase_plan.append({"name": "phase2_fixed", "until": cumulative, "self_play": True, "mode": "fixed_checkpoint", "update_every": 0, "fixed_path": phase2_fixed_path})
+        if phase3 > 0:
+            cumulative += phase3
+            phase_plan.append({"name": "phase3_snapshot", "until": cumulative, "self_play": True, "mode": "snapshot", "update_every": PHASE3_SNAPSHOT_UPDATE_EVERY, "fixed_path": ""})
+
+        totLifeT = cumulative
+        roster_config["totLifeT"] = totLifeT
+
     vec_env_count = int(os.getenv("NUM_ENVS", os.getenv("VEC_ENV_COUNT", "1")))
     if vec_env_count < 1:
         vec_env_count = 1
     
     if USE_SUBPROC_ENVS and vec_env_count < 2:
         USE_SUBPROC_ENVS = False
-    if USE_SUBPROC_ENVS and SELF_PLAY_ENABLED:
+    if USE_SUBPROC_ENVS and (SELF_PLAY_ENABLED or phase_mode_active):
         warn_msg = "[WARN] USE_SUBPROC_ENVS=1 несовместим с SELF_PLAY_ENABLED=1, отключаю subprocess env."
         print(warn_msg)
         append_agent_log(warn_msg)
@@ -644,7 +692,8 @@ def main():
             f"PREFETCH={int(PREFETCH)} "
             f"PIN_MEMORY={int(PIN_MEMORY)} "
             f"LOG_EVERY={LOG_EVERY} "
-            f"SAVE_EVERY={SAVE_EVERY}"
+            f"SAVE_EVERY={SAVE_EVERY} "
+            f"PHASED={int(phase_mode_active)}"
         )
         if TRAIN_LOG_TO_FILE:
             append_agent_log(train_start_line)
@@ -655,6 +704,10 @@ def main():
         warn_msg = "[WARN] USE_SUBPROC_ENVS=1: рендер в subprocess env недоступен, рендер будет пропущен."
         print(warn_msg)
         append_agent_log(warn_msg)
+
+    if phase_mode_active:
+        phase_desc = ", ".join([f"{p['name']}:{p['until']}" for p in phase_plan])
+        append_agent_log(f"[PHASED] Активирован по-фазовый режим. План: {phase_desc}")
     
     env_contexts = []
     subproc_envs = []
@@ -826,70 +879,116 @@ def main():
             print(f"[WARN] torch.compile недоступен: {exc}")
     
     opponent_policy_net = None
-    if SELF_PLAY_ENABLED:
-        opponent_policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
-        opponent_policy_net.eval()
-        if SELF_PLAY_OPPONENT_MODE == "fixed_checkpoint":
-            if not SELF_PLAY_FIXED_PATH:
-                raise ValueError("SELF_PLAY_FIXED_PATH обязателен для режима fixed_checkpoint.")
-            if not os.path.isfile(SELF_PLAY_FIXED_PATH):
-                raise FileNotFoundError(
-                    f"SELF_PLAY_FIXED_PATH не найден: {SELF_PLAY_FIXED_PATH}. Проверь путь."
-                )
-            try:
-                checkpoint = torch.load(
-                    SELF_PLAY_FIXED_PATH, map_location=device, weights_only=False
-                )
-            except TypeError:
-                checkpoint = torch.load(SELF_PLAY_FIXED_PATH, map_location=device)
-            except Exception as exc:
-                err_msg = (
-                    "[SELFPLAY][ERROR] Не удалось загрузить fixed_checkpoint. "
-                    "Где: train.py (torch.load). "
-                    "Что делать: убедитесь, что файл модели доверенный и целый, "
-                    "или пересохраните чекпойнт текущей версией PyTorch. "
-                    f"Детали: {exc}"
-                )
-                print(err_msg)
-                append_agent_log(err_msg)
-                raise
-            def _normalize_state_dict(state_dict: dict) -> dict:
-                if not state_dict:
-                    return state_dict
-                if any(key.startswith("_orig_mod.") for key in state_dict.keys()):
-                    return {key.replace("_orig_mod.", "", 1): value for key, value in state_dict.items()}
-                return state_dict
+    phase_runtime = {
+        "self_play_enabled": SELF_PLAY_ENABLED,
+        "mode": SELF_PLAY_OPPONENT_MODE,
+        "update_every": SELF_PLAY_UPDATE_EVERY_EPISODES,
+        "phase_name": "legacy",
+    }
 
-            if isinstance(checkpoint, dict) and "policy_net" in checkpoint:
-                checkpoint_net_type = checkpoint.get("net_type", "basic")
-                if checkpoint_net_type != NET_TYPE:
-                    warn_msg = (
-                        "[SELFPLAY] ВНИМАНИЕ: несовпадение типа сети "
-                        f"(checkpoint={checkpoint_net_type}, текущая={NET_TYPE}). "
-                        "Стартуем с новой инициализацией."
-                    )
-                    print(warn_msg)
-                    append_agent_log(warn_msg)
-                else:
-                    opponent_policy_net.load_state_dict(
-                        _normalize_state_dict(checkpoint["policy_net"])
-                    )
-            else:
-                if NET_TYPE != "basic":
-                    warn_msg = (
-                        "[SELFPLAY] ВНИМАНИЕ: старый формат чекпойнта без net_type, "
-                        f"а текущая сеть={NET_TYPE}. Стартуем с новой инициализацией."
-                    )
-                    print(warn_msg)
-                    append_agent_log(warn_msg)
-                else:
-                    opponent_policy_net.load_state_dict(_normalize_state_dict(checkpoint))
+    def _normalize_state_dict(state_dict: dict) -> dict:
+        if not state_dict:
+            return state_dict
+        if any(key.startswith("_orig_mod.") for key in state_dict.keys()):
+            return {key.replace("_orig_mod.", "", 1): value for key, value in state_dict.items()}
+        return state_dict
+
+    def _ensure_opponent_net() -> None:
+        nonlocal opponent_policy_net
+        if opponent_policy_net is None:
+            opponent_policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
+            opponent_policy_net.eval()
+
+    def _load_fixed_opponent(path: str) -> None:
+        _ensure_opponent_net()
+        try:
+            checkpoint = torch.load(path, map_location=device, weights_only=False)
+        except TypeError:
+            checkpoint = torch.load(path, map_location=device)
+        except Exception as exc:
+            err_msg = (
+                "[SELFPLAY][ERROR] Не удалось загрузить fixed_checkpoint. "
+                "Где: train.py (_load_fixed_opponent/torch.load). "
+                "Что делать: проверьте путь и совместимость .pth с текущей версией PyTorch. "
+                f"Детали: {exc}"
+            )
+            print(err_msg)
+            append_agent_log(err_msg)
+            raise
+
+        if isinstance(checkpoint, dict) and "policy_net" in checkpoint:
+            checkpoint_net_type = checkpoint.get("net_type", "basic")
+            if checkpoint_net_type != NET_TYPE:
+                warn_msg = (
+                    "[SELFPLAY] ВНИМАНИЕ: несовпадение типа сети "
+                    f"(checkpoint={checkpoint_net_type}, текущая={NET_TYPE}). "
+                    "Стартуем с новой инициализацией."
+                )
+                print(warn_msg)
+                append_agent_log(warn_msg)
+                return
+            opponent_policy_net.load_state_dict(_normalize_state_dict(checkpoint["policy_net"]))
+        else:
+            if NET_TYPE != "basic":
+                warn_msg = (
+                    "[SELFPLAY] ВНИМАНИЕ: старый формат чекпойнта без net_type, "
+                    f"а текущая сеть={NET_TYPE}. Стартуем с новой инициализацией."
+                )
+                print(warn_msg)
+                append_agent_log(warn_msg)
+                return
+            opponent_policy_net.load_state_dict(_normalize_state_dict(checkpoint))
+
+    def _phase_for_episode(episode_num: int) -> dict:
+        if not phase_mode_active:
+            return {
+                "name": "legacy",
+                "self_play": SELF_PLAY_ENABLED,
+                "mode": SELF_PLAY_OPPONENT_MODE,
+                "update_every": SELF_PLAY_UPDATE_EVERY_EPISODES,
+                "fixed_path": SELF_PLAY_FIXED_PATH,
+            }
+        for phase in phase_plan:
+            if episode_num <= phase["until"]:
+                return phase
+        return phase_plan[-1]
+
+    current_phase_name = None
+
+    def _apply_phase(episode_num: int, force: bool = False) -> None:
+        nonlocal current_phase_name
+        phase = _phase_for_episode(max(1, episode_num))
+        if not force and phase["name"] == current_phase_name:
+            return
+        current_phase_name = phase["name"]
+        phase_runtime["phase_name"] = phase["name"]
+        phase_runtime["self_play_enabled"] = bool(phase.get("self_play", False))
+        phase_runtime["mode"] = phase.get("mode", "none")
+        phase_runtime["update_every"] = int(phase.get("update_every", SELF_PLAY_UPDATE_EVERY_EPISODES) or 1)
+
+        if not phase_runtime["self_play_enabled"]:
+            append_agent_log(f"[PHASE] ep={episode_num} -> {phase['name']} (self-play=off)")
+            return
+
+        if phase_runtime["mode"] == "fixed_checkpoint":
+            fixed_path = phase.get("fixed_path") or phase2_fixed_path
+            if not fixed_path:
+                raise ValueError("Фаза fixed_checkpoint без пути к модели. Проверьте PHASE2_FIXED_PATH.")
+            if not os.path.isfile(fixed_path):
+                raise FileNotFoundError(f"fixed_checkpoint не найден: {fixed_path}")
+            _load_fixed_opponent(fixed_path)
+            append_agent_log(f"[PHASE] ep={episode_num} -> {phase['name']} fixed_checkpoint={fixed_path}")
+        elif phase_runtime["mode"] == "snapshot":
+            _ensure_opponent_net()
+            opponent_policy_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
             append_agent_log(
-                f"[SELFPLAY] fixed_checkpoint path={SELF_PLAY_FIXED_PATH}"
+                f"[PHASE] ep={episode_num} -> {phase['name']} snapshot update_every={phase_runtime['update_every']}"
             )
         else:
-            opponent_policy_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
-    
+            append_agent_log(f"[PHASE] ep={episode_num} -> {phase['name']} mode=none")
+
+    if SELF_PLAY_ENABLED or phase_mode_active:
+        _apply_phase(1, force=True)
     optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
     scaler = torch.cuda.amp.GradScaler(enabled=USE_AMP)
     replay_capacity = int(os.getenv("REPLAY_CAPACITY", "100000"))
@@ -1043,7 +1142,7 @@ def main():
         else:
             for idx, ctx in enumerate(env_contexts):
                 env_unwrapped = unwrap_env(ctx["env"])
-                if SELF_PLAY_ENABLED:
+                if phase_runtime["self_play_enabled"]:
                     env_unwrapped.enemyTurn(
                         trunc=trunc,
                         policy_fn=lambda obs, env=ctx["env"], lm=ctx["len_model"]: opponent_policy(obs, env, lm),
@@ -1132,11 +1231,11 @@ def main():
     
             if done is True:
                 logging_start = time.perf_counter()
-                if SELF_PLAY_ENABLED:
+                if phase_runtime["self_play_enabled"]:
                     append_agent_log(
                         f"Конец эпизода {numLifeT + 1}. "
-                        f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
-                        f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
+                        f"[SELFPLAY] enabled=1 phase={phase_runtime['phase_name']} mode={phase_runtime['mode']} "
+                        f"update_every={phase_runtime['update_every']} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
                     )
                 end_reason_env = info.get("end reason", "")
                 winner_env = info.get("winner")
@@ -1299,12 +1398,15 @@ def main():
                         if TRAIN_LOG_TO_CONSOLE:
                             print(save_line)
     
-                if SELF_PLAY_ENABLED and SELF_PLAY_OPPONENT_MODE == "snapshot":
-                    if numLifeT % SELF_PLAY_UPDATE_EVERY_EPISODES == 0:
+                if phase_runtime["self_play_enabled"] and phase_runtime["mode"] == "snapshot":
+                    if numLifeT % max(1, int(phase_runtime["update_every"])) == 0:
                         opponent_policy_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
                         append_agent_log(
                             f"[SELFPLAY] opponent snapshot updated at episode {numLifeT}"
                         )
+
+                if phase_mode_active and numLifeT < totLifeT:
+                    _apply_phase(numLifeT + 1)
     
                 if USE_SUBPROC_ENVS:
                     ctx["conn"].send(("reset", None))

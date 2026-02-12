@@ -38,6 +38,9 @@ class GUIController(QtCore.QObject):
     progressTextChanged = QtCore.Signal(str)
     rosterSummaryChanged = QtCore.Signal(str)
     numGamesChanged = QtCore.Signal(int)
+    phase1EpisodesChanged = QtCore.Signal(int)
+    phase2EpisodesChanged = QtCore.Signal(int)
+    phase3EpisodesChanged = QtCore.Signal(int)
     missionChanged = QtCore.Signal(str)
     metricsChanged = QtCore.Signal()
     metricsLabelChanged = QtCore.Signal(str)
@@ -59,6 +62,9 @@ class GUIController(QtCore.QObject):
         self._progress_text = "0%"
 
         self._num_games = 100
+        self._phase1_episodes = 5000
+        self._phase2_episodes = 10000
+        self._phase3_episodes = 10000
         self._mission_options = ["only_war"]
         self._selected_mission = "only_war"
 
@@ -94,7 +100,7 @@ class GUIController(QtCore.QObject):
         self._select_latest_play_model(initial=True)
         self._update_roster_summary()
 
-        self._emit_status("Нажмите «Тренировка 8х» или «Самообучение», чтобы запустить обучение.")
+        self._emit_status("Нажмите «Тренировка 8х», «Самообучение» или «По-фазовая тренировка», чтобы запустить обучение.")
 
     @QtCore.Property(QtCore.QObject, constant=True)
     def availableUnitsModel(self) -> QtCore.QObject:
@@ -135,6 +141,18 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(int, notify=numGamesChanged)
     def numGames(self) -> int:
         return self._num_games
+
+    @QtCore.Property(int, notify=phase1EpisodesChanged)
+    def phase1Episodes(self) -> int:
+        return self._phase1_episodes
+
+    @QtCore.Property(int, notify=phase2EpisodesChanged)
+    def phase2Episodes(self) -> int:
+        return self._phase2_episodes
+
+    @QtCore.Property(int, notify=phase3EpisodesChanged)
+    def phase3Episodes(self) -> int:
+        return self._phase3_episodes
 
     @QtCore.Property("QStringList", constant=True)
     def missionOptions(self):
@@ -200,6 +218,33 @@ class GUIController(QtCore.QObject):
         if self._num_games != value:
             self._num_games = value
             self.numGamesChanged.emit(value)
+
+    @QtCore.Slot(int)
+    def set_phase1_episodes(self, value: int) -> None:
+        if value < 0:
+            self._emit_status("Фаза 1: количество эпизодов не может быть отрицательным.")
+            return
+        if self._phase1_episodes != value:
+            self._phase1_episodes = value
+            self.phase1EpisodesChanged.emit(value)
+
+    @QtCore.Slot(int)
+    def set_phase2_episodes(self, value: int) -> None:
+        if value < 0:
+            self._emit_status("Фаза 2: количество эпизодов не может быть отрицательным.")
+            return
+        if self._phase2_episodes != value:
+            self._phase2_episodes = value
+            self.phase2EpisodesChanged.emit(value)
+
+    @QtCore.Slot(int)
+    def set_phase3_episodes(self, value: int) -> None:
+        if value < 0:
+            self._emit_status("Фаза 3: количество эпизодов не может быть отрицательным.")
+            return
+        if self._phase3_episodes != value:
+            self._phase3_episodes = value
+            self.phase3EpisodesChanged.emit(value)
 
     @QtCore.Slot(str)
     def set_selected_mission(self, mission: str) -> None:
@@ -290,6 +335,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Slot()
     def start_self_play(self) -> None:
         self._start_training(mode="selfplay")
+
+    @QtCore.Slot()
+    def start_phased_training(self) -> None:
+        self._start_training(mode="phased")
 
     @QtCore.Slot()
     def stop_process(self) -> None:
@@ -522,7 +571,17 @@ class GUIController(QtCore.QObject):
         if self._process is not None:
             self._emit_status("Процесс уже запущен. Сначала остановите текущий.")
             return
-        if not self._prepare_training_data():
+        total_episodes = self._num_games
+        if mode == "phased":
+            total_episodes = self._phase1_episodes + self._phase2_episodes + self._phase3_episodes
+            if total_episodes <= 0:
+                self._emit_status(
+                    "По-фазовая тренировка: суммарное число эпизодов должно быть больше нуля. "
+                    "Проверьте поля фаз 1/2/3."
+                )
+                return
+
+        if not self._prepare_training_data(total_episodes):
             return
 
         train_label = "TRAIN"
@@ -538,6 +597,27 @@ class GUIController(QtCore.QObject):
             status_prefix = "Самообучение"
             env_overrides["VEC_ENV_COUNT"] = "8"
             env_overrides["SELF_PLAY_ENABLED"] = "1"
+        elif mode == "phased":
+            train_label = "PHASED"
+            status_prefix = "По-фазовая тренировка"
+            env_overrides["PHASED_TRAINING_ENABLED"] = "1"
+            env_overrides["PHASE1_EPISODES"] = str(self._phase1_episodes)
+            env_overrides["PHASE2_EPISODES"] = str(self._phase2_episodes)
+            env_overrides["PHASE3_EPISODES"] = str(self._phase3_episodes)
+            env_overrides["SELF_PLAY_ENABLED"] = "1"
+            env_overrides["USE_SUBPROC_ENVS"] = "0"
+            env_overrides["NUM_ENVS"] = "8"
+            env_overrides["VEC_ENV_COUNT"] = "8"
+            env_overrides["PHASE3_SNAPSHOT_UPDATE_EVERY"] = "200"
+
+            fixed_path = self._find_latest_checkpoint_file() or self._find_latest_model_checkpoint_file()
+            if not fixed_path:
+                self._emit_status(
+                    "По-фазовая тренировка: не найден checkpoint/model .pth для фазы 2. "
+                    "Сначала выполните обычную тренировку с сохранением чекпойнтов (SAVE_EVERY)."
+                )
+                return
+            env_overrides["PHASE2_FIXED_PATH"] = fixed_path
 
         if mode == "selfplay" and self._self_play_from_checkpoint:
             checkpoint_path = self._find_latest_checkpoint_file()
@@ -572,13 +652,13 @@ class GUIController(QtCore.QObject):
         self._process.errorOccurred.connect(self._on_error)
         self._process.finished.connect(self._on_finished)
 
-        self._train_total_episodes = self._num_games
+        self._train_total_episodes = total_episodes
         self._reset_training_stats()
         self._set_progress(0, self._train_total_episodes)
         self._progress_stats = "— it/s • elapsed 00:00"
         self.progressStatsChanged.emit(self._progress_stats)
 
-        start_message = f"Старт {status_prefix.lower()}: PER=1, N_STEP=3."
+        start_message = f"Старт {status_prefix.lower()}: PER=1, N_STEP=3, ep={total_episodes}."
         self._emit_log(f"[{train_label}] {start_message}")
         self._emit_status(start_message)
 
@@ -597,12 +677,12 @@ class GUIController(QtCore.QObject):
 
         self._set_running(True)
 
-    def _prepare_training_data(self) -> bool:
+    def _prepare_training_data(self, episodes: int) -> bool:
         try:
             self._persist_rosters()
             script = self._script_path("data")
             args = [
-                str(self._num_games),
+                str(episodes),
                 "Necrons",
                 "Necrons",
                 "60",
@@ -676,7 +756,10 @@ class GUIController(QtCore.QObject):
             "[TRAIN8] Старт",
             "[TRAIN] Старт",
             "[SELFPLAY] Старт",
+            "[PHASED] Старт",
             "[TRAIN][START]",
+            "[PHASED]",
+            "[PHASE]",
             "[DEVICE CHECK]",
             "[metrics] saved:",
         )
@@ -974,6 +1057,28 @@ class GUIController(QtCore.QObject):
                 if not name.startswith("checkpoint_ep"):
                     continue
                 if not name.endswith(".pth"):
+                    continue
+                path = os.path.join(root, name)
+                try:
+                    mtime = os.path.getmtime(path)
+                except OSError:
+                    continue
+                if mtime > latest_mtime:
+                    latest_mtime = mtime
+                    latest_path = path
+        return latest_path
+
+    def _find_latest_model_checkpoint_file(self) -> Optional[str]:
+        models_path = os.path.join(self._repo_root, "models")
+        if not os.path.isdir(models_path):
+            return None
+        latest_path = None
+        latest_mtime = -1.0
+        for root, _, files in os.walk(models_path):
+            for name in files:
+                if not name.endswith(".pth"):
+                    continue
+                if not name.startswith("model-"):
                     continue
                 path = os.path.join(root, name)
                 try:
