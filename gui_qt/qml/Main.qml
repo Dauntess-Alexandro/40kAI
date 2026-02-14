@@ -133,7 +133,7 @@ ApplicationWindow {
 
                                     RowLayout {
                                         spacing: root.spacingSm
-                                        Label { text: "Кол-во эпизодов для Тренировки:" }
+                                        Label { text: "# эпизодов для Тренировки:" }
                                         TextField {
                                             id: numGamesField
                                             text: controller.numGames.toString()
