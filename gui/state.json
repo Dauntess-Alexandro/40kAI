@@ -1,7 +1,11 @@
 {
   "board": {
-    "width": 40,
-    "height": 60
+    "width": 60,
+    "height": 40,
+    "board_w": 60,
+    "board_h": 40,
+    "cols": 60,
+    "rows": 40
   },
   "turn": 1,
   "round": 1,
@@ -22,8 +26,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 34,
-      "y": 40
+      "x": 12,
+      "y": 17
     },
     {
       "side": "player",
@@ -31,8 +35,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 37,
-      "y": 44
+      "x": 11,
+      "y": 4
     },
     {
       "side": "model",
@@ -40,8 +44,8 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 6,
-      "y": 27
+      "x": 50,
+      "y": 21
     },
     {
       "side": "model",
@@ -49,32 +53,23 @@
       "name": "Necron Warriors",
       "models": 10,
       "hp": 10.0,
-      "x": 3,
-      "y": 31
+      "x": 55,
+      "y": 23
     }
   ],
   "objectives": [
     {
       "id": 1,
-      "x": 32,
-      "y": 38
-    },
-    {
-      "id": 2,
-      "x": 32,
-      "y": 22
-    },
-    {
-      "id": 3,
-      "x": 8,
-      "y": 38
-    },
-    {
-      "id": 4,
-      "x": 8,
-      "y": 22
+      "x": 30,
+      "y": 20
     }
   ],
+  "attacker_side": null,
+  "defender_side": null,
+  "deployment": {
+    "attacker": null,
+    "defender": null
+  },
   "log_tail": [
     "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
     "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
@@ -108,5 +103,5 @@
     "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])"
   ],
   "model_events": [],
-  "generated_at": "2026-02-09T15:20:50.541219Z"
+  "generated_at": "2026-02-12T14:59:40.645262Z"
 }

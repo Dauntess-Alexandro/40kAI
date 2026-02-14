@@ -140,9 +140,11 @@ class GameController:
                 )
             )
 
-            from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
+            from gym_mod.engine.mission import normalize_mission_name, deploy_for_mission, post_deploy_setup
 
-            deploy_only_war(
+            mission_name = normalize_mission_name(getattr(env.unwrapped, "mission_name", None))
+            deploy_for_mission(
+                mission_name,
                 model_units=model,
                 enemy_units=enemy,
                 b_len=env.unwrapped.b_len,

@@ -37,10 +37,10 @@ ApplicationWindow {
             id: mainTabs
             Layout.fillWidth: true
 
-            TabButton { text: "Train" }
-            TabButton { text: "Model Metrics" }
-            TabButton { text: "Play" }
-            TabButton { text: "Settings" }
+            TabButton { text: "Главная" }
+            TabButton { text: "Метрики модели" }
+            TabButton { text: "Игра" }
+            TabButton { text: "Настройки" }
             TabButton { text: "Оценка" }
         }
 
@@ -62,12 +62,6 @@ ApplicationWindow {
                         anchors.fill: parent
                         spacing: root.spacingMd
 
-                    Text {
-                        text: "Train Model:"
-                        font.pixelSize: Math.round(20 * root.uiScale)
-                        font.bold: true
-                    }
-
                     GridLayout {
                         columns: 2
                         columnSpacing: root.spacingLg
@@ -79,6 +73,57 @@ ApplicationWindow {
                             Layout.fillWidth: true
 
                             GroupBox {
+                                title: "Миссия"
+                                Layout.fillWidth: true
+
+                                ColumnLayout {
+                                    spacing: root.spacingSm
+                                    anchors.fill: parent
+
+                                    RowLayout {
+                                        spacing: root.spacingSm
+                                        Label { text: "Выбор миссии" }
+                                        ComboBox {
+                                            id: missionCombo
+                                            Layout.preferredWidth: root.inputWidthMd
+                                            model: controller.missionOptions
+                                            currentIndex: Math.max(0, controller.missionOptions.indexOf(controller.selectedMission))
+                                            onActivated: controller.set_selected_mission_index(currentIndex)
+                                        }
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: root.spacingXs
+
+                                        Label {
+                                            text: "Only War"
+                                            font.bold: true
+                                        }
+
+                                        GridLayout {
+                                            columns: 2
+                                            columnSpacing: root.spacingMd
+                                            rowSpacing: root.spacingXs
+                                            Layout.fillWidth: true
+
+                                            Label { text: "Размер стола:"; font.bold: true }
+                                            Label { text: "60×40" }
+
+                                            Label { text: "Контрольная точка:"; font.bold: true }
+                                            Label { text: "1, центр (30,20)" }
+
+                                            Label { text: "Деплой:"; font.bold: true }
+                                            Label { text: "Attacker слева / Defender справа"; wrapMode: Text.Wrap }
+
+                                            Label { text: "Примечание:"; font.bold: true }
+                                            Label { text: "roll-off определяет роли"; wrapMode: Text.Wrap }
+                                        }
+                                    }
+                                }
+                            }
+
+                            GroupBox {
                                 title: "Настройки"
                                 Layout.fillWidth: true
 
@@ -88,7 +133,7 @@ ApplicationWindow {
 
                                     RowLayout {
                                         spacing: root.spacingSm
-                                        Label { text: "# of Games in Training:" }
+                                        Label { text: "Кол-во эпизодов для Тренировки:" }
                                         TextField {
                                             id: numGamesField
                                             text: controller.numGames.toString()
@@ -105,62 +150,14 @@ ApplicationWindow {
 
                                     RowLayout {
                                         spacing: root.spacingSm
-                                        Label { text: "Model Faction:" }
+                                        Label { text: "Фракция Модели:" }
                                         RadioButton { text: "Necrons"; checked: true }
                                     }
 
                                     RowLayout {
                                         spacing: root.spacingSm
-                                        Label { text: "Player Faction:" }
+                                        Label { text: "Фракция Игрока:" }
                                         RadioButton { text: "Necrons"; checked: true }
-                                    }
-                                }
-                            }
-
-                            GroupBox {
-                                title: "Размеры поля"
-                                Layout.fillWidth: true
-
-                                ColumnLayout {
-                                    spacing: root.spacingSm
-                                    anchors.fill: parent
-
-                                    RowLayout {
-                                        spacing: root.spacingXs
-                                        Label { text: "X:" }
-                                        TextField {
-                                            id: boardXField
-                                            text: controller.boardX.toString()
-                                            validator: IntValidator { bottom: 1 }
-                                            Layout.preferredWidth: root.inputWidthSm
-                                            onEditingFinished: {
-                                                var value = parseInt(text)
-                                                if (!isNaN(value)) {
-                                                    controller.set_board_x(value)
-                                                }
-                                            }
-                                        }
-                                        Button { text: "+"; onClicked: controller.increment_board_x() }
-                                        Button { text: "-"; onClicked: controller.decrement_board_x() }
-                                    }
-
-                                    RowLayout {
-                                        spacing: root.spacingXs
-                                        Label { text: "Y:" }
-                                        TextField {
-                                            id: boardYField
-                                            text: controller.boardY.toString()
-                                            validator: IntValidator { bottom: 1 }
-                                            Layout.preferredWidth: root.inputWidthSm
-                                            onEditingFinished: {
-                                                var value = parseInt(text)
-                                                if (!isNaN(value)) {
-                                                    controller.set_board_y(value)
-                                                }
-                                            }
-                                        }
-                                        Button { text: "+"; onClicked: controller.increment_board_y() }
-                                        Button { text: "-"; onClicked: controller.decrement_board_y() }
                                     }
                                 }
                             }
@@ -245,6 +242,14 @@ ApplicationWindow {
                                         enabled: !controller.running
                                         Layout.columnSpan: 2
                                         onToggled: controller.set_self_play_from_checkpoint(checked)
+                                    }
+
+                                    CheckBox {
+                                        text: "Продолжить обучение (RESUME_CHECKPOINT)"
+                                        checked: controller.resumeFromCheckpoint
+                                        enabled: !controller.running
+                                        Layout.columnSpan: 2
+                                        onToggled: controller.set_resume_from_checkpoint(checked)
                                     }
 
                                     Button {
@@ -664,9 +669,129 @@ ApplicationWindow {
             Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Label {
-                    anchors.centerIn: parent
-                    text: "Скоро"
+                Item {
+                    anchors.fill: parent
+                    anchors.margins: root.spacingLg
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: root.spacingLg
+
+                        Text {
+                            text: "Оценка модели"
+                            font.pixelSize: Math.round(20 * root.uiScale)
+                            font.bold: true
+                        }
+
+                        GroupBox {
+                            title: "Параметры оценки"
+                            Layout.fillWidth: true
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: root.spacingSm
+
+                                RowLayout {
+                                    spacing: root.spacingSm
+                                    Label { text: "Количество игр:" }
+                                    TextField {
+                                        id: evalGamesField
+                                        text: controller.evalGames.toString()
+                                        validator: IntValidator { bottom: 1 }
+                                        Layout.preferredWidth: root.inputWidthMd
+                                        onEditingFinished: {
+                                            var value = parseInt(text)
+                                            if (!isNaN(value)) {
+                                                controller.set_eval_games(value)
+                                                text = controller.evalGames.toString()
+                                            }
+                                        }
+                                    }
+                                }
+
+                                RowLayout {
+                                    spacing: root.spacingSm
+                                    Label { text: "Модель:" }
+                                    Button {
+                                        text: "Выбрать"
+                                        enabled: !controller.running
+                                        onClicked: evalModelDialog.open()
+                                    }
+                                    Button {
+                                        text: "Последняя"
+                                        enabled: !controller.running
+                                        onClicked: controller.select_latest_eval_model()
+                                    }
+                                }
+
+                                Label {
+                                    text: controller.evalModelLabel
+                                    wrapMode: Text.WordWrap
+                                }
+
+                                Label {
+                                    text: "Запуск: модель против эвристики, без исследования (epsilon=0)."
+                                    wrapMode: Text.WordWrap
+                                    color: "#555555"
+                                }
+                            }
+                        }
+
+                        GroupBox {
+                            title: "Действия"
+                            Layout.fillWidth: true
+
+                            RowLayout {
+                                anchors.fill: parent
+                                spacing: root.spacingMd
+
+                                Button {
+                                    text: "Запустить оценку"
+                                    enabled: !controller.running
+                                    onClicked: controller.start_eval()
+                                }
+
+                                Button {
+                                    text: "Остановить"
+                                    enabled: controller.running
+                                    onClicked: controller.stop_process()
+                                }
+                            }
+                        }
+
+                        GroupBox {
+                            title: "Подробный результат"
+                            Layout.fillWidth: true
+
+                            TextArea {
+                                text: controller.evalSummaryText
+                                readOnly: true
+                                wrapMode: TextArea.Wrap
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: Math.round(190 * root.uiScale)
+                            }
+                        }
+
+                        GroupBox {
+                            title: "Лог оценки"
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+
+                            ScrollView {
+                                anchors.fill: parent
+
+                                TextArea {
+                                    id: evalLogArea
+                                    readOnly: true
+                                    wrapMode: TextArea.Wrap
+                                    text: controller.evalLogText
+                                    onTextChanged: {
+                                        cursorPosition = length
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -692,6 +817,14 @@ ApplicationWindow {
         folder: controller.modelsFolderUrl
         nameFilters: ["Pickle Files (*.pickle)", "All Files (*)"]
         onAccepted: controller.select_play_model(playModelDialog.fileUrl)
+    }
+
+    Platform.FileDialog {
+        id: evalModelDialog
+        title: "Выбрать модель для оценки"
+        folder: controller.modelsFolderUrl
+        nameFilters: ["Pickle Files (*.pickle)", "All Files (*)"]
+        onAccepted: controller.select_eval_model(evalModelDialog.fileUrl)
     }
 
     Dialog {
@@ -894,12 +1027,6 @@ ApplicationWindow {
         }
         function onNumGamesChanged(value) {
             numGamesField.text = value.toString()
-        }
-        function onBoardXChanged(value) {
-            boardXField.text = value.toString()
-        }
-        function onBoardYChanged(value) {
-            boardYField.text = value.toString()
         }
     }
 

@@ -90,8 +90,14 @@ def write_state_json(env, path=None):
         active_side = "model"
 
     payload = {
-        "board": {"width": _safe_int(getattr(env, "b_hei", None), None),
-                  "height": _safe_int(getattr(env, "b_len", None), None)},
+        "board": {
+            "width": _safe_int(getattr(env, "b_hei", None), None),
+            "height": _safe_int(getattr(env, "b_len", None), None),
+            "board_w": _safe_int(getattr(env, "b_hei", None), None),
+            "board_h": _safe_int(getattr(env, "b_len", None), None),
+            "cols": _safe_int(getattr(env, "b_hei", None), None),
+            "rows": _safe_int(getattr(env, "b_len", None), None),
+        },
         "turn": _safe_int(getattr(env, "numTurns", None), None),
         "round": _safe_int(getattr(env, "battle_round", None), None),
         "phase": getattr(env, "phase", None),
@@ -102,6 +108,12 @@ def write_state_json(env, path=None):
                "model": _safe_int(getattr(env, "modelCP", None), None)},
         "units": units,
         "objectives": objectives,
+        "attacker_side": getattr(env, "attacker_side", None),
+        "defender_side": getattr(env, "defender_side", None),
+        "deployment": {
+            "attacker": getattr(env, "attacker_side", None),
+            "defender": getattr(env, "defender_side", None),
+        },
         "log_tail": _read_log_tail(),
         "model_events": _read_event_tail(),
         "generated_at": datetime.utcnow().isoformat() + "Z",

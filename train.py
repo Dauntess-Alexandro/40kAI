@@ -16,7 +16,12 @@ import multiprocessing as mp
 from tqdm import tqdm
 from gym_mod.envs.warhamEnv import *
 from gym_mod.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
-from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
+from gym_mod.engine.mission import (
+    normalize_mission_name,
+    board_dims_for_mission,
+    deploy_for_mission,
+    post_deploy_setup,
+)
 from gymnasium import spaces
 
 from model.DQN import *
@@ -89,6 +94,7 @@ PIN_MEMORY = os.getenv("PIN_MEMORY", "0") == "1"
 USE_AMP = os.getenv("USE_AMP", "1") == "1"
 USE_COMPILE = os.getenv("USE_COMPILE", "0") == "1"
 SAVE_EVERY = int(os.getenv("SAVE_EVERY", "0"))
+RESUME_CHECKPOINT = os.getenv("RESUME_CHECKPOINT", "").strip()
 # Параллелизм через subprocess (только без self-play, маски считаются в воркерах).
 USE_SUBPROC_ENVS = os.getenv("USE_SUBPROC_ENVS", "0") == "1"
 # Рекомендации (включать вручную при наличии GPU/CPU): NUM_ENVS=8..16, BATCH_ACT=1,
@@ -200,6 +206,171 @@ def moving_avg(values, window=50):
         out.append(sum(chunk) / len(chunk))
     return out
 
+
+def parse_clip_reward_config(raw_value: str):
+    """
+    CLIP_REWARD варианты:
+      - off/none/0/false -> отключено
+      - "1" -> симметричный клип [-1, +1]
+      - "-1,1" -> явный диапазон [min, max]
+    """
+    text = str(raw_value).strip().lower()
+    if text in ("", "off", "none", "false", "0"):
+        return False, None, None
+
+    if "," in text:
+        parts = [p.strip() for p in text.split(",") if p.strip()]
+        if len(parts) != 2:
+            warn_msg = (
+                "[TRAIN][WARN] Неверный формат CLIP_REWARD. "
+                "Где: train.py (parse_clip_reward_config). "
+                "Что делать: используйте off, число (например 1) или диапазон min,max (например -1,1). "
+                f"Получено: {raw_value}. Клиппинг отключен."
+            )
+            print(warn_msg)
+            append_agent_log(warn_msg)
+            return False, None, None
+        try:
+            lo, hi = float(parts[0]), float(parts[1])
+        except ValueError:
+            warn_msg = (
+                "[TRAIN][WARN] CLIP_REWARD содержит нечисловые границы. "
+                "Где: train.py (parse_clip_reward_config). "
+                "Что делать: задайте диапазон числами, например -1,1. "
+                f"Получено: {raw_value}. Клиппинг отключен."
+            )
+            print(warn_msg)
+            append_agent_log(warn_msg)
+            return False, None, None
+    else:
+        try:
+            bound = abs(float(text))
+        except ValueError:
+            warn_msg = (
+                "[TRAIN][WARN] CLIP_REWARD не является числом. "
+                "Где: train.py (parse_clip_reward_config). "
+                "Что делать: используйте off, число (например 1) или диапазон min,max (например -1,1). "
+                f"Получено: {raw_value}. Клиппинг отключен."
+            )
+            print(warn_msg)
+            append_agent_log(warn_msg)
+            return False, None, None
+        lo, hi = -bound, bound
+
+    if lo > hi:
+        lo, hi = hi, lo
+    return True, float(lo), float(hi)
+
+
+def maybe_clip_reward(value: float, enabled: bool, lo=None, hi=None):
+    if not enabled or lo is None or hi is None:
+        return float(value), False
+    clipped = float(np.clip(float(value), lo, hi))
+    return clipped, clipped != float(value)
+
+
+def _load_checkpoint_payload(checkpoint_path: str):
+    try:
+        return torch.load(checkpoint_path, map_location=device, weights_only=False)
+    except TypeError:
+        return torch.load(checkpoint_path, map_location=device)
+
+
+def _extract_policy_state_dict(checkpoint):
+    if not isinstance(checkpoint, dict):
+        return checkpoint
+    for key in ("policy_net", "model_state_dict", "state_dict"):
+        value = checkpoint.get(key)
+        if isinstance(value, dict):
+            return value
+    if checkpoint and all(hasattr(value, "shape") for value in checkpoint.values()):
+        return checkpoint
+    return None
+
+
+def _resume_from_checkpoint(policy_net, target_net, optimizer, checkpoint_path: str) -> None:
+    if not os.path.isfile(checkpoint_path):
+        err_msg = (
+            "[RESUME][ERROR] Не найден чекпойнт. "
+            "Где: train.py (_resume_from_checkpoint). "
+            "Что делать: проверьте RESUME_CHECKPOINT и укажите существующий файл .pth. "
+            f"Путь: {checkpoint_path}"
+        )
+        print(err_msg)
+        append_agent_log(err_msg)
+        raise FileNotFoundError(err_msg)
+
+    try:
+        checkpoint = _load_checkpoint_payload(checkpoint_path)
+    except Exception as exc:
+        err_msg = (
+            "[RESUME][ERROR] Не удалось загрузить чекпойнт. "
+            "Где: train.py (_load_checkpoint_payload/torch.load). "
+            "Что делать: проверьте целостность файла или пересохраните чекпойнт текущей версией PyTorch. "
+            f"Путь: {checkpoint_path}. Детали: {exc}"
+        )
+        print(err_msg)
+        append_agent_log(err_msg)
+        raise
+
+    policy_state = _extract_policy_state_dict(checkpoint)
+    if not isinstance(policy_state, dict):
+        err_msg = (
+            "[RESUME][ERROR] В чекпойнте нет policy_net state_dict. "
+            "Где: train.py (_extract_policy_state_dict). "
+            "Что делать: укажите корректный checkpoint_ep*.pth с policy_net. "
+            f"Путь: {checkpoint_path}"
+        )
+        print(err_msg)
+        append_agent_log(err_msg)
+        raise ValueError(err_msg)
+
+    policy_net.load_state_dict(normalize_state_dict(policy_state))
+    policy_loaded = 1
+
+    target_loaded = 0
+    target_state = checkpoint.get("target_net") if isinstance(checkpoint, dict) else None
+    if isinstance(target_state, dict):
+        target_net.load_state_dict(normalize_state_dict(target_state))
+        target_loaded = 1
+    else:
+        target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
+
+    optimizer_loaded = 0
+    optimizer_state = checkpoint.get("optimizer") if isinstance(checkpoint, dict) else None
+    if isinstance(optimizer_state, dict):
+        try:
+            optimizer.load_state_dict(optimizer_state)
+            optimizer_loaded = 1
+        except Exception as exc:
+            warn_msg = (
+                "[RESUME][WARN] Не удалось загрузить optimizer state. "
+                "Где: train.py (_resume_from_checkpoint/optimizer.load_state_dict). "
+                "Что делать: обучение продолжится с новым optimizer, при необходимости "
+                "сохраните свежий checkpoint и проверьте совместимость версий. "
+                f"Детали: {exc}"
+            )
+            print(warn_msg)
+            append_agent_log(warn_msg)
+    else:
+        warn_msg = (
+            "[RESUME][WARN] В чекпойнте нет optimizer state. "
+            "Где: train.py (_resume_from_checkpoint). "
+            "Что делать: обучение продолжится с новым optimizer; "
+            "для полного resume сохраняйте checkpoint с optimizer."
+        )
+        print(warn_msg)
+        append_agent_log(warn_msg)
+
+    ok_line = f"[RESUME] loaded checkpoint={checkpoint_path}"
+    details_line = (
+        f"[RESUME] loaded: policy={policy_loaded} target={target_loaded} optimizer={optimizer_loaded}"
+    )
+    print(ok_line)
+    print(details_line)
+    append_agent_log(ok_line)
+    append_agent_log(details_line)
+
 def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
     os.makedirs(metrics_dir, exist_ok=True)
     os.makedirs("gui/img", exist_ok=True)
@@ -310,11 +481,13 @@ def append_agent_log(line: str) -> None:
 def _env_worker(conn, roster_config, b_len, b_hei, trunc):
     try:
         enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+        mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
         attacker_side, defender_side = roll_off_attacker_defender(
             manual_roll_allowed=False,
             log_fn=None,
         )
-        deploy_only_war(
+        deploy_for_mission(
+            mission_name,
             model_units=model,
             enemy_units=enemy,
             b_len=b_len,
@@ -347,11 +520,13 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                 next_observation, reward, done, res, info = env.step(payload)
                 conn.send((next_observation, reward, done, res, info))
             elif cmd == "reset":
+                mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
                 attacker_side, defender_side = roll_off_attacker_defender(
                     manual_roll_allowed=False,
                     log_fn=None,
                 )
-                deploy_only_war(
+                deploy_for_mission(
+                    mission_name,
                     model_units=model,
                     enemy_units=enemy,
                     b_len=b_len,
@@ -403,8 +578,9 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
 def _load_roster_config():
     config = {
         "totLifeT": 10,
-        "b_len": 60,
-        "b_hei": 40,
+        "b_len": 40,
+        "b_hei": 60,
+        "mission": DEFAULT_MISSION_NAME,
         "enemy_faction": "Necrons",
         "model_faction": "Necrons",
         "enemy_units": [
@@ -443,6 +619,7 @@ def _load_roster_config():
         config["b_hei"] = initFile.getBoardY()
         config["enemy_faction"] = initFile.getEnemyFaction()
         config["model_faction"] = initFile.getModelFaction()
+        config["mission"] = normalize_mission_name(getattr(initFile, "getMission", lambda: DEFAULT_MISSION_NAME)())
         enemy_counts = initFile.getEnemyUnitCounts()
         model_counts = initFile.getModelUnitCounts()
         enemy_instance_ids = initFile.getEnemyUnitInstanceIds()
@@ -476,6 +653,9 @@ def _load_roster_config():
 
         config["enemy_units"] = enemy_units
         config["model_units"] = model_units
+
+    config["mission"] = normalize_mission_name(config.get("mission", os.getenv("MISSION_NAME", DEFAULT_MISSION_NAME)))
+    config["b_len"], config["b_hei"] = board_dims_for_mission(config["mission"])
 
     return config
 
@@ -591,6 +771,7 @@ def main():
     global USE_SUBPROC_ENVS
     print("\nTraining...\n")
     train_start_time = time.perf_counter()
+    clip_reward_enabled, clip_reward_min, clip_reward_max = parse_clip_reward_config(CLIP_REWARD)
     
     end = False
     trunc = True
@@ -613,6 +794,10 @@ def main():
         USE_SUBPROC_ENVS = False
     
     if TRAIN_LOG_ENABLED:
+        if clip_reward_enabled:
+            clip_reward_mode = f"on[{clip_reward_min:.3f},{clip_reward_max:.3f}]"
+        else:
+            clip_reward_mode = "off"
         train_start_line = (
             "[TRAIN][START] "
             f"DoubleDQN={int(DOUBLE_DQN_ENABLED)} "
@@ -620,7 +805,7 @@ def main():
             f"PER={int(PER_ENABLED)} "
             f"N_STEP={N_STEP} "
             f"LR={LR} "
-            f"clip_reward={CLIP_REWARD} "
+            f"clip_reward={clip_reward_mode} "
             f"grad_clip={GRAD_CLIP_VALUE} "
             f"NUM_ENVS={vec_env_count} "
             f"BATCH_ACT={int(BATCH_ACT)} "
@@ -686,6 +871,7 @@ def main():
         for env_idx in range(vec_env_count):
             enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
             env_log_fn = log_fn if env_idx == 0 else None
+            mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
             attacker_side, defender_side = roll_off_attacker_defender(
                 manual_roll_allowed=False,
                 log_fn=print if env_idx == 0 else None,
@@ -705,7 +891,8 @@ def main():
                 print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
                 print("Units:", [(u.name, u.instance_id, u.models_count) for u in model])
     
-            deploy_only_war(
+            deploy_for_mission(
+                mission_name,
                 model_units=model,
                 enemy_units=enemy,
                 b_len=b_len,
@@ -799,7 +986,13 @@ def main():
     
     policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
     target_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
-    target_net.load_state_dict(policy_net.state_dict())
+    optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
+
+    if RESUME_CHECKPOINT:
+        _resume_from_checkpoint(policy_net, target_net, optimizer, RESUME_CHECKPOINT)
+    else:
+        target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
+
     target_net.eval()
     
     if USE_COMPILE and hasattr(torch, "compile"):
@@ -872,9 +1065,8 @@ def main():
                 f"[SELFPLAY] fixed_checkpoint path={SELF_PLAY_FIXED_PATH}"
             )
         else:
-            opponent_policy_net.load_state_dict(policy_net.state_dict())
+            opponent_policy_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
     
-    optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
     scaler = torch.cuda.amp.GradScaler(enabled=USE_AMP)
     replay_capacity = int(os.getenv("REPLAY_CAPACITY", "100000"))
     if PER_ENABLED:
@@ -960,6 +1152,7 @@ def main():
     perf_counts = {
         "env_steps": 0,
         "updates": 0,
+        "reward_clipped": 0,
     }
     primary_env_unwrapped = unwrap_env(primary_ctx["env"]) if not USE_SUBPROC_ENVS else None
     if primary_env_unwrapped is not None:
@@ -1054,7 +1247,16 @@ def main():
                 next_observation, reward, done, res, info = ctx["env"].step(action_dict)
             perf_stats["env_step_s"] += time.perf_counter() - step_start
             perf_counts["env_steps"] += 1
-            ctx["rew_arr"].append(float(reward))
+            raw_reward = float(reward)
+            ctx["rew_arr"].append(raw_reward)
+            reward_for_buffer, reward_was_clipped = maybe_clip_reward(
+                raw_reward,
+                clip_reward_enabled,
+                clip_reward_min,
+                clip_reward_max,
+            )
+            if reward_was_clipped:
+                perf_counts["reward_clipped"] += 1
     
             unit_health = info["model health"]
             enemy_health = info["player health"]
@@ -1094,7 +1296,7 @@ def main():
                 else:
                     next_shoot_mask = build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG)
     
-            ctx["n_step_buffer"].append((state_t, actions[idx], float(reward), next_state_t, done, next_shoot_mask))
+            ctx["n_step_buffer"].append((state_t, actions[idx], reward_for_buffer, next_state_t, done, next_shoot_mask))
             if len(ctx["n_step_buffer"]) >= N_STEP:
                 reward_sum, n_step_next_state, n_step_next_mask, n_step_count = build_n_step_transition(
                     ctx["n_step_buffer"], GAMMA
@@ -1285,7 +1487,7 @@ def main():
     
                 if SELF_PLAY_ENABLED and SELF_PLAY_OPPONENT_MODE == "snapshot":
                     if numLifeT % SELF_PLAY_UPDATE_EVERY_EPISODES == 0:
-                        opponent_policy_net.load_state_dict(policy_net.state_dict())
+                        opponent_policy_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
                         append_agent_log(
                             f"[SELFPLAY] opponent snapshot updated at episode {numLifeT}"
                         )
@@ -1294,6 +1496,7 @@ def main():
                     ctx["conn"].send(("reset", None))
                     ctx["state"], ctx["info"] = ctx["conn"].recv()
                 else:
+                    mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
                     attacker_side, defender_side = roll_off_attacker_defender(
                         manual_roll_allowed=False,
                         log_fn=print if idx == 0 else None,
@@ -1301,7 +1504,8 @@ def main():
                     if verbose and idx == 0:
                         print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
     
-                    deploy_only_war(
+                    deploy_for_mission(
+                        mission_name,
                         model_units=ctx["model"],
                         enemy_units=ctx["enemy"],
                         b_len=b_len,
@@ -1448,12 +1652,14 @@ def main():
                 f"train_bwd_ms={1000.0 * perf_stats['train_backward_s'] / updates:.3f} "
                 f"log_ms={1000.0 * perf_stats['logging_s'] / steps:.3f}"
             )
+            if clip_reward_enabled:
+                perf_line += f" reward_clip_events={perf_counts['reward_clipped']}"
             if TRAIN_LOG_TO_FILE:
                 append_agent_log(perf_line)
             if TRAIN_LOG_TO_CONSOLE:
                 print(perf_line)
             perf_stats = {k: 0.0 for k in perf_stats}
-            perf_counts = {"env_steps": 0, "updates": 0}
+            perf_counts = {"env_steps": 0, "updates": 0, "reward_clipped": 0}
     
         global_step += vec_env_count
     

@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import math
+import os
 from pathlib import Path
 import random
 from time import monotonic, perf_counter
@@ -23,6 +24,16 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from viewer.styles import Theme
 from viewer.tooltip import UnitTooltipWidget
 
+GL_BLEND = 0x0BE2
+GL_SRC_ALPHA = 0x0302
+GL_ONE_MINUS_SRC_ALPHA = 0x0303
+ENV_BOARD_WIDTH = 60
+ENV_BOARD_HEIGHT = 40
+
+
+def resolve_asset_path(rel_path: str) -> Path:
+    return Path(__file__).resolve().parent / "assets" / rel_path
+
 
 @dataclass
 class UnitRender:
@@ -31,6 +42,7 @@ class UnitRender:
     radius: float
     color: QtGui.QColor
     label: str
+    icon: Optional[QtGui.QPixmap] = None
 
 
 @dataclass
@@ -106,15 +118,66 @@ class GaussTracerEffect:
     edge_specks: List[EdgeSpeckBlueprint]
 
 
+@dataclass
+class DecalInstance:
+    texture_key: str
+    center: QtCore.QPointF
+    rotation_deg: float
+    scale: float
+
+
+@dataclass
+class PropInstance:
+    kind: str
+    center: QtCore.QPointF
+    rotation_deg: float
+    scale: float
+
+
+@dataclass
+class ParticleInstance:
+    texture_key: str
+    position: QtCore.QPointF
+    velocity: QtCore.QPointF
+    life: float
+    age: float
+    size_px: float
+    alpha: float
+    mode: str
+
+
+class TextureManager:
+    def __init__(self, base_dir: Path) -> None:
+        self._base_dir = base_dir
+        self._pixmaps: Dict[str, QtGui.QPixmap] = {}
+
+    def load_png(self, rel_path: str) -> Optional[QtGui.QPixmap]:
+        if rel_path in self._pixmaps:
+            return self._pixmaps[rel_path]
+        path = self._base_dir / rel_path
+        if not path.exists():
+            return None
+        image = QtGui.QImage(str(path))
+        if image.isNull():
+            return None
+        pixmap = QtGui.QPixmap.fromImage(image)
+        self._pixmaps[rel_path] = pixmap
+        return pixmap
+
 class OpenGLBoardWidget(QOpenGLWidget):
     unit_selected = QtCore.Signal(str, int)
 
-    def __init__(self, cell_size: int = 18, parent: Optional[QtWidgets.QWidget] = None):
+    def __init__(self, cell_size: int = 24, unit_icon_scale: float = 2.75, parent: Optional[QtWidgets.QWidget] = None):
         super().__init__(parent)
         self.cell_size = cell_size
         self._state: Dict = {}
         self._board_width = 0
         self._board_height = 0
+        self._state_board_width: Optional[int] = None
+        self._state_board_height: Optional[int] = None
+        self._swap_axes = False
+        self._rotate90 = False
+        self._board_debug_logged = False
         self._board_rect = QtCore.QRectF()
         self._grid_picture: Optional[QtGui.QPicture] = None
         self._grid_size: Tuple[int, int] = (0, 0)
@@ -157,6 +220,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._scale = 1.0
         self._min_scale = 0.2
         self._max_scale = 6.0
+        self._fit_padding = 0.96
+        self._unit_icon_scale = max(0.5, float(unit_icon_scale))
         self._pan = QtCore.QPointF(0, 0)
         self._target_scale = self._scale
         self._target_pan = QtCore.QPointF(0, 0)
@@ -203,15 +268,67 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._fx_tinted_cache: Dict[Tuple[str, int], QtGui.QPixmap] = {}
         self._fx_initialized = False
 
+        assets_root = resolve_asset_path("")
+        self._texture_manager = TextureManager(assets_root)
+        self._unit_icon_by_name = self._build_unit_icon_map()
+        self._ground_textures: List[QtGui.QPixmap] = []
+        self._prop_textures: Dict[str, QtGui.QPixmap] = {}
+        self._shadow_textures: Dict[str, QtGui.QPixmap] = {}
+        self._decal_textures: Dict[str, QtGui.QPixmap] = {}
+        self._fx_particle_textures: Dict[str, QtGui.QPixmap] = {}
+        self._decals: List[DecalInstance] = []
+        self._props: List[PropInstance] = []
+        self._particles: List[ParticleInstance] = []
+        self._particles_last_ts: Optional[float] = None
+        self._props_initialized = False
+        self._props_seed = 613
+        self._props_board_size: Tuple[int, int] = (0, 0)
+        self.render_terrain = False
+        self.render_decals = False
+        self.render_prop_shadows = False
+        self.render_fx = True
+        self._cursor_world_raw: Optional[QtCore.QPointF] = None
+
         self.setMouseTracking(True)
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
 
     def initializeGL(self) -> None:
         super().initializeGL()
         self._t0 = perf_counter()
+        self._setup_gl_blend()
+        self._load_environment_assets()
         self._load_fx_assets()
         if not self._fx_timer.isActive():
             self._fx_timer.start()
+
+    def _setup_gl_blend(self) -> None:
+        context = self.context()
+        if context is None:
+            return
+        functions = context.functions()
+        if functions is None:
+            return
+        functions.glEnable(GL_BLEND)
+        functions.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+
+    def _load_environment_assets(self) -> None:
+        self._ground_textures = []
+        for name in ("ground/ground_01.png", "ground/ground_02.png"):
+            pixmap = self._texture_manager.load_png(name)
+            if pixmap is not None:
+                self._ground_textures.append(pixmap)
+
+        self._prop_textures.clear()
+        self._shadow_textures.clear()
+        self._decal_textures.clear()
+
+        self._fx_particle_textures.clear()
+        fx_dir = self._texture_manager._base_dir / "fx"
+        if fx_dir.exists():
+            for path in fx_dir.glob("*.png"):
+                pixmap = self._texture_manager.load_png(f"fx/{path.name}")
+                if pixmap is not None:
+                    self._fx_particle_textures[path.stem] = pixmap
 
     def set_error_message(self, message: Optional[str]) -> None:
         self._error_message = message
@@ -228,40 +345,46 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.set_error_message(None)
         self._clear_hover_tooltip(force=True)
         board = self._state.get("board", {})
-        width = int(board.get("width") or 60)
-        height = int(board.get("height") or 40)
+        raw_units = list(self._state.get("units", []) or [])
+        width, height = self._resolve_board_dims(board, raw_units)
         self._board_width = width
         self._board_height = height
         self._board_rect = QtCore.QRectF(0, 0, width * self.cell_size, height * self.cell_size)
         self._ensure_grid_cache(width, height)
+        if self.render_terrain:
+            if (width, height) != self._props_board_size:
+                self._props_board_size = (width, height)
+                self._props_initialized = False
+            self._ensure_props()
 
-        self._units_state = list(self._state.get("units", []) or [])
+        self._units_state = raw_units
         self._prev_unit_positions = dict(self._curr_unit_positions)
         self._curr_unit_positions = {}
         for unit in self._units_state:
             key = (unit.get("side"), unit.get("id"))
-            x = unit.get("x")
-            y = unit.get("y")
-            if key[0] is None or key[1] is None or x is None or y is None:
+            view_cell = self._state_to_view_cell(unit.get("x"), unit.get("y"))
+            if key[0] is None or key[1] is None or view_cell is None:
                 continue
-            self._curr_unit_positions[key] = QtCore.QPointF(float(x), float(y))
+            view_x, view_y = view_cell
+            self._curr_unit_positions[key] = QtCore.QPointF(float(view_x), float(view_y))
 
         for key, point in self._curr_unit_positions.items():
             self._prev_unit_positions.setdefault(key, QtCore.QPointF(point))
+
 
         self._start_unit_animation()
 
         self._objectives = []
         self._objective_labels = []
-        for objective in self._state.get("objectives", []) or []:
-            x = objective.get("x")
-            y = objective.get("y")
-            if x is None or y is None:
+        for objective in (self._state.get("objectives", []) or [])[:1]:
+            view_cell = self._state_to_view_cell(objective.get("x"), objective.get("y"))
+            if view_cell is None:
                 continue
+            view_x, view_y = view_cell
             radius = self.cell_size * 0.2
             center = QtCore.QPointF(
-                x * self.cell_size + self.cell_size / 2,
-                y * self.cell_size + self.cell_size / 2,
+                view_x * self.cell_size + self.cell_size / 2,
+                view_y * self.cell_size + self.cell_size / 2,
             )
             owner = objective.get("owner")
             owner_color = Theme.objective
@@ -288,8 +411,97 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 )
             )
 
+
         self.refresh_overlays()
         self.update()
+
+    @staticmethod
+    def _safe_int(value: object) -> Optional[int]:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def state_pos_to_xy(self, pos: object) -> Optional[Tuple[int, int]]:
+        """Map env/grid position (row, col) to view (x, y)."""
+        if not isinstance(pos, (tuple, list)) or len(pos) < 2:
+            return None
+        row = self._safe_int(pos[0])
+        col = self._safe_int(pos[1])
+        if row is None or col is None:
+            return None
+        return col, row
+
+    def xy_to_state_pos(self, x: object, y: object) -> Optional[Tuple[int, int]]:
+        """Map view (x, y) to env/grid position (row, col)."""
+        col = self._safe_int(x)
+        row = self._safe_int(y)
+        if col is None or row is None:
+            return None
+        return row, col
+
+    def _state_xy_to_view_xy(self, x: object, y: object) -> Optional[Tuple[int, int]]:
+        """state.json stores coordinates as x=col, y=row (already in view axes)."""
+        state_x = self._safe_int(x)
+        state_y = self._safe_int(y)
+        if state_x is None or state_y is None:
+            return None
+        return state_x, state_y
+
+    def _state_to_view_cell(self, x: object, y: object) -> Optional[Tuple[int, int]]:
+        return self._state_xy_to_view_xy(x, y)
+
+    def _resolve_board_dims(self, board: dict, units: List[dict]) -> Tuple[int, int]:
+        """Viewer contract: env coordinates are x in [0..W-1], y in [0..H-1]."""
+        board = board or {}
+        width = self._safe_int(board.get("width"))
+        height = self._safe_int(board.get("height"))
+
+        if width is None:
+            width = self._safe_int(board.get("board_w"))
+        if height is None:
+            height = self._safe_int(board.get("board_h"))
+
+        cols = self._safe_int(board.get("cols"))
+        rows = self._safe_int(board.get("rows"))
+        if width is None and cols is not None:
+            width = cols
+        if height is None and rows is not None:
+            height = rows
+
+        width = width or ENV_BOARD_WIDTH
+        height = height or ENV_BOARD_HEIGHT
+        self._state_board_width = width
+        self._state_board_height = height
+        self._swap_axes = False
+        self._rotate90 = False
+
+        if (width, height) == (ENV_BOARD_HEIGHT, ENV_BOARD_WIDTH):
+            self._swap_axes = True
+
+        x_values = [self._safe_int(unit.get("x")) for unit in units if isinstance(unit, dict)]
+        y_values = [self._safe_int(unit.get("y")) for unit in units if isinstance(unit, dict)]
+        max_x = max((x for x in x_values if x is not None), default=-1)
+        max_y = max((y for y in y_values if y is not None), default=-1)
+        if max_x >= 0 and max_y >= 0:
+            clearly_out_of_bounds = max_x >= width or max_y >= height
+            fits_if_swapped = max_x < height and max_y < width
+            if clearly_out_of_bounds and fits_if_swapped:
+                self._swap_axes = True
+
+        if self._swap_axes:
+            width, height = height, width
+        return width, height
+
+    def board_debug_info(self) -> Dict[str, object]:
+        return {
+            "state_board_width": self._state_board_width,
+            "state_board_height": self._state_board_height,
+            "renderer_board_width": self._board_width,
+            "renderer_board_height": self._board_height,
+            "swap_axes": self._swap_axes,
+            "rotate90": self._rotate90,
+        }
 
     def set_active_context(
         self,
@@ -362,7 +574,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.update()
 
     def set_target_cell(self, cell: Optional[Tuple[int, int]]) -> None:
-        self._target_cell = cell
+        self._target_cell = self._state_xy_to_view_xy(cell[0], cell[1]) if cell is not None else None
         self._target_unit_id = None
         self.update()
 
@@ -372,7 +584,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.update()
 
     def set_hover_cell(self, cell: Optional[Tuple[int, int]]) -> None:
-        self._hover_cell = cell
+        self._hover_cell = self._state_xy_to_view_xy(cell[0], cell[1]) if cell is not None else None
         self.update()
 
     def set_active_phase(self, phase: Optional[str]) -> None:
@@ -398,14 +610,38 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def fit_to_view(self) -> None:
         if self._board_rect.isEmpty():
             return
-        view_size = self.size()
-        if view_size.width() <= 0 or view_size.height() <= 0:
+        viewport_w = float(self.width())
+        viewport_h = float(self.height())
+        if viewport_w <= 0 or viewport_h <= 0:
             return
-        scale_x = view_size.width() / self._board_rect.width()
-        scale_y = view_size.height() / self._board_rect.height()
-        self._scale = max(self._min_scale, min(self._max_scale, min(scale_x, scale_y) * 0.95))
-        self._center_board()
+
+        board_px_w = float(self._board_width * self.cell_size)
+        board_px_h = float(self._board_height * self.cell_size)
+        if board_px_w <= 0 or board_px_h <= 0:
+            return
+
+        fit_scale = self._fit_padding * min(viewport_w / board_px_w, viewport_h / board_px_h)
+        fit_scale = max(self._min_scale, min(self._max_scale, fit_scale))
+
+        center_x = board_px_w * 0.5
+        center_y = board_px_h * 0.5
+        pan = QtCore.QPointF(
+            viewport_w * 0.5 - center_x * fit_scale,
+            viewport_h * 0.5 - center_y * fit_scale,
+        )
+
+        self._scale = fit_scale
+        self._pan = pan
         self._set_target_view(self._scale, self._pan, immediate=True)
+
+        if os.getenv("GUI_DEBUG") == "1":
+            print(
+                "[VIEWER FIT] "
+                f"viewport={int(viewport_w)}x{int(viewport_h)}, "
+                f"board_px={int(board_px_w)}x{int(board_px_h)}, "
+                f"cell_px={self.cell_size}, zoom={self._scale:.4f}"
+            )
+
         self.update()
 
     def center_view(self) -> None:
@@ -438,6 +674,79 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.end()
         self._grid_picture = picture
         self._grid_size = (width, height)
+
+    def _ensure_props(self) -> None:
+        if not self.render_terrain:
+            return
+        if self._props_initialized and self._props:
+            return
+        if self._board_rect.isEmpty():
+            return
+        if not self._prop_textures:
+            return
+        rng = random.Random(self._props_seed)
+        prop_names = list(self._prop_textures.keys())
+        if not prop_names:
+            return
+        count = rng.randint(30, 60)
+        margin = self.cell_size * 1.5
+        width = max(0.0, self._board_rect.width() - margin * 2)
+        height = max(0.0, self._board_rect.height() - margin * 2)
+        self._props = []
+        for _ in range(count):
+            kind = rng.choice(prop_names)
+            x = margin + rng.random() * width
+            y = margin + rng.random() * height
+            rotation = rng.uniform(-12.0, 12.0)
+            scale = rng.uniform(0.85, 1.25)
+            self._props.append(
+                PropInstance(
+                    kind=kind,
+                    center=QtCore.QPointF(x, y),
+                    rotation_deg=rotation,
+                    scale=scale,
+                )
+            )
+        self._props_initialized = True
+
+    def _view_world_rect(self) -> QtCore.QRectF:
+        pan_x, pan_y = self._snap_pan_to_pixels(self._pan)
+        scale = self._scale if self._scale > 0 else 1.0
+        width = self.width()
+        height = self.height()
+        left_world = (-pan_x) / scale
+        right_world = (width - pan_x) / scale
+        top_world = (-pan_y) / scale
+        bottom_world = (height - pan_y) / scale
+        return QtCore.QRectF(
+            left_world,
+            top_world,
+            right_world - left_world,
+            bottom_world - top_world,
+        )
+
+    def _draw_sprite(
+        self,
+        painter: QtGui.QPainter,
+        pixmap: QtGui.QPixmap,
+        center: QtCore.QPointF,
+        *,
+        rotation_deg: float = 0.0,
+        scale: float = 1.0,
+        alpha: float = 1.0,
+    ) -> None:
+        if pixmap.isNull():
+            return
+        painter.save()
+        painter.setOpacity(max(0.0, min(1.0, alpha)))
+        painter.translate(center)
+        if rotation_deg:
+            painter.rotate(rotation_deg)
+        painter.scale(scale, scale)
+        half_w = pixmap.width() / 2
+        half_h = pixmap.height() / 2
+        painter.drawPixmap(QtCore.QPointF(-half_w, -half_h), pixmap)
+        painter.restore()
 
     def _draw_grid(self, painter: QtGui.QPainter) -> None:
         if self._board_rect.isEmpty() or self._scale <= 0:
@@ -492,6 +801,69 @@ class OpenGLBoardWidget(QOpenGLWidget):
             )
 
         painter.restore()
+
+    def _add_decal(self, kind: str, center: QtCore.QPointF) -> None:
+        if not self.render_decals:
+            return
+        texture_key = self._resolve_decal_key(kind)
+        if texture_key is None:
+            return
+        rotation = random.uniform(0.0, 360.0)
+        scale = random.uniform(0.7, 1.1)
+        self._decals.append(
+            DecalInstance(
+                texture_key=texture_key,
+                center=center,
+                rotation_deg=rotation,
+                scale=scale,
+            )
+        )
+        if len(self._decals) > 500:
+            self._decals = self._decals[-500:]
+
+    def _resolve_decal_key(self, kind: str) -> Optional[str]:
+        if not self._decal_textures:
+            return None
+        kind_lower = kind.lower()
+        for name in self._decal_textures:
+            if kind_lower in name.lower():
+                return name
+        return next(iter(self._decal_textures.keys()), None)
+
+    def _spawn_particles(self, center: QtCore.QPointF, kind: str, count: int) -> None:
+        if not self._fx_particle_textures:
+            return
+        texture_key = self._resolve_fx_key(kind)
+        if texture_key is None:
+            return
+        rng = random.Random()
+        for _ in range(count):
+            speed = rng.uniform(8.0, 28.0)
+            angle = rng.uniform(0.0, math.tau)
+            velocity = QtCore.QPointF(math.cos(angle) * speed, math.sin(angle) * speed)
+            life = rng.uniform(0.45, 1.2) if kind != "spark" else rng.uniform(0.2, 0.5)
+            size = rng.uniform(18.0, 36.0) if kind == "smoke" else rng.uniform(10.0, 20.0)
+            alpha = 0.75 if kind == "spark" else 0.6
+            mode = "additive" if kind == "spark" else "normal"
+            self._particles.append(
+                ParticleInstance(
+                    texture_key=texture_key,
+                    position=QtCore.QPointF(center),
+                    velocity=velocity,
+                    life=life,
+                    age=0.0,
+                    size_px=size,
+                    alpha=alpha,
+                    mode=mode,
+                )
+            )
+
+    def _resolve_fx_key(self, kind: str) -> Optional[str]:
+        kind_lower = kind.lower()
+        for name in self._fx_particle_textures:
+            if kind_lower in name.lower():
+                return name
+        return next(iter(self._fx_particle_textures.keys()), None)
 
     def _start_unit_animation(self) -> None:
         self._unit_anim_clock.restart()
@@ -550,12 +922,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
             center_y = interp_y * self.cell_size + self.cell_size / 2 - offset
             color = Theme.player if unit.get("side") == "player" else Theme.model
             radius = self.cell_size * 0.35
+            unit_name = str(unit.get("name") or "")
             render = UnitRender(
                 key=key,
                 center=QtCore.QPointF(center_x, center_y),
                 radius=radius,
                 color=color,
                 label=str(unit.get("id", "")),
+                icon=self._icon_for_unit_name(unit_name),
             )
             self._units.append(render)
             if key[0] is not None and key[1] is not None:
@@ -583,10 +957,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         move_range = self._move_range
         if move_range is None:
             return
-        x = unit.get("x")
-        y = unit.get("y")
-        if x is None or y is None:
+        view_cell = self._state_to_view_cell(unit.get("x"), unit.get("y"))
+        if view_cell is None:
             return
+        x, y = view_cell
         for dx in range(-move_range, move_range + 1):
             for dy in range(-move_range, move_range + 1):
                 if abs(dx) + abs(dy) > move_range:
@@ -612,9 +986,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         shoot_range = self._shoot_range
         if shoot_range is None:
             return
-        source_x = unit.get("x")
-        source_y = unit.get("y")
-        if source_x is None or source_y is None:
+        if self._state_to_view_cell(unit.get("x"), unit.get("y")) is None:
             return
         target_keys = self._resolve_targets(unit, shoot_range)
         for key in target_keys:
@@ -760,6 +1132,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     self._show_hover_tooltip()
                 else:
                     self._clear_hover_tooltip(force=True)
+            else:
+                self._spawn_particles(world, "spark", 14)
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
@@ -771,6 +1145,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._drag_start = pos
             self.update()
         world = self._map_to_world(pos)
+        self._cursor_world_raw = QtCore.QPointF(world)
         self._cursor_world = self._snap_world_to_cell(world)
         self._update_hover_cell(world)
         self._update_hover_tooltip(event, world)
@@ -781,6 +1156,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if event.button() == QtCore.Qt.LeftButton:
             if self._drag_distance < 4:
                 self._select_unit_at(event.position())
+                world = self._map_to_world(QtCore.QPointF(event.position()))
+                self._spawn_particles(world, "smoke", 16)
             self._dragging = False
         super().mouseReleaseEvent(event)
 
@@ -833,6 +1210,106 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if self._tooltip_follow_timer.isActive():
             self._tooltip_follow_timer.stop()
 
+    def _draw_ground_layer(self, painter: QtGui.QPainter) -> None:
+        if not self._ground_textures or self._board_rect.isEmpty():
+            return
+        view_rect = self._view_world_rect()
+        tile_size = 256.0
+        start_x = int(math.floor(view_rect.left() / tile_size))
+        end_x = int(math.ceil(view_rect.right() / tile_size))
+        start_y = int(math.floor(view_rect.top() / tile_size))
+        end_y = int(math.ceil(view_rect.bottom() / tile_size))
+        painter.save()
+        painter.setClipRect(self._board_rect)
+        for ty in range(start_y, end_y + 1):
+            for tx in range(start_x, end_x + 1):
+                pixmap = self._ground_textures[(tx + ty) % len(self._ground_textures)]
+                world_x = tx * tile_size
+                world_y = ty * tile_size
+                painter.drawPixmap(
+                    QtCore.QRectF(world_x, world_y, tile_size, tile_size),
+                    pixmap,
+                    QtCore.QRectF(0, 0, pixmap.width(), pixmap.height()),
+                )
+        painter.restore()
+
+    def _draw_decals_layer(self, painter: QtGui.QPainter) -> None:
+        if not self._decals or not self._decal_textures:
+            return
+        painter.save()
+        painter.setClipRect(self._board_rect)
+        for decal in self._decals:
+            pixmap = self._decal_textures.get(decal.texture_key)
+            if pixmap is None:
+                continue
+            self._draw_sprite(
+                painter,
+                pixmap,
+                decal.center,
+                rotation_deg=decal.rotation_deg,
+                scale=decal.scale,
+                alpha=0.9,
+            )
+        painter.restore()
+
+    def _draw_props_layer(self, painter: QtGui.QPainter) -> None:
+        if not self._props or not self._prop_textures:
+            return
+        painter.save()
+        painter.setClipRect(self._board_rect)
+        for prop in self._props:
+            prop_pixmap = self._prop_textures.get(prop.kind)
+            if prop_pixmap is None:
+                continue
+            if self.render_prop_shadows:
+                shadow_pixmap = self._shadow_textures.get(prop.kind)
+                if shadow_pixmap is not None:
+                    shadow_center = prop.center + QtCore.QPointF(8.0, 12.0)
+                    self._draw_sprite(
+                        painter,
+                        shadow_pixmap,
+                        shadow_center,
+                        rotation_deg=prop.rotation_deg,
+                        scale=prop.scale,
+                        alpha=0.7,
+                    )
+            self._draw_sprite(
+                painter,
+                prop_pixmap,
+                prop.center,
+                rotation_deg=prop.rotation_deg,
+                scale=prop.scale,
+                alpha=1.0,
+            )
+        painter.restore()
+
+    def _draw_particles_layer(self, painter: QtGui.QPainter) -> None:
+        if not self._particles or not self._fx_particle_textures:
+            return
+        painter.save()
+        painter.setClipRect(self._board_rect)
+        for particle in self._particles:
+            pixmap = self._fx_particle_textures.get(particle.texture_key)
+            if pixmap is None:
+                continue
+            painter.setCompositionMode(
+                QtGui.QPainter.CompositionMode_Plus
+                if particle.mode == "additive"
+                else QtGui.QPainter.CompositionMode_SourceOver
+            )
+            alpha = max(0.0, min(1.0, particle.alpha * (1.0 - particle.age / particle.life)))
+            size_scale = particle.size_px * (1.0 + 0.35 * (particle.age / particle.life))
+            max_dim = max(1.0, float(max(pixmap.width(), pixmap.height())))
+            self._draw_sprite(
+                painter,
+                pixmap,
+                particle.position,
+                rotation_deg=0.0,
+                scale=size_scale / max_dim,
+                alpha=alpha,
+            )
+        painter.restore()
+
     def paintGL(self) -> None:
         painter = QtGui.QPainter(self)
         painter.setRenderHints(
@@ -852,32 +1329,32 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter.end()
             return
 
-        self._draw_grid(painter)
-
         painter.setTransform(self._view_transform())
-        for layer_name in self._layer_order:
-            if layer_name == "movement":
-                self._draw_movement_layer(painter)
-            elif layer_name == "objectives":
-                self._draw_objective_layer(painter)
-            elif layer_name == "units":
-                self._draw_units_layer(painter)
-            elif layer_name == "selection":
-                self._draw_selection_layer(painter)
-            elif layer_name == "shooting":
-                self._draw_shooting_layer(painter)
-            elif layer_name == "fx":
-                self._draw_fx_layer(painter)
-            elif layer_name == "labels":
-                self._draw_labels_layer(painter)
+        self._draw_ground_layer(painter)
+        painter.setTransform(QtGui.QTransform())
+        self._draw_grid(painter)
+        painter.setTransform(self._view_transform())
+        self._draw_movement_layer(painter)
+        self._draw_objective_layer(painter)
+        self._draw_units_layer(painter)
+        self._draw_selection_layer(painter)
+        self._draw_shooting_layer(painter)
+        if self.render_fx:
+            self._draw_fx_layer(painter)
+        self._draw_labels_layer(painter)
 
         painter.setTransform(QtGui.QTransform())
         if self._debug_overlay:
-            debug_lines = ["DEBUG: (0,0) вверху слева"]
+            debug_lines = [
+                "DEBUG: (0,0) вверху слева",
+                f"Слои: terrain={'on' if self.render_terrain else 'off'}, "
+                f"decals={'on' if self.render_decals else 'off'}, "
+                f"fx={'on' if self.render_fx else 'off'}",
+            ]
             if self._cursor_world is not None:
-                col = int(self._cursor_world.x() // self.cell_size)
-                row = int(self._cursor_world.y() // self.cell_size)
-                debug_lines.append(f"Курсор: row={row}, col={col}")
+                state_pos = self._world_to_state_pos(self._cursor_world)
+                if state_pos is not None:
+                    debug_lines.append(f"Курсор: x={state_pos[1]}, y={state_pos[0]}")
             painter.setPen(Theme.text)
             painter.setFont(Theme.font(size=9, bold=False))
             painter.drawText(
@@ -917,9 +1394,22 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def _draw_units_layer(self, painter: QtGui.QPainter) -> None:
         for render in self._units:
+            marker_radius = render.radius
             painter.setBrush(Theme.brush(render.color))
             painter.setPen(Theme.pen(Theme.outline, 0.8))
-            painter.drawEllipse(render.center, render.radius, render.radius)
+            painter.drawEllipse(render.center, marker_radius, marker_radius)
+
+            if render.icon is None or render.icon.isNull():
+                continue
+
+            icon_size = marker_radius * self._unit_icon_scale
+            rect = QtCore.QRectF(
+                render.center.x() - icon_size / 2,
+                render.center.y() - icon_size / 2,
+                icon_size,
+                icon_size,
+            )
+            painter.drawPixmap(rect, render.icon, QtCore.QRectF(render.icon.rect()))
 
     def _draw_selection_layer(self, painter: QtGui.QPainter) -> None:
         if self._selected_unit_key in self._unit_by_key:
@@ -946,13 +1436,30 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter.drawText(pos, label)
 
     def _tick_fx(self) -> None:
+        now = monotonic()
+        if self._particles_last_ts is None:
+            self._particles_last_ts = now
+        dt = now - self._particles_last_ts
+        self._particles_last_ts = now
+        if self._particles:
+            remaining: List[ParticleInstance] = []
+            for particle in self._particles:
+                particle.age += dt
+                if particle.age >= particle.life:
+                    continue
+                particle.position = QtCore.QPointF(
+                    particle.position.x() + particle.velocity.x() * dt,
+                    particle.position.y() + particle.velocity.y() * dt,
+                )
+                remaining.append(particle)
+            self._particles = remaining
         if self.isVisible():
             self.update()
 
     def _load_fx_assets(self) -> None:
         if self._fx_initialized:
             return
-        assets_dir = Path(__file__).resolve().parent / "assets" / "fx"
+        assets_dir = resolve_asset_path("fx")
         for name in ("glow_soft", "ring_soft", "tesseract_segments"):
             path = assets_dir / f"{name}.png"
             if not path.exists():
@@ -985,6 +1492,51 @@ class OpenGLBoardWidget(QOpenGLWidget):
         name = str(unit.get("name") or "")
         return faction.lower() == "necrons" or "necron" in name.lower()
 
+    def _normalize_unit_name(self, unit_name: str) -> str:
+        normalized = unit_name.strip().lower().replace("-", " ")
+        return " ".join(normalized.split())
+
+    def _build_unit_icon_map(self) -> Dict[str, QtGui.QPixmap]:
+        icon_links = {
+            "Necron Warriors": "icons/necron_warriors_icon.png",
+            "Royal Warden": "icons/royal_warden_icon.png",
+            "Canoptek Scarab Swarms": "icons/canoptek_scarab_swarms_icon.png",
+        }
+        name_aliases = {
+            "warriors": "Necron Warriors",
+            "necron warrior": "Necron Warriors",
+            "royal warden": "Royal Warden",
+            "canoptek scarab swarm": "Canoptek Scarab Swarms",
+            "scarab swarms": "Canoptek Scarab Swarms",
+        }
+
+        icon_map: Dict[str, QtGui.QPixmap] = {}
+        for raw_name, rel_path in icon_links.items():
+            pixmap = self._texture_manager.load_png(rel_path)
+            if pixmap is None or pixmap.isNull():
+                continue
+            normalized = self._normalize_unit_name(raw_name)
+            icon_map[normalized] = pixmap
+
+        for alias, canonical in name_aliases.items():
+            canonical_key = self._normalize_unit_name(canonical)
+            if canonical_key not in icon_map:
+                continue
+            icon_map[self._normalize_unit_name(alias)] = icon_map[canonical_key]
+
+        return icon_map
+
+    def _icon_for_unit_name(self, unit_name: str) -> Optional[QtGui.QPixmap]:
+        key = self._normalize_unit_name(unit_name)
+        if key in self._unit_icon_by_name:
+            return self._unit_icon_by_name[key]
+
+        # Fallback: иконка подтягивается даже при небольшом расхождении имени из ростера.
+        for known_key, pixmap in self._unit_icon_by_name.items():
+            if known_key and (known_key in key or key in known_key):
+                return pixmap
+        return None
+
     def _fx_color_for_unit(self, unit: Optional[dict]) -> Tuple[QtGui.QColor, float]:
         if self._is_necron(unit):
             return QtGui.QColor(100, 255, 140), 1.0
@@ -1009,6 +1561,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return tinted
 
     def _draw_fx_layer(self, painter: QtGui.QPainter) -> None:
+        self._draw_particles_layer(painter)
         self._draw_gauss_effects(painter)
         if not self._fx_pixmaps:
             return
@@ -1616,16 +2169,23 @@ class OpenGLBoardWidget(QOpenGLWidget):
             row * self.cell_size + self.cell_size / 2,
         )
 
-    def _update_hover_cell(self, world: QtCore.QPointF) -> None:
+    def _world_to_view_cell(self, world: QtCore.QPointF) -> Optional[Tuple[int, int]]:
         if self._board_rect.isEmpty():
-            self._hover_cell = None
-            return
+            return None
         col = int(world.x() // self.cell_size)
         row = int(world.y() // self.cell_size)
         if col < 0 or row < 0 or col >= self._board_width or row >= self._board_height:
-            self._hover_cell = None
-            return
-        self._hover_cell = (col, row)
+            return None
+        return col, row
+
+    def _world_to_state_pos(self, world: QtCore.QPointF) -> Optional[Tuple[int, int]]:
+        view_cell = self._world_to_view_cell(world)
+        if view_cell is None:
+            return None
+        return self.xy_to_state_pos(*view_cell)
+
+    def _update_hover_cell(self, world: QtCore.QPointF) -> None:
+        self._hover_cell = self._world_to_view_cell(world)
 
     def _update_hover_tooltip(self, event: QtGui.QMouseEvent, world: QtCore.QPointF) -> None:
         if self._board_rect.isEmpty():
@@ -1669,17 +2229,15 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 self._tooltip_widget.update_content(tooltip_payload, accent)
 
     def _unit_key_at_world(self, world: QtCore.QPointF) -> Optional[Tuple[str, int]]:
-        if self._board_rect.isEmpty():
+        view_cell = self._world_to_view_cell(world)
+        if view_cell is None:
             return None
-        col = int(world.x() // self.cell_size)
-        row = int(world.y() // self.cell_size)
-        if col < 0 or row < 0 or col >= self._board_width or row >= self._board_height:
-            return None
-        candidates = [
-            unit
-            for unit in self._units_state
-            if int(unit.get("x", -1)) == col and int(unit.get("y", -1)) == row
-        ]
+        col, row = view_cell
+        candidates = []
+        for unit in self._units_state:
+            view_cell = self._state_to_view_cell(unit.get("x"), unit.get("y"))
+            if view_cell == (col, row):
+                candidates.append(unit)
         closest_key = None
         closest_dist = None
         for unit in candidates:

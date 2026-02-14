@@ -1,4 +1,5 @@
 import torch
+import json
 import os
 import queue
 import re
@@ -11,9 +12,27 @@ from datetime import datetime
 from PySide6 import QtCore, QtGui, QtWidgets
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+VIEWER_CONFIG_PATH = os.path.join(ROOT_DIR, "viewer", "viewer_config.json")
 GYM_PATH = os.path.join(ROOT_DIR, "gym_mod")
 if GYM_PATH not in sys.path:
     sys.path.insert(0, GYM_PATH)
+
+
+def load_viewer_config() -> dict:
+    defaults = {
+        "cell_size": 24,
+        "unit_icon_scale": 2.75,
+    }
+    try:
+        with open(VIEWER_CONFIG_PATH, "r", encoding="utf-8") as handle:
+            loaded = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return defaults
+    if not isinstance(loaded, dict):
+        return defaults
+    cfg = dict(defaults)
+    cfg.update(loaded)
+    return cfg
 
 from viewer.opengl_view import OpenGLBoardWidget
 from viewer.gun_fx import get_gun_fx_config
@@ -162,7 +181,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.state_path = state_path
         self.setWindowTitle("40kAI Viewer")
-        self.resize(1200, 800)
+        self.resize(2560, 1440)
 
         self.controller = GameController(model_path=model_path, state_path=state_path)
         self._pending_request = None
@@ -175,15 +194,29 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._show_objective_radius = True
         self._units_by_key = {}
         self._unit_row_by_key = {}
+        self._did_initial_fit = False
+        self._board_debug_logged = False
+
+        self._viewer_config = load_viewer_config()
+        cell_size = int(self._viewer_config.get("cell_size", 24))
+        unit_icon_scale = float(self._viewer_config.get("unit_icon_scale", 2.75))
 
         self.state_watcher = StateWatcher(self.state_path)
-        self.map_scene = OpenGLBoardWidget(cell_size=18)
+        self.map_scene = OpenGLBoardWidget(
+            cell_size=max(8, cell_size),
+            unit_icon_scale=max(0.5, unit_icon_scale),
+        )
+        self.map_scene.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Expanding,
+        )
         self.map_scene.unit_selected.connect(self._select_row_for_unit)
 
         self.status_round = QtWidgets.QLabel("Раунд: —")
         self.status_turn = QtWidgets.QLabel("Ход: —")
         self.status_phase = QtWidgets.QLabel("Фаза: —")
         self.status_active = QtWidgets.QLabel("Активен: —")
+        self.status_deployment = QtWidgets.QLabel("Деплой: ожидание ролл-оффа")
 
         self.points_vp_player = QtWidgets.QLabel("Player VP: —")
         self.points_vp_model = QtWidgets.QLabel("Model VP: —")
@@ -242,9 +275,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         fit_button.clicked.connect(self._fit_view)
 
         left_widget = QtWidgets.QWidget()
+        left_widget.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Expanding,
+        )
         left_layout = QtWidgets.QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(6)
         left_layout.addWidget(fit_button, alignment=QtCore.Qt.AlignLeft)
-        left_layout.addWidget(self.map_scene)
+        left_layout.addWidget(self.map_scene, 1)
 
         log_group = QtWidgets.QGroupBox("ЖУРНАЛ")
         log_layout = QtWidgets.QVBoxLayout(log_group)
@@ -267,36 +306,42 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._build_command_pages()
         command_layout.addWidget(self.command_stack)
 
-        right_widget = QtWidgets.QWidget()
-        right_layout = QtWidgets.QVBoxLayout(right_widget)
-        right_layout.setSpacing(8)
-        right_layout.addWidget(self._group_status())
-        right_layout.addWidget(self._group_points())
-        right_layout.addWidget(self._group_units())
-        right_layout.addWidget(self._group_legend())
-        right_layout.addWidget(command_group)
-        right_layout.addStretch()
+        right_top_widget = QtWidgets.QWidget()
+        right_top_layout = QtWidgets.QVBoxLayout(right_top_widget)
+        right_top_layout.setSpacing(8)
+        right_top_layout.addWidget(self._group_status())
+        right_top_layout.addWidget(self._group_points())
+        right_top_layout.addWidget(self._group_units())
+        right_top_layout.addWidget(self._group_legend())
+        right_top_layout.addWidget(command_group)
+        right_top_layout.addStretch()
 
-        top_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        top_splitter.addWidget(left_widget)
-        top_splitter.addWidget(right_widget)
-        top_splitter.setStretchFactor(0, 4)
-        top_splitter.setStretchFactor(1, 1)
+        self._right_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self._right_splitter.addWidget(right_top_widget)
+        self._right_splitter.addWidget(log_group)
+        self._right_splitter.setStretchFactor(0, 3)
+        self._right_splitter.setStretchFactor(1, 2)
+        self._right_splitter.setChildrenCollapsible(False)
 
-        main_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
-        main_splitter.addWidget(top_splitter)
-        main_splitter.addWidget(log_group)
-        main_splitter.setStretchFactor(0, 3)
-        main_splitter.setStretchFactor(1, 2)
+        self._top_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self._top_splitter.addWidget(left_widget)
+        self._top_splitter.addWidget(self._right_splitter)
+        self._top_splitter.setStretchFactor(0, 1)
+        self._top_splitter.setStretchFactor(1, 0)
+        self._top_splitter.setChildrenCollapsible(False)
+        self._right_splitter.setMinimumWidth(380)
+        self._right_splitter.setMaximumWidth(450)
 
         central = QtWidgets.QWidget()
         central_layout = QtWidgets.QVBoxLayout(central)
-        central_layout.addWidget(main_splitter)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+        central_layout.addWidget(self._top_splitter)
         self.setCentralWidget(central)
 
         self._apply_dark_theme()
         self._build_toolbar()
-        self._fit_view()
+        QtCore.QTimer.singleShot(0, self._apply_initial_splitter_sizes)
         app = QtWidgets.QApplication.instance()
         if app is not None:
             app.installEventFilter(self)
@@ -351,6 +396,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.status_turn)
         layout.addWidget(self.status_phase)
         layout.addWidget(self.status_active)
+        layout.addWidget(self.status_deployment)
         return box
 
     def _group_points(self):
@@ -731,6 +777,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._set_request(request)
         self._poll_state()
 
+    def _apply_initial_splitter_sizes(self) -> None:
+        total_w = max(self.width(), 2560)
+        right_w = max(380, min(450, int(total_w * 0.2)))
+        left_w = max(1400, total_w - right_w)
+        self._top_splitter.setSizes([left_w, right_w])
+
+        total_h = max(self.height(), 800)
+        top_h = int(total_h * 0.72)
+        bottom_h = max(180, total_h - top_h)
+        self._right_splitter.setSizes([top_h, bottom_h])
+
     def _fit_view(self):
         self.map_scene.fit_to_view()
 
@@ -745,8 +802,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._apply_state(self.state_watcher.state)
 
     def _apply_state(self, state):
-        board = state.get("board", {})
         self.map_scene.update_state(state)
+        if not self._did_initial_fit:
+            self._did_initial_fit = True
+            QtCore.QTimer.singleShot(0, self._fit_view)
 
         self._units_by_key = {}
         for unit in state.get("units", []) or []:
@@ -758,6 +817,19 @@ class ViewerWindow(QtWidgets.QMainWindow):
         active = state.get("active") or state.get("active_side")
         active_label = "Игрок" if active == "player" else "Модель" if active == "model" else "—"
         self.status_active.setText(f"Активен: {active_label}")
+
+        deployment = state.get("deployment", {}) if isinstance(state.get("deployment", {}), dict) else {}
+        attacker = deployment.get("attacker") or state.get("attacker_side")
+        defender = deployment.get("defender") or state.get("defender_side")
+        attacker_label = "Модель" if attacker == "model" else "Игрок" if attacker == "enemy" else None
+        defender_label = "Модель" if defender == "model" else "Игрок" if defender == "enemy" else None
+        if attacker_label and defender_label:
+            self.status_deployment.setText(
+                f"Деплой: атакующий слева — {attacker_label}, защитник справа — {defender_label}"
+            )
+        else:
+            self.status_deployment.setText("Деплой: ожидание ролл-оффа")
+
         self._auto_switch_log_tab(active)
 
         vp = state.get("vp", {})
@@ -1426,10 +1498,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _unit_to_world_center(self, unit: dict) -> Optional[QtCore.QPointF]:
         cell = self.map_scene.cell_size
-        x = unit.get("x")
-        y = unit.get("y")
-        if x is None or y is None:
+        view_xy = self.map_scene._state_xy_to_view_xy(unit.get("x"), unit.get("y"))
+        if view_xy is None:
             return None
+        x, y = view_xy
         return QtCore.QPointF(x * cell + cell / 2, y * cell + cell / 2)
 
     def _side_from_unit_id(self, unit_id: int) -> Optional[str]:
@@ -1518,5 +1590,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
 def launch(state_path, model_path=None):
     app = QtWidgets.QApplication([])
     window = ViewerWindow(state_path, model_path=model_path)
+    window.setGeometry(0, 0, 2560, 1440)
     window.showMaximized()
     app.exec()

@@ -1,3 +1,4 @@
+import ast
 import json
 import os
 import re
@@ -38,14 +39,19 @@ class GUIController(QtCore.QObject):
     progressTextChanged = QtCore.Signal(str)
     rosterSummaryChanged = QtCore.Signal(str)
     numGamesChanged = QtCore.Signal(int)
-    boardXChanged = QtCore.Signal(int)
-    boardYChanged = QtCore.Signal(int)
+    missionChanged = QtCore.Signal(str)
     metricsChanged = QtCore.Signal()
     metricsLabelChanged = QtCore.Signal(str)
     playModelPathChanged = QtCore.Signal(str)
     playModelLabelChanged = QtCore.Signal(str)
+    evalModelPathChanged = QtCore.Signal(str)
+    evalModelLabelChanged = QtCore.Signal(str)
+    evalGamesChanged = QtCore.Signal(int)
+    evalLogTextChanged = QtCore.Signal(str)
+    evalSummaryTextChanged = QtCore.Signal(str)
     boardTextChanged = QtCore.Signal(str)
     selfPlayFromCheckpointChanged = QtCore.Signal(bool)
+    resumeFromCheckpointChanged = QtCore.Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -60,8 +66,8 @@ class GUIController(QtCore.QObject):
         self._progress_text = "0%"
 
         self._num_games = 100
-        self._board_x = 60
-        self._board_y = 40
+        self._mission_options = ["only_war"]
+        self._selected_mission = "only_war"
 
         self._train_total_episodes = 0
         self._training_samples = deque()
@@ -85,14 +91,22 @@ class GUIController(QtCore.QObject):
 
         self._play_model_path = ""
         self._play_model_label = "Модель не выбрана"
+        self._eval_model_path = ""
+        self._eval_model_label = "Модель не выбрана"
+        self._eval_games = 50
+        self._eval_log_text = ""
+        self._eval_summary_text = "Итог оценки появится после завершения eval.py."
+        self._active_process_kind = ""
         self._board_text = "ASCII карта будет доступна после запуска игры."
         self._self_play_from_checkpoint = False
+        self._resume_from_checkpoint = False
 
         self._load_available_units()
         self._load_rosters_from_file()
         self._refresh_models()
         self._select_latest_metrics()
         self._select_latest_play_model(initial=True)
+        self._select_latest_eval_model(initial=True)
         self._update_roster_summary()
 
         self._emit_status("Нажмите «Тренировка 8х» или «Самообучение», чтобы запустить обучение.")
@@ -137,13 +151,13 @@ class GUIController(QtCore.QObject):
     def numGames(self) -> int:
         return self._num_games
 
-    @QtCore.Property(int, notify=boardXChanged)
-    def boardX(self) -> int:
-        return self._board_x
+    @QtCore.Property("QStringList", constant=True)
+    def missionOptions(self):
+        return self._mission_options
 
-    @QtCore.Property(int, notify=boardYChanged)
-    def boardY(self) -> int:
-        return self._board_y
+    @QtCore.Property(str, notify=missionChanged)
+    def selectedMission(self) -> str:
+        return self._selected_mission
 
     @QtCore.Property(str, notify=metricsChanged)
     def metricsRewardPath(self) -> str:
@@ -181,6 +195,26 @@ class GUIController(QtCore.QObject):
     def playModelLabel(self) -> str:
         return self._play_model_label
 
+    @QtCore.Property(str, notify=evalModelPathChanged)
+    def evalModelPath(self) -> str:
+        return self._eval_model_path
+
+    @QtCore.Property(str, notify=evalModelLabelChanged)
+    def evalModelLabel(self) -> str:
+        return self._eval_model_label
+
+    @QtCore.Property(int, notify=evalGamesChanged)
+    def evalGames(self) -> int:
+        return self._eval_games
+
+    @QtCore.Property(str, notify=evalLogTextChanged)
+    def evalLogText(self) -> str:
+        return self._eval_log_text
+
+    @QtCore.Property(str, notify=evalSummaryTextChanged)
+    def evalSummaryText(self) -> str:
+        return self._eval_summary_text
+
     @QtCore.Property(str, notify=boardTextChanged)
     def boardText(self) -> str:
         return self._board_text
@@ -188,6 +222,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(bool, notify=selfPlayFromCheckpointChanged)
     def selfPlayFromCheckpoint(self) -> bool:
         return self._self_play_from_checkpoint
+
+    @QtCore.Property(bool, notify=resumeFromCheckpointChanged)
+    def resumeFromCheckpoint(self) -> bool:
+        return self._resume_from_checkpoint
 
     @QtCore.Property(str, constant=True)
     def modelsFolderUrl(self) -> str:
@@ -202,45 +240,32 @@ class GUIController(QtCore.QObject):
             self._num_games = value
             self.numGamesChanged.emit(value)
 
-    @QtCore.Slot(int)
-    def set_board_x(self, value: int) -> None:
-        if value <= 0:
-            self._emit_status("X должен быть больше нуля.")
-            return
-        if self._board_x != value:
-            self._board_x = value
-            self.boardXChanged.emit(value)
+    @QtCore.Slot(str)
+    def set_selected_mission(self, mission: str) -> None:
+        normalized = (mission or "only_war").strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized not in self._mission_options:
+            normalized = "only_war"
+        if self._selected_mission != normalized:
+            self._selected_mission = normalized
+            self.missionChanged.emit(normalized)
 
     @QtCore.Slot(int)
-    def set_board_y(self, value: int) -> None:
+    def set_selected_mission_index(self, index: int) -> None:
+        if 0 <= index < len(self._mission_options):
+            self.set_selected_mission(self._mission_options[index])
+
+    @QtCore.Slot(int)
+    def set_eval_games(self, value: int) -> None:
         if value <= 0:
-            self._emit_status("Y должен быть больше нуля.")
+            self._emit_status(
+                "Некорректное значение количества игр для оценки. "
+                "Где: gui_qt/main.py (set_eval_games). "
+                "Что делать: укажите число больше нуля."
+            )
             return
-        if self._board_y != value:
-            self._board_y = value
-            self.boardYChanged.emit(value)
-
-    @QtCore.Slot(bool)
-    def set_self_play_from_checkpoint(self, value: bool) -> None:
-        if self._self_play_from_checkpoint != value:
-            self._self_play_from_checkpoint = value
-            self.selfPlayFromCheckpointChanged.emit(value)
-
-    @QtCore.Slot()
-    def increment_board_x(self) -> None:
-        self.set_board_x(self._board_x + 10)
-
-    @QtCore.Slot()
-    def decrement_board_x(self) -> None:
-        self.set_board_x(max(10, self._board_x - 10))
-
-    @QtCore.Slot()
-    def increment_board_y(self) -> None:
-        self.set_board_y(self._board_y + 10)
-
-    @QtCore.Slot()
-    def decrement_board_y(self) -> None:
-        self.set_board_y(max(10, self._board_y - 10))
+        if self._eval_games != value:
+            self._eval_games = value
+            self.evalGamesChanged.emit(value)
 
     @QtCore.Slot(int)
     def add_unit_to_player(self, index: int) -> None:
@@ -317,6 +342,22 @@ class GUIController(QtCore.QObject):
     @QtCore.Slot()
     def start_self_play(self) -> None:
         self._start_training(mode="selfplay")
+
+    @QtCore.Slot(bool)
+    def set_self_play_from_checkpoint(self, value: bool) -> None:
+        flag = bool(value)
+        if self._self_play_from_checkpoint == flag:
+            return
+        self._self_play_from_checkpoint = flag
+        self.selfPlayFromCheckpointChanged.emit(flag)
+
+    @QtCore.Slot(bool)
+    def set_resume_from_checkpoint(self, value: bool) -> None:
+        flag = bool(value)
+        if self._resume_from_checkpoint == flag:
+            return
+        self._resume_from_checkpoint = flag
+        self.resumeFromCheckpointChanged.emit(flag)
 
     @QtCore.Slot()
     def stop_process(self) -> None:
@@ -411,6 +452,108 @@ class GUIController(QtCore.QObject):
         else:
             self._emit_status("Сохранённые модели не найдены.")
 
+    @QtCore.Slot(str)
+    def select_eval_model(self, file_url: str) -> None:
+        path = self._to_local_file(file_url)
+        if not path:
+            self._emit_status("Модель для оценки не выбрана.")
+            return
+        if not os.path.exists(path):
+            self._emit_status(
+                "Файл модели для оценки не найден. "
+                "Где: gui_qt/main.py (select_eval_model). "
+                "Что делать: проверьте путь к .pickle и повторите."
+            )
+            return
+        if not path.endswith(".pickle"):
+            self._emit_status("Для оценки выберите файл модели .pickle.")
+            return
+        self._set_eval_model(path, source="manual")
+        self._emit_status("Модель для оценки обновлена.")
+
+    @QtCore.Slot()
+    def select_latest_eval_model(self) -> None:
+        if self._select_latest_eval_model(initial=False):
+            self._emit_status("Для оценки выбрана последняя сохранённая модель.")
+        else:
+            self._emit_status(
+                "Сохранённые модели для оценки не найдены. "
+                "Что делать: запустите обучение или выберите модель вручную."
+            )
+
+    @QtCore.Slot()
+    def start_eval(self) -> None:
+        if self._process is not None:
+            self._emit_status("Процесс уже запущен. Сначала остановите текущий.")
+            return
+        if not self._check_torch_import():
+            return
+
+        model_path = self._resolve_eval_model_path()
+        if model_path == "None":
+            self._emit_status(
+                "Не удалось запустить оценку: модель не найдена. "
+                "Где: gui_qt/main.py (start_eval). "
+                "Что делать: выберите .pickle вручную или обучите новую модель."
+            )
+            return
+
+        eval_script = os.path.join(self._repo_root, "eval.py")
+        if not os.path.exists(eval_script):
+            self._emit_status(
+                "Не удалось запустить оценку: не найден eval.py. "
+                "Где: gui_qt/main.py (start_eval). "
+                "Что делать: проверьте целостность репозитория и повторите."
+            )
+            return
+
+        self._process = QtCore.QProcess(self)
+        self._process.setWorkingDirectory(self._repo_root)
+
+        self._set_eval_log_text("")
+        self._set_eval_summary_text("Идёт оценка... Итог будет показан после завершения.")
+
+        env = QtCore.QProcessEnvironment.systemEnvironment()
+        env.insert("FORCE_GREEDY", "1")
+        env.insert("EVAL_EPSILON", "0")
+        env.insert("PYTHONPATH", self._pythonpath_with_gym_mod())
+        env.insert("MISSION_NAME", self._selected_mission)
+        self._process.setProcessEnvironment(env)
+
+        self._process.readyReadStandardOutput.connect(self._read_stdout)
+        self._process.readyReadStandardError.connect(self._read_stderr)
+        self._process.errorOccurred.connect(self._on_error)
+        self._process.finished.connect(self._on_finished)
+
+        self._active_process_kind = "eval"
+        self._train_total_episodes = 0
+        self._reset_training_stats()
+        self._set_progress(0, 0)
+        self._progress_stats = "— it/s • elapsed 00:00"
+        self.progressStatsChanged.emit(self._progress_stats)
+
+        args = ["-u", "eval.py", "--games", str(self._eval_games), "--model", model_path]
+        self._emit_log(
+            f"[EVAL] Старт оценки: игр={self._eval_games}, модель={os.path.basename(model_path)}, "
+            "противник=эвристика, exploration=off.",
+            level="INFO",
+        )
+        self._append_eval_log_line(
+            f"Старт оценки: игр={self._eval_games}, модель={os.path.basename(model_path)}, "
+            "противник=эвристика, exploration=off."
+        )
+        self._emit_status("Оценка запущена...")
+        self._process.start(sys.executable, args)
+        if not self._process.waitForStarted(3000):
+            self._emit_log(
+                "[GUI] Не удалось запустить eval.py. Проверьте, что файл доступен и окружение корректно.",
+                level="ERROR",
+            )
+            self._cleanup_process()
+            return
+
+        self._set_running(True)
+
     @QtCore.Slot()
     def play_in_terminal(self) -> None:
         model_path = self._resolve_play_model_path()
@@ -424,10 +567,12 @@ class GUIController(QtCore.QObject):
             return
         self._persist_rosters()
         command = self._build_script_command(script, [model_path])
+        env = os.environ.copy()
+        env["MISSION_NAME"] = self._selected_mission
         subprocess.Popen(
             command,
             cwd=self._repo_root,
-            env=os.environ.copy(),
+            env=env,
             start_new_session=True,
         )
         self._emit_status("Запуск игры в терминале.")
@@ -451,6 +596,7 @@ class GUIController(QtCore.QObject):
         env["MODEL_PATH"] = model_path
         env["FIGHT_REPORT"] = "1"
         env["PLAY_NO_EXPLORATION"] = "1"
+        env["MISSION_NAME"] = self._selected_mission
         command = self._build_script_command(script, [])
         subprocess.Popen(
             command,
@@ -574,6 +720,18 @@ class GUIController(QtCore.QObject):
             env_overrides["SELF_PLAY_OPPONENT_MODE"] = "fixed_checkpoint"
             env_overrides["SELF_PLAY_FIXED_PATH"] = checkpoint_path
 
+        if self._resume_from_checkpoint:
+            resume_path = self._find_latest_resume_file()
+            if not resume_path:
+                self._emit_status(
+                    "Resume включён, но checkpoint_ep*.pth и model-*.pth не найдены. "
+                    "Где: gui_qt/main.py (_start_training). "
+                    "Что делать: сохраните чекпойнт и запустите снова или снимите галочку resume."
+                )
+                return
+            env_overrides["RESUME_CHECKPOINT"] = resume_path
+            self._emit_log(f"[GUI] [RESUME] Использую чекпойнт: {resume_path}", level="INFO")
+
         self._emit_log(f"[GUI] Запуск {status_prefix.lower()}...", level="INFO")
         self._emit_status(f"{status_prefix}...")
 
@@ -586,6 +744,7 @@ class GUIController(QtCore.QObject):
         env.insert("TRAIN_LOG_TO_FILE", "1")
         env.insert("PER_ENABLED", "1")
         env.insert("N_STEP", "3")
+        env.insert("MISSION_NAME", self._selected_mission)
         for key, value in env_overrides.items():
             env.insert(key, value)
         self._process.setProcessEnvironment(env)
@@ -594,6 +753,8 @@ class GUIController(QtCore.QObject):
         self._process.readyReadStandardError.connect(self._read_stderr)
         self._process.errorOccurred.connect(self._on_error)
         self._process.finished.connect(self._on_finished)
+
+        self._active_process_kind = "train"
 
         self._train_total_episodes = self._num_games
         self._reset_training_stats()
@@ -628,8 +789,9 @@ class GUIController(QtCore.QObject):
                 str(self._num_games),
                 "Necrons",
                 "Necrons",
-                str(self._board_x),
-                str(self._board_y),
+                "60",
+                "40",
+                self._selected_mission,
             ]
             command = self._build_script_command(script, args)
             result = subprocess.run(
@@ -666,6 +828,9 @@ class GUIController(QtCore.QObject):
         data = self._process.readAllStandardOutput().data().decode("utf-8", errors="replace")
         for line in data.splitlines():
             if line.strip():
+                if self._active_process_kind == "eval":
+                    self._append_eval_log_line(line)
+                    self._maybe_update_eval_summary(line)
                 if self._should_show_train_log(line):
                     self._emit_log(line)
                 self._handle_progress_line(line)
@@ -676,6 +841,8 @@ class GUIController(QtCore.QObject):
         data = self._process.readAllStandardError().data().decode("utf-8", errors="replace")
         for line in data.splitlines():
             if line.strip():
+                if self._active_process_kind == "eval":
+                    self._append_eval_log_line(f"[stderr] {line}")
                 if not self._is_tqdm_progress_line(line):
                     self._emit_log(line, level="ERROR")
                 self._handle_progress_line(line)
@@ -695,11 +862,13 @@ class GUIController(QtCore.QObject):
         if normalized.startswith("[ERROR]") or normalized.startswith("[WARN]"):
             return True
         allowed_prefixes = (
+            "[EVAL]",
             "[TRAIN8] Старт",
             "[TRAIN] Старт",
             "[SELFPLAY] Старт",
             "[TRAIN][START]",
             "[DEVICE CHECK]",
+            "[RESUME]",
             "[metrics] saved:",
         )
         allowed_contains = (
@@ -756,11 +925,26 @@ class GUIController(QtCore.QObject):
     def _on_finished(self, exit_code: int, exit_status: QtCore.QProcess.ExitStatus) -> None:
         status_text = "нормально" if exit_status == QtCore.QProcess.ExitStatus.NormalExit else "с ошибкой"
         self._emit_log(f"[GUI] Процесс завершён ({status_text}), код: {exit_code}.")
-        if exit_status == QtCore.QProcess.ExitStatus.NormalExit:
-            self._emit_status("Обучение завершено.")
+        if self._active_process_kind == "eval":
+            if exit_status == QtCore.QProcess.ExitStatus.NormalExit and exit_code == 0:
+                self._emit_status("Оценка завершена.")
+                if not self._eval_summary_text.strip() or "Идёт оценка" in self._eval_summary_text:
+                    self._set_eval_summary_text(
+                        "Оценка завершена, но итоговая строка [SUMMARY] не найдена. "
+                        "Проверьте лог ниже (gui_qt/main.py, _on_finished)."
+                    )
+            else:
+                self._emit_status("Оценка завершена с ошибкой. Проверьте лог.")
+                self._set_eval_summary_text(
+                    "Оценка завершена с ошибкой. Где: gui_qt/main.py (_on_finished). "
+                    "Что делать: проверьте лог оценки и traceback внизу."
+                )
         else:
-            self._emit_status("Обучение завершено с ошибкой.")
-        self._select_latest_metrics()
+            if exit_status == QtCore.QProcess.ExitStatus.NormalExit:
+                self._emit_status("Обучение завершено.")
+            else:
+                self._emit_status("Обучение завершено с ошибкой.")
+            self._select_latest_metrics()
         self._cleanup_process()
 
     def _cleanup_process(self) -> None:
@@ -768,6 +952,7 @@ class GUIController(QtCore.QObject):
             return
         self._process.deleteLater()
         self._process = None
+        self._active_process_kind = ""
         self._set_running(False)
 
     def _emit_log(self, message: str, level: str | None = None) -> None:
@@ -779,6 +964,67 @@ class GUIController(QtCore.QObject):
 
     def _emit_status(self, message: str) -> None:
         self.statusChanged.emit(message)
+
+    def _set_eval_log_text(self, value: str) -> None:
+        self._eval_log_text = value
+        self.evalLogTextChanged.emit(value)
+
+    def _append_eval_log_line(self, line: str) -> None:
+        if not line:
+            return
+        if self._eval_log_text:
+            self._eval_log_text += "\n"
+        self._eval_log_text += line
+        self.evalLogTextChanged.emit(self._eval_log_text)
+
+    def _set_eval_summary_text(self, value: str) -> None:
+        self._eval_summary_text = value
+        self.evalSummaryTextChanged.emit(value)
+
+    def _maybe_update_eval_summary(self, line: str) -> None:
+        normalized = line.strip()
+        summary_prefix = "[EVAL][SUMMARY] "
+        if normalized.startswith(summary_prefix):
+            payload = normalized[len(summary_prefix):]
+            details = self._format_eval_summary(payload)
+            self._set_eval_summary_text(details)
+
+    def _format_eval_summary(self, payload: str) -> str:
+        pairs = {
+            key: value
+            for key, value in re.findall(r"([a-zA-Z_]+)=([^=]+?)(?=\s+[a-zA-Z_]+=|$)", payload)
+        }
+
+        reason_labels = {
+            "turn_limit": "Лимит ходов",
+            "wipeout_enemy": "Уничтожение армии противника",
+            "wipeout_model": "Уничтожение армии модели",
+            "auto": "Авто-завершение",
+            "unknown": "Неизвестно",
+        }
+
+        reason_text = pairs.get('end_reasons', '{}')
+        try:
+            reason_dict = ast.literal_eval(reason_text)
+            if isinstance(reason_dict, dict):
+                pretty_reasons = {
+                    reason_labels.get(str(key), str(key)): value
+                    for key, value in reason_dict.items()
+                }
+                reason_text = str(pretty_reasons)
+        except (ValueError, SyntaxError):
+            pass
+
+        lines = ["Подробный результат оценки:"]
+        lines.append(f"- Победы: {pairs.get('wins', '?')}")
+        lines.append(f"- Поражения: {pairs.get('losses', '?')}")
+        lines.append(f"- Ничьи: {pairs.get('draws', '?')}")
+        lines.append(f"- Winrate (все игры): {pairs.get('winrate_all', '?')}")
+        lines.append(f"- Winrate (без ничьих): {pairs.get('winrate_no_draw', '?')}")
+        lines.append(f"- Средний VP diff: {pairs.get('avg_vp_diff', '?')}")
+        lines.append(f"- Медианный VP diff: {pairs.get('median_vp_diff', '?')}")
+        lines.append(f"- Причины завершения: {reason_text}")
+        return "\n".join(lines)
 
     def _format_duration(self, seconds: int) -> str:
         minutes, secs = divmod(max(0, seconds), 60)
@@ -809,6 +1055,13 @@ class GUIController(QtCore.QObject):
         self.playModelPathChanged.emit(self._play_model_path)
         self.playModelLabelChanged.emit(self._play_model_label)
 
+    def _set_eval_model(self, path: str, source: str) -> None:
+        self._eval_model_path = path
+        label_prefix = "Последняя модель" if source == "latest" else "Выбрана модель"
+        self._eval_model_label = f"{label_prefix}: {os.path.basename(path)}"
+        self.evalModelPathChanged.emit(self._eval_model_path)
+        self.evalModelLabelChanged.emit(self._eval_model_label)
+
     def _select_latest_play_model(self, initial: bool) -> bool:
         latest_model = self._find_latest_model_file()
         if not latest_model:
@@ -829,6 +1082,34 @@ class GUIController(QtCore.QObject):
             self._set_play_model(latest, source="latest")
             return latest
         return "None"
+
+    def _select_latest_eval_model(self, initial: bool) -> bool:
+        latest_model = self._find_latest_model_file()
+        if not latest_model:
+            if initial:
+                self._eval_model_path = ""
+                self._eval_model_label = "Модель не найдена"
+                self.evalModelPathChanged.emit(self._eval_model_path)
+                self.evalModelLabelChanged.emit(self._eval_model_label)
+            return False
+        self._set_eval_model(latest_model, source="latest")
+        return True
+
+    def _resolve_eval_model_path(self) -> str:
+        if self._eval_model_path and os.path.exists(self._eval_model_path):
+            return self._eval_model_path
+        latest = self._find_latest_model_file()
+        if latest:
+            self._set_eval_model(latest, source="latest")
+            return latest
+        return "None"
+
+    def _pythonpath_with_gym_mod(self) -> str:
+        gym_mod_path = os.path.join(self._repo_root, "gym_mod")
+        env_path = os.environ.get("PYTHONPATH", "")
+        if not env_path:
+            return gym_mod_path
+        return os.pathsep.join([gym_mod_path, env_path])
 
     def _script_path(self, script_base: str) -> str:
         ext = "bat" if self._is_windows else "sh"
@@ -996,6 +1277,31 @@ class GUIController(QtCore.QObject):
                 if not name.startswith("checkpoint_ep"):
                     continue
                 if not name.endswith(".pth"):
+                    continue
+                path = os.path.join(root, name)
+                try:
+                    mtime = os.path.getmtime(path)
+                except OSError:
+                    continue
+                if mtime > latest_mtime:
+                    latest_mtime = mtime
+                    latest_path = path
+        return latest_path
+
+    def _find_latest_resume_file(self) -> Optional[str]:
+        checkpoint_path = self._find_latest_checkpoint_file()
+        if checkpoint_path:
+            return checkpoint_path
+
+        models_path = os.path.join(self._repo_root, "models")
+        if not os.path.isdir(models_path):
+            return None
+
+        latest_path = None
+        latest_mtime = -1.0
+        for root, _, files in os.walk(models_path):
+            for name in files:
+                if not (name.startswith("model-") and name.endswith(".pth")):
                     continue
                 path = os.path.join(root, name)
                 try:

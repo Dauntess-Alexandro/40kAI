@@ -8,8 +8,12 @@ from typing import Optional
 
 import torch
 
-from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
-from gym_mod.engine.mission import check_end_of_battle
+from gym_mod.engine.mission import (
+    check_end_of_battle,
+    normalize_mission_name,
+    deploy_for_mission,
+    post_deploy_setup,
+)
 from gym_mod.envs.warhamEnv import roll_off_attacker_defender
 from model.DQN import DQN
 from model.utils import normalize_state_dict
@@ -23,15 +27,58 @@ def log(message: str) -> None:
         print(f"[EVAL] {message}", flush=True)
 
 
+def _find_checkpoint_for_pickle(pickle_path: str) -> Optional[str]:
+    stem, _ = os.path.splitext(pickle_path)
+    direct_candidate = f"{stem}.pth"
+    if os.path.exists(direct_candidate):
+        return direct_candidate
+
+    parent = os.path.dirname(pickle_path)
+    if not os.path.isdir(parent):
+        return None
+
+    best_path = None
+    best_mtime = -1.0
+    for name in os.listdir(parent):
+        if not name.endswith(".pth"):
+            continue
+        path = os.path.join(parent, name)
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            continue
+        if mtime > best_mtime:
+            best_mtime = mtime
+            best_path = path
+    return best_path
+
+
+def _load_checkpoint_payload(checkpoint_path: str):
+    try:
+        return torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    except TypeError:
+        return torch.load(checkpoint_path, map_location="cpu")
+
+
+def _extract_policy_state_dict(checkpoint):
+    if not isinstance(checkpoint, dict):
+        return checkpoint
+    for key in ("policy_net", "model_state_dict", "state_dict"):
+        value = checkpoint.get(key)
+        if isinstance(value, dict):
+            return value
+    if checkpoint and all(hasattr(value, "shape") for value in checkpoint.values()):
+        return checkpoint
+    return None
+
+
 def load_latest_model(model_path: Optional[str] = None):
     if model_path and model_path != "None":
         pickle_path = model_path
-        checkpoint_path = model_path[:-len("pickle")] + "pth"
     else:
         save_path = "models/"
         folders = os.listdir(save_path) if os.path.isdir(save_path) else []
         envs = []
-        modelpth = []
 
         for folder in folders:
             full = os.path.join(save_path, folder)
@@ -40,22 +87,22 @@ def load_latest_model(model_path: Optional[str] = None):
                 for filename in files:
                     if filename.endswith(".pickle"):
                         envs.append(os.path.join(full, filename))
-                    elif filename.endswith(".pth"):
-                        modelpth.append(os.path.join(full, filename))
 
-        if not envs or not modelpth:
-            return None, None, None, None
+        if not envs:
+            return None, None, None, None, None, None
 
         envs.sort(key=lambda x: os.path.getmtime(x))
-        modelpth.sort()
         pickle_path = envs[-1]
-        checkpoint_path = modelpth[-1]
+
+    checkpoint_path = _find_checkpoint_for_pickle(pickle_path)
+    if checkpoint_path is None:
+        return None, None, None, None, pickle_path, None
 
     with open(pickle_path, "rb") as handle:
         env, model, enemy = pickle.load(handle)
 
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
-    return env, model, enemy, checkpoint
+    checkpoint = _load_checkpoint_payload(checkpoint_path)
+    return env, model, enemy, checkpoint, pickle_path, checkpoint_path
 
 
 def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, shoot_mask=None):
@@ -103,7 +150,9 @@ def run_episode(env, model_units, enemy_units, policy_net, epsilon, device):
         log_fn=None,
     )
 
-    deploy_only_war(
+    mission_name = normalize_mission_name(getattr(env_unwrapped, "mission_name", None))
+    deploy_for_mission(
+        mission_name,
         model_units=model_units,
         enemy_units=enemy_units,
         b_len=env_unwrapped.b_len,
@@ -174,9 +223,16 @@ def main():
 
     os.environ.setdefault("MANUAL_DICE", "0")
 
-    env, model_units, enemy_units, checkpoint = load_latest_model(args.model)
+    env, model_units, enemy_units, checkpoint, pickle_path, checkpoint_path = load_latest_model(args.model)
     if env is None:
-        log("Модель не найдена. Проверьте папку models/ и наличие файлов .pickle/.pth.")
+        if pickle_path and checkpoint_path is None:
+            log(
+                "[ERROR] Не найден checkpoint для выбранной модели. "
+                "Где: eval.py (load_latest_model/_find_checkpoint_for_pickle). "
+                f"Что делать: проверьте .pth рядом с .pickle. model={pickle_path}"
+            )
+        else:
+            log("[ERROR] Модель не найдена. Проверьте папку models/ и наличие файлов .pickle/.pth.")
         return 0
 
     attacker_side, defender_side = roll_off_attacker_defender(
@@ -184,7 +240,9 @@ def main():
         log_fn=None,
     )
     env_unwrapped = unwrap_env(env)
-    deploy_only_war(
+    mission_name = normalize_mission_name(getattr(env_unwrapped, "mission_name", None))
+    deploy_for_mission(
+        mission_name,
         model_units=model_units,
         enemy_units=enemy_units,
         b_len=env_unwrapped.b_len,
@@ -206,25 +264,37 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    policy_state = _extract_policy_state_dict(checkpoint)
+    if not isinstance(policy_state, dict):
+        log(
+            "[ERROR] В checkpoint отсутствует policy state_dict. "
+            "Где: eval.py (_extract_policy_state_dict). "
+            "Что делать: укажите корректный .pth, сохранённый train.py."
+        )
+        return 0
+
     net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
     dueling = net_type == "dueling"
-    if not dueling and isinstance(checkpoint, dict):
-        policy_state = checkpoint.get("policy_net", {})
+    if not dueling:
         if any(key.startswith("value_heads.") for key in policy_state):
             dueling = True
 
     policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
     target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
-    optimizer = torch.optim.Adam(policy_net.parameters())
-
-    policy_net.load_state_dict(normalize_state_dict(checkpoint["policy_net"]))
-    target_net.load_state_dict(normalize_state_dict(checkpoint["target_net"]))
-    optimizer.load_state_dict(checkpoint["optimizer"])
+    policy_net.load_state_dict(normalize_state_dict(policy_state))
+    target_state = checkpoint.get("target_net") if isinstance(checkpoint, dict) else None
+    if isinstance(target_state, dict):
+        target_net.load_state_dict(normalize_state_dict(target_state))
+    else:
+        target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
 
     policy_net.eval()
     target_net.eval()
 
-    log(f"Старт оценки: игр={games}, epsilon={epsilon:.3f}.")
+    log(
+        f"Старт оценки: игр={games}, epsilon={epsilon:.3f}, "
+        f"модель={os.path.basename(pickle_path)}, checkpoint={os.path.basename(checkpoint_path)}."
+    )
 
     wins = 0
     losses = 0
@@ -258,6 +328,20 @@ def main():
     winrate_no_draw = wins / (wins + losses) if (wins + losses) else 0.0
     avg_vp_diff = sum(vp_diffs) / len(vp_diffs) if vp_diffs else 0.0
     median_vp_diff = median(vp_diffs) if vp_diffs else 0.0
+    min_vp_diff = min(vp_diffs) if vp_diffs else 0.0
+    max_vp_diff = max(vp_diffs) if vp_diffs else 0.0
+    positive_vp_games = sum(1 for value in vp_diffs if value > 0)
+    negative_vp_games = sum(1 for value in vp_diffs if value < 0)
+    neutral_vp_games = sum(1 for value in vp_diffs if value == 0)
+    sorted_reasons = sorted(end_reasons.items(), key=lambda item: (-item[1], item[0]))
+    reason_labels = {
+        "turn_limit": "Лимит ходов",
+        "wipeout_enemy": "Уничтожение армии противника",
+        "wipeout_model": "Уничтожение армии модели",
+        "auto": "Авто-завершение",
+        "unknown": "Неизвестно",
+    }
+
     log(
         "[SUMMARY] "
         f"wins={wins} losses={losses} draws={draws} "
@@ -267,6 +351,25 @@ def main():
         f"median_vp_diff={median_vp_diff:.3f} "
         f"end_reasons={dict(end_reasons)}"
     )
+
+    log("[DETAIL] ---------- Подробный итог оценки ----------")
+    log(f"[DETAIL] Всего игр: {games}")
+    log(f"[DETAIL] Победы/Поражения/Ничьи: {wins}/{losses}/{draws}")
+    log(f"[DETAIL] Winrate (все игры): {winrate_all:.3f}")
+    log(f"[DETAIL] Winrate (без ничьих): {winrate_no_draw:.3f}")
+    log(f"[DETAIL] VP diff (avg/median/min/max): {avg_vp_diff:.3f}/{median_vp_diff:.3f}/{min_vp_diff:.3f}/{max_vp_diff:.3f}")
+    log(
+        "[DETAIL] VP diff по знаку: "
+        f"положительных={positive_vp_games}, отрицательных={negative_vp_games}, нулевых={neutral_vp_games}"
+    )
+    if sorted_reasons:
+        log("[DETAIL] Причины завершения (по частоте):")
+        for reason, count in sorted_reasons:
+            reason_ru = reason_labels.get(reason, reason)
+            log(f"[DETAIL]   - {reason_ru} ({reason}): {count}")
+    else:
+        log("[DETAIL] Причины завершения: данных нет")
+    log("[DETAIL] ------------------------------------------------")
     return 0
 
 
