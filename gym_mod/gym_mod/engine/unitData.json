@@ -15,6 +15,10 @@
       "Abilities": [
         "Reanimation Protocols"
       ],
+      "KEYWORDS": [
+        "INFANTRY",
+        "BATTLELINE"
+      ],
       "Weapons": [
         "Gauss flayer",
         "Necron close combat weapon"
@@ -35,6 +39,10 @@
       "Abilities": [
         "Reanimation Protocols"
       ],
+      "KEYWORDS": [
+        "INFANTRY",
+        "CHARACTER"
+      ],
       "Weapons": [
         "Relic gauss blaster",
         "Royal warden close combat weapon"
@@ -54,6 +62,11 @@
       "IVSave": 0,
       "Abilities": [
         "Reanimation Protocols"
+      ],
+      "KEYWORDS": [
+        "SWARM",
+        "FLY",
+        "CANOPTEK"
       ],
       "Weapons": [
         "Feeder mandibles"
