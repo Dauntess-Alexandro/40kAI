@@ -15,6 +15,12 @@ class TestGuiModelPositionsRegression(unittest.TestCase):
         source = Path("viewer/opengl_view.py").read_text(encoding="utf-8")
         self.assertIn('models = f"{alive_models}/{total_models}"', source)
 
+    def test_units_layer_draws_icons_for_models_without_circles(self):
+        source = Path("viewer/opengl_view.py").read_text(encoding="utf-8")
+        self.assertIn("# Без кругов: рисуем только иконки", source)
+        self.assertIn("for model_center in model_centers", source)
+        self.assertIn("painter.drawPixmap(rect, icon, QtCore.QRectF(icon.rect()))", source)
+
     def test_app_world_center_prefers_anchor_coords(self):
         source = Path("viewer/app.py").read_text(encoding="utf-8")
         self.assertIn('anchor_x = unit.get("anchor_x")', source)

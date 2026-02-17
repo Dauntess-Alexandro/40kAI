@@ -1441,28 +1441,38 @@ class OpenGLBoardWidget(QOpenGLWidget):
         for render in self._units:
             marker_radius = render.radius
             model_centers = render.model_centers or []
-            if model_centers:
-                model_radius = max(2.0, render.radius * 0.35)
-                painter.setBrush(Theme.brush(render.color))
-                painter.setPen(Theme.pen(Theme.outline, 0.7))
-                for model_center in model_centers:
-                    painter.drawEllipse(model_center, model_radius, model_radius)
-
-            painter.setBrush(Theme.brush(render.color))
-            painter.setPen(Theme.pen(Theme.outline, 0.8))
-            painter.drawEllipse(render.center, max(2.0, marker_radius * 0.45), max(2.0, marker_radius * 0.45))
-
-            if render.icon is None or render.icon.isNull():
+            icon = render.icon
+            if icon is not None and not icon.isNull():
+                # Без кругов: рисуем только иконки (по одной на каждую модель).
+                if model_centers:
+                    icon_size = max(10.0, self.cell_size * 0.75)
+                    for model_center in model_centers:
+                        rect = QtCore.QRectF(
+                            model_center.x() - icon_size / 2,
+                            model_center.y() - icon_size / 2,
+                            icon_size,
+                            icon_size,
+                        )
+                        painter.drawPixmap(rect, icon, QtCore.QRectF(icon.rect()))
+                else:
+                    icon_size = marker_radius * self._unit_icon_scale
+                    rect = QtCore.QRectF(
+                        render.center.x() - icon_size / 2,
+                        render.center.y() - icon_size / 2,
+                        icon_size,
+                        icon_size,
+                    )
+                    painter.drawPixmap(rect, icon, QtCore.QRectF(icon.rect()))
                 continue
 
-            icon_size = marker_radius * self._unit_icon_scale
-            rect = QtCore.QRectF(
-                render.center.x() - icon_size / 2,
-                render.center.y() - icon_size / 2,
-                icon_size,
-                icon_size,
-            )
-            painter.drawPixmap(rect, render.icon, QtCore.QRectF(render.icon.rect()))
+            # Fallback без кругов: небольшой квадрат, если иконки нет.
+            size = max(6.0, marker_radius * 0.6)
+            painter.setBrush(Theme.brush(render.color))
+            painter.setPen(Theme.pen(Theme.outline, 0.8))
+            centers = model_centers or [render.center]
+            for center in centers:
+                rect = QtCore.QRectF(center.x() - size / 2, center.y() - size / 2, size, size)
+                painter.drawRect(rect)
 
     def _draw_selection_layer(self, painter: QtGui.QPainter) -> None:
         if self._selected_unit_key in self._unit_by_key:
