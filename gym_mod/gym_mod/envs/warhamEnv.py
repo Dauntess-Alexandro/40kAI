@@ -9,6 +9,7 @@ import os
 import random
 import re
 import sys
+import time
 from typing import Optional
 
 import reward_config as reward_cfg
@@ -802,6 +803,8 @@ class Warhammer40kEnv(gym.Env):
         self.iter = 0
         self.restarts = 0
         self.playType = False
+        self._state_flush_last_ts = 0.0
+        self._state_flush_pending = False
         self.b_len = b_len
         self.b_hei = b_hei
         self.board = np.zeros((self.b_len, self.b_hei))
@@ -952,18 +955,55 @@ class Warhammer40kEnv(gym.Env):
             return sum(1 for w in pools[idx] if w > 0)
         return 0
 
-    def _flush_state_snapshot(self, reason: str = "") -> None:
-        """Синхронный экспорт state.json для мгновенного обновления GUI."""
+    def _flush_state_snapshot(self, reason: str = "", force: bool = False) -> bool:
+        """Синхронный экспорт state.json для GUI с throttle, безопасный для training."""
         if not hasattr(self, "board"):
-            return
+            return False
+
+        mode_raw = str(os.getenv("STATE_FLUSH_MODE", "auto")).strip().lower()
+        if mode_raw in {"0", "off", "disabled", "none"}:
+            return False
+
+        if mode_raw == "auto":
+            # В training (playType=False) не пишем state на каждый hit.
+            enabled = bool(getattr(self, "playType", False))
+        elif mode_raw in {"gui", "on", "enabled", "always"}:
+            enabled = True
+        elif mode_raw in {"train", "training"}:
+            enabled = False
+        else:
+            enabled = bool(getattr(self, "playType", False))
+
+        if not enabled and not force:
+            return False
+
+        min_interval_ms = 120
+        try:
+            min_interval_ms = max(0, int(os.getenv("STATE_FLUSH_MIN_INTERVAL_MS", "120")))
+        except (TypeError, ValueError):
+            min_interval_ms = 120
+
+        now = time.monotonic()
+        min_interval_s = min_interval_ms / 1000.0
+        if not force and min_interval_s > 0:
+            last_ts = float(getattr(self, "_state_flush_last_ts", 0.0) or 0.0)
+            if now - last_ts < min_interval_s:
+                self._state_flush_pending = True
+                return False
+
         try:
             write_state_json(self)
+            self._state_flush_last_ts = now
+            self._state_flush_pending = False
+            return True
         except Exception as exc:
             details = f" ({reason})" if reason else ""
             self._log(
                 f"[STATE] Не удалось обновить state.json{details}. Где: warhamEnv._flush_state_snapshot. "
                 f"Что делать дальше: проверить доступ к файлу state.json. Ошибка: {exc}"
             )
+            return False
+
 
     def _apply_health_update(self, side: str, idx: int, new_hp: float, reason: str = "") -> None:
         health = self.unit_health if side == "model" else self.enemy_health
@@ -3756,6 +3796,8 @@ class Warhammer40kEnv(gym.Env):
         self.iter = 0
         self.trunc = trunc
         self.playType = playType
+        self._state_flush_last_ts = 0.0
+        self._state_flush_pending = False
 
         if Type == "small":
             self.restarts += 1
@@ -4504,7 +4546,9 @@ class Warhammer40kEnv(gym.Env):
             self.board[int(self.coordsOfOM[i][0])][int(self.coordsOfOM[i][1])] = 3
 
         self._sync_model_positions_to_anchors()
-        write_state_json(self)
+        # Принудительный flush в узловых точках (конец шага/фазы).
+        if not self._flush_state_snapshot(reason="updateBoard", force=True):
+            write_state_json(self)
 
     def returnBoard(self):
         return self.board
