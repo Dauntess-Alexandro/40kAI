@@ -173,6 +173,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         cell_size: int = 24,
         unit_icon_scale: float = 2.75,
         model_icon_scale: float = 0.75,
+        selection_fx_config: Optional[Dict] = None,
         parent: Optional[QtWidgets.QWidget] = None,
     ):
         super().__init__(parent)
@@ -230,6 +231,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._fit_padding = 0.96
         self._unit_icon_scale = max(0.25, float(unit_icon_scale))
         self._model_icon_scale = max(0.2, float(model_icon_scale))
+        self._selection_fx = self._build_selection_fx_config(selection_fx_config)
         self._pan = QtCore.QPointF(0, 0)
         self._target_scale = self._scale
         self._target_pan = QtCore.QPointF(0, 0)
@@ -1388,8 +1390,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.setTransform(self._view_transform())
         self._draw_movement_layer(painter)
         self._draw_objective_layer(painter)
-        self._draw_units_layer(painter)
         self._draw_selection_layer(painter)
+        self._draw_units_layer(painter)
         self._draw_shooting_layer(painter)
         if self.render_fx:
             self._draw_fx_layer(painter)
@@ -1482,11 +1484,110 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 painter.drawRect(rect)
 
     def _draw_selection_layer(self, painter: QtGui.QPainter) -> None:
-        if self._selected_unit_key in self._unit_by_key:
-            render = self._unit_by_key[self._selected_unit_key]
-            painter.setBrush(QtCore.Qt.NoBrush)
-            painter.setPen(Theme.pen(Theme.selection, 2))
-            painter.drawEllipse(render.center, render.radius + 2, render.radius + 2)
+        if self._selected_unit_key not in self._unit_by_key:
+            return
+        render = self._unit_by_key[self._selected_unit_key]
+        unit = self._state_unit(self._selected_unit_key)
+        self._draw_selection_platform(painter, render, unit)
+
+    def _build_selection_fx_config(self, config: Optional[Dict]) -> Dict[str, float]:
+        base = {
+            "enabled": True,
+            "rx_cells": 1.65,
+            "ry_cells": 0.9,
+            "offset_y_cells": 0.28,
+            "alpha": 0.52,
+            "glow_strength": 0.7,
+            "noise_strength": 0.2,
+            "pulse_speed": 1.15,
+            "pulse_amount": 0.08,
+        }
+        if isinstance(config, dict):
+            base.update(config)
+        return base
+
+    def _draw_selection_platform(
+        self,
+        painter: QtGui.QPainter,
+        render: UnitRender,
+        unit: Optional[dict],
+    ) -> None:
+        if not self._selection_fx.get("enabled", True):
+            return
+        rx_cells = max(0.4, float(self._selection_fx.get("rx_cells", 1.65)))
+        ry_cells = max(0.2, float(self._selection_fx.get("ry_cells", 0.9)))
+        alpha = max(0.0, min(1.0, float(self._selection_fx.get("alpha", 0.52))))
+        glow_strength = max(0.0, min(2.0, float(self._selection_fx.get("glow_strength", 0.7))))
+        noise_strength = max(0.0, min(1.0, float(self._selection_fx.get("noise_strength", 0.2))))
+        pulse_speed = max(0.0, float(self._selection_fx.get("pulse_speed", 1.15)))
+        pulse_amount = max(0.0, min(0.4, float(self._selection_fx.get("pulse_amount", 0.08))))
+        offset_y = float(self._selection_fx.get("offset_y_cells", 0.28))
+
+        t = (perf_counter() - self._t0) if self._t0 is not None else 0.0
+        pulse = 1.0 + pulse_amount * math.sin(2.0 * math.pi * pulse_speed * t)
+
+        rx = self.cell_size * rx_cells
+        ry = self.cell_size * ry_cells
+        center = QtCore.QPointF(render.center.x(), render.center.y() + offset_y * self.cell_size)
+        color, strength = self._fx_color_for_unit(unit)
+        base_alpha = alpha * strength
+
+        painter.save()
+        painter.translate(center)
+        scale_y = ry / max(rx, 0.001)
+        painter.scale(1.0, scale_y)
+        gradient = QtGui.QRadialGradient(QtCore.QPointF(0.0, 0.0), rx)
+        inner = QtGui.QColor(color)
+        mid = QtGui.QColor(color)
+        edge = QtGui.QColor(color)
+        inner.setAlphaF(max(0.0, min(1.0, base_alpha * (0.85 + 0.15 * pulse))))
+        mid.setAlphaF(max(0.0, min(1.0, base_alpha * 0.38)))
+        edge.setAlphaF(max(0.0, min(1.0, base_alpha * 0.02)))
+        gradient.setColorAt(0.0, inner)
+        gradient.setColorAt(0.62, mid)
+        gradient.setColorAt(1.0, edge)
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.setBrush(QtGui.QBrush(gradient))
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+        painter.drawEllipse(QtCore.QPointF(0.0, 0.0), rx * pulse, rx * pulse)
+        painter.restore()
+
+        rim_color = QtGui.QColor(color)
+        rim_color.setAlphaF(max(0.0, min(1.0, base_alpha * glow_strength * (0.55 + 0.25 * pulse))))
+        rim_width = max(1.0, self._px_to_world(2.0))
+        painter.save()
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.setPen(QtGui.QPen(rim_color, rim_width))
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+        painter.drawEllipse(center, rx * (0.96 + 0.05 * pulse), ry * (0.96 + 0.05 * pulse))
+        painter.restore()
+
+        if noise_strength <= 0.0:
+            return
+        noise_color = QtGui.QColor(color)
+        noise_color.setAlphaF(base_alpha * 0.35 * noise_strength)
+        seed = hash((render.key, int(t * 10)))
+        rng = random.Random(seed)
+        specks = int(18 + 28 * noise_strength)
+        painter.save()
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.setBrush(noise_color)
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+        for _ in range(specks):
+            angle = rng.uniform(0.0, math.tau)
+            radius_n = math.sqrt(rng.uniform(0.0, 1.0))
+            x = center.x() + math.cos(angle) * rx * radius_n
+            y = center.y() + math.sin(angle) * ry * radius_n
+            size_world = self._px_to_world(rng.uniform(1.0, 2.4))
+            painter.drawEllipse(
+                QtCore.QRectF(
+                    x - size_world / 2,
+                    y - size_world / 2,
+                    size_world,
+                    size_world,
+                )
+            )
+        painter.restore()
 
     def _draw_shooting_layer(self, painter: QtGui.QPainter) -> None:
         if not self._target_highlights:
