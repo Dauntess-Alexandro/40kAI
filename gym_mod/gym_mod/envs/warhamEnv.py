@@ -2059,6 +2059,7 @@ class Warhammer40kEnv(gym.Env):
                             f"Цель в ближнем бою мертва ({self._format_unit_label('enemy', idOfE)}), юнит выходит из боя. Позиция: {pos_before}",
                         )
                     else:
+                        retreated = False
                         if action["attack"] == 0:
                             if self.unit_health[i] * 2 >= self.enemy_health[idOfE]:
                                 reward_delta -= reward_cfg.MOVEMENT_MELEE_RETREAT_PENALTY
@@ -2076,6 +2077,7 @@ class Warhammer40kEnv(gym.Env):
                                 f"Отступление из боя с {self._format_unit_label('enemy', idOfE)}. Позиция до: {pos_before}",
                             )
                             self.unitFellBack[i] = True
+                            retreated = True
                             if battleSh is True:
                                 diceRoll = dice()
                                 if diceRoll < 3:
@@ -2104,12 +2106,13 @@ class Warhammer40kEnv(gym.Env):
                                 "Reward (движение): "
                                 f"остался в бою bonus=+{reward_cfg.MOVEMENT_MELEE_STAY_BONUS:.3f}",
                             )
-                        self._log_unit(
-                            "MODEL",
-                            modelName,
-                            i,
-                            f"Остаётся в ближнем бою с {self._format_unit_label('enemy', idOfE)}, движение пропущено.",
-                        )
+                        if not retreated:
+                            self._log_unit(
+                                "MODEL",
+                                modelName,
+                                i,
+                                f"Остаётся в ближнем бою с {self._format_unit_label('enemy', idOfE)}, движение пропущено.",
+                            )
             if objective_hold_delta != 0 or objective_proximity_delta != 0:
                 total_obj_delta = objective_hold_delta + objective_proximity_delta
                 self._log_reward(
