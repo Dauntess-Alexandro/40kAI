@@ -168,7 +168,13 @@ class TextureManager:
 class OpenGLBoardWidget(QOpenGLWidget):
     unit_selected = QtCore.Signal(str, int)
 
-    def __init__(self, cell_size: int = 24, unit_icon_scale: float = 2.75, parent: Optional[QtWidgets.QWidget] = None):
+    def __init__(
+        self,
+        cell_size: int = 24,
+        unit_icon_scale: float = 2.75,
+        model_icon_scale: float = 0.75,
+        parent: Optional[QtWidgets.QWidget] = None,
+    ):
         super().__init__(parent)
         self.cell_size = cell_size
         self._state: Dict = {}
@@ -222,7 +228,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._min_scale = 0.2
         self._max_scale = 6.0
         self._fit_padding = 0.96
-        self._unit_icon_scale = max(0.5, float(unit_icon_scale))
+        self._unit_icon_scale = max(0.25, float(unit_icon_scale))
+        self._model_icon_scale = max(0.2, float(model_icon_scale))
         self._pan = QtCore.QPointF(0, 0)
         self._target_scale = self._scale
         self._target_pan = QtCore.QPointF(0, 0)
@@ -1445,7 +1452,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if icon is not None and not icon.isNull():
                 # Без кругов: рисуем только иконки (по одной на каждую модель).
                 if model_centers:
-                    icon_size = max(10.0, self.cell_size * 0.75)
+                    icon_size = max(6.0, self.cell_size * self._model_icon_scale)
                     for model_center in model_centers:
                         rect = QtCore.QRectF(
                             model_center.x() - icon_size / 2,

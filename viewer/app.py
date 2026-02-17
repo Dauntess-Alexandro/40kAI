@@ -22,6 +22,7 @@ def load_viewer_config() -> dict:
     defaults = {
         "cell_size": 24,
         "unit_icon_scale": 2.75,
+        "model_icon_scale": 0.75,
     }
     try:
         with open(VIEWER_CONFIG_PATH, "r", encoding="utf-8") as handle:
@@ -200,11 +201,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._viewer_config = load_viewer_config()
         cell_size = int(self._viewer_config.get("cell_size", 24))
         unit_icon_scale = float(self._viewer_config.get("unit_icon_scale", 2.75))
+        model_icon_scale = float(self._viewer_config.get("model_icon_scale", 0.75))
 
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = OpenGLBoardWidget(
             cell_size=max(8, cell_size),
-            unit_icon_scale=max(0.5, unit_icon_scale),
+            unit_icon_scale=max(0.25, unit_icon_scale),
+            model_icon_scale=max(0.2, model_icon_scale),
         )
         self.map_scene.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding,
