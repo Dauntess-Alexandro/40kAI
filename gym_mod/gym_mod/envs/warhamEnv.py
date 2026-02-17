@@ -983,6 +983,9 @@ class Warhammer40kEnv(gym.Env):
                     idx,
                     f"Потери: убито моделей {killed}. Осталось: {new_alive}. HP: {old_hp:.1f} -> {bounded_hp:.1f}{suffix}",
                 )
+            self._sync_model_positions_to_anchors()
+            if killed > 0:
+                self._auto_fix_unit_coherency(side, idx, reason="потери моделей")
 
     def _sync_model_positions_to_anchors(self) -> None:
         self.unit_anchor_coords = [list(coords) for coords in self.unit_coords]
@@ -990,11 +993,11 @@ class Warhammer40kEnv(gym.Env):
         self.unit_model_positions = []
         for idx, anchor in enumerate(self.unit_anchor_coords):
             alive = self._alive_models_from_pool("model", idx)
-            self.unit_model_positions.append([list(anchor) for _ in range(alive)])
+            self.unit_model_positions.append(self._build_anchor_formation(anchor, alive))
         self.enemy_model_positions = []
         for idx, anchor in enumerate(self.enemy_anchor_coords):
             alive = self._alive_models_from_pool("enemy", idx)
-            self.enemy_model_positions.append([list(anchor) for _ in range(alive)])
+            self.enemy_model_positions.append(self._build_anchor_formation(anchor, alive))
 
     def _init_model_state_from_health(self) -> None:
         self.unit_model_wounds = [
@@ -1006,6 +1009,109 @@ class Warhammer40kEnv(gym.Env):
             for i in range(len(self.enemy_health))
         ]
         self._sync_model_positions_to_anchors()
+
+    def _coherency_required_neighbors(self, alive_models: int) -> int:
+        if alive_models >= 7:
+            return 2
+        if alive_models >= 2:
+            return 1
+        return 0
+
+    def _models_in_coherency(self, model_a, model_b) -> bool:
+        if model_a is None or model_b is None:
+            return False
+        ax, ay, az = float(model_a[0]), float(model_a[1]), float(model_a[2] if len(model_a) > 2 else 0)
+        bx, by, bz = float(model_b[0]), float(model_b[1]), float(model_b[2] if len(model_b) > 2 else 0)
+        horizontal = float(np.sqrt((bx - ax) ** 2 + (by - ay) ** 2))
+        vertical = abs(bz - az)
+        return horizontal <= 2.0 and vertical <= 5.0
+
+    def _build_anchor_formation(self, anchor_xy, count: int):
+        x, y = int(anchor_xy[0]), int(anchor_xy[1])
+        offsets = [
+            (0, 0),
+            (0, 1), (0, -1), (1, 0), (-1, 0),
+            (1, 1), (1, -1), (-1, 1), (-1, -1),
+            (0, 2), (0, -2), (2, 0), (-2, 0),
+            (1, 2), (1, -2), (-1, 2), (-1, -2),
+            (2, 1), (2, -1), (-2, 1), (-2, -1),
+        ]
+        positions = []
+        for dx, dy in offsets:
+            positions.append([x + dx, y + dy, 0])
+            if len(positions) >= count:
+                break
+        while len(positions) < count:
+            positions.append([x, y, 0])
+        return positions
+
+    def _validate_unit_coherency(self, side: str, idx: int) -> bool:
+        positions_all = self.unit_model_positions if side == "model" else self.enemy_model_positions
+        if not (0 <= idx < len(positions_all)):
+            return True
+        positions = positions_all[idx]
+        alive = len(positions)
+        required = self._coherency_required_neighbors(alive)
+        if required == 0:
+            return True
+        for i, pos_i in enumerate(positions):
+            neighbors = 0
+            for j, pos_j in enumerate(positions):
+                if i == j:
+                    continue
+                if self._models_in_coherency(pos_i, pos_j):
+                    neighbors += 1
+            if neighbors < required:
+                return False
+        return True
+
+    def _auto_fix_unit_coherency(self, side: str, idx: int, reason: str = "") -> None:
+        anchors = self.unit_anchor_coords if side == "model" else self.enemy_anchor_coords
+        positions_all = self.unit_model_positions if side == "model" else self.enemy_model_positions
+        if not (0 <= idx < len(anchors)):
+            return
+        alive = self._alive_models_from_pool(side, idx)
+        positions_all[idx] = self._build_anchor_formation(anchors[idx], alive)
+        unit_id = idx + (21 if side == "model" else 11)
+        side_label = "MODEL" if side == "model" else self._display_side("enemy")
+        why = f" Причина: {reason}." if reason else ""
+        self._log_unit(
+            side_label,
+            unit_id,
+            idx,
+            f"Когеренция автоматически обновлена. Живых моделей: {alive}.{why}",
+        )
+
+    def _auto_fix_all_coherency(self, reason: str = "") -> None:
+        for side, total in (("model", len(self.unit_health)), ("enemy", len(self.enemy_health))):
+            for idx in range(total):
+                if self._alive_models_from_pool(side, idx) <= 1:
+                    continue
+                if not self._validate_unit_coherency(side, idx):
+                    self._auto_fix_unit_coherency(side, idx, reason=reason)
+
+    def _unit_model_points(self, side: str, idx: int):
+        positions_all = self.unit_model_positions if side == "model" else self.enemy_model_positions
+        coords_all = self.unit_coords if side == "model" else self.enemy_coords
+        if 0 <= idx < len(positions_all) and positions_all[idx]:
+            return positions_all[idx]
+        if 0 <= idx < len(coords_all):
+            c = coords_all[idx]
+            return [[float(c[0]), float(c[1]), 0.0]]
+        return []
+
+    def _distance_between_units(self, side_a: str, idx_a: int, side_b: str, idx_b: int) -> float:
+        pts_a = self._unit_model_points(side_a, idx_a)
+        pts_b = self._unit_model_points(side_b, idx_b)
+        if not pts_a or not pts_b:
+            return float("inf")
+        best = float("inf")
+        for pa in pts_a:
+            for pb in pts_b:
+                d = distance(pa[:2], pb[:2])
+                if d < best:
+                    best = d
+        return best
 
     def _should_log(self) -> bool:
         if self._is_verbose():
@@ -1492,6 +1598,7 @@ class Warhammer40kEnv(gym.Env):
             target_coords = self.unit_coords if moving_unit_side == "model" else self.enemy_coords
 
         target_pos = target_coords[moving_idx]
+        target_side = "enemy" if moving_unit_side == "enemy" else "model"
         candidates = []
         for i in range(len(defender_health)):
             if defender_health[i] <= 0:
@@ -1500,7 +1607,7 @@ class Warhammer40kEnv(gym.Env):
                 continue
             if defender_weapon[i] == "None":
                 continue
-            if distance(defender_coords[i], target_pos) <= defender_weapon[i]["Range"]:
+            if self._distance_between_units(defender_side, i, target_side, moving_idx) <= defender_weapon[i]["Range"]:
                 candidates.append(i)
         return candidates
 
@@ -1771,6 +1878,7 @@ class Warhammer40kEnv(gym.Env):
         self.battle_round += 1
         self.numTurns = self.battle_round
         self._round_banner_shown = False
+        self._auto_fix_all_coherency(reason="конец боевого раунда")
         apply_end_of_battle(self, log_fn=self._log)
 
     def _advance_turn_order(self):
@@ -2544,7 +2652,7 @@ class Warhammer40kEnv(gym.Env):
                 shootAbleUnits = []
                 for j in range(len(self.enemy_health)):
                     if (
-                        distance(self.unit_coords[i], self.enemy_coords[j]) <= self.unit_weapon[i]["Range"]
+                        self._distance_between_units("model", i, "enemy", j) <= self.unit_weapon[i]["Range"]
                         and self.enemy_health[j] > 0
                         and self.enemyInAttack[j][0] == 0
                     ):
@@ -2556,7 +2664,7 @@ class Warhammer40kEnv(gym.Env):
                         idOfE = valid_target_ids[raw]
                         target_hp_prev = self.enemy_health[idOfE]
                         target_max_hp = self.enemy_data[idOfE]["W"] * self.enemy_data[idOfE]["#OfModels"]
-                        distances = {j: distance(self.unit_coords[i], self.enemy_coords[j]) for j in valid_target_ids}
+                        distances = {j: self._distance_between_units("model", i, "enemy", j) for j in valid_target_ids}
                         closest = min(distances, key=distances.get)
                         min_hp = min(valid_target_ids, key=lambda idx: self.enemy_health[idx])
                         if idOfE == closest:
@@ -2589,7 +2697,7 @@ class Warhammer40kEnv(gym.Env):
                                 self.enemy_health[idOfE],
                                 self.enemy_data[idOfE],
                                 effects=effect,
-                                distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
+                                distance_to_target=self._distance_between_units("model", i, "enemy", idOfE),
                                 roller=_logger.roll,
                             )
                         else:
@@ -2600,7 +2708,7 @@ class Warhammer40kEnv(gym.Env):
                                 self.enemy_health[idOfE],
                                 self.enemy_data[idOfE],
                                 effects=effect,
-                                distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
+                                distance_to_target=self._distance_between_units("model", i, "enemy", idOfE),
                             )
                         self._apply_health_update("enemy", idOfE, modHealth, reason="shooting")
                         damage_dealt = max(0.0, float(target_hp_prev - modHealth))
@@ -2794,7 +2902,7 @@ class Warhammer40kEnv(gym.Env):
                 shootAbleUnits = []
                 for j in range(len(self.unit_health)):
                     if (
-                        distance(self.enemy_coords[i], self.unit_coords[j]) <= self.enemy_weapon[i]["Range"]
+                        self._distance_between_units("enemy", i, "model", j) <= self.enemy_weapon[i]["Range"]
                         and self.unit_health[j] > 0
                         and self.unitInAttack[j][0] == 0
                     ):
@@ -2828,7 +2936,7 @@ class Warhammer40kEnv(gym.Env):
                                 self.unit_health[idOfM],
                                 self.unit_data[idOfM],
                                 effects=effect,
-                                distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfM]),
+                                distance_to_target=self._distance_between_units("enemy", i, "model", idOfM),
                                 roller=_logger.roll,
                             )
                         else:
@@ -2839,7 +2947,7 @@ class Warhammer40kEnv(gym.Env):
                                 self.unit_health[idOfM],
                                 self.unit_data[idOfM],
                                 effects=effect,
-                                distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfM]),
+                                distance_to_target=self._distance_between_units("enemy", i, "model", idOfM),
                             )
                         self._apply_health_update("model", idOfM, modHealth, reason="shooting")
                         self._log_unit(
@@ -2898,7 +3006,7 @@ class Warhammer40kEnv(gym.Env):
                     else:
                         shootAble = np.array([])
                         for j in range(len(self.unit_health)):
-                            if distance(self.enemy_coords[i], self.unit_coords[j]) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
+                            if self._distance_between_units("enemy", i, "model", j) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
                                 shootAble = np.append(shootAble, j)
                         if len(shootAble) > 0:
                             response = False
@@ -2965,7 +3073,7 @@ class Warhammer40kEnv(gym.Env):
                     else:
                         shootAbleUnits = []
                         for j in range(len(self.unit_health)):
-                            if distance(self.enemy_coords[i], self.unit_coords[j]) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
+                            if self._distance_between_units("enemy", i, "model", j) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
                                 shootAbleUnits.append(j)
                         if len(shootAbleUnits) > 0:
                             idOfM = np.random.choice(shootAbleUnits)
@@ -2982,7 +3090,7 @@ class Warhammer40kEnv(gym.Env):
                                 self.unit_health[idOfM],
                                 self.unit_data[idOfM],
                                 effects=effect,
-                                distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfM]),
+                                distance_to_target=self._distance_between_units("enemy", i, "model", idOfM),
                             )
                             self._apply_health_update("model", idOfM, modHealth, reason="shooting")
                             if self.trunc is False:

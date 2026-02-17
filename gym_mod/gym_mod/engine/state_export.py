@@ -40,7 +40,7 @@ def _read_event_tail(max_events=2000):
     return recorder.snapshot(limit=max_events)
 
 
-def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, anchor=None):
+def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, anchor=None, model_positions=None):
     name = "—"
     models = None
     if isinstance(unit_data, dict):
@@ -58,6 +58,7 @@ def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, ancho
         "y": _safe_int(coords[0], None) if coords is not None else None,
         "anchor_x": _safe_int(anchor[1], None) if anchor is not None else None,
         "anchor_y": _safe_int(anchor[0], None) if anchor is not None else None,
+        "model_positions": model_positions or [],
     }
 
 
@@ -72,7 +73,10 @@ def write_state_json(env, path=None):
         hp = env.enemy_health[idx] if idx < len(env.enemy_health) else None
         units.append(_unit_payload("player", unit_id, unit_data, coords, hp,
                                    alive_models=env._alive_models_from_pool("enemy", idx) if hasattr(env, "_alive_models_from_pool") else None,
-                                   anchor=(env.enemy_anchor_coords[idx] if hasattr(env, "enemy_anchor_coords") and idx < len(env.enemy_anchor_coords) else None)))
+                                   anchor=(env.enemy_anchor_coords[idx] if hasattr(env, "enemy_anchor_coords") and idx < len(env.enemy_anchor_coords) else None),
+                                   model_positions=([{"x": _safe_int(pos[1], None), "y": _safe_int(pos[0], None), "z": _safe_int(pos[2], 0)}
+                                                     for pos in env.enemy_model_positions[idx]]
+                                                    if hasattr(env, "enemy_model_positions") and idx < len(env.enemy_model_positions) else [])))
 
     for idx, coords in enumerate(getattr(env, "unit_coords", [])):
         unit_id = env._unit_id("model", idx)
@@ -80,7 +84,10 @@ def write_state_json(env, path=None):
         hp = env.unit_health[idx] if idx < len(env.unit_health) else None
         units.append(_unit_payload("model", unit_id, unit_data, coords, hp,
                                    alive_models=env._alive_models_from_pool("model", idx) if hasattr(env, "_alive_models_from_pool") else None,
-                                   anchor=(env.unit_anchor_coords[idx] if hasattr(env, "unit_anchor_coords") and idx < len(env.unit_anchor_coords) else None)))
+                                   anchor=(env.unit_anchor_coords[idx] if hasattr(env, "unit_anchor_coords") and idx < len(env.unit_anchor_coords) else None),
+                                   model_positions=([{"x": _safe_int(pos[1], None), "y": _safe_int(pos[0], None), "z": _safe_int(pos[2], 0)}
+                                                     for pos in env.unit_model_positions[idx]]
+                                                    if hasattr(env, "unit_model_positions") and idx < len(env.unit_model_positions) else [])))
 
     objectives = []
     for idx, coords in enumerate(getattr(env, "coordsOfOM", [])):
