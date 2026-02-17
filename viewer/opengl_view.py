@@ -43,6 +43,7 @@ class UnitRender:
     color: QtGui.QColor
     label: str
     icon: Optional[QtGui.QPixmap] = None
+    model_centers: Optional[List[QtCore.QPointF]] = None
 
 
 @dataclass
@@ -362,7 +363,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._curr_unit_positions = {}
         for unit in self._units_state:
             key = (unit.get("side"), unit.get("id"))
-            view_cell = self._state_to_view_cell(unit.get("x"), unit.get("y"))
+            view_cell = self._unit_anchor_view_cell(unit)
             if key[0] is None or key[1] is None or view_cell is None:
                 continue
             view_x, view_y = view_cell
@@ -450,6 +451,34 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def _state_to_view_cell(self, x: object, y: object) -> Optional[Tuple[int, int]]:
         return self._state_xy_to_view_xy(x, y)
+
+    def _unit_anchor_state_xy(self, unit: dict) -> Tuple[object, object]:
+        if not isinstance(unit, dict):
+            return None, None
+        anchor_x = unit.get("anchor_x")
+        anchor_y = unit.get("anchor_y")
+        if self._safe_int(anchor_x) is not None and self._safe_int(anchor_y) is not None:
+            return anchor_x, anchor_y
+        return unit.get("x"), unit.get("y")
+
+    def _unit_anchor_view_cell(self, unit: dict) -> Optional[Tuple[int, int]]:
+        anchor_x, anchor_y = self._unit_anchor_state_xy(unit)
+        return self._state_to_view_cell(anchor_x, anchor_y)
+
+    def _unit_model_view_cells(self, unit: dict) -> List[Tuple[int, int]]:
+        if not isinstance(unit, dict):
+            return []
+        model_positions = unit.get("model_positions")
+        if not isinstance(model_positions, list):
+            return []
+        cells: List[Tuple[int, int]] = []
+        for pos in model_positions:
+            if not isinstance(pos, dict):
+                continue
+            view_cell = self._state_to_view_cell(pos.get("x"), pos.get("y"))
+            if view_cell is not None:
+                cells.append(view_cell)
+        return cells
 
     def _resolve_board_dims(self, board: dict, units: List[dict]) -> Tuple[int, int]:
         """Viewer contract: env coordinates are x in [0..W-1], y in [0..H-1]."""
@@ -922,14 +951,30 @@ class OpenGLBoardWidget(QOpenGLWidget):
             center_y = interp_y * self.cell_size + self.cell_size / 2 - offset
             color = Theme.player if unit.get("side") == "player" else Theme.model
             radius = self.cell_size * 0.35
+            model_cells = self._unit_model_view_cells(unit)
+            model_centers = [
+                QtCore.QPointF(
+                    model_x * self.cell_size + self.cell_size / 2,
+                    model_y * self.cell_size + self.cell_size / 2,
+                )
+                for model_x, model_y in model_cells
+            ]
             unit_name = str(unit.get("name") or "")
+            alive_models = self._safe_int(unit.get("alive_models"))
+            total_models = self._safe_int(unit.get("models"))
+            model_label = ""
+            if alive_models is not None and total_models is not None:
+                model_label = f" {alive_models}/{total_models}"
+            elif total_models is not None:
+                model_label = f" {total_models}"
             render = UnitRender(
                 key=key,
                 center=QtCore.QPointF(center_x, center_y),
                 radius=radius,
                 color=color,
-                label=str(unit.get("id", "")),
+                label=f"{unit.get('id', '')}{model_label}",
                 icon=self._icon_for_unit_name(unit_name),
+                model_centers=model_centers,
             )
             self._units.append(render)
             if key[0] is not None and key[1] is not None:
@@ -957,7 +1002,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         move_range = self._move_range
         if move_range is None:
             return
-        view_cell = self._state_to_view_cell(unit.get("x"), unit.get("y"))
+        view_cell = self._unit_anchor_view_cell(unit)
         if view_cell is None:
             return
         x, y = view_cell
@@ -986,7 +1031,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         shoot_range = self._shoot_range
         if shoot_range is None:
             return
-        if self._state_to_view_cell(unit.get("x"), unit.get("y")) is None:
+        if self._unit_anchor_view_cell(unit) is None:
             return
         target_keys = self._resolve_targets(unit, shoot_range)
         for key in target_keys:
@@ -1395,9 +1440,17 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def _draw_units_layer(self, painter: QtGui.QPainter) -> None:
         for render in self._units:
             marker_radius = render.radius
+            model_centers = render.model_centers or []
+            if model_centers:
+                model_radius = max(2.0, render.radius * 0.35)
+                painter.setBrush(Theme.brush(render.color))
+                painter.setPen(Theme.pen(Theme.outline, 0.7))
+                for model_center in model_centers:
+                    painter.drawEllipse(model_center, model_radius, model_radius)
+
             painter.setBrush(Theme.brush(render.color))
             painter.setPen(Theme.pen(Theme.outline, 0.8))
-            painter.drawEllipse(render.center, marker_radius, marker_radius)
+            painter.drawEllipse(render.center, max(2.0, marker_radius * 0.45), max(2.0, marker_radius * 0.45))
 
             if render.icon is None or render.icon.isNull():
                 continue
@@ -2235,7 +2288,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         col, row = view_cell
         candidates = []
         for unit in self._units_state:
-            view_cell = self._state_to_view_cell(unit.get("x"), unit.get("y"))
+            view_cell = self._unit_anchor_view_cell(unit)
             if view_cell == (col, row):
                 candidates.append(unit)
         closest_key = None
@@ -2433,7 +2486,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def _build_unit_tooltip_payload(self, unit: dict) -> Dict:
         title = self._unit_display_name(unit)
-        models = unit.get("models", "—")
+        total_models = self._safe_int(unit.get("models"))
+        alive_models = self._safe_int(unit.get("alive_models"))
+        if alive_models is not None and total_models is not None:
+            models = f"{alive_models}/{total_models}"
+        elif total_models is not None:
+            models = str(total_models)
+        else:
+            models = unit.get("models", "—")
         wounds_value = self._coerce_number(unit.get("wounds", unit.get("hp")))
         wounds_max = self._coerce_number(
             unit.get("max_wounds", unit.get("wounds_max", unit.get("wounds", unit.get("hp"))))

@@ -1498,7 +1498,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _unit_to_world_center(self, unit: dict) -> Optional[QtCore.QPointF]:
         cell = self.map_scene.cell_size
-        view_xy = self.map_scene._state_xy_to_view_xy(unit.get("x"), unit.get("y"))
+        anchor_x = unit.get("anchor_x") if isinstance(unit, dict) else None
+        anchor_y = unit.get("anchor_y") if isinstance(unit, dict) else None
+        if self.map_scene._safe_int(anchor_x) is not None and self.map_scene._safe_int(anchor_y) is not None:
+            view_xy = self.map_scene._state_xy_to_view_xy(anchor_x, anchor_y)
+        else:
+            view_xy = self.map_scene._state_xy_to_view_xy(unit.get("x"), unit.get("y"))
         if view_xy is None:
             return None
         x, y = view_xy
