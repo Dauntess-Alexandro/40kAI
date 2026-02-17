@@ -1785,7 +1785,6 @@ class Warhammer40kEnv(gym.Env):
     def command_phase(self, side: str, action=None, manual: bool = False):
         self.begin_phase(side, "command")
         if side == "model":
-            self._log_phase("MODEL", "command")
             self.modelCP += 1
             self.enemyCP += 1
             reward_delta = 0
@@ -1985,7 +1984,6 @@ class Warhammer40kEnv(gym.Env):
     def movement_phase(self, side: str, action=None, manual: bool = False, battle_shock=None):
         self.begin_phase(side, "movement")
         if side == "model":
-            self._log_phase("MODEL", "movement")
             advanced_flags = [False] * len(self.unit_health)
             reward_delta = 0
             objective_hold_delta = 0.0
@@ -2226,7 +2224,6 @@ class Warhammer40kEnv(gym.Env):
             return advanced_flags, reward_delta, movement_meta
 
         if side == "enemy" and action is not None and not manual:
-            self._log_phase(self._display_side("enemy"), "movement")
             advanced_flags = [False] * len(self.enemy_health)
             move_dir = action.get("move", 4) if isinstance(action, dict) else 4
             attack_choice = action.get("attack", 1) if isinstance(action, dict) else 1
@@ -2524,7 +2521,6 @@ class Warhammer40kEnv(gym.Env):
     def shooting_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False):
         self.begin_phase(side, "shooting")
         if side == "model":
-            self._log_phase("MODEL", "shooting")
             reward_delta = 0
             for i in range(len(self.unit_health)):
                 modelName = i + 21
@@ -2776,7 +2772,6 @@ class Warhammer40kEnv(gym.Env):
             )
             return reward_delta
         elif side == "enemy" and action is not None and not manual:
-            self._log_phase(self._display_side("enemy"), "shooting")
             for i in range(len(self.enemy_health)):
                 unit_id = i + 11
                 advanced = advanced_flags[i] if advanced_flags else False
@@ -2999,7 +2994,6 @@ class Warhammer40kEnv(gym.Env):
     def charge_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False):
         self.begin_phase(side, "charge")
         if side == "model":
-            self._log_phase("MODEL", "charge")
             reward_delta = 0
             any_charge_targets = False
             for i in range(len(self.unit_health)):
@@ -3154,7 +3148,6 @@ class Warhammer40kEnv(gym.Env):
             )
             return reward_delta
         elif side == "enemy" and action is not None and not manual:
-            self._log_phase(self._display_side("enemy"), "charge")
             any_charge_targets = False
             for i in range(len(self.enemy_health)):
                 unit_id = i + 11
@@ -3438,7 +3431,6 @@ class Warhammer40kEnv(gym.Env):
         advantage_term = 0.0
         strength_term = 0.0
         if side == "model":
-            self._log_phase("MODEL", "fight")
             engaged_model = [i for i in range(len(self.unit_health)) if self.unit_health[i] > 0 and self.unitInAttack[i][0] == 1]
             engaged_enemy = [i for i in range(len(self.enemy_health)) if self.enemy_health[i] > 0 and self.enemyInAttack[i][0] == 1]
             if not engaged_model and not engaged_enemy:
