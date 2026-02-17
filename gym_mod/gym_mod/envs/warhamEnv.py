@@ -9,6 +9,7 @@ import os
 import random
 import re
 import sys
+import time
 from typing import Optional
 
 import reward_config as reward_cfg
@@ -802,6 +803,8 @@ class Warhammer40kEnv(gym.Env):
         self.iter = 0
         self.restarts = 0
         self.playType = False
+        self._state_flush_last_ts = 0.0
+        self._state_flush_pending = False
         self.b_len = b_len
         self.b_hei = b_hei
         self.board = np.zeros((self.b_len, self.b_hei))
@@ -816,6 +819,12 @@ class Warhammer40kEnv(gym.Env):
         self.enemy_coords = []
         self.unit_health = []
         self.enemy_health = []
+        self.unit_model_wounds = []
+        self.enemy_model_wounds = []
+        self.unit_anchor_coords = []
+        self.enemy_anchor_coords = []
+        self.unit_model_positions = []
+        self.enemy_model_positions = []
 
         self.game_over = False
         self.unitInAttack = []
@@ -892,6 +901,8 @@ class Warhammer40kEnv(gym.Env):
             ),
         )
 
+        self._init_model_state_from_health()
+
         obsSpace = (len(model) * 3) + (len(enemy) * 3) + len(self.coordsOfOM * 2) + 1
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obsSpace,), dtype=np.float32)
 
@@ -899,6 +910,8 @@ class Warhammer40kEnv(gym.Env):
         return {
             "model health": self.unit_health,
             "player health": self.enemy_health,
+            "model alive models": [self._alive_models_from_pool("model", i) for i in range(len(self.unit_health))],
+            "player alive models": [self._alive_models_from_pool("enemy", i) for i in range(len(self.enemy_health))],
             "modelCP": self.modelCP,
             "playerCP": self.enemyCP,
             "in attack": self.unitInAttack,
@@ -913,6 +926,246 @@ class Warhammer40kEnv(gym.Env):
             "end reason": getattr(self, "last_end_reason", ""),
             "winner": getattr(self, "last_winner", None),
         }
+
+
+    def _coerce_int(self, value, default=0):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _model_wounds_pool_from_hp(self, unit_data: dict, hp_value: float) -> list[int]:
+        if not isinstance(unit_data, dict):
+            return []
+        wounds_max = max(1, self._coerce_int(unit_data.get("W"), default=1))
+        models_cap = max(1, self._coerce_int(unit_data.get("#OfModels"), default=1))
+        hp = max(0, self._coerce_int(round(float(hp_value)), default=0))
+        if hp <= 0:
+            return []
+        full = hp // wounds_max
+        rem = hp % wounds_max
+        pool = [wounds_max] * min(full, models_cap)
+        if rem > 0 and len(pool) < models_cap:
+            pool.append(rem)
+        return pool[:models_cap]
+
+    def _alive_models_from_pool(self, side: str, idx: int) -> int:
+        pools = self.unit_model_wounds if side == "model" else self.enemy_model_wounds
+        if 0 <= idx < len(pools):
+            return sum(1 for w in pools[idx] if w > 0)
+        return 0
+
+    def _flush_state_snapshot(self, reason: str = "", force: bool = False) -> bool:
+        """Синхронный экспорт state.json для GUI с throttle, безопасный для training."""
+        if not hasattr(self, "board"):
+            return False
+
+        mode_raw = str(os.getenv("STATE_FLUSH_MODE", "auto")).strip().lower()
+        if mode_raw in {"0", "off", "disabled", "none"}:
+            return False
+
+        if mode_raw == "auto":
+            # В training (playType=False) не пишем state на каждый hit.
+            enabled = bool(getattr(self, "playType", False))
+        elif mode_raw in {"gui", "on", "enabled", "always"}:
+            enabled = True
+        elif mode_raw in {"train", "training"}:
+            enabled = False
+        else:
+            enabled = bool(getattr(self, "playType", False))
+
+        if not enabled and not force:
+            return False
+
+        min_interval_ms = 120
+        try:
+            min_interval_ms = max(0, int(os.getenv("STATE_FLUSH_MIN_INTERVAL_MS", "120")))
+        except (TypeError, ValueError):
+            min_interval_ms = 120
+
+        now = time.monotonic()
+        min_interval_s = min_interval_ms / 1000.0
+        if not force and min_interval_s > 0:
+            last_ts = float(getattr(self, "_state_flush_last_ts", 0.0) or 0.0)
+            if now - last_ts < min_interval_s:
+                self._state_flush_pending = True
+                return False
+
+        try:
+            write_state_json(self)
+            self._state_flush_last_ts = now
+            self._state_flush_pending = False
+            return True
+        except Exception as exc:
+            details = f" ({reason})" if reason else ""
+            self._log(
+                f"[STATE] Не удалось обновить state.json{details}. Где: warhamEnv._flush_state_snapshot. "
+                f"Что делать дальше: проверить доступ к файлу state.json. Ошибка: {exc}"
+            )
+            return False
+
+
+    def _apply_health_update(self, side: str, idx: int, new_hp: float, reason: str = "") -> None:
+        health = self.unit_health if side == "model" else self.enemy_health
+        data = self.unit_data if side == "model" else self.enemy_data
+        pools = self.unit_model_wounds if side == "model" else self.enemy_model_wounds
+        prefix = "MODEL" if side == "model" else self._display_side("enemy")
+
+        if not (0 <= idx < len(health)):
+            return
+
+        old_hp = float(health[idx])
+        bounded_hp = max(0.0, float(new_hp))
+        health[idx] = bounded_hp
+
+        if 0 <= idx < len(data):
+            old_pool = pools[idx] if idx < len(pools) else []
+            old_alive = sum(1 for w in old_pool if w > 0)
+            new_pool = self._model_wounds_pool_from_hp(data[idx], bounded_hp)
+            new_alive = sum(1 for w in new_pool if w > 0)
+            if idx < len(pools):
+                pools[idx] = new_pool
+            killed = max(0, old_alive - new_alive)
+            if killed > 0:
+                unit_id = idx + (21 if side == "model" else 11)
+                unit_label = self._format_unit_label(side, idx, unit_id=unit_id)
+                suffix = f" ({reason})" if reason else ""
+                self._log_unit(
+                    prefix,
+                    unit_id,
+                    idx,
+                    f"Потери: убито моделей {killed}. Осталось: {new_alive}. HP: {old_hp:.1f} -> {bounded_hp:.1f}{suffix}",
+                )
+            self._sync_model_positions_to_anchors()
+            if killed > 0:
+                self._auto_fix_unit_coherency(side, idx, reason="потери моделей")
+            self._flush_state_snapshot(reason=f"health_update:{side}:{idx}")
+
+    def _sync_model_positions_to_anchors(self) -> None:
+        self.unit_anchor_coords = [list(coords) for coords in self.unit_coords]
+        self.enemy_anchor_coords = [list(coords) for coords in self.enemy_coords]
+        self.unit_model_positions = []
+        for idx, anchor in enumerate(self.unit_anchor_coords):
+            alive = self._alive_models_from_pool("model", idx)
+            self.unit_model_positions.append(self._build_anchor_formation(anchor, alive))
+        self.enemy_model_positions = []
+        for idx, anchor in enumerate(self.enemy_anchor_coords):
+            alive = self._alive_models_from_pool("enemy", idx)
+            self.enemy_model_positions.append(self._build_anchor_formation(anchor, alive))
+
+    def _init_model_state_from_health(self) -> None:
+        self.unit_model_wounds = [
+            self._model_wounds_pool_from_hp(self.unit_data[i], self.unit_health[i])
+            for i in range(len(self.unit_health))
+        ]
+        self.enemy_model_wounds = [
+            self._model_wounds_pool_from_hp(self.enemy_data[i], self.enemy_health[i])
+            for i in range(len(self.enemy_health))
+        ]
+        self._sync_model_positions_to_anchors()
+
+    def _coherency_required_neighbors(self, alive_models: int) -> int:
+        if alive_models >= 7:
+            return 2
+        if alive_models >= 2:
+            return 1
+        return 0
+
+    def _models_in_coherency(self, model_a, model_b) -> bool:
+        if model_a is None or model_b is None:
+            return False
+        ax, ay, az = float(model_a[0]), float(model_a[1]), float(model_a[2] if len(model_a) > 2 else 0)
+        bx, by, bz = float(model_b[0]), float(model_b[1]), float(model_b[2] if len(model_b) > 2 else 0)
+        horizontal = float(np.sqrt((bx - ax) ** 2 + (by - ay) ** 2))
+        vertical = abs(bz - az)
+        return horizontal <= 2.0 and vertical <= 5.0
+
+    def _build_anchor_formation(self, anchor_xy, count: int):
+        x, y = int(anchor_xy[0]), int(anchor_xy[1])
+        offsets = [
+            (0, 0),
+            (0, 1), (0, -1), (1, 0), (-1, 0),
+            (1, 1), (1, -1), (-1, 1), (-1, -1),
+            (0, 2), (0, -2), (2, 0), (-2, 0),
+            (1, 2), (1, -2), (-1, 2), (-1, -2),
+            (2, 1), (2, -1), (-2, 1), (-2, -1),
+        ]
+        positions = []
+        for dx, dy in offsets:
+            positions.append([x + dx, y + dy, 0])
+            if len(positions) >= count:
+                break
+        while len(positions) < count:
+            positions.append([x, y, 0])
+        return positions
+
+    def _validate_unit_coherency(self, side: str, idx: int) -> bool:
+        positions_all = self.unit_model_positions if side == "model" else self.enemy_model_positions
+        if not (0 <= idx < len(positions_all)):
+            return True
+        positions = positions_all[idx]
+        alive = len(positions)
+        required = self._coherency_required_neighbors(alive)
+        if required == 0:
+            return True
+        for i, pos_i in enumerate(positions):
+            neighbors = 0
+            for j, pos_j in enumerate(positions):
+                if i == j:
+                    continue
+                if self._models_in_coherency(pos_i, pos_j):
+                    neighbors += 1
+            if neighbors < required:
+                return False
+        return True
+
+    def _auto_fix_unit_coherency(self, side: str, idx: int, reason: str = "") -> None:
+        anchors = self.unit_anchor_coords if side == "model" else self.enemy_anchor_coords
+        positions_all = self.unit_model_positions if side == "model" else self.enemy_model_positions
+        if not (0 <= idx < len(anchors)):
+            return
+        alive = self._alive_models_from_pool(side, idx)
+        positions_all[idx] = self._build_anchor_formation(anchors[idx], alive)
+        unit_id = idx + (21 if side == "model" else 11)
+        side_label = "MODEL" if side == "model" else self._display_side("enemy")
+        why = f" Причина: {reason}." if reason else ""
+        self._log_unit(
+            side_label,
+            unit_id,
+            idx,
+            f"Когеренция автоматически обновлена. Живых моделей: {alive}.{why}",
+        )
+
+    def _auto_fix_all_coherency(self, reason: str = "") -> None:
+        for side, total in (("model", len(self.unit_health)), ("enemy", len(self.enemy_health))):
+            for idx in range(total):
+                if self._alive_models_from_pool(side, idx) <= 1:
+                    continue
+                if not self._validate_unit_coherency(side, idx):
+                    self._auto_fix_unit_coherency(side, idx, reason=reason)
+
+    def _unit_model_points(self, side: str, idx: int):
+        positions_all = self.unit_model_positions if side == "model" else self.enemy_model_positions
+        coords_all = self.unit_coords if side == "model" else self.enemy_coords
+        if 0 <= idx < len(positions_all) and positions_all[idx]:
+            return positions_all[idx]
+        if 0 <= idx < len(coords_all):
+            c = coords_all[idx]
+            return [[float(c[0]), float(c[1]), 0.0]]
+        return []
+
+    def _distance_between_units(self, side_a: str, idx_a: int, side_b: str, idx_b: int) -> float:
+        pts_a = self._unit_model_points(side_a, idx_a)
+        pts_b = self._unit_model_points(side_b, idx_b)
+        if not pts_a or not pts_b:
+            return float("inf")
+        best = float("inf")
+        for pa in pts_a:
+            for pb in pts_b:
+                d = distance(pa[:2], pb[:2])
+                if d < best:
+                    best = d
+        return best
 
     def _should_log(self) -> bool:
         if self._is_verbose():
@@ -1399,6 +1652,7 @@ class Warhammer40kEnv(gym.Env):
             target_coords = self.unit_coords if moving_unit_side == "model" else self.enemy_coords
 
         target_pos = target_coords[moving_idx]
+        target_side = "enemy" if moving_unit_side == "enemy" else "model"
         candidates = []
         for i in range(len(defender_health)):
             if defender_health[i] <= 0:
@@ -1407,7 +1661,7 @@ class Warhammer40kEnv(gym.Env):
                 continue
             if defender_weapon[i] == "None":
                 continue
-            if distance(defender_coords[i], target_pos) <= defender_weapon[i]["Range"]:
+            if self._distance_between_units(defender_side, i, target_side, moving_idx) <= defender_weapon[i]["Range"]:
                 candidates.append(i)
         return candidates
 
@@ -1506,7 +1760,7 @@ class Warhammer40kEnv(gym.Env):
                 hit_on_6=True,
             )
 
-        target_health[moving_idx] = modHealth
+        self._apply_health_update("enemy" if moving_unit_side == "enemy" else "model", moving_idx, modHealth, reason="Overwatch")
         self._log_rule(
             defender_side,
             chosen,
@@ -1678,6 +1932,7 @@ class Warhammer40kEnv(gym.Env):
         self.battle_round += 1
         self.numTurns = self.battle_round
         self._round_banner_shown = False
+        self._auto_fix_all_coherency(reason="конец боевого раунда")
         apply_end_of_battle(self, log_fn=self._log)
 
     def _advance_turn_order(self):
@@ -1692,7 +1947,6 @@ class Warhammer40kEnv(gym.Env):
     def command_phase(self, side: str, action=None, manual: bool = False):
         self.begin_phase(side, "command")
         if side == "model":
-            self._log_phase("MODEL", "command")
             self.modelCP += 1
             self.enemyCP += 1
             reward_delta = 0
@@ -1892,7 +2146,6 @@ class Warhammer40kEnv(gym.Env):
     def movement_phase(self, side: str, action=None, manual: bool = False, battle_shock=None):
         self.begin_phase(side, "movement")
         if side == "model":
-            self._log_phase("MODEL", "movement")
             advanced_flags = [False] * len(self.unit_health)
             reward_delta = 0
             objective_hold_delta = 0.0
@@ -2059,6 +2312,7 @@ class Warhammer40kEnv(gym.Env):
                             f"Цель в ближнем бою мертва ({self._format_unit_label('enemy', idOfE)}), юнит выходит из боя. Позиция: {pos_before}",
                         )
                     else:
+                        retreated = False
                         if action["attack"] == 0:
                             if self.unit_health[i] * 2 >= self.enemy_health[idOfE]:
                                 reward_delta -= reward_cfg.MOVEMENT_MELEE_RETREAT_PENALTY
@@ -2076,6 +2330,7 @@ class Warhammer40kEnv(gym.Env):
                                 f"Отступление из боя с {self._format_unit_label('enemy', idOfE)}. Позиция до: {pos_before}",
                             )
                             self.unitFellBack[i] = True
+                            retreated = True
                             if battleSh is True:
                                 diceRoll = dice()
                                 if diceRoll < 3:
@@ -2104,12 +2359,13 @@ class Warhammer40kEnv(gym.Env):
                                 "Reward (движение): "
                                 f"остался в бою bonus=+{reward_cfg.MOVEMENT_MELEE_STAY_BONUS:.3f}",
                             )
-                        self._log_unit(
-                            "MODEL",
-                            modelName,
-                            i,
-                            f"Остаётся в ближнем бою с {self._format_unit_label('enemy', idOfE)}, движение пропущено.",
-                        )
+                        if not retreated:
+                            self._log_unit(
+                                "MODEL",
+                                modelName,
+                                i,
+                                f"Остаётся в ближнем бою с {self._format_unit_label('enemy', idOfE)}, движение пропущено.",
+                            )
             if objective_hold_delta != 0 or objective_proximity_delta != 0:
                 total_obj_delta = objective_hold_delta + objective_proximity_delta
                 self._log_reward(
@@ -2130,7 +2386,6 @@ class Warhammer40kEnv(gym.Env):
             return advanced_flags, reward_delta, movement_meta
 
         if side == "enemy" and action is not None and not manual:
-            self._log_phase(self._display_side("enemy"), "movement")
             advanced_flags = [False] * len(self.enemy_health)
             move_dir = action.get("move", 4) if isinstance(action, dict) else 4
             attack_choice = action.get("attack", 1) if isinstance(action, dict) else 1
@@ -2428,7 +2683,6 @@ class Warhammer40kEnv(gym.Env):
     def shooting_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False):
         self.begin_phase(side, "shooting")
         if side == "model":
-            self._log_phase("MODEL", "shooting")
             reward_delta = 0
             for i in range(len(self.unit_health)):
                 modelName = i + 21
@@ -2452,7 +2706,7 @@ class Warhammer40kEnv(gym.Env):
                 shootAbleUnits = []
                 for j in range(len(self.enemy_health)):
                     if (
-                        distance(self.unit_coords[i], self.enemy_coords[j]) <= self.unit_weapon[i]["Range"]
+                        self._distance_between_units("model", i, "enemy", j) <= self.unit_weapon[i]["Range"]
                         and self.enemy_health[j] > 0
                         and self.enemyInAttack[j][0] == 0
                     ):
@@ -2464,7 +2718,7 @@ class Warhammer40kEnv(gym.Env):
                         idOfE = valid_target_ids[raw]
                         target_hp_prev = self.enemy_health[idOfE]
                         target_max_hp = self.enemy_data[idOfE]["W"] * self.enemy_data[idOfE]["#OfModels"]
-                        distances = {j: distance(self.unit_coords[i], self.enemy_coords[j]) for j in valid_target_ids}
+                        distances = {j: self._distance_between_units("model", i, "enemy", j) for j in valid_target_ids}
                         closest = min(distances, key=distances.get)
                         min_hp = min(valid_target_ids, key=lambda idx: self.enemy_health[idx])
                         if idOfE == closest:
@@ -2497,7 +2751,7 @@ class Warhammer40kEnv(gym.Env):
                                 self.enemy_health[idOfE],
                                 self.enemy_data[idOfE],
                                 effects=effect,
-                                distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
+                                distance_to_target=self._distance_between_units("model", i, "enemy", idOfE),
                                 roller=_logger.roll,
                             )
                         else:
@@ -2508,9 +2762,9 @@ class Warhammer40kEnv(gym.Env):
                                 self.enemy_health[idOfE],
                                 self.enemy_data[idOfE],
                                 effects=effect,
-                                distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
+                                distance_to_target=self._distance_between_units("model", i, "enemy", idOfE),
                             )
-                        self.enemy_health[idOfE] = modHealth
+                        self._apply_health_update("enemy", idOfE, modHealth, reason="shooting")
                         damage_dealt = max(0.0, float(target_hp_prev - modHealth))
                         normalized_damage = damage_dealt / max(1.0, float(self.enemy_hp_max_total))
                         damage_term = reward_cfg.SHOOT_REWARD_DAMAGE_SCALE * normalized_damage
@@ -2680,7 +2934,6 @@ class Warhammer40kEnv(gym.Env):
             )
             return reward_delta
         elif side == "enemy" and action is not None and not manual:
-            self._log_phase(self._display_side("enemy"), "shooting")
             for i in range(len(self.enemy_health)):
                 unit_id = i + 11
                 advanced = advanced_flags[i] if advanced_flags else False
@@ -2703,7 +2956,7 @@ class Warhammer40kEnv(gym.Env):
                 shootAbleUnits = []
                 for j in range(len(self.unit_health)):
                     if (
-                        distance(self.enemy_coords[i], self.unit_coords[j]) <= self.enemy_weapon[i]["Range"]
+                        self._distance_between_units("enemy", i, "model", j) <= self.enemy_weapon[i]["Range"]
                         and self.unit_health[j] > 0
                         and self.unitInAttack[j][0] == 0
                     ):
@@ -2737,7 +2990,7 @@ class Warhammer40kEnv(gym.Env):
                                 self.unit_health[idOfM],
                                 self.unit_data[idOfM],
                                 effects=effect,
-                                distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfM]),
+                                distance_to_target=self._distance_between_units("enemy", i, "model", idOfM),
                                 roller=_logger.roll,
                             )
                         else:
@@ -2748,9 +3001,9 @@ class Warhammer40kEnv(gym.Env):
                                 self.unit_health[idOfM],
                                 self.unit_data[idOfM],
                                 effects=effect,
-                                distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfM]),
+                                distance_to_target=self._distance_between_units("enemy", i, "model", idOfM),
                             )
-                        self.unit_health[idOfM] = modHealth
+                        self._apply_health_update("model", idOfM, modHealth, reason="shooting")
                         self._log_unit(
                             "enemy",
                             unit_id,
@@ -2807,7 +3060,7 @@ class Warhammer40kEnv(gym.Env):
                     else:
                         shootAble = np.array([])
                         for j in range(len(self.unit_health)):
-                            if distance(self.enemy_coords[i], self.unit_coords[j]) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
+                            if self._distance_between_units("enemy", i, "model", j) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
                                 shootAble = np.append(shootAble, j)
                         if len(shootAble) > 0:
                             response = False
@@ -2842,7 +3095,7 @@ class Warhammer40kEnv(gym.Env):
                                         distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfE]),
                                         roller=logger.roll,
                                     )
-                                    self.unit_health[idOfE] = modHealth
+                                    self._apply_health_update("model", idOfE, modHealth, reason="overwatch")
                                     self._log(
                                         f"{unit_label} нанёс {sum(dmg)} урона по {self._format_unit_label('model', idOfE)}"
                                     )
@@ -2874,7 +3127,7 @@ class Warhammer40kEnv(gym.Env):
                     else:
                         shootAbleUnits = []
                         for j in range(len(self.unit_health)):
-                            if distance(self.enemy_coords[i], self.unit_coords[j]) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
+                            if self._distance_between_units("enemy", i, "model", j) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
                                 shootAbleUnits.append(j)
                         if len(shootAbleUnits) > 0:
                             idOfM = np.random.choice(shootAbleUnits)
@@ -2891,9 +3144,9 @@ class Warhammer40kEnv(gym.Env):
                                 self.unit_health[idOfM],
                                 self.unit_data[idOfM],
                                 effects=effect,
-                                distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfM]),
+                                distance_to_target=self._distance_between_units("enemy", i, "model", idOfM),
                             )
-                            self.unit_health[idOfM] = modHealth
+                            self._apply_health_update("model", idOfM, modHealth, reason="shooting")
                             if self.trunc is False:
                                 self._log(
                                     f"{self._format_unit_label('enemy', i)} стреляет по {self._format_unit_label('model', idOfM)}: урон {float(np.sum(dmg))}."
@@ -2903,7 +3156,6 @@ class Warhammer40kEnv(gym.Env):
     def charge_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False):
         self.begin_phase(side, "charge")
         if side == "model":
-            self._log_phase("MODEL", "charge")
             reward_delta = 0
             any_charge_targets = False
             for i in range(len(self.unit_health)):
@@ -3058,7 +3310,6 @@ class Warhammer40kEnv(gym.Env):
             )
             return reward_delta
         elif side == "enemy" and action is not None and not manual:
-            self._log_phase(self._display_side("enemy"), "charge")
             any_charge_targets = False
             for i in range(len(self.enemy_health)):
                 unit_id = i + 11
@@ -3342,7 +3593,6 @@ class Warhammer40kEnv(gym.Env):
         advantage_term = 0.0
         strength_term = 0.0
         if side == "model":
-            self._log_phase("MODEL", "fight")
             engaged_model = [i for i in range(len(self.unit_health)) if self.unit_health[i] > 0 and self.unitInAttack[i][0] == 1]
             engaged_enemy = [i for i in range(len(self.enemy_health)) if self.enemy_health[i] > 0 and self.enemyInAttack[i][0] == 1]
             if not engaged_model and not engaged_enemy:
@@ -3546,6 +3796,8 @@ class Warhammer40kEnv(gym.Env):
         self.iter = 0
         self.trunc = trunc
         self.playType = playType
+        self._state_flush_last_ts = 0.0
+        self._state_flush_pending = False
 
         if Type == "small":
             self.restarts += 1
@@ -3564,6 +3816,12 @@ class Warhammer40kEnv(gym.Env):
         self.unit_coords = []
         self.enemy_health = []
         self.unit_health = []
+        self.unit_model_wounds = []
+        self.enemy_model_wounds = []
+        self.unit_anchor_coords = []
+        self.enemy_anchor_coords = []
+        self.unit_model_positions = []
+        self.enemy_model_positions = []
         self.enemyInAttack = []
         self.unitInAttack = []
         self.unitFellBack = []
@@ -3618,6 +3876,8 @@ class Warhammer40kEnv(gym.Env):
                 if isinstance(unit, dict)
             ),
         )
+
+        self._init_model_state_from_health()
 
         self.game_over = False
         self.last_end_reason = ""
@@ -3740,7 +4000,7 @@ class Warhammer40kEnv(gym.Env):
                         rangeOfComb="Melee",
                     )
 
-                self.enemy_health[def_idx] = modHealth
+                self._apply_health_update("enemy", def_idx, modHealth, reason="fight")
                 models_after = _remaining_models("enemy", def_idx, modHealth)
 
                 wname = weapon.get("Name", "Melee") if isinstance(weapon, dict) else str(weapon)
@@ -3826,7 +4086,7 @@ class Warhammer40kEnv(gym.Env):
                         **extra_kwargs,
                     )
 
-                self.unit_health[def_idx] = modHealth
+                self._apply_health_update("model", def_idx, modHealth, reason="fight")
                 models_after = _remaining_models("model", def_idx, modHealth)
 
                 wname = weapon.get("Name", "Melee") if isinstance(weapon, dict) else str(weapon)
@@ -4285,7 +4545,10 @@ class Warhammer40kEnv(gym.Env):
         for i in range(len(self.coordsOfOM)):
             self.board[int(self.coordsOfOM[i][0])][int(self.coordsOfOM[i][1])] = 3
 
-        write_state_json(self)
+        self._sync_model_positions_to_anchors()
+        # Принудительный flush в узловых точках (конец шага/фазы).
+        if not self._flush_state_snapshot(reason="updateBoard", force=True):
+            write_state_json(self)
 
     def returnBoard(self):
         return self.board
