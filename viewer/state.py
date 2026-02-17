@@ -33,15 +33,19 @@ def load_state(path: str) -> Dict[str, Any]:
 @dataclass
 class StateWatcher:
     path: str
-    mtime: float = 0.0
+    mtime_ns: int = 0
+    size: int = -1
     state: Dict[str, Any] = field(default_factory=_default_state)
 
     def load_if_changed(self) -> bool:
         if not os.path.exists(self.path):
             return False
-        new_mtime = os.path.getmtime(self.path)
-        if new_mtime <= self.mtime:
+        stat = os.stat(self.path)
+        new_mtime_ns = int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000)))
+        new_size = int(stat.st_size)
+        if new_mtime_ns == self.mtime_ns and new_size == self.size:
             return False
-        self.mtime = new_mtime
+        self.mtime_ns = new_mtime_ns
+        self.size = new_size
         self.state = load_state(self.path)
         return True

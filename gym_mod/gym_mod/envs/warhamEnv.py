@@ -952,6 +952,19 @@ class Warhammer40kEnv(gym.Env):
             return sum(1 for w in pools[idx] if w > 0)
         return 0
 
+    def _flush_state_snapshot(self, reason: str = "") -> None:
+        """Синхронный экспорт state.json для мгновенного обновления GUI."""
+        if not hasattr(self, "board"):
+            return
+        try:
+            write_state_json(self)
+        except Exception as exc:
+            details = f" ({reason})" if reason else ""
+            self._log(
+                f"[STATE] Не удалось обновить state.json{details}. Где: warhamEnv._flush_state_snapshot. "
+                f"Что делать дальше: проверить доступ к файлу state.json. Ошибка: {exc}"
+            )
+
     def _apply_health_update(self, side: str, idx: int, new_hp: float, reason: str = "") -> None:
         health = self.unit_health if side == "model" else self.enemy_health
         data = self.unit_data if side == "model" else self.enemy_data
@@ -986,6 +999,7 @@ class Warhammer40kEnv(gym.Env):
             self._sync_model_positions_to_anchors()
             if killed > 0:
                 self._auto_fix_unit_coherency(side, idx, reason="потери моделей")
+            self._flush_state_snapshot(reason=f"health_update:{side}:{idx}")
 
     def _sync_model_positions_to_anchors(self) -> None:
         self.unit_anchor_coords = [list(coords) for coords in self.unit_coords]
