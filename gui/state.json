@@ -25,36 +25,256 @@
       "id": 11,
       "name": "Necron Warriors",
       "models": 10,
+      "alive_models": 10,
       "hp": 10.0,
-      "x": 12,
-      "y": 17
+      "x": 56,
+      "y": 28,
+      "anchor_x": 56,
+      "anchor_y": 28,
+      "model_positions": [
+        {
+          "x": 56,
+          "y": 28,
+          "z": 0
+        },
+        {
+          "x": 57,
+          "y": 28,
+          "z": 0
+        },
+        {
+          "x": 55,
+          "y": 28,
+          "z": 0
+        },
+        {
+          "x": 56,
+          "y": 29,
+          "z": 0
+        },
+        {
+          "x": 56,
+          "y": 27,
+          "z": 0
+        },
+        {
+          "x": 57,
+          "y": 29,
+          "z": 0
+        },
+        {
+          "x": 55,
+          "y": 29,
+          "z": 0
+        },
+        {
+          "x": 57,
+          "y": 27,
+          "z": 0
+        },
+        {
+          "x": 55,
+          "y": 27,
+          "z": 0
+        },
+        {
+          "x": 58,
+          "y": 28,
+          "z": 0
+        }
+      ]
     },
     {
       "side": "player",
       "id": 12,
       "name": "Necron Warriors",
       "models": 10,
+      "alive_models": 10,
       "hp": 10.0,
-      "x": 11,
-      "y": 4
+      "x": 49,
+      "y": 22,
+      "anchor_x": 49,
+      "anchor_y": 22,
+      "model_positions": [
+        {
+          "x": 49,
+          "y": 22,
+          "z": 0
+        },
+        {
+          "x": 50,
+          "y": 22,
+          "z": 0
+        },
+        {
+          "x": 48,
+          "y": 22,
+          "z": 0
+        },
+        {
+          "x": 49,
+          "y": 23,
+          "z": 0
+        },
+        {
+          "x": 49,
+          "y": 21,
+          "z": 0
+        },
+        {
+          "x": 50,
+          "y": 23,
+          "z": 0
+        },
+        {
+          "x": 48,
+          "y": 23,
+          "z": 0
+        },
+        {
+          "x": 50,
+          "y": 21,
+          "z": 0
+        },
+        {
+          "x": 48,
+          "y": 21,
+          "z": 0
+        },
+        {
+          "x": 51,
+          "y": 22,
+          "z": 0
+        }
+      ]
     },
     {
       "side": "model",
       "id": 21,
       "name": "Necron Warriors",
       "models": 10,
+      "alive_models": 10,
       "hp": 10.0,
-      "x": 50,
-      "y": 21
+      "x": 9,
+      "y": 6,
+      "anchor_x": 9,
+      "anchor_y": 6,
+      "model_positions": [
+        {
+          "x": 9,
+          "y": 6,
+          "z": 0
+        },
+        {
+          "x": 10,
+          "y": 6,
+          "z": 0
+        },
+        {
+          "x": 8,
+          "y": 6,
+          "z": 0
+        },
+        {
+          "x": 9,
+          "y": 7,
+          "z": 0
+        },
+        {
+          "x": 9,
+          "y": 5,
+          "z": 0
+        },
+        {
+          "x": 10,
+          "y": 7,
+          "z": 0
+        },
+        {
+          "x": 8,
+          "y": 7,
+          "z": 0
+        },
+        {
+          "x": 10,
+          "y": 5,
+          "z": 0
+        },
+        {
+          "x": 8,
+          "y": 5,
+          "z": 0
+        },
+        {
+          "x": 11,
+          "y": 6,
+          "z": 0
+        }
+      ]
     },
     {
       "side": "model",
       "id": 22,
       "name": "Necron Warriors",
       "models": 10,
+      "alive_models": 10,
       "hp": 10.0,
-      "x": 55,
-      "y": 23
+      "x": 2,
+      "y": 24,
+      "anchor_x": 2,
+      "anchor_y": 24,
+      "model_positions": [
+        {
+          "x": 2,
+          "y": 24,
+          "z": 0
+        },
+        {
+          "x": 3,
+          "y": 24,
+          "z": 0
+        },
+        {
+          "x": 1,
+          "y": 24,
+          "z": 0
+        },
+        {
+          "x": 2,
+          "y": 25,
+          "z": 0
+        },
+        {
+          "x": 2,
+          "y": 23,
+          "z": 0
+        },
+        {
+          "x": 3,
+          "y": 25,
+          "z": 0
+        },
+        {
+          "x": 1,
+          "y": 25,
+          "z": 0
+        },
+        {
+          "x": 3,
+          "y": 23,
+          "z": 0
+        },
+        {
+          "x": 1,
+          "y": 23,
+          "z": 0
+        },
+        {
+          "x": 4,
+          "y": 24,
+          "z": 0
+        }
+      ]
     }
   ],
   "objectives": [
@@ -71,37 +291,37 @@
     "defender": null
   },
   "log_tail": [
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])",
-    "Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])"
+    "[MODEL] checkpoint=C:\\40kAI\\models\\M_Necrons_vs_P_Necrons\\model-7-844909.pth",
+    "Roll-off Attacker/Defender: enemy=1 model=6 -> attacker=model",
+    "Юниты: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]",
+    "[DEPLOY][Only War] attacker=model -> LEFT x=0..14; defender=enemy -> RIGHT x=45..59",
+    "[DEPLOY] Order: model first, alternating",
+    "[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (28,13)",
+    "[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (21,57)",
+    "[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (14,2)",
+    "[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (37,48)",
+    "[MISSION Only War] Post-deploy: currently no post-deploy units supported",
+    "[MODEL] Архитектура сети: dueling (источник: net_type)",
+    "",
+    "Инструкции:",
+    "Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).",
+    "Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).",
+    "{'model health': [10, 10], 'player health': [10, 10], 'model alive models': [10, 10], 'player alive models': [10, 10], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}",
+    "Здоровье MODEL: [10, 10], здоровье PLAYER: [10, 10]",
+    "CP MODEL: 0, CP PLAYER: 0",
+    "VP MODEL: 0, VP PLAYER: 0",
+    "[MODEL] pickle=C:\\40kAI\\models\\M_Necrons_vs_P_Necrons\\model-7-844909.pickle",
+    "[MODEL] checkpoint=C:\\40kAI\\models\\M_Necrons_vs_P_Necrons\\model-7-844909.pth",
+    "Roll-off Attacker/Defender: enemy=1 model=4 -> attacker=model",
+    "Юниты: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]",
+    "[DEPLOY][Only War] attacker=model -> LEFT x=0..14; defender=enemy -> RIGHT x=45..59",
+    "[DEPLOY] Order: model first, alternating",
+    "[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (6,9)",
+    "[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (28,56)",
+    "[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (24,2)",
+    "[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (22,49)",
+    "[MISSION Only War] Post-deploy: currently no post-deploy units supported"
   ],
   "model_events": [],
-  "generated_at": "2026-02-12T14:59:40.645262Z"
+  "generated_at": "2026-02-17T14:54:56.621911Z"
 }

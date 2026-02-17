@@ -181,7 +181,10 @@ def deploy_only_war(
     def _place_unit(unit, side: str, unit_idx: int):
         zone_side = side_to_zone[side]
         coord = get_random_free_deploy_coord(zone_side, b_len, b_hei, occupied)
-        unit.unit_coords = [coord[0], coord[1]]
+        if hasattr(unit, "set_anchor"):
+            unit.set_anchor(coord[0], coord[1])
+        else:
+            unit.unit_coords = [coord[0], coord[1]]
         occupied.add(coord)
         _log_deploy(log_fn, side, unit_idx, coord, unit=unit)
 

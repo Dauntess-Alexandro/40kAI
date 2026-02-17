@@ -22,6 +22,7 @@ def load_viewer_config() -> dict:
     defaults = {
         "cell_size": 24,
         "unit_icon_scale": 2.75,
+        "model_icon_scale": 0.75,
     }
     try:
         with open(VIEWER_CONFIG_PATH, "r", encoding="utf-8") as handle:
@@ -200,11 +201,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._viewer_config = load_viewer_config()
         cell_size = int(self._viewer_config.get("cell_size", 24))
         unit_icon_scale = float(self._viewer_config.get("unit_icon_scale", 2.75))
+        model_icon_scale = float(self._viewer_config.get("model_icon_scale", 0.75))
 
         self.state_watcher = StateWatcher(self.state_path)
         self.map_scene = OpenGLBoardWidget(
             cell_size=max(8, cell_size),
-            unit_icon_scale=max(0.5, unit_icon_scale),
+            unit_icon_scale=max(0.25, unit_icon_scale),
+            model_icon_scale=max(0.2, model_icon_scale),
         )
         self.map_scene.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding,
@@ -1498,7 +1501,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _unit_to_world_center(self, unit: dict) -> Optional[QtCore.QPointF]:
         cell = self.map_scene.cell_size
-        view_xy = self.map_scene._state_xy_to_view_xy(unit.get("x"), unit.get("y"))
+        anchor_x = unit.get("anchor_x") if isinstance(unit, dict) else None
+        anchor_y = unit.get("anchor_y") if isinstance(unit, dict) else None
+        if self.map_scene._safe_int(anchor_x) is not None and self.map_scene._safe_int(anchor_y) is not None:
+            view_xy = self.map_scene._state_xy_to_view_xy(anchor_x, anchor_y)
+        else:
+            view_xy = self.map_scene._state_xy_to_view_xy(unit.get("x"), unit.get("y"))
         if view_xy is None:
             return None
         x, y = view_xy
