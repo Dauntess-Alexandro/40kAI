@@ -816,6 +816,12 @@ class Warhammer40kEnv(gym.Env):
         self.enemy_coords = []
         self.unit_health = []
         self.enemy_health = []
+        self.unit_model_wounds = []
+        self.enemy_model_wounds = []
+        self.unit_anchor_coords = []
+        self.enemy_anchor_coords = []
+        self.unit_model_positions = []
+        self.enemy_model_positions = []
 
         self.game_over = False
         self.unitInAttack = []
@@ -892,6 +898,8 @@ class Warhammer40kEnv(gym.Env):
             ),
         )
 
+        self._init_model_state_from_health()
+
         obsSpace = (len(model) * 3) + (len(enemy) * 3) + len(self.coordsOfOM * 2) + 1
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obsSpace,), dtype=np.float32)
 
@@ -899,6 +907,8 @@ class Warhammer40kEnv(gym.Env):
         return {
             "model health": self.unit_health,
             "player health": self.enemy_health,
+            "model alive models": [self._alive_models_from_pool("model", i) for i in range(len(self.unit_health))],
+            "player alive models": [self._alive_models_from_pool("enemy", i) for i in range(len(self.enemy_health))],
             "modelCP": self.modelCP,
             "playerCP": self.enemyCP,
             "in attack": self.unitInAttack,
@@ -913,6 +923,89 @@ class Warhammer40kEnv(gym.Env):
             "end reason": getattr(self, "last_end_reason", ""),
             "winner": getattr(self, "last_winner", None),
         }
+
+
+    def _coerce_int(self, value, default=0):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _model_wounds_pool_from_hp(self, unit_data: dict, hp_value: float) -> list[int]:
+        if not isinstance(unit_data, dict):
+            return []
+        wounds_max = max(1, self._coerce_int(unit_data.get("W"), default=1))
+        models_cap = max(1, self._coerce_int(unit_data.get("#OfModels"), default=1))
+        hp = max(0, self._coerce_int(round(float(hp_value)), default=0))
+        if hp <= 0:
+            return []
+        full = hp // wounds_max
+        rem = hp % wounds_max
+        pool = [wounds_max] * min(full, models_cap)
+        if rem > 0 and len(pool) < models_cap:
+            pool.append(rem)
+        return pool[:models_cap]
+
+    def _alive_models_from_pool(self, side: str, idx: int) -> int:
+        pools = self.unit_model_wounds if side == "model" else self.enemy_model_wounds
+        if 0 <= idx < len(pools):
+            return sum(1 for w in pools[idx] if w > 0)
+        return 0
+
+    def _apply_health_update(self, side: str, idx: int, new_hp: float, reason: str = "") -> None:
+        health = self.unit_health if side == "model" else self.enemy_health
+        data = self.unit_data if side == "model" else self.enemy_data
+        pools = self.unit_model_wounds if side == "model" else self.enemy_model_wounds
+        prefix = "MODEL" if side == "model" else self._display_side("enemy")
+
+        if not (0 <= idx < len(health)):
+            return
+
+        old_hp = float(health[idx])
+        bounded_hp = max(0.0, float(new_hp))
+        health[idx] = bounded_hp
+
+        if 0 <= idx < len(data):
+            old_pool = pools[idx] if idx < len(pools) else []
+            old_alive = sum(1 for w in old_pool if w > 0)
+            new_pool = self._model_wounds_pool_from_hp(data[idx], bounded_hp)
+            new_alive = sum(1 for w in new_pool if w > 0)
+            if idx < len(pools):
+                pools[idx] = new_pool
+            killed = max(0, old_alive - new_alive)
+            if killed > 0:
+                unit_id = idx + (21 if side == "model" else 11)
+                unit_label = self._format_unit_label(side, idx, unit_id=unit_id)
+                suffix = f" ({reason})" if reason else ""
+                self._log_unit(
+                    prefix,
+                    unit_id,
+                    idx,
+                    f"Потери: убито моделей {killed}. Осталось: {new_alive}. HP: {old_hp:.1f} -> {bounded_hp:.1f}{suffix}",
+                )
+
+    def _sync_model_positions_to_anchors(self) -> None:
+        self.unit_anchor_coords = [list(coords) for coords in self.unit_coords]
+        self.enemy_anchor_coords = [list(coords) for coords in self.enemy_coords]
+        self.unit_model_positions = []
+        for idx, anchor in enumerate(self.unit_anchor_coords):
+            alive = self._alive_models_from_pool("model", idx)
+            self.unit_model_positions.append([list(anchor) for _ in range(alive)])
+        self.enemy_model_positions = []
+        for idx, anchor in enumerate(self.enemy_anchor_coords):
+            alive = self._alive_models_from_pool("enemy", idx)
+            self.enemy_model_positions.append([list(anchor) for _ in range(alive)])
+
+    def _init_model_state_from_health(self) -> None:
+        self.unit_model_wounds = [
+            self._model_wounds_pool_from_hp(self.unit_data[i], self.unit_health[i])
+            for i in range(len(self.unit_health))
+        ]
+        self.enemy_model_wounds = [
+            self._model_wounds_pool_from_hp(self.enemy_data[i], self.enemy_health[i])
+            for i in range(len(self.enemy_health))
+        ]
+        self._sync_model_positions_to_anchors()
 
     def _should_log(self) -> bool:
         if self._is_verbose():
@@ -1506,7 +1599,7 @@ class Warhammer40kEnv(gym.Env):
                 hit_on_6=True,
             )
 
-        target_health[moving_idx] = modHealth
+        self._apply_health_update("enemy" if moving_unit_side == "enemy" else "model", moving_idx, modHealth, reason="Overwatch")
         self._log_rule(
             defender_side,
             chosen,
@@ -2513,7 +2606,7 @@ class Warhammer40kEnv(gym.Env):
                                 effects=effect,
                                 distance_to_target=distance(self.unit_coords[i], self.enemy_coords[idOfE]),
                             )
-                        self.enemy_health[idOfE] = modHealth
+                        self._apply_health_update("enemy", idOfE, modHealth, reason="shooting")
                         damage_dealt = max(0.0, float(target_hp_prev - modHealth))
                         normalized_damage = damage_dealt / max(1.0, float(self.enemy_hp_max_total))
                         damage_term = reward_cfg.SHOOT_REWARD_DAMAGE_SCALE * normalized_damage
@@ -2753,7 +2846,7 @@ class Warhammer40kEnv(gym.Env):
                                 effects=effect,
                                 distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfM]),
                             )
-                        self.unit_health[idOfM] = modHealth
+                        self._apply_health_update("model", idOfM, modHealth, reason="shooting")
                         self._log_unit(
                             "enemy",
                             unit_id,
@@ -2845,7 +2938,7 @@ class Warhammer40kEnv(gym.Env):
                                         distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfE]),
                                         roller=logger.roll,
                                     )
-                                    self.unit_health[idOfE] = modHealth
+                                    self._apply_health_update("model", idOfE, modHealth, reason="overwatch")
                                     self._log(
                                         f"{unit_label} нанёс {sum(dmg)} урона по {self._format_unit_label('model', idOfE)}"
                                     )
@@ -2896,7 +2989,7 @@ class Warhammer40kEnv(gym.Env):
                                 effects=effect,
                                 distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfM]),
                             )
-                            self.unit_health[idOfM] = modHealth
+                            self._apply_health_update("model", idOfM, modHealth, reason="shooting")
                             if self.trunc is False:
                                 self._log(
                                     f"{self._format_unit_label('enemy', i)} стреляет по {self._format_unit_label('model', idOfM)}: урон {float(np.sum(dmg))}."
@@ -3567,6 +3660,12 @@ class Warhammer40kEnv(gym.Env):
         self.unit_coords = []
         self.enemy_health = []
         self.unit_health = []
+        self.unit_model_wounds = []
+        self.enemy_model_wounds = []
+        self.unit_anchor_coords = []
+        self.enemy_anchor_coords = []
+        self.unit_model_positions = []
+        self.enemy_model_positions = []
         self.enemyInAttack = []
         self.unitInAttack = []
         self.unitFellBack = []
@@ -3621,6 +3720,8 @@ class Warhammer40kEnv(gym.Env):
                 if isinstance(unit, dict)
             ),
         )
+
+        self._init_model_state_from_health()
 
         self.game_over = False
         self.last_end_reason = ""
@@ -3743,7 +3844,7 @@ class Warhammer40kEnv(gym.Env):
                         rangeOfComb="Melee",
                     )
 
-                self.enemy_health[def_idx] = modHealth
+                self._apply_health_update("enemy", def_idx, modHealth, reason="fight")
                 models_after = _remaining_models("enemy", def_idx, modHealth)
 
                 wname = weapon.get("Name", "Melee") if isinstance(weapon, dict) else str(weapon)
@@ -3829,7 +3930,7 @@ class Warhammer40kEnv(gym.Env):
                         **extra_kwargs,
                     )
 
-                self.unit_health[def_idx] = modHealth
+                self._apply_health_update("model", def_idx, modHealth, reason="fight")
                 models_after = _remaining_models("model", def_idx, modHealth)
 
                 wname = weapon.get("Name", "Melee") if isinstance(weapon, dict) else str(weapon)
@@ -4288,6 +4389,7 @@ class Warhammer40kEnv(gym.Env):
         for i in range(len(self.coordsOfOM)):
             self.board[int(self.coordsOfOM[i][0])][int(self.coordsOfOM[i][1])] = 3
 
+        self._sync_model_positions_to_anchors()
         write_state_json(self)
 
     def returnBoard(self):
