@@ -209,6 +209,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
         self._active_unit_id = None
         self._active_unit_side = None
+        self._selected_unit_id = None
+        self._selected_unit_side = None
         self._phase = None
         self._move_range = None
         self._shoot_range = None
@@ -543,6 +545,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self,
         active_unit_id=None,
         active_unit_side=None,
+        selected_unit_id=None,
+        selected_unit_side=None,
         phase=None,
         move_range=None,
         shoot_range=None,
@@ -551,6 +555,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
     ) -> None:
         self._active_unit_id = active_unit_id
         self._active_unit_side = active_unit_side
+        self._selected_unit_id = selected_unit_id
+        self._selected_unit_side = selected_unit_side
         self._phase = phase or ""
         self._move_range = move_range
         self._shoot_range = shoot_range
@@ -638,9 +644,20 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return
 
     def select_unit(self, side, unit_id) -> None:
+        self.set_selected_unit(side, unit_id)
+
+    def set_selected_unit(self, side, unit_id) -> None:
+        if unit_id is None:
+            self._selected_unit_key = None
+            self._selected_unit_id = None
+            self._selected_unit_side = None
+            self.update()
+            return
         key = (side, unit_id)
         if key in self._unit_by_key:
             self._selected_unit_key = key
+            self._selected_unit_id = unit_id
+            self._selected_unit_side = side
             self.update()
 
     def fit_to_view(self) -> None:
@@ -1243,9 +1260,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 if closest_dist is None or distance < closest_dist:
                     closest_dist = distance
                     closest_key = render.key
-        if closest_key and closest_key != self._selected_unit_key:
-            self._selected_unit_key = closest_key
-            self.unit_selected.emit(closest_key[0], closest_key[1])
+        if closest_key:
+            was_key = self._selected_unit_key
+            self.set_selected_unit(closest_key[0], closest_key[1])
+            if closest_key != was_key:
+                self.unit_selected.emit(closest_key[0], closest_key[1])
         self.update()
 
     def _clear_hover_tooltip(self, force: bool = False) -> None:
@@ -1388,6 +1407,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.setTransform(self._view_transform())
         self._draw_movement_layer(painter)
         self._draw_objective_layer(painter)
+        self._draw_platform_fx_layer(painter)
         self._draw_units_layer(painter)
         self._draw_selection_layer(painter)
         self._draw_shooting_layer(painter)
@@ -1650,23 +1670,6 @@ class OpenGLBoardWidget(QOpenGLWidget):
         t = (perf_counter() - self._t0) if self._t0 is not None else 0.0
         pulse = 0.5 + 0.5 * math.sin(2 * math.pi * t * 1.2)
 
-        active_unit = self._find_unit_by_id(self._active_unit_id)
-        active_render = self._unit_render_for_unit(active_unit)
-        if active_render is None and self._selected_unit_key in self._unit_by_key:
-            active_render = self._unit_by_key[self._selected_unit_key]
-            active_unit = self._state_unit(self._selected_unit_key)
-        if active_render:
-            color, strength = self._fx_color_for_unit(active_unit)
-            self._draw_platform_highlight(
-                painter,
-                active_render,
-                color,
-                strength,
-                pulse,
-                t,
-            )
-            # Центральный круг активного юнита отключён: используем только платформу под отрядом.
-
         target_unit = self._find_unit_by_id(self._target_unit_id)
         target_render = self._unit_render_for_unit(target_unit)
         target_center = None
@@ -1712,6 +1715,50 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
             self._draw_fx_sprite(painter, hover_pixmap, hover_center, hover_size, hover_alpha)
             painter.restore()
+
+    def _draw_platform_fx_layer(self, painter: QtGui.QPainter) -> None:
+        if not self._fx_pixmaps:
+            return
+        t = (perf_counter() - self._t0) if self._t0 is not None else 0.0
+        pulse = 0.5 + 0.5 * math.sin(2 * math.pi * t * 1.2)
+
+        active_unit = self._find_unit_by_id(self._active_unit_id)
+        active_render = self._unit_render_for_unit(active_unit)
+        if active_render:
+            color, strength = self._fx_color_for_unit(active_unit)
+            self._draw_platform_highlight(
+                painter,
+                active_render,
+                color,
+                strength,
+                pulse,
+                t,
+            )
+
+        if self._selected_unit_id is None or self._selected_unit_id == self._active_unit_id:
+            return
+        selected_key = (self._selected_unit_side, self._selected_unit_id)
+        selected_render = self._unit_by_key.get(selected_key)
+        selected_unit = self._state_unit(selected_key)
+        if selected_render is None:
+            selected_unit = self._find_unit_by_id(self._selected_unit_id)
+            selected_render = self._unit_render_for_unit(selected_unit)
+        if selected_render:
+            selected_color = QtGui.QColor(140, 205, 255)
+            _, base_strength = self._fx_color_for_unit(selected_unit)
+            self._draw_platform_highlight(
+                painter,
+                selected_render,
+                selected_color,
+                base_strength * 0.32,
+                pulse,
+                t,
+                pulse_strength=0.2,
+                glow_scale=0.45,
+                noise_scale=0.4,
+                scan_scale=0.45,
+                sparkle_scale=0.0,
+            )
 
     def _platform_rect_for_render(self, render: UnitRender, unit: Optional[dict]) -> QtCore.QRectF:
         # Если есть явные позиции моделей в state, считаем platform от них.
@@ -1779,6 +1826,12 @@ class OpenGLBoardWidget(QOpenGLWidget):
         strength: float,
         pulse: float,
         t: float,
+        *,
+        pulse_strength: float = 1.0,
+        glow_scale: float = 1.0,
+        noise_scale: float = 1.0,
+        scan_scale: float = 1.0,
+        sparkle_scale: float = 1.0,
     ) -> None:
         rect = self._platform_rect_for_render(render, self._state_unit(render.key))
         if rect.isEmpty():
@@ -1793,13 +1846,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.save()
         painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
         painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
-        glow_margin = rect.height() * (0.34 + 0.06 * pulse)
+        fx_pulse = 1.0 + (pulse - 0.5) * pulse_strength
+        glow_margin = rect.height() * (0.34 + 0.06 * pulse * pulse_strength)
         glow_rect = rect.adjusted(-glow_margin, -glow_margin, glow_margin, glow_margin)
         self._draw_fx_sprite_rect(
             painter,
             glow_pixmap,
             glow_rect,
-            opacity=0.46 * strength * (0.82 + 0.18 * pulse),
+            opacity=0.46 * strength * (0.82 + 0.18 * pulse * pulse_strength) * glow_scale,
         )
         inner_rect = QtCore.QRectF(rect)
         inner_rect.setWidth(rect.width() * 0.85)
@@ -1815,7 +1869,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter,
             base_pixmap,
             inner_rect,
-            opacity=0.24 * strength * (0.9 + 0.1 * pulse),
+            opacity=0.24 * strength * (0.9 + 0.1 * pulse * pulse_strength),
         )
 
         clip = QtGui.QPainterPath()
@@ -1831,20 +1885,20 @@ class OpenGLBoardWidget(QOpenGLWidget):
             noise_transform = QtGui.QTransform()
             noise_transform.translate((t * 5.12) % 256.0, (t * 2.56) % 256.0)
             noise_brush.setTransform(noise_transform)
-            painter.setOpacity(0.07 * strength)
+            painter.setOpacity(0.07 * strength * noise_scale)
             painter.fillPath(clip, noise_brush)
-            painter.setOpacity(0.22 * strength)
+            painter.setOpacity(0.22 * strength * noise_scale)
             painter.fillPath(ring_mask, noise_brush)
         if scan_pixmap is not None:
             scan_brush = QtGui.QBrush(scan_pixmap)
             scan_transform = QtGui.QTransform()
             scan_transform.translate(0.0, (t * 26.0) % 256.0)
             scan_brush.setTransform(scan_transform)
-            painter.setOpacity(0.19 * strength)
+            painter.setOpacity(0.19 * strength * scan_scale)
             painter.fillPath(clip, scan_brush)
         painter.restore()
 
-        if sparkle_pixmap is not None:
+        if sparkle_pixmap is not None and sparkle_scale > 0:
             center = rect.center()
             sparkle_count = 6
             base_rx = rect.width() * 0.38
@@ -1855,14 +1909,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     center.x() + math.cos(phase) * base_rx,
                     center.y() + math.sin(phase * 1.7) * base_ry,
                 )
-                size = self.cell_size * (0.24 + 0.04 * math.sin(phase * 1.8))
+                size = self.cell_size * (0.24 + 0.04 * math.sin(phase * 1.8)) * max(0.4, sparkle_scale)
                 sparkle_rect = QtCore.QRectF(
                     sparkle_center.x() - size * 0.5,
                     sparkle_center.y() - size * 0.5,
                     size,
                     size,
                 )
-                sparkle_alpha = (0.13 + 0.07 * math.sin(phase * 2.1)) * strength
+                sparkle_alpha = (0.13 + 0.07 * math.sin(phase * 2.1)) * strength * sparkle_scale * fx_pulse
                 self._draw_fx_sprite_rect(
                     painter,
                     sparkle_pixmap,

@@ -190,6 +190,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._awaiting_player_action = False
         self._active_unit_id = None
         self._active_unit_side = None
+        self._selected_unit_id = None
+        self._selected_unit_side = None
+        self._syncing_table_selection = False
         self._current_target_id = None
         self._last_shooter_id = None
         self._show_objective_radius = True
@@ -913,6 +916,20 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 filtered.append(event)
         return filtered
 
+    def _set_selected_unit(self, side, unit_id, *, source: str, select_row: bool = False):
+        self._selected_unit_side = side
+        self._selected_unit_id = unit_id
+        self.map_scene.set_selected_unit(side, unit_id)
+        if select_row:
+            self._select_row_for_unit_id(unit_id, side=side)
+        if source == "map":
+            unit_name = self._units_by_key.get((side, unit_id), {}).get("name", "—")
+            self._append_log([f"Выбрано на карте: unit_id={unit_id}, name={unit_name}"])
+        elif source == "table":
+            row = self._unit_row_by_key.get((side, unit_id))
+            if row is not None:
+                self._append_log([f"Выбрано в таблице: row={row} -> unit_id={unit_id}"])
+
     def _select_row_for_unit(self, side, unit_id):
         unit_key = (side, unit_id)
         row = self._unit_row_by_key.get(unit_key)
@@ -920,12 +937,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
             row = self._find_row_for_unit(unit_key)
         if row is None:
             return
-        self.units_table.selectRow(row)
-        unit_name = self._units_by_key.get(unit_key, {}).get("name", "—")
-        self._append_log([f"Выбрано на карте: unit_id={unit_id}, name={unit_name}"])
+        self._set_selected_unit(side, unit_id, source="map", select_row=True)
         self._on_target_selected(unit_id)
 
     def _sync_selection_from_table(self):
+        if self._syncing_table_selection:
+            return
         selected = self.units_table.selectionModel().selectedRows()
         if not selected:
             return
@@ -938,8 +955,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         side, unit_id = unit_key
         if side and unit_id is not None:
-            self.map_scene.select_unit(side, unit_id)
-            self._append_log([f"Выбрано в таблице: row={row} -> unit_id={unit_id}"])
+            self._set_selected_unit(side, unit_id, source="table")
             self._on_target_selected(unit_id)
 
     def add_log_line(self, line: str):
@@ -1402,14 +1418,18 @@ class ViewerWindow(QtWidgets.QMainWindow):
                     break
         if row is None:
             return
-        self.units_table.selectRow(row)
+        self._syncing_table_selection = True
+        try:
+            self.units_table.selectRow(row)
+        finally:
+            self._syncing_table_selection = False
 
     def _refresh_active_context(self):
         unit_id, side = self._resolve_active_unit()
         self._active_unit_id = unit_id
         self._active_unit_side = side
-        if unit_id is not None:
-            self._select_row_for_unit_id(unit_id, side=side)
+        if self._selected_unit_id is None and unit_id is not None:
+            self._set_selected_unit(side, unit_id, source="auto", select_row=True)
         active_unit = self._units_by_key.get((side, unit_id))
         phase = None
         if self.state_watcher and self.state_watcher.state:
@@ -1423,6 +1443,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.map_scene.set_active_context(
             active_unit_id=unit_id,
             active_unit_side=side,
+            selected_unit_id=self._selected_unit_id,
+            selected_unit_side=self._selected_unit_side,
             phase=phase,
             move_range=move_range,
             shoot_range=shoot_range,
