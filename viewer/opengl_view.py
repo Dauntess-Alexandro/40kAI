@@ -1713,20 +1713,57 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._draw_fx_sprite(painter, hover_pixmap, hover_center, hover_size, hover_alpha)
             painter.restore()
 
-    def _platform_rect_for_render(self, render: UnitRender) -> QtCore.QRectF:
-        centers = render.model_centers or [render.center]
-        min_x = min(center.x() for center in centers)
-        max_x = max(center.x() for center in centers)
-        min_y = min(center.y() for center in centers)
-        max_y = max(center.y() for center in centers)
-        width = (max_x - min_x) + self.cell_size * 2.2
-        height = (max_y - min_y) + self.cell_size * 1.45
-        width = max(width, self.cell_size * 2.8)
-        height = max(height, width * 0.42)
-        center = QtCore.QPointF(
-            (min_x + max_x) * 0.5,
-            (min_y + max_y) * 0.5 + self.cell_size * 0.18,
-        )
+    def _platform_rect_for_render(self, render: UnitRender, unit: Optional[dict]) -> QtCore.QRectF:
+        # Если есть явные позиции моделей в state, считаем platform от них.
+        model_centers: List[QtCore.QPointF] = []
+        model_positions = unit.get("model_positions") if isinstance(unit, dict) else None
+        if isinstance(model_positions, list):
+            for pos in model_positions:
+                if not isinstance(pos, dict):
+                    continue
+                view_cell = self._state_to_view_cell(pos.get("x"), pos.get("y"))
+                if view_cell is None:
+                    continue
+                model_centers.append(
+                    QtCore.QPointF(
+                        view_cell[0] * self.cell_size + self.cell_size / 2,
+                        view_cell[1] * self.cell_size + self.cell_size / 2,
+                    )
+                )
+        if not model_centers and render.model_centers:
+            model_centers = list(render.model_centers)
+
+        if model_centers:
+            min_x = min(center.x() for center in model_centers)
+            max_x = max(center.x() for center in model_centers)
+            min_y = min(center.y() for center in model_centers)
+            max_y = max(center.y() for center in model_centers)
+            bbox_width_cells = (max_x - min_x) / self.cell_size
+            bbox_height_cells = (max_y - min_y) / self.cell_size
+            rx_cells = (bbox_width_cells * 0.5) + 0.6
+            ry_cells = (bbox_height_cells * 0.5) + 0.6
+            rx_cells = max(1.4, min(rx_cells, 4.8))
+            ry_cells = max(0.9, min(ry_cells, 3.2))
+
+            centroid_x = sum(center.x() for center in model_centers) / len(model_centers)
+            centroid_y = sum(center.y() for center in model_centers) / len(model_centers)
+            center = QtCore.QPointF(
+                centroid_x,
+                centroid_y + self.cell_size * 0.32,
+            )
+            width = rx_cells * 2.0 * self.cell_size
+            height = ry_cells * 2.0 * self.cell_size
+            return QtCore.QRectF(
+                center.x() - width * 0.5,
+                center.y() - height * 0.5,
+                width,
+                height,
+            )
+
+        # Fallback: старый якорный размер, если позиции моделей недоступны.
+        width = self.cell_size * 2.8
+        height = self.cell_size * 1.2
+        center = QtCore.QPointF(render.center.x(), render.center.y() + self.cell_size * 0.2)
         return QtCore.QRectF(
             center.x() - width * 0.5,
             center.y() - height * 0.5,
@@ -1743,7 +1780,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         pulse: float,
         t: float,
     ) -> None:
-        rect = self._platform_rect_for_render(render)
+        rect = self._platform_rect_for_render(render, self._state_unit(render.key))
         if rect.isEmpty():
             return
 
@@ -1762,26 +1799,42 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter,
             glow_pixmap,
             glow_rect,
-            opacity=0.42 * strength * (0.8 + 0.2 * pulse),
+            opacity=0.46 * strength * (0.82 + 0.18 * pulse),
         )
+        inner_rect = QtCore.QRectF(rect)
+        inner_rect.setWidth(rect.width() * 0.85)
+        inner_rect.setHeight(rect.height() * 0.85)
+        inner_rect.moveCenter(rect.center())
         self._draw_fx_sprite_rect(
             painter,
             base_pixmap,
             rect,
-            opacity=0.54 * strength,
+            opacity=0.35 * strength,
+        )
+        self._draw_fx_sprite_rect(
+            painter,
+            base_pixmap,
+            inner_rect,
+            opacity=0.24 * strength * (0.9 + 0.1 * pulse),
         )
 
         clip = QtGui.QPainterPath()
         clip.addEllipse(rect)
+        inner_clip = QtGui.QPainterPath()
+        ring_core_rect = rect.adjusted(rect.width() * 0.24, rect.height() * 0.24, -rect.width() * 0.24, -rect.height() * 0.24)
+        inner_clip.addEllipse(ring_core_rect)
+        ring_mask = clip.subtracted(inner_clip)
         painter.save()
         painter.setClipPath(clip)
         if noise_pixmap is not None:
             noise_brush = QtGui.QBrush(noise_pixmap)
             noise_transform = QtGui.QTransform()
-            noise_transform.translate((t * 18.0) % 256.0, (t * 11.0) % 256.0)
+            noise_transform.translate((t * 5.12) % 256.0, (t * 2.56) % 256.0)
             noise_brush.setTransform(noise_transform)
-            painter.setOpacity(0.23 * strength)
+            painter.setOpacity(0.07 * strength)
             painter.fillPath(clip, noise_brush)
+            painter.setOpacity(0.22 * strength)
+            painter.fillPath(ring_mask, noise_brush)
         if scan_pixmap is not None:
             scan_brush = QtGui.QBrush(scan_pixmap)
             scan_transform = QtGui.QTransform()
