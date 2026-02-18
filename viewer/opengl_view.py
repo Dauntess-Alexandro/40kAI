@@ -1722,8 +1722,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         t = (perf_counter() - self._t0) if self._t0 is not None else 0.0
         pulse = 0.5 + 0.5 * math.sin(2 * math.pi * t * 1.2)
 
-        active_unit = self._find_unit_by_id(self._active_unit_id)
-        active_render = self._unit_render_for_unit(active_unit)
+        active_unit, active_render = self._resolve_unit_by_key_or_id(
+            self._active_unit_side,
+            self._active_unit_id,
+        )
         if active_render:
             color, strength = self._fx_color_for_unit(active_unit)
             self._draw_platform_highlight(
@@ -1735,30 +1737,53 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 t,
             )
 
-        if self._selected_unit_id is None or self._selected_unit_id == self._active_unit_id:
+        selected_matches_active = (
+            self._selected_unit_id == self._active_unit_id
+            and self._selected_unit_side == self._active_unit_side
+        )
+        if self._selected_unit_id is None or selected_matches_active:
             return
-        selected_key = (self._selected_unit_side, self._selected_unit_id)
-        selected_render = self._unit_by_key.get(selected_key)
-        selected_unit = self._state_unit(selected_key)
-        if selected_render is None:
-            selected_unit = self._find_unit_by_id(self._selected_unit_id)
-            selected_render = self._unit_render_for_unit(selected_unit)
+        selected_unit, selected_render = self._resolve_unit_by_key_or_id(
+            self._selected_unit_side,
+            self._selected_unit_id,
+        )
         if selected_render:
-            selected_color = QtGui.QColor(140, 205, 255)
+            selected_color = QtGui.QColor(120, 200, 255)
             _, base_strength = self._fx_color_for_unit(selected_unit)
+            selected_strength = max(0.22, base_strength * 0.55)
             self._draw_platform_highlight(
                 painter,
                 selected_render,
                 selected_color,
-                base_strength * 0.32,
+                selected_strength,
                 pulse,
                 t,
-                pulse_strength=0.2,
-                glow_scale=0.45,
-                noise_scale=0.4,
-                scan_scale=0.45,
+                pulse_strength=0.12,
+                glow_scale=0.35,
+                noise_scale=0.25,
+                scan_scale=0.30,
                 sparkle_scale=0.0,
             )
+
+    def _resolve_unit_by_key_or_id(
+        self,
+        unit_side: Optional[str],
+        unit_id: Optional[int],
+    ) -> Tuple[Optional[dict], Optional[UnitRender]]:
+        if unit_id is None:
+            return None, None
+        unit = None
+        render = None
+        if unit_side is not None:
+            key = (unit_side, unit_id)
+            render = self._unit_by_key.get(key)
+            unit = self._state_unit(key)
+        if render is None:
+            unit = self._find_unit_by_id(unit_id)
+            render = self._unit_render_for_unit(unit)
+            if render is not None and unit is None:
+                unit = self._state_unit(render.key)
+        return unit, render
 
     def _platform_rect_for_render(self, render: UnitRender, unit: Optional[dict]) -> QtCore.QRectF:
         # Если есть явные позиции моделей в state, считаем platform от них.
