@@ -1539,6 +1539,21 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 continue
             pixmap = QtGui.QPixmap.fromImage(image)
             self._fx_pixmaps[name] = pixmap
+        platform_assets = {
+            "highlight_platform/base": "highlight_platform/platform_base_512.png",
+            "highlight_platform/glow": "highlight_platform/platform_glow_512.png",
+            "highlight_platform/noise": "highlight_platform/platform_noise_tile_256.png",
+            "highlight_platform/scanlines": "highlight_platform/scanlines_tile_256.png",
+            "highlight_platform/sparkle": "highlight_platform/sparkle_particle_64.png",
+        }
+        for key, rel_path in platform_assets.items():
+            path = assets_dir / rel_path
+            if not path.exists():
+                continue
+            image = QtGui.QImage(str(path))
+            if image.isNull():
+                continue
+            self._fx_pixmaps[key] = QtGui.QPixmap.fromImage(image)
         self._fx_initialized = True
 
     def _find_unit_by_id(self, unit_id: Optional[int]) -> Optional[dict]:
@@ -1645,20 +1660,15 @@ class OpenGLBoardWidget(QOpenGLWidget):
             active_unit = self._state_unit(self._selected_unit_key)
         if active_render:
             color, strength = self._fx_color_for_unit(active_unit)
-            glow_pixmap = self._tinted_pixmap("glow_soft", color)
-            ring_pixmap = self._tinted_pixmap("ring_soft", color)
-            glow_alpha = 0.45 * (0.7 + 0.3 * pulse) * strength
-            ring_alpha = 0.55 * (0.7 + 0.3 * pulse) * strength
-            glow_size = active_render.radius * 4.2 * (0.95 + 0.08 * pulse)
-            ring_size = active_render.radius * 3.6 * (0.95 + 0.08 * pulse)
-            painter.save()
-            painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
-            self._draw_fx_sprite(painter, glow_pixmap, active_render.center, glow_size, glow_alpha)
-            painter.restore()
-            painter.save()
-            painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
-            self._draw_fx_sprite(painter, ring_pixmap, active_render.center, ring_size, ring_alpha)
-            painter.restore()
+            self._draw_platform_highlight(
+                painter,
+                active_render,
+                color,
+                strength,
+                pulse,
+                t,
+            )
+            # Центральный круг активного юнита отключён: используем только платформу под отрядом.
 
         target_unit = self._find_unit_by_id(self._target_unit_id)
         target_render = self._unit_render_for_unit(target_unit)
@@ -1702,6 +1712,111 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
             self._draw_fx_sprite(painter, hover_pixmap, hover_center, hover_size, hover_alpha)
             painter.restore()
+
+    def _platform_rect_for_render(self, render: UnitRender) -> QtCore.QRectF:
+        centers = render.model_centers or [render.center]
+        min_x = min(center.x() for center in centers)
+        max_x = max(center.x() for center in centers)
+        min_y = min(center.y() for center in centers)
+        max_y = max(center.y() for center in centers)
+        width = (max_x - min_x) + self.cell_size * 2.2
+        height = (max_y - min_y) + self.cell_size * 1.45
+        width = max(width, self.cell_size * 2.8)
+        height = max(height, width * 0.42)
+        center = QtCore.QPointF(
+            (min_x + max_x) * 0.5,
+            (min_y + max_y) * 0.5 + self.cell_size * 0.18,
+        )
+        return QtCore.QRectF(
+            center.x() - width * 0.5,
+            center.y() - height * 0.5,
+            width,
+            height,
+        )
+
+    def _draw_platform_highlight(
+        self,
+        painter: QtGui.QPainter,
+        render: UnitRender,
+        color: QtGui.QColor,
+        strength: float,
+        pulse: float,
+        t: float,
+    ) -> None:
+        rect = self._platform_rect_for_render(render)
+        if rect.isEmpty():
+            return
+
+        base_pixmap = self._tinted_pixmap("highlight_platform/base", color)
+        glow_pixmap = self._tinted_pixmap("highlight_platform/glow", color)
+        noise_pixmap = self._tinted_pixmap("highlight_platform/noise", color)
+        scan_pixmap = self._tinted_pixmap("highlight_platform/scanlines", color)
+        sparkle_pixmap = self._tinted_pixmap("highlight_platform/sparkle", color)
+
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+        glow_margin = rect.height() * (0.34 + 0.06 * pulse)
+        glow_rect = rect.adjusted(-glow_margin, -glow_margin, glow_margin, glow_margin)
+        self._draw_fx_sprite_rect(
+            painter,
+            glow_pixmap,
+            glow_rect,
+            opacity=0.42 * strength * (0.8 + 0.2 * pulse),
+        )
+        self._draw_fx_sprite_rect(
+            painter,
+            base_pixmap,
+            rect,
+            opacity=0.54 * strength,
+        )
+
+        clip = QtGui.QPainterPath()
+        clip.addEllipse(rect)
+        painter.save()
+        painter.setClipPath(clip)
+        if noise_pixmap is not None:
+            noise_brush = QtGui.QBrush(noise_pixmap)
+            noise_transform = QtGui.QTransform()
+            noise_transform.translate((t * 18.0) % 256.0, (t * 11.0) % 256.0)
+            noise_brush.setTransform(noise_transform)
+            painter.setOpacity(0.23 * strength)
+            painter.fillPath(clip, noise_brush)
+        if scan_pixmap is not None:
+            scan_brush = QtGui.QBrush(scan_pixmap)
+            scan_transform = QtGui.QTransform()
+            scan_transform.translate(0.0, (t * 26.0) % 256.0)
+            scan_brush.setTransform(scan_transform)
+            painter.setOpacity(0.19 * strength)
+            painter.fillPath(clip, scan_brush)
+        painter.restore()
+
+        if sparkle_pixmap is not None:
+            center = rect.center()
+            sparkle_count = 6
+            base_rx = rect.width() * 0.38
+            base_ry = rect.height() * 0.28
+            for idx in range(sparkle_count):
+                phase = t * (0.65 + idx * 0.11) + idx * 1.37
+                sparkle_center = QtCore.QPointF(
+                    center.x() + math.cos(phase) * base_rx,
+                    center.y() + math.sin(phase * 1.7) * base_ry,
+                )
+                size = self.cell_size * (0.24 + 0.04 * math.sin(phase * 1.8))
+                sparkle_rect = QtCore.QRectF(
+                    sparkle_center.x() - size * 0.5,
+                    sparkle_center.y() - size * 0.5,
+                    size,
+                    size,
+                )
+                sparkle_alpha = (0.13 + 0.07 * math.sin(phase * 2.1)) * strength
+                self._draw_fx_sprite_rect(
+                    painter,
+                    sparkle_pixmap,
+                    sparkle_rect,
+                    opacity=max(0.0, sparkle_alpha),
+                )
+        painter.restore()
 
     def _generate_gauss_particles(self, seed: int) -> List[DisintegrationParticle]:
         rng = random.Random(seed)
@@ -2231,6 +2346,20 @@ class OpenGLBoardWidget(QOpenGLWidget):
         rect = QtCore.QRectF(-size / 2, -size / 2, size, size)
         source_rect = QtCore.QRectF(pixmap.rect())
         painter.drawPixmap(rect, pixmap, source_rect)
+        painter.restore()
+
+    def _draw_fx_sprite_rect(
+        self,
+        painter: QtGui.QPainter,
+        pixmap: Optional[QtGui.QPixmap],
+        rect: QtCore.QRectF,
+        opacity: float,
+    ) -> None:
+        if pixmap is None or rect.isEmpty() or opacity <= 0:
+            return
+        painter.save()
+        painter.setOpacity(opacity)
+        painter.drawPixmap(rect, pixmap, QtCore.QRectF(pixmap.rect()))
         painter.restore()
 
     def _cell_center(self, col: int, row: int) -> QtCore.QPointF:
