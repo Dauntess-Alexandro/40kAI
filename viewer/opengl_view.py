@@ -1750,7 +1750,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if selected_render:
             selected_color = QtGui.QColor(120, 200, 255)
             _, base_strength = self._fx_color_for_unit(selected_unit)
-            selected_strength = max(0.22, base_strength * 0.55)
+            selected_strength = max(0.26, base_strength * 0.62)
             self._draw_platform_highlight(
                 painter,
                 selected_render,
@@ -1758,10 +1758,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 selected_strength,
                 pulse,
                 t,
-                pulse_strength=0.12,
-                glow_scale=0.35,
-                noise_scale=0.25,
-                scan_scale=0.30,
+                pulse_strength=0.16,
+                glow_scale=0.42,
+                noise_scale=0.30,
+                scan_scale=0.36,
                 sparkle_scale=0.0,
             )
 
