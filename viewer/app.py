@@ -599,9 +599,18 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if request is None:
             return False
         prompt = str(getattr(request, "prompt", "")).lower()
-        if "ход юнита" in prompt:
-            return True
-        return ("цель" in prompt and ("стрель" in prompt or "shoot" in prompt)) or "выберите цель" in prompt
+        return (
+            "выберите цель" in prompt
+            or (
+                "цель" in prompt
+                and (
+                    "стрель" in prompt
+                    or "shoot" in prompt
+                    or "charge" in prompt
+                    or "чардж" in prompt
+                )
+            )
+        )
 
     def _maybe_reset_target_for_request(self, request) -> None:
         if not self._is_target_request(request):
