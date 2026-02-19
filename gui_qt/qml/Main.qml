@@ -149,17 +149,6 @@ ApplicationWindow {
                                         }
                                     }
 
-                                    RowLayout {
-                                        spacing: root.spacingSm
-                                        Label { text: "Фракция Модели:" }
-                                        RadioButton { text: "Necrons"; checked: true }
-                                    }
-
-                                    RowLayout {
-                                        spacing: root.spacingSm
-                                        Label { text: "Фракция Игрока:" }
-                                        RadioButton { text: "Necrons"; checked: true }
-                                    }
                                 }
                             }
                         }
@@ -299,6 +288,30 @@ ApplicationWindow {
                         spacing: root.spacingMd
                         Layout.fillWidth: true
                         Layout.fillHeight: true
+
+                        GroupBox {
+                            title: "Фракции"
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: Math.round(260 * root.uiScale)
+                            Layout.fillHeight: true
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: root.spacingMd
+
+                                RowLayout {
+                                    spacing: root.spacingSm
+                                    Label { text: "Фракция модели:" }
+                                    RadioButton { text: "Necrons"; checked: true }
+                                }
+
+                                RowLayout {
+                                    spacing: root.spacingSm
+                                    Label { text: "Фракция игрока:" }
+                                    RadioButton { text: "Necrons"; checked: true }
+                                }
+                            }
+                        }
 
                         GroupBox {
                             title: "Доступные юниты (Necrons)"
