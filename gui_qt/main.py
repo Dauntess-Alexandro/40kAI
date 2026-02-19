@@ -52,6 +52,8 @@ class GUIController(QtCore.QObject):
     boardTextChanged = QtCore.Signal(str)
     selfPlayFromCheckpointChanged = QtCore.Signal(bool)
     resumeFromCheckpointChanged = QtCore.Signal(bool)
+    factionIconSizeChanged = QtCore.Signal(int)
+    unitIconSizeChanged = QtCore.Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -84,7 +86,8 @@ class GUIController(QtCore.QObject):
         self._model_model = QtGui.QStandardItemModel(self)
         self._unit_icon_cache: dict[str, QIcon] = {}
         self._unit_icon_source_cache: dict[str, str] = {}
-        self._unit_icon_size = QtCore.QSize(18, 18)
+        self._icon_sizes = self._load_icon_sizes_config()
+        self._unit_icon_size = QtCore.QSize(self._icon_sizes["unit"], self._icon_sizes["unit"])
 
         self._metrics_defaults = self._build_default_metrics()
         self._metrics_files = dict(self._metrics_defaults)
@@ -234,6 +237,39 @@ class GUIController(QtCore.QObject):
     def modelsFolderUrl(self) -> str:
         return self._to_file_url(os.path.join(self._repo_root, "models"))
 
+    @QtCore.Property(int, notify=factionIconSizeChanged)
+    def factionIconSize(self) -> int:
+        return self._icon_sizes["faction"]
+
+    @QtCore.Property(int, notify=unitIconSizeChanged)
+    def unitIconSize(self) -> int:
+        return self._icon_sizes["unit"]
+
+    def _load_icon_sizes_config(self) -> dict[str, int]:
+        defaults = {"unit": 18, "faction": 18}
+        config_path = os.path.join(self._repo_root, "gui_qt", "icon_sizes.json")
+        if not os.path.exists(config_path):
+            return defaults
+
+        try:
+            with open(config_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            self._emit_log(
+                "[GUI] Не удалось прочитать gui_qt/icon_sizes.json. "
+                "Использую размеры иконок по умолчанию (18).",
+                level="WARN",
+            )
+            return defaults
+
+        result = dict(defaults)
+        for key, target in (("unit_icon_size", "unit"), ("faction_icon_size", "faction")):
+            value = payload.get(key, defaults[target])
+            if isinstance(value, (int, float)):
+                px = max(12, min(64, int(value)))
+                result[target] = px
+        return result
+
     def get_faction_icon(self, faction_name: str) -> QIcon:
         normalized = (faction_name or "").strip().lower()
         if normalized == "necrons":
@@ -306,7 +342,7 @@ class GUIController(QtCore.QObject):
         if icon.isNull():
             return ""
         sizes = icon.availableSizes()
-        pixmap = icon.pixmap(sizes[0] if sizes else QtCore.QSize(18, 18))
+        pixmap = icon.pixmap(sizes[0] if sizes else QtCore.QSize(self._icon_sizes["faction"], self._icon_sizes["faction"]))
         if pixmap.isNull():
             return ""
         icon_path = os.path.join(self._repo_root, "gui_qt", "assets", "necrons.png")

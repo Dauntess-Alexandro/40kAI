@@ -26,7 +26,8 @@ ApplicationWindow {
     property int dialogWidthXl: Math.round(900 * uiScale)
     property int dialogHeightMd: Math.round(520 * uiScale)
     property int dialogHeightLg: Math.round(500 * uiScale)
-    property int factionIconSize: Math.round(18 * uiScale)
+    property int factionIconSize: controller.factionIconSize
+    property int unitIconSize: controller.unitIconSize
     property string modelFactionName: modelFactionNecrons.checked ? "Necrons" : "-"
     property string playerFactionName: playerFactionNecrons.checked ? "Necrons" : "-"
 
@@ -498,8 +499,8 @@ ApplicationWindow {
                                         Image {
                                             id: unitIconAvailable
                                             source: controller.unit_icon_source(model.display)
-                                            width: 18
-                                            height: 18
+                                            width: root.unitIconSize
+                                            height: root.unitIconSize
                                             anchors.verticalCenter: parent.verticalCenter
                                             anchors.left: parent.left
                                             anchors.leftMargin: root.spacingSm
@@ -574,8 +575,8 @@ ApplicationWindow {
                                         Image {
                                             id: unitIconPlayer
                                             source: controller.unit_icon_source(model.display)
-                                            width: 18
-                                            height: 18
+                                            width: root.unitIconSize
+                                            height: root.unitIconSize
                                             anchors.verticalCenter: parent.verticalCenter
                                             anchors.left: parent.left
                                             anchors.leftMargin: root.spacingSm
@@ -654,8 +655,8 @@ ApplicationWindow {
                                         Image {
                                             id: unitIconModel
                                             source: controller.unit_icon_source(model.display)
-                                            width: 18
-                                            height: 18
+                                            width: root.unitIconSize
+                                            height: root.unitIconSize
                                             anchors.verticalCenter: parent.verticalCenter
                                             anchors.left: parent.left
                                             anchors.leftMargin: root.spacingSm
