@@ -26,7 +26,8 @@ ApplicationWindow {
     property int dialogWidthXl: Math.round(900 * uiScale)
     property int dialogHeightMd: Math.round(520 * uiScale)
     property int dialogHeightLg: Math.round(500 * uiScale)
-    property int factionIconSize: Math.round(18 * uiScale)
+    property int factionIconSize: controller.factionIconSize
+    property int unitIconSize: controller.unitIconSize
     property string modelFactionName: modelFactionNecrons.checked ? "Necrons" : "-"
     property string playerFactionName: playerFactionNecrons.checked ? "Necrons" : "-"
 
@@ -492,8 +493,21 @@ ApplicationWindow {
                                     clip: true
                                     delegate: Rectangle {
                                         width: ListView.view ? ListView.view.width : 0
-                                        height: unitNameAvailable.implicitHeight + root.spacingSm
+                                        height: Math.max(unitNameAvailable.implicitHeight, unitIconAvailable.height) + root.spacingSm
                                         color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
+
+                                        Image {
+                                            id: unitIconAvailable
+                                            source: controller.unit_icon_source(model.display)
+                                            width: root.unitIconSize
+                                            height: root.unitIconSize
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: root.spacingSm
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
+                                            visible: source !== ""
+                                        }
 
                                         Text {
                                             id: unitNameAvailable
@@ -501,7 +515,7 @@ ApplicationWindow {
                                             color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
                                             elide: Text.ElideRight
                                             anchors.verticalCenter: parent.verticalCenter
-                                            anchors.left: parent.left
+                                            anchors.left: unitIconAvailable.visible ? unitIconAvailable.right : parent.left
                                             anchors.leftMargin: root.spacingSm
                                         }
 
@@ -555,8 +569,21 @@ ApplicationWindow {
                                     clip: true
                                     delegate: Rectangle {
                                         width: ListView.view ? ListView.view.width : 0
-                                        height: unitNamePlayer.implicitHeight + root.spacingSm
+                                        height: Math.max(unitNamePlayer.implicitHeight, unitIconPlayer.height) + root.spacingSm
                                         color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
+
+                                        Image {
+                                            id: unitIconPlayer
+                                            source: controller.unit_icon_source(model.display)
+                                            width: root.unitIconSize
+                                            height: root.unitIconSize
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: root.spacingSm
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
+                                            visible: source !== ""
+                                        }
 
                                         Text {
                                             id: unitNamePlayer
@@ -564,7 +591,7 @@ ApplicationWindow {
                                             color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
                                             elide: Text.ElideRight
                                             anchors.verticalCenter: parent.verticalCenter
-                                            anchors.left: parent.left
+                                            anchors.left: unitIconPlayer.visible ? unitIconPlayer.right : parent.left
                                             anchors.leftMargin: root.spacingSm
                                         }
 
@@ -622,8 +649,21 @@ ApplicationWindow {
                                     clip: true
                                     delegate: Rectangle {
                                         width: ListView.view ? ListView.view.width : 0
-                                        height: unitNameModel.implicitHeight + root.spacingSm
+                                        height: Math.max(unitNameModel.implicitHeight, unitIconModel.height) + root.spacingSm
                                         color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
+
+                                        Image {
+                                            id: unitIconModel
+                                            source: controller.unit_icon_source(model.display)
+                                            width: root.unitIconSize
+                                            height: root.unitIconSize
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: root.spacingSm
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
+                                            visible: source !== ""
+                                        }
 
                                         Text {
                                             id: unitNameModel
@@ -631,7 +671,7 @@ ApplicationWindow {
                                             color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
                                             elide: Text.ElideRight
                                             anchors.verticalCenter: parent.verticalCenter
-                                            anchors.left: parent.left
+                                            anchors.left: unitIconModel.visible ? unitIconModel.right : parent.left
                                             anchors.leftMargin: root.spacingSm
                                         }
 
