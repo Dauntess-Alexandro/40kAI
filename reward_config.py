@@ -16,7 +16,7 @@ VP_CAP_PER_COMMAND = 3
 
 # Награды, связанные с целями/объектами (VP-компоненты).
 VP_OBJECTIVE_HOLD_REWARD = 0.5
-VP_OBJECTIVE_HOLD_PENALTY = 0.2
+VP_OBJECTIVE_HOLD_PENALTY = 0.12
 VP_OBJECTIVE_PROXIMITY_REWARD = 0.5
 # No-move penalty scaling: apply only when the unit could improve objective approach.
 # penalty = -VP_OBJECTIVE_HOLD_PENALTY * clamp01(missed_progress / VP_OBJECTIVE_MISSED_PROGRESS_NORM)
@@ -56,9 +56,15 @@ DAMAGE_TAKEN_SCALE = 0.5
 # ====================================
 # Reward shaping (objectives/utility)
 # ====================================
-IDLE_OUT_OF_OBJECTIVE_PENALTY = 0.05
+IDLE_OUT_OF_OBJECTIVE_PENALTY = 0.02
+OBJECTIVE_PROGRESS_STEP_SCALE = 0.03
+OBJECTIVE_PROGRESS_STEP_CAP = 0.10
 KILL_ON_OBJECTIVE_BONUS = 0.2
 DAMAGE_ON_OBJECTIVE_SCALE = 0.05
+
+# Контекстные штрафы за «пропуск» действий
+SHOOT_REWARD_INVALID_TARGET_PENALTY = 0.20
+CHARGE_SKIP_WITH_TARGETS_PENALTY = 0.10
 
 # ======================
 # Reward shaping (fight)
