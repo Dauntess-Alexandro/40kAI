@@ -269,17 +269,28 @@ ApplicationWindow {
                     anchors.margins: root.spacingLg
                     spacing: root.spacingMd
 
-                    GroupBox {
-                        title: "Ростер"
+                    Frame {
                         Layout.fillWidth: true
+                        padding: root.spacingSm
 
-                        ColumnLayout {
+                        RowLayout {
                             anchors.fill: parent
-                            spacing: root.spacingSm
+                            spacing: root.spacingMd
+
+                            Label {
+                                text: "Статус ростера:"
+                                font.bold: true
+                            }
 
                             Label {
                                 text: controller.rosterSummary
-                                font.bold: true
+                                Layout.fillWidth: true
+                                elide: Label.ElideRight
+                            }
+
+                            Label {
+                                text: "Игрок: " + playerFactionCombo.currentText + " • Модель: " + modelFactionCombo.currentText
+                                color: "#666666"
                             }
                         }
                     }
@@ -291,9 +302,11 @@ ApplicationWindow {
 
                         GroupBox {
                             title: "Фракции"
-                            Layout.fillWidth: true
+                            Layout.fillWidth: false
                             Layout.preferredWidth: Math.round(260 * root.uiScale)
-                            Layout.fillHeight: true
+                            Layout.maximumWidth: Math.round(280 * root.uiScale)
+                            Layout.fillHeight: false
+                            Layout.alignment: Qt.AlignTop
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -304,7 +317,7 @@ ApplicationWindow {
                                     Label { text: "Фракция модели:" }
                                     ComboBox {
                                         id: modelFactionCombo
-                                        Layout.preferredWidth: Math.round(160 * root.uiScale)
+                                        Layout.preferredWidth: Math.round(150 * root.uiScale)
                                         model: ["Necrons"]
                                         currentIndex: 0
                                     }
@@ -315,7 +328,7 @@ ApplicationWindow {
                                     Label { text: "Фракция игрока:" }
                                     ComboBox {
                                         id: playerFactionCombo
-                                        Layout.preferredWidth: Math.round(160 * root.uiScale)
+                                        Layout.preferredWidth: Math.round(150 * root.uiScale)
                                         model: ["Necrons"]
                                         currentIndex: 0
                                     }
@@ -324,9 +337,10 @@ ApplicationWindow {
                         }
 
                         GroupBox {
-                            title: "Доступные юниты (Necrons)"
+                            title: "Доступные юниты (" + playerFactionCombo.currentText + ")"
                             Layout.fillWidth: true
                             Layout.fillHeight: true
+                            Layout.preferredWidth: Math.round(460 * root.uiScale)
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -364,10 +378,12 @@ ApplicationWindow {
                                     spacing: root.spacingSm
                                     Button {
                                         text: "Добавить в игрока"
+                                        highlighted: true
                                         onClicked: controller.add_unit_to_player(availableUnitsView.currentIndex)
                                     }
                                     Button {
                                         text: "Добавить в модель"
+                                        flat: true
                                         onClicked: controller.add_unit_to_model(availableUnitsView.currentIndex)
                                     }
                                 }
@@ -378,6 +394,7 @@ ApplicationWindow {
                             title: "Ростер игрока"
                             Layout.fillWidth: true
                             Layout.fillHeight: true
+                            Layout.preferredWidth: Math.round(360 * root.uiScale)
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -415,10 +432,18 @@ ApplicationWindow {
                                     spacing: root.spacingSm
                                     Button {
                                         text: "Удалить"
+                                        enabled: playerRosterView.currentIndex >= 0
                                         onClicked: controller.remove_player_unit(playerRosterView.currentIndex)
                                     }
                                     Button {
                                         text: "Очистить"
+                                        flat: true
+                                        contentItem: Text {
+                                            text: parent.text
+                                            color: "#b00020"
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
                                         onClicked: controller.clear_player_roster()
                                     }
                                 }
@@ -429,6 +454,7 @@ ApplicationWindow {
                             title: "Ростер модели"
                             Layout.fillWidth: true
                             Layout.fillHeight: true
+                            Layout.preferredWidth: Math.round(360 * root.uiScale)
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -466,10 +492,18 @@ ApplicationWindow {
                                     spacing: root.spacingSm
                                     Button {
                                         text: "Удалить"
+                                        enabled: modelRosterView.currentIndex >= 0
                                         onClicked: controller.remove_model_unit(modelRosterView.currentIndex)
                                     }
                                     Button {
                                         text: "Очистить"
+                                        flat: true
+                                        contentItem: Text {
+                                            text: parent.text
+                                            color: "#b00020"
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
                                         onClicked: controller.clear_model_roster()
                                     }
                                 }
