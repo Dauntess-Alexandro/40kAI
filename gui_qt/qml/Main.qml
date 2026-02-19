@@ -344,18 +344,19 @@ ApplicationWindow {
                         }
                     }
 
-                    RowLayout {
-                        spacing: root.spacingMd
+                    GridLayout {
+                        columns: 4
+                        columnSpacing: root.spacingMd
+                        rowSpacing: 0
                         Layout.fillWidth: true
                         Layout.fillHeight: true
 
                         GroupBox {
                             title: "Фракции"
-                            Layout.fillWidth: false
-                            Layout.preferredWidth: Math.round(260 * root.uiScale)
-                            Layout.maximumWidth: Math.round(280 * root.uiScale)
+                            Layout.fillWidth: true
                             Layout.fillHeight: false
                             Layout.alignment: Qt.AlignTop
+                            Layout.horizontalStretchFactor: 1
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -451,32 +452,37 @@ ApplicationWindow {
 
                         GroupBox {
                             title: ""
-                            label: RowLayout {
-                                spacing: root.spacingXs
-
-                                Image {
-                                    source: controller.faction_icon_source(root.playerFactionName)
-                                    sourceSize.width: root.factionIconSize
-                                    sourceSize.height: root.factionIconSize
-                                    Layout.preferredWidth: root.factionIconSize
-                                    Layout.preferredHeight: root.factionIconSize
-                                    visible: source !== ""
-                                    fillMode: Image.PreserveAspectFit
-                                    smooth: true
-                                }
-
-                                Label {
-                                    text: "Доступные юниты (" + root.playerFactionName + ")"
-                                    font.bold: true
-                                }
-                            }
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            Layout.preferredWidth: Math.round(460 * root.uiScale)
+                            Layout.alignment: Qt.AlignTop
+                            Layout.horizontalStretchFactor: 3
 
                             ColumnLayout {
                                 anchors.fill: parent
+                                anchors.margins: root.spacingXs
                                 spacing: root.spacingSm
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: Math.round(24 * root.uiScale)
+                                    spacing: root.spacingXs
+
+                                    Image {
+                                        source: controller.faction_icon_source(root.playerFactionName)
+                                        sourceSize.width: root.factionIconSize
+                                        sourceSize.height: root.factionIconSize
+                                        Layout.preferredWidth: root.factionIconSize
+                                        Layout.preferredHeight: root.factionIconSize
+                                        visible: source !== ""
+                                        fillMode: Image.PreserveAspectFit
+                                        smooth: true
+                                    }
+
+                                    Label {
+                                        text: "Доступные юниты (" + root.playerFactionName + ")"
+                                        font.bold: true
+                                    }
+                                }
 
                                 ListView {
                                     id: availableUnitsView
@@ -523,14 +529,23 @@ ApplicationWindow {
                         }
 
                         GroupBox {
-                            title: "Ростер игрока"
+                            title: ""
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            Layout.preferredWidth: Math.round(360 * root.uiScale)
+                            Layout.alignment: Qt.AlignTop
+                            Layout.horizontalStretchFactor: 2
 
                             ColumnLayout {
                                 anchors.fill: parent
+                                anchors.margins: root.spacingXs
                                 spacing: root.spacingSm
+
+                                Label {
+                                    text: "Ростер игрока"
+                                    font.bold: true
+                                    Layout.preferredHeight: Math.round(24 * root.uiScale)
+                                    verticalAlignment: Text.AlignVCenter
+                                }
 
                                 ListView {
                                     id: playerRosterView
@@ -581,14 +596,23 @@ ApplicationWindow {
                         }
 
                         GroupBox {
-                            title: "Ростер модели"
+                            title: ""
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            Layout.preferredWidth: Math.round(360 * root.uiScale)
+                            Layout.alignment: Qt.AlignTop
+                            Layout.horizontalStretchFactor: 2
 
                             ColumnLayout {
                                 anchors.fill: parent
+                                anchors.margins: root.spacingXs
                                 spacing: root.spacingSm
+
+                                Label {
+                                    text: "Ростер модели"
+                                    font.bold: true
+                                    Layout.preferredHeight: Math.round(24 * root.uiScale)
+                                    verticalAlignment: Text.AlignVCenter
+                                }
 
                                 ListView {
                                     id: modelRosterView
