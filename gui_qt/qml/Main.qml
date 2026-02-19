@@ -26,6 +26,8 @@ ApplicationWindow {
     property int dialogWidthXl: Math.round(900 * uiScale)
     property int dialogHeightMd: Math.round(520 * uiScale)
     property int dialogHeightLg: Math.round(500 * uiScale)
+    property string modelFactionName: modelFactionNecrons.checked ? "Necrons" : "-"
+    property string playerFactionName: playerFactionNecrons.checked ? "Necrons" : "-"
 
     font.pixelSize: Math.round(14 * uiScale)
 
@@ -289,7 +291,7 @@ ApplicationWindow {
                             }
 
                             Label {
-                                text: "Игрок: " + playerFactionCombo.currentText + " • Модель: " + modelFactionCombo.currentText
+                                text: "Игрок: " + root.playerFactionName + " • Модель: " + root.modelFactionName
                                 color: "#666666"
                             }
                         }
@@ -313,31 +315,65 @@ ApplicationWindow {
                                 spacing: root.spacingMd
 
                                 RowLayout {
+                                    Layout.fillWidth: true
                                     spacing: root.spacingSm
-                                    Label { text: "Фракция модели:" }
-                                    ComboBox {
-                                        id: modelFactionCombo
-                                        Layout.preferredWidth: Math.round(150 * root.uiScale)
-                                        model: ["Necrons"]
-                                        currentIndex: 0
+                                    Label {
+                                        text: "Фракция модели:"
+                                        Layout.preferredWidth: Math.round(115 * root.uiScale)
+                                    }
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        radius: Math.round(6 * root.uiScale)
+                                        color: "#f6f6f6"
+                                        border.color: "#d7d7d7"
+                                        border.width: 1
+                                        implicitHeight: modelFactionNecrons.implicitHeight + root.spacingSm
+
+                                        RadioButton {
+                                            id: modelFactionNecrons
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: root.spacingSm
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: "Necrons"
+                                            checked: true
+                                            autoExclusive: false
+                                            onClicked: checked = true
+                                        }
                                     }
                                 }
 
                                 RowLayout {
+                                    Layout.fillWidth: true
                                     spacing: root.spacingSm
-                                    Label { text: "Фракция игрока:" }
-                                    ComboBox {
-                                        id: playerFactionCombo
-                                        Layout.preferredWidth: Math.round(150 * root.uiScale)
-                                        model: ["Necrons"]
-                                        currentIndex: 0
+                                    Label {
+                                        text: "Фракция игрока:"
+                                        Layout.preferredWidth: Math.round(115 * root.uiScale)
+                                    }
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        radius: Math.round(6 * root.uiScale)
+                                        color: "#f6f6f6"
+                                        border.color: "#d7d7d7"
+                                        border.width: 1
+                                        implicitHeight: playerFactionNecrons.implicitHeight + root.spacingSm
+
+                                        RadioButton {
+                                            id: playerFactionNecrons
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: root.spacingSm
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: "Necrons"
+                                            checked: true
+                                            autoExclusive: false
+                                            onClicked: checked = true
+                                        }
                                     }
                                 }
                             }
                         }
 
                         GroupBox {
-                            title: "Доступные юниты (" + playerFactionCombo.currentText + ")"
+                            title: "Доступные юниты (" + root.playerFactionName + ")"
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             Layout.preferredWidth: Math.round(460 * root.uiScale)
