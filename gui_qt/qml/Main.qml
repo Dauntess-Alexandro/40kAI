@@ -38,6 +38,7 @@ ApplicationWindow {
             Layout.fillWidth: true
 
             TabButton { text: "Главная" }
+            TabButton { text: "Ростер" }
             TabButton { text: "Метрики модели" }
             TabButton { text: "Игра" }
             TabButton { text: "Настройки" }
@@ -168,65 +169,6 @@ ApplicationWindow {
                             Layout.fillWidth: true
 
                             GroupBox {
-                                title: "Ростер"
-                                Layout.fillWidth: true
-
-                                ColumnLayout {
-                                    spacing: root.spacingSm
-                                    anchors.fill: parent
-
-                                    Label {
-                                        text: controller.rosterSummary
-                                        font.bold: true
-                                    }
-
-                                    Label {
-                                        text: "Доступные юниты (Necrons)"
-                                    }
-
-                                    ListView {
-                                        id: availableUnitsInline
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: root.listHeightSm
-                                        model: controller.availableUnitsModel
-                                        clip: true
-                                        delegate: Rectangle {
-                                            width: ListView.view ? ListView.view.width : 0
-                                            height: unitNameInline.implicitHeight + root.spacingSm
-                                            color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
-
-                                            Text {
-                                                id: unitNameInline
-                                                text: model.display
-                                                color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
-                                                elide: Text.ElideRight
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                anchors.left: parent.left
-                                                anchors.leftMargin: root.spacingSm
-                                            }
-                                        }
-                                    }
-
-                                    RowLayout {
-                                        spacing: root.spacingSm
-                                        Button {
-                                            text: "Добавить в игрока"
-                                            onClicked: controller.add_unit_to_player(availableUnitsInline.currentIndex)
-                                        }
-                                        Button {
-                                            text: "Добавить в модель"
-                                            onClicked: controller.add_unit_to_model(availableUnitsInline.currentIndex)
-                                        }
-                                    }
-
-                                    Button {
-                                        text: "Army Viewer"
-                                        onClicked: armyViewerDialog.open()
-                                    }
-                                }
-                            }
-
-                            GroupBox {
                                 title: "Действия"
                                 Layout.fillWidth: true
 
@@ -325,6 +267,176 @@ ApplicationWindow {
                             }
                         }
                     }
+                    }
+                }
+            }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: root.spacingLg
+                    spacing: root.spacingMd
+
+                    GroupBox {
+                        title: "Ростер"
+                        Layout.fillWidth: true
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            spacing: root.spacingSm
+
+                            Label {
+                                text: controller.rosterSummary
+                                font.bold: true
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        spacing: root.spacingMd
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+
+                        GroupBox {
+                            title: "Доступные юниты (Necrons)"
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: root.spacingSm
+
+                                ListView {
+                                    id: availableUnitsView
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    model: controller.availableUnitsModel
+                                    clip: true
+                                    delegate: Rectangle {
+                                        width: ListView.view ? ListView.view.width : 0
+                                        height: unitNameAvailable.implicitHeight + root.spacingSm
+                                        color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
+
+                                        Text {
+                                            id: unitNameAvailable
+                                            text: model.display
+                                            color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
+                                            elide: Text.ElideRight
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: root.spacingSm
+                                        }
+                                    }
+                                }
+
+                                RowLayout {
+                                    spacing: root.spacingSm
+                                    Button {
+                                        text: "Добавить в игрока"
+                                        onClicked: controller.add_unit_to_player(availableUnitsView.currentIndex)
+                                    }
+                                    Button {
+                                        text: "Добавить в модель"
+                                        onClicked: controller.add_unit_to_model(availableUnitsView.currentIndex)
+                                    }
+                                }
+                            }
+                        }
+
+                        GroupBox {
+                            title: "Ростер игрока"
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: root.spacingSm
+
+                                ListView {
+                                    id: playerRosterView
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    model: controller.playerRosterModel
+                                    clip: true
+                                    delegate: Rectangle {
+                                        width: ListView.view ? ListView.view.width : 0
+                                        height: unitNamePlayer.implicitHeight + root.spacingSm
+                                        color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
+
+                                        Text {
+                                            id: unitNamePlayer
+                                            text: model.display
+                                            color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
+                                            elide: Text.ElideRight
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: root.spacingSm
+                                        }
+                                    }
+                                }
+
+                                RowLayout {
+                                    spacing: root.spacingSm
+                                    Button {
+                                        text: "Удалить"
+                                        onClicked: controller.remove_player_unit(playerRosterView.currentIndex)
+                                    }
+                                    Button {
+                                        text: "Очистить"
+                                        onClicked: controller.clear_player_roster()
+                                    }
+                                }
+                            }
+                        }
+
+                        GroupBox {
+                            title: "Ростер модели"
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: root.spacingSm
+
+                                ListView {
+                                    id: modelRosterView
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    model: controller.modelRosterModel
+                                    clip: true
+                                    delegate: Rectangle {
+                                        width: ListView.view ? ListView.view.width : 0
+                                        height: unitNameModel.implicitHeight + root.spacingSm
+                                        color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
+
+                                        Text {
+                                            id: unitNameModel
+                                            text: model.display
+                                            color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
+                                            elide: Text.ElideRight
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: root.spacingSm
+                                        }
+                                    }
+                                }
+
+                                RowLayout {
+                                    spacing: root.spacingSm
+                                    Button {
+                                        text: "Удалить"
+                                        onClicked: controller.remove_model_unit(modelRosterView.currentIndex)
+                                    }
+                                    Button {
+                                        text: "Очистить"
+                                        onClicked: controller.clear_model_roster()
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -855,164 +967,6 @@ ApplicationWindow {
             repeat: true
             running: asciiBoardDialog.visible
             onTriggered: controller.refresh_board_text()
-        }
-    }
-
-    Dialog {
-        id: armyViewerDialog
-        title: "Army Viewer"
-        modal: true
-        standardButtons: Dialog.Close
-        width: root.dialogWidthXl
-        height: root.dialogHeightLg
-
-        ColumnLayout {
-            anchors.fill: parent
-            spacing: root.spacingMd
-
-            RowLayout {
-                spacing: root.spacingMd
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-
-                GroupBox {
-                    title: "Доступные юниты (Necrons)"
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        spacing: root.spacingSm
-
-                        ListView {
-                            id: availableUnitsView
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            model: controller.availableUnitsModel
-                            clip: true
-                            delegate: Rectangle {
-                                width: ListView.view ? ListView.view.width : 0
-                                height: unitNameAvailable.implicitHeight + root.spacingSm
-                                color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
-
-                                Text {
-                                    id: unitNameAvailable
-                                    text: model.display
-                                    color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
-                                    elide: Text.ElideRight
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.left: parent.left
-                                    anchors.leftMargin: root.spacingSm
-                                }
-                            }
-                        }
-
-                        RowLayout {
-                            spacing: root.spacingSm
-                            Button {
-                                text: "Добавить в игрока"
-                                onClicked: controller.add_unit_to_player(availableUnitsView.currentIndex)
-                            }
-                            Button {
-                                text: "Добавить в модель"
-                                onClicked: controller.add_unit_to_model(availableUnitsView.currentIndex)
-                            }
-                        }
-                    }
-                }
-
-                GroupBox {
-                    title: "Ростер игрока"
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        spacing: root.spacingSm
-
-                        ListView {
-                            id: playerRosterView
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            model: controller.playerRosterModel
-                            clip: true
-                            delegate: Rectangle {
-                                width: ListView.view ? ListView.view.width : 0
-                                height: unitNamePlayer.implicitHeight + root.spacingSm
-                                color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
-
-                                Text {
-                                    id: unitNamePlayer
-                                    text: model.display
-                                    color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
-                                    elide: Text.ElideRight
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.left: parent.left
-                                    anchors.leftMargin: root.spacingSm
-                                }
-                            }
-                        }
-
-                        RowLayout {
-                            spacing: root.spacingSm
-                            Button {
-                                text: "Удалить"
-                                onClicked: controller.remove_player_unit(playerRosterView.currentIndex)
-                            }
-                            Button {
-                                text: "Очистить"
-                                onClicked: controller.clear_player_roster()
-                            }
-                        }
-                    }
-                }
-
-                GroupBox {
-                    title: "Ростер модели"
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        spacing: root.spacingSm
-
-                        ListView {
-                            id: modelRosterView
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            model: controller.modelRosterModel
-                            clip: true
-                            delegate: Rectangle {
-                                width: ListView.view ? ListView.view.width : 0
-                                height: unitNameModel.implicitHeight + root.spacingSm
-                                color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
-
-                                Text {
-                                    id: unitNameModel
-                                    text: model.display
-                                    color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
-                                    elide: Text.ElideRight
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.left: parent.left
-                                    anchors.leftMargin: root.spacingSm
-                                }
-                            }
-                        }
-
-                        RowLayout {
-                            spacing: root.spacingSm
-                            Button {
-                                text: "Удалить"
-                                onClicked: controller.remove_model_unit(modelRosterView.currentIndex)
-                            }
-                            Button {
-                                text: "Очистить"
-                                onClicked: controller.clear_model_roster()
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 
