@@ -1044,14 +1044,53 @@ class Warhammer40kEnv(gym.Env):
     def _sync_model_positions_to_anchors(self) -> None:
         self.unit_anchor_coords = [list(coords) for coords in self.unit_coords]
         self.enemy_anchor_coords = [list(coords) for coords in self.enemy_coords]
-        self.unit_model_positions = []
-        for idx, anchor in enumerate(self.unit_anchor_coords):
-            alive = self._alive_models_from_pool("model", idx)
-            self.unit_model_positions.append(self._build_anchor_formation(anchor, alive))
-        self.enemy_model_positions = []
-        for idx, anchor in enumerate(self.enemy_anchor_coords):
-            alive = self._alive_models_from_pool("enemy", idx)
-            self.enemy_model_positions.append(self._build_anchor_formation(anchor, alive))
+
+        occupied: set[tuple[int, int]] = set()
+        self.unit_model_positions = self._resolve_side_model_positions(
+            side="model",
+            occupied=occupied,
+        )
+        self.enemy_model_positions = self._resolve_side_model_positions(
+            side="enemy",
+            occupied=occupied,
+        )
+
+    def _resolve_side_model_positions(self, side: str, occupied: set[tuple[int, int]]):
+        coords = self.unit_coords if side == "model" else self.enemy_coords
+        anchors = self.unit_anchor_coords if side == "model" else self.enemy_anchor_coords
+        resolved_positions = []
+        max_radius = max(1, self.b_len + self.b_hei)
+
+        for idx in range(len(coords)):
+            alive = self._alive_models_from_pool(side, idx)
+            if alive <= 0:
+                resolved_positions.append([])
+                continue
+
+            preferred = self._clamp_anchor(coords[idx])
+            best_anchor = self._find_nearest_valid_anchor(
+                preferred_anchor=preferred,
+                count=alive,
+                occupied=occupied,
+                max_radius=max_radius,
+            )
+            if best_anchor is None:
+                best_anchor = preferred
+                unit_label = self._format_unit_label(side, idx)
+                self._log(
+                    f"[MODEL_POS] {unit_label}: не найдено полностью валидное размещение формации. "
+                    "Где: warhamEnv._resolve_side_model_positions. "
+                    "Что делать дальше: увеличить карту или уменьшить плотность юнитов."
+                )
+
+            anchors[idx] = [int(best_anchor[0]), int(best_anchor[1])]
+            coords[idx] = [int(best_anchor[0]), int(best_anchor[1])]
+            formation = self._build_anchor_formation(best_anchor, alive)
+            resolved_positions.append(formation)
+            for pos in formation:
+                occupied.add((int(pos[0]), int(pos[1])))
+
+        return resolved_positions
 
     def _init_model_state_from_health(self) -> None:
         self.unit_model_wounds = [
@@ -1082,14 +1121,7 @@ class Warhammer40kEnv(gym.Env):
 
     def _build_anchor_formation(self, anchor_xy, count: int):
         x, y = int(anchor_xy[0]), int(anchor_xy[1])
-        offsets = [
-            (0, 0),
-            (0, 1), (0, -1), (1, 0), (-1, 0),
-            (1, 1), (1, -1), (-1, 1), (-1, -1),
-            (0, 2), (0, -2), (2, 0), (-2, 0),
-            (1, 2), (1, -2), (-1, 2), (-1, -2),
-            (2, 1), (2, -1), (-2, 1), (-2, -1),
-        ]
+        offsets = self._formation_offsets()
         positions = []
         for dx, dy in offsets:
             positions.append([x + dx, y + dy, 0])
@@ -1098,6 +1130,68 @@ class Warhammer40kEnv(gym.Env):
         while len(positions) < count:
             positions.append([x, y, 0])
         return positions
+
+    def _formation_offsets(self):
+        return [
+            (0, 0),
+            (0, 1), (0, -1), (1, 0), (-1, 0),
+            (1, 1), (1, -1), (-1, 1), (-1, -1),
+            (0, 2), (0, -2), (2, 0), (-2, 0),
+            (1, 2), (1, -2), (-1, 2), (-1, -2),
+            (2, 1), (2, -1), (-2, 1), (-2, -1),
+        ]
+
+    def _clamp_anchor(self, anchor_xy):
+        x = int(anchor_xy[0]) if anchor_xy is not None else 0
+        y = int(anchor_xy[1]) if anchor_xy is not None else 0
+        x = max(0, min(self.b_len - 1, x))
+        y = max(0, min(self.b_hei - 1, y))
+        return [x, y]
+
+    def _is_model_cell_in_bounds(self, pos_xy) -> bool:
+        x = int(pos_xy[0])
+        y = int(pos_xy[1])
+        return 0 <= x < self.b_len and 0 <= y < self.b_hei
+
+    def _is_formation_valid(self, anchor_xy, count: int, occupied: set[tuple[int, int]]) -> bool:
+        if count <= 0:
+            return True
+        formation = self._build_anchor_formation(anchor_xy, count)
+        used = set()
+        for pos in formation:
+            cell = (int(pos[0]), int(pos[1]))
+            if not self._is_model_cell_in_bounds(cell):
+                return False
+            if cell in occupied or cell in used:
+                return False
+            used.add(cell)
+        return True
+
+    def _ring_positions(self, center, radius: int):
+        cx, cy = int(center[0]), int(center[1])
+        if radius == 0:
+            yield [cx, cy]
+            return
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                if max(abs(dx), abs(dy)) != radius:
+                    continue
+                yield [cx + dx, cy + dy]
+
+    def _find_nearest_valid_anchor(
+        self,
+        preferred_anchor,
+        count: int,
+        occupied: set[tuple[int, int]],
+        max_radius: int,
+    ):
+        preferred = self._clamp_anchor(preferred_anchor)
+        for radius in range(0, max_radius + 1):
+            for candidate in self._ring_positions(preferred, radius):
+                if not self._is_formation_valid(candidate, count, occupied):
+                    continue
+                return self._clamp_anchor(candidate)
+        return None
 
     def _validate_unit_coherency(self, side: str, idx: int) -> bool:
         positions_all = self.unit_model_positions if side == "model" else self.enemy_model_positions
@@ -1126,6 +1220,7 @@ class Warhammer40kEnv(gym.Env):
             return
         alive = self._alive_models_from_pool(side, idx)
         positions_all[idx] = self._build_anchor_formation(anchors[idx], alive)
+        self._sync_model_positions_to_anchors()
         unit_id = idx + (21 if side == "model" else 11)
         side_label = "MODEL" if side == "model" else self._display_side("enemy")
         why = f" Причина: {reason}." if reason else ""
