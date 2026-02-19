@@ -329,6 +329,11 @@ ApplicationWindow {
                                             anchors.left: parent.left
                                             anchors.leftMargin: root.spacingSm
                                         }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            onClicked: availableUnitsView.currentIndex = index
+                                        }
                                     }
                                 }
 
@@ -375,6 +380,11 @@ ApplicationWindow {
                                             anchors.left: parent.left
                                             anchors.leftMargin: root.spacingSm
                                         }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            onClicked: playerRosterView.currentIndex = index
+                                        }
                                     }
                                 }
 
@@ -420,6 +430,11 @@ ApplicationWindow {
                                             anchors.verticalCenter: parent.verticalCenter
                                             anchors.left: parent.left
                                             anchors.leftMargin: root.spacingSm
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            onClicked: modelRosterView.currentIndex = index
                                         }
                                     }
                                 }
