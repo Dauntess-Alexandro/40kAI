@@ -302,13 +302,23 @@ ApplicationWindow {
                                 RowLayout {
                                     spacing: root.spacingSm
                                     Label { text: "Фракция модели:" }
-                                    RadioButton { text: "Necrons"; checked: true }
+                                    ComboBox {
+                                        id: modelFactionCombo
+                                        Layout.preferredWidth: Math.round(160 * root.uiScale)
+                                        model: ["Necrons"]
+                                        currentIndex: 0
+                                    }
                                 }
 
                                 RowLayout {
                                     spacing: root.spacingSm
                                     Label { text: "Фракция игрока:" }
-                                    RadioButton { text: "Necrons"; checked: true }
+                                    ComboBox {
+                                        id: playerFactionCombo
+                                        Layout.preferredWidth: Math.round(160 * root.uiScale)
+                                        model: ["Necrons"]
+                                        currentIndex: 0
+                                    }
                                 }
                             }
                         }
