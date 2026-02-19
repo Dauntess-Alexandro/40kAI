@@ -3388,20 +3388,11 @@ class Warhammer40kEnv(gym.Env):
                                 roll_text = f"бросок: {dice_vals[0]} + {dice_vals[1]} = {diceRoll}"
                             else:
                                 roll_text = f"бросок total={diceRoll}"
-                            skip_penalty = float(getattr(reward_cfg, "CHARGE_SKIP_WITH_TARGETS_PENALTY", 0.10))
-                            reward_delta -= skip_penalty
                             self._log_unit(
                                 "MODEL",
                                 modelName,
                                 i,
-                                f"Цели в 12\": {target_list}. {roll_text}. Чардж пропущен при доступных целях.",
-                            )
-                            self._log_reward_unit(
-                                "model",
-                                modelName,
-                                i,
-                                "Reward (чардж): "
-                                f"skip_with_targets_penalty=-{skip_penalty:.3f}",
+                                f"Цели в 12\": {target_list}. {roll_text}. Чардж пропущен при доступных целях (penalty=0).",
                             )
                         else:
                             self._log_unit("MODEL", modelName, i, "Нет целей в 12\", чардж пропущен.")
