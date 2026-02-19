@@ -79,9 +79,12 @@ class GUIController(QtCore.QObject):
         self._model_roster: list[RosterEntry] = []
         self._instance_counter = 1
 
-        self._available_model = QtCore.QStringListModel()
-        self._player_model = QtCore.QStringListModel()
-        self._model_model = QtCore.QStringListModel()
+        self._available_model = QtGui.QStandardItemModel(self)
+        self._player_model = QtGui.QStandardItemModel(self)
+        self._model_model = QtGui.QStandardItemModel(self)
+        self._unit_icon_cache: dict[str, QIcon] = {}
+        self._unit_icon_source_cache: dict[str, str] = {}
+        self._unit_icon_size = QtCore.QSize(18, 18)
 
         self._metrics_defaults = self._build_default_metrics()
         self._metrics_files = dict(self._metrics_defaults)
@@ -239,6 +242,64 @@ class GUIController(QtCore.QObject):
                 return QIcon(icon_path)
         return QIcon()
 
+    def normalize_unit_name(self, text: str) -> str:
+        normalized = (text or "").strip()
+        normalized = re.sub(r"\(x\d+\)\s*$", "", normalized, flags=re.IGNORECASE)
+        return " ".join(normalized.split())
+
+    def get_unit_icon(self, unit_name: str) -> QIcon:
+        normalized = self.normalize_unit_name(unit_name)
+        if not normalized:
+            return QIcon()
+        cache_key = normalized.casefold()
+        if cache_key in self._unit_icon_cache:
+            return self._unit_icon_cache[cache_key]
+
+        icon_file_map = {
+            "necron warriors": "necron_warriors_icon.png",
+            "royal warden": "royal_warden_icon.png",
+            "canoptek scarab swarms": "canoptek_scarab_swarms_icon.png",
+        }
+        icon_file = icon_file_map.get(cache_key)
+        if not icon_file:
+            icon = QIcon()
+        else:
+            icon_path = os.path.join(self._repo_root, "gui_qt", "assets", icon_file)
+            icon = QIcon(icon_path) if os.path.exists(icon_path) else QIcon()
+        self._unit_icon_cache[cache_key] = icon
+        return icon
+
+    def get_unit_icon_source(self, unit_name: str) -> str:
+        normalized = self.normalize_unit_name(unit_name)
+        if not normalized:
+            return ""
+        cache_key = normalized.casefold()
+        if cache_key in self._unit_icon_source_cache:
+            return self._unit_icon_source_cache[cache_key]
+
+        icon = self.get_unit_icon(normalized)
+        if icon.isNull():
+            self._unit_icon_source_cache[cache_key] = ""
+            return ""
+
+        pixmap = icon.pixmap(self._unit_icon_size)
+        if pixmap.isNull():
+            self._unit_icon_source_cache[cache_key] = ""
+            return ""
+
+        scaled = pixmap.scaled(
+            self._unit_icon_size,
+            QtCore.Qt.KeepAspectRatio,
+            QtCore.Qt.SmoothTransformation,
+        )
+        image_dir = os.path.join(self._repo_root, "gui_qt", ".icon_cache")
+        os.makedirs(image_dir, exist_ok=True)
+        image_path = os.path.join(image_dir, f"{cache_key.replace(' ', '_')}.png")
+        scaled.save(image_path, "PNG")
+        source = self._to_file_url(image_path)
+        self._unit_icon_source_cache[cache_key] = source
+        return source
+
     @QtCore.Slot(str, result=str)
     def faction_icon_source(self, faction_name: str) -> str:
         icon = self.get_faction_icon(faction_name)
@@ -250,6 +311,10 @@ class GUIController(QtCore.QObject):
             return ""
         icon_path = os.path.join(self._repo_root, "gui_qt", "assets", "necrons.png")
         return self._to_file_url(icon_path)
+
+    @QtCore.Slot(str, result=str)
+    def unit_icon_source(self, unit_name: str) -> str:
+        return self.get_unit_icon_source(unit_name)
 
     @QtCore.Slot(int)
     def set_num_games(self, value: int) -> None:
@@ -1358,15 +1423,28 @@ class GUIController(QtCore.QObject):
         return entry
 
     def _refresh_models(self) -> None:
-        self._available_model.setStringList(
-            [f"{unit.name} (x{unit.default_count})" for unit in self._available_units]
+        self._replace_model_items(
+            self._available_model,
+            [f"{unit.name} (x{unit.default_count})" for unit in self._available_units],
         )
-        self._player_model.setStringList(
-            [f"{entry.name} (x{entry.count})" for entry in self._player_roster]
+        self._replace_model_items(
+            self._player_model,
+            [f"{entry.name} (x{entry.count})" for entry in self._player_roster],
         )
-        self._model_model.setStringList(
-            [f"{entry.name} (x{entry.count})" for entry in self._model_roster]
+        self._replace_model_items(
+            self._model_model,
+            [f"{entry.name} (x{entry.count})" for entry in self._model_roster],
         )
+
+    def _replace_model_items(self, model: QtGui.QStandardItemModel, values: list[str]) -> None:
+        model.clear()
+        for value in values:
+            icon = self.get_unit_icon(value)
+            item = QtGui.QStandardItem(value)
+            item.setEditable(False)
+            item.setData(icon, QtCore.Qt.DecorationRole)
+            item.setData(self.get_unit_icon_source(value), QtCore.Qt.UserRole + 1)
+            model.appendRow(item)
 
     def _update_roster_summary(self) -> None:
         self._roster_summary = (
