@@ -438,12 +438,11 @@ ApplicationWindow {
                                     Button {
                                         text: "Очистить"
                                         flat: true
-                                        contentItem: Text {
-                                            text: parent.text
-                                            color: "#b00020"
-                                            horizontalAlignment: Text.AlignHCenter
-                                            verticalAlignment: Text.AlignVCenter
-                                        }
+                                        icon.source: ""
+                                        icon.width: 0
+                                        icon.height: 0
+                                        display: AbstractButton.TextOnly
+                                        text: "⚠ Очистить"
                                         onClicked: controller.clear_player_roster()
                                     }
                                 }
@@ -498,12 +497,11 @@ ApplicationWindow {
                                     Button {
                                         text: "Очистить"
                                         flat: true
-                                        contentItem: Text {
-                                            text: parent.text
-                                            color: "#b00020"
-                                            horizontalAlignment: Text.AlignHCenter
-                                            verticalAlignment: Text.AlignVCenter
-                                        }
+                                        icon.source: ""
+                                        icon.width: 0
+                                        icon.height: 0
+                                        display: AbstractButton.TextOnly
+                                        text: "⚠ Очистить"
                                         onClicked: controller.clear_model_roster()
                                     }
                                 }
