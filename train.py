@@ -1115,6 +1115,11 @@ def main():
         ctx["ep_len"] = 0
         ctx["rew_arr"] = []
         ctx["n_step_buffer"] = collections.deque(maxlen=N_STEP)
+        ctx["action_head_total"] = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+        ctx["action_head_skip"] = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+        ctx["action_head_invalid"] = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+        ctx["shoot_windows_with_targets"] = 0
+        ctx["shoot_windows_without_targets"] = 0
     
     state = primary_ctx["state"]
     info = primary_ctx["info"]
@@ -1239,6 +1244,31 @@ def main():
         for idx, ctx in enumerate(env_contexts):
             ctx["ep_len"] += 1
             action_dict = convertToDict(actions[idx])
+            # Локальная аналитика по головам action-space (для [TRAIN][ACTIONS] в конце эпизода)
+            for _head in ("move", "attack", "shoot", "charge", "use_cp", "cp_on"):
+                ctx["action_head_total"][_head] += 1
+            if int(action_dict.get("move", 4)) == 4:
+                ctx["action_head_skip"]["move"] += 1
+            if int(action_dict.get("attack", 0)) == 0:
+                ctx["action_head_skip"]["attack"] += 1
+                ctx["action_head_skip"]["charge"] += 1
+            if int(action_dict.get("use_cp", 0)) == 0:
+                ctx["action_head_skip"]["use_cp"] += 1
+            shoot_mask_now = shoot_masks[idx] if idx < len(shoot_masks) else None
+            valid_shoot_indices = []
+            if shoot_mask_now is not None:
+                try:
+                    valid_shoot_indices = [j for j, allowed in enumerate(shoot_mask_now) if bool(allowed)]
+                except Exception:
+                    valid_shoot_indices = []
+            if len(valid_shoot_indices) == 0:
+                ctx["shoot_windows_without_targets"] += 1
+                ctx["action_head_skip"]["shoot"] += 1
+            else:
+                ctx["shoot_windows_with_targets"] += 1
+                shoot_raw = int(action_dict.get("shoot", -1))
+                if shoot_raw < 0 or shoot_raw >= len(valid_shoot_indices):
+                    ctx["action_head_invalid"]["shoot"] += 1
             step_start = time.perf_counter()
             if USE_SUBPROC_ENVS:
                 ctx["conn"].send(("step", action_dict))
@@ -1328,14 +1358,6 @@ def main():
                 winner_env = info.get("winner")
                 model_hp_total = sum(info.get("model health", [])) if isinstance(info.get("model health"), (list, tuple, np.ndarray)) else info.get("model health")
                 enemy_hp_total = sum(info.get("player health", [])) if isinstance(info.get("player health"), (list, tuple, np.ndarray)) else info.get("player health")
-                append_agent_log(
-                    "Конец эпизода: "
-                    f"reason={end_reason_env or 'unknown'} "
-                    f"winner={winner_env} "
-                    f"model_hp_total={model_hp_total} enemy_hp_total={enemy_hp_total} "
-                    f"model_vp={info.get('model VP')} enemy_vp={info.get('player VP')} "
-                    f"turn={info.get('turn')} battle_round={info.get('battle round')}"
-                )
                 if ctx["ep_len"] == 1:
                     append_agent_log(
                         "ВНИМАНИЕ: эпизод завершился на первом шаге. "
@@ -1421,6 +1443,32 @@ def main():
                     if trunc is False:
                         print("draw!")
     
+                resolved_winner = "model" if result == "win" else ("enemy" if result == "loss" else "draw")
+                resolved_end_reason = end_reason_env or end_reason
+                if TRAIN_LOG_TO_FILE:
+                    append_agent_log(
+                        "Конец эпизода: "
+                        f"reason={resolved_end_reason} "
+                        f"winner={resolved_winner} "
+                        f"winner_env={winner_env} "
+                        f"model_hp_total={model_hp_total} enemy_hp_total={enemy_hp_total} "
+                        f"model_vp={info.get('model VP')} enemy_vp={info.get('player VP')} "
+                        f"turn={info.get('turn')} battle_round={info.get('battle round')}"
+                    )
+                    steps_denom = max(1, int(ctx.get("ep_len", 0)))
+                    skip_counts = ctx.get("action_head_skip", Counter())
+                    invalid_counts = ctx.get("action_head_invalid", Counter())
+                    append_agent_log(
+                        "[TRAIN][ACTIONS] "
+                        f"ep={numLifeT + 1} "
+                        f"steps={steps_denom} "
+                        f"skip={{move:{skip_counts['move']},attack:{skip_counts['attack']},shoot:{skip_counts['shoot']},charge:{skip_counts['charge']},use_cp:{skip_counts['use_cp']},cp_on:{skip_counts['cp_on']}}} "
+                        f"invalid={{move:{invalid_counts['move']},attack:{invalid_counts['attack']},shoot:{invalid_counts['shoot']},charge:{invalid_counts['charge']},use_cp:{invalid_counts['use_cp']},cp_on:{invalid_counts['cp_on']}}} "
+                        f"skip_rate={{move:{skip_counts['move']/steps_denom:.3f},attack:{skip_counts['attack']/steps_denom:.3f},shoot:{skip_counts['shoot']/steps_denom:.3f},charge:{skip_counts['charge']/steps_denom:.3f},use_cp:{skip_counts['use_cp']/steps_denom:.3f},cp_on:{skip_counts['cp_on']/steps_denom:.3f}}} "
+                        f"invalid_rate={{move:{invalid_counts['move']/steps_denom:.3f},attack:{invalid_counts['attack']/steps_denom:.3f},shoot:{invalid_counts['shoot']/steps_denom:.3f},charge:{invalid_counts['charge']/steps_denom:.3f},use_cp:{invalid_counts['use_cp']/steps_denom:.3f},cp_on:{invalid_counts['cp_on']/steps_denom:.3f}}} "
+                        f"shoot_windows={{with_targets:{ctx.get('shoot_windows_with_targets', 0)},without_targets:{ctx.get('shoot_windows_without_targets', 0)}}}"
+                    )
+
                 if TRAIN_LOG_ENABLED:
                     win_flag = 1 if result == "win" else 0
                     train_ep_line = (
