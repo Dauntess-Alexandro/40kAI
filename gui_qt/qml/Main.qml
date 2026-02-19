@@ -436,7 +436,6 @@ ApplicationWindow {
                                         onClicked: controller.remove_player_unit(playerRosterView.currentIndex)
                                     }
                                     Button {
-                                        text: "Очистить"
                                         flat: true
                                         icon.source: ""
                                         icon.width: 0
@@ -495,7 +494,6 @@ ApplicationWindow {
                                         onClicked: controller.remove_model_unit(modelRosterView.currentIndex)
                                     }
                                     Button {
-                                        text: "Очистить"
                                         flat: true
                                         icon.source: ""
                                         icon.width: 0
