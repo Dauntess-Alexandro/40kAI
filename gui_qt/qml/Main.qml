@@ -26,6 +26,7 @@ ApplicationWindow {
     property int dialogWidthXl: Math.round(900 * uiScale)
     property int dialogHeightMd: Math.round(520 * uiScale)
     property int dialogHeightLg: Math.round(500 * uiScale)
+    property int factionIconSize: Math.round(18 * uiScale)
     property string modelFactionName: modelFactionNecrons.checked ? "Necrons" : "-"
     property string playerFactionName: playerFactionNecrons.checked ? "Necrons" : "-"
 
@@ -290,25 +291,72 @@ ApplicationWindow {
                                 elide: Label.ElideRight
                             }
 
-                            Label {
-                                text: "Игрок: " + root.playerFactionName + " • Модель: " + root.modelFactionName
-                                color: "#666666"
+                            RowLayout {
+                                spacing: root.spacingXs
+
+                                Label {
+                                    text: "Игрок:"
+                                    color: "#666666"
+                                }
+
+                                Image {
+                                    source: controller.faction_icon_source(root.playerFactionName)
+                                    sourceSize.width: root.factionIconSize
+                                    sourceSize.height: root.factionIconSize
+                                    Layout.preferredWidth: root.factionIconSize
+                                    Layout.preferredHeight: root.factionIconSize
+                                    visible: source !== ""
+                                    fillMode: Image.PreserveAspectFit
+                                    smooth: true
+                                }
+
+                                Label {
+                                    text: root.playerFactionName
+                                    color: "#666666"
+                                }
+
+                                Label {
+                                    text: "•"
+                                    color: "#666666"
+                                }
+
+                                Label {
+                                    text: "Модель:"
+                                    color: "#666666"
+                                }
+
+                                Image {
+                                    source: controller.faction_icon_source(root.modelFactionName)
+                                    sourceSize.width: root.factionIconSize
+                                    sourceSize.height: root.factionIconSize
+                                    Layout.preferredWidth: root.factionIconSize
+                                    Layout.preferredHeight: root.factionIconSize
+                                    visible: source !== ""
+                                    fillMode: Image.PreserveAspectFit
+                                    smooth: true
+                                }
+
+                                Label {
+                                    text: root.modelFactionName
+                                    color: "#666666"
+                                }
                             }
                         }
                     }
 
-                    RowLayout {
-                        spacing: root.spacingMd
+                    GridLayout {
+                        columns: 4
+                        columnSpacing: root.spacingMd
+                        rowSpacing: 0
                         Layout.fillWidth: true
                         Layout.fillHeight: true
 
                         GroupBox {
                             title: "Фракции"
-                            Layout.fillWidth: false
-                            Layout.preferredWidth: Math.round(260 * root.uiScale)
-                            Layout.maximumWidth: Math.round(280 * root.uiScale)
+                            Layout.fillWidth: true
                             Layout.fillHeight: false
                             Layout.alignment: Qt.AlignTop
+                            Layout.horizontalStretchFactor: 1
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -331,13 +379,28 @@ ApplicationWindow {
 
                                         RadioButton {
                                             id: modelFactionNecrons
-                                            anchors.left: parent.left
-                                            anchors.leftMargin: root.spacingSm
+                                            anchors.left: modelFactionIcon.right
+                                            anchors.leftMargin: root.spacingXs
                                             anchors.verticalCenter: parent.verticalCenter
-                                            text: "Necrons"
+                                            text: root.modelFactionName
                                             checked: true
                                             autoExclusive: false
                                             onClicked: checked = true
+                                        }
+
+                                        Image {
+                                            id: modelFactionIcon
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: root.spacingSm
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            source: controller.faction_icon_source(root.modelFactionName)
+                                            sourceSize.width: root.factionIconSize
+                                            sourceSize.height: root.factionIconSize
+                                            width: root.factionIconSize
+                                            height: root.factionIconSize
+                                            visible: source !== ""
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
                                         }
                                     }
                                 }
@@ -359,13 +422,28 @@ ApplicationWindow {
 
                                         RadioButton {
                                             id: playerFactionNecrons
-                                            anchors.left: parent.left
-                                            anchors.leftMargin: root.spacingSm
+                                            anchors.left: playerFactionIcon.right
+                                            anchors.leftMargin: root.spacingXs
                                             anchors.verticalCenter: parent.verticalCenter
-                                            text: "Necrons"
+                                            text: root.playerFactionName
                                             checked: true
                                             autoExclusive: false
                                             onClicked: checked = true
+                                        }
+
+                                        Image {
+                                            id: playerFactionIcon
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: root.spacingSm
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            source: controller.faction_icon_source(root.playerFactionName)
+                                            sourceSize.width: root.factionIconSize
+                                            sourceSize.height: root.factionIconSize
+                                            width: root.factionIconSize
+                                            height: root.factionIconSize
+                                            visible: source !== ""
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
                                         }
                                     }
                                 }
@@ -373,14 +451,38 @@ ApplicationWindow {
                         }
 
                         GroupBox {
-                            title: "Доступные юниты (" + root.playerFactionName + ")"
+                            title: ""
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            Layout.preferredWidth: Math.round(460 * root.uiScale)
+                            Layout.alignment: Qt.AlignTop
+                            Layout.horizontalStretchFactor: 3
 
                             ColumnLayout {
                                 anchors.fill: parent
+                                anchors.margins: root.spacingXs
                                 spacing: root.spacingSm
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: Math.round(24 * root.uiScale)
+                                    spacing: root.spacingXs
+
+                                    Image {
+                                        source: controller.faction_icon_source(root.playerFactionName)
+                                        sourceSize.width: root.factionIconSize
+                                        sourceSize.height: root.factionIconSize
+                                        Layout.preferredWidth: root.factionIconSize
+                                        Layout.preferredHeight: root.factionIconSize
+                                        visible: source !== ""
+                                        fillMode: Image.PreserveAspectFit
+                                        smooth: true
+                                    }
+
+                                    Label {
+                                        text: "Доступные юниты (" + root.playerFactionName + ")"
+                                        font.bold: true
+                                    }
+                                }
 
                                 ListView {
                                     id: availableUnitsView
@@ -427,14 +529,23 @@ ApplicationWindow {
                         }
 
                         GroupBox {
-                            title: "Ростер игрока"
+                            title: ""
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            Layout.preferredWidth: Math.round(360 * root.uiScale)
+                            Layout.alignment: Qt.AlignTop
+                            Layout.horizontalStretchFactor: 2
 
                             ColumnLayout {
                                 anchors.fill: parent
+                                anchors.margins: root.spacingXs
                                 spacing: root.spacingSm
+
+                                Label {
+                                    text: "Ростер игрока"
+                                    font.bold: true
+                                    Layout.preferredHeight: Math.round(24 * root.uiScale)
+                                    verticalAlignment: Text.AlignVCenter
+                                }
 
                                 ListView {
                                     id: playerRosterView
@@ -485,14 +596,23 @@ ApplicationWindow {
                         }
 
                         GroupBox {
-                            title: "Ростер модели"
+                            title: ""
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            Layout.preferredWidth: Math.round(360 * root.uiScale)
+                            Layout.alignment: Qt.AlignTop
+                            Layout.horizontalStretchFactor: 2
 
                             ColumnLayout {
                                 anchors.fill: parent
+                                anchors.margins: root.spacingXs
                                 spacing: root.spacingSm
+
+                                Label {
+                                    text: "Ростер модели"
+                                    font.bold: true
+                                    Layout.preferredHeight: Math.round(24 * root.uiScale)
+                                    verticalAlignment: Text.AlignVCenter
+                                }
 
                                 ListView {
                                     id: modelRosterView

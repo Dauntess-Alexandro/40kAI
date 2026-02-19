@@ -231,6 +231,26 @@ class GUIController(QtCore.QObject):
     def modelsFolderUrl(self) -> str:
         return self._to_file_url(os.path.join(self._repo_root, "models"))
 
+    def get_faction_icon(self, faction_name: str) -> QIcon:
+        normalized = (faction_name or "").strip().lower()
+        if normalized == "necrons":
+            icon_path = os.path.join(self._repo_root, "gui_qt", "assets", "necrons.png")
+            if os.path.exists(icon_path):
+                return QIcon(icon_path)
+        return QIcon()
+
+    @QtCore.Slot(str, result=str)
+    def faction_icon_source(self, faction_name: str) -> str:
+        icon = self.get_faction_icon(faction_name)
+        if icon.isNull():
+            return ""
+        sizes = icon.availableSizes()
+        pixmap = icon.pixmap(sizes[0] if sizes else QtCore.QSize(18, 18))
+        if pixmap.isNull():
+            return ""
+        icon_path = os.path.join(self._repo_root, "gui_qt", "assets", "necrons.png")
+        return self._to_file_url(icon_path)
+
     @QtCore.Slot(int)
     def set_num_games(self, value: int) -> None:
         if value <= 0:
