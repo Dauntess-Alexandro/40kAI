@@ -1,11 +1,11 @@
 {
-    "lr":1e-4,
-    "tau":0.005,
+    "lr": 0.0001,
+    "tau": 0.01,
     "eps_start": 0.9,
-    "eps_end": 0.15,
-    "eps_decay": 30000,
-    "batch_size": 512,
+    "eps_end": 0.05,
+    "eps_decay": 20000,
+    "batch_size": 384,
     "gamma": 0.99,
-    "updates_per_step": 4,
+    "updates_per_step": 6,
     "warmup_steps": 5000
 }

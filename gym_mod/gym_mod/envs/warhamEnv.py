@@ -2311,6 +2311,12 @@ class Warhammer40kEnv(gym.Env):
                                     norm_base = max(1.0, float(getattr(reward_cfg, "VP_OBJECTIVE_MISSED_PROGRESS_NORM", 6.0)))
                                     severity = min(1.0, missed_progress / norm_base)
                                     hold_penalty = reward_cfg.VP_OBJECTIVE_HOLD_PENALTY * severity
+                                    round_scale = 1.0
+                                    if self.battle_round <= 2:
+                                        round_scale = 0.5
+                                    elif self.battle_round <= 4:
+                                        round_scale = 0.75
+                                    hold_penalty *= round_scale
                                     reward_delta -= hold_penalty
                                     objective_hold_delta -= hold_penalty
                                     movement_meta["applied_hold_penalty"] = True
@@ -2325,7 +2331,7 @@ class Warhammer40kEnv(gym.Env):
                                         f"(obj={nearest_obj_idx}, d_before={d_before:.3f}, "
                                         f"d_after={d_after:.3f}, d_best={d_best_possible:.3f}, max_reach={max_reach:.3f}, "
                                         f"could_reach_objective={int(could_reach_control)}, severity={severity:.3f}, "
-                                        f"reason={hold_penalty_reason})",
+                                        f"round_scale={round_scale:.2f}, reason={hold_penalty_reason})",
                                     )
                                 else:
                                     hold_penalty_reason = "no_move_cannot_improve"
@@ -2993,7 +2999,7 @@ class Warhammer40kEnv(gym.Env):
                                 defender_label=self._format_unit_label("enemy", idOfE),
                             )
                     else:
-                        penalty = 0.5 + reward_cfg.SHOOT_REWARD_SKIP_PENALTY
+                        penalty = float(getattr(reward_cfg, "SHOOT_REWARD_INVALID_TARGET_PENALTY", 0.20))
                         reward_delta -= penalty
                         target_list = self._format_unit_choices("enemy", valid_target_ids)
                         self._log_unit(
@@ -3386,7 +3392,7 @@ class Warhammer40kEnv(gym.Env):
                                 "MODEL",
                                 modelName,
                                 i,
-                                f"Цели в 12\": {target_list}. {roll_text}. Нет достижимых целей.",
+                                f"Цели в 12\": {target_list}. {roll_text}. Чардж пропущен при доступных целях (penalty=0).",
                             )
                         else:
                             self._log_unit("MODEL", modelName, i, "Нет целей в 12\", чардж пропущен.")
@@ -4521,6 +4527,21 @@ class Warhammer40kEnv(gym.Env):
         can_measure_move = min_obj_dist_start is not None and min_obj_dist_end is not None
         if can_measure_move:
             moved_closer = min_obj_dist_end < min_obj_dist_start
+        if can_measure_move:
+            progress = max(0.0, float(min_obj_dist_start - min_obj_dist_end))
+            if progress > 0:
+                norm_base = max(1.0, float(getattr(reward_cfg, "VP_OBJECTIVE_MISSED_PROGRESS_NORM", 6.0)))
+                progress_norm = progress / norm_base
+                progress_scale = float(getattr(reward_cfg, "OBJECTIVE_PROGRESS_STEP_SCALE", 0.03))
+                progress_cap = float(getattr(reward_cfg, "OBJECTIVE_PROGRESS_STEP_CAP", 0.10))
+                progress_bonus = min(progress_cap, progress_scale * progress_norm)
+                if progress_bonus > 0:
+                    reward += progress_bonus
+                    self._log_reward(
+                        "Reward (progress к objective): "
+                        f"d_before={min_obj_dist_start:.3f}, d_after={min_obj_dist_end:.3f}, "
+                        f"delta={progress:.3f}, norm={progress_norm:.3f}, bonus=+{progress_bonus:.3f}"
+                    )
         idle_conditions_met = (
             not near_objective
             and not vp_changed
