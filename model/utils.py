@@ -17,6 +17,20 @@ from gym_mod.engine.utils import distance
 with open(os.path.abspath("hyperparams.json")) as j:
     data = json.loads(j.read())
 
+HP_PRESET = os.getenv("HP_PRESET", "").strip().upper()
+if HP_PRESET == "B":
+    data["eps_start"] = 0.12
+    data["eps_end"] = 0.02
+    data["eps_decay"] = 6000
+    data["lr"] = 5e-5
+    data["warmup_steps"] = 0
+elif HP_PRESET == "C":
+    data["eps_start"] = 0.06
+    data["eps_end"] = 0.01
+    data["eps_decay"] = 3000
+    data["lr"] = 5e-5
+    data["warmup_steps"] = 0
+
 EPS_START = data["eps_start"]
 EPS_END = data["eps_end"]
 EPS_DECAY = data["eps_decay"]

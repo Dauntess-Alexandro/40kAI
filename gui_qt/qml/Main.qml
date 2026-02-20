@@ -187,6 +187,30 @@ ApplicationWindow {
                                         onToggled: controller.set_resume_from_checkpoint(checked)
                                     }
 
+                                    CheckBox {
+                                        text: "Сохранять чекпойнт каждые 500 эпизодов (SAVE_EVERY=500)"
+                                        checked: controller.saveEvery500
+                                        enabled: !controller.running
+                                        Layout.columnSpan: 2
+                                        onToggled: controller.set_save_every_500(checked)
+                                    }
+
+                                    CheckBox {
+                                        text: "Файнтюн preset B (меньше исследования + lr=5e-5 + warmup=0)"
+                                        checked: controller.finetunePresetB
+                                        enabled: !controller.running
+                                        Layout.columnSpan: 2
+                                        onToggled: controller.set_finetune_preset_b(checked)
+                                    }
+
+                                    CheckBox {
+                                        text: "Финальный preset C (ещё меньше исследования + lr=5e-5 + warmup=0)"
+                                        checked: controller.finetunePresetC
+                                        enabled: !controller.running
+                                        Layout.columnSpan: 2
+                                        onToggled: controller.set_finetune_preset_c(checked)
+                                    }
+
                                     Button {
                                         text: "Тренировка 8х"
                                         enabled: !controller.running

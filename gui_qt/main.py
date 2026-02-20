@@ -52,6 +52,9 @@ class GUIController(QtCore.QObject):
     boardTextChanged = QtCore.Signal(str)
     selfPlayFromCheckpointChanged = QtCore.Signal(bool)
     resumeFromCheckpointChanged = QtCore.Signal(bool)
+    saveEvery500Changed = QtCore.Signal(bool)
+    finetunePresetBChanged = QtCore.Signal(bool)
+    finetunePresetCChanged = QtCore.Signal(bool)
     factionIconSizeChanged = QtCore.Signal(int)
     unitIconSizeChanged = QtCore.Signal(int)
 
@@ -106,6 +109,9 @@ class GUIController(QtCore.QObject):
         self._board_text = "ASCII карта будет доступна после запуска игры."
         self._self_play_from_checkpoint = False
         self._resume_from_checkpoint = False
+        self._save_every_500 = True
+        self._finetune_preset_b = False
+        self._finetune_preset_c = False
 
         self._load_available_units()
         self._load_rosters_from_file()
@@ -232,6 +238,18 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(bool, notify=resumeFromCheckpointChanged)
     def resumeFromCheckpoint(self) -> bool:
         return self._resume_from_checkpoint
+
+    @QtCore.Property(bool, notify=saveEvery500Changed)
+    def saveEvery500(self) -> bool:
+        return self._save_every_500
+
+    @QtCore.Property(bool, notify=finetunePresetBChanged)
+    def finetunePresetB(self) -> bool:
+        return self._finetune_preset_b
+
+    @QtCore.Property(bool, notify=finetunePresetCChanged)
+    def finetunePresetC(self) -> bool:
+        return self._finetune_preset_c
 
     @QtCore.Property(str, constant=True)
     def modelsFolderUrl(self) -> str:
@@ -479,6 +497,36 @@ class GUIController(QtCore.QObject):
             return
         self._resume_from_checkpoint = flag
         self.resumeFromCheckpointChanged.emit(flag)
+
+    @QtCore.Slot(bool)
+    def set_save_every_500(self, value: bool) -> None:
+        flag = bool(value)
+        if self._save_every_500 == flag:
+            return
+        self._save_every_500 = flag
+        self.saveEvery500Changed.emit(flag)
+
+    @QtCore.Slot(bool)
+    def set_finetune_preset_b(self, value: bool) -> None:
+        flag = bool(value)
+        if self._finetune_preset_b == flag:
+            return
+        self._finetune_preset_b = flag
+        self.finetunePresetBChanged.emit(flag)
+        if flag and self._finetune_preset_c:
+            self._finetune_preset_c = False
+            self.finetunePresetCChanged.emit(False)
+
+    @QtCore.Slot(bool)
+    def set_finetune_preset_c(self, value: bool) -> None:
+        flag = bool(value)
+        if self._finetune_preset_c == flag:
+            return
+        self._finetune_preset_c = flag
+        self.finetunePresetCChanged.emit(flag)
+        if flag and self._finetune_preset_b:
+            self._finetune_preset_b = False
+            self.finetunePresetBChanged.emit(False)
 
     @QtCore.Slot()
     def stop_process(self) -> None:
@@ -852,6 +900,22 @@ class GUIController(QtCore.QObject):
                 return
             env_overrides["RESUME_CHECKPOINT"] = resume_path
             self._emit_log(f"[GUI] [RESUME] Использую чекпойнт: {resume_path}", level="INFO")
+
+        if self._save_every_500:
+            env_overrides["SAVE_EVERY"] = "500"
+
+        if self._finetune_preset_b:
+            env_overrides["HP_PRESET"] = "B"
+            self._emit_log(
+                "[GUI] [HP] Применяю preset B: eps_start=0.12 eps_end=0.02 eps_decay=6000 lr=5e-5 warmup_steps=0",
+                level="INFO",
+            )
+        elif self._finetune_preset_c:
+            env_overrides["HP_PRESET"] = "C"
+            self._emit_log(
+                "[GUI] [HP] Применяю preset C: eps_start=0.06 eps_end=0.01 eps_decay=3000 lr=5e-5 warmup_steps=0",
+                level="INFO",
+            )
 
         self._emit_log(f"[GUI] Запуск {status_prefix.lower()}...", level="INFO")
         self._emit_status(f"{status_prefix}...")
