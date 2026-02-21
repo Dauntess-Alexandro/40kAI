@@ -914,7 +914,7 @@ class GUIController(QtCore.QObject):
             env.insert("TRAIN_LOG_ENABLED", "1")
             env.insert("TRAIN_LOG_TO_CONSOLE", "1")
             env.insert("TRAIN_LOG_TO_FILE", "1")
-            env.insert("REWARD_DEBUG", "0")
+            env.insert("REWARD_DEBUG", "1")
             env.insert("LOG_EVERY", "500")
         env.insert("PER_ENABLED", "1")
         env.insert("N_STEP", "3")
