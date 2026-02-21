@@ -1,8 +1,48 @@
 from collections import namedtuple, deque
+import os
 import random
 import numpy as np
 
+_NUMBA_DISABLED = os.environ.get("WARHAMMER_DISABLE_NUMBA", "").strip().lower() in {"1", "true", "yes", "on"}
+
+try:
+    if _NUMBA_DISABLED:
+        raise ImportError("numba disabled by WARHAMMER_DISABLE_NUMBA")
+    from numba import njit
+    NUMBA_AVAILABLE = True
+except Exception:
+    NUMBA_AVAILABLE = False
+
+    def njit(*args, **kwargs):
+        def _decorator(func):
+            return func
+
+        return _decorator
+
 Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward', 'n_step', 'next_shoot_mask'))
+
+
+@njit(cache=True)
+def _compute_per_probs(priorities, alpha, eps):
+    scaled = np.power(priorities, alpha)
+    total = scaled.sum()
+    if not np.isfinite(total) or total <= eps:
+        count = priorities.shape[0]
+        return np.full(count, 1.0 / count, dtype=np.float32)
+    probs = scaled / total
+    probs = np.maximum(probs, eps)
+    probs = probs / probs.sum()
+    return probs.astype(np.float32)
+
+
+@njit(cache=True)
+def _sanitize_priority(priority, eps):
+    value = np.float32(priority)
+    if not np.isfinite(value):
+        return np.float32(eps)
+    if value < eps:
+        return np.float32(eps)
+    return value
 
 class ReplayMemory(object):
 
@@ -54,12 +94,15 @@ class PrioritizedReplayMemory(object):
         if len(self.memory) == 0:
             return [], [], []
         priorities = np.array(self.priorities, dtype=np.float32)
-        scaled = priorities ** self.alpha
-        probs = scaled / scaled.sum()
+        probs = _compute_per_probs(priorities, self.alpha, self.eps)
         indices = np.random.choice(len(self.memory), batch_size, p=probs)
         samples = [self.memory[idx] for idx in indices]
         weights = (len(self.memory) * probs[indices]) ** (-beta)
-        weights = weights / weights.max()
+        max_weight = weights.max()
+        if np.isfinite(max_weight) and max_weight > 0:
+            weights = weights / max_weight
+        else:
+            weights = np.ones_like(weights, dtype=np.float32)
         return samples, indices, weights.astype(np.float32)
 
     def sample(self, batch_size, beta=0.4, prefetch=False):
@@ -73,7 +116,9 @@ class PrioritizedReplayMemory(object):
 
     def update_priorities(self, indices, priorities):
         for idx, priority in zip(indices, priorities):
-            value = float(priority)
+            if idx < 0 or idx >= len(self.priorities):
+                continue
+            value = float(_sanitize_priority(priority, self.eps))
             self.priorities[idx] = value
             if value > self.max_priority:
                 self.max_priority = value
