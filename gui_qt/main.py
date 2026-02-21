@@ -852,12 +852,12 @@ class GUIController(QtCore.QObject):
         if mode == "train8":
             train_label = "TRAIN8"
             status_prefix = "Обучение"
-            env_overrides["NUM_ENVS"] = "24"
+            env_overrides["NUM_ENVS"] = "12"
             env_overrides["USE_SUBPROC_ENVS"] = "1"
         elif mode == "selfplay":
             train_label = "SELFPLAY"
             status_prefix = "Самообучение"
-            env_overrides["VEC_ENV_COUNT"] = "24"
+            env_overrides["VEC_ENV_COUNT"] = "12"
             env_overrides["SELF_PLAY_ENABLED"] = "1"
 
         if mode == "selfplay" and self._self_play_from_checkpoint:
