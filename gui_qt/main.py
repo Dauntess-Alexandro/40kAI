@@ -908,13 +908,16 @@ class GUIController(QtCore.QObject):
             env.insert("TRAIN_LOG_ENABLED", "0")
             env.insert("TRAIN_LOG_TO_CONSOLE", "0")
             env.insert("TRAIN_LOG_TO_FILE", "0")
+            env.insert("REWARD_DEBUG", "0")
+            env.insert("LOG_EVERY", "1000")
         else:
             env.insert("TRAIN_LOG_ENABLED", "1")
             env.insert("TRAIN_LOG_TO_CONSOLE", "1")
             env.insert("TRAIN_LOG_TO_FILE", "1")
+            env.insert("REWARD_DEBUG", "0")
+            env.insert("LOG_EVERY", "500")
         env.insert("PER_ENABLED", "1")
         env.insert("N_STEP", "3")
-        env.insert("LOG_EVERY", "500")
         env.insert("SAVE_EVERY", "500")
         env.insert("CLIP_REWARD", "1")
         env.insert("MISSION_NAME", self._selected_mission)
@@ -939,7 +942,7 @@ class GUIController(QtCore.QObject):
         self._emit_log(f"[{train_label}] {start_message}")
         if self._disable_train_logging:
             self._emit_log(
-                f"[{train_label}] Speed-режим: логирование train отключено (TRAIN_LOG_ENABLED/TO_CONSOLE/TO_FILE=0).",
+                f"[{train_label}] Speed-режим: TRAIN_LOG_*=0, REWARD_DEBUG=0, LOG_EVERY=1000.",
                 level="INFO",
             )
         self._emit_status(start_message)
