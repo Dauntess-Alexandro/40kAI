@@ -15,6 +15,7 @@ from typing import Optional
 import reward_config as reward_cfg
 
 from ..engine.utils import *
+from ..engine.hotloops import scan_targets_in_range
 from ..engine import utils as engine_utils
 from gym_mod.engine.mission import (
     MISSION_NAME,
@@ -975,11 +976,14 @@ class Warhammer40kEnv(gym.Env):
             if self.unit_weapon[unit_idx] == "None":
                 return []
             range_limit = self.unit_weapon[unit_idx]["Range"]
-            for enemy_idx in range(len(self.enemy_health)):
-                if self.enemy_health[enemy_idx] <= 0 or self.enemyInAttack[enemy_idx][0] == 1:
-                    continue
-                if self._cached_distance_model_enemy(unit_idx, enemy_idx) <= range_limit:
-                    targets.append(enemy_idx)
+            target_ids, _used_numba = scan_targets_in_range(
+                np.asarray(self.unit_coords[unit_idx], dtype=np.float64),
+                np.asarray(self.enemy_coords, dtype=np.float64),
+                np.asarray(self.enemy_health, dtype=np.float64),
+                np.asarray([row[0] for row in self.enemyInAttack], dtype=np.int8),
+                float(range_limit),
+            )
+            targets = [int(idx) for idx in target_ids]
         else:
             if not (0 <= unit_idx < len(self.enemy_health)):
                 return []
@@ -988,11 +992,14 @@ class Warhammer40kEnv(gym.Env):
             if self.enemy_weapon[unit_idx] == "None":
                 return []
             range_limit = self.enemy_weapon[unit_idx]["Range"]
-            for model_idx in range(len(self.unit_health)):
-                if self.unit_health[model_idx] <= 0 or self.unitInAttack[model_idx][0] == 1:
-                    continue
-                if self._cached_distance_enemy_model(unit_idx, model_idx) <= range_limit:
-                    targets.append(model_idx)
+            target_ids, _used_numba = scan_targets_in_range(
+                np.asarray(self.enemy_coords[unit_idx], dtype=np.float64),
+                np.asarray(self.unit_coords, dtype=np.float64),
+                np.asarray(self.unit_health, dtype=np.float64),
+                np.asarray([row[0] for row in self.unitInAttack], dtype=np.int8),
+                float(range_limit),
+            )
+            targets = [int(idx) for idx in target_ids]
 
         self._shoot_target_cache[cache_key] = list(targets)
         return targets

@@ -157,10 +157,12 @@
 
 ---
 
-## 3.3. Опционально: Cython/Numba для hot loops
+## 3.3. Опционально: Cython/Numba для hot loops ✅ СДЕЛАНО (Numba-path + fallback)
 **Что делаем**
 - Ускорить горячие участки distance/target scan.
 - Выбирать только после стабилизации чисто-Python оптимизаций.
+
+**Статус в репо**: добавлен hot-loop helper `scan_targets_in_range` с optional Numba JIT (`ENABLE_NUMBA_HOTLOOPS=1` по умолчанию) и безопасным numpy fallback, без изменения игровой логики.
 
 **Ожидаемый эффект**: +10–35% поверх B/C (зависит от профиля CPU).
 
@@ -247,4 +249,4 @@
 ### Sprint 3 (env deep)
 - [ ] B: кэш distance/targets + strict invalidation.
 - [ ] C: оптимизация reward-heavy step логики.
-- [ ] (опц.) Cython/Numba hot loops.
+- [x] (опц.) Cython/Numba hot loops.
