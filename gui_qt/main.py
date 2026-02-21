@@ -603,6 +603,35 @@ class GUIController(QtCore.QObject):
             )
 
     @QtCore.Slot()
+    def select_best_eval_model(self) -> None:
+        best_checkpoint = self._find_best_checkpoint_by_episode()
+        if not best_checkpoint:
+            self._emit_status(
+                "Не найдено checkpoint_ep*.pth в models/. "
+                "Где: gui_qt/main.py (select_best_eval_model). "
+                "Что делать: запустите обучение и дождитесь сохранения чекпойнта."
+            )
+            return
+
+        best_model = self._find_eval_pickle_for_checkpoint(best_checkpoint)
+        if not best_model:
+            self._emit_status(
+                "Найден чекпойнт, но связанная .pickle модель для eval не найдена. "
+                "Где: gui_qt/main.py (_find_eval_pickle_for_checkpoint). "
+                "Что делать: убедитесь, что .pickle лежит рядом с checkpoint_ep*.pth "
+                "или выберите модель вручную."
+            )
+            self._emit_log(
+                f"[GUI] [EVAL] Чекпойнт без .pickle для eval: {best_checkpoint}",
+                level="WARN",
+            )
+            return
+
+        self._set_eval_model(best_model, source="best")
+        checkpoint_name = os.path.basename(best_checkpoint)
+        self._emit_status(f"Выбрана лучшая модель по чекпойнту: {checkpoint_name}.")
+
+    @QtCore.Slot()
     def start_eval(self) -> None:
         if self._process is not None:
             self._emit_status("Процесс уже запущен. Сначала остановите текущий.")
@@ -865,6 +894,9 @@ class GUIController(QtCore.QObject):
         env.insert("TRAIN_LOG_TO_FILE", "1")
         env.insert("PER_ENABLED", "1")
         env.insert("N_STEP", "3")
+        env.insert("LOG_EVERY", "500")
+        env.insert("SAVE_EVERY", "500")
+        env.insert("CLIP_REWARD", "1")
         env.insert("MISSION_NAME", self._selected_mission)
         for key, value in env_overrides.items():
             env.insert(key, value)
@@ -1178,7 +1210,12 @@ class GUIController(QtCore.QObject):
 
     def _set_eval_model(self, path: str, source: str) -> None:
         self._eval_model_path = path
-        label_prefix = "Последняя модель" if source == "latest" else "Выбрана модель"
+        if source == "latest":
+            label_prefix = "Последняя модель"
+        elif source == "best":
+            label_prefix = "Лучшая модель"
+        else:
+            label_prefix = "Выбрана модель"
         self._eval_model_label = f"{label_prefix}: {os.path.basename(path)}"
         self.evalModelPathChanged.emit(self._eval_model_path)
         self.evalModelLabelChanged.emit(self._eval_model_label)
@@ -1408,6 +1445,67 @@ class GUIController(QtCore.QObject):
                     latest_mtime = mtime
                     latest_path = path
         return latest_path
+
+    def _extract_checkpoint_episode(self, filename: str) -> Optional[int]:
+        match = re.search(r"checkpoint_ep(\d+)\.pth$", filename)
+        if not match:
+            return None
+        return int(match.group(1))
+
+    def _find_best_checkpoint_by_episode(self) -> Optional[str]:
+        models_path = os.path.join(self._repo_root, "models")
+        if not os.path.isdir(models_path):
+            return None
+
+        best_path = None
+        best_episode = -1
+        best_mtime = -1.0
+
+        for root, _, files in os.walk(models_path):
+            for name in files:
+                episode = self._extract_checkpoint_episode(name)
+                if episode is None:
+                    continue
+                path = os.path.join(root, name)
+                try:
+                    mtime = os.path.getmtime(path)
+                except OSError:
+                    continue
+
+                if episode > best_episode or (episode == best_episode and mtime > best_mtime):
+                    best_episode = episode
+                    best_mtime = mtime
+                    best_path = path
+
+        return best_path
+
+    def _find_eval_pickle_for_checkpoint(self, checkpoint_path: str) -> Optional[str]:
+        checkpoint_dir = os.path.dirname(checkpoint_path)
+        checkpoint_stem, _ = os.path.splitext(checkpoint_path)
+        direct_pickle = f"{checkpoint_stem}.pickle"
+        if os.path.exists(direct_pickle):
+            return direct_pickle
+
+        best_pickle = None
+        best_mtime = -1.0
+        try:
+            entries = os.listdir(checkpoint_dir)
+        except OSError:
+            return None
+
+        for name in entries:
+            if not (name.endswith(".pickle") and name.startswith("model-")):
+                continue
+            candidate = os.path.join(checkpoint_dir, name)
+            try:
+                mtime = os.path.getmtime(candidate)
+            except OSError:
+                continue
+            if mtime > best_mtime:
+                best_mtime = mtime
+                best_pickle = candidate
+
+        return best_pickle
 
     def _find_latest_resume_file(self) -> Optional[str]:
         checkpoint_path = self._find_latest_checkpoint_file()
