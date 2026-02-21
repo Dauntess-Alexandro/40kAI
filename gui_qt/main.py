@@ -52,6 +52,7 @@ class GUIController(QtCore.QObject):
     boardTextChanged = QtCore.Signal(str)
     selfPlayFromCheckpointChanged = QtCore.Signal(bool)
     resumeFromCheckpointChanged = QtCore.Signal(bool)
+    disableTrainLoggingChanged = QtCore.Signal(bool)
     factionIconSizeChanged = QtCore.Signal(int)
     unitIconSizeChanged = QtCore.Signal(int)
 
@@ -106,6 +107,7 @@ class GUIController(QtCore.QObject):
         self._board_text = "ASCII карта будет доступна после запуска игры."
         self._self_play_from_checkpoint = False
         self._resume_from_checkpoint = False
+        self._disable_train_logging = False
 
         self._load_available_units()
         self._load_rosters_from_file()
@@ -232,6 +234,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(bool, notify=resumeFromCheckpointChanged)
     def resumeFromCheckpoint(self) -> bool:
         return self._resume_from_checkpoint
+
+    @QtCore.Property(bool, notify=disableTrainLoggingChanged)
+    def disableTrainLogging(self) -> bool:
+        return self._disable_train_logging
 
     @QtCore.Property(str, constant=True)
     def modelsFolderUrl(self) -> str:
@@ -479,6 +485,14 @@ class GUIController(QtCore.QObject):
             return
         self._resume_from_checkpoint = flag
         self.resumeFromCheckpointChanged.emit(flag)
+
+    @QtCore.Slot(bool)
+    def set_disable_train_logging(self, value: bool) -> None:
+        flag = bool(value)
+        if self._disable_train_logging == flag:
+            return
+        self._disable_train_logging = flag
+        self.disableTrainLoggingChanged.emit(flag)
 
     @QtCore.Slot()
     def stop_process(self) -> None:
@@ -890,12 +904,20 @@ class GUIController(QtCore.QObject):
         self._process.setWorkingDirectory(self._repo_root)
 
         env = QtCore.QProcessEnvironment.systemEnvironment()
-        env.insert("TRAIN_LOG_ENABLED", "1")
-        env.insert("TRAIN_LOG_TO_CONSOLE", "1")
-        env.insert("TRAIN_LOG_TO_FILE", "1")
+        if self._disable_train_logging:
+            env.insert("TRAIN_LOG_ENABLED", "0")
+            env.insert("TRAIN_LOG_TO_CONSOLE", "0")
+            env.insert("TRAIN_LOG_TO_FILE", "0")
+            env.insert("REWARD_DEBUG", "0")
+            env.insert("LOG_EVERY", "1000")
+        else:
+            env.insert("TRAIN_LOG_ENABLED", "1")
+            env.insert("TRAIN_LOG_TO_CONSOLE", "1")
+            env.insert("TRAIN_LOG_TO_FILE", "1")
+            env.insert("REWARD_DEBUG", "1")
+            env.insert("LOG_EVERY", "500")
         env.insert("PER_ENABLED", "1")
         env.insert("N_STEP", "3")
-        env.insert("LOG_EVERY", "500")
         env.insert("SAVE_EVERY", "500")
         env.insert("CLIP_REWARD", "1")
         env.insert("MISSION_NAME", self._selected_mission)
@@ -918,6 +940,11 @@ class GUIController(QtCore.QObject):
 
         start_message = f"Старт {status_prefix.lower()}: PER=1, N_STEP=3."
         self._emit_log(f"[{train_label}] {start_message}")
+        if self._disable_train_logging:
+            self._emit_log(
+                f"[{train_label}] Speed-режим: TRAIN_LOG_*=0, REWARD_DEBUG=0, LOG_EVERY=1000.",
+                level="INFO",
+            )
         self._emit_status(start_message)
 
         script = self._script_path("train")

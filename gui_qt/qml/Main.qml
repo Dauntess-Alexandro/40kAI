@@ -187,6 +187,14 @@ ApplicationWindow {
                                         onToggled: controller.set_resume_from_checkpoint(checked)
                                     }
 
+                                    CheckBox {
+                                        text: "Не логировать тренировку (speed)"
+                                        checked: controller.disableTrainLogging
+                                        enabled: !controller.running
+                                        Layout.columnSpan: 2
+                                        onToggled: controller.set_disable_train_logging(checked)
+                                    }
+
                                     Button {
                                         text: "Тренировка 8х"
                                         enabled: !controller.running

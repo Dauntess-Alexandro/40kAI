@@ -480,6 +480,24 @@ def append_agent_log(line: str) -> None:
 
 def _env_worker(conn, roster_config, b_len, b_hei, trunc):
     try:
+        lean_info_enabled = os.getenv("TRAIN_LEAN_INFO", "1") == "1"
+
+        def _lean_train_info(info):
+            if not isinstance(info, dict):
+                return info
+            # Lean info для train-mode: уменьшаем IPC payload, оставляем только нужные поля.
+            return {
+                "model health": info.get("model health", []),
+                "player health": info.get("player health", []),
+                "in attack": info.get("in attack", 0),
+                "model VP": info.get("model VP", 0),
+                "player VP": info.get("player VP", 0),
+                "mission": info.get("mission", DEFAULT_MISSION_NAME),
+                "end reason": info.get("end reason", ""),
+                "winner": info.get("winner", None),
+                "turn": info.get("turn", 0),
+            }
+
         enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
         mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
         attacker_side, defender_side = roll_off_attacker_defender(
@@ -518,6 +536,8 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                 conn.send(True)
             elif cmd == "step":
                 next_observation, reward, done, res, info = env.step(payload)
+                if lean_info_enabled:
+                    info = _lean_train_info(info)
                 conn.send((next_observation, reward, done, res, info))
             elif cmd == "reset":
                 mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
@@ -556,9 +576,6 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                     else:
                         raise TypeError(f"Unsupported action space for {k}: {type(sp)}")
                 conn.send(sizes)
-            elif cmd == "sample_action":
-                sampled_action = env.action_space.sample()
-                conn.send(sampled_action)
             elif cmd == "save_pickle":
                 try:
                     with open(payload, "wb") as file:
@@ -692,7 +709,17 @@ def _build_units_from_config(config, b_len, b_hei):
         )
     return enemy, model
 
-def _select_actions_batch(env_contexts, states, steps_done, policy_net, shoot_masks=None):
+def _sample_random_action_from_sizes(action_sizes, shoot_mask=None):
+    action_list = [random.randrange(int(size)) for size in action_sizes]
+    if shoot_mask is not None and len(action_list) > 2:
+        mask = torch.as_tensor(shoot_mask, dtype=torch.bool)
+        valid_indices = torch.where(mask)[0].tolist()
+        if valid_indices:
+            action_list[2] = random.choice(valid_indices)
+    return action_list
+
+
+def _select_actions_batch(env_contexts, states, steps_done, policy_net, action_sizes, shoot_masks=None):
     decay_steps = max(1.0, float(EPS_DECAY))
     progress = min(float(steps_done) / decay_steps, 1.0)
     eps_threshold = EPS_START + (EPS_END - EPS_START) * progress
@@ -713,31 +740,32 @@ def _select_actions_batch(env_contexts, states, steps_done, policy_net, shoot_ma
 
     for env_idx, ctx in enumerate(env_contexts):
         env = ctx.get("env")
-        len_model = ctx["len_model"]
         use_random = random.random() <= eps_threshold
         if use_random:
             if env is None:
-                ctx["conn"].send(("sample_action", None))
-                sampled_action = ctx["conn"].recv()
+                action_list = _sample_random_action_from_sizes(
+                    action_sizes,
+                    shoot_mask=shoot_masks[env_idx] if shoot_masks else None,
+                )
             else:
                 sampled_action = env.action_space.sample()
-            shoot_choice = sampled_action["shoot"]
-            if shoot_masks and shoot_masks[env_idx] is not None:
-                mask = torch.as_tensor(shoot_masks[env_idx], dtype=torch.bool)
-                valid_indices = torch.where(mask)[0].tolist()
-                if valid_indices:
-                    shoot_choice = random.choice(valid_indices)
-            action_list = [
-                sampled_action["move"],
-                sampled_action["attack"],
-                shoot_choice,
-                sampled_action["charge"],
-                sampled_action["use_cp"],
-                sampled_action["cp_on"],
-            ]
-            for i in range(len_model):
-                label = "move_num_" + str(i)
-                action_list.append(sampled_action[label])
+                shoot_choice = sampled_action["shoot"]
+                if shoot_masks and shoot_masks[env_idx] is not None:
+                    mask = torch.as_tensor(shoot_masks[env_idx], dtype=torch.bool)
+                    valid_indices = torch.where(mask)[0].tolist()
+                    if valid_indices:
+                        shoot_choice = random.choice(valid_indices)
+                action_list = [
+                    sampled_action["move"],
+                    sampled_action["attack"],
+                    shoot_choice,
+                    sampled_action["charge"],
+                    sampled_action["use_cp"],
+                    sampled_action["cp_on"],
+                ]
+                for i in range(ctx["len_model"]):
+                    label = "move_num_" + str(i)
+                    action_list.append(sampled_action[label])
             actions.append(torch.tensor([action_list], device="cpu"))
         else:
             action = []
@@ -1200,18 +1228,28 @@ def main():
     
     while end is False:
         shoot_masks = []
-        for idx, ctx in enumerate(env_contexts):
-            mask_log_fn = append_agent_log if idx == 0 else None
-            if USE_SUBPROC_ENVS:
+        if USE_SUBPROC_ENVS:
+            # Batched IPC: сначала отправляем всем env, затем читаем ответы по порядку.
+            for ctx in env_contexts:
                 ctx["conn"].send(("get_shoot_mask", None))
+            for ctx in env_contexts:
                 shoot_masks.append(ctx["conn"].recv())
-            else:
+        else:
+            for idx, ctx in enumerate(env_contexts):
+                mask_log_fn = append_agent_log if idx == 0 else None
                 shoot_masks.append(build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG))
     
         states = [ctx["state"] for ctx in env_contexts]
         action_start = time.perf_counter()
         if BATCH_ACT:
-            actions, eps_threshold = _select_actions_batch(env_contexts, states, global_step, policy_net, shoot_masks)
+            actions, eps_threshold = _select_actions_batch(
+                env_contexts,
+                states,
+                global_step,
+                policy_net,
+                n_actions,
+                shoot_masks,
+            )
         else:
             decay_steps = max(1.0, float(EPS_DECAY))
             progress = min(float(global_step) / decay_steps, 1.0)
@@ -1255,9 +1293,11 @@ def main():
     
         dev = next(policy_net.parameters()).device
     
+        action_dicts = []
         for idx, ctx in enumerate(env_contexts):
             ctx["ep_len"] += 1
             action_dict = convertToDict(actions[idx])
+            action_dicts.append(action_dict)
             # Локальная аналитика по головам action-space (для [TRAIN][ACTIONS] в конце эпизода)
             for _head in ("move", "attack", "shoot", "charge", "use_cp", "cp_on"):
                 ctx["action_head_total"][_head] += 1
@@ -1283,14 +1323,36 @@ def main():
                 shoot_raw = int(action_dict.get("shoot", -1))
                 if shoot_raw < 0 or shoot_raw >= len(valid_shoot_indices):
                     ctx["action_head_invalid"]["shoot"] += 1
+
+        step_results = [None] * len(env_contexts)
+        next_shoot_masks = [None] * len(env_contexts)
+        if USE_SUBPROC_ENVS:
+            # Batched IPC: сначала отправляем step всем env, затем собираем ответы.
+            step_start = time.perf_counter()
+            for idx, ctx in enumerate(env_contexts):
+                ctx["conn"].send(("step", action_dicts[idx]))
+            for idx, ctx in enumerate(env_contexts):
+                step_results[idx] = ctx["conn"].recv()
+            perf_stats["env_step_s"] += time.perf_counter() - step_start
+            perf_counts["env_steps"] += len(env_contexts)
+
+            # Batched IPC для масок стрельбы после шага (только где эпизод не завершён).
+            pending_next_mask_indices = []
+            for idx, (_next_observation, _reward, done, _res, _info) in enumerate(step_results):
+                if not done:
+                    env_contexts[idx]["conn"].send(("get_shoot_mask", None))
+                    pending_next_mask_indices.append(idx)
+            for idx in pending_next_mask_indices:
+                next_shoot_masks[idx] = env_contexts[idx]["conn"].recv()
+
+        for idx, ctx in enumerate(env_contexts):
             step_start = time.perf_counter()
             if USE_SUBPROC_ENVS:
-                ctx["conn"].send(("step", action_dict))
-                next_observation, reward, done, res, info = ctx["conn"].recv()
+                next_observation, reward, done, res, info = step_results[idx]
             else:
-                next_observation, reward, done, res, info = ctx["env"].step(action_dict)
-            perf_stats["env_step_s"] += time.perf_counter() - step_start
-            perf_counts["env_steps"] += 1
+                next_observation, reward, done, res, info = ctx["env"].step(action_dicts[idx])
+                perf_stats["env_step_s"] += time.perf_counter() - step_start
+                perf_counts["env_steps"] += 1
             raw_reward = float(reward)
             ctx["rew_arr"].append(raw_reward)
             reward_for_buffer, reward_was_clipped = maybe_clip_reward(
@@ -1335,8 +1397,7 @@ def main():
                 next_state_t = torch.tensor(to_np_state(next_observation), device=dev).unsqueeze(0)
                 mask_log_fn = append_agent_log if idx == 0 else None
                 if USE_SUBPROC_ENVS:
-                    ctx["conn"].send(("get_shoot_mask", None))
-                    next_shoot_mask = ctx["conn"].recv()
+                    next_shoot_mask = next_shoot_masks[idx]
                 else:
                     next_shoot_mask = build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG)
     
