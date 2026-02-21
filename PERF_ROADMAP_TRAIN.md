@@ -130,7 +130,7 @@
 
 ## 3) Сложные архитектурные изменения (Deep changes)
 
-## 3.1. D — PER sum-tree / segment-tree
+## 3.1. D — PER sum-tree / segment-tree ✅ СДЕЛАНО
 **Что делаем**
 - Полностью заменить текущее O(N) sampling на дерево префиксных сумм:
   - sample: O(log N),
@@ -140,9 +140,11 @@
 
 **Риск**: средний/высокий (критично для стабильности PER).
 
+**Статус в репо**: `PrioritizedReplayMemory` переведена на sum-tree/min-tree (O(log N) update/sample path), интерфейс совместим с текущим train loop.
+
 ---
 
-## 3.2. B — кэш distance/target внутри env фаз
+## 3.2. B — кэш distance/target внутри env фаз ✅ СДЕЛАНО
 **Что делаем**
 - Кэшировать distance-матрицы и доступные цели на фазу.
 - Чёткая invalidation-схема после movement/charge/casualty.
@@ -150,6 +152,8 @@
 **Ожидаемый эффект**: +15–40% на env-time.
 
 **Риск**: высокий (устаревшие кэши = логические ошибки боя).
+
+**Статус в репо**: добавлены phase-level кэши дистанций/целей (`_distance_cache`, `_shoot_target_cache`) с явной invalidation в `step/enemyTurn`, и использование кэша в стрельбе.
 
 ---
 

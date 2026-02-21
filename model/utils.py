@@ -123,23 +123,26 @@ def build_shoot_action_mask(env, log_fn=None, debug=False):
     shoot_space = env_unwrapped.action_space.spaces["shoot"].n
     valid_lengths = []
     for i in range(len(env_unwrapped.unit_health)):
-        if env_unwrapped.unit_health[i] <= 0:
-            continue
-        if env_unwrapped.unitFellBack[i]:
-            continue
-        if env_unwrapped.unitInAttack[i][0] == 1:
-            continue
-        if env_unwrapped.unit_weapon[i] == "None":
-            continue
-        valid_targets = []
-        for j in range(len(env_unwrapped.enemy_health)):
-            if (
-                distance(env_unwrapped.unit_coords[i], env_unwrapped.enemy_coords[j])
-                <= env_unwrapped.unit_weapon[i]["Range"]
-                and env_unwrapped.enemy_health[j] > 0
-                and env_unwrapped.enemyInAttack[j][0] == 0
-            ):
-                valid_targets.append(j)
+        if hasattr(env_unwrapped, "get_shoot_targets_for_unit"):
+            valid_targets = env_unwrapped.get_shoot_targets_for_unit("model", i)
+        else:
+            if env_unwrapped.unit_health[i] <= 0:
+                continue
+            if env_unwrapped.unitFellBack[i]:
+                continue
+            if env_unwrapped.unitInAttack[i][0] == 1:
+                continue
+            if env_unwrapped.unit_weapon[i] == "None":
+                continue
+            valid_targets = []
+            for j in range(len(env_unwrapped.enemy_health)):
+                if (
+                    distance(env_unwrapped.unit_coords[i], env_unwrapped.enemy_coords[j])
+                    <= env_unwrapped.unit_weapon[i]["Range"]
+                    and env_unwrapped.enemy_health[j] > 0
+                    and env_unwrapped.enemyInAttack[j][0] == 0
+                ):
+                    valid_targets.append(j)
         if valid_targets:
             valid_lengths.append(len(valid_targets))
     if not valid_lengths:

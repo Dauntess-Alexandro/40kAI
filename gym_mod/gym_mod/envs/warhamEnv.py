@@ -856,6 +856,9 @@ class Warhammer40kEnv(gym.Env):
 
         self._prev_vp_diff = 0
         self._objective_hold_streaks = [0] * len(self.coordsOfOM)
+        self._target_cache_epoch = 0
+        self._distance_cache = {}
+        self._shoot_target_cache = {}
         self._agent_log_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "..", "LOGS_FOR_AGENTS.md")
         )
@@ -933,6 +936,66 @@ class Warhammer40kEnv(gym.Env):
             return int(value)
         except (TypeError, ValueError):
             return default
+
+    def _invalidate_target_cache(self, reason: str = ""):
+        self._target_cache_epoch += 1
+        self._distance_cache.clear()
+        self._shoot_target_cache.clear()
+
+    def _cached_distance_model_enemy(self, model_idx: int, enemy_idx: int) -> float:
+        key = ("m2e", self._target_cache_epoch, int(model_idx), int(enemy_idx))
+        cached = self._distance_cache.get(key)
+        if cached is not None:
+            return cached
+        value = distance(self.unit_coords[model_idx], self.enemy_coords[enemy_idx])
+        self._distance_cache[key] = value
+        return value
+
+    def _cached_distance_enemy_model(self, enemy_idx: int, model_idx: int) -> float:
+        key = ("e2m", self._target_cache_epoch, int(enemy_idx), int(model_idx))
+        cached = self._distance_cache.get(key)
+        if cached is not None:
+            return cached
+        value = distance(self.enemy_coords[enemy_idx], self.unit_coords[model_idx])
+        self._distance_cache[key] = value
+        return value
+
+    def get_shoot_targets_for_unit(self, side: str, unit_idx: int) -> list[int]:
+        cache_key = (self._target_cache_epoch, side, int(unit_idx))
+        cached = self._shoot_target_cache.get(cache_key)
+        if cached is not None:
+            return list(cached)
+
+        targets = []
+        if side == "model":
+            if not (0 <= unit_idx < len(self.unit_health)):
+                return []
+            if self.unit_health[unit_idx] <= 0 or self.unitFellBack[unit_idx] or self.unitInAttack[unit_idx][0] == 1:
+                return []
+            if self.unit_weapon[unit_idx] == "None":
+                return []
+            range_limit = self.unit_weapon[unit_idx]["Range"]
+            for enemy_idx in range(len(self.enemy_health)):
+                if self.enemy_health[enemy_idx] <= 0 or self.enemyInAttack[enemy_idx][0] == 1:
+                    continue
+                if self._cached_distance_model_enemy(unit_idx, enemy_idx) <= range_limit:
+                    targets.append(enemy_idx)
+        else:
+            if not (0 <= unit_idx < len(self.enemy_health)):
+                return []
+            if self.enemy_health[unit_idx] <= 0 or self.enemyFellBack[unit_idx] or self.enemyInAttack[unit_idx][0] == 1:
+                return []
+            if self.enemy_weapon[unit_idx] == "None":
+                return []
+            range_limit = self.enemy_weapon[unit_idx]["Range"]
+            for model_idx in range(len(self.unit_health)):
+                if self.unit_health[model_idx] <= 0 or self.unitInAttack[model_idx][0] == 1:
+                    continue
+                if self._cached_distance_enemy_model(unit_idx, model_idx) <= range_limit:
+                    targets.append(model_idx)
+
+        self._shoot_target_cache[cache_key] = list(targets)
+        return targets
 
     def _model_wounds_pool_from_hp(self, unit_data: dict, hp_value: float) -> list[int]:
         if not isinstance(unit_data, dict):
@@ -2804,14 +2867,7 @@ class Warhammer40kEnv(gym.Env):
                     self._log_unit("MODEL", modelName, i, "Advance без Assault — стрельба пропущена.")
                     continue
 
-                shootAbleUnits = []
-                for j in range(len(self.enemy_health)):
-                    if (
-                        self._distance_between_units("model", i, "enemy", j) <= self.unit_weapon[i]["Range"]
-                        and self.enemy_health[j] > 0
-                        and self.enemyInAttack[j][0] == 0
-                    ):
-                        shootAbleUnits.append(j)
+                shootAbleUnits = self.get_shoot_targets_for_unit("model", i)
                 if len(shootAbleUnits) > 0:
                     valid_target_ids = shootAbleUnits
                     raw = action["shoot"]
@@ -3054,14 +3110,7 @@ class Warhammer40kEnv(gym.Env):
                     self._log_unit("enemy", unit_id, i, "Advance без Assault — стрельба пропущена.")
                     continue
 
-                shootAbleUnits = []
-                for j in range(len(self.unit_health)):
-                    if (
-                        self._distance_between_units("enemy", i, "model", j) <= self.enemy_weapon[i]["Range"]
-                        and self.unit_health[j] > 0
-                        and self.unitInAttack[j][0] == 0
-                    ):
-                        shootAbleUnits.append(j)
+                shootAbleUnits = self.get_shoot_targets_for_unit("enemy", i)
                 if len(shootAbleUnits) > 0:
                     valid_target_ids = shootAbleUnits
                     raw = action.get("shoot", 0) if isinstance(action, dict) else 0
@@ -3992,6 +4041,7 @@ class Warhammer40kEnv(gym.Env):
         return self._get_observation(), info
 
     def enemyTurn(self, trunc=False, policy_fn=None):
+        self._invalidate_target_cache("enemy_turn_start")
         self.unitCharged = [0] * len(self.unit_health)
         self.enemyCharged = [0] * len(self.enemy_health)
         if trunc is True:
@@ -4004,9 +4054,11 @@ class Warhammer40kEnv(gym.Env):
             action = policy_fn(obs)
         battle_shock = self.command_phase("enemy", action=action)
         advanced_flags = self.movement_phase("enemy", action=action, battle_shock=battle_shock)
+        self._invalidate_target_cache("enemy_after_movement")
         self.shooting_phase("enemy", advanced_flags=advanced_flags, action=action)
         self.charge_phase("enemy", advanced_flags=advanced_flags, action=action)
         self.fight_phase("enemy")
+        self._invalidate_target_cache("enemy_after_fight")
         apply_end_of_battle(self, log_fn=self._log)
 
         if self.modelStrat["overwatch"] != -1:
@@ -4413,6 +4465,7 @@ class Warhammer40kEnv(gym.Env):
 
 
     def step(self, action):
+        self._invalidate_target_cache("model_step_start")
         reward = 0
         res = 0
         secondary_interval = max(1, int(os.getenv("REWARD_SECONDARY_INTERVAL", "1")))
@@ -4435,6 +4488,7 @@ class Warhammer40kEnv(gym.Env):
         if delta != 0:
             self._log_reward(f"Reward (шаг): командование delta={delta:+.3f}")
         advanced_flags, delta, movement_meta = self.movement_phase("model", action=action, battle_shock=battle_shock)
+        self._invalidate_target_cache("model_after_movement")
         reward += delta
         if delta != 0:
             self._log_reward(f"Reward (шаг): движение delta={delta:+.3f}")
@@ -4447,6 +4501,7 @@ class Warhammer40kEnv(gym.Env):
         if charge_delta != 0:
             self._log_reward(f"Reward (шаг): чардж delta={charge_delta:+.3f}")
         fight_delta = self.fight_phase("model") or 0
+        self._invalidate_target_cache("model_after_fight")
         reward += fight_delta
         if fight_delta != 0:
             self._log_reward(f"Reward (шаг): бой delta={fight_delta:+.3f}")

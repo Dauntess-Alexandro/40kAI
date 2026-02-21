@@ -49,14 +49,18 @@ class PrioritizedReplayMemory(object):
         self.capacity = capacity
         self.alpha = alpha
         self.eps = eps
-        self.memory = []
-        self.priorities = []
+        self.memory = [None] * capacity
+        self.size = 0
         self.pos = 0
         self.max_priority = 1.0
-        self._prefetch = None
         self._lock = threading.Lock()
         self._prefetch_thread = None
         self._prefetch_result = None
+        self.tree_size = 1
+        while self.tree_size < capacity:
+            self.tree_size <<= 1
+        self.sum_tree = np.zeros(2 * self.tree_size, dtype=np.float32)
+        self.min_tree = np.full(2 * self.tree_size, np.inf, dtype=np.float32)
 
     def _start_async_prefetch(self, batch_size, beta):
         def _worker():
@@ -65,29 +69,69 @@ class PrioritizedReplayMemory(object):
         self._prefetch_thread = threading.Thread(target=_worker, daemon=True)
         self._prefetch_thread.start()
 
+    def _set_leaf(self, data_idx, priority_alpha):
+        leaf = data_idx + self.tree_size
+        self.sum_tree[leaf] = priority_alpha
+        self.min_tree[leaf] = priority_alpha
+        leaf //= 2
+        while leaf >= 1:
+            left = leaf * 2
+            right = left + 1
+            self.sum_tree[leaf] = self.sum_tree[left] + self.sum_tree[right]
+            self.min_tree[leaf] = min(self.min_tree[left], self.min_tree[right])
+            leaf //= 2
+
+    def _prefix_search(self, mass):
+        idx = 1
+        while idx < self.tree_size:
+            left = idx * 2
+            if self.sum_tree[left] >= mass:
+                idx = left
+            else:
+                mass -= self.sum_tree[left]
+                idx = left + 1
+        return idx - self.tree_size
+
     def push(self, *args):
         transition = Transition(*args)
         with self._lock:
-            if len(self.memory) < self.capacity:
-                self.memory.append(transition)
-                self.priorities.append(self.max_priority)
-            else:
-                self.memory[self.pos] = transition
-                self.priorities[self.pos] = self.max_priority
+            self.memory[self.pos] = transition
+            priority_alpha = float(max(self.max_priority, self.eps)) ** self.alpha
+            self._set_leaf(self.pos, priority_alpha)
+            if self.size < self.capacity:
+                self.size += 1
             self.pos = (self.pos + 1) % self.capacity
 
     def _sample_impl(self, batch_size, beta=0.4):
         with self._lock:
-            if len(self.memory) == 0:
+            if self.size == 0:
                 return [], [], []
-            priorities = np.array(self.priorities, dtype=np.float32)
-            scaled = priorities ** self.alpha
-            probs = scaled / scaled.sum()
-            indices = np.random.choice(len(self.memory), batch_size, p=probs)
-            samples = [self.memory[idx] for idx in indices]
-            weights = (len(self.memory) * probs[indices]) ** (-beta)
-            weights = weights / weights.max()
-            return samples, indices, weights.astype(np.float32)
+            total = float(self.sum_tree[1])
+            if total <= 0.0:
+                return [], [], []
+
+            actual_batch = int(batch_size)
+            segment = total / actual_batch
+            indices = []
+            priorities_alpha = []
+            samples = []
+            for i in range(actual_batch):
+                a = segment * i
+                b = segment * (i + 1)
+                mass = random.uniform(a, b)
+                idx = self._prefix_search(mass)
+                if idx >= self.size:
+                    idx = self.size - 1
+                indices.append(idx)
+                p_alpha = float(self.sum_tree[idx + self.tree_size])
+                priorities_alpha.append(p_alpha)
+                samples.append(self.memory[idx])
+
+            probs = np.asarray(priorities_alpha, dtype=np.float32) / total
+            probs = np.clip(probs, 1e-12, None)
+            weights = (self.size * probs) ** (-beta)
+            weights /= weights.max()
+            return samples, np.asarray(indices, dtype=np.int64), weights.astype(np.float32)
 
     def sample(self, batch_size, beta=0.4, prefetch=False):
         if not prefetch:
@@ -104,9 +148,12 @@ class PrioritizedReplayMemory(object):
         with self._lock:
             for idx, priority in zip(indices, priorities):
                 value = float(priority)
-                self.priorities[idx] = value
+                if value < self.eps:
+                    value = self.eps
+                p_alpha = value ** self.alpha
+                self._set_leaf(int(idx), p_alpha)
                 if value > self.max_priority:
                     self.max_priority = value
 
     def __len__(self):
-        return len(self.memory)
+        return self.size
