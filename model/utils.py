@@ -48,10 +48,11 @@ def normalize_state_dict(state_dict):
     return normalized
 
 def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None):
+    force_greedy = os.getenv("FORCE_GREEDY", "0") == "1" or os.getenv("PLAY_NO_EXPLORATION", "0") == "1"
     sample = random.random()
     decay_steps = max(1.0, float(EPS_DECAY))
     progress = min(float(steps_done) / decay_steps, 1.0)
-    eps_threshold = EPS_START + (EPS_END - EPS_START) * progress
+    eps_threshold = 0.0 if force_greedy else EPS_START + (EPS_END - EPS_START) * progress
     steps_done += 1
     dev = next(policy_net.parameters()).device
 
@@ -71,7 +72,7 @@ def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None
         state = state.unsqueeze(0)
 
 
-    if sample > eps_threshold:
+    if force_greedy or sample > eps_threshold:
         with torch.no_grad():
             decision = policy_net(state)
             action = []

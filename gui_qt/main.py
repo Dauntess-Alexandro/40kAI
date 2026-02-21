@@ -754,7 +754,8 @@ class GUIController(QtCore.QObject):
             env=env,
             start_new_session=True,
         )
-        self._emit_status("Запуск игры в GUI через Viewer.")
+        self._emit_log("[VIEWER] Запуск в greedy-режиме: exploration отключен (epsilon=0).", level="INFO")
+        self._emit_status("Запуск игры в GUI через Viewer (greedy, без исследования).")
 
     def _check_torch_import(self) -> bool:
         command = [
