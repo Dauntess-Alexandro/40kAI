@@ -576,9 +576,6 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                     else:
                         raise TypeError(f"Unsupported action space for {k}: {type(sp)}")
                 conn.send(sizes)
-            elif cmd == "sample_action":
-                sampled_action = env.action_space.sample()
-                conn.send(sampled_action)
             elif cmd == "save_pickle":
                 try:
                     with open(payload, "wb") as file:
@@ -712,7 +709,17 @@ def _build_units_from_config(config, b_len, b_hei):
         )
     return enemy, model
 
-def _select_actions_batch(env_contexts, states, steps_done, policy_net, shoot_masks=None):
+def _sample_random_action_from_sizes(action_sizes, shoot_mask=None):
+    action_list = [random.randrange(int(size)) for size in action_sizes]
+    if shoot_mask is not None and len(action_list) > 2:
+        mask = torch.as_tensor(shoot_mask, dtype=torch.bool)
+        valid_indices = torch.where(mask)[0].tolist()
+        if valid_indices:
+            action_list[2] = random.choice(valid_indices)
+    return action_list
+
+
+def _select_actions_batch(env_contexts, states, steps_done, policy_net, action_sizes, shoot_masks=None):
     decay_steps = max(1.0, float(EPS_DECAY))
     progress = min(float(steps_done) / decay_steps, 1.0)
     eps_threshold = EPS_START + (EPS_END - EPS_START) * progress
@@ -733,31 +740,32 @@ def _select_actions_batch(env_contexts, states, steps_done, policy_net, shoot_ma
 
     for env_idx, ctx in enumerate(env_contexts):
         env = ctx.get("env")
-        len_model = ctx["len_model"]
         use_random = random.random() <= eps_threshold
         if use_random:
             if env is None:
-                ctx["conn"].send(("sample_action", None))
-                sampled_action = ctx["conn"].recv()
+                action_list = _sample_random_action_from_sizes(
+                    action_sizes,
+                    shoot_mask=shoot_masks[env_idx] if shoot_masks else None,
+                )
             else:
                 sampled_action = env.action_space.sample()
-            shoot_choice = sampled_action["shoot"]
-            if shoot_masks and shoot_masks[env_idx] is not None:
-                mask = torch.as_tensor(shoot_masks[env_idx], dtype=torch.bool)
-                valid_indices = torch.where(mask)[0].tolist()
-                if valid_indices:
-                    shoot_choice = random.choice(valid_indices)
-            action_list = [
-                sampled_action["move"],
-                sampled_action["attack"],
-                shoot_choice,
-                sampled_action["charge"],
-                sampled_action["use_cp"],
-                sampled_action["cp_on"],
-            ]
-            for i in range(len_model):
-                label = "move_num_" + str(i)
-                action_list.append(sampled_action[label])
+                shoot_choice = sampled_action["shoot"]
+                if shoot_masks and shoot_masks[env_idx] is not None:
+                    mask = torch.as_tensor(shoot_masks[env_idx], dtype=torch.bool)
+                    valid_indices = torch.where(mask)[0].tolist()
+                    if valid_indices:
+                        shoot_choice = random.choice(valid_indices)
+                action_list = [
+                    sampled_action["move"],
+                    sampled_action["attack"],
+                    shoot_choice,
+                    sampled_action["charge"],
+                    sampled_action["use_cp"],
+                    sampled_action["cp_on"],
+                ]
+                for i in range(ctx["len_model"]):
+                    label = "move_num_" + str(i)
+                    action_list.append(sampled_action[label])
             actions.append(torch.tensor([action_list], device="cpu"))
         else:
             action = []
@@ -1234,7 +1242,14 @@ def main():
         states = [ctx["state"] for ctx in env_contexts]
         action_start = time.perf_counter()
         if BATCH_ACT:
-            actions, eps_threshold = _select_actions_batch(env_contexts, states, global_step, policy_net, shoot_masks)
+            actions, eps_threshold = _select_actions_batch(
+                env_contexts,
+                states,
+                global_step,
+                policy_net,
+                n_actions,
+                shoot_masks,
+            )
         else:
             decay_steps = max(1.0, float(EPS_DECAY))
             progress = min(float(global_step) / decay_steps, 1.0)

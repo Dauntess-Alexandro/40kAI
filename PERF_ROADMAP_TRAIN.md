@@ -71,7 +71,7 @@
 
 ## 2) Средние по сложности (2–5 дней)
 
-## 2.1. F — убрать IPC `sample_action` в epsilon-random
+## 2.1. F — убрать IPC `sample_action` в epsilon-random ✅ СДЕЛАНО
 **Что делаем**
 - Генерируем random action в train-процессе по форме action-space.
 - В subprocess больше не вызываем `("sample_action", None)` на каждый env.
@@ -79,6 +79,9 @@
 **Ожидаемый эффект**: +5–12% (особенно при высоком epsilon и большом NUM_ENVS).
 
 **Риск**: низкий при корректном совпадении распределения с env sampler.
+
+
+**Статус в репо**: в `train.py` random action для epsilon-ветки в subprocess env теперь генерируется в train-процессе по размерам action heads (`n_actions`) без IPC-команды `("sample_action", None)` на каждый env/шаг; обработчик `sample_action` удалён из worker.
 
 ---
 
@@ -239,7 +242,7 @@
 ### Sprint 1 (быстрый прирост)
 - [ ] Закрепить speed/balance профили в GUI/env overrides.
 - [ ] Бенч baseline + бенч после quick wins.
-- [ ] F: убрать `sample_action` IPC.
+- [x] F: убрать `sample_action` IPC.
 - [ ] A: lean-info для subprocess step.
 
 ### Sprint 2 (архитектурный)
