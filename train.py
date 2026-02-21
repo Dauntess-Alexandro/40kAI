@@ -480,6 +480,24 @@ def append_agent_log(line: str) -> None:
 
 def _env_worker(conn, roster_config, b_len, b_hei, trunc):
     try:
+        lean_info_enabled = os.getenv("TRAIN_LEAN_INFO", "1") == "1"
+
+        def _lean_train_info(info):
+            if not isinstance(info, dict):
+                return info
+            # Lean info для train-mode: уменьшаем IPC payload, оставляем только нужные поля.
+            return {
+                "model health": info.get("model health", []),
+                "player health": info.get("player health", []),
+                "in attack": info.get("in attack", 0),
+                "model VP": info.get("model VP", 0),
+                "player VP": info.get("player VP", 0),
+                "mission": info.get("mission", DEFAULT_MISSION_NAME),
+                "end reason": info.get("end reason", ""),
+                "winner": info.get("winner", None),
+                "turn": info.get("turn", 0),
+            }
+
         enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
         mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
         attacker_side, defender_side = roll_off_attacker_defender(
@@ -518,6 +536,8 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                 conn.send(True)
             elif cmd == "step":
                 next_observation, reward, done, res, info = env.step(payload)
+                if lean_info_enabled:
+                    info = _lean_train_info(info)
                 conn.send((next_observation, reward, done, res, info))
             elif cmd == "reset":
                 mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))

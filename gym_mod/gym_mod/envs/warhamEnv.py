@@ -4415,6 +4415,8 @@ class Warhammer40kEnv(gym.Env):
     def step(self, action):
         reward = 0
         res = 0
+        secondary_interval = max(1, int(os.getenv("REWARD_SECONDARY_INTERVAL", "1")))
+        run_secondary_checks = secondary_interval <= 1 or ((self.iter + 1) % secondary_interval == 0)
         model_hp_start = float(sum(self.unit_health))
         enemy_hp_start = float(sum(self.enemy_health))
         enemy_dead_start = sum(1 for hp in self.enemy_health if hp <= 0)
@@ -4423,7 +4425,7 @@ class Warhammer40kEnv(gym.Env):
         self.refresh_objective_control()
         _, pre_controlled = controlled_objectives(self, "model")
         pre_controlled_set = set(pre_controlled)
-        min_obj_dist_start = self._min_model_obj_distance()
+        min_obj_dist_start = self._min_model_obj_distance() if run_secondary_checks else None
         prev_vp_diff = self._prev_vp_diff
         self.unitCharged = [0] * len(self.unit_health)
         self.enemyCharged = [0] * len(self.enemy_health)
@@ -4521,8 +4523,8 @@ class Warhammer40kEnv(gym.Env):
         kills_dealt = max(0, enemy_dead_end - enemy_dead_start)
         vp_changed = (self.modelVP != pre_model_vp) or (self.enemyVP != pre_enemy_vp)
         control_changed = pre_controlled_set != post_controlled_set
-        near_objective = self._any_model_near_objective()
-        min_obj_dist_end = self._min_model_obj_distance()
+        near_objective = self._any_model_near_objective() if run_secondary_checks else False
+        min_obj_dist_end = self._min_model_obj_distance() if run_secondary_checks else None
         moved_closer = False
         can_measure_move = min_obj_dist_start is not None and min_obj_dist_end is not None
         if can_measure_move:
@@ -4542,35 +4544,36 @@ class Warhammer40kEnv(gym.Env):
                         f"d_before={min_obj_dist_start:.3f}, d_after={min_obj_dist_end:.3f}, "
                         f"delta={progress:.3f}, norm={progress_norm:.3f}, bonus=+{progress_bonus:.3f}"
                     )
-        idle_conditions_met = (
-            not near_objective
-            and not vp_changed
-            and not control_changed
-            and damage_dealt <= 0
-            and kills_dealt <= 0
-            and (not moved_closer or not can_measure_move)
-        )
-        hold_penalty_applied = bool(movement_meta.get("applied_hold_penalty", False))
-        if idle_conditions_met and hold_penalty_applied:
-            self._log_reward(
-                "Reward (idle вне цели): "
-                "skip, reason=hold_penalty_already_applied, "
-                f"near_obj={int(near_objective)}, vp_changed={int(vp_changed)}, "
-                f"control_changed={int(control_changed)}, damage={damage_dealt:.2f}, "
-                f"kills={kills_dealt}, moved_closer={int(moved_closer)}, "
-                f"min_dist={min_obj_dist_start}->{min_obj_dist_end}, "
-                f"hold_penalty_events={movement_meta.get('hold_penalty_events', 0)}"
+        if run_secondary_checks:
+            idle_conditions_met = (
+                not near_objective
+                and not vp_changed
+                and not control_changed
+                and damage_dealt <= 0
+                and kills_dealt <= 0
+                and (not moved_closer or not can_measure_move)
             )
-        elif idle_conditions_met:
-            reward -= reward_cfg.IDLE_OUT_OF_OBJECTIVE_PENALTY
-            self._log_reward(
-                "Reward (idle вне цели): "
-                f"penalty=-{reward_cfg.IDLE_OUT_OF_OBJECTIVE_PENALTY:.3f}, "
-                f"near_obj={int(near_objective)}, vp_changed={int(vp_changed)}, "
-                f"control_changed={int(control_changed)}, damage={damage_dealt:.2f}, "
-                f"kills={kills_dealt}, moved_closer={int(moved_closer)}, "
-                f"min_dist={min_obj_dist_start}->{min_obj_dist_end}"
-            )
+            hold_penalty_applied = bool(movement_meta.get("applied_hold_penalty", False))
+            if idle_conditions_met and hold_penalty_applied:
+                self._log_reward(
+                    "Reward (idle вне цели): "
+                    "skip, reason=hold_penalty_already_applied, "
+                    f"near_obj={int(near_objective)}, vp_changed={int(vp_changed)}, "
+                    f"control_changed={int(control_changed)}, damage={damage_dealt:.2f}, "
+                    f"kills={kills_dealt}, moved_closer={int(moved_closer)}, "
+                    f"min_dist={min_obj_dist_start}->{min_obj_dist_end}, "
+                    f"hold_penalty_events={movement_meta.get('hold_penalty_events', 0)}"
+                )
+            elif idle_conditions_met:
+                reward -= reward_cfg.IDLE_OUT_OF_OBJECTIVE_PENALTY
+                self._log_reward(
+                    "Reward (idle вне цели): "
+                    f"penalty=-{reward_cfg.IDLE_OUT_OF_OBJECTIVE_PENALTY:.3f}, "
+                    f"near_obj={int(near_objective)}, vp_changed={int(vp_changed)}, "
+                    f"control_changed={int(control_changed)}, damage={damage_dealt:.2f}, "
+                    f"kills={kills_dealt}, moved_closer={int(moved_closer)}, "
+                    f"min_dist={min_obj_dist_start}->{min_obj_dist_end}"
+                )
 
         self._advance_turn_order()
         if self.game_over and res == 0:
