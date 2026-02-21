@@ -850,13 +850,13 @@ class GUIController(QtCore.QObject):
         env_overrides: dict[str, str] = {}
         if mode == "train8":
             train_label = "TRAIN8"
-            status_prefix = "Обучение 8x"
-            env_overrides["NUM_ENVS"] = "16"
+            status_prefix = "Обучение"
+            env_overrides["NUM_ENVS"] = "24"
             env_overrides["USE_SUBPROC_ENVS"] = "1"
         elif mode == "selfplay":
             train_label = "SELFPLAY"
             status_prefix = "Самообучение"
-            env_overrides["VEC_ENV_COUNT"] = "8"
+            env_overrides["VEC_ENV_COUNT"] = "24"
             env_overrides["SELF_PLAY_ENABLED"] = "1"
 
         if mode == "selfplay" and self._self_play_from_checkpoint:
