@@ -1122,6 +1122,11 @@ ApplicationWindow {
                                         enabled: !controller.running
                                         onClicked: controller.select_latest_eval_model()
                                     }
+                                    Button {
+                                        text: "Лучшая"
+                                        enabled: !controller.running
+                                        onClicked: controller.select_best_eval_model()
+                                    }
                                 }
 
                                 Label {
