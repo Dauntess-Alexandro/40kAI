@@ -502,6 +502,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         choice_page = QtWidgets.QWidget()
         choice_layout = QtWidgets.QHBoxLayout(choice_page)
         self.choice_combo = QtWidgets.QComboBox()
+        self.choice_combo.currentTextChanged.connect(self._on_choice_target_changed)
         self.choice_ok = QtWidgets.QPushButton("ОК")
         self.choice_ok.clicked.connect(self._submit_choice)
         choice_layout.addWidget(self.choice_combo)
@@ -572,6 +573,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if request.options:
                 self.choice_combo.addItems([str(opt) for opt in request.options])
                 self.command_stack.setCurrentIndex(self._command_pages["choice"])
+                if self._is_target_request(request):
+                    self._sync_target_from_choice(self.choice_combo.currentText())
+                    self._set_confirm_enabled(self._current_target_id is not None)
             else:
                 self.command_stack.setCurrentIndex(self._command_pages["text"])
             self.command_input.setPlaceholderText("Введите команду...")
@@ -647,6 +651,20 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.int_ok.setEnabled(enabled)
         self.choice_combo.setEnabled(enabled)
         self.choice_ok.setEnabled(enabled)
+
+    def _on_choice_target_changed(self, value: str) -> None:
+        if not self._is_target_request(self._pending_request):
+            return
+        self._sync_target_from_choice(value)
+        self._set_confirm_enabled(self._current_target_id is not None)
+
+    def _sync_target_from_choice(self, value: str) -> None:
+        parsed_id = self._extract_unit_id(value)
+        if parsed_id is None:
+            self._current_target_id = None
+            return
+        self._current_target_id = parsed_id
+        self.map_scene.set_target_unit(parsed_id)
 
     def _on_target_selected(self, unit_id: int) -> None:
         if not self._is_target_request(self._pending_request):
@@ -765,9 +783,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._submit_answer(text)
 
     def _submit_choice(self):
-        if self._is_target_request(self._pending_request) and self._current_target_id is None:
-            return
         value = self.choice_combo.currentText()
+        if self._is_target_request(self._pending_request) and self._current_target_id is None:
+            self._sync_target_from_choice(value)
+            if self._current_target_id is None:
+                return
         self._submit_answer(value)
 
     def _submit_answer(self, value):

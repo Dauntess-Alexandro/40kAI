@@ -7,3 +7,6 @@
 время=2026-02-22 17:00:38 длительность_с=7.22 модель=M_Necrons_vs_P_Necrons/model-33-658501 run_id=4541679 эпизоды=100 winrate_mean=0.0300 vp_diff_mean=0.0400 reward_mean=-0.039147 ep_len_mean=10.00 turn_mean=11.00
 время=2026-02-22 17:58:23 длительность_с=246.22 модель=M_Necrons_vs_P_Necrons/model-37-300922 run_id=9360779 эпизоды=2500 winrate_mean=0.2616 vp_diff_mean=-0.4308 reward_mean=0.219382 ep_len_mean=9.37 turn_mean=10.37
 время=2026-02-22 18:14:31 длительность_с=240.91 модель=M_Necrons_vs_P_Necrons/model-50-762229 run_id=6476019 эпизоды=2500 winrate_mean=0.2576 vp_diff_mean=-0.4612 reward_mean=0.230578 ep_len_mean=9.43 turn_mean=10.43
+время=2026-02-22 18:37:31 длительность_с=481.24 модель=M_Necrons_vs_P_Necrons/model-50-258586 run_id=2193638 эпизоды=5000 winrate_mean=0.2964 vp_diff_mean=-0.3630 reward_mean=0.325694 ep_len_mean=9.30 turn_mean=10.30
+время=2026-02-22 19:32:15 длительность_с=577.33 модель=M_Necrons_vs_P_Necrons/model-39-658865 run_id=1427516 эпизоды=5000 winrate_mean=0.2672 vp_diff_mean=-0.3152 reward_mean=0.214952 ep_len_mean=9.77 turn_mean=10.77
+время=2026-02-22 19:42:59 длительность_с=559.98 модель=M_Necrons_vs_P_Necrons/model-0-142415 run_id=4761531 эпизоды=5000 winrate_mean=0.2932 vp_diff_mean=-0.3196 reward_mean=0.306977 ep_len_mean=9.39 turn_mean=10.39
