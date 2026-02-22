@@ -5,6 +5,7 @@ import datetime
 import json
 import os
 import pickle
+import sys
 from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
@@ -28,6 +29,16 @@ from model.alphazero import (
     to_action_dict,
 )
 
+
+
+# Защита от UnicodeEncodeError на Windows cp1251/cp866 при боевых логах.
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 DEFAULT_MISSION_NAME = "only_war"
 

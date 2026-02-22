@@ -680,6 +680,8 @@ class GUIController(QtCore.QObject):
         self._set_eval_summary_text("Идёт оценка... Итог будет показан после завершения.")
 
         env = QtCore.QProcessEnvironment.systemEnvironment()
+        env.insert("PYTHONUTF8", "1")
+        env.insert("PYTHONIOENCODING", "utf-8")
         env.insert("FORCE_GREEDY", "1")
         env.insert("EVAL_EPSILON", "0")
         env.insert("PYTHONPATH", self._pythonpath_with_gym_mod())
@@ -916,6 +918,8 @@ class GUIController(QtCore.QObject):
         self._process.setWorkingDirectory(self._repo_root)
 
         env = QtCore.QProcessEnvironment.systemEnvironment()
+        env.insert("PYTHONUTF8", "1")
+        env.insert("PYTHONIOENCODING", "utf-8")
         if self._disable_train_logging:
             env.insert("TRAIN_LOG_ENABLED", "0")
             env.insert("TRAIN_LOG_TO_CONSOLE", "0")
