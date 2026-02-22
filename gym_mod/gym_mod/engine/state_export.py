@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 from datetime import datetime
 
 from gym_mod.engine.event_bus import get_event_recorder
@@ -133,7 +134,28 @@ def write_state_json(env, path=None):
         "generated_at": datetime.utcnow().isoformat() + "Z",
     }
 
-    with open(state_path, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
+    state_dir = os.path.dirname(state_path)
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=state_dir,
+            delete=False,
+            prefix="state.",
+            suffix=".tmp",
+        ) as handle:
+            temp_path = handle.name
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        os.replace(temp_path, state_path)
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
 
     return payload
