@@ -1,0 +1,34 @@
+{
+  "updated_at": "2026-02-21 20:30:00",
+  "rounds": [
+    [
+      {"title": "Model_v120", "score": "2:1"},
+      {"title": "Model_v117", "score": "1:2"},
+      {"title": "Model_v119", "score": "2:0"},
+      {"title": "Model_v115", "score": "0:2"},
+      {"title": "Model_v118", "score": "2:1"},
+      {"title": "Model_v113", "score": "1:2"},
+      {"title": "Model_v116", "score": "2:0"},
+      {"title": "Model_v112", "score": "0:2"}
+    ],
+    [
+      {"title": "Model_v120", "score": "2:1", "highlighted": true},
+      {"title": "Model_v119", "score": "2:0", "highlighted": true},
+      {"title": "Model_v113", "score": "2:1", "highlighted": true},
+      {"title": "Model_v116", "score": "2:0", "highlighted": true}
+    ],
+    [
+      {"title": "Model_v120", "score": "3:2", "highlighted": true},
+      {"title": "Model_v116", "score": "3:1", "highlighted": true}
+    ],
+    [
+      {"title": "Model_v120", "score": "3:2", "highlighted": true}
+    ]
+  ],
+  "leaderboard": [
+    {"name": "Model_v120", "elo": 1672, "winrate": "64%", "vp_diff": "+41", "games": 103},
+    {"name": "Model_v116", "elo": 1608, "winrate": "58%", "vp_diff": "+27", "games": 99},
+    {"name": "Model_v119", "elo": 1569, "winrate": "55%", "vp_diff": "+12", "games": 97},
+    {"name": "Model_v113", "elo": 1527, "winrate": "51%", "vp_diff": "+4", "games": 96}
+  ]
+}

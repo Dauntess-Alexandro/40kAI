@@ -40,6 +40,7 @@ from viewer.gun_fx import get_gun_fx_config
 from viewer.state import StateWatcher
 from viewer.styles import Theme
 from viewer.model_log_tree import render_model_log_flat
+from viewer.tournament_bracket import TournamentTab
 
 from gym_mod.engine.game_controller import GameController
 from gym_mod.engine.game_io import parse_dice_values
@@ -338,11 +339,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._right_splitter.setMinimumWidth(380)
         self._right_splitter.setMaximumWidth(450)
 
+        self.main_tabs = QtWidgets.QTabWidget()
+        self.main_tabs.addTab(self._top_splitter, "Бой")
+        self.main_tabs.addTab(TournamentTab(), "Турнир")
+
         central = QtWidgets.QWidget()
         central_layout = QtWidgets.QVBoxLayout(central)
         central_layout.setContentsMargins(0, 0, 0, 0)
         central_layout.setSpacing(0)
-        central_layout.addWidget(self._top_splitter)
+        central_layout.addWidget(self.main_tabs)
         self.setCentralWidget(central)
 
         self._apply_dark_theme()
