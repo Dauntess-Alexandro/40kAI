@@ -1173,6 +1173,12 @@ class Warhammer40kEnv(gym.Env):
         ]
         self._sync_model_positions_to_anchors()
 
+    def _sync_after_command_phase_reanimation(self, side: str) -> None:
+        # Reanimation меняет суммарный HP; синхронизируем пулы/позиции и сразу обновляем state.json.
+        self._init_model_state_from_health()
+        self._sync_model_positions_to_anchors()
+        self._flush_state_snapshot(reason=f"command_phase_reanimation:{side}", force=True)
+
     def _coherency_required_neighbors(self, alive_models: int) -> int:
         if alive_models >= 7:
             return 2

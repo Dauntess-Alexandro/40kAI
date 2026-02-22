@@ -149,6 +149,9 @@ def apply_end_of_command_phase(env, side: str, dice_fn: DiceFn, log_fn: LogFn) -
             unit_label,
         )
 
+    if hasattr(env, "_sync_after_command_phase_reanimation"):
+        env._sync_after_command_phase_reanimation(side)
+
 
 def _self_check_fixed_roll(roll: int) -> DiceFn:
     def _dice(max: int = 6, num: int = 1) -> int:
