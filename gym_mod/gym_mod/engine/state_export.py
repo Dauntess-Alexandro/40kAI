@@ -1,9 +1,11 @@
 import json
 import os
 import tempfile
+import time
 from datetime import datetime
 
 from gym_mod.engine.event_bus import get_event_recorder
+from gym_mod.engine.io_profiler import get_io_profiler
 
 
 DEFAULT_STATE_PATH = os.path.join(os.getcwd(), "gui", "state.json")
@@ -87,6 +89,7 @@ def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, ancho
 
 
 def write_state_json(env, path=None):
+    io_profiler = get_io_profiler()
     state_path = path or os.getenv("STATE_JSON_PATH", DEFAULT_STATE_PATH)
     os.makedirs(os.path.dirname(state_path), exist_ok=True)
 
@@ -152,28 +155,43 @@ def write_state_json(env, path=None):
             "attacker": getattr(env, "attacker_side", None),
             "defender": getattr(env, "defender_side", None),
         },
-        "log_tail": _read_log_tail(),
-        "model_events": _read_event_tail(),
+        "payload_kind": "light",
         "generated_at": datetime.utcnow().isoformat() + "Z",
     }
+
+    payload_mode = str(os.getenv("STATE_PAYLOAD_MODE", "auto")).strip().lower()
+    include_full_payload = payload_mode in {"full", "always"}
+    if payload_mode in {"auto", "", "default"}:
+        interval_ms = max(0, _safe_int(os.getenv("STATE_FULL_PAYLOAD_INTERVAL_MS", "1000"), 1000) or 1000)
+        last_full_ts = float(getattr(env, "_state_payload_last_full_ts", 0.0) or 0.0)
+        now_ts = time.monotonic()
+        include_full_payload = (now_ts - last_full_ts) >= (interval_ms / 1000.0)
+        if include_full_payload:
+            env._state_payload_last_full_ts = now_ts
+
+    if include_full_payload:
+        payload["payload_kind"] = "full"
+        payload["log_tail"] = _read_log_tail()
+        payload["model_events"] = _read_event_tail()
 
     state_dir = os.path.dirname(state_path)
     temp_path = None
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=state_dir,
-            delete=False,
-            prefix="state.",
-            suffix=".tmp",
-        ) as handle:
-            temp_path = handle.name
-            json.dump(payload, handle, ensure_ascii=False, indent=2)
-            handle.flush()
-            os.fsync(handle.fileno())
+        with io_profiler.timed("state export"):
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=state_dir,
+                delete=False,
+                prefix="state.",
+                suffix=".tmp",
+            ) as handle:
+                temp_path = handle.name
+                json.dump(payload, handle, ensure_ascii=False, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
 
-        os.replace(temp_path, state_path)
+            os.replace(temp_path, state_path)
     finally:
         if temp_path and os.path.exists(temp_path):
             try:

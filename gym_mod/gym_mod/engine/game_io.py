@@ -9,6 +9,8 @@ import queue
 import atexit
 import time
 
+from gym_mod.engine.io_profiler import get_io_profiler
+
 
 LOG_DEFAULT_PATH = os.path.join(os.getcwd(), "gui", "response.txt")
 
@@ -51,8 +53,9 @@ class _AsyncLogWriter:
             for path, lines in pending.items():
                 try:
                     os.makedirs(os.path.dirname(path), exist_ok=True)
-                    with open(path, "a", encoding="utf-8") as handle:
-                        handle.writelines(lines)
+                    with get_io_profiler().timed("log append"):
+                        with open(path, "a", encoding="utf-8") as handle:
+                            handle.writelines(lines)
                 except OSError:
                     continue
             pending.clear()
@@ -135,8 +138,9 @@ def _append_log_line(message: str, path: Optional[str] = None) -> None:
         return
 
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    with open(log_path, "a", encoding="utf-8") as handle:
-        handle.write(message.rstrip("\n") + "\n")
+    with get_io_profiler().timed("log append"):
+        with open(log_path, "a", encoding="utf-8") as handle:
+            handle.write(message.rstrip("\n") + "\n")
 
 
 class ConsoleIO(BaseIO):

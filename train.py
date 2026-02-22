@@ -18,6 +18,7 @@ import atexit
 from tqdm import tqdm
 from gym_mod.envs.warhamEnv import *
 from gym_mod.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
+from gym_mod.engine.io_profiler import get_io_profiler
 from gym_mod.engine.mission import (
     normalize_mission_name,
     board_dims_for_mission,
@@ -125,6 +126,7 @@ if SELF_PLAY_OPPONENT_MODE not in ("snapshot", "fixed_checkpoint"):
 
 
 DEFAULT_MISSION_NAME = "only_war"
+IO_PROFILER = get_io_profiler()
 
 def to_np_state(s):
     if isinstance(s, (dict, collections.OrderedDict)):
@@ -384,11 +386,12 @@ def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
     # --- CSV ---
     csv_path = os.path.join(metrics_dir, f"stats_{run_id}.csv")
     cols = ["episode", "ep_reward", "ep_len", "turn", "model_vp", "player_vp", "vp_diff", "result", "end_reason", "end_code"]
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=cols)
-        w.writeheader()
-        for r in ep_rows:
-            w.writerow({k: r.get(k, "") for k in cols})
+    with IO_PROFILER.timed("metrics save"):
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=cols)
+            w.writeheader()
+            for r in ep_rows:
+                w.writerow({k: r.get(k, "") for k in cols})
 
     wins01 = [1 if r["result"] == "win" else 0 for r in ep_rows]
     vp_diff = [r["vp_diff"] for r in ep_rows]
@@ -1627,15 +1630,16 @@ def main():
                 if SAVE_EVERY > 0 and numLifeT % SAVE_EVERY == 0:
                     checkpoint_path = f"models/{safe_name}/checkpoint_ep{numLifeT}.pth"
                     os.makedirs(f"models/{safe_name}", exist_ok=True)
-                    torch.save(
-                        {
-                            "policy_net": policy_net.state_dict(),
-                            "target_net": target_net.state_dict(),
-                            "net_type": NET_TYPE,
-                            "optimizer": optimizer.state_dict(),
-                        },
-                        checkpoint_path,
-                    )
+                    with IO_PROFILER.timed("checkpoint save"):
+                        torch.save(
+                            {
+                                "policy_net": policy_net.state_dict(),
+                                "target_net": target_net.state_dict(),
+                                "net_type": NET_TYPE,
+                                "optimizer": optimizer.state_dict(),
+                            },
+                            checkpoint_path,
+                        )
                     if TRAIN_LOG_ENABLED:
                         save_line = f"[TRAIN][SAVE] ep={numLifeT} path={checkpoint_path}"
                         if TRAIN_LOG_TO_FILE:
@@ -1840,17 +1844,19 @@ def main():
     metrics_obj.showEpLen()
 
     save_extra_metrics(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
-    metrics_obj.createJson()
+    with IO_PROFILER.timed("metrics save"):
+        metrics_obj.createJson()
     print("Generated metrics")
 
     os.makedirs(fold, exist_ok=True)
 
-    torch.save({
-        "policy_net": policy_net.state_dict(),
-        "target_net": target_net.state_dict(),
-        "net_type": NET_TYPE,
-        'optimizer': optimizer.state_dict(),}
-        , ("models/{}/model-{}.pth".format(safe_name, date)))
+    with IO_PROFILER.timed("checkpoint save"):
+        torch.save({
+            "policy_net": policy_net.state_dict(),
+            "target_net": target_net.state_dict(),
+            "net_type": NET_TYPE,
+            'optimizer': optimizer.state_dict(),}
+            , ("models/{}/model-{}.pth".format(safe_name, date)))
     train_elapsed_s = time.perf_counter() - train_start_time
     model_tag = f"{safe_name}/model-{date}"
     save_training_summary(
@@ -1911,6 +1917,9 @@ def main():
     else:
         for ctx in env_contexts:
             ctx["env"].close()
+
+    with IO_PROFILER.timed("metrics save"):
+        IO_PROFILER.write_snapshot()
 
     _flush_agent_log_buffer(force=True)
     
