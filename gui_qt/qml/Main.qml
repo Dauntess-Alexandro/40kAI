@@ -1184,6 +1184,7 @@ ApplicationWindow {
                         }
                     }
                 }
+            }
 
             Item {
                 Layout.fillWidth: true
