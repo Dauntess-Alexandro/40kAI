@@ -12,6 +12,7 @@ ApplicationWindow {
     title: "40kAI — второй GUI (Qt)"
 
     property string statusText: "Готово к запуску."
+    property string alphaStatusText: "AlphaZero готов."
     property real uiScale: Math.max(1.0, Math.min(Screen.width / 1920, Screen.height / 1080))
     property int spacingXs: Math.round(6 * uiScale)
     property int spacingSm: Math.round(8 * uiScale)
@@ -47,6 +48,7 @@ ApplicationWindow {
             TabButton { text: "Игра" }
             TabButton { text: "Настройки" }
             TabButton { text: "Оценка" }
+            TabButton { text: "AlphaZero" }
         }
 
         StackLayout {
@@ -1182,7 +1184,89 @@ ApplicationWindow {
                         }
                     }
                 }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: root.spacingLg
+                    spacing: root.spacingMd
+
+                    Text { text: "AlphaZero"; font.pixelSize: Math.round(20 * root.uiScale); font.bold: true }
+
+                    GroupBox {
+                        title: "Настройки обучения"
+                        Layout.fillWidth: true
+                        GridLayout {
+                            anchors.fill: parent
+                            columns: 2
+                            columnSpacing: root.spacingMd
+                            rowSpacing: root.spacingSm
+
+                            Label { text: "Эпизоды" }
+                            TextField {
+                                id: azNumGamesField
+                                text: alphazeroController.numGames.toString()
+                                validator: IntValidator { bottom: 1 }
+                                onEditingFinished: {
+                                    var value = parseInt(text)
+                                    if (!isNaN(value)) {
+                                        alphazeroController.set_num_games(value)
+                                        text = alphazeroController.numGames.toString()
+                                    }
+                                }
+                            }
+
+                            CheckBox {
+                                text: "Продолжить обучение (AZ_RESUME_CHECKPOINT)"
+                                checked: alphazeroController.resumeFromCheckpoint
+                                enabled: !alphazeroController.running
+                                Layout.columnSpan: 2
+                                onToggled: alphazeroController.set_resume_from_checkpoint(checked)
+                            }
+
+                            Button { text: "Запустить AlphaZero"; enabled: !alphazeroController.running; onClicked: alphazeroController.start_self_play() }
+                            Button { text: "Остановить"; enabled: alphazeroController.running; onClicked: alphazeroController.stop_process() }
+                        }
+                    }
+
+                    GroupBox {
+                        title: "Модель и метрики"
+                        Layout.fillWidth: true
+                        RowLayout {
+                            anchors.fill: parent
+                            spacing: root.spacingSm
+                            Button { text: "Выбрать модель"; onClicked: azMetricsFileDialog.open() }
+                            Button { text: "Последние метрики"; onClicked: alphazeroController.select_latest_metrics() }
+                            Label { text: alphazeroController.metricsLabel; Layout.fillWidth: true; elide: Label.ElideRight }
+                        }
+                    }
+
+                    Label { text: alphaStatusText }
+                    Label { text: alphazeroController.progressLabel }
+                    ProgressBar { Layout.fillWidth: true; value: alphazeroController.progressValue }
+                    Label { text: alphazeroController.progressStats }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Image { source: alphazeroController.metricsRewardPath; Layout.fillWidth: true; fillMode: Image.PreserveAspectFit }
+                        Image { source: alphazeroController.metricsLossPath; Layout.fillWidth: true; fillMode: Image.PreserveAspectFit }
+                    }
+
+                    GroupBox {
+                        title: "Логи AlphaZero"
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        ScrollView {
+                            anchors.fill: parent
+                            TextArea { id: alphaLogArea; readOnly: true; wrapMode: TextArea.Wrap; text: "" }
+                        }
+                    }
+                }
             }
+
         }
     }
 
@@ -1261,11 +1345,34 @@ ApplicationWindow {
         }
     }
 
+
+    Connections {
+        target: alphazeroController
+        function onLogLine(message) {
+            alphaLogArea.text += message + "\n"
+            alphaLogArea.cursorPosition = alphaLogArea.length
+        }
+        function onStatusChanged(message) {
+            root.alphaStatusText = message
+        }
+        function onNumGamesChanged(value) {
+            azNumGamesField.text = value.toString()
+        }
+    }
+
     Platform.FileDialog {
         id: metricsFileDialog
         title: "Выберите модель (.pickle)"
         nameFilters: ["Pickle Files (*.pickle)"]
         folder: Platform.StandardPaths.writableLocation(Platform.StandardPaths.DocumentsLocation)
         onAccepted: controller.select_metrics_file(fileUrl)
+    }
+
+    Platform.FileDialog {
+        id: azMetricsFileDialog
+        title: "Выберите AlphaZero модель (.pickle)"
+        nameFilters: ["Pickle Files (*.pickle)"]
+        folder: controller.modelsFolderUrl
+        onAccepted: alphazeroController.select_metrics_file(fileUrl)
     }
 }
