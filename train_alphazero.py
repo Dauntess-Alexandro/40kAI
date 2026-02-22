@@ -32,6 +32,22 @@ from model.alphazero import (
 DEFAULT_MISSION_NAME = "only_war"
 
 
+def append_agent_log(line: str) -> None:
+    log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LOGS_FOR_AGENTS.md")
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    full_line = f"{timestamp} | {line}"
+    try:
+        with open(log_path, "a", encoding="utf-8") as log_file:
+            log_file.write(full_line + "\n")
+    except Exception as exc:
+        print(f"[ALPHAZERO][LOG][WARN] Не удалось записать LOGS_FOR_AGENTS.md: {exc}")
+
+
+def az_log(line: str) -> None:
+    print(line, flush=True)
+    append_agent_log(line)
+
+
 def _load_roster_config():
     config = {
         "totLifeT": 10,
@@ -244,6 +260,7 @@ def main() -> int:
     lr = float(os.getenv("AZ_LR", "1e-3"))
     checkpoint = os.getenv("AZ_RESUME_CHECKPOINT", "").strip()
 
+    az_log(f"[ALPHAZERO][START] episodes={num_episodes} sims={simulations} max_steps={max_steps} lr={lr}")
     env = _env_factory()
     obs, _ = env.reset()
     action_keys, action_sizes = action_space_layout(env.action_space)
@@ -251,7 +268,7 @@ def main() -> int:
 
     if checkpoint:
         net, meta = load_alphazero_checkpoint(checkpoint)
-        print(f"[ALPHAZERO] Резюмирую из {checkpoint}, epoch={meta['epoch']} step={meta['step']}")
+        az_log(f"[ALPHAZERO] Резюмирую из {checkpoint}, epoch={meta['epoch']} step={meta['step']}")
     else:
         net = AlphaZeroNet(obs_dim, action_sizes)
 
@@ -279,7 +296,7 @@ def main() -> int:
                     sim_env = safe_env_copy(env)
                     nxt, rew, term, trunc, _ = sim_env.step(to_action_dict(action_keys, action_tuple))
                 except Exception as exc:  # noqa: BLE001
-                    print(
+                    az_log(
                         "[ALPHAZERO][WARN] Невалидное действие в MCTS: "
                         f"{action_tuple}. Где: train_alphazero.py/rollout. Что делать: проверьте маски целей. Детали: {exc}"
                     )
@@ -292,7 +309,7 @@ def main() -> int:
 
             visits = mcts.search(root=MCTSNode(), action_priors=priors, rollout_fn=rollout)
             if not visits:
-                print("[ALPHAZERO][WARN] MCTS не нашёл действий. Где: train_alphazero.py/main. Что делать: проверьте action space.")
+                az_log("[ALPHAZERO][WARN] MCTS не нашёл действий. Где: train_alphazero.py/main. Что делать: проверьте action space.")
                 action_tuple = tuple(0 for _ in action_sizes)
                 visit_sum = 1
                 target_policy = torch.zeros(sum(action_sizes), dtype=torch.float32)
@@ -343,7 +360,7 @@ def main() -> int:
 
         avg_loss = total_loss / max(1, len(history))
         losses.append(avg_loss)
-        print(f"[ALPHAZERO][TRAIN] ep={ep} loss={avg_loss:.4f} reward={ep_reward:.3f} len={ep_len}")
+        az_log(f"[ALPHAZERO][TRAIN] ep={ep} loss={avg_loss:.4f} reward={ep_reward:.3f} len={ep_len}")
 
     run_id = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     ckpt = f"models/alphazero_model-{run_id}.pth"
@@ -353,8 +370,8 @@ def main() -> int:
         pickle.dump({"agent_type": "alphazero", "checkpoint": ckpt}, f)
 
     _write_metrics(run_id, losses, episodes)
-    print(f"[ALPHAZERO] Чекпойнт сохранён: {ckpt}")
-    print("Generated metrics")
+    az_log(f"[ALPHAZERO] Чекпойнт сохранён: {ckpt}")
+    az_log("[ALPHAZERO] Generated metrics")
     return 0
 
 
