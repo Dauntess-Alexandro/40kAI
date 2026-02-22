@@ -23,22 +23,45 @@ def _safe_float(value, fallback=None):
         return fallback
 
 
-def _read_log_tail(max_lines=30):
+def _read_log_tail(max_lines=30, max_bytes=65536):
     candidates = [
         os.path.join(os.getcwd(), "gui", "response.txt"),
         os.path.join(os.getcwd(), "response.txt"),
     ]
     for path in candidates:
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8", errors="ignore") as handle:
-                lines = [line.rstrip("\n") for line in handle.readlines()]
-                return lines[-max_lines:] if lines else []
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "rb") as handle:
+                handle.seek(0, os.SEEK_END)
+                file_size = handle.tell()
+                if file_size <= 0:
+                    return []
+
+                read_size = max(1, min(int(max_bytes), file_size))
+                handle.seek(-read_size, os.SEEK_END)
+                chunk = handle.read(read_size)
+            text = chunk.decode("utf-8", errors="ignore")
+            lines = text.splitlines()
+            if read_size < file_size and lines:
+                lines = lines[1:]
+            lines = [line.rstrip("\n") for line in lines]
+            return lines[-max_lines:] if lines else []
+        except OSError:
+            continue
     return []
 
 
-def _read_event_tail(max_events=2000):
+def _read_event_tail(default_max_events=500):
     recorder = get_event_recorder()
-    return recorder.snapshot(limit=max_events)
+    raw_limit = os.getenv("STATE_MODEL_EVENTS_LIMIT", str(default_max_events))
+    try:
+        limit = max(0, int(raw_limit))
+    except (TypeError, ValueError):
+        limit = default_max_events
+    if limit == 0:
+        return []
+    return recorder.snapshot(limit=limit)
 
 
 def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, anchor=None, model_positions=None):

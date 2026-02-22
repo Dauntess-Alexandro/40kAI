@@ -1057,6 +1057,10 @@ class Warhammer40kEnv(gym.Env):
         except (TypeError, ValueError):
             min_interval_ms = 120
 
+        # Для GUI по умолчанию делаем чуть более редкий flush, чтобы снизить I/O пики.
+        if bool(getattr(self, "playType", False)) and "STATE_FLUSH_MIN_INTERVAL_MS" not in os.environ:
+            min_interval_ms = max(min_interval_ms, 180)
+
         now = time.monotonic()
         min_interval_s = min_interval_ms / 1000.0
         if not force and min_interval_s > 0:
