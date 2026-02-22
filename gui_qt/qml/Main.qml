@@ -45,6 +45,7 @@ ApplicationWindow {
             TabButton { text: "Ростер" }
             TabButton { text: "Метрики модели" }
             TabButton { text: "Игра" }
+            TabButton { text: "Турнир" }
             TabButton { text: "Настройки" }
             TabButton { text: "Оценка" }
         }
@@ -1044,6 +1045,106 @@ ApplicationWindow {
             Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                Item {
+                    anchors.fill: parent
+                    anchors.margins: root.spacingLg
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: root.spacingMd
+
+                        Text {
+                            text: "Турнир self-play"
+                            font.pixelSize: Math.round(20 * root.uiScale)
+                            font.bold: true
+                        }
+
+                        GroupBox {
+                            title: "Источник данных"
+                            Layout.fillWidth: true
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: root.spacingSm
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: root.spacingSm
+
+                                    TextField {
+                                        id: tournamentPathField
+                                        Layout.fillWidth: true
+                                        text: controller.tournamentJsonPath
+                                        placeholderText: "Путь к tournament_results.json"
+                                        onEditingFinished: controller.set_tournament_json_path(text)
+                                    }
+
+                                    Button {
+                                        text: "Выбрать"
+                                        onClicked: tournamentJsonDialog.open()
+                                    }
+
+                                    Button {
+                                        text: "Обновить"
+                                        onClicked: {
+                                            controller.set_tournament_json_path(tournamentPathField.text)
+                                            controller.reload_tournament_data()
+                                        }
+                                    }
+                                }
+
+                                Label {
+                                    text: controller.tournamentStatus
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            spacing: root.spacingMd
+
+                            GroupBox {
+                                title: "Сетка (по раундам)"
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+
+                                ScrollView {
+                                    anchors.fill: parent
+                                    TextArea {
+                                        readOnly: true
+                                        wrapMode: TextArea.Wrap
+                                        text: controller.tournamentRoundsText
+                                    }
+                                }
+                            }
+
+                            GroupBox {
+                                title: "Рейтинг"
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+
+                                ListView {
+                                    anchors.fill: parent
+                                    model: controller.tournamentLeaderboardModel
+                                    clip: true
+                                    delegate: Label {
+                                        width: ListView.view ? ListView.view.width : 0
+                                        text: model.display
+                                        wrapMode: Text.WordWrap
+                                        padding: root.spacingXs
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 Label {
                     anchors.centerIn: parent
                     text: "Скоро"
@@ -1214,6 +1315,19 @@ ApplicationWindow {
         folder: controller.modelsFolderUrl
         nameFilters: ["Pickle Files (*.pickle)", "All Files (*)"]
         onAccepted: controller.select_eval_model(evalModelDialog.fileUrl)
+    }
+
+    Platform.FileDialog {
+        id: tournamentJsonDialog
+        title: "Выбрать JSON турнира"
+        folder: controller.modelsFolderUrl
+        nameFilters: ["JSON Files (*.json)", "All Files (*)"]
+        onAccepted: {
+            var localPath = tournamentJsonDialog.fileUrl
+            controller.set_tournament_json_path(localPath)
+            tournamentPathField.text = controller.tournamentJsonPath
+            controller.reload_tournament_data()
+        }
     }
 
     Dialog {

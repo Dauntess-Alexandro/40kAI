@@ -55,6 +55,9 @@ class GUIController(QtCore.QObject):
     disableTrainLoggingChanged = QtCore.Signal(bool)
     factionIconSizeChanged = QtCore.Signal(int)
     unitIconSizeChanged = QtCore.Signal(int)
+    tournamentStatusChanged = QtCore.Signal(str)
+    tournamentRoundsTextChanged = QtCore.Signal(str)
+    tournamentJsonPathChanged = QtCore.Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -108,6 +111,10 @@ class GUIController(QtCore.QObject):
         self._self_play_from_checkpoint = False
         self._resume_from_checkpoint = False
         self._disable_train_logging = False
+        self._tournament_json_path = os.path.join(self._repo_root, "tournament_results.json")
+        self._tournament_status = "Турнир: загрузка данных..."
+        self._tournament_rounds_text = ""
+        self._tournament_leaderboard_model = QtGui.QStandardItemModel(self)
 
         self._load_available_units()
         self._load_rosters_from_file()
@@ -115,6 +122,7 @@ class GUIController(QtCore.QObject):
         self._select_latest_metrics()
         self._select_latest_play_model(initial=True)
         self._select_latest_eval_model(initial=True)
+        self.reload_tournament_data()
         self._update_roster_summary()
 
         self._emit_status("Нажмите «Тренировка 8х» или «Самообучение», чтобы запустить обучение.")
@@ -250,6 +258,22 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(int, notify=unitIconSizeChanged)
     def unitIconSize(self) -> int:
         return self._icon_sizes["unit"]
+
+    @QtCore.Property(str, notify=tournamentStatusChanged)
+    def tournamentStatus(self) -> str:
+        return self._tournament_status
+
+    @QtCore.Property(str, notify=tournamentRoundsTextChanged)
+    def tournamentRoundsText(self) -> str:
+        return self._tournament_rounds_text
+
+    @QtCore.Property(str, notify=tournamentJsonPathChanged)
+    def tournamentJsonPath(self) -> str:
+        return self._tournament_json_path
+
+    @QtCore.Property(QtCore.QObject, constant=True)
+    def tournamentLeaderboardModel(self) -> QtCore.QObject:
+        return self._tournament_leaderboard_model
 
     def _load_icon_sizes_config(self) -> dict[str, int]:
         defaults = {"unit": 18, "faction": 18}
@@ -493,6 +517,95 @@ class GUIController(QtCore.QObject):
             return
         self._disable_train_logging = flag
         self.disableTrainLoggingChanged.emit(flag)
+
+    @QtCore.Slot(str)
+    def set_tournament_json_path(self, path: str) -> None:
+        normalized = (path or "").strip()
+        if normalized.startswith("file://"):
+            normalized = QtCore.QUrl(normalized).toLocalFile()
+        if not normalized:
+            normalized = os.path.join(self._repo_root, "tournament_results.json")
+        if normalized == self._tournament_json_path:
+            return
+        self._tournament_json_path = normalized
+        self.tournamentJsonPathChanged.emit(self._tournament_json_path)
+
+    @QtCore.Slot()
+    def reload_tournament_data(self) -> None:
+        self._tournament_leaderboard_model.clear()
+        path = self._tournament_json_path
+        if not os.path.exists(path):
+            self._tournament_status = (
+                "[ТУРНИР][WARN] Файл не найден. Где: gui_qt/main.py (reload_tournament_data). "
+                f"Что делать: создайте {path} или выберите другой JSON."
+            )
+            self._tournament_rounds_text = "Нет данных турнира."
+            self.tournamentStatusChanged.emit(self._tournament_status)
+            self.tournamentRoundsTextChanged.emit(self._tournament_rounds_text)
+            return
+
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError) as exc:
+            self._tournament_status = (
+                "[ТУРНИР][ERROR] Не удалось прочитать JSON. Где: gui_qt/main.py (reload_tournament_data). "
+                f"Что делать: проверьте формат JSON. Ошибка: {exc}"
+            )
+            self._tournament_rounds_text = "Ошибка чтения турнира."
+            self.tournamentStatusChanged.emit(self._tournament_status)
+            self.tournamentRoundsTextChanged.emit(self._tournament_rounds_text)
+            return
+
+        if not isinstance(payload, dict):
+            self._tournament_status = (
+                "[ТУРНИР][ERROR] Некорректная структура JSON. Где: gui_qt/main.py (reload_tournament_data). "
+                "Что делать: ожидается объект с полями rounds и leaderboard."
+            )
+            self._tournament_rounds_text = "Ошибка структуры турнира."
+            self.tournamentStatusChanged.emit(self._tournament_status)
+            self.tournamentRoundsTextChanged.emit(self._tournament_rounds_text)
+            return
+
+        rounds = payload.get("rounds", [])
+        leaderboard = payload.get("leaderboard", [])
+        updated_at = payload.get("updated_at", "—")
+
+        round_lines: list[str] = []
+        for round_idx, round_nodes in enumerate(rounds, start=1):
+            round_lines.append(f"Раунд {round_idx}:")
+            if not isinstance(round_nodes, list) or not round_nodes:
+                round_lines.append("  • пусто")
+                continue
+            for node in round_nodes:
+                if not isinstance(node, dict):
+                    continue
+                title = str(node.get("title", "TBD"))
+                score = str(node.get("score", ""))
+                score_suffix = f" ({score})" if score else ""
+                champion_mark = " 🏆" if bool(node.get("highlighted", False)) else ""
+                round_lines.append(f"  • {title}{score_suffix}{champion_mark}")
+
+        if not round_lines:
+            round_lines.append("Раунды не найдены.")
+
+        if isinstance(leaderboard, list):
+            for row in leaderboard:
+                if not isinstance(row, dict):
+                    continue
+                name = str(row.get("name", "—"))
+                elo = str(row.get("elo", "—"))
+                winrate = str(row.get("winrate", "—"))
+                vp_diff = str(row.get("vp_diff", "—"))
+                games = str(row.get("games", "—"))
+                item = QtGui.QStandardItem(f"{name} | ELO {elo} | WR {winrate} | VP {vp_diff} | G {games}")
+                item.setEditable(False)
+                self._tournament_leaderboard_model.appendRow(item)
+
+        self._tournament_status = f"Турнир загружен: {path} | updated_at={updated_at}"
+        self._tournament_rounds_text = "\n".join(round_lines)
+        self.tournamentStatusChanged.emit(self._tournament_status)
+        self.tournamentRoundsTextChanged.emit(self._tournament_rounds_text)
 
     @QtCore.Slot()
     def stop_process(self) -> None:
