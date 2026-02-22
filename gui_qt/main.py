@@ -56,8 +56,10 @@ class GUIController(QtCore.QObject):
     factionIconSizeChanged = QtCore.Signal(int)
     unitIconSizeChanged = QtCore.Signal(int)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, agent_kind: str = "dqn"):
         super().__init__(parent)
+        self._agent_kind = (agent_kind or "dqn").lower()
+        self._agent_label = "AlphaZero" if self._agent_kind == "alphazero" else "DQN"
         self._process: Optional[QtCore.QProcess] = None
         self._running = False
         self._repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -117,7 +119,7 @@ class GUIController(QtCore.QObject):
         self._select_latest_eval_model(initial=True)
         self._update_roster_summary()
 
-        self._emit_status("Нажмите «Тренировка 8х» или «Самообучение», чтобы запустить обучение.")
+        self._emit_status(f"[{self._agent_label}] Нажмите «Тренировка 8х» или «Самообучение», чтобы запустить обучение.")
 
     @QtCore.Property(QtCore.QObject, constant=True)
     def availableUnitsModel(self) -> QtCore.QObject:
@@ -547,7 +549,7 @@ class GUIController(QtCore.QObject):
         if not metrics_id:
             self._emit_status("Не удалось определить ID метрик из имени файла.")
             return
-        json_path = os.path.join(self._repo_root, "models", f"data_{metrics_id}.json")
+        json_path = os.path.join(self._repo_root, "models", f"{self._metrics_json_prefix()}{metrics_id}.json")
         if not os.path.exists(json_path):
             self._emit_status("Файл метрик не найден в models/.")
             self._emit_log(f"[GUI] metrics json не найден: {json_path}", level="WARN")
@@ -678,6 +680,8 @@ class GUIController(QtCore.QObject):
         self._set_eval_summary_text("Идёт оценка... Итог будет показан после завершения.")
 
         env = QtCore.QProcessEnvironment.systemEnvironment()
+        env.insert("PYTHONUTF8", "1")
+        env.insert("PYTHONIOENCODING", "utf-8")
         env.insert("FORCE_GREEDY", "1")
         env.insert("EVAL_EPSILON", "0")
         env.insert("PYTHONPATH", self._pythonpath_with_gym_mod())
@@ -860,21 +864,28 @@ class GUIController(QtCore.QObject):
         if not self._prepare_training_data():
             return
 
-        train_label = "TRAIN"
-        status_prefix = "Обучение"
-        env_overrides: dict[str, str] = {}
-        if mode == "train8":
-            train_label = "TRAIN8"
+        if self._agent_kind == "alphazero":
+            train_label = "ALPHAZERO"
+            status_prefix = "Обучение AlphaZero" if mode != "selfplay" else "Self-play AlphaZero"
+            env_overrides: dict[str, str] = {
+                "AZ_NUM_EPISODES": str(self._num_games),
+            }
+        else:
+            train_label = "TRAIN"
             status_prefix = "Обучение"
-            env_overrides["NUM_ENVS"] = "12"
-            env_overrides["USE_SUBPROC_ENVS"] = "1"
-        elif mode == "selfplay":
-            train_label = "SELFPLAY"
-            status_prefix = "Самообучение"
-            env_overrides["VEC_ENV_COUNT"] = "12"
-            env_overrides["SELF_PLAY_ENABLED"] = "1"
+            env_overrides: dict[str, str] = {}
+            if mode == "train8":
+                train_label = "TRAIN8"
+                status_prefix = "Обучение"
+                env_overrides["NUM_ENVS"] = "12"
+                env_overrides["USE_SUBPROC_ENVS"] = "1"
+            elif mode == "selfplay":
+                train_label = "SELFPLAY"
+                status_prefix = "Самообучение"
+                env_overrides["VEC_ENV_COUNT"] = "12"
+                env_overrides["SELF_PLAY_ENABLED"] = "1"
 
-        if mode == "selfplay" and self._self_play_from_checkpoint:
+        if self._agent_kind != "alphazero" and mode == "selfplay" and self._self_play_from_checkpoint:
             checkpoint_path = self._find_latest_checkpoint_file()
             if not checkpoint_path:
                 self._emit_status(
@@ -894,7 +905,10 @@ class GUIController(QtCore.QObject):
                     "Что делать: сохраните чекпойнт и запустите снова или снимите галочку resume."
                 )
                 return
-            env_overrides["RESUME_CHECKPOINT"] = resume_path
+            if self._agent_kind == "alphazero":
+                env_overrides["AZ_RESUME_CHECKPOINT"] = resume_path
+            else:
+                env_overrides["RESUME_CHECKPOINT"] = resume_path
             self._emit_log(f"[GUI] [RESUME] Использую чекпойнт: {resume_path}", level="INFO")
 
         self._emit_log(f"[GUI] Запуск {status_prefix.lower()}...", level="INFO")
@@ -904,6 +918,8 @@ class GUIController(QtCore.QObject):
         self._process.setWorkingDirectory(self._repo_root)
 
         env = QtCore.QProcessEnvironment.systemEnvironment()
+        env.insert("PYTHONUTF8", "1")
+        env.insert("PYTHONIOENCODING", "utf-8")
         if self._disable_train_logging:
             env.insert("TRAIN_LOG_ENABLED", "0")
             env.insert("TRAIN_LOG_TO_CONSOLE", "0")
@@ -947,7 +963,8 @@ class GUIController(QtCore.QObject):
             )
         self._emit_status(start_message)
 
-        script = self._script_path("train")
+        script_base = "train_alphazero" if self._agent_kind == "alphazero" else "train"
+        script = self._script_path(script_base)
         if self._is_windows:
             self._process.start("cmd", ["/c", script])
         else:
@@ -1048,6 +1065,8 @@ class GUIController(QtCore.QObject):
             "[TRAIN] Старт",
             "[SELFPLAY] Старт",
             "[TRAIN][START]",
+            "[ALPHAZERO]",
+            "[ALPHAZERO][TRAIN]",
             "[DEVICE CHECK]",
             "[RESUME]",
             "[metrics] saved:",
@@ -1122,9 +1141,9 @@ class GUIController(QtCore.QObject):
                 )
         else:
             if exit_status == QtCore.QProcess.ExitStatus.NormalExit:
-                self._emit_status("Обучение завершено.")
+                self._emit_status(f"[{self._agent_label}] Обучение завершено.")
             else:
-                self._emit_status("Обучение завершено с ошибкой.")
+                self._emit_status(f"[{self._agent_label}] Обучение завершено с ошибкой.")
             self._select_latest_metrics()
         self._cleanup_process()
 
@@ -1290,6 +1309,15 @@ class GUIController(QtCore.QObject):
             return latest
         return "None"
 
+    def _model_pickle_prefix(self) -> str:
+        return "alphazero_model-" if self._agent_kind == "alphazero" else "model-"
+
+    def _checkpoint_prefix(self) -> str:
+        return "alphazero_model-" if self._agent_kind == "alphazero" else "checkpoint_ep"
+
+    def _metrics_json_prefix(self) -> str:
+        return "alphazero_data_" if self._agent_kind == "alphazero" else "data_"
+
     def _pythonpath_with_gym_mod(self) -> str:
         gym_mod_path = os.path.join(self._repo_root, "gym_mod")
         env_path = os.environ.get("PYTHONPATH", "")
@@ -1379,10 +1407,9 @@ class GUIController(QtCore.QObject):
 
     def _extract_metrics_id(self, path: str) -> str:
         base = os.path.basename(path)
-        match = re.search(r"model-(\d+-\d+)\.pickle$", base)
-        if match:
-            return match.group(1)
-        match = re.search(r"model-(-?\d+)\.pickle$", base)
+        model_prefix = self._model_pickle_prefix()
+        pattern = rf"{re.escape(model_prefix)}(\d{{8}}-\d{{6}}|\d+-\d+|-?\d+)\.pickle$"
+        match = re.search(pattern, base)
         if match:
             return match.group(1)
         tail = path[-16:-7]
@@ -1415,7 +1442,7 @@ class GUIController(QtCore.QObject):
         if latest_model:
             metrics_id = self._extract_metrics_id(latest_model)
             if metrics_id:
-                json_path = os.path.join(self._repo_root, "models", f"data_{metrics_id}.json")
+                json_path = os.path.join(self._repo_root, "models", f"{self._metrics_json_prefix()}{metrics_id}.json")
                 if os.path.exists(json_path) and self._load_metrics_from_json(json_path):
                     self._metrics_label = f"Файл: {os.path.basename(latest_model)}"
                     self.metricsLabelChanged.emit(self._metrics_label)
@@ -1440,7 +1467,7 @@ class GUIController(QtCore.QObject):
             for name in files:
                 if not name.endswith(".pickle"):
                     continue
-                if "model-" not in name:
+                if not name.startswith(self._model_pickle_prefix()):
                     continue
                 path = os.path.join(root, name)
                 try:
@@ -1460,7 +1487,8 @@ class GUIController(QtCore.QObject):
         latest_mtime = -1.0
         for root, _, files in os.walk(models_path):
             for name in files:
-                if not name.startswith("checkpoint_ep"):
+                prefix = self._checkpoint_prefix()
+                if not name.startswith(prefix):
                     continue
                 if not name.endswith(".pth"):
                     continue
@@ -1548,7 +1576,8 @@ class GUIController(QtCore.QObject):
         latest_mtime = -1.0
         for root, _, files in os.walk(models_path):
             for name in files:
-                if not (name.startswith("model-") and name.endswith(".pth")):
+                prefix = "alphazero_model-" if self._agent_kind == "alphazero" else "model-"
+                if not (name.startswith(prefix) and name.endswith(".pth")):
                     continue
                 path = os.path.join(root, name)
                 try:
@@ -1567,7 +1596,7 @@ class GUIController(QtCore.QObject):
         latest_path = None
         latest_mtime = -1.0
         for name in os.listdir(models_path):
-            if not (name.startswith("data_") and name.endswith(".json")):
+            if not (name.startswith(self._metrics_json_prefix()) and name.endswith(".json")):
                 continue
             path = os.path.join(models_path, name)
             try:
@@ -1733,8 +1762,10 @@ def main() -> int:
 
     engine = QtQml.QQmlApplicationEngine()
 
-    controller = GUIController()
+    controller = GUIController(agent_kind="dqn")
+    alphazeroController = GUIController(agent_kind="alphazero")
     engine.rootContext().setContextProperty("controller", controller)
+    engine.rootContext().setContextProperty("alphazeroController", alphazeroController)
 
     qml_path = os.path.join(os.path.dirname(__file__), "qml", "Main.qml")
     engine.load(QtCore.QUrl.fromLocalFile(qml_path))
