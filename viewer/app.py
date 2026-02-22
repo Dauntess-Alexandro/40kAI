@@ -625,9 +625,30 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 self.add_log_line(
                     f"REQ: shooter changed Unit {previous_label}->Unit {shooter_label}, target reset"
                 )
-            self._last_shooter_id = shooter_id
+        self._last_shooter_id = shooter_id
         self._reset_target_selection()
+        if getattr(request, "kind", "") == "choice" and getattr(request, "options", None):
+            self._set_confirm_enabled(True)
+            self._sync_target_from_choice()
+            return
         self._set_confirm_enabled(False)
+
+    def _sync_target_from_choice(self) -> None:
+        if not self._is_target_request(self._pending_request):
+            return
+        option = self.choice_combo.currentText().strip()
+        if not option:
+            self._current_target_id = None
+            self.map_scene.clear_target_selection()
+            return
+        try:
+            target_id = int(option)
+        except ValueError:
+            self._current_target_id = None
+            self.map_scene.clear_target_selection()
+            return
+        self._current_target_id = target_id
+        self.map_scene.set_target_unit(target_id)
 
     def _reset_target_selection(self) -> None:
         self._current_target_id = None
@@ -765,6 +786,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._submit_answer(text)
 
     def _submit_choice(self):
+        self._sync_target_from_choice()
         if self._is_target_request(self._pending_request) and self._current_target_id is None:
             return
         value = self.choice_combo.currentText()
