@@ -1044,8 +1044,12 @@ class Warhammer40kEnv(gym.Env):
         else:
             enabled = bool(getattr(self, "playType", False))
 
-        if not enabled and not force:
-            return False
+        if not enabled:
+            if not force:
+                return False
+            allow_force_train = str(os.getenv("STATE_FLUSH_ALLOW_FORCE_IN_TRAIN", "0")).strip().lower()
+            if allow_force_train not in {"1", "true", "yes", "on"}:
+                return False
 
         min_interval_ms = 120
         try:
@@ -4735,7 +4739,8 @@ class Warhammer40kEnv(gym.Env):
         self._sync_model_positions_to_anchors()
         # Принудительный flush в узловых точках (конец шага/фазы).
         if not self._flush_state_snapshot(reason="updateBoard", force=True):
-            write_state_json(self)
+            if bool(getattr(self, "playType", False)):
+                write_state_json(self)
 
     def returnBoard(self):
         return self.board
