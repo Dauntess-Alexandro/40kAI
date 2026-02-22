@@ -6,9 +6,65 @@ import re
 import os
 import threading
 import queue
+import atexit
+import time
 
 
 LOG_DEFAULT_PATH = os.path.join(os.getcwd(), "gui", "response.txt")
+
+
+class _AsyncLogWriter:
+    def __init__(self) -> None:
+        self._queue: queue.Queue = queue.Queue(maxsize=10000)
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._worker, name="game-io-log-writer", daemon=True)
+        self._thread.start()
+
+    def submit(self, path: str, message: str) -> None:
+        if message is None:
+            return
+        try:
+            self._queue.put_nowait((path, message.rstrip("\n") + "\n"))
+        except queue.Full:
+            # Не блокируем игровой поток из-за переполнения очереди логов.
+            return
+
+    def _worker(self) -> None:
+        batch_size = max(1, int(os.getenv("GUI_LOG_BATCH_SIZE", "32") or "32"))
+        flush_interval = max(0.05, float(os.getenv("GUI_LOG_FLUSH_INTERVAL_SEC", "0.20") or "0.20"))
+        pending: dict[str, list[str]] = {}
+        last_flush = time.monotonic()
+
+        while not self._stop.is_set() or not self._queue.empty():
+            timeout = max(0.01, flush_interval - (time.monotonic() - last_flush))
+            try:
+                path, payload = self._queue.get(timeout=timeout)
+                pending.setdefault(path, []).append(payload)
+            except queue.Empty:
+                pass
+
+            buffered = sum(len(lines) for lines in pending.values())
+            should_flush = buffered >= batch_size or (time.monotonic() - last_flush) >= flush_interval
+            if not should_flush or not pending:
+                continue
+
+            for path, lines in pending.items():
+                try:
+                    os.makedirs(os.path.dirname(path), exist_ok=True)
+                    with open(path, "a", encoding="utf-8") as handle:
+                        handle.writelines(lines)
+                except OSError:
+                    continue
+            pending.clear()
+            last_flush = time.monotonic()
+
+    def shutdown(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=1.0)
+
+
+_ASYNC_LOG_WRITER = _AsyncLogWriter()
+atexit.register(_ASYNC_LOG_WRITER.shutdown)
 
 
 @dataclass
@@ -73,6 +129,11 @@ def _append_log_line(message: str, path: Optional[str] = None) -> None:
     if message is None:
         return
     log_path = path or LOG_DEFAULT_PATH
+    async_enabled = os.getenv("GUI_LOG_ASYNC_WRITE", "1") == "1"
+    if async_enabled:
+        _ASYNC_LOG_WRITER.submit(log_path, message)
+        return
+
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     with open(log_path, "a", encoding="utf-8") as handle:
         handle.write(message.rstrip("\n") + "\n")

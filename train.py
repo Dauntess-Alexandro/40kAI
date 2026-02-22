@@ -13,6 +13,8 @@ import random
 import matplotlib.pyplot as plt
 import time
 import multiprocessing as mp
+import threading
+import atexit
 from tqdm import tqdm
 from gym_mod.envs.warhamEnv import *
 from gym_mod.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
@@ -94,6 +96,10 @@ PIN_MEMORY = os.getenv("PIN_MEMORY", "0") == "1"
 USE_AMP = os.getenv("USE_AMP", "1") == "1"
 USE_COMPILE = os.getenv("USE_COMPILE", "0") == "1"
 SAVE_EVERY = int(os.getenv("SAVE_EVERY", "0"))
+SAVE_EVERY_MIN = max(1, int(os.getenv("SAVE_EVERY_MIN", "50")))
+SAVE_EVERY_ALLOW_LOW = os.getenv("SAVE_EVERY_ALLOW_LOW", "0") == "1"
+if SAVE_EVERY > 0 and SAVE_EVERY < SAVE_EVERY_MIN and not SAVE_EVERY_ALLOW_LOW:
+    SAVE_EVERY = SAVE_EVERY_MIN
 RESUME_CHECKPOINT = os.getenv("RESUME_CHECKPOINT", "").strip()
 # Параллелизм через subprocess (только без self-play, маски считаются в воркерах).
 USE_SUBPROC_ENVS = os.getenv("USE_SUBPROC_ENVS", "0") == "1"
@@ -469,14 +475,43 @@ def save_training_summary(run_id: str, model_tag: str, ep_rows: list[dict], elap
     print(f"[results] запись в {results_path}: {summary_line}")
 
 def append_agent_log(line: str) -> None:
-    log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LOGS_FOR_AGENTS.md")
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    full_line = f"{timestamp} | {line}"
+    full_line = f"{timestamp} | {line}\n"
+    with _TRAIN_LOG_LOCK:
+        _TRAIN_LOG_BUFFER.append(full_line)
+    _flush_agent_log_buffer(force=False)
+
+
+_TRAIN_LOG_BUFFER: list[str] = []
+_TRAIN_LOG_LOCK = threading.Lock()
+_TRAIN_LOG_LAST_FLUSH = time.monotonic()
+
+
+def _flush_agent_log_buffer(force: bool = False) -> None:
+    global _TRAIN_LOG_LAST_FLUSH
+    max_lines = max(1, int(os.getenv("TRAIN_LOG_BUFFER_LINES", "64") or "64"))
+    flush_interval = max(0.1, float(os.getenv("TRAIN_LOG_FLUSH_INTERVAL_SEC", "1.0") or "1.0"))
+
+    with _TRAIN_LOG_LOCK:
+        now = time.monotonic()
+        if not force and len(_TRAIN_LOG_BUFFER) < max_lines and (now - _TRAIN_LOG_LAST_FLUSH) < flush_interval:
+            return
+        lines = list(_TRAIN_LOG_BUFFER)
+        _TRAIN_LOG_BUFFER.clear()
+        _TRAIN_LOG_LAST_FLUSH = now
+
+    if not lines:
+        return
+
+    log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LOGS_FOR_AGENTS.md")
     try:
         with open(log_path, "a", encoding="utf-8") as log_file:
-            log_file.write(full_line + "\n")
+            log_file.writelines(lines)
     except Exception as exc:
         print(f"[LOG][WARN] Не удалось записать LOGS_FOR_AGENTS.md: {exc}")
+
+
+atexit.register(lambda: _flush_agent_log_buffer(force=True))
 
 def _env_worker(conn, roster_config, b_len, b_hei, trunc):
     try:
@@ -1876,6 +1911,8 @@ def main():
     else:
         for ctx in env_contexts:
             ctx["env"].close()
+
+    _flush_agent_log_buffer(force=True)
     
     if os.path.isfile("gui/data.json"):
         initFile.delFile()
