@@ -784,6 +784,12 @@ ApplicationWindow {
                                     text: "Средняя награда по ходу обучения."
                                     wrapMode: Text.WordWrap
                                 }
+
+                                Label {
+                                    text: controller.rewardSummary
+                                    wrapMode: Text.WordWrap
+                                    color: "#666666"
+                                }
                             }
                         }
 
@@ -819,6 +825,12 @@ ApplicationWindow {
                                 Label {
                                     text: "Динамика функции потерь."
                                     wrapMode: Text.WordWrap
+                                }
+
+                                Label {
+                                    text: controller.lossSummary
+                                    wrapMode: Text.WordWrap
+                                    color: "#666666"
                                 }
                             }
                         }
@@ -856,6 +868,12 @@ ApplicationWindow {
                                     text: "Сколько ходов длится партия."
                                     wrapMode: Text.WordWrap
                                 }
+
+                                Label {
+                                    text: controller.epLenSummary
+                                    wrapMode: Text.WordWrap
+                                    color: "#666666"
+                                }
                             }
                         }
 
@@ -891,6 +909,12 @@ ApplicationWindow {
                                 Label {
                                     text: "Доля побед модели по играм."
                                     wrapMode: Text.WordWrap
+                                }
+
+                                Label {
+                                    text: controller.winrateSummary
+                                    wrapMode: Text.WordWrap
+                                    color: "#666666"
                                 }
                             }
                         }
@@ -928,6 +952,12 @@ ApplicationWindow {
                                     text: "Разница очков победы между сторонами."
                                     wrapMode: Text.WordWrap
                                 }
+
+                                Label {
+                                    text: controller.vpDiffSummary
+                                    wrapMode: Text.WordWrap
+                                    color: "#666666"
+                                }
                             }
                         }
 
@@ -964,6 +994,21 @@ ApplicationWindow {
                                     text: "Почему эпизоды завершались."
                                     wrapMode: Text.WordWrap
                                 }
+                            }
+                        }
+                    }
+                    GroupBox {
+                        title: "Состояние модели"
+                        Layout.fillWidth: true
+
+                        ScrollView {
+                            anchors.fill: parent
+
+                            TextArea {
+                                text: controller.modelStateText
+                                readOnly: true
+                                wrapMode: Text.WordWrap
+                                selectByMouse: true
                             }
                         }
                     }

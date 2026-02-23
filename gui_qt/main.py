@@ -1,4 +1,5 @@
 import ast
+import csv
 import json
 import os
 import re
@@ -42,6 +43,7 @@ class GUIController(QtCore.QObject):
     missionChanged = QtCore.Signal(str)
     metricsChanged = QtCore.Signal()
     metricsLabelChanged = QtCore.Signal(str)
+    metricsSummaryChanged = QtCore.Signal()
     playModelPathChanged = QtCore.Signal(str)
     playModelLabelChanged = QtCore.Signal(str)
     evalModelPathChanged = QtCore.Signal(str)
@@ -95,6 +97,15 @@ class GUIController(QtCore.QObject):
         self._metrics_paths = self._build_metrics_paths(self._metrics_files, cache_token=self._cache_token())
         self._metrics_mtimes: dict[str, Optional[float]] = {}
         self._metrics_label = "По умолчанию"
+        self._metrics_run_id = ""
+        self._metric_summary_texts = {
+            "reward": "Текущее: — | Среднее: — | Мин: — | Макс: —",
+            "loss": "Текущее: — | Среднее: — | Мин: — | Макс: —",
+            "epLen": "Текущее: — | Среднее: — | Мин: — | Макс: —",
+            "winrate": "Текущее: — | Среднее: — | Мин: — | Макс: —",
+            "vpdiff": "Текущее: — | Среднее: — | Мин: — | Макс: —",
+        }
+        self._model_state_text = "Нет данных о состоянии модели."
 
         self._play_model_path = ""
         self._play_model_label = "Модель не выбрана"
@@ -194,6 +205,30 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=metricsLabelChanged)
     def metricsLabel(self) -> str:
         return self._metrics_label
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def rewardSummary(self) -> str:
+        return self._metric_summary_texts["reward"]
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def lossSummary(self) -> str:
+        return self._metric_summary_texts["loss"]
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def epLenSummary(self) -> str:
+        return self._metric_summary_texts["epLen"]
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def winrateSummary(self) -> str:
+        return self._metric_summary_texts["winrate"]
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def vpDiffSummary(self) -> str:
+        return self._metric_summary_texts["vpdiff"]
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def modelStateText(self) -> str:
+        return self._model_state_text
 
     @QtCore.Property(str, notify=playModelPathChanged)
     def playModelPath(self) -> str:
@@ -1407,7 +1442,9 @@ class GUIController(QtCore.QObject):
             "vpdiff": self._resolve_metric_path(payload.get("vpdiff"), self._metrics_defaults["vpdiff"]),
             "endreasons": self._resolve_metric_path(payload.get("endreasons"), self._metrics_defaults["endreasons"]),
         }
+        self._metrics_run_id = self._extract_run_id_from_path(json_path)
         self._set_metrics_files(updated)
+        self._refresh_metrics_summaries()
         return True
 
     def _select_latest_metrics(self) -> bool:
@@ -1427,8 +1464,167 @@ class GUIController(QtCore.QObject):
             return True
         self._set_metrics_files(dict(self._metrics_defaults))
         self._metrics_label = "По умолчанию"
+        self._metrics_run_id = ""
+        self._refresh_metrics_summaries()
         self.metricsLabelChanged.emit(self._metrics_label)
         return False
+
+    def _extract_run_id_from_path(self, path: str) -> str:
+        base = os.path.basename(path)
+        match = re.search(r"_(\d+)\.json$", base)
+        if match:
+            return match.group(1)
+        return ""
+
+    def _format_metric_summary(self, values: list[float], percent: bool = False) -> str:
+        if not values:
+            return "Текущее: — | Среднее: — | Мин: — | Макс: —"
+        current = values[-1]
+        avg = sum(values) / len(values)
+        min_value = min(values)
+        max_value = max(values)
+        if percent:
+            return (
+                f"Текущее: {current * 100:.2f}% | Среднее: {avg * 100:.2f}% | "
+                f"Мин: {min_value * 100:.2f}% | Макс: {max_value * 100:.2f}%"
+            )
+        return (
+            f"Текущее: {current:.4f} | Среднее: {avg:.4f} | "
+            f"Мин: {min_value:.4f} | Макс: {max_value:.4f}"
+        )
+
+    def _find_stats_csv_for_run(self) -> Optional[str]:
+        metrics_dir = os.path.join(self._repo_root, "metrics")
+        if not os.path.isdir(metrics_dir):
+            return None
+        if self._metrics_run_id:
+            exact = os.path.join(metrics_dir, f"stats_{self._metrics_run_id}.csv")
+            if os.path.exists(exact):
+                return exact
+        latest_path = None
+        latest_mtime = -1.0
+        for name in os.listdir(metrics_dir):
+            if not (name.startswith("stats_") and name.endswith(".csv")):
+                continue
+            path = os.path.join(metrics_dir, name)
+            try:
+                mtime = os.path.getmtime(path)
+            except OSError:
+                continue
+            if mtime > latest_mtime:
+                latest_mtime = mtime
+                latest_path = path
+        return latest_path
+
+    def _parse_training_counters(self) -> tuple[int, int, int, int]:
+        total_episodes = 0
+        results_path = os.path.join(self._repo_root, "results.txt")
+        if os.path.exists(results_path):
+            try:
+                with open(results_path, "r", encoding="utf-8") as handle:
+                    for line in handle:
+                        match = re.search(r"эпизоды=(\d+)", line)
+                        if match:
+                            total_episodes += int(match.group(1))
+            except OSError:
+                pass
+
+        snapshot_episodes = 0
+        fixed_episodes = 0
+        logs_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS.md")
+        if os.path.exists(logs_path):
+            try:
+                with open(logs_path, "r", encoding="utf-8") as handle:
+                    for line in handle:
+                        if "[SELFPLAY] enabled=1 mode=snapshot" in line:
+                            snapshot_episodes += 1
+                        elif "[SELFPLAY] enabled=1 mode=fixed_checkpoint" in line:
+                            fixed_episodes += 1
+            except OSError:
+                pass
+
+        selfplay_total = snapshot_episodes + fixed_episodes
+        heuristic_episodes = max(total_episodes - selfplay_total, 0)
+        return total_episodes, heuristic_episodes, snapshot_episodes, fixed_episodes
+
+    def _extract_latest_resume_meta(self) -> dict[str, str]:
+        values = {
+            "global_step": "—",
+            "optimize_steps": "—",
+            "episode": "—",
+            "replay_size": "—",
+            "eps": "—",
+        }
+        logs_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS.md")
+        if not os.path.exists(logs_path):
+            return values
+        try:
+            with open(logs_path, "r", encoding="utf-8") as handle:
+                for line in handle:
+                    if "[RESUME] loaded:" not in line:
+                        continue
+                    for key, raw_value in re.findall(r"(global_step|optimize_steps|episode|replay_size|eps)=([^\s]+)", line):
+                        values[key] = raw_value
+        except OSError:
+            return values
+        return values
+
+    def _refresh_metrics_summaries(self) -> None:
+        defaults = {
+            "reward": "Текущее: — | Среднее: — | Мин: — | Макс: —",
+            "loss": "Текущее: — | Среднее: — | Мин: — | Макс: —",
+            "epLen": "Текущее: — | Среднее: — | Мин: — | Макс: —",
+            "winrate": "Текущее: — | Среднее: — | Мин: — | Макс: —",
+            "vpdiff": "Текущее: — | Среднее: — | Мин: — | Макс: —",
+        }
+        summaries = dict(defaults)
+        csv_path = self._find_stats_csv_for_run()
+        rows: list[dict[str, str]] = []
+        if csv_path and os.path.exists(csv_path):
+            try:
+                with open(csv_path, "r", encoding="utf-8") as handle:
+                    reader = csv.DictReader(handle)
+                    rows = list(reader)
+            except (OSError, csv.Error):
+                rows = []
+
+        if rows:
+            rewards = [float(r.get("ep_reward", 0.0) or 0.0) for r in rows]
+            ep_len = [float(r.get("ep_len", 0.0) or 0.0) for r in rows]
+            vp_diff = [float(r.get("vp_diff", 0.0) or 0.0) for r in rows]
+            wins = [1.0 if (r.get("result") or "").strip() == "win" else 0.0 for r in rows]
+            losses = []
+            for idx in range(1, len(rows) + 1):
+                loss_match = re.search(r"loss=([\d\.eE+-]+)", rows[idx - 1].get("loss", ""))
+                if loss_match:
+                    losses.append(float(loss_match.group(1)))
+
+            summaries["reward"] = self._format_metric_summary(rewards)
+            summaries["epLen"] = self._format_metric_summary(ep_len)
+            summaries["vpdiff"] = self._format_metric_summary(vp_diff)
+            summaries["winrate"] = self._format_metric_summary(wins, percent=True)
+            if losses:
+                summaries["loss"] = self._format_metric_summary(losses)
+
+        total, heuristic, snapshot, fixed = self._parse_training_counters()
+        resume = self._extract_latest_resume_meta()
+        model_state = (
+            "Эпизоды\n"
+            f"• Всего: {total}\n"
+            f"• Против эвристики: {heuristic}\n"
+            f"• Self-play snapshot: {snapshot}\n"
+            f"• Self-play fixed: {fixed}\n\n"
+            "Состояние модели\n"
+            f"• global_step: {resume['global_step']}\n"
+            f"• optimize_steps: {resume['optimize_steps']}\n"
+            f"• episode: {resume['episode']}\n"
+            f"• replay_size: {resume['replay_size']}\n"
+            f"• eps: {resume['eps']}"
+        )
+
+        self._metric_summary_texts = summaries
+        self._model_state_text = model_state
+        self.metricsSummaryChanged.emit()
 
     def _find_latest_model_file(self) -> Optional[str]:
         models_path = os.path.join(self._repo_root, "models")
