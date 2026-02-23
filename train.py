@@ -296,7 +296,7 @@ def _extract_policy_state_dict(checkpoint):
     return None
 
 
-def _resume_from_checkpoint(policy_net, target_net, optimizer, checkpoint_path: str) -> None:
+def _resume_from_checkpoint(policy_net, target_net, optimizer, memory, checkpoint_path: str) -> dict:
     if not os.path.isfile(checkpoint_path):
         err_msg = (
             "[RESUME][ERROR] Не найден чекпойнт. "
@@ -370,14 +370,61 @@ def _resume_from_checkpoint(policy_net, target_net, optimizer, checkpoint_path: 
         print(warn_msg)
         append_agent_log(warn_msg)
 
+    restored_global_step = 0
+    restored_optimize_steps = 0
+    restored_episode = 0
+    if isinstance(checkpoint, dict):
+        restored_global_step = int(checkpoint.get("global_step", 0) or 0)
+        restored_optimize_steps = int(checkpoint.get("optimize_steps", 0) or 0)
+        restored_episode = int(checkpoint.get("episode", 0) or 0)
+
+    replay_loaded = 0
+    replay_state = checkpoint.get("replay_memory") if isinstance(checkpoint, dict) else None
+    if replay_state is not None:
+        try:
+            replay_loaded = int(memory.load_state_dict(replay_state) or 0)
+        except Exception as exc:
+            warn_msg = (
+                "[RESUME][WARN] Не удалось загрузить replay buffer. "
+                "Где: train.py (_resume_from_checkpoint/memory.load_state_dict). "
+                "Что делать: обучение продолжится с пустым буфером; проверьте совместимость формата. "
+                f"Детали: {exc}"
+            )
+            print(warn_msg)
+            append_agent_log(warn_msg)
+    else:
+        warn_msg = (
+            "[RESUME][WARN] В чекпойнте нет replay buffer state. "
+            "Где: train.py (_resume_from_checkpoint). "
+            "Что делать: обучение продолжится с пустым буфером; "
+            "для полного resume сохраняйте replay_memory в checkpoint."
+        )
+        print(warn_msg)
+        append_agent_log(warn_msg)
+
+    decay_steps = max(1.0, float(EPS_DECAY))
+    eps_progress = min(float(restored_global_step) / decay_steps, 1.0)
+    eps_at_resume = EPS_START + (EPS_END - EPS_START) * eps_progress
+
     ok_line = f"[RESUME] loaded checkpoint={checkpoint_path}"
     details_line = (
-        f"[RESUME] loaded: policy={policy_loaded} target={target_loaded} optimizer={optimizer_loaded}"
+        "[RESUME] loaded: "
+        f"policy={policy_loaded} target={target_loaded} optimizer={optimizer_loaded} "
+        f"global_step={restored_global_step} optimize_steps={restored_optimize_steps} "
+        f"episode={restored_episode} replay_size={replay_loaded} eps={eps_at_resume:.4f}"
     )
     print(ok_line)
     print(details_line)
     append_agent_log(ok_line)
     append_agent_log(details_line)
+
+    return {
+        "global_step": restored_global_step,
+        "optimize_steps": restored_optimize_steps,
+        "episode": restored_episode,
+        "replay_size": replay_loaded,
+        "epsilon": float(eps_at_resume),
+    }
 
 def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
     os.makedirs(metrics_dir, exist_ok=True)
@@ -506,7 +553,8 @@ def _flush_agent_log_buffer(force: bool = False) -> None:
     if not lines:
         return
 
-    log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LOGS_FOR_AGENTS.md")
+    script_path = globals().get("__file__") or sys.argv[0] or "train.py"
+    log_path = os.path.join(os.path.dirname(os.path.abspath(script_path)), "LOGS_FOR_AGENTS.md")
     try:
         with open(log_path, "a", encoding="utf-8") as log_file:
             log_file.writelines(lines)
@@ -911,7 +959,6 @@ def main():
     subproc_envs = []
     subproc_conns = []
     
-    numLifeT = 0
     
     verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
     log_fn = print if verbose else None
@@ -1068,8 +1115,21 @@ def main():
     target_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
     optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
 
+    replay_capacity = int(os.getenv("REPLAY_CAPACITY", "100000"))
+    if PER_ENABLED:
+        memory = PrioritizedReplayMemory(replay_capacity, alpha=PER_ALPHA, eps=PER_EPS)
+    else:
+        memory = ReplayMemory(replay_capacity)
+
+    resume_meta = {
+        "global_step": 0,
+        "optimize_steps": 0,
+        "episode": 0,
+        "replay_size": 0,
+        "epsilon": float(EPS_START),
+    }
     if RESUME_CHECKPOINT:
-        _resume_from_checkpoint(policy_net, target_net, optimizer, RESUME_CHECKPOINT)
+        resume_meta = _resume_from_checkpoint(policy_net, target_net, optimizer, memory, RESUME_CHECKPOINT)
     else:
         target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
 
@@ -1148,11 +1208,6 @@ def main():
             opponent_policy_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
     
     scaler = torch.cuda.amp.GradScaler(enabled=USE_AMP)
-    replay_capacity = int(os.getenv("REPLAY_CAPACITY", "100000"))
-    if PER_ENABLED:
-        memory = PrioritizedReplayMemory(replay_capacity, alpha=PER_ALPHA, eps=PER_EPS)
-    else:
-        memory = ReplayMemory(replay_capacity)
     
     def opponent_policy(obs, env, len_model):
         if opponent_policy_net is None:
@@ -1223,8 +1278,8 @@ def main():
     metrics_obj = metrics(fold, randNum, date)
     ep_rows = [] 
     
-    global_step = 0
-    optimize_steps = 0
+    global_step = int(resume_meta.get("global_step", 0) or 0)
+    optimize_steps = int(resume_meta.get("optimize_steps", 0) or 0)
     perf_stats = {
         "action_select_s": 0.0,
         "enemy_turn_s": 0.0,
@@ -1239,6 +1294,15 @@ def main():
         "updates": 0,
         "reward_clipped": 0,
     }
+    resume_episode_base = int(resume_meta.get("episode", 0) or 0)
+    numLifeT = 0
+    if RESUME_CHECKPOINT:
+        append_agent_log(
+            "[RESUME] Параметры продолжения: "
+            f"path={RESUME_CHECKPOINT}, episode_base={resume_episode_base}, global_step={global_step}, "
+            f"optimize_steps={optimize_steps}, replay_size={int(resume_meta.get('replay_size', 0) or 0)}, "
+            f"eps_at_resume={float(resume_meta.get('epsilon', EPS_START)):.4f}"
+        )
     primary_env_unwrapped = unwrap_env(primary_ctx["env"]) if not USE_SUBPROC_ENVS else None
     if primary_env_unwrapped is not None:
         initial_model_hp = float(sum(getattr(primary_env_unwrapped, "unit_health", [])))
@@ -1627,8 +1691,9 @@ def main():
                 if trunc is False:
                     print("Restarting...")
                 numLifeT += 1
-                if SAVE_EVERY > 0 and numLifeT % SAVE_EVERY == 0:
-                    checkpoint_path = f"models/{safe_name}/checkpoint_ep{numLifeT}.pth"
+                total_episode = resume_episode_base + numLifeT
+                if SAVE_EVERY > 0 and total_episode % SAVE_EVERY == 0:
+                    checkpoint_path = f"models/{safe_name}/checkpoint_ep{total_episode}.pth"
                     os.makedirs(f"models/{safe_name}", exist_ok=True)
                     with IO_PROFILER.timed("checkpoint save"):
                         torch.save(
@@ -1637,21 +1702,25 @@ def main():
                                 "target_net": target_net.state_dict(),
                                 "net_type": NET_TYPE,
                                 "optimizer": optimizer.state_dict(),
+                                "global_step": int(global_step),
+                                "optimize_steps": int(optimize_steps),
+                                "episode": int(total_episode),
+                                "replay_memory": memory.state_dict(),
                             },
                             checkpoint_path,
                         )
                     if TRAIN_LOG_ENABLED:
-                        save_line = f"[TRAIN][SAVE] ep={numLifeT} path={checkpoint_path}"
+                        save_line = f"[TRAIN][SAVE] ep={total_episode} path={checkpoint_path}"
                         if TRAIN_LOG_TO_FILE:
                             append_agent_log(save_line)
                         if TRAIN_LOG_TO_CONSOLE:
                             print(save_line)
     
                 if SELF_PLAY_ENABLED and SELF_PLAY_OPPONENT_MODE == "snapshot":
-                    if numLifeT % SELF_PLAY_UPDATE_EVERY_EPISODES == 0:
+                    if total_episode % SELF_PLAY_UPDATE_EVERY_EPISODES == 0:
                         opponent_policy_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
                         append_agent_log(
-                            f"[SELFPLAY] opponent snapshot updated at episode {numLifeT}"
+                            f"[SELFPLAY] opponent snapshot updated at episode {total_episode}"
                         )
     
                 if USE_SUBPROC_ENVS:
@@ -1851,12 +1920,19 @@ def main():
     os.makedirs(fold, exist_ok=True)
 
     with IO_PROFILER.timed("checkpoint save"):
-        torch.save({
-            "policy_net": policy_net.state_dict(),
-            "target_net": target_net.state_dict(),
-            "net_type": NET_TYPE,
-            'optimizer': optimizer.state_dict(),}
-            , ("models/{}/model-{}.pth".format(safe_name, date)))
+        torch.save(
+            {
+                "policy_net": policy_net.state_dict(),
+                "target_net": target_net.state_dict(),
+                "net_type": NET_TYPE,
+                "optimizer": optimizer.state_dict(),
+                "global_step": int(global_step),
+                "optimize_steps": int(optimize_steps),
+                "episode": int(resume_episode_base + numLifeT),
+                "replay_memory": memory.state_dict(),
+            },
+            ("models/{}/model-{}.pth".format(safe_name, date)),
+        )
     train_elapsed_s = time.perf_counter() - train_start_time
     model_tag = f"{safe_name}/model-{date}"
     save_training_summary(

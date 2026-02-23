@@ -241,8 +241,10 @@ def optimize_model(
     state_batch = torch.cat(state_tensors, dim=0)  # [B, n_obs]
 
     # ---- action_batch / reward_batch (на тот же dev!) ----
-    action_batch = _to_device(torch.cat(batch.action)).long()  # индексы ОБЯЗАТЕЛЬНО long и на dev
-    reward_batch = _to_device(torch.cat(batch.reward)).float().view(-1)  # [B]
+    action_tensors = [_to_device(a) for a in batch.action]
+    reward_tensors = [_to_device(r) for r in batch.reward]
+    action_batch = torch.cat(action_tensors).long()  # индексы ОБЯЗАТЕЛЬНО long и на dev
+    reward_batch = torch.cat(reward_tensors).float().view(-1)  # [B]
     n_step_batch = torch.tensor(batch.n_step, device=dev, dtype=torch.float32)  # [B]
 
     # ---- next states ----

@@ -5,6 +5,27 @@ import threading
 
 Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward', 'n_step', 'next_shoot_mask'))
 
+
+def _to_cpu_if_tensor(value):
+    if hasattr(value, "detach") and hasattr(value, "cpu"):
+        try:
+            return value.detach().cpu()
+        except Exception:
+            return value
+    return value
+
+
+def _normalize_transition_cpu(transition):
+    if isinstance(transition, Transition):
+        items = list(transition)
+    elif isinstance(transition, (tuple, list)) and len(transition) == len(Transition._fields):
+        items = list(transition)
+    else:
+        return None
+    for i in range(len(items)):
+        items[i] = _to_cpu_if_tensor(items[i])
+    return Transition(*items)
+
 class ReplayMemory(object):
 
     def __init__(self, capacity):
@@ -41,6 +62,28 @@ class ReplayMemory(object):
         return result
 
     def __len__(self):
+        return len(self.memory)
+
+    def state_dict(self):
+        with self._lock:
+            return {
+                "type": "replay",
+                "capacity": int(self.memory.maxlen or 0),
+                "items": list(self.memory),
+            }
+
+    def load_state_dict(self, state):
+        if not isinstance(state, dict):
+            return 0
+        items = state.get("items")
+        if not isinstance(items, list):
+            return 0
+        with self._lock:
+            self.memory.clear()
+            for item in items[-(self.memory.maxlen or len(items)):]:
+                transition = _normalize_transition_cpu(item)
+                if transition is not None:
+                    self.memory.append(transition)
         return len(self.memory)
 
 
@@ -156,4 +199,67 @@ class PrioritizedReplayMemory(object):
                     self.max_priority = value
 
     def __len__(self):
+        return self.size
+
+    def state_dict(self):
+        with self._lock:
+            ordered_items = []
+            for idx in range(self.size):
+                item = self.memory[idx]
+                if item is not None:
+                    ordered_items.append(item)
+            priorities = []
+            for idx in range(self.size):
+                priorities.append(float(self.sum_tree[idx + self.tree_size]))
+            return {
+                "type": "prioritized",
+                "capacity": int(self.capacity),
+                "alpha": float(self.alpha),
+                "eps": float(self.eps),
+                "items": ordered_items,
+                "priorities_alpha": priorities,
+                "max_priority": float(self.max_priority),
+            }
+
+    def load_state_dict(self, state):
+        if not isinstance(state, dict):
+            return 0
+        items = state.get("items")
+        priorities_alpha = state.get("priorities_alpha")
+        if not isinstance(items, list):
+            return 0
+        with self._lock:
+            self.memory = [None] * self.capacity
+            self.size = 0
+            self.pos = 0
+            self.max_priority = 1.0
+            self.sum_tree.fill(0.0)
+            self.min_tree.fill(np.inf)
+
+            max_items = min(len(items), self.capacity)
+            for idx in range(max_items):
+                item = items[idx]
+                transition = _normalize_transition_cpu(item)
+                if transition is None:
+                    continue
+                self.memory[idx] = transition
+                p_alpha = 1.0
+                if isinstance(priorities_alpha, list) and idx < len(priorities_alpha):
+                    try:
+                        p_alpha = float(priorities_alpha[idx])
+                    except (TypeError, ValueError):
+                        p_alpha = 1.0
+                if p_alpha <= 0.0:
+                    p_alpha = float(self.eps) ** float(self.alpha)
+                self._set_leaf(idx, p_alpha)
+                self.size += 1
+
+            self.pos = self.size % self.capacity if self.capacity > 0 else 0
+            try:
+                self.max_priority = float(state.get("max_priority", 1.0))
+            except (TypeError, ValueError):
+                self.max_priority = 1.0
+            if self.max_priority < self.eps:
+                self.max_priority = self.eps
+
         return self.size
