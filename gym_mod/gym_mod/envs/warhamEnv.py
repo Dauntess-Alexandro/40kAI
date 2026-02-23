@@ -1044,14 +1044,22 @@ class Warhammer40kEnv(gym.Env):
         else:
             enabled = bool(getattr(self, "playType", False))
 
-        if not enabled and not force:
-            return False
+        if not enabled:
+            if not force:
+                return False
+            allow_force_train = str(os.getenv("STATE_FLUSH_ALLOW_FORCE_IN_TRAIN", "0")).strip().lower()
+            if allow_force_train not in {"1", "true", "yes", "on"}:
+                return False
 
         min_interval_ms = 120
         try:
             min_interval_ms = max(0, int(os.getenv("STATE_FLUSH_MIN_INTERVAL_MS", "120")))
         except (TypeError, ValueError):
             min_interval_ms = 120
+
+        # Для GUI по умолчанию делаем чуть более редкий flush, чтобы снизить I/O пики.
+        if bool(getattr(self, "playType", False)) and "STATE_FLUSH_MIN_INTERVAL_MS" not in os.environ:
+            min_interval_ms = max(min_interval_ms, 180)
 
         now = time.monotonic()
         min_interval_s = min_interval_ms / 1000.0
@@ -1172,6 +1180,12 @@ class Warhammer40kEnv(gym.Env):
             for i in range(len(self.enemy_health))
         ]
         self._sync_model_positions_to_anchors()
+
+    def _sync_after_command_phase_reanimation(self, side: str) -> None:
+        # Reanimation меняет суммарный HP; синхронизируем пулы/позиции и сразу обновляем state.json.
+        self._init_model_state_from_health()
+        self._sync_model_positions_to_anchors()
+        self._flush_state_snapshot(reason=f"command_phase_reanimation:{side}", force=True)
 
     def _coherency_required_neighbors(self, alive_models: int) -> int:
         if alive_models >= 7:
@@ -4729,7 +4743,8 @@ class Warhammer40kEnv(gym.Env):
         self._sync_model_positions_to_anchors()
         # Принудительный flush в узловых точках (конец шага/фазы).
         if not self._flush_state_snapshot(reason="updateBoard", force=True):
-            write_state_json(self)
+            if bool(getattr(self, "playType", False)):
+                write_state_json(self)
 
     def returnBoard(self):
         return self.board

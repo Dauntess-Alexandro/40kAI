@@ -1,8 +1,11 @@
 import json
 import os
+import tempfile
+import time
 from datetime import datetime
 
 from gym_mod.engine.event_bus import get_event_recorder
+from gym_mod.engine.io_profiler import get_io_profiler
 
 
 DEFAULT_STATE_PATH = os.path.join(os.getcwd(), "gui", "state.json")
@@ -22,22 +25,45 @@ def _safe_float(value, fallback=None):
         return fallback
 
 
-def _read_log_tail(max_lines=30):
+def _read_log_tail(max_lines=30, max_bytes=65536):
     candidates = [
         os.path.join(os.getcwd(), "gui", "response.txt"),
         os.path.join(os.getcwd(), "response.txt"),
     ]
     for path in candidates:
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8", errors="ignore") as handle:
-                lines = [line.rstrip("\n") for line in handle.readlines()]
-                return lines[-max_lines:] if lines else []
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "rb") as handle:
+                handle.seek(0, os.SEEK_END)
+                file_size = handle.tell()
+                if file_size <= 0:
+                    return []
+
+                read_size = max(1, min(int(max_bytes), file_size))
+                handle.seek(-read_size, os.SEEK_END)
+                chunk = handle.read(read_size)
+            text = chunk.decode("utf-8", errors="ignore")
+            lines = text.splitlines()
+            if read_size < file_size and lines:
+                lines = lines[1:]
+            lines = [line.rstrip("\n") for line in lines]
+            return lines[-max_lines:] if lines else []
+        except OSError:
+            continue
     return []
 
 
-def _read_event_tail(max_events=2000):
+def _read_event_tail(default_max_events=500):
     recorder = get_event_recorder()
-    return recorder.snapshot(limit=max_events)
+    raw_limit = os.getenv("STATE_MODEL_EVENTS_LIMIT", str(default_max_events))
+    try:
+        limit = max(0, int(raw_limit))
+    except (TypeError, ValueError):
+        limit = default_max_events
+    if limit == 0:
+        return []
+    return recorder.snapshot(limit=limit)
 
 
 def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, anchor=None, model_positions=None):
@@ -63,6 +89,7 @@ def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, ancho
 
 
 def write_state_json(env, path=None):
+    io_profiler = get_io_profiler()
     state_path = path or os.getenv("STATE_JSON_PATH", DEFAULT_STATE_PATH)
     os.makedirs(os.path.dirname(state_path), exist_ok=True)
 
@@ -128,12 +155,48 @@ def write_state_json(env, path=None):
             "attacker": getattr(env, "attacker_side", None),
             "defender": getattr(env, "defender_side", None),
         },
-        "log_tail": _read_log_tail(),
-        "model_events": _read_event_tail(),
+        "payload_kind": "light",
         "generated_at": datetime.utcnow().isoformat() + "Z",
     }
 
-    with open(state_path, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
+    payload_mode = str(os.getenv("STATE_PAYLOAD_MODE", "auto")).strip().lower()
+    include_full_payload = payload_mode in {"full", "always"}
+    if payload_mode in {"auto", "", "default"}:
+        interval_ms = max(0, _safe_int(os.getenv("STATE_FULL_PAYLOAD_INTERVAL_MS", "1000"), 1000) or 1000)
+        last_full_ts = float(getattr(env, "_state_payload_last_full_ts", 0.0) or 0.0)
+        now_ts = time.monotonic()
+        include_full_payload = (now_ts - last_full_ts) >= (interval_ms / 1000.0)
+        if include_full_payload:
+            env._state_payload_last_full_ts = now_ts
+
+    if include_full_payload:
+        payload["payload_kind"] = "full"
+        payload["log_tail"] = _read_log_tail()
+        payload["model_events"] = _read_event_tail()
+
+    state_dir = os.path.dirname(state_path)
+    temp_path = None
+    try:
+        with io_profiler.timed("state export"):
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=state_dir,
+                delete=False,
+                prefix="state.",
+                suffix=".tmp",
+            ) as handle:
+                temp_path = handle.name
+                json.dump(payload, handle, ensure_ascii=False, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+
+            os.replace(temp_path, state_path)
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
 
     return payload
