@@ -1521,7 +1521,7 @@ class GUIController(QtCore.QObject):
         results_path = os.path.join(self._repo_root, "results.txt")
         if os.path.exists(results_path):
             try:
-                with open(results_path, "r", encoding="utf-8") as handle:
+                with open(results_path, "r", encoding="utf-8", errors="replace") as handle:
                     for line in handle:
                         match = re.search(r"эпизоды=(\d+)", line)
                         if match:
@@ -1534,7 +1534,7 @@ class GUIController(QtCore.QObject):
         logs_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS.md")
         if os.path.exists(logs_path):
             try:
-                with open(logs_path, "r", encoding="utf-8") as handle:
+                with open(logs_path, "r", encoding="utf-8", errors="replace") as handle:
                     for line in handle:
                         if "[SELFPLAY] enabled=1 mode=snapshot" in line:
                             snapshot_episodes += 1
@@ -1559,7 +1559,7 @@ class GUIController(QtCore.QObject):
         if not os.path.exists(logs_path):
             return values
         try:
-            with open(logs_path, "r", encoding="utf-8") as handle:
+            with open(logs_path, "r", encoding="utf-8", errors="replace") as handle:
                 for line in handle:
                     if "[RESUME] loaded:" not in line:
                         continue
@@ -1582,7 +1582,7 @@ class GUIController(QtCore.QObject):
         rows: list[dict[str, str]] = []
         if csv_path and os.path.exists(csv_path):
             try:
-                with open(csv_path, "r", encoding="utf-8") as handle:
+                with open(csv_path, "r", encoding="utf-8", errors="replace") as handle:
                     reader = csv.DictReader(handle)
                     rows = list(reader)
             except (OSError, csv.Error):
