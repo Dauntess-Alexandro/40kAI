@@ -1,4 +1,5 @@
 import ast
+import csv
 import json
 import os
 import re
@@ -29,6 +30,12 @@ class UnitInfo:
     default_count: int
 
 
+
+
+def datetime_stamp() -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
+
 class GUIController(QtCore.QObject):
     logLine = QtCore.Signal(str)
     statusChanged = QtCore.Signal(str)
@@ -42,6 +49,7 @@ class GUIController(QtCore.QObject):
     missionChanged = QtCore.Signal(str)
     metricsChanged = QtCore.Signal()
     metricsLabelChanged = QtCore.Signal(str)
+    runtimeStateChanged = QtCore.Signal()
     playModelPathChanged = QtCore.Signal(str)
     playModelLabelChanged = QtCore.Signal(str)
     evalModelPathChanged = QtCore.Signal(str)
@@ -95,6 +103,12 @@ class GUIController(QtCore.QObject):
         self._metrics_paths = self._build_metrics_paths(self._metrics_files, cache_token=self._cache_token())
         self._metrics_mtimes: dict[str, Optional[float]] = {}
         self._metrics_label = "По умолчанию"
+        self._runtime_state_path = os.path.join(self._repo_root, "metrics", "train_runtime_state.json")
+        self._runtime_source = "нет данных"
+        self._runtime_model_summary = "н/д"
+        self._runtime_modes_summary = "н/д"
+        self._runtime_metrics_summary = "н/д"
+        self._runtime_last_source_key = ""
 
         self._play_model_path = ""
         self._play_model_label = "Модель не выбрана"
@@ -113,11 +127,17 @@ class GUIController(QtCore.QObject):
         self._load_rosters_from_file()
         self._refresh_models()
         self._select_latest_metrics()
+        self._refresh_runtime_state_summary(force_log=True)
         self._select_latest_play_model(initial=True)
         self._select_latest_eval_model(initial=True)
         self._update_roster_summary()
 
         self._emit_status("Нажмите «Тренировка 8х» или «Самообучение», чтобы запустить обучение.")
+
+        self._runtime_timer = QtCore.QTimer(self)
+        self._runtime_timer.setInterval(1000)
+        self._runtime_timer.timeout.connect(self._refresh_runtime_state_summary)
+        self._runtime_timer.start()
 
     @QtCore.Property(QtCore.QObject, constant=True)
     def availableUnitsModel(self) -> QtCore.QObject:
@@ -194,6 +214,22 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=metricsLabelChanged)
     def metricsLabel(self) -> str:
         return self._metrics_label
+
+    @QtCore.Property(str, notify=runtimeStateChanged)
+    def runtimeSource(self) -> str:
+        return self._runtime_source
+
+    @QtCore.Property(str, notify=runtimeStateChanged)
+    def runtimeModelSummary(self) -> str:
+        return self._runtime_model_summary
+
+    @QtCore.Property(str, notify=runtimeStateChanged)
+    def runtimeModesSummary(self) -> str:
+        return self._runtime_modes_summary
+
+    @QtCore.Property(str, notify=runtimeStateChanged)
+    def runtimeMetricsSummary(self) -> str:
+        return self._runtime_metrics_summary
 
     @QtCore.Property(str, notify=playModelPathChanged)
     def playModelPath(self) -> str:
@@ -1578,6 +1614,253 @@ class GUIController(QtCore.QObject):
                 latest_mtime = mtime
                 latest_path = path
         return latest_path
+
+    def _refresh_runtime_state_summary(self, force_log: bool = False) -> None:
+        payload, source = self._load_runtime_summary_payload()
+        model_text, modes_text, metrics_text = self._render_runtime_summary(payload)
+
+        source_key = f"{source}|{payload.get('updated_at', 'n/a') if isinstance(payload, dict) else 'n/a'}"
+        if force_log or source_key != self._runtime_last_source_key:
+            self._runtime_last_source_key = source_key
+            self._emit_log(f"[GUI][STATE] Источник состояния: {source}.")
+
+        changed = False
+        if self._runtime_source != source:
+            self._runtime_source = source
+            changed = True
+        if self._runtime_model_summary != model_text:
+            self._runtime_model_summary = model_text
+            changed = True
+        if self._runtime_modes_summary != modes_text:
+            self._runtime_modes_summary = modes_text
+            changed = True
+        if self._runtime_metrics_summary != metrics_text:
+            self._runtime_metrics_summary = metrics_text
+            changed = True
+        if changed:
+            self.runtimeStateChanged.emit()
+
+    def _load_runtime_summary_payload(self) -> tuple[dict, str]:
+        runtime_payload = self._read_json_safely(self._runtime_state_path)
+        if runtime_payload:
+            active = bool(runtime_payload.get("training_active"))
+            source = "runtime state (активная тренировка)" if active else "runtime state (последний сохранённый)"
+            return runtime_payload, source
+
+        fallback = self._build_summary_from_fallback_files()
+        if fallback:
+            return fallback, "fallback (metrics/results)"
+        return {}, "данные не найдены"
+
+    def _read_json_safely(self, path: str) -> dict:
+        if not os.path.exists(path):
+            return {}
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            if isinstance(payload, dict):
+                return payload
+        except (OSError, json.JSONDecodeError) as exc:
+            self._emit_log(
+                "[GUI][WARN] Не удалось прочитать runtime state. "
+                "Где: gui_qt/main.py (_read_json_safely). "
+                f"Что делать: дождитесь следующей записи или проверьте JSON. Детали: {exc}",
+                level="WARN",
+            )
+        return {}
+
+    def _build_summary_from_fallback_files(self) -> dict:
+        csv_path = self._find_latest_stats_csv()
+        rows = self._load_stats_rows(csv_path) if csv_path else []
+        if not rows:
+            return self._build_summary_from_results_txt()
+
+        mode_counts = {"heuristic": 0, "selfplay_snapshot": 0, "selfplay_fixed": 0, "unknown": 0}
+        for row in rows:
+            mode = str(row.get("opponent_mode") or "unknown")
+            if mode not in mode_counts:
+                mode = "unknown"
+            mode_counts[mode] += 1
+
+        def agg(values: list[float]) -> dict:
+            if not values:
+                return {"count": 0, "mean": None, "min": None, "max": None, "latest": None}
+            return {
+                "count": len(values),
+                "mean": sum(values) / len(values),
+                "min": min(values),
+                "max": max(values),
+                "latest": values[-1],
+            }
+
+        rewards = [v for v in (self._to_float(r.get("ep_reward")) for r in rows) if v is not None]
+        ep_lens = [v for v in (self._to_float(r.get("ep_len")) for r in rows) if v is not None]
+        vp_diffs = [v for v in (self._to_float(r.get("vp_diff")) for r in rows) if v is not None]
+        wins = [1.0 if str(r.get("result") or "").strip().lower() == "win" else 0.0 for r in rows]
+
+        return {
+            "updated_at": datetime_stamp(),
+            "training_active": False,
+            "counters": {
+                "total_episodes": len(rows),
+                "episode": len(rows),
+            },
+            "episodes_by_mode": mode_counts,
+            "metric_aggregates": {
+                "winrate": agg(wins),
+                "vp_diff": agg(vp_diffs),
+                "reward": agg(rewards),
+                "ep_len": agg(ep_lens),
+            },
+        }
+
+    def _build_summary_from_results_txt(self) -> dict:
+        results_path = os.path.join(self._repo_root, "results.txt")
+        if not os.path.exists(results_path):
+            return {}
+        try:
+            with open(results_path, "r", encoding="utf-8") as handle:
+                lines = [line.strip() for line in handle if line.strip()]
+        except OSError:
+            return {}
+        if not lines:
+            return {}
+        pairs = {}
+        for token in lines[-1].split():
+            if "=" in token:
+                key, value = token.split("=", 1)
+                pairs[key.strip()] = value.strip()
+
+        episodes = int(self._to_float(pairs.get("эпизоды")) or 0)
+        winrate_mean = self._to_float(pairs.get("winrate_mean"))
+        vp_diff_mean = self._to_float(pairs.get("vp_diff_mean"))
+        reward_mean = self._to_float(pairs.get("reward_mean"))
+        ep_len_mean = self._to_float(pairs.get("ep_len_mean"))
+        return {
+            "updated_at": datetime_stamp(),
+            "training_active": False,
+            "counters": {"total_episodes": episodes, "episode": episodes},
+            "episodes_by_mode": {"heuristic": 0, "selfplay_snapshot": 0, "selfplay_fixed": 0, "unknown": episodes},
+            "metric_aggregates": {
+                "winrate": {"count": episodes, "mean": winrate_mean, "min": None, "max": None, "latest": None},
+                "vp_diff": {"count": episodes, "mean": vp_diff_mean, "min": None, "max": None, "latest": None},
+                "reward": {"count": episodes, "mean": reward_mean, "min": None, "max": None, "latest": None},
+                "ep_len": {"count": episodes, "mean": ep_len_mean, "min": None, "max": None, "latest": None},
+            },
+        }
+
+    def _find_latest_stats_csv(self) -> Optional[str]:
+        metrics_path = os.path.join(self._repo_root, "metrics")
+        if not os.path.isdir(metrics_path):
+            return None
+        latest_path = None
+        latest_mtime = -1.0
+        for name in os.listdir(metrics_path):
+            if not (name.startswith("stats_") and name.endswith(".csv")):
+                continue
+            path = os.path.join(metrics_path, name)
+            try:
+                mtime = os.path.getmtime(path)
+            except OSError:
+                continue
+            if mtime > latest_mtime:
+                latest_mtime = mtime
+                latest_path = path
+        return latest_path
+
+    def _load_stats_rows(self, path: str) -> list[dict]:
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                return [row for row in csv.DictReader(handle)]
+        except (OSError, csv.Error) as exc:
+            self._emit_log(
+                "[GUI][WARN] Не удалось прочитать stats CSV. "
+                "Где: gui_qt/main.py (_load_stats_rows). "
+                f"Что делать: проверьте файл метрик. Детали: {exc}",
+                level="WARN",
+            )
+            return []
+
+    def _render_runtime_summary(self, payload: dict) -> tuple[str, str, str]:
+        counters = payload.get("counters", {}) if isinstance(payload, dict) else {}
+        params = payload.get("params", {}) if isinstance(payload, dict) else {}
+        mode_counts = payload.get("episodes_by_mode", {}) if isinstance(payload, dict) else {}
+        agg = payload.get("metric_aggregates", {}) if isinstance(payload, dict) else {}
+
+        model_lines = [
+            f"Эпизодов всего: {self._fmt_int(counters.get('total_episodes'))}",
+            f"global_step: {self._fmt_int(counters.get('global_step'))}",
+            f"optimize_steps: {self._fmt_int(counters.get('optimize_steps'))}",
+            f"replay_size: {self._fmt_int(counters.get('replay_size'))}",
+            f"epsilon (текущий/оценочный): {self._fmt_float(counters.get('epsilon_current'), 4)} / {self._fmt_float(counters.get('epsilon_estimated'), 4)}",
+            f"episode (абсолютный): {self._fmt_int(counters.get('episode'))}",
+            f"warmup_steps: {self._fmt_int(counters.get('warmup_steps'))}",
+            f"updates_per_step: {self._fmt_float(counters.get('updates_per_step'), 2)}",
+            f"PER / n_step / batch: {self._fmt_bool(params.get('per_enabled'))} / {self._fmt_int(params.get('n_step'))} / {self._fmt_int(params.get('batch_size'))}",
+            f"gamma / lr / num_envs: {self._fmt_float(params.get('gamma'), 4)} / {self._fmt_float(params.get('lr'), 6)} / {self._fmt_int(counters.get('num_envs'))}",
+        ]
+
+        modes_lines = [
+            f"heuristic: {self._fmt_int(mode_counts.get('heuristic'))}",
+            f"self-play snapshot: {self._fmt_int(mode_counts.get('selfplay_snapshot'))}",
+            f"self-play fixed checkpoint: {self._fmt_int(mode_counts.get('selfplay_fixed'))}",
+            f"unknown: {self._fmt_int(mode_counts.get('unknown'))}",
+        ]
+
+        metrics_lines = [
+            f"winrate: {self._fmt_agg(agg.get('winrate'), percent=True)}",
+            f"vp_diff: {self._fmt_agg(agg.get('vp_diff'))}",
+            f"reward: {self._fmt_agg(agg.get('reward'))}",
+            f"ep_len: {self._fmt_agg(agg.get('ep_len'))}",
+            f"loss: {self._fmt_agg(agg.get('loss'))}",
+        ]
+        return "\n".join(model_lines), "\n".join(modes_lines), "\n".join(metrics_lines)
+
+    def _fmt_int(self, value) -> str:
+        if value is None:
+            return "н/д"
+        try:
+            return f"{int(value):,}".replace(",", " ")
+        except (TypeError, ValueError):
+            return "н/д"
+
+    def _fmt_float(self, value, digits: int = 2) -> str:
+        if value is None:
+            return "н/д"
+        try:
+            return f"{float(value):.{digits}f}"
+        except (TypeError, ValueError):
+            return "н/д"
+
+    def _fmt_bool(self, value) -> str:
+        if value is None:
+            return "н/д"
+        return "вкл" if bool(value) else "выкл"
+
+    def _fmt_agg(self, block: dict, percent: bool = False) -> str:
+        if not isinstance(block, dict) or int(block.get("count", 0) or 0) <= 0:
+            return "н/д"
+        mean_val = self._fmt_percent(block.get("mean")) if percent else self._fmt_float(block.get("mean"), 3)
+        min_val = self._fmt_percent(block.get("min")) if percent else self._fmt_float(block.get("min"), 3)
+        max_val = self._fmt_percent(block.get("max")) if percent else self._fmt_float(block.get("max"), 3)
+        latest_val = self._fmt_percent(block.get("latest")) if percent else self._fmt_float(block.get("latest"), 3)
+        return f"mean {mean_val} | min {min_val} | max {max_val} | latest {latest_val}"
+
+    def _fmt_percent(self, value) -> str:
+        if value is None:
+            return "н/д"
+        try:
+            return f"{float(value) * 100.0:.1f}%"
+        except (TypeError, ValueError):
+            return "н/д"
+
+    def _to_float(self, value) -> Optional[float]:
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     def _create_roster_entry(self, unit: UnitInfo) -> RosterEntry:
         entry = RosterEntry(name=unit.name, count=unit.default_count, instance_id=str(self._instance_counter))

@@ -432,7 +432,19 @@ def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
 
     # --- CSV ---
     csv_path = os.path.join(metrics_dir, f"stats_{run_id}.csv")
-    cols = ["episode", "ep_reward", "ep_len", "turn", "model_vp", "player_vp", "vp_diff", "result", "end_reason", "end_code"]
+    cols = [
+        "episode",
+        "ep_reward",
+        "ep_len",
+        "turn",
+        "model_vp",
+        "player_vp",
+        "vp_diff",
+        "result",
+        "end_reason",
+        "end_code",
+        "opponent_mode",
+    ]
     with IO_PROFILER.timed("metrics save"):
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=cols)
@@ -491,6 +503,123 @@ def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
     plt.close()
 
     print(f"[metrics] saved: {csv_path}")
+
+
+def _atomic_write_json(path: str, payload: dict) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp_path, path)
+
+
+def _numeric_aggregates(values: list[float]) -> dict:
+    if not values:
+        return {"count": 0, "mean": None, "min": None, "max": None, "latest": None}
+    return {
+        "count": len(values),
+        "mean": float(sum(values) / len(values)),
+        "min": float(min(values)),
+        "max": float(max(values)),
+        "latest": float(values[-1]),
+    }
+
+
+def build_runtime_state_summary(
+    *,
+    training_active: bool,
+    run_id: str,
+    safe_name: str,
+    global_step: int,
+    optimize_steps: int,
+    replay_size: int,
+    epsilon_current: float,
+    epsilon_estimated: float,
+    total_episode: int,
+    runtime_episode_completed: int,
+    opponent_mode: str,
+    ep_rows: list[dict],
+    losses: list[float],
+    vec_env_count: int,
+) -> dict:
+    mode_counts = Counter()
+    for row in ep_rows:
+        mode = str(row.get("opponent_mode") or "unknown")
+        mode_counts[mode] += 1
+
+    reward_values = [float(r.get("ep_reward", 0.0)) for r in ep_rows if r.get("ep_reward") is not None]
+    ep_len_values = [float(r.get("ep_len", 0.0)) for r in ep_rows if r.get("ep_len") is not None]
+    vp_diff_values = [float(r.get("vp_diff", 0.0)) for r in ep_rows if r.get("vp_diff") is not None]
+    turn_values = [float(r.get("turn", 0.0)) for r in ep_rows if r.get("turn") is not None]
+    win_values = [1.0 if r.get("result") == "win" else 0.0 for r in ep_rows]
+
+    return {
+        "version": 1,
+        "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "training_active": bool(training_active),
+        "run_id": str(run_id),
+        "model_tag": str(safe_name),
+        "counters": {
+            "total_episodes": int(total_episode),
+            "runtime_episode_completed": int(runtime_episode_completed),
+            "global_step": int(global_step),
+            "optimize_steps": int(optimize_steps),
+            "replay_size": int(replay_size),
+            "episode": int(total_episode),
+            "epsilon_current": float(epsilon_current),
+            "epsilon_estimated": float(epsilon_estimated),
+            "warmup_steps": int(WARMUP_STEPS),
+            "updates_per_step": int(UPDATES_PER_STEP),
+            "num_envs": int(vec_env_count),
+        },
+        "params": {
+            "per_enabled": bool(PER_ENABLED),
+            "per_alpha": float(PER_ALPHA),
+            "per_beta_start": float(PER_BETA_START),
+            "per_beta_frames": int(PER_BETA_FRAMES),
+            "n_step": int(N_STEP),
+            "batch_size": int(BATCH_SIZE),
+            "gamma": float(GAMMA),
+            "lr": float(LR),
+            "tau": float(TAU),
+            "double_dqn_enabled": bool(DOUBLE_DQN_ENABLED),
+            "dueling_enabled": bool(DUELING_ENABLED),
+            "self_play_enabled": bool(SELF_PLAY_ENABLED),
+            "self_play_opponent_mode": str(opponent_mode),
+        },
+        "episodes_by_mode": {
+            "heuristic": int(mode_counts.get("heuristic", 0)),
+            "selfplay_snapshot": int(mode_counts.get("selfplay_snapshot", 0)),
+            "selfplay_fixed": int(mode_counts.get("selfplay_fixed", 0)),
+            "unknown": int(mode_counts.get("unknown", 0)),
+        },
+        "metric_aggregates": {
+            "winrate": _numeric_aggregates(win_values),
+            "vp_diff": _numeric_aggregates(vp_diff_values),
+            "reward": _numeric_aggregates(reward_values),
+            "ep_len": _numeric_aggregates(ep_len_values),
+            "turn": _numeric_aggregates(turn_values),
+            "loss": _numeric_aggregates([float(v) for v in losses]),
+        },
+    }
+
+
+def persist_runtime_state(path: str, payload: dict) -> bool:
+    try:
+        _atomic_write_json(path, payload)
+        return True
+    except OSError as exc:
+        warn_line = (
+            "[TRAIN][WARN] Не удалось сохранить runtime state. "
+            "Где: train.py (persist_runtime_state). "
+            "Что делать: проверьте права на запись в metrics/. "
+            f"Детали: {exc}"
+        )
+        print(warn_line)
+        append_agent_log(warn_line)
+        return False
 
 def save_training_summary(run_id: str, model_tag: str, ep_rows: list[dict], elapsed_s: float, results_path: str = "results.txt") -> None:
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -954,6 +1083,24 @@ def main():
         warn_msg = "[WARN] USE_SUBPROC_ENVS=1: рендер в subprocess env недоступен, рендер будет пропущен."
         print(warn_msg)
         append_agent_log(warn_msg)
+
+    runtime_state_path = os.path.join("metrics", "train_runtime_state.json")
+    runtime_state_flush_sec = max(0.5, float(os.getenv("RUNTIME_STATE_FLUSH_SEC", "2.0")))
+    last_runtime_state_flush = 0.0
+
+    if SELF_PLAY_ENABLED:
+        if SELF_PLAY_OPPONENT_MODE == "fixed_checkpoint":
+            runtime_opponent_mode = "selfplay_fixed"
+        else:
+            runtime_opponent_mode = "selfplay_snapshot"
+    else:
+        runtime_opponent_mode = "heuristic"
+
+    append_agent_log(
+        "[TRAIN][STATE] Runtime state включён: "
+        f"path={runtime_state_path}, flush_sec={runtime_state_flush_sec:.1f}, "
+        f"opponent_mode={runtime_opponent_mode}"
+    )
     
     env_contexts = []
     subproc_envs = []
@@ -1276,7 +1423,7 @@ def main():
     fileName = fold+"/model-"+date+".pickle"
     randNum = np.random.randint(0, 10000000)
     metrics_obj = metrics(fold, randNum, date)
-    ep_rows = [] 
+    ep_rows = []
     
     global_step = int(resume_meta.get("global_step", 0) or 0)
     optimize_steps = int(resume_meta.get("optimize_steps", 0) or 0)
@@ -1303,6 +1450,25 @@ def main():
             f"optimize_steps={optimize_steps}, replay_size={int(resume_meta.get('replay_size', 0) or 0)}, "
             f"eps_at_resume={float(resume_meta.get('epsilon', EPS_START)):.4f}"
         )
+
+    init_runtime_state = build_runtime_state_summary(
+        training_active=True,
+        run_id=str(randNum),
+        safe_name=safe_name,
+        global_step=int(global_step),
+        optimize_steps=int(optimize_steps),
+        replay_size=int(len(memory)),
+        epsilon_current=float(EPS_START),
+        epsilon_estimated=float(EPS_START),
+        total_episode=int(resume_episode_base),
+        runtime_episode_completed=0,
+        opponent_mode=runtime_opponent_mode,
+        ep_rows=ep_rows,
+        losses=[],
+        vec_env_count=vec_env_count,
+    )
+    if persist_runtime_state(runtime_state_path, init_runtime_state):
+        append_agent_log("[TRAIN][STATE] Стартовый runtime state сохранён.")
     primary_env_unwrapped = unwrap_env(primary_ctx["env"]) if not USE_SUBPROC_ENVS else None
     if primary_env_unwrapped is not None:
         initial_model_hp = float(sum(getattr(primary_env_unwrapped, "unit_health", [])))
@@ -1673,6 +1839,7 @@ def main():
                         "result": result,
                         "end_reason": end_reason,
                         "end_code": end_code,
+                        "opponent_mode": runtime_opponent_mode,
                     }
                 )
                 # ==========================================================
@@ -1692,6 +1859,27 @@ def main():
                     print("Restarting...")
                 numLifeT += 1
                 total_episode = resume_episode_base + numLifeT
+
+                now_flush = time.monotonic()
+                if (now_flush - last_runtime_state_flush) >= runtime_state_flush_sec or numLifeT == 1:
+                    runtime_payload = build_runtime_state_summary(
+                        training_active=True,
+                        run_id=str(randNum),
+                        safe_name=safe_name,
+                        global_step=int(global_step),
+                        optimize_steps=int(optimize_steps),
+                        replay_size=int(len(memory)),
+                        epsilon_current=float(eps_threshold),
+                        epsilon_estimated=float(eps_threshold),
+                        total_episode=int(total_episode),
+                        runtime_episode_completed=int(numLifeT),
+                        opponent_mode=runtime_opponent_mode,
+                        ep_rows=ep_rows,
+                        losses=losses,
+                        vec_env_count=vec_env_count,
+                    )
+                    if persist_runtime_state(runtime_state_path, runtime_payload):
+                        last_runtime_state_flush = now_flush
                 if SAVE_EVERY > 0 and total_episode % SAVE_EVERY == 0:
                     checkpoint_path = f"models/{safe_name}/checkpoint_ep{total_episode}.pth"
                     os.makedirs(f"models/{safe_name}", exist_ok=True)
@@ -1892,6 +2080,27 @@ def main():
             perf_stats = {k: 0.0 for k in perf_stats}
             perf_counts = {"env_steps": 0, "updates": 0, "reward_clipped": 0}
     
+        now_flush = time.monotonic()
+        if (now_flush - last_runtime_state_flush) >= runtime_state_flush_sec:
+            runtime_payload = build_runtime_state_summary(
+                training_active=True,
+                run_id=str(randNum),
+                safe_name=safe_name,
+                global_step=int(global_step),
+                optimize_steps=int(optimize_steps),
+                replay_size=int(len(memory)),
+                epsilon_current=float(eps_threshold if "eps_threshold" in locals() else EPS_START),
+                epsilon_estimated=float(eps_threshold if "eps_threshold" in locals() else EPS_START),
+                total_episode=int(resume_episode_base + numLifeT),
+                runtime_episode_completed=int(numLifeT),
+                opponent_mode=runtime_opponent_mode,
+                ep_rows=ep_rows,
+                losses=losses,
+                vec_env_count=vec_env_count,
+            )
+            if persist_runtime_state(runtime_state_path, runtime_payload):
+                last_runtime_state_flush = now_flush
+
         global_step += vec_env_count
     
     with open('trainRes.txt', 'w') as f:
@@ -1915,6 +2124,25 @@ def main():
     save_extra_metrics(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
     with IO_PROFILER.timed("metrics save"):
         metrics_obj.createJson()
+
+    final_runtime_payload = build_runtime_state_summary(
+        training_active=False,
+        run_id=str(randNum),
+        safe_name=safe_name,
+        global_step=int(global_step),
+        optimize_steps=int(optimize_steps),
+        replay_size=int(len(memory)),
+        epsilon_current=float(eps_threshold if "eps_threshold" in locals() else EPS_START),
+        epsilon_estimated=float(eps_threshold if "eps_threshold" in locals() else EPS_START),
+        total_episode=int(resume_episode_base + numLifeT),
+        runtime_episode_completed=int(numLifeT),
+        opponent_mode=runtime_opponent_mode,
+        ep_rows=ep_rows,
+        losses=losses,
+        vec_env_count=vec_env_count,
+    )
+    if persist_runtime_state(runtime_state_path, final_runtime_payload):
+        append_agent_log("[TRAIN][STATE] Финальный runtime state сохранён.")
     print("Generated metrics")
 
     os.makedirs(fold, exist_ok=True)

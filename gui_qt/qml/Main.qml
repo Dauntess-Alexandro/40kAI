@@ -268,7 +268,6 @@ ApplicationWindow {
                             }
                         }
                     }
-                    }
                 }
             }
 
@@ -966,6 +965,58 @@ ApplicationWindow {
                                 }
                             }
                         }
+                    }
+
+                    GroupBox {
+                        title: "Состояние модели и обучения"
+                        Layout.fillWidth: true
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            spacing: root.spacingSm
+
+                            Label {
+                                text: "Источник: " + controller.runtimeSource
+                                color: "#666666"
+                                wrapMode: Text.WordWrap
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: root.spacingMd
+
+                                GroupBox {
+                                    title: "Состояние модели"
+                                    Layout.fillWidth: true
+                                    Label {
+                                        anchors.fill: parent
+                                        text: controller.runtimeModelSummary
+                                        wrapMode: Text.WordWrap
+                                    }
+                                }
+
+                                GroupBox {
+                                    title: "Эпизоды по режимам"
+                                    Layout.fillWidth: true
+                                    Label {
+                                        anchors.fill: parent
+                                        text: controller.runtimeModesSummary
+                                        wrapMode: Text.WordWrap
+                                    }
+                                }
+
+                                GroupBox {
+                                    title: "Агрегаты метрик"
+                                    Layout.fillWidth: true
+                                    Label {
+                                        anchors.fill: parent
+                                        text: controller.runtimeMetricsSummary
+                                        wrapMode: Text.WordWrap
+                                    }
+                                }
+                            }
+                        }
+                    }
                     }
                 }
             }
