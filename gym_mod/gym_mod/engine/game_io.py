@@ -114,6 +114,7 @@ class BaseIO:
         x_max: int,
         y_min: int,
         y_max: int,
+        meta: Optional[dict] = None,
     ):
         raise NotImplementedError
 
@@ -234,6 +235,7 @@ class ConsoleIO(BaseIO):
         x_max: int,
         y_min: int,
         y_max: int,
+        meta: Optional[dict] = None,
     ):
         self.log(prompt)
         self.log(f"Допустимый диапазон: X={x_min}..{x_max}, Y={y_min}..{y_max}")
@@ -365,13 +367,17 @@ class GuiIO(BaseIO):
         x_max: int,
         y_min: int,
         y_max: int,
+        meta: Optional[dict] = None,
     ):
+        request_meta = {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max}
+        if isinstance(meta, dict):
+            request_meta.update(meta)
         request = Request(
             kind="deploy_coord",
             prompt=prompt,
             min_value=x_min,
             max_value=x_max,
-            meta={"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max},
+            meta=request_meta,
         )
         self.request_queue.put(request)
         answer = self._wait_for_answer()

@@ -116,6 +116,20 @@ class TestDeploymentStage1Regression(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual("occupied", reason)
 
+    def test_validate_deploy_coord_checks_model_offsets_collision(self):
+        mission = _load_mission_module("mission_under_test_stage1_model_offsets")
+        ok, reason = mission.validate_deploy_coord(
+            "model",
+            (5, 3),
+            40,
+            60,
+            occupied=[],
+            model_offsets=[(0, 0), (0, 1)],
+            occupied_model_cells=[(5, 4)],
+        )
+        self.assertFalse(ok)
+        self.assertEqual("occupied", reason)
+
 
 class TestDeploymentStage2ManualRegression(unittest.TestCase):
     def _build_units(self, n, prefix):

@@ -187,6 +187,9 @@ def validate_deploy_coord(
     b_len: int,
     b_hei: int,
     occupied: Iterable[Tuple[int, int]],
+    *,
+    model_offsets: Iterable[Tuple[int, int]] | None = None,
+    occupied_model_cells: Iterable[Tuple[int, int]] | None = None,
 ) -> Tuple[bool, str]:
     if not _in_bounds(coord, b_len, b_hei):
         return False, "out_of_bounds"
@@ -196,6 +199,20 @@ def validate_deploy_coord(
     occupied_set = set((int(r), int(c)) for r, c in occupied)
     if key in occupied_set:
         return False, "occupied"
+
+    offsets = list(model_offsets or [(0, 0)])
+    model_occupied_set = set((int(r), int(c)) for r, c in (occupied_model_cells or []))
+    for dr, dc in offsets:
+        m_row = int(coord[0]) + int(dr)
+        m_col = int(coord[1]) + int(dc)
+        m_coord = (m_row, m_col)
+        if not _in_bounds(m_coord, b_len, b_hei):
+            return False, "out_of_bounds"
+        if not is_in_deploy_zone(side, m_coord, b_len, b_hei):
+            return False, "outside_deploy_zone"
+        if m_coord in model_occupied_set:
+            return False, "occupied"
+
     return True, "ok"
 
 
@@ -218,6 +235,38 @@ def _log_deploy(log_fn: Optional[callable], side: str, unit_idx: int, coord: Tup
         include_instance_id=False,
     )
     log_fn(f"[DEPLOY][{side.upper()}] {unit_label} -> ({coord[0]},{coord[1]})")
+
+
+def _collect_model_offsets(unit) -> List[Tuple[int, int]]:
+    if not hasattr(unit, "models"):
+        return [(0, 0)]
+    try:
+        models = unit.models()
+    except Exception:
+        return [(0, 0)]
+    if not isinstance(models, list) or not models:
+        return [(0, 0)]
+    anchor = getattr(unit, "unit_coords", [0, 0])
+    base_row = int(anchor[0])
+    base_col = int(anchor[1])
+    result: List[Tuple[int, int]] = []
+    for model in models:
+        if not isinstance(model, dict) or not model.get("alive", True):
+            continue
+        coords = model.get("coords", [base_row, base_col, 0])
+        if len(coords) < 2:
+            continue
+        dr = int(coords[0]) - base_row
+        dc = int(coords[1]) - base_col
+        candidate = (dr, dc)
+        if candidate not in result:
+            result.append(candidate)
+    return result or [(0, 0)]
+
+
+def _add_unit_model_cells(occupied_model_cells: set[Tuple[int, int]], anchor: Tuple[int, int], offsets: Iterable[Tuple[int, int]]) -> None:
+    for dr, dc in offsets:
+        occupied_model_cells.add((int(anchor[0]) + int(dr), int(anchor[1]) + int(dc)))
 
 
 def deploy_only_war(
@@ -272,13 +321,18 @@ def deploy_only_war(
         log_fn(f"[DEPLOY] Order: {attacker_side} first, alternating")
 
     occupied: set[Tuple[int, int]] = set()
+    occupied_model_cells: set[Tuple[int, int]] = set()
     side_counts = {
         "model": len(model_units),
         "enemy": len(enemy_units),
     }
+    manual_total = side_counts.get("enemy", 0)
+    manual_done = 0
 
     def _place_unit(unit, side: str, unit_idx: int):
+        nonlocal manual_done
         zone_side = side_to_zone[side]
+        unit_model_offsets = _collect_model_offsets(unit)
         coord = None
         use_manual = mode == "manual_player" and side == "enemy"
         if use_manual:
@@ -287,16 +341,41 @@ def deploy_only_war(
             unit_label = format_unit(unit_id, getattr(unit, "unit_data", None), include_instance_id=False)
             x_min, x_max = _zone_bounds_for_side(zone_side, b_hei)
             y_min, y_max = 0, b_len - 1
+            next_label = None
+            if unit_idx + 1 < len(enemy_units):
+                next_unit = enemy_units[unit_idx + 1]
+                next_label = format_unit(11 + unit_idx + 1, getattr(next_unit, "unit_data", None), include_instance_id=False)
             while True:
+                current_index = manual_done + 1
+                prompt = (
+                    f"[DEPLOY][MANUAL] Расставьте юнита: {unit_label} [{current_index}/{manual_total}]. "
+                    f"Осталось расставить: {max(0, manual_total - manual_done)}. "
+                    f"Зона: X={x_min}..{x_max}, Y={y_min}..{y_max}."
+                )
+                if next_label is not None:
+                    prompt += f" Следом: {next_label} [{current_index + 1}/{manual_total}]"
                 response = io.request_deploy_coord(
-                    (
-                        f"[DEPLOY][MANUAL] Выберите позицию для {unit_label}. "
-                        f"Зона: X={x_min}..{x_max}, Y={y_min}..{y_max}."
-                    ),
+                    prompt,
                     x_min=x_min,
                     x_max=x_max,
                     y_min=y_min,
                     y_max=y_max,
+                    meta={
+                        "deployment_mode": mode,
+                        "deploy_side": side,
+                        "deploy_unit_id": unit_id,
+                        "deploy_unit_label": unit_label,
+                        "deploy_index": current_index,
+                        "deploy_total": manual_total,
+                        "deploy_remaining": max(0, manual_total - manual_done),
+                        "deploy_next_label": next_label,
+                        "deploy_zone_side": zone_side,
+                        "deploy_b_len": b_len,
+                        "deploy_b_hei": b_hei,
+                        "occupied": [[int(r), int(c)] for r, c in sorted(occupied)],
+                        "occupied_model_cells": [[int(r), int(c)] for r, c in sorted(occupied_model_cells)],
+                        "model_offsets": [[int(dr), int(dc)] for dr, dc in unit_model_offsets],
+                    },
                 )
                 if response is None:
                     if log_fn is not None:
@@ -308,7 +387,15 @@ def deploy_only_war(
                 x = int(response.get("x", -99999))
                 y = int(response.get("y", -99999))
                 coord_candidate = (y, x)
-                ok, reason = validate_deploy_coord(zone_side, coord_candidate, b_len, b_hei, occupied)
+                ok, reason = validate_deploy_coord(
+                    zone_side,
+                    coord_candidate,
+                    b_len,
+                    b_hei,
+                    occupied,
+                    model_offsets=unit_model_offsets,
+                    occupied_model_cells=occupied_model_cells,
+                )
                 if ok:
                     coord = coord_candidate
                     if log_fn is not None:
@@ -332,7 +419,15 @@ def deploy_only_war(
                 total_units=side_counts.get(side, 0),
                 log_fn=log_fn,
             )
-        ok, reason = validate_deploy_coord(zone_side, coord, b_len, b_hei, occupied)
+        ok, reason = validate_deploy_coord(
+            zone_side,
+            coord,
+            b_len,
+            b_hei,
+            occupied,
+            model_offsets=unit_model_offsets,
+            occupied_model_cells=occupied_model_cells,
+        )
         if not ok:
             raise RuntimeError(
                 f"Deployment validation failed: side={side}, zone_side={zone_side}, coord={coord}, reason={reason}"
@@ -342,6 +437,9 @@ def deploy_only_war(
         else:
             unit.unit_coords = [coord[0], coord[1]]
         occupied.add(coord)
+        _add_unit_model_cells(occupied_model_cells, coord, unit_model_offsets)
+        if side == "enemy":
+            manual_done += 1
         _log_deploy(log_fn, side, unit_idx, coord, unit=unit)
 
     attacker_units = model_units if attacker_side == "model" else enemy_units

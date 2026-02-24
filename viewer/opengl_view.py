@@ -168,6 +168,7 @@ class TextureManager:
 class OpenGLBoardWidget(QOpenGLWidget):
     unit_selected = QtCore.Signal(str, int)
     cell_clicked = QtCore.Signal(int, int)
+    cell_hovered = QtCore.Signal(object)
 
     def __init__(
         self,
@@ -250,6 +251,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._target_unit_id: Optional[int] = None
         self._target_cell: Optional[Tuple[int, int]] = None
         self._hover_cell: Optional[Tuple[int, int]] = None
+        self._deploy_ghost_cells: List[Tuple[int, int]] = []
+        self._deploy_ghost_valid: Optional[bool] = None
         self._hover_unit_key: Optional[Tuple[str, int]] = None
         self._hover_tooltip_text: Optional[Dict] = None
         self._hover_tooltip_ts: float = 0.0
@@ -628,6 +631,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def set_hover_cell(self, cell: Optional[Tuple[int, int]]) -> None:
         self._hover_cell = self._state_xy_to_view_xy(cell[0], cell[1]) if cell is not None else None
+        self.update()
+
+    def set_deploy_ghost(self, cells: List[Tuple[int, int]], is_valid: Optional[bool]) -> None:
+        self._deploy_ghost_cells = list(cells or [])
+        self._deploy_ghost_valid = is_valid
         self.update()
 
     def set_active_phase(self, phase: Optional[str]) -> None:
@@ -1218,6 +1226,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._cursor_world_raw = QtCore.QPointF(world)
         self._cursor_world = self._snap_world_to_cell(world)
         self._update_hover_cell(world)
+        state_pos = self._world_to_state_pos(world)
+        self.cell_hovered.emit(state_pos)
         self._update_hover_tooltip(event, world)
         self.update()
         super().mouseMoveEvent(event)
@@ -1236,6 +1246,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def leaveEvent(self, event: QtCore.QEvent) -> None:
         self._hover_cell = None
+        self.cell_hovered.emit(None)
         self._clear_hover_tooltip()
         self.update()
         super().leaveEvent(event)
@@ -1506,8 +1517,23 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 painter.drawRect(rect)
 
     def _draw_selection_layer(self, painter: QtGui.QPainter) -> None:
-        # Кольца выбора отключены: используем только платформенный FX под активным юнитом.
-        return
+        if not self._deploy_ghost_cells:
+            return
+        color = QtGui.QColor(70, 220, 120, 110) if self._deploy_ghost_valid else QtGui.QColor(220, 70, 70, 120)
+        border = QtGui.QColor(70, 220, 120, 190) if self._deploy_ghost_valid else QtGui.QColor(220, 70, 70, 210)
+        painter.save()
+        painter.setBrush(QtGui.QBrush(color))
+        painter.setPen(QtGui.QPen(border, 1.5))
+        size = self.cell_size * 0.62
+        for state_x, state_y in self._deploy_ghost_cells:
+            view_cell = self._state_xy_to_view_xy(state_x, state_y)
+            if view_cell is None:
+                continue
+            cx, cy = view_cell
+            center = self._cell_center(cx, cy)
+            rect = QtCore.QRectF(center.x() - size / 2, center.y() - size / 2, size, size)
+            painter.drawEllipse(rect)
+        painter.restore()
 
     def _draw_shooting_layer(self, painter: QtGui.QPainter) -> None:
         if not self._target_highlights:
