@@ -1312,6 +1312,6 @@ ApplicationWindow {
         title: "Выберите модель (.pickle)"
         nameFilters: ["Pickle Files (*.pickle)"]
         folder: Platform.StandardPaths.writableLocation(Platform.StandardPaths.DocumentsLocation)
-        onAccepted: controller.select_metrics_file(fileUrl)
+        onAccepted: controller.select_metrics_file(metricsFileDialog.fileUrl)
     }
 }

@@ -1622,11 +1622,17 @@ class GUIController(QtCore.QObject):
 
             for path in candidates:
                 try:
+                    # PyTorch >=2.6 по умолчанию грузит только веса (weights_only=True),
+                    # что ломает старые checkpoint'ы с replay buffer / кастомными классами.
+                    checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+                except TypeError:
+                    # Совместимость со старыми версиями torch без аргумента weights_only.
                     checkpoint = torch.load(path, map_location="cpu")
-                    if isinstance(checkpoint, dict):
-                        break
                 except Exception:
                     continue
+
+                if isinstance(checkpoint, dict):
+                    break
         except Exception:
             return values
 
