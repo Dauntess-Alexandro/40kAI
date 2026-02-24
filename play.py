@@ -20,6 +20,11 @@ from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
 from gym_mod.envs.warhamEnv import roll_off_attacker_defender
 
 
+def load_trusted_checkpoint(path: str):
+    """Загрузка доверенного checkpoint для PyTorch>=2.6 (weights_only=False)."""
+    return torch.load(path, weights_only=False)
+
+
 PLAY_EPS = float(os.getenv("PLAY_EPS", "")) if os.getenv("PLAY_EPS") is not None and os.getenv("PLAY_EPS") != "" else None
 PLAY_NO_EXPLORATION = os.getenv("PLAY_NO_EXPLORATION", "0") == "1"
 if PLAY_NO_EXPLORATION:
@@ -46,7 +51,7 @@ if sys.argv[1] == "None":
     envs.sort(key=lambda x: os.path.getmtime(x))
     modelpth.sort()
 
-    checkpoint = torch.load(modelpth[-1])
+    checkpoint = load_trusted_checkpoint(modelpth[-1])
 
     #print("Playing with environment saved here: ", envs[-1])
     with open(envs[-1], 'rb') as f:
@@ -57,7 +62,7 @@ else:
         env, model, enemy = pickle.load(f)
     f = str(sys.argv[1])
     modelpth = f[:-len("pickle")]+"pth"
-    checkpoint = torch.load(modelpth)
+    checkpoint = load_trusted_checkpoint(modelpth)
 
 playInGUI = False
 if sys.argv[2] == "True":
