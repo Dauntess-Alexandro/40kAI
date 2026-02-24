@@ -175,6 +175,47 @@ class GuiMetricsStateFallbackTests(unittest.TestCase):
         eps = c._compute_eps_for_global_step(global_step=500, eps_start=1.0, eps_end=0.1, eps_decay=1000)
         self.assertAlmostEqual(eps, 0.55, places=6)
 
+    def test_stale_selected_path_id_is_ignored(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = os.path.join(td, "models", "run")
+            os.makedirs(run, exist_ok=True)
+            stale_pickle = os.path.join(run, "model-1-111111.pickle")
+            open(stale_pickle, "w", encoding="utf-8").close()
+            with open(os.path.join(run, "model-42-537303.pth"), "w", encoding="utf-8") as handle:
+                json.dump({"global_step": 777, "optimize_steps": 12, "episode": 34, "replay_memory": {"count": 9}}, handle)
+
+            c = self._make_controller(td, "42-537303", stale_pickle)
+            with patch.dict("sys.modules", {"torch": _FakeTorch}):
+                meta = c._extract_selected_model_meta()
+
+            self.assertEqual(meta["global_step"], "777")
+            self.assertEqual(meta["source"], "model-42-537303.pth")
+
+    def test_load_metrics_json_sets_selected_pickle_by_model_id(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = os.path.join(td, "models", "run")
+            os.makedirs(run, exist_ok=True)
+            with open(os.path.join(td, "models", "data_42-537303.json"), "w", encoding="utf-8") as handle:
+                json.dump({}, handle)
+            pickle_path = os.path.join(run, "model-42-537303.pickle")
+            open(pickle_path, "w", encoding="utf-8").close()
+
+            c = GUIController.__new__(GUIController)
+            c._repo_root = td
+            c._metrics_defaults = {k: "" for k in ("reward", "loss", "epLen", "winrate", "vpdiff", "endreasons")}
+            c._resolve_metric_path = lambda value, default: default
+            c._set_metrics_files = lambda updated: None
+            c._refresh_metrics_summaries = lambda: None
+            c._emit_status = lambda *args, **kwargs: None
+            c._emit_log = lambda *args, **kwargs: None
+            c._selected_metrics_model_id = ""
+            c._selected_metrics_model_path = ""
+
+            ok = c._load_metrics_from_json(os.path.join(td, "models", "data_42-537303.json"))
+            self.assertTrue(ok)
+            self.assertEqual(c._selected_metrics_model_id, "42-537303")
+            self.assertEqual(c._selected_metrics_model_path, pickle_path)
+
 
 if __name__ == "__main__":
     unittest.main()

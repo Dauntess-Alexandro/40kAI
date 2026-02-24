@@ -1445,6 +1445,7 @@ class GUIController(QtCore.QObject):
             "endreasons": self._resolve_metric_path(payload.get("endreasons"), self._metrics_defaults["endreasons"]),
         }
         self._selected_metrics_model_id = self._extract_model_id_from_metrics_json_path(json_path)
+        self._selected_metrics_model_path = self._find_model_pickle_by_id(self._selected_metrics_model_id)
         self._set_metrics_files(updated)
         self._refresh_metrics_summaries()
         return True
@@ -1724,11 +1725,19 @@ class GUIController(QtCore.QObject):
             candidates.append((priority, -mtime, path))
 
         if self._selected_metrics_model_path:
-            direct = os.path.splitext(self._selected_metrics_model_path)[0] + ".pth"
-            if os.path.exists(direct):
-                _append(1, direct)
+            selected_path_id = self._extract_metrics_id(self._selected_metrics_model_path)
+            if selected_path_id and selected_path_id != model_id:
+                self._emit_log(
+                    "[GUI][METRICS] Выбранный путь модели не соответствует текущему model_id, прямой кандидат пропущен: "
+                    f"path_id={selected_path_id}, model_id={model_id}, path={self._selected_metrics_model_path}",
+                    level="WARN",
+                )
             else:
-                self._emit_log(f"[GUI][METRICS] Кандидат отклонён: не существует {direct}", level="WARN")
+                direct = os.path.splitext(self._selected_metrics_model_path)[0] + ".pth"
+                if os.path.exists(direct):
+                    _append(1, direct)
+                else:
+                    self._emit_log(f"[GUI][METRICS] Кандидат отклонён: не существует {direct}", level="WARN")
 
         models_path = os.path.join(self._repo_root, "models")
         model_dirs: set[str] = set()
@@ -1766,6 +1775,28 @@ class GUIController(QtCore.QObject):
 
         candidates.sort(key=lambda item: (item[0], item[1], item[2]))
         return [path for _, _, path in candidates]
+
+    def _find_model_pickle_by_id(self, model_id: str) -> str:
+        if not model_id:
+            return ""
+        models_path = os.path.join(self._repo_root, "models")
+        if not os.path.isdir(models_path):
+            return ""
+        best_path = ""
+        best_mtime = -1.0
+        target = f"model-{model_id}.pickle"
+        for root, _, files in os.walk(models_path):
+            if target not in files:
+                continue
+            path = os.path.join(root, target)
+            try:
+                mtime = os.path.getmtime(path)
+            except OSError:
+                continue
+            if mtime > best_mtime:
+                best_mtime = mtime
+                best_path = path
+        return best_path
 
     def _detect_selected_model_episode(self, model_id: str) -> Optional[int]:
         results_path = os.path.join(self._repo_root, "results.txt")
