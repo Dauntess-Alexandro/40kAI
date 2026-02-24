@@ -140,7 +140,7 @@ class TestDeploymentStage2ManualRegression(unittest.TestCase):
             def __init__(self):
                 self.answers = iter([
                     {"x": 30, "y": 10},  # invalid zone for manual player side
-                    {"x": 45, "y": 6},   # valid
+                    {"x": 47, "y": 6},   # valid with formation offsets (dc can be -2)
                     None,                   # cancel -> auto fallback for next unit
                 ])
 
@@ -163,7 +163,7 @@ class TestDeploymentStage2ManualRegression(unittest.TestCase):
             log_fn=logs.append,
         )
 
-        self.assertEqual((6, 45), tuple(enemy[0].unit_coords))
+        self.assertEqual((6, 47), tuple(enemy[0].unit_coords))
         self.assertTrue(mission.is_in_deploy_zone("enemy", tuple(enemy[1].unit_coords), 40, 60))
         self.assertTrue(any("invalid" in line for line in logs))
         self.assertTrue(any("ручной ввод отменён" in line for line in logs))

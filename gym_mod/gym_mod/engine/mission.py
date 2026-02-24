@@ -238,14 +238,34 @@ def _log_deploy(log_fn: Optional[callable], side: str, unit_idx: int, coord: Tup
 
 
 def _collect_model_offsets(unit) -> List[Tuple[int, int]]:
+    def _fallback_offsets_from_unit_size() -> List[Tuple[int, int]]:
+        count = 1
+        unit_data = getattr(unit, "unit_data", None)
+        if isinstance(unit_data, dict):
+            try:
+                count = max(1, int(unit_data.get("#OfModels", 1)))
+            except (TypeError, ValueError):
+                count = 1
+        # Keep formation offsets in sync with warhamEnv._formation_offsets,
+        # so deploy preview matches final formation after env.reset().
+        formation_offsets: List[Tuple[int, int]] = [
+            (0, 0),
+            (0, 1), (0, -1), (1, 0), (-1, 0),
+            (1, 1), (1, -1), (-1, 1), (-1, -1),
+            (0, 2), (0, -2), (2, 0), (-2, 0),
+            (1, 2), (1, -2), (-1, 2), (-1, -2),
+            (2, 1), (2, -1), (-2, 1), (-2, -1),
+        ]
+        return formation_offsets[:count]
+
     if not hasattr(unit, "models"):
-        return [(0, 0)]
+        return _fallback_offsets_from_unit_size()
     try:
         models = unit.models()
     except Exception:
-        return [(0, 0)]
+        return _fallback_offsets_from_unit_size()
     if not isinstance(models, list) or not models:
-        return [(0, 0)]
+        return _fallback_offsets_from_unit_size()
     anchor = getattr(unit, "unit_coords", [0, 0])
     base_row = int(anchor[0])
     base_col = int(anchor[1])
@@ -261,7 +281,11 @@ def _collect_model_offsets(unit) -> List[Tuple[int, int]]:
         candidate = (dr, dc)
         if candidate not in result:
             result.append(candidate)
-    return result or [(0, 0)]
+    # If unit internals still keep all models at anchor (PR1-style),
+    # use battle formation offsets by model count instead of a single dot.
+    if not result or len(result) == 1:
+        return _fallback_offsets_from_unit_size()
+    return result
 
 
 def _add_unit_model_cells(occupied_model_cells: set[Tuple[int, int]], anchor: Tuple[int, int], offsets: Iterable[Tuple[int, int]]) -> None:
