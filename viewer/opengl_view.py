@@ -167,6 +167,7 @@ class TextureManager:
 
 class OpenGLBoardWidget(QOpenGLWidget):
     unit_selected = QtCore.Signal(str, int)
+    cell_clicked = QtCore.Signal(int, int)
 
     def __init__(
         self,
@@ -1226,6 +1227,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if self._drag_distance < 4:
                 self._select_unit_at(event.position())
                 world = self._map_to_world(QtCore.QPointF(event.position()))
+                state_pos = self._world_to_state_pos(world)
+                if state_pos is not None:
+                    self.cell_clicked.emit(int(state_pos[0]), int(state_pos[1]))
                 self._spawn_particles(world, "smoke", 16)
             self._dragging = False
         super().mouseReleaseEvent(event)

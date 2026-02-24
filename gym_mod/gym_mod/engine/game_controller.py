@@ -154,6 +154,12 @@ class GameController:
             from gym_mod.engine.mission import normalize_mission_name, deploy_for_mission, post_deploy_setup
 
             mission_name = normalize_mission_name(getattr(env.unwrapped, "mission_name", None))
+            deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "auto")).strip().lower() or "auto"
+            deployment_strategy = str(os.getenv("DEPLOYMENT_STRATEGY", "template_jitter")).strip().lower() or "template_jitter"
+            deployment_seed = os.getenv("DEPLOYMENT_SEED", "").strip()
+            self._io.log(
+                f"[DEPLOY] mode={deployment_mode}, strategy={deployment_strategy}, seed={deployment_seed or 'none'}"
+            )
             deploy_for_mission(
                 mission_name,
                 model_units=model,
@@ -162,11 +168,13 @@ class GameController:
                 b_hei=env.unwrapped.b_hei,
                 attacker_side=attacker_side,
                 log_fn=self._io.log,
+                deployment_mode=deployment_mode,
             )
             post_deploy_setup(log_fn=self._io.log)
 
             env.attacker_side = attacker_side
             env.defender_side = defender_side
+            env.deployment_mode = deployment_mode
 
             state, info = env.reset(
                 options={"m": model, "e": enemy, "playType": True, "Type": "big", "trunc": True}

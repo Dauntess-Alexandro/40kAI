@@ -154,6 +154,7 @@ def write_state_json(env, path=None):
         "deployment": {
             "attacker": getattr(env, "attacker_side", None),
             "defender": getattr(env, "defender_side", None),
+            "mode": getattr(env, "deployment_mode", None),
         },
         "payload_kind": "light",
         "generated_at": datetime.utcnow().isoformat() + "Z",

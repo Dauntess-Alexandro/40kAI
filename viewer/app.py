@@ -185,6 +185,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.resize(2560, 1440)
 
         self.controller = GameController(model_path=model_path, state_path=state_path)
+        os.environ.setdefault("DEPLOYMENT_MODE", "manual_player")
         self._pending_request = None
         self._pending_requests: Deque = deque()
         self._awaiting_player_action = False
@@ -217,6 +218,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QSizePolicy.Expanding,
         )
         self.map_scene.unit_selected.connect(self._select_row_for_unit)
+        self.map_scene.cell_clicked.connect(self._on_cell_clicked)
 
         self.status_round = QtWidgets.QLabel("Раунд: —")
         self.status_turn = QtWidgets.QLabel("Ход: —")
@@ -590,6 +592,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 + (f" или {compact}" if compact else "")
             )
             self.command_stack.setCurrentIndex(self._command_pages["text"])
+        elif kind == "deploy_coord":
+            meta = getattr(request, "meta", {}) or {}
+            x_min = meta.get("x_min", "?")
+            x_max = meta.get("x_max", "?")
+            y_min = meta.get("y_min", "?")
+            y_max = meta.get("y_max", "?")
+            self.command_input.setPlaceholderText(f"X Y (X={x_min}..{x_max}, Y={y_min}..{y_max})")
+            self.command_stack.setCurrentIndex(self._command_pages["text"])
         else:
             self.command_input.setPlaceholderText("Введите команду...")
             self.command_stack.setCurrentIndex(self._command_pages["text"])
@@ -616,7 +626,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
             )
         )
 
+    def _is_deploy_request(self, request) -> bool:
+        if request is None:
+            return False
+        return str(getattr(request, "kind", "")).strip().lower() == "deploy_coord"
+
     def _maybe_reset_target_for_request(self, request) -> None:
+        if self._is_deploy_request(request):
+            self._set_confirm_enabled(True)
+            return
         if not self._is_target_request(request):
             self._set_confirm_enabled(True)
             return
@@ -677,6 +695,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         target_label = self._format_unit_label(unit_id)
         self.add_log_line(f"REQ: target selected Unit {target_label}, confirm enabled")
 
+    def _on_cell_clicked(self, x: int, y: int) -> None:
+        if not self._is_deploy_request(self._pending_request):
+            return
+        self.map_scene.set_target_cell((x, y))
+        self.command_input.setText(f"{x} {y}")
+        self.add_log_line(f"REQ: deploy cell selected x={x}, y={y}")
+
     def _update_command_hint(self, kind):
         if kind == "direction":
             self.command_hint.setText("Горячие клавиши: ↑ ↓ ← →, пробел/0 — нет")
@@ -686,6 +711,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_hint.setText("Горячие клавиши: Enter — отправить")
         elif kind == "choice":
             self.command_hint.setText("Горячие клавиши: Enter — выбрать")
+        elif kind == "deploy_coord":
+            self.command_hint.setText("Кликните клетку на поле или введите X Y, затем Enter")
         else:
             self.command_hint.setText("Горячие клавиши: Enter — отправить")
 
@@ -757,6 +784,26 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _submit_text(self):
         text = self.command_input.text().strip()
+        if self._is_deploy_request(self._pending_request):
+            parts = [p for p in re.split(r"[\s,;:]+", text) if p]
+            if len(parts) != 2:
+                self.add_log_line(
+                    "Ошибка деплоя: нужно ввести X и Y. Где: viewer/app.py (_submit_text). "
+                    "Что делать дальше: кликните клетку на поле или введите два числа."
+                )
+                return
+            try:
+                x = int(parts[0])
+                y = int(parts[1])
+            except ValueError:
+                self.add_log_line(
+                    "Ошибка деплоя: X/Y должны быть целыми. Где: viewer/app.py (_submit_text). "
+                    "Что делать дальше: введите целые координаты."
+                )
+                return
+            self.map_scene.set_target_cell((x, y))
+            self._submit_answer({"x": x, "y": y})
+            return
         if self._is_target_request(self._pending_request) and self._current_target_id is None:
             return
         if not text:

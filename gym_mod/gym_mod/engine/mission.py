@@ -9,12 +9,14 @@ Only War-specific logic is centralized here:
 from __future__ import annotations
 
 import random
+import os
 from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import reward_config as reward_cfg
 
 from gym_mod.engine.logging_utils import format_unit
+from gym_mod.engine.game_io import get_active_io
 
 MISSION_ONLY_WAR = "only_war"
 MISSION_NAME = "Only War"
@@ -126,12 +128,81 @@ def get_random_free_deploy_coord(
     b_len: int,
     b_hei: int,
     occupied: Iterable[Tuple[int, int]],
+    *,
+    rng: random.Random | None = None,
+    strategy: str = "random",
+    unit_idx: int | None = None,
+    total_units: int | None = None,
+    log_fn: Optional[callable] = None,
 ) -> Tuple[int, int]:
     occupied_set = set((int(row), int(col)) for row, col in occupied)
     choices = [c for c in _zone_coords(side, b_len, b_hei) if c not in occupied_set]
     if not choices:
         raise RuntimeError(f"No free deployment space for side={side}")
-    return random.choice(choices)
+
+    picker = rng.choice if rng is not None else random.choice
+    if strategy != "template_jitter":
+        return picker(choices)
+
+    x_min, x_max = _zone_bounds_for_side(side, b_hei)
+    x_center = int((x_min + x_max) // 2)
+
+    if total_units is None or total_units <= 0:
+        target_row = b_len // 2
+    else:
+        idx = 0 if unit_idx is None else max(0, int(unit_idx))
+        span = max(1, b_len - 1)
+        target_row = int(round((idx + 1) * span / (int(total_units) + 1)))
+
+    jitter_rows = [0, -1, 1, -2, 2, -3, 3]
+    jitter_cols = [0, -1, 1, -2, 2]
+    template_candidates: list[Tuple[int, int]] = []
+    for dr in jitter_rows:
+        for dc in jitter_cols:
+            cand = (int(target_row + dr), int(x_center + dc))
+            if cand in template_candidates:
+                continue
+            if cand in occupied_set:
+                continue
+            if not _in_bounds(cand, b_len, b_hei):
+                continue
+            if not is_in_deploy_zone(side, cand, b_len, b_hei):
+                continue
+            template_candidates.append(cand)
+
+    if template_candidates:
+        return picker(template_candidates)
+
+    if log_fn is not None:
+        log_fn(
+            f"[DEPLOY][AUTO] strategy=template_jitter fallback=random; "
+            f"reason=no_valid_template_candidates side={side} unit_idx={unit_idx}"
+        )
+    return picker(choices)
+
+
+def validate_deploy_coord(
+    side: str,
+    coord: Sequence[int],
+    b_len: int,
+    b_hei: int,
+    occupied: Iterable[Tuple[int, int]],
+) -> Tuple[bool, str]:
+    if not _in_bounds(coord, b_len, b_hei):
+        return False, "out_of_bounds"
+    if not is_in_deploy_zone(side, coord, b_len, b_hei):
+        return False, "outside_deploy_zone"
+    key = (int(coord[0]), int(coord[1]))
+    occupied_set = set((int(r), int(c)) for r, c in occupied)
+    if key in occupied_set:
+        return False, "occupied"
+    return True, "ok"
+
+
+def _resolve_deploy_rng(seed: int | None) -> random.Random | None:
+    if seed is None:
+        return None
+    return random.Random(int(seed))
 
 
 def _log_deploy(log_fn: Optional[callable], side: str, unit_idx: int, coord: Tuple[int, int], unit=None):
@@ -156,11 +227,32 @@ def deploy_only_war(
     b_hei: int,
     attacker_side: str,
     log_fn: Optional[callable] = None,
+    deployment_seed: int | None = None,
+    deployment_strategy: str | None = None,
+    deployment_mode: str | None = None,
 ) -> None:
     if attacker_side not in ("model", "enemy"):
         raise ValueError(f"Unknown attacker side: {attacker_side}")
 
     defender_side = "enemy" if attacker_side == "model" else "model"
+    if deployment_seed is None:
+        raw_seed = os.getenv("DEPLOYMENT_SEED", "").strip()
+        if raw_seed != "":
+            try:
+                deployment_seed = int(raw_seed)
+            except ValueError:
+                if log_fn is not None:
+                    log_fn(
+                        f"[DEPLOY][AUTO] invalid DEPLOYMENT_SEED='{raw_seed}'; "
+                        "Где: mission.deploy_only_war. Что делать дальше: укажите целое число."
+                    )
+                deployment_seed = None
+
+    strategy_raw = (deployment_strategy or os.getenv("DEPLOYMENT_STRATEGY", "template_jitter")).strip().lower()
+    strategy = strategy_raw if strategy_raw in {"random", "template_jitter"} else "template_jitter"
+    mode_raw = (deployment_mode or os.getenv("DEPLOYMENT_MODE", "auto")).strip().lower()
+    mode = mode_raw if mode_raw in {"auto", "manual_player"} else "auto"
+    rng = _resolve_deploy_rng(deployment_seed)
     attacker_zone_side = "model"
     defender_zone_side = "enemy"
     side_to_zone = {
@@ -174,13 +266,77 @@ def deploy_only_war(
             f"[DEPLOY][Only War] attacker={attacker_side} -> LEFT x={left_min_x}..{left_max_x}; "
             f"defender={defender_side} -> RIGHT x={right_min_x}..{right_max_x}"
         )
+        log_fn(
+            f"[DEPLOY][AUTO] mode={mode} strategy={strategy} seed={deployment_seed if deployment_seed is not None else 'none'}"
+        )
         log_fn(f"[DEPLOY] Order: {attacker_side} first, alternating")
 
     occupied: set[Tuple[int, int]] = set()
+    side_counts = {
+        "model": len(model_units),
+        "enemy": len(enemy_units),
+    }
 
     def _place_unit(unit, side: str, unit_idx: int):
         zone_side = side_to_zone[side]
-        coord = get_random_free_deploy_coord(zone_side, b_len, b_hei, occupied)
+        coord = None
+        use_manual = mode == "manual_player" and side == "enemy"
+        if use_manual:
+            io = get_active_io()
+            unit_id = 11 + unit_idx
+            unit_label = format_unit(unit_id, getattr(unit, "unit_data", None), include_instance_id=False)
+            x_min, x_max = _zone_bounds_for_side(zone_side, b_hei)
+            y_min, y_max = 0, b_len - 1
+            while True:
+                response = io.request_deploy_coord(
+                    (
+                        f"[DEPLOY][MANUAL] Выберите позицию для {unit_label}. "
+                        f"Зона: X={x_min}..{x_max}, Y={y_min}..{y_max}."
+                    ),
+                    x_min=x_min,
+                    x_max=x_max,
+                    y_min=y_min,
+                    y_max=y_max,
+                )
+                if response is None:
+                    if log_fn is not None:
+                        log_fn(
+                            f"[DEPLOY][MANUAL] {unit_label}: ручной ввод отменён. "
+                            "Где: mission.deploy_only_war. Что делать дальше: auto-placement для этого юнита."
+                        )
+                    break
+                x = int(response.get("x", -99999))
+                y = int(response.get("y", -99999))
+                coord_candidate = (y, x)
+                ok, reason = validate_deploy_coord(zone_side, coord_candidate, b_len, b_hei, occupied)
+                if ok:
+                    coord = coord_candidate
+                    if log_fn is not None:
+                        log_fn(f"[DEPLOY][MANUAL] accepted {unit_label} -> ({coord[0]},{coord[1]})")
+                    break
+                if log_fn is not None:
+                    log_fn(
+                        f"[DEPLOY][MANUAL] invalid {unit_label}: reason={reason}, x={x}, y={y}. "
+                        "Где: mission.deploy_only_war. Что делать дальше: выберите другую клетку в зоне деплоя."
+                    )
+
+        if coord is None:
+            coord = get_random_free_deploy_coord(
+                zone_side,
+                b_len,
+                b_hei,
+                occupied,
+                rng=rng,
+                strategy=strategy,
+                unit_idx=unit_idx,
+                total_units=side_counts.get(side, 0),
+                log_fn=log_fn,
+            )
+        ok, reason = validate_deploy_coord(zone_side, coord, b_len, b_hei, occupied)
+        if not ok:
+            raise RuntimeError(
+                f"Deployment validation failed: side={side}, zone_side={zone_side}, coord={coord}, reason={reason}"
+            )
         if hasattr(unit, "set_anchor"):
             unit.set_anchor(coord[0], coord[1])
         else:
@@ -215,12 +371,35 @@ def deploy_for_mission(
     b_hei: int,
     attacker_side: str,
     log_fn: Optional[callable] = None,
+    deployment_seed: int | None = None,
+    deployment_strategy: str | None = None,
+    deployment_mode: str | None = None,
 ) -> None:
     mission = normalize_mission_name(mission_name)
     if mission == MISSION_ONLY_WAR:
-        deploy_only_war(model_units, enemy_units, b_len, b_hei, attacker_side, log_fn=log_fn)
+        deploy_only_war(
+            model_units,
+            enemy_units,
+            b_len,
+            b_hei,
+            attacker_side,
+            log_fn=log_fn,
+            deployment_seed=deployment_seed,
+            deployment_strategy=deployment_strategy,
+            deployment_mode=deployment_mode,
+        )
         return
-    deploy_only_war(model_units, enemy_units, b_len, b_hei, attacker_side, log_fn=log_fn)
+    deploy_only_war(
+        model_units,
+        enemy_units,
+        b_len,
+        b_hei,
+        attacker_side,
+        log_fn=log_fn,
+        deployment_seed=deployment_seed,
+        deployment_strategy=deployment_strategy,
+        deployment_mode=deployment_mode,
+    )
 
 
 def controlled_objectives(env, side: str) -> Tuple[int, List[int]]:
