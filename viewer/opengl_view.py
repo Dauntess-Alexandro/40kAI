@@ -1227,7 +1227,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._cursor_world = self._snap_world_to_cell(world)
         self._update_hover_cell(world)
         state_pos = self._world_to_state_pos(world)
-        self.cell_hovered.emit(state_pos)
+        if state_pos is None:
+            self.cell_hovered.emit(None)
+        else:
+            # _world_to_state_pos returns (row, col), while viewer deployment API expects (x=col, y=row).
+            self.cell_hovered.emit((int(state_pos[1]), int(state_pos[0])))
         self._update_hover_tooltip(event, world)
         self.update()
         super().mouseMoveEvent(event)
@@ -1239,7 +1243,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 world = self._map_to_world(QtCore.QPointF(event.position()))
                 state_pos = self._world_to_state_pos(world)
                 if state_pos is not None:
-                    self.cell_clicked.emit(int(state_pos[0]), int(state_pos[1]))
+                    # _world_to_state_pos returns (row, col), while click contract is (x=col, y=row).
+                    self.cell_clicked.emit(int(state_pos[1]), int(state_pos[0]))
                 self._spawn_particles(world, "smoke", 16)
             self._dragging = False
         super().mouseReleaseEvent(event)
