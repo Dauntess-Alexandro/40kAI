@@ -195,6 +195,14 @@ ApplicationWindow {
                                         onToggled: controller.set_disable_train_logging(checked)
                                     }
 
+                                    CheckBox {
+                                        text: "Очищать логи автоматически"
+                                        checked: controller.autoClearLogs
+                                        enabled: !controller.running
+                                        Layout.columnSpan: 2
+                                        onToggled: controller.set_auto_clear_logs(checked)
+                                    }
+
                                     Button {
                                         text: "Тренировка 8х"
                                         enabled: !controller.running

@@ -55,6 +55,7 @@ class GUIController(QtCore.QObject):
     selfPlayFromCheckpointChanged = QtCore.Signal(bool)
     resumeFromCheckpointChanged = QtCore.Signal(bool)
     disableTrainLoggingChanged = QtCore.Signal(bool)
+    autoClearLogsChanged = QtCore.Signal(bool)
     factionIconSizeChanged = QtCore.Signal(int)
     unitIconSizeChanged = QtCore.Signal(int)
 
@@ -119,6 +120,7 @@ class GUIController(QtCore.QObject):
         self._self_play_from_checkpoint = False
         self._resume_from_checkpoint = False
         self._disable_train_logging = False
+        self._auto_clear_logs = True
 
         self._load_available_units()
         self._load_rosters_from_file()
@@ -273,6 +275,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(bool, notify=disableTrainLoggingChanged)
     def disableTrainLogging(self) -> bool:
         return self._disable_train_logging
+
+    @QtCore.Property(bool, notify=autoClearLogsChanged)
+    def autoClearLogs(self) -> bool:
+        return self._auto_clear_logs
 
     @QtCore.Property(str, constant=True)
     def modelsFolderUrl(self) -> str:
@@ -529,6 +535,14 @@ class GUIController(QtCore.QObject):
         self._disable_train_logging = flag
         self.disableTrainLoggingChanged.emit(flag)
 
+    @QtCore.Slot(bool)
+    def set_auto_clear_logs(self, value: bool) -> None:
+        flag = bool(value)
+        if self._auto_clear_logs == flag:
+            return
+        self._auto_clear_logs = flag
+        self.autoClearLogsChanged.emit(flag)
+
     @QtCore.Slot()
     def stop_process(self) -> None:
         if self._process is None:
@@ -545,12 +559,13 @@ class GUIController(QtCore.QObject):
     def clear_model_cache(self) -> None:
         try:
             self._clear_cache_files()
-            self._emit_status("Кэш моделей и LOGS_FOR_AGENTS.md очищены.")
-            self._emit_log("[GUI] Кэш моделей и LOGS_FOR_AGENTS.md очищены.")
+            self._emit_status("Кэш моделей, LOGS_FOR_AGENTS.md и results.txt очищены.")
+            self._emit_log("[GUI] Кэш моделей, LOGS_FOR_AGENTS.md и results.txt очищены.")
         except OSError as exc:
             message = (
-                "Не удалось очистить кэш (gui_qt/main.py): "
-                "проверьте права доступа и повторите."
+                "Не удалось очистить кэш и логи. "
+                "Где: gui_qt/main.py (clear_model_cache). "
+                "Что делать: проверьте права доступа к models/, metrics/, LOGS_FOR_AGENTS.md и results.txt, затем повторите."
             )
             self._emit_status(message)
             self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
@@ -558,13 +573,14 @@ class GUIController(QtCore.QObject):
     @QtCore.Slot()
     def clear_agent_logs(self) -> None:
         try:
-            self._truncate_agent_logs()
-            self._emit_status("LOGS_FOR_AGENTS.md очищен.")
-            self._emit_log("[GUI] LOGS_FOR_AGENTS.md очищен.")
+            self._clear_runtime_logs()
+            self._emit_status("LOGS_FOR_AGENTS.md и results.txt очищены.")
+            self._emit_log("[GUI] LOGS_FOR_AGENTS.md и results.txt очищены.")
         except OSError as exc:
             message = (
-                "Не удалось очистить LOGS_FOR_AGENTS.md (gui_qt/main.py): "
-                "проверьте путь и права доступа, затем повторите."
+                "Не удалось очистить логи. "
+                "Где: gui_qt/main.py (clear_agent_logs). "
+                "Что делать: проверьте путь и права доступа к LOGS_FOR_AGENTS.md и results.txt, затем повторите."
             )
             self._emit_status(message)
             self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
@@ -892,6 +908,19 @@ class GUIController(QtCore.QObject):
         if self._process is not None:
             self._emit_status("Процесс уже запущен. Сначала остановите текущий.")
             return
+        if self._auto_clear_logs:
+            try:
+                self._clear_runtime_logs()
+                self._emit_log("[GUI] Автоочистка: LOGS_FOR_AGENTS.md и results.txt очищены.", level="INFO")
+            except OSError as exc:
+                message = (
+                    "Не удалось автоматически очистить логи перед тренировкой. "
+                    "Где: gui_qt/main.py (_start_training). "
+                    "Что делать: проверьте доступ к LOGS_FOR_AGENTS.md и results.txt или снимите галочку автоочистки."
+                )
+                self._emit_status(message)
+                self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
+                return
         if not self._prepare_training_data():
             return
 
@@ -1899,7 +1928,7 @@ class GUIController(QtCore.QObject):
                     shutil.rmtree(target)
                 else:
                     os.remove(target)
-        self._truncate_agent_logs()
+        self._clear_runtime_logs()
 
     def _remove_contents(self, path: str) -> None:
         if not os.path.isdir(path):
@@ -1911,9 +1940,12 @@ class GUIController(QtCore.QObject):
             else:
                 os.remove(target)
 
-    def _truncate_agent_logs(self) -> None:
+    def _clear_runtime_logs(self) -> None:
         log_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS.md")
         with open(log_path, "w", encoding="utf-8"):
+            pass
+        results_path = os.path.join(self._repo_root, "results.txt")
+        with open(results_path, "w", encoding="utf-8"):
             pass
 
 
