@@ -3,7 +3,7 @@
     "tau": 0.01,
     "eps_start": 0.9,
     "eps_end": 0.05,
-    "eps_decay": 20000,
+    "eps_decay": 30000,
     "batch_size": 384,
     "gamma": 0.99,
     "updates_per_step": 6,
