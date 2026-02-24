@@ -293,6 +293,10 @@ def _add_unit_model_cells(occupied_model_cells: set[Tuple[int, int]], anchor: Tu
         occupied_model_cells.add((int(anchor[0]) + int(dr), int(anchor[1]) + int(dc)))
 
 
+def _facing_for_deploy_zone(zone_side: str) -> str:
+    return "right" if str(zone_side) == "model" else "left"
+
+
 def deploy_only_war(
     model_units: Sequence,
     enemy_units: Sequence,
@@ -464,6 +468,13 @@ def deploy_only_war(
             unit.set_anchor(coord[0], coord[1])
         else:
             unit.unit_coords = [coord[0], coord[1]]
+        facing = _facing_for_deploy_zone(zone_side)
+        try:
+            setattr(unit, "facing", facing)
+        except Exception:
+            pass
+        if isinstance(getattr(unit, "unit_data", None), dict):
+            unit.unit_data["Facing"] = facing
         occupied.add(coord)
         _add_unit_model_cells(occupied_model_cells, coord, unit_model_offsets)
         if side == "enemy":

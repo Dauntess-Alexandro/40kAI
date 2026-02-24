@@ -828,6 +828,19 @@ class ViewerWindow(QtWidgets.QMainWindow):
             offsets = [(0, 0)]
         return [(anchor_x + dc, anchor_y + dr) for dr, dc in offsets]
 
+    def _resolve_deploy_facing(self, request_meta, placed_cells):
+        meta = request_meta if isinstance(request_meta, dict) else {}
+        zone_side = str(meta.get("deploy_zone_side") or "").strip().lower()
+        if zone_side == "model":
+            return "right"
+        if zone_side == "enemy":
+            return "left"
+        if placed_cells:
+            board_w = int(meta.get("deploy_b_hei") or 60)
+            anchor_x = int(placed_cells[0][0])
+            return "right" if anchor_x < (board_w / 2.0) else "left"
+        return "right"
+
     def _update_command_hint(self, kind):
         if kind == "direction":
             self.command_hint.setText("Горячие клавиши: ↑ ↓ ← →, пробел/0 — нет")
@@ -1004,6 +1017,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                         unit_id=int(unit_id),
                         unit_name=unit_name,
                         model_cells=placed_cells,
+                        facing=self._resolve_deploy_facing(finished_meta, placed_cells),
                     )
                     self.map_scene.trigger_deploy_snap_flash(placed_cells, duration_s=0.22)
                 except (TypeError, ValueError):

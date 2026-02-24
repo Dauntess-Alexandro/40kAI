@@ -25,6 +25,37 @@ def _safe_float(value, fallback=None):
         return fallback
 
 
+def _normalize_facing(value):
+    raw = str(value or "").strip().lower()
+    if raw in {"left", "l", "west", "w", "-1"}:
+        return "left"
+    if raw in {"right", "r", "east", "e", "1"}:
+        return "right"
+    return None
+
+
+def _facing_from_x(coords, board_width):
+    x = _safe_int(coords[1], None) if coords is not None else None
+    width = _safe_int(board_width, None)
+    if x is None or width is None or width <= 0:
+        return None
+    return "right" if x < (width / 2.0) else "left"
+
+
+def _resolve_unit_facing(unit_data, coords, board_width):
+    if isinstance(unit_data, dict):
+        explicit = (
+            unit_data.get("facing")
+            or unit_data.get("Facing")
+            or unit_data.get("orientation")
+            or unit_data.get("Orientation")
+        )
+        normalized = _normalize_facing(explicit)
+        if normalized is not None:
+            return normalized
+    return _facing_from_x(coords, board_width)
+
+
 def _read_log_tail(max_lines=30, max_bytes=65536):
     candidates = [
         os.path.join(os.getcwd(), "gui", "response.txt"),
@@ -66,7 +97,7 @@ def _read_event_tail(default_max_events=500):
     return recorder.snapshot(limit=limit)
 
 
-def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, anchor=None, model_positions=None):
+def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, anchor=None, model_positions=None, facing=None):
     name = "—"
     models = None
     if isinstance(unit_data, dict):
@@ -85,6 +116,7 @@ def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, ancho
         "anchor_x": _safe_int(anchor[1], None) if anchor is not None else None,
         "anchor_y": _safe_int(anchor[0], None) if anchor is not None else None,
         "model_positions": model_positions or [],
+        "facing": facing,
     }
 
 
@@ -92,6 +124,8 @@ def write_state_json(env, path=None):
     io_profiler = get_io_profiler()
     state_path = path or os.getenv("STATE_JSON_PATH", DEFAULT_STATE_PATH)
     os.makedirs(os.path.dirname(state_path), exist_ok=True)
+
+    board_width = _safe_int(getattr(env, "b_hei", None), None)
 
     units = []
     for idx, coords in enumerate(getattr(env, "enemy_coords", [])):
@@ -103,7 +137,8 @@ def write_state_json(env, path=None):
                                    anchor=(env.enemy_anchor_coords[idx] if hasattr(env, "enemy_anchor_coords") and idx < len(env.enemy_anchor_coords) else None),
                                    model_positions=([{"x": _safe_int(pos[1], None), "y": _safe_int(pos[0], None), "z": _safe_int(pos[2], 0)}
                                                      for pos in env.enemy_model_positions[idx]]
-                                                    if hasattr(env, "enemy_model_positions") and idx < len(env.enemy_model_positions) else [])))
+                                                    if hasattr(env, "enemy_model_positions") and idx < len(env.enemy_model_positions) else []),
+                                   facing=_resolve_unit_facing(unit_data, coords, board_width)))
 
     for idx, coords in enumerate(getattr(env, "unit_coords", [])):
         unit_id = env._unit_id("model", idx)
@@ -114,7 +149,8 @@ def write_state_json(env, path=None):
                                    anchor=(env.unit_anchor_coords[idx] if hasattr(env, "unit_anchor_coords") and idx < len(env.unit_anchor_coords) else None),
                                    model_positions=([{"x": _safe_int(pos[1], None), "y": _safe_int(pos[0], None), "z": _safe_int(pos[2], 0)}
                                                      for pos in env.unit_model_positions[idx]]
-                                                    if hasattr(env, "unit_model_positions") and idx < len(env.unit_model_positions) else [])))
+                                                    if hasattr(env, "unit_model_positions") and idx < len(env.unit_model_positions) else []),
+                                   facing=_resolve_unit_facing(unit_data, coords, board_width)))
 
     objectives = []
     for idx, coords in enumerate(getattr(env, "coordsOfOM", [])):

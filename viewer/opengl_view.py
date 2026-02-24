@@ -44,6 +44,7 @@ class UnitRender:
     label: str
     icon: Optional[QtGui.QPixmap] = None
     model_centers: Optional[List[QtCore.QPointF]] = None
+    facing: str = "right"
 
 
 @dataclass
@@ -708,6 +709,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         unit_id: int,
         unit_name: str,
         model_cells: List[Tuple[int, int]],
+        facing: Optional[str] = None,
     ) -> None:
         if not model_cells:
             return
@@ -736,6 +738,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             label=f"{key[1]}",
             icon=self._icon_for_unit_name(str(unit_name or "")),
             model_centers=model_centers,
+            facing=("left" if str(facing).lower() == "left" else "right"),
         )
         self._deploy_preview_units.append(render)
         self._deploy_preview_unit_keys = {r.key for r in self._deploy_preview_units}
@@ -1131,6 +1134,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 label=f"{unit.get('id', '')}{model_label}",
                 icon=self._icon_for_unit_name(unit_name),
                 model_centers=model_centers,
+                facing=self._resolve_render_facing(unit),
             )
             self._units.append(render)
             if key[0] is not None and key[1] is not None:
@@ -1609,6 +1613,31 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     objective.control_radius,
                 )
 
+    def _resolve_render_facing(self, unit: Optional[dict]) -> str:
+        if not isinstance(unit, dict):
+            return "right"
+        raw = str(unit.get("facing") or "").strip().lower()
+        if raw in {"left", "right"}:
+            return raw
+        x_val = unit.get("x")
+        board_w = self._board_width or ENV_BOARD_WIDTH
+        try:
+            x = float(x_val)
+        except (TypeError, ValueError):
+            return "right"
+        return "right" if x < (float(board_w) / 2.0) else "left"
+
+    def _draw_pixmap_with_facing(self, painter: QtGui.QPainter, rect: QtCore.QRectF, pixmap: QtGui.QPixmap, facing: str) -> None:
+        if facing == "left":
+            painter.save()
+            painter.translate(rect.x() + rect.width(), 0.0)
+            painter.scale(-1.0, 1.0)
+            mirrored_rect = QtCore.QRectF(0.0, rect.y(), rect.width(), rect.height())
+            painter.drawPixmap(mirrored_rect, pixmap, QtCore.QRectF(pixmap.rect()))
+            painter.restore()
+            return
+        painter.drawPixmap(rect, pixmap, QtCore.QRectF(pixmap.rect()))
+
     def _draw_units_layer(self, painter: QtGui.QPainter) -> None:
         renders = list(self._units)
         if self._deploy_preview_units:
@@ -1629,7 +1658,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                             icon_size,
                             icon_size,
                         )
-                        painter.drawPixmap(rect, icon, QtCore.QRectF(icon.rect()))
+                        self._draw_pixmap_with_facing(painter, rect, icon, render.facing)
                 else:
                     icon_size = marker_radius * self._unit_icon_scale
                     rect = QtCore.QRectF(
@@ -1638,7 +1667,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                         icon_size,
                         icon_size,
                     )
-                    painter.drawPixmap(rect, icon, QtCore.QRectF(icon.rect()))
+                    self._draw_pixmap_with_facing(painter, rect, icon, render.facing)
                 continue
 
             # Fallback без кругов: небольшой квадрат, если иконки нет.
