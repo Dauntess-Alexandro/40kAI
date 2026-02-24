@@ -552,7 +552,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._deploy_context = None
             self._deploy_hover_cell = None
             self._deploy_status_text = ""
-            self.map_scene.set_deploy_ghost([], None)
+            self.map_scene.set_deploy_ghost([], None, "")
             if self.controller.is_finished:
                 self.command_prompt.setText("Игра завершена.")
             else:
@@ -755,16 +755,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _refresh_deploy_preview(self) -> None:
         if not self._is_deploy_request(self._pending_request):
-            self.map_scene.set_deploy_ghost([], None)
+            self.map_scene.set_deploy_ghost([], None, "")
             return
         meta = self._deploy_context if isinstance(self._deploy_context, dict) else {}
         if self._deploy_hover_cell is None:
-            self.map_scene.set_deploy_ghost([], None)
+            self.map_scene.set_deploy_ghost([], None, "")
             return
 
         x, y = self._deploy_hover_cell
         ok, reason, ghost_cells = self._validate_deploy_cell(x, y)
-        self.map_scene.set_deploy_ghost(ghost_cells, ok)
+        unit_name = str((self._deploy_context or {}).get("deploy_unit_name") or (self._deploy_context or {}).get("deploy_unit_label") or "")
+        self.map_scene.set_deploy_ghost(ghost_cells, ok, unit_name)
         if not ok:
             self.command_hint.setText(f"Клик заблокирован: {reason}. Выберите валидную клетку.")
 

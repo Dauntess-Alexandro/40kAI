@@ -253,6 +253,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._hover_cell: Optional[Tuple[int, int]] = None
         self._deploy_ghost_cells: List[Tuple[int, int]] = []
         self._deploy_ghost_valid: Optional[bool] = None
+        self._deploy_ghost_unit_name: str = ""
+        self._deploy_ghost_alpha_valid = 0.55
+        self._deploy_ghost_alpha_invalid = 0.40
         self._hover_unit_key: Optional[Tuple[str, int]] = None
         self._hover_tooltip_text: Optional[Dict] = None
         self._hover_tooltip_ts: float = 0.0
@@ -633,9 +636,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._hover_cell = self._state_xy_to_view_xy(cell[0], cell[1]) if cell is not None else None
         self.update()
 
-    def set_deploy_ghost(self, cells: List[Tuple[int, int]], is_valid: Optional[bool]) -> None:
+    def set_deploy_ghost(self, cells: List[Tuple[int, int]], is_valid: Optional[bool], unit_name: str = "") -> None:
         self._deploy_ghost_cells = list(cells or [])
         self._deploy_ghost_valid = is_valid
+        self._deploy_ghost_unit_name = str(unit_name or "")
         self.update()
 
     def set_active_phase(self, phase: Optional[str]) -> None:
@@ -1427,6 +1431,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.setTransform(self._view_transform())
         self._draw_movement_layer(painter)
         self._draw_objective_layer(painter)
+        self._draw_deploy_ghost_layer(painter)
         self._draw_platform_fx_layer(painter)
         self._draw_units_layer(painter)
         self._draw_selection_layer(painter)
@@ -1521,24 +1526,63 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 rect = QtCore.QRectF(center.x() - size / 2, center.y() - size / 2, size, size)
                 painter.drawRect(rect)
 
-    def _draw_selection_layer(self, painter: QtGui.QPainter) -> None:
+    def _draw_deploy_ghost_layer(self, painter: QtGui.QPainter) -> None:
         if not self._deploy_ghost_cells:
             return
-        color = QtGui.QColor(70, 220, 120, 110) if self._deploy_ghost_valid else QtGui.QColor(220, 70, 70, 120)
-        border = QtGui.QColor(70, 220, 120, 190) if self._deploy_ghost_valid else QtGui.QColor(220, 70, 70, 210)
+
+        ghost_icon = self._icon_for_unit_name(self._deploy_ghost_unit_name) if self._deploy_ghost_unit_name else None
+        alpha = self._deploy_ghost_alpha_valid if self._deploy_ghost_valid else self._deploy_ghost_alpha_invalid
+
         painter.save()
-        painter.setBrush(QtGui.QBrush(color))
-        painter.setPen(QtGui.QPen(border, 1.5))
-        size = self.cell_size * 0.62
-        for state_x, state_y in self._deploy_ghost_cells:
-            view_cell = self._state_xy_to_view_xy(state_x, state_y)
-            if view_cell is None:
-                continue
-            cx, cy = view_cell
-            center = self._cell_center(cx, cy)
-            rect = QtCore.QRectF(center.x() - size / 2, center.y() - size / 2, size, size)
-            painter.drawEllipse(rect)
+        painter.setOpacity(max(0.0, min(1.0, alpha)))
+
+        if ghost_icon is not None and not ghost_icon.isNull():
+            icon_size = max(6.0, self.cell_size * self._model_icon_scale)
+            for state_x, state_y in self._deploy_ghost_cells:
+                view_cell = self._state_xy_to_view_xy(state_x, state_y)
+                if view_cell is None:
+                    continue
+                center = self._cell_center(view_cell[0], view_cell[1])
+                rect = QtCore.QRectF(
+                    center.x() - icon_size / 2,
+                    center.y() - icon_size / 2,
+                    icon_size,
+                    icon_size,
+                )
+                painter.drawPixmap(rect, ghost_icon, QtCore.QRectF(ghost_icon.rect()))
+        else:
+            # Fallback: если иконка не найдена, оставляем простой ghost-маркер.
+            color = QtGui.QColor(70, 220, 120, 110) if self._deploy_ghost_valid else QtGui.QColor(220, 70, 70, 120)
+            border = QtGui.QColor(70, 220, 120, 190) if self._deploy_ghost_valid else QtGui.QColor(220, 70, 70, 210)
+            painter.setBrush(QtGui.QBrush(color))
+            painter.setPen(QtGui.QPen(border, 1.3))
+            size = self.cell_size * 0.62
+            for state_x, state_y in self._deploy_ghost_cells:
+                view_cell = self._state_xy_to_view_xy(state_x, state_y)
+                if view_cell is None:
+                    continue
+                center = self._cell_center(view_cell[0], view_cell[1])
+                rect = QtCore.QRectF(center.x() - size / 2, center.y() - size / 2, size, size)
+                painter.drawEllipse(rect)
+
+        painter.setOpacity(1.0)
+        if self._deploy_ghost_valid is False:
+            # Для невалидного preview добавляем мягкий красный контур, но не заменяем спрайт.
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.setPen(QtGui.QPen(QtGui.QColor(220, 70, 70, 180), 1.4))
+            ring_size = self.cell_size * 0.68
+            for state_x, state_y in self._deploy_ghost_cells:
+                view_cell = self._state_xy_to_view_xy(state_x, state_y)
+                if view_cell is None:
+                    continue
+                center = self._cell_center(view_cell[0], view_cell[1])
+                rect = QtCore.QRectF(center.x() - ring_size / 2, center.y() - ring_size / 2, ring_size, ring_size)
+                painter.drawEllipse(rect)
         painter.restore()
+
+    def _draw_selection_layer(self, painter: QtGui.QPainter) -> None:
+        # Кольца выбора отключены: отдельный слой selection не используется.
+        return
 
     def _draw_shooting_layer(self, painter: QtGui.QPainter) -> None:
         if not self._target_highlights:

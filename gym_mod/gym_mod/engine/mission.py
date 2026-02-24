@@ -339,6 +339,9 @@ def deploy_only_war(
             io = get_active_io()
             unit_id = 11 + unit_idx
             unit_label = format_unit(unit_id, getattr(unit, "unit_data", None), include_instance_id=False)
+            unit_name = ""
+            if isinstance(getattr(unit, "unit_data", None), dict):
+                unit_name = str(getattr(unit, "unit_data", {}).get("Name") or "")
             x_min, x_max = _zone_bounds_for_side(zone_side, b_hei)
             y_min, y_max = 0, b_len - 1
             next_label = None
@@ -365,6 +368,7 @@ def deploy_only_war(
                         "deploy_side": side,
                         "deploy_unit_id": unit_id,
                         "deploy_unit_label": unit_label,
+                        "deploy_unit_name": unit_name,
                         "deploy_index": current_index,
                         "deploy_total": manual_total,
                         "deploy_remaining": max(0, manual_total - manual_done),
