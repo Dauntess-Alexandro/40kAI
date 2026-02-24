@@ -1398,6 +1398,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         match = re.search(r"(?:юнит|unit)\s*#?\s*(\d+)", prompt, re.IGNORECASE)
         if match:
             return int(match.group(1))
+        raw = str(prompt).strip()
+        if raw.isdigit():
+            return int(raw)
         return None
 
     def _resolve_move_range(self, unit):
