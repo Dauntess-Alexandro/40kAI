@@ -555,6 +555,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._deploy_hover_cell = None
             self._deploy_status_text = ""
             self._clear_deploy_overlays()
+            self.map_scene.clear_temporary_deploy_units()
             if self.controller.is_finished:
                 self.command_prompt.setText("Игра завершена.")
             else:
@@ -573,6 +574,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         else:
             self._deploy_visual_reset_done = False
             self._clear_deploy_overlays()
+            self.map_scene.clear_temporary_deploy_units()
 
         self._maybe_reset_target_for_request(request)
         self._update_deploy_status_from_request(request)
@@ -808,6 +810,24 @@ class ViewerWindow(QtWidgets.QMainWindow):
         )
         return ok, reason, ghost_cells
 
+    def _extract_manual_deploy_cells(self, request_meta, submitted_value):
+        meta = request_meta if isinstance(request_meta, dict) else {}
+        if not isinstance(submitted_value, dict):
+            return []
+        try:
+            anchor_x = int(submitted_value.get("x"))
+            anchor_y = int(submitted_value.get("y"))
+        except (TypeError, ValueError):
+            return []
+        offsets = [
+            (int(pair[0]), int(pair[1]))
+            for pair in (meta.get("model_offsets") or [[0, 0]])
+            if isinstance(pair, (list, tuple)) and len(pair) >= 2
+        ]
+        if not offsets:
+            offsets = [(0, 0)]
+        return [(anchor_x + dc, anchor_y + dr) for dr, dc in offsets]
+
     def _update_command_hint(self, kind):
         if kind == "direction":
             self.command_hint.setText("Горячие клавиши: ↑ ↓ ← →, пробел/0 — нет")
@@ -970,9 +990,25 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if self._pending_request is None:
             return
         finished_request = self._pending_request
+        finished_meta = getattr(finished_request, "meta", {}) or {}
         if self._is_deploy_request(finished_request):
-            # Placement confirmed: remove preview/marker immediately
-            # and wait for fresh state redraw with real unit render.
+            placed_cells = self._extract_manual_deploy_cells(finished_meta, value)
+            deploy_side = str(finished_meta.get("deploy_side") or "enemy")
+            unit_side = "player" if deploy_side == "enemy" else "model"
+            unit_id = finished_meta.get("deploy_unit_id")
+            unit_name = str(finished_meta.get("deploy_unit_name") or finished_meta.get("deploy_unit_label") or "")
+            if placed_cells and unit_id is not None:
+                try:
+                    self.map_scene.add_temporary_deploy_unit(
+                        unit_side=unit_side,
+                        unit_id=int(unit_id),
+                        unit_name=unit_name,
+                        model_cells=placed_cells,
+                    )
+                    self.map_scene.trigger_deploy_snap_flash(placed_cells, duration_s=0.22)
+                except (TypeError, ValueError):
+                    pass
+            # Placement confirmed: remove preview/marker immediately.
             self._clear_deploy_overlays()
         self._finish_active_request()
         messages, request = self.controller.answer(value)
