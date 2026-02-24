@@ -15,6 +15,14 @@ from model.utils import select_action, convertToDict, build_shoot_action_mask, n
 from gym_mod.envs.warhamEnv import roll_off_attacker_defender
 
 
+def load_trusted_checkpoint(checkpoint_path: str):
+    """Загрузка доверенного checkpoint с поддержкой разных версий PyTorch."""
+    try:
+        return torch.load(checkpoint_path, weights_only=False)
+    except TypeError:
+        return torch.load(checkpoint_path)
+
+
 class GameController:
     def __init__(self, model_path: Optional[str] = None, state_path: Optional[str] = None):
         self.model_path = model_path or "None"
@@ -106,7 +114,7 @@ class GameController:
         with open(model_path, "rb") as handle:
             env, model, enemy = pickle.load(handle)
 
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = load_trusted_checkpoint(checkpoint_path)
         return env, model, enemy, checkpoint
 
     def _run_game_loop(self):
