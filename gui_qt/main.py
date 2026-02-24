@@ -1620,10 +1620,22 @@ class GUIController(QtCore.QObject):
             if log_values:
                 values.update(log_values)
                 values["source"] = "логи (fallback)"
-                self._emit_log(
-                    f"[GUI][METRICS] State для model_id={model_id} восстановлен из LOGS_FOR_AGENTS.md.",
-                    level="INFO",
-                )
+                missing = [key for key in ("global_step", "optimize_steps", "replay_size", "eps") if values.get(key) == "—"]
+                if missing:
+                    values["reason"] = (
+                        "Данные в LOGS_FOR_AGENTS.md найдены частично: отсутствуют поля "
+                        f"{', '.join(missing)}. Что делать: проверьте полный лог run и сохранение checkpoint."
+                    )
+                    self._emit_log(
+                        f"[GUI][METRICS] State для model_id={model_id} получен частично из LOGS_FOR_AGENTS.md, отсутствуют: {missing}.",
+                        level="WARN",
+                    )
+                else:
+                    values["reason"] = ""
+                    self._emit_log(
+                        f"[GUI][METRICS] State для model_id={model_id} восстановлен из LOGS_FOR_AGENTS.md.",
+                        level="INFO",
+                    )
                 return values
             values["reason"] = "Не найден checkpoint для выбранной модели (где искали: selected/models/checkpoint_ep/logs)."
             return values
@@ -1636,11 +1648,22 @@ class GUIController(QtCore.QObject):
             if log_values:
                 values.update(log_values)
                 values["source"] = "логи (fallback)"
-                values["reason"] = ""
-                self._emit_log(
-                    f"[GUI][METRICS] torch недоступен, state для model_id={model_id} восстановлен из LOGS_FOR_AGENTS.md.",
-                    level="WARN",
-                )
+                missing = [key for key in ("global_step", "optimize_steps", "replay_size", "eps") if values.get(key) == "—"]
+                if missing:
+                    values["reason"] = (
+                        "torch недоступен, а данные из LOGS_FOR_AGENTS.md неполные: отсутствуют поля "
+                        f"{', '.join(missing)}. Что делать: проверьте полный лог run или исправьте загрузку torch/checkpoint."
+                    )
+                    self._emit_log(
+                        f"[GUI][METRICS] torch недоступен, state для model_id={model_id} получен частично из LOGS_FOR_AGENTS.md, отсутствуют: {missing}.",
+                        level="WARN",
+                    )
+                else:
+                    values["reason"] = ""
+                    self._emit_log(
+                        f"[GUI][METRICS] torch недоступен, state для model_id={model_id} восстановлен из LOGS_FOR_AGENTS.md.",
+                        level="WARN",
+                    )
                 return values
             values["reason"] = (
                 "Не удалось открыть checkpoint: torch недоступен (gui_qt/main.py:_extract_selected_model_meta). "

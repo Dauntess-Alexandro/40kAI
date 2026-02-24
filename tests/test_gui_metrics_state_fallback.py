@@ -143,6 +143,7 @@ class GuiMetricsStateFallbackTests(unittest.TestCase):
             meta = c._extract_selected_model_meta()
             self.assertEqual(meta["global_step"], "200")
             self.assertEqual(meta["source"], "логи (fallback)")
+            self.assertEqual(meta["reason"], "")
 
     def test_torch_missing_uses_logs_fallback(self):
         with tempfile.TemporaryDirectory() as td:
@@ -164,6 +165,26 @@ class GuiMetricsStateFallbackTests(unittest.TestCase):
             self.assertEqual(meta["global_step"], "333")
             self.assertEqual(meta["source"], "логи (fallback)")
             self.assertEqual(meta["reason"], "")
+
+    def test_partial_logs_fallback_sets_reason(self):
+        with tempfile.TemporaryDirectory() as td:
+            models = os.path.join(td, "models", "run")
+            os.makedirs(models, exist_ok=True)
+            pickle_path = os.path.join(models, "model-5-5.pickle")
+            open(pickle_path, "w", encoding="utf-8").close()
+            with open(os.path.join(td, "LOGS_FOR_AGENTS.md"), "w", encoding="utf-8") as handle:
+                handle.write("2026 | [TRAIN][START] run_id=1\n")
+                handle.write("2026 | [TRAIN][EP] ep=600\n")
+                handle.write("2026 | [SAVE] pickle сохранён: models/run/model-5-5.pickle\n")
+
+            c = self._make_controller(td, "5-5", pickle_path)
+            with patch.dict("sys.modules", {"torch": None}):
+                meta = c._extract_selected_model_meta()
+
+            self.assertEqual(meta["source"], "логи (fallback)")
+            self.assertEqual(meta["episode"], "600")
+            self.assertEqual(meta["global_step"], "—")
+            self.assertIn("частично", meta["reason"])
 
     def test_no_sources_keeps_dashes_with_reason(self):
         with tempfile.TemporaryDirectory() as td:
