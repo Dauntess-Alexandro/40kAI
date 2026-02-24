@@ -1613,17 +1613,21 @@ class GUIController(QtCore.QObject):
                 if target_name in files:
                     candidates.append(os.path.join(root, target_name))
 
-        if not candidates:
-            return values
-
         checkpoint = None
+        repo_root_in_path = True
         try:
             import torch
+
+            repo_root_in_path = self._repo_root in sys.path
+            if not repo_root_in_path:
+                # Для unpickle checkpoint'ов нужен импорт model.memory.Transition.
+                # Добавляем корень репозитория, чтобы namespace-package `model/` был доступен.
+                sys.path.insert(0, self._repo_root)
 
             for path in candidates:
                 try:
                     # PyTorch >=2.6 по умолчанию грузит только веса (weights_only=True),
-                    # что ломает старые checkpoint'ы с replay buffer / кастомными классами.
+                    # что ломает checkpoint'ы с replay buffer / кастомными классами.
                     checkpoint = torch.load(path, map_location="cpu", weights_only=False)
                 except TypeError:
                     # Совместимость со старыми версиями torch без аргумента weights_only.
@@ -1633,8 +1637,39 @@ class GUIController(QtCore.QObject):
 
                 if isinstance(checkpoint, dict):
                     break
+
+            if not isinstance(checkpoint, dict):
+                # Fallback: если model-<id>.pth не читается/отсутствует, берём
+                # свежий checkpoint_ep*.pth из той же папки модели.
+                fallback_dir = None
+                if self._selected_metrics_model_path:
+                    fallback_dir = os.path.dirname(self._selected_metrics_model_path)
+                if fallback_dir and os.path.isdir(fallback_dir):
+                    fallback_candidates: list[str] = []
+                    try:
+                        for name in os.listdir(fallback_dir):
+                            if name.startswith("checkpoint_ep") and name.endswith(".pth"):
+                                fallback_candidates.append(os.path.join(fallback_dir, name))
+                    except OSError:
+                        fallback_candidates = []
+                    fallback_candidates.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+                    for path in fallback_candidates:
+                        try:
+                            checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+                        except TypeError:
+                            checkpoint = torch.load(path, map_location="cpu")
+                        except Exception:
+                            continue
+                        if isinstance(checkpoint, dict):
+                            break
         except Exception:
             return values
+        finally:
+            if not repo_root_in_path:
+                try:
+                    sys.path.remove(self._repo_root)
+                except ValueError:
+                    pass
 
         if not isinstance(checkpoint, dict):
             return values
