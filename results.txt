@@ -1,0 +1,1 @@
+время=2026-02-24 15:31:47 длительность_с=25.79 модель=M_Necrons_vs_P_Necrons/model-44-1810 run_id=7925561 эпизоды=100 winrate_mean=0.1700 vp_diff_mean=-0.5100 reward_mean=0.020729 ep_len_mean=9.52 turn_mean=10.52
