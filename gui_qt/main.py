@@ -97,7 +97,8 @@ class GUIController(QtCore.QObject):
         self._metrics_paths = self._build_metrics_paths(self._metrics_files, cache_token=self._cache_token())
         self._metrics_mtimes: dict[str, Optional[float]] = {}
         self._metrics_label = "По умолчанию"
-        self._metrics_run_id = ""
+        self._selected_metrics_model_id = ""
+        self._selected_metrics_model_path = ""
         self._metric_summary_texts = {
             "reward": "Текущее: — | Среднее: — | Мин: — | Макс: —",
             "loss": "Текущее: — | Среднее: — | Мин: — | Макс: —",
@@ -589,6 +590,7 @@ class GUIController(QtCore.QObject):
             return
         if not self._load_metrics_from_json(json_path):
             return
+        self._selected_metrics_model_path = path
         self._metrics_label = f"Файл: {os.path.basename(path)}"
         self.metricsLabelChanged.emit(self._metrics_label)
         self._emit_status("Метрики обновлены.")
@@ -1442,7 +1444,7 @@ class GUIController(QtCore.QObject):
             "vpdiff": self._resolve_metric_path(payload.get("vpdiff"), self._metrics_defaults["vpdiff"]),
             "endreasons": self._resolve_metric_path(payload.get("endreasons"), self._metrics_defaults["endreasons"]),
         }
-        self._metrics_run_id = self._extract_run_id_from_path(json_path)
+        self._selected_metrics_model_id = self._extract_model_id_from_metrics_json_path(json_path)
         self._set_metrics_files(updated)
         self._refresh_metrics_summaries()
         return True
@@ -1454,6 +1456,7 @@ class GUIController(QtCore.QObject):
             if metrics_id:
                 json_path = os.path.join(self._repo_root, "models", f"data_{metrics_id}.json")
                 if os.path.exists(json_path) and self._load_metrics_from_json(json_path):
+                    self._selected_metrics_model_path = latest_model
                     self._metrics_label = f"Файл: {os.path.basename(latest_model)}"
                     self.metricsLabelChanged.emit(self._metrics_label)
                     return True
@@ -1464,16 +1467,38 @@ class GUIController(QtCore.QObject):
             return True
         self._set_metrics_files(dict(self._metrics_defaults))
         self._metrics_label = "По умолчанию"
-        self._metrics_run_id = ""
+        self._selected_metrics_model_id = ""
+        self._selected_metrics_model_path = ""
         self._refresh_metrics_summaries()
         self.metricsLabelChanged.emit(self._metrics_label)
         return False
 
-    def _extract_run_id_from_path(self, path: str) -> str:
+    def _extract_model_id_from_metrics_json_path(self, path: str) -> str:
         base = os.path.basename(path)
-        match = re.search(r"_(\d+)\.json$", base)
+        match = re.search(r"^data_(.+)\.json$", base)
         if match:
             return match.group(1)
+        return ""
+
+    def _find_run_id_for_model_id(self, model_id: str) -> str:
+        if not model_id:
+            return ""
+        results_path = os.path.join(self._repo_root, "results.txt")
+        if not os.path.exists(results_path):
+            return ""
+        try:
+            with open(results_path, "r", encoding="utf-8", errors="replace") as handle:
+                lines = handle.readlines()
+        except OSError:
+            return ""
+
+        needle = f"model-{model_id}"
+        for line in reversed(lines):
+            if needle not in line:
+                continue
+            match = re.search(r"run_id=(\d+)", line)
+            if match:
+                return match.group(1)
         return ""
 
     def _format_metric_summary(self, values: list[float], percent: bool = False) -> str:
@@ -1497,8 +1522,9 @@ class GUIController(QtCore.QObject):
         metrics_dir = os.path.join(self._repo_root, "metrics")
         if not os.path.isdir(metrics_dir):
             return None
-        if self._metrics_run_id:
-            exact = os.path.join(metrics_dir, f"stats_{self._metrics_run_id}.csv")
+        run_id = self._find_run_id_for_model_id(self._selected_metrics_model_id)
+        if run_id:
+            exact = os.path.join(metrics_dir, f"stats_{run_id}.csv")
             if os.path.exists(exact):
                 return exact
         latest_path = None
@@ -1516,38 +1542,53 @@ class GUIController(QtCore.QObject):
                 latest_path = path
         return latest_path
 
-    def _parse_training_counters(self) -> tuple[int, int, int, int]:
-        total_episodes = 0
-        results_path = os.path.join(self._repo_root, "results.txt")
-        if os.path.exists(results_path):
-            try:
-                with open(results_path, "r", encoding="utf-8", errors="replace") as handle:
-                    for line in handle:
-                        match = re.search(r"эпизоды=(\d+)", line)
-                        if match:
-                            total_episodes += int(match.group(1))
-            except OSError:
-                pass
-
+    def _parse_selected_model_counters(self, rows_count: int) -> tuple[int, int, int, int]:
+        total_episodes = max(0, int(rows_count))
         snapshot_episodes = 0
         fixed_episodes = 0
+        selected_run_episodes = 0
+
+        model_id = self._selected_metrics_model_id
+        if not model_id:
+            return total_episodes, total_episodes, 0, 0
+
         logs_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS.md")
         if os.path.exists(logs_path):
             try:
+                run_ep_seen = 0
+                run_snapshot_seen = 0
+                run_fixed_seen = 0
                 with open(logs_path, "r", encoding="utf-8", errors="replace") as handle:
                     for line in handle:
+                        if "[TRAIN][START]" in line:
+                            run_ep_seen = 0
+                            run_snapshot_seen = 0
+                            run_fixed_seen = 0
+
+                        ep_match = re.search(r"\[TRAIN\]\[EP\]\s+ep=(\d+)", line)
+                        if ep_match:
+                            run_ep_seen = max(run_ep_seen, int(ep_match.group(1)))
+
                         if "[SELFPLAY] enabled=1 mode=snapshot" in line:
-                            snapshot_episodes += 1
+                            run_snapshot_seen += 1
                         elif "[SELFPLAY] enabled=1 mode=fixed_checkpoint" in line:
-                            fixed_episodes += 1
+                            run_fixed_seen += 1
+
+                        if "[SAVE] pickle" in line and f"model-{model_id}.pickle" in line:
+                            selected_run_episodes = run_ep_seen
+                            snapshot_episodes = run_snapshot_seen
+                            fixed_episodes = run_fixed_seen
             except OSError:
                 pass
+
+        if selected_run_episodes > 0:
+            total_episodes = selected_run_episodes
 
         selfplay_total = snapshot_episodes + fixed_episodes
         heuristic_episodes = max(total_episodes - selfplay_total, 0)
         return total_episodes, heuristic_episodes, snapshot_episodes, fixed_episodes
 
-    def _extract_latest_resume_meta(self) -> dict[str, str]:
+    def _extract_selected_model_meta(self) -> dict[str, str]:
         values = {
             "global_step": "—",
             "optimize_steps": "—",
@@ -1555,18 +1596,72 @@ class GUIController(QtCore.QObject):
             "replay_size": "—",
             "eps": "—",
         }
-        logs_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS.md")
-        if not os.path.exists(logs_path):
+        model_id = self._selected_metrics_model_id
+        if not model_id:
             return values
+
+        candidates: list[str] = []
+        if self._selected_metrics_model_path:
+            direct = os.path.splitext(self._selected_metrics_model_path)[0] + ".pth"
+            if os.path.exists(direct):
+                candidates.append(direct)
+
+        models_path = os.path.join(self._repo_root, "models")
+        if os.path.isdir(models_path):
+            target_name = f"model-{model_id}.pth"
+            for root, _, files in os.walk(models_path):
+                if target_name in files:
+                    candidates.append(os.path.join(root, target_name))
+
+        if not candidates:
+            return values
+
+        checkpoint = None
         try:
-            with open(logs_path, "r", encoding="utf-8", errors="replace") as handle:
-                for line in handle:
-                    if "[RESUME] loaded:" not in line:
-                        continue
-                    for key, raw_value in re.findall(r"(global_step|optimize_steps|episode|replay_size|eps)=([^\s]+)", line):
-                        values[key] = raw_value
-        except OSError:
+            import torch
+
+            for path in candidates:
+                try:
+                    checkpoint = torch.load(path, map_location="cpu")
+                    if isinstance(checkpoint, dict):
+                        break
+                except Exception:
+                    continue
+        except Exception:
             return values
+
+        if not isinstance(checkpoint, dict):
+            return values
+
+        values["global_step"] = str(int(checkpoint.get("global_step", 0) or 0))
+        values["optimize_steps"] = str(int(checkpoint.get("optimize_steps", 0) or 0))
+        values["episode"] = str(int(checkpoint.get("episode", 0) or 0))
+
+        replay = checkpoint.get("replay_memory")
+        replay_size = "—"
+        if isinstance(replay, dict):
+            for key in ("size", "length", "count"):
+                if key in replay:
+                    replay_size = str(int(replay.get(key, 0) or 0))
+                    break
+            if replay_size == "—":
+                memory = replay.get("memory")
+                if isinstance(memory, list):
+                    replay_size = str(len(memory))
+        values["replay_size"] = replay_size
+
+        try:
+            with open(os.path.join(self._repo_root, "hyperparams.json"), "r", encoding="utf-8", errors="replace") as handle:
+                hp = json.load(handle)
+            eps_start = float(hp.get("eps_start", 0.9))
+            eps_end = float(hp.get("eps_end", 0.05))
+            eps_decay = max(1.0, float(hp.get("eps_decay", 20000)))
+            progress = min(float(values["global_step"]) / eps_decay, 1.0)
+            eps = eps_start + (eps_end - eps_start) * progress
+            values["eps"] = f"{eps:.4f}"
+        except (OSError, ValueError, json.JSONDecodeError):
+            pass
+
         return values
 
     def _refresh_metrics_summaries(self) -> None:
@@ -1606,8 +1701,8 @@ class GUIController(QtCore.QObject):
             if losses:
                 summaries["loss"] = self._format_metric_summary(losses)
 
-        total, heuristic, snapshot, fixed = self._parse_training_counters()
-        resume = self._extract_latest_resume_meta()
+        total, heuristic, snapshot, fixed = self._parse_selected_model_counters(len(rows))
+        resume = self._extract_selected_model_meta()
         model_state = (
             "Эпизоды\n"
             f"• Всего: {total}\n"
