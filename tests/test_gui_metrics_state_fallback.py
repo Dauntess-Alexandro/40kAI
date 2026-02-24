@@ -87,6 +87,8 @@ class GuiMetricsStateFallbackTests(unittest.TestCase):
         controller._repo_root = root
         controller._selected_metrics_model_id = model_id
         controller._selected_metrics_model_path = model_path
+        controller._metrics_torch_import_error = ""
+        controller._metrics_torch_import_warned = False
         controller._emit_log = lambda *args, **kwargs: None
         return controller
 
@@ -210,11 +212,25 @@ class GuiMetricsStateFallbackTests(unittest.TestCase):
             c._emit_log = lambda *args, **kwargs: None
             c._selected_metrics_model_id = ""
             c._selected_metrics_model_path = ""
+            c._metrics_torch_import_error = ""
+            c._metrics_torch_import_warned = False
 
             ok = c._load_metrics_from_json(os.path.join(td, "models", "data_42-537303.json"))
             self.assertTrue(ok)
             self.assertEqual(c._selected_metrics_model_id, "42-537303")
             self.assertEqual(c._selected_metrics_model_path, pickle_path)
+
+    def test_torch_import_warn_is_emitted_once(self):
+        c = self._make_controller("/tmp", "1-1", "/tmp/model-1-1.pickle")
+        logs = []
+        c._emit_log = lambda message, level=None: logs.append((level, message))
+
+        with patch.dict("sys.modules", {"torch": None}):
+            self.assertIsNone(c._get_torch_for_metrics_state())
+            self.assertIsNone(c._get_torch_for_metrics_state())
+
+        warn_lines = [item for item in logs if item[0] == "WARN" and "Не удалось импортировать torch" in item[1]]
+        self.assertEqual(len(warn_lines), 1)
 
 
 if __name__ == "__main__":

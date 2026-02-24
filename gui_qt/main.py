@@ -99,6 +99,8 @@ class GUIController(QtCore.QObject):
         self._metrics_label = "По умолчанию"
         self._selected_metrics_model_id = ""
         self._selected_metrics_model_path = ""
+        self._metrics_torch_import_error = ""
+        self._metrics_torch_import_warned = False
         self._metric_summary_texts = {
             "reward": "Текущее: — | Среднее: — | Мин: — | Макс: —",
             "loss": "Текущее: — | Среднее: — | Мин: — | Макс: —",
@@ -1628,13 +1630,30 @@ class GUIController(QtCore.QObject):
 
         checkpoint = None
         selected_checkpoint = ""
+        torch_module = self._get_torch_for_metrics_state()
+        if torch_module is None:
+            log_values = self._extract_selected_model_meta_from_logs(model_id)
+            if log_values:
+                values.update(log_values)
+                values["source"] = "логи (fallback)"
+                values["reason"] = ""
+                self._emit_log(
+                    f"[GUI][METRICS] torch недоступен, state для model_id={model_id} восстановлен из LOGS_FOR_AGENTS.md.",
+                    level="WARN",
+                )
+                return values
+            values["reason"] = (
+                "Не удалось открыть checkpoint: torch недоступен (gui_qt/main.py:_extract_selected_model_meta). "
+                "Что делать: установите torch в окружение GUI или откройте модель с доступным LOGS_FOR_AGENTS.md."
+            )
+            return values
+
         try:
-            import torch
 
             for path in candidates:
                 self._emit_log(f"[GUI][METRICS] Проверяю checkpoint-кандидат: {path}", level="INFO")
                 try:
-                    checkpoint = torch.load(path, map_location="cpu")
+                    checkpoint = torch_module.load(path, map_location="cpu")
                     if not isinstance(checkpoint, dict):
                         self._emit_log(
                             f"[GUI][METRICS] Кандидат отклонён: checkpoint не dict ({path}).",
@@ -1661,26 +1680,8 @@ class GUIController(QtCore.QObject):
                         level="WARN",
                     )
                     continue
-        except Exception as exc:
-            self._emit_log(
-                f"[GUI][METRICS] Не удалось импортировать torch для чтения checkpoint. Детали: {exc}",
-                level="WARN",
-            )
-            log_values = self._extract_selected_model_meta_from_logs(model_id)
-            if log_values:
-                values.update(log_values)
-                values["source"] = "логи (fallback)"
-                values["reason"] = ""
-                self._emit_log(
-                    f"[GUI][METRICS] torch недоступен, state для model_id={model_id} восстановлен из LOGS_FOR_AGENTS.md.",
-                    level="WARN",
-                )
-                return values
-            values["reason"] = (
-                "Не удалось открыть checkpoint: torch недоступен (gui_qt/main.py:_extract_selected_model_meta). "
-                "Что делать: установите torch в окружение GUI или откройте модель с доступным LOGS_FOR_AGENTS.md."
-            )
-            return values
+        except Exception:
+            pass
 
         if not isinstance(checkpoint, dict):
             values["reason"] = "Checkpoint найден, но не удалось прочитать словарь state."
@@ -1708,6 +1709,23 @@ class GUIController(QtCore.QObject):
         values["eps"] = f"{eps:.4f}"
 
         return values
+
+    def _get_torch_for_metrics_state(self):
+        if self._metrics_torch_import_error:
+            return None
+        try:
+            import torch
+
+            return torch
+        except Exception as exc:
+            self._metrics_torch_import_error = str(exc)
+            if not self._metrics_torch_import_warned:
+                self._metrics_torch_import_warned = True
+                self._emit_log(
+                    f"[GUI][METRICS] Не удалось импортировать torch для чтения checkpoint. Детали: {exc}",
+                    level="WARN",
+                )
+            return None
 
     def _collect_selected_model_checkpoint_candidates(self, model_id: str, selected_episode: Optional[int]) -> list[str]:
         candidates: list[tuple[int, float, str]] = []
