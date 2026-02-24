@@ -1665,7 +1665,20 @@ class GUIController(QtCore.QObject):
                 f"[GUI][METRICS] Не удалось импортировать torch для чтения checkpoint. Детали: {exc}",
                 level="WARN",
             )
-            values["reason"] = "Не удалось открыть checkpoint (torch недоступен)."
+            log_values = self._extract_selected_model_meta_from_logs(model_id)
+            if log_values:
+                values.update(log_values)
+                values["source"] = "логи (fallback)"
+                values["reason"] = ""
+                self._emit_log(
+                    f"[GUI][METRICS] torch недоступен, state для model_id={model_id} восстановлен из LOGS_FOR_AGENTS.md.",
+                    level="WARN",
+                )
+                return values
+            values["reason"] = (
+                "Не удалось открыть checkpoint: torch недоступен (gui_qt/main.py:_extract_selected_model_meta). "
+                "Что делать: установите torch в окружение GUI или откройте модель с доступным LOGS_FOR_AGENTS.md."
+            )
             return values
 
         if not isinstance(checkpoint, dict):
