@@ -120,6 +120,9 @@ class GameController:
         try:
             env, model, enemy, checkpoint = self._load_game()
 
+            if os.getenv("PLAY_NO_EXPLORATION", "0") == "1" or os.getenv("FORCE_GREEDY", "0") == "1":
+                self._io.log("[MODEL] Viewer запущен в greedy-режиме: exploration отключен (epsilon=0).")
+
             env.io = self._io
             env.playType = True
 

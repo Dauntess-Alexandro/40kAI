@@ -13,9 +13,12 @@ import random
 import matplotlib.pyplot as plt
 import time
 import multiprocessing as mp
+import threading
+import atexit
 from tqdm import tqdm
 from gym_mod.envs.warhamEnv import *
 from gym_mod.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
+from gym_mod.engine.io_profiler import get_io_profiler
 from gym_mod.engine.mission import (
     normalize_mission_name,
     board_dims_for_mission,
@@ -76,7 +79,7 @@ if TRAIN_DEBUG:
 # =========================
 # ===== per + n-step =====
 PER_ENABLED = os.getenv("PER_ENABLED", "1") == "1"
-PER_ALPHA = float(os.getenv("PER_ALPHA", "0.6"))
+PER_ALPHA = float(os.getenv("PER_ALPHA", "0.55"))
 PER_BETA_START = float(os.getenv("PER_BETA_START", "0.4"))
 PER_BETA_FRAMES = int(os.getenv("PER_BETA_FRAMES", "200000"))
 PER_EPS = float(os.getenv("PER_EPS", "1e-6"))
@@ -94,6 +97,10 @@ PIN_MEMORY = os.getenv("PIN_MEMORY", "0") == "1"
 USE_AMP = os.getenv("USE_AMP", "1") == "1"
 USE_COMPILE = os.getenv("USE_COMPILE", "0") == "1"
 SAVE_EVERY = int(os.getenv("SAVE_EVERY", "0"))
+SAVE_EVERY_MIN = max(1, int(os.getenv("SAVE_EVERY_MIN", "50")))
+SAVE_EVERY_ALLOW_LOW = os.getenv("SAVE_EVERY_ALLOW_LOW", "0") == "1"
+if SAVE_EVERY > 0 and SAVE_EVERY < SAVE_EVERY_MIN and not SAVE_EVERY_ALLOW_LOW:
+    SAVE_EVERY = SAVE_EVERY_MIN
 RESUME_CHECKPOINT = os.getenv("RESUME_CHECKPOINT", "").strip()
 # Параллелизм через subprocess (только без self-play, маски считаются в воркерах).
 USE_SUBPROC_ENVS = os.getenv("USE_SUBPROC_ENVS", "0") == "1"
@@ -119,6 +126,7 @@ if SELF_PLAY_OPPONENT_MODE not in ("snapshot", "fixed_checkpoint"):
 
 
 DEFAULT_MISSION_NAME = "only_war"
+IO_PROFILER = get_io_profiler()
 
 def to_np_state(s):
     if isinstance(s, (dict, collections.OrderedDict)):
@@ -288,7 +296,7 @@ def _extract_policy_state_dict(checkpoint):
     return None
 
 
-def _resume_from_checkpoint(policy_net, target_net, optimizer, checkpoint_path: str) -> None:
+def _resume_from_checkpoint(policy_net, target_net, optimizer, memory, checkpoint_path: str) -> dict:
     if not os.path.isfile(checkpoint_path):
         err_msg = (
             "[RESUME][ERROR] Не найден чекпойнт. "
@@ -362,14 +370,61 @@ def _resume_from_checkpoint(policy_net, target_net, optimizer, checkpoint_path: 
         print(warn_msg)
         append_agent_log(warn_msg)
 
+    restored_global_step = 0
+    restored_optimize_steps = 0
+    restored_episode = 0
+    if isinstance(checkpoint, dict):
+        restored_global_step = int(checkpoint.get("global_step", 0) or 0)
+        restored_optimize_steps = int(checkpoint.get("optimize_steps", 0) or 0)
+        restored_episode = int(checkpoint.get("episode", 0) or 0)
+
+    replay_loaded = 0
+    replay_state = checkpoint.get("replay_memory") if isinstance(checkpoint, dict) else None
+    if replay_state is not None:
+        try:
+            replay_loaded = int(memory.load_state_dict(replay_state) or 0)
+        except Exception as exc:
+            warn_msg = (
+                "[RESUME][WARN] Не удалось загрузить replay buffer. "
+                "Где: train.py (_resume_from_checkpoint/memory.load_state_dict). "
+                "Что делать: обучение продолжится с пустым буфером; проверьте совместимость формата. "
+                f"Детали: {exc}"
+            )
+            print(warn_msg)
+            append_agent_log(warn_msg)
+    else:
+        warn_msg = (
+            "[RESUME][WARN] В чекпойнте нет replay buffer state. "
+            "Где: train.py (_resume_from_checkpoint). "
+            "Что делать: обучение продолжится с пустым буфером; "
+            "для полного resume сохраняйте replay_memory в checkpoint."
+        )
+        print(warn_msg)
+        append_agent_log(warn_msg)
+
+    decay_steps = max(1.0, float(EPS_DECAY))
+    eps_progress = min(float(restored_global_step) / decay_steps, 1.0)
+    eps_at_resume = EPS_START + (EPS_END - EPS_START) * eps_progress
+
     ok_line = f"[RESUME] loaded checkpoint={checkpoint_path}"
     details_line = (
-        f"[RESUME] loaded: policy={policy_loaded} target={target_loaded} optimizer={optimizer_loaded}"
+        "[RESUME] loaded: "
+        f"policy={policy_loaded} target={target_loaded} optimizer={optimizer_loaded} "
+        f"global_step={restored_global_step} optimize_steps={restored_optimize_steps} "
+        f"episode={restored_episode} replay_size={replay_loaded} eps={eps_at_resume:.4f}"
     )
     print(ok_line)
     print(details_line)
     append_agent_log(ok_line)
     append_agent_log(details_line)
+
+    return {
+        "global_step": restored_global_step,
+        "optimize_steps": restored_optimize_steps,
+        "episode": restored_episode,
+        "replay_size": replay_loaded,
+        "epsilon": float(eps_at_resume),
+    }
 
 def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
     os.makedirs(metrics_dir, exist_ok=True)
@@ -378,11 +433,12 @@ def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
     # --- CSV ---
     csv_path = os.path.join(metrics_dir, f"stats_{run_id}.csv")
     cols = ["episode", "ep_reward", "ep_len", "turn", "model_vp", "player_vp", "vp_diff", "result", "end_reason", "end_code"]
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=cols)
-        w.writeheader()
-        for r in ep_rows:
-            w.writerow({k: r.get(k, "") for k in cols})
+    with IO_PROFILER.timed("metrics save"):
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=cols)
+            w.writeheader()
+            for r in ep_rows:
+                w.writerow({k: r.get(k, "") for k in cols})
 
     wins01 = [1 if r["result"] == "win" else 0 for r in ep_rows]
     vp_diff = [r["vp_diff"] for r in ep_rows]
@@ -469,17 +525,65 @@ def save_training_summary(run_id: str, model_tag: str, ep_rows: list[dict], elap
     print(f"[results] запись в {results_path}: {summary_line}")
 
 def append_agent_log(line: str) -> None:
-    log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LOGS_FOR_AGENTS.md")
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    full_line = f"{timestamp} | {line}"
+    full_line = f"{timestamp} | {line}\n"
+    with _TRAIN_LOG_LOCK:
+        _TRAIN_LOG_BUFFER.append(full_line)
+    _flush_agent_log_buffer(force=False)
+
+
+_TRAIN_LOG_BUFFER: list[str] = []
+_TRAIN_LOG_LOCK = threading.Lock()
+_TRAIN_LOG_LAST_FLUSH = time.monotonic()
+
+
+def _flush_agent_log_buffer(force: bool = False) -> None:
+    global _TRAIN_LOG_LAST_FLUSH
+    max_lines = max(1, int(os.getenv("TRAIN_LOG_BUFFER_LINES", "64") or "64"))
+    flush_interval = max(0.1, float(os.getenv("TRAIN_LOG_FLUSH_INTERVAL_SEC", "1.0") or "1.0"))
+
+    with _TRAIN_LOG_LOCK:
+        now = time.monotonic()
+        if not force and len(_TRAIN_LOG_BUFFER) < max_lines and (now - _TRAIN_LOG_LAST_FLUSH) < flush_interval:
+            return
+        lines = list(_TRAIN_LOG_BUFFER)
+        _TRAIN_LOG_BUFFER.clear()
+        _TRAIN_LOG_LAST_FLUSH = now
+
+    if not lines:
+        return
+
+    script_path = globals().get("__file__") or sys.argv[0] or "train.py"
+    log_path = os.path.join(os.path.dirname(os.path.abspath(script_path)), "LOGS_FOR_AGENTS.md")
     try:
         with open(log_path, "a", encoding="utf-8") as log_file:
-            log_file.write(full_line + "\n")
+            log_file.writelines(lines)
     except Exception as exc:
         print(f"[LOG][WARN] Не удалось записать LOGS_FOR_AGENTS.md: {exc}")
 
+
+atexit.register(lambda: _flush_agent_log_buffer(force=True))
+
 def _env_worker(conn, roster_config, b_len, b_hei, trunc):
     try:
+        lean_info_enabled = os.getenv("TRAIN_LEAN_INFO", "1") == "1"
+
+        def _lean_train_info(info):
+            if not isinstance(info, dict):
+                return info
+            # Lean info для train-mode: уменьшаем IPC payload, оставляем только нужные поля.
+            return {
+                "model health": info.get("model health", []),
+                "player health": info.get("player health", []),
+                "in attack": info.get("in attack", 0),
+                "model VP": info.get("model VP", 0),
+                "player VP": info.get("player VP", 0),
+                "mission": info.get("mission", DEFAULT_MISSION_NAME),
+                "end reason": info.get("end reason", ""),
+                "winner": info.get("winner", None),
+                "turn": info.get("turn", 0),
+            }
+
         enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
         mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
         attacker_side, defender_side = roll_off_attacker_defender(
@@ -518,6 +622,8 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                 conn.send(True)
             elif cmd == "step":
                 next_observation, reward, done, res, info = env.step(payload)
+                if lean_info_enabled:
+                    info = _lean_train_info(info)
                 conn.send((next_observation, reward, done, res, info))
             elif cmd == "reset":
                 mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
@@ -556,9 +662,6 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                     else:
                         raise TypeError(f"Unsupported action space for {k}: {type(sp)}")
                 conn.send(sizes)
-            elif cmd == "sample_action":
-                sampled_action = env.action_space.sample()
-                conn.send(sampled_action)
             elif cmd == "save_pickle":
                 try:
                     with open(payload, "wb") as file:
@@ -692,7 +795,17 @@ def _build_units_from_config(config, b_len, b_hei):
         )
     return enemy, model
 
-def _select_actions_batch(env_contexts, states, steps_done, policy_net, shoot_masks=None):
+def _sample_random_action_from_sizes(action_sizes, shoot_mask=None):
+    action_list = [random.randrange(int(size)) for size in action_sizes]
+    if shoot_mask is not None and len(action_list) > 2:
+        mask = torch.as_tensor(shoot_mask, dtype=torch.bool)
+        valid_indices = torch.where(mask)[0].tolist()
+        if valid_indices:
+            action_list[2] = random.choice(valid_indices)
+    return action_list
+
+
+def _select_actions_batch(env_contexts, states, steps_done, policy_net, action_sizes, shoot_masks=None):
     decay_steps = max(1.0, float(EPS_DECAY))
     progress = min(float(steps_done) / decay_steps, 1.0)
     eps_threshold = EPS_START + (EPS_END - EPS_START) * progress
@@ -713,31 +826,32 @@ def _select_actions_batch(env_contexts, states, steps_done, policy_net, shoot_ma
 
     for env_idx, ctx in enumerate(env_contexts):
         env = ctx.get("env")
-        len_model = ctx["len_model"]
         use_random = random.random() <= eps_threshold
         if use_random:
             if env is None:
-                ctx["conn"].send(("sample_action", None))
-                sampled_action = ctx["conn"].recv()
+                action_list = _sample_random_action_from_sizes(
+                    action_sizes,
+                    shoot_mask=shoot_masks[env_idx] if shoot_masks else None,
+                )
             else:
                 sampled_action = env.action_space.sample()
-            shoot_choice = sampled_action["shoot"]
-            if shoot_masks and shoot_masks[env_idx] is not None:
-                mask = torch.as_tensor(shoot_masks[env_idx], dtype=torch.bool)
-                valid_indices = torch.where(mask)[0].tolist()
-                if valid_indices:
-                    shoot_choice = random.choice(valid_indices)
-            action_list = [
-                sampled_action["move"],
-                sampled_action["attack"],
-                shoot_choice,
-                sampled_action["charge"],
-                sampled_action["use_cp"],
-                sampled_action["cp_on"],
-            ]
-            for i in range(len_model):
-                label = "move_num_" + str(i)
-                action_list.append(sampled_action[label])
+                shoot_choice = sampled_action["shoot"]
+                if shoot_masks and shoot_masks[env_idx] is not None:
+                    mask = torch.as_tensor(shoot_masks[env_idx], dtype=torch.bool)
+                    valid_indices = torch.where(mask)[0].tolist()
+                    if valid_indices:
+                        shoot_choice = random.choice(valid_indices)
+                action_list = [
+                    sampled_action["move"],
+                    sampled_action["attack"],
+                    shoot_choice,
+                    sampled_action["charge"],
+                    sampled_action["use_cp"],
+                    sampled_action["cp_on"],
+                ]
+                for i in range(ctx["len_model"]):
+                    label = "move_num_" + str(i)
+                    action_list.append(sampled_action[label])
             actions.append(torch.tensor([action_list], device="cpu"))
         else:
             action = []
@@ -798,6 +912,7 @@ def main():
             clip_reward_mode = f"on[{clip_reward_min:.3f},{clip_reward_max:.3f}]"
         else:
             clip_reward_mode = "off"
+        update_ratio = float(UPDATES_PER_STEP) / max(1.0, float(vec_env_count))
         train_start_line = (
             "[TRAIN][START] "
             f"DoubleDQN={int(DOUBLE_DQN_ENABLED)} "
@@ -808,6 +923,9 @@ def main():
             f"clip_reward={clip_reward_mode} "
             f"grad_clip={GRAD_CLIP_VALUE} "
             f"NUM_ENVS={vec_env_count} "
+            f"UPDATES_PER_STEP={UPDATES_PER_STEP} "
+            f"update_ratio={update_ratio:.3f} "
+            f"WARMUP_STEPS={WARMUP_STEPS} "
             f"BATCH_ACT={int(BATCH_ACT)} "
             f"USE_AMP={int(USE_AMP)} "
             f"USE_COMPILE={int(USE_COMPILE)} "
@@ -821,6 +939,16 @@ def main():
             append_agent_log(train_start_line)
         if TRAIN_LOG_TO_CONSOLE:
             print(train_start_line)
+        if update_ratio < 0.25:
+            ratio_warn = (
+                "[TRAIN][WARN] Низкий update_ratio: "
+                f"updates_per_step={UPDATES_PER_STEP}, num_envs={vec_env_count}, ratio={update_ratio:.3f}. "
+                "Что делать: повысить updates_per_step или уменьшить NUM_ENVS, иначе возможно недообучение."
+            )
+            if TRAIN_LOG_TO_FILE:
+                append_agent_log(ratio_warn)
+            if TRAIN_LOG_TO_CONSOLE:
+                print(ratio_warn)
     
     if USE_SUBPROC_ENVS and RENDER_EVERY > 0:
         warn_msg = "[WARN] USE_SUBPROC_ENVS=1: рендер в subprocess env недоступен, рендер будет пропущен."
@@ -831,7 +959,6 @@ def main():
     subproc_envs = []
     subproc_conns = []
     
-    numLifeT = 0
     
     verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
     log_fn = print if verbose else None
@@ -988,8 +1115,21 @@ def main():
     target_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
     optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
 
+    replay_capacity = int(os.getenv("REPLAY_CAPACITY", "100000"))
+    if PER_ENABLED:
+        memory = PrioritizedReplayMemory(replay_capacity, alpha=PER_ALPHA, eps=PER_EPS)
+    else:
+        memory = ReplayMemory(replay_capacity)
+
+    resume_meta = {
+        "global_step": 0,
+        "optimize_steps": 0,
+        "episode": 0,
+        "replay_size": 0,
+        "epsilon": float(EPS_START),
+    }
     if RESUME_CHECKPOINT:
-        _resume_from_checkpoint(policy_net, target_net, optimizer, RESUME_CHECKPOINT)
+        resume_meta = _resume_from_checkpoint(policy_net, target_net, optimizer, memory, RESUME_CHECKPOINT)
     else:
         target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
 
@@ -1068,11 +1208,6 @@ def main():
             opponent_policy_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
     
     scaler = torch.cuda.amp.GradScaler(enabled=USE_AMP)
-    replay_capacity = int(os.getenv("REPLAY_CAPACITY", "100000"))
-    if PER_ENABLED:
-        memory = PrioritizedReplayMemory(replay_capacity, alpha=PER_ALPHA, eps=PER_EPS)
-    else:
-        memory = ReplayMemory(replay_capacity)
     
     def opponent_policy(obs, env, len_model):
         if opponent_policy_net is None:
@@ -1115,6 +1250,11 @@ def main():
         ctx["ep_len"] = 0
         ctx["rew_arr"] = []
         ctx["n_step_buffer"] = collections.deque(maxlen=N_STEP)
+        ctx["action_head_total"] = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+        ctx["action_head_skip"] = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+        ctx["action_head_invalid"] = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+        ctx["shoot_windows_with_targets"] = 0
+        ctx["shoot_windows_without_targets"] = 0
     
     state = primary_ctx["state"]
     info = primary_ctx["info"]
@@ -1138,8 +1278,8 @@ def main():
     metrics_obj = metrics(fold, randNum, date)
     ep_rows = [] 
     
-    global_step = 0
-    optimize_steps = 0
+    global_step = int(resume_meta.get("global_step", 0) or 0)
+    optimize_steps = int(resume_meta.get("optimize_steps", 0) or 0)
     perf_stats = {
         "action_select_s": 0.0,
         "enemy_turn_s": 0.0,
@@ -1154,6 +1294,15 @@ def main():
         "updates": 0,
         "reward_clipped": 0,
     }
+    resume_episode_base = int(resume_meta.get("episode", 0) or 0)
+    numLifeT = 0
+    if RESUME_CHECKPOINT:
+        append_agent_log(
+            "[RESUME] Параметры продолжения: "
+            f"path={RESUME_CHECKPOINT}, episode_base={resume_episode_base}, global_step={global_step}, "
+            f"optimize_steps={optimize_steps}, replay_size={int(resume_meta.get('replay_size', 0) or 0)}, "
+            f"eps_at_resume={float(resume_meta.get('epsilon', EPS_START)):.4f}"
+        )
     primary_env_unwrapped = unwrap_env(primary_ctx["env"]) if not USE_SUBPROC_ENVS else None
     if primary_env_unwrapped is not None:
         initial_model_hp = float(sum(getattr(primary_env_unwrapped, "unit_health", [])))
@@ -1181,18 +1330,28 @@ def main():
     
     while end is False:
         shoot_masks = []
-        for idx, ctx in enumerate(env_contexts):
-            mask_log_fn = append_agent_log if idx == 0 else None
-            if USE_SUBPROC_ENVS:
+        if USE_SUBPROC_ENVS:
+            # Batched IPC: сначала отправляем всем env, затем читаем ответы по порядку.
+            for ctx in env_contexts:
                 ctx["conn"].send(("get_shoot_mask", None))
+            for ctx in env_contexts:
                 shoot_masks.append(ctx["conn"].recv())
-            else:
+        else:
+            for idx, ctx in enumerate(env_contexts):
+                mask_log_fn = append_agent_log if idx == 0 else None
                 shoot_masks.append(build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG))
     
         states = [ctx["state"] for ctx in env_contexts]
         action_start = time.perf_counter()
         if BATCH_ACT:
-            actions, eps_threshold = _select_actions_batch(env_contexts, states, global_step, policy_net, shoot_masks)
+            actions, eps_threshold = _select_actions_batch(
+                env_contexts,
+                states,
+                global_step,
+                policy_net,
+                n_actions,
+                shoot_masks,
+            )
         else:
             decay_steps = max(1.0, float(EPS_DECAY))
             progress = min(float(global_step) / decay_steps, 1.0)
@@ -1236,17 +1395,66 @@ def main():
     
         dev = next(policy_net.parameters()).device
     
+        action_dicts = []
         for idx, ctx in enumerate(env_contexts):
             ctx["ep_len"] += 1
             action_dict = convertToDict(actions[idx])
+            action_dicts.append(action_dict)
+            # Локальная аналитика по головам action-space (для [TRAIN][ACTIONS] в конце эпизода)
+            for _head in ("move", "attack", "shoot", "charge", "use_cp", "cp_on"):
+                ctx["action_head_total"][_head] += 1
+            if int(action_dict.get("move", 4)) == 4:
+                ctx["action_head_skip"]["move"] += 1
+            if int(action_dict.get("attack", 0)) == 0:
+                ctx["action_head_skip"]["attack"] += 1
+                ctx["action_head_skip"]["charge"] += 1
+            if int(action_dict.get("use_cp", 0)) == 0:
+                ctx["action_head_skip"]["use_cp"] += 1
+            shoot_mask_now = shoot_masks[idx] if idx < len(shoot_masks) else None
+            valid_shoot_indices = []
+            if shoot_mask_now is not None:
+                try:
+                    valid_shoot_indices = [j for j, allowed in enumerate(shoot_mask_now) if bool(allowed)]
+                except Exception:
+                    valid_shoot_indices = []
+            if len(valid_shoot_indices) == 0:
+                ctx["shoot_windows_without_targets"] += 1
+                ctx["action_head_skip"]["shoot"] += 1
+            else:
+                ctx["shoot_windows_with_targets"] += 1
+                shoot_raw = int(action_dict.get("shoot", -1))
+                if shoot_raw < 0 or shoot_raw >= len(valid_shoot_indices):
+                    ctx["action_head_invalid"]["shoot"] += 1
+
+        step_results = [None] * len(env_contexts)
+        next_shoot_masks = [None] * len(env_contexts)
+        if USE_SUBPROC_ENVS:
+            # Batched IPC: сначала отправляем step всем env, затем собираем ответы.
+            step_start = time.perf_counter()
+            for idx, ctx in enumerate(env_contexts):
+                ctx["conn"].send(("step", action_dicts[idx]))
+            for idx, ctx in enumerate(env_contexts):
+                step_results[idx] = ctx["conn"].recv()
+            perf_stats["env_step_s"] += time.perf_counter() - step_start
+            perf_counts["env_steps"] += len(env_contexts)
+
+            # Batched IPC для масок стрельбы после шага (только где эпизод не завершён).
+            pending_next_mask_indices = []
+            for idx, (_next_observation, _reward, done, _res, _info) in enumerate(step_results):
+                if not done:
+                    env_contexts[idx]["conn"].send(("get_shoot_mask", None))
+                    pending_next_mask_indices.append(idx)
+            for idx in pending_next_mask_indices:
+                next_shoot_masks[idx] = env_contexts[idx]["conn"].recv()
+
+        for idx, ctx in enumerate(env_contexts):
             step_start = time.perf_counter()
             if USE_SUBPROC_ENVS:
-                ctx["conn"].send(("step", action_dict))
-                next_observation, reward, done, res, info = ctx["conn"].recv()
+                next_observation, reward, done, res, info = step_results[idx]
             else:
-                next_observation, reward, done, res, info = ctx["env"].step(action_dict)
-            perf_stats["env_step_s"] += time.perf_counter() - step_start
-            perf_counts["env_steps"] += 1
+                next_observation, reward, done, res, info = ctx["env"].step(action_dicts[idx])
+                perf_stats["env_step_s"] += time.perf_counter() - step_start
+                perf_counts["env_steps"] += 1
             raw_reward = float(reward)
             ctx["rew_arr"].append(raw_reward)
             reward_for_buffer, reward_was_clipped = maybe_clip_reward(
@@ -1291,8 +1499,7 @@ def main():
                 next_state_t = torch.tensor(to_np_state(next_observation), device=dev).unsqueeze(0)
                 mask_log_fn = append_agent_log if idx == 0 else None
                 if USE_SUBPROC_ENVS:
-                    ctx["conn"].send(("get_shoot_mask", None))
-                    next_shoot_mask = ctx["conn"].recv()
+                    next_shoot_mask = next_shoot_masks[idx]
                 else:
                     next_shoot_mask = build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG)
     
@@ -1328,14 +1535,6 @@ def main():
                 winner_env = info.get("winner")
                 model_hp_total = sum(info.get("model health", [])) if isinstance(info.get("model health"), (list, tuple, np.ndarray)) else info.get("model health")
                 enemy_hp_total = sum(info.get("player health", [])) if isinstance(info.get("player health"), (list, tuple, np.ndarray)) else info.get("player health")
-                append_agent_log(
-                    "Конец эпизода: "
-                    f"reason={end_reason_env or 'unknown'} "
-                    f"winner={winner_env} "
-                    f"model_hp_total={model_hp_total} enemy_hp_total={enemy_hp_total} "
-                    f"model_vp={info.get('model VP')} enemy_vp={info.get('player VP')} "
-                    f"turn={info.get('turn')} battle_round={info.get('battle round')}"
-                )
                 if ctx["ep_len"] == 1:
                     append_agent_log(
                         "ВНИМАНИЕ: эпизод завершился на первом шаге. "
@@ -1421,6 +1620,32 @@ def main():
                     if trunc is False:
                         print("draw!")
     
+                resolved_winner = "model" if result == "win" else ("enemy" if result == "loss" else "draw")
+                resolved_end_reason = end_reason_env or end_reason
+                if TRAIN_LOG_TO_FILE:
+                    append_agent_log(
+                        "Конец эпизода: "
+                        f"reason={resolved_end_reason} "
+                        f"winner={resolved_winner} "
+                        f"winner_env={winner_env} "
+                        f"model_hp_total={model_hp_total} enemy_hp_total={enemy_hp_total} "
+                        f"model_vp={info.get('model VP')} enemy_vp={info.get('player VP')} "
+                        f"turn={info.get('turn')} battle_round={info.get('battle round')}"
+                    )
+                    steps_denom = max(1, int(ctx.get("ep_len", 0)))
+                    skip_counts = ctx.get("action_head_skip", Counter())
+                    invalid_counts = ctx.get("action_head_invalid", Counter())
+                    append_agent_log(
+                        "[TRAIN][ACTIONS] "
+                        f"ep={numLifeT + 1} "
+                        f"steps={steps_denom} "
+                        f"skip={{move:{skip_counts['move']},attack:{skip_counts['attack']},shoot:{skip_counts['shoot']},charge:{skip_counts['charge']},use_cp:{skip_counts['use_cp']},cp_on:{skip_counts['cp_on']}}} "
+                        f"invalid={{move:{invalid_counts['move']},attack:{invalid_counts['attack']},shoot:{invalid_counts['shoot']},charge:{invalid_counts['charge']},use_cp:{invalid_counts['use_cp']},cp_on:{invalid_counts['cp_on']}}} "
+                        f"skip_rate={{move:{skip_counts['move']/steps_denom:.3f},attack:{skip_counts['attack']/steps_denom:.3f},shoot:{skip_counts['shoot']/steps_denom:.3f},charge:{skip_counts['charge']/steps_denom:.3f},use_cp:{skip_counts['use_cp']/steps_denom:.3f},cp_on:{skip_counts['cp_on']/steps_denom:.3f}}} "
+                        f"invalid_rate={{move:{invalid_counts['move']/steps_denom:.3f},attack:{invalid_counts['attack']/steps_denom:.3f},shoot:{invalid_counts['shoot']/steps_denom:.3f},charge:{invalid_counts['charge']/steps_denom:.3f},use_cp:{invalid_counts['use_cp']/steps_denom:.3f},cp_on:{invalid_counts['cp_on']/steps_denom:.3f}}} "
+                        f"shoot_windows={{with_targets:{ctx.get('shoot_windows_with_targets', 0)},without_targets:{ctx.get('shoot_windows_without_targets', 0)}}}"
+                    )
+
                 if TRAIN_LOG_ENABLED:
                     win_flag = 1 if result == "win" else 0
                     train_ep_line = (
@@ -1466,30 +1691,36 @@ def main():
                 if trunc is False:
                     print("Restarting...")
                 numLifeT += 1
-                if SAVE_EVERY > 0 and numLifeT % SAVE_EVERY == 0:
-                    checkpoint_path = f"models/{safe_name}/checkpoint_ep{numLifeT}.pth"
+                total_episode = resume_episode_base + numLifeT
+                if SAVE_EVERY > 0 and total_episode % SAVE_EVERY == 0:
+                    checkpoint_path = f"models/{safe_name}/checkpoint_ep{total_episode}.pth"
                     os.makedirs(f"models/{safe_name}", exist_ok=True)
-                    torch.save(
-                        {
-                            "policy_net": policy_net.state_dict(),
-                            "target_net": target_net.state_dict(),
-                            "net_type": NET_TYPE,
-                            "optimizer": optimizer.state_dict(),
-                        },
-                        checkpoint_path,
-                    )
+                    with IO_PROFILER.timed("checkpoint save"):
+                        torch.save(
+                            {
+                                "policy_net": policy_net.state_dict(),
+                                "target_net": target_net.state_dict(),
+                                "net_type": NET_TYPE,
+                                "optimizer": optimizer.state_dict(),
+                                "global_step": int(global_step),
+                                "optimize_steps": int(optimize_steps),
+                                "episode": int(total_episode),
+                                "replay_memory": memory.state_dict(),
+                            },
+                            checkpoint_path,
+                        )
                     if TRAIN_LOG_ENABLED:
-                        save_line = f"[TRAIN][SAVE] ep={numLifeT} path={checkpoint_path}"
+                        save_line = f"[TRAIN][SAVE] ep={total_episode} path={checkpoint_path}"
                         if TRAIN_LOG_TO_FILE:
                             append_agent_log(save_line)
                         if TRAIN_LOG_TO_CONSOLE:
                             print(save_line)
     
                 if SELF_PLAY_ENABLED and SELF_PLAY_OPPONENT_MODE == "snapshot":
-                    if numLifeT % SELF_PLAY_UPDATE_EVERY_EPISODES == 0:
+                    if total_episode % SELF_PLAY_UPDATE_EVERY_EPISODES == 0:
                         opponent_policy_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
                         append_agent_log(
-                            f"[SELFPLAY] opponent snapshot updated at episode {numLifeT}"
+                            f"[SELFPLAY] opponent snapshot updated at episode {total_episode}"
                         )
     
                 if USE_SUBPROC_ENVS:
@@ -1682,17 +1913,26 @@ def main():
     metrics_obj.showEpLen()
 
     save_extra_metrics(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
-    metrics_obj.createJson()
+    with IO_PROFILER.timed("metrics save"):
+        metrics_obj.createJson()
     print("Generated metrics")
 
     os.makedirs(fold, exist_ok=True)
 
-    torch.save({
-        "policy_net": policy_net.state_dict(),
-        "target_net": target_net.state_dict(),
-        "net_type": NET_TYPE,
-        'optimizer': optimizer.state_dict(),}
-        , ("models/{}/model-{}.pth".format(safe_name, date)))
+    with IO_PROFILER.timed("checkpoint save"):
+        torch.save(
+            {
+                "policy_net": policy_net.state_dict(),
+                "target_net": target_net.state_dict(),
+                "net_type": NET_TYPE,
+                "optimizer": optimizer.state_dict(),
+                "global_step": int(global_step),
+                "optimize_steps": int(optimize_steps),
+                "episode": int(resume_episode_base + numLifeT),
+                "replay_memory": memory.state_dict(),
+            },
+            ("models/{}/model-{}.pth".format(safe_name, date)),
+        )
     train_elapsed_s = time.perf_counter() - train_start_time
     model_tag = f"{safe_name}/model-{date}"
     save_training_summary(
@@ -1753,6 +1993,11 @@ def main():
     else:
         for ctx in env_contexts:
             ctx["env"].close()
+
+    with IO_PROFILER.timed("metrics save"):
+        IO_PROFILER.write_snapshot()
+
+    _flush_agent_log_buffer(force=True)
     
     if os.path.isfile("gui/data.json"):
         initFile.delFile()

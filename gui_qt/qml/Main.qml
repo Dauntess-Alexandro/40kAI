@@ -187,6 +187,14 @@ ApplicationWindow {
                                         onToggled: controller.set_resume_from_checkpoint(checked)
                                     }
 
+                                    CheckBox {
+                                        text: "Не логировать тренировку (speed)"
+                                        checked: controller.disableTrainLogging
+                                        enabled: !controller.running
+                                        Layout.columnSpan: 2
+                                        onToggled: controller.set_disable_train_logging(checked)
+                                    }
+
                                     Button {
                                         text: "Тренировка 8х"
                                         enabled: !controller.running
@@ -709,252 +717,298 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
 
-                ColumnLayout {
+                ScrollView {
                     anchors.fill: parent
                     anchors.margins: root.spacingLg
-                    spacing: root.spacingMd
+                    clip: true
 
-                    Text {
-                        text: "Model Metrics"
-                        font.pixelSize: Math.round(20 * root.uiScale)
-                        font.bold: true
-                    }
-
-                    RowLayout {
+                    Column {
+                        width: Math.max(parent ? parent.width : 0, root.width - 2 * root.spacingLg)
                         spacing: root.spacingMd
-                        Layout.fillWidth: true
 
-                        Button {
-                            text: "Выбрать модель"
-                            onClicked: metricsFileDialog.open()
+                        Text {
+                            text: "Model Metrics"
+                            font.pixelSize: Math.round(20 * root.uiScale)
+                            font.bold: true
                         }
 
-                        Label {
-                            text: controller.metricsLabel
-                            Layout.fillWidth: true
-                            elide: Label.ElideRight
+                        RowLayout {
+                            spacing: root.spacingMd
+                            width: parent.width
+
+                            Button {
+                                text: "Выбрать модель"
+                                onClicked: metricsFileDialog.open()
+                            }
+
+                            Label {
+                                text: controller.metricsLabel
+                                Layout.fillWidth: true
+                                elide: Label.ElideRight
+                            }
                         }
-                    }
 
-                    GridLayout {
-                        columns: 2
-                        columnSpacing: root.spacingMd
-                        rowSpacing: root.spacingMd
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
+                        GridLayout {
+                            columns: 2
+                            columnSpacing: root.spacingMd
+                            rowSpacing: root.spacingMd
+                            width: parent.width
 
-                        GroupBox {
-                            title: "Награда за эпизод"
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
+                            GroupBox {
+                                title: "Награда за эпизод"
+                                Layout.fillWidth: true
 
-                            ColumnLayout {
-                                anchors.fill: parent
-                                spacing: root.spacingXs
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    spacing: root.spacingXs
 
-                                Item {
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: true
+                                    Item {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
 
-                                    Image {
-                                        id: rewardChart
-                                        anchors.fill: parent
-                                        source: controller.metricsRewardPath
-                                        fillMode: Image.PreserveAspectFit
-                                        smooth: true
+                                        Image {
+                                            id: rewardChart
+                                            anchors.fill: parent
+                                            source: controller.metricsRewardPath
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "Нет данных по наградам."
+                                            color: "#777777"
+                                            visible: rewardChart.status !== Image.Ready
+                                        }
                                     }
 
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "Нет данных по наградам."
-                                        color: "#777777"
-                                        visible: rewardChart.status !== Image.Ready
+                                    Label {
+                                        text: "Средняя награда по ходу обучения."
+                                        wrapMode: Text.WordWrap
+                                    }
+
+                                    Label {
+                                        text: controller.rewardSummary
+                                        wrapMode: Text.WordWrap
+                                        color: "#666666"
                                     }
                                 }
+                            }
 
-                                Label {
-                                    text: "Средняя награда по ходу обучения."
-                                    wrapMode: Text.WordWrap
+                            GroupBox {
+                                title: "Потери (loss)"
+                                Layout.fillWidth: true
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    spacing: root.spacingXs
+
+                                    Item {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
+
+                                        Image {
+                                            id: lossChart
+                                            anchors.fill: parent
+                                            source: controller.metricsLossPath
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "Нет данных по loss."
+                                            color: "#777777"
+                                            visible: lossChart.status !== Image.Ready
+                                        }
+                                    }
+
+                                    Label {
+                                        text: "Динамика функции потерь."
+                                        wrapMode: Text.WordWrap
+                                    }
+
+                                    Label {
+                                        text: controller.lossSummary
+                                        wrapMode: Text.WordWrap
+                                        color: "#666666"
+                                    }
+                                }
+                            }
+
+                            GroupBox {
+                                title: "Длина эпизода"
+                                Layout.fillWidth: true
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    spacing: root.spacingXs
+
+                                    Item {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
+
+                                        Image {
+                                            id: epLenChart
+                                            anchors.fill: parent
+                                            source: controller.metricsEpLenPath
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "Нет данных по длине эпизода."
+                                            color: "#777777"
+                                            visible: epLenChart.status !== Image.Ready
+                                        }
+                                    }
+
+                                    Label {
+                                        text: "Сколько ходов длится партия."
+                                        wrapMode: Text.WordWrap
+                                    }
+
+                                    Label {
+                                        text: controller.epLenSummary
+                                        wrapMode: Text.WordWrap
+                                        color: "#666666"
+                                    }
+                                }
+                            }
+
+                            GroupBox {
+                                title: "Winrate"
+                                Layout.fillWidth: true
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    spacing: root.spacingXs
+
+                                    Item {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
+
+                                        Image {
+                                            id: winrateChart
+                                            anchors.fill: parent
+                                            source: controller.metricsWinratePath
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "Нет данных по winrate."
+                                            color: "#777777"
+                                            visible: winrateChart.status !== Image.Ready
+                                        }
+                                    }
+
+                                    Label {
+                                        text: "Доля побед модели по играм."
+                                        wrapMode: Text.WordWrap
+                                    }
+
+                                    Label {
+                                        text: controller.winrateSummary
+                                        wrapMode: Text.WordWrap
+                                        color: "#666666"
+                                    }
+                                }
+                            }
+
+                            GroupBox {
+                                title: "Разница VP"
+                                Layout.fillWidth: true
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    spacing: root.spacingXs
+
+                                    Item {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
+
+                                        Image {
+                                            id: vpDiffChart
+                                            anchors.fill: parent
+                                            source: controller.metricsVpDiffPath
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "Нет данных по VP."
+                                            color: "#777777"
+                                            visible: vpDiffChart.status !== Image.Ready
+                                        }
+                                    }
+
+                                    Label {
+                                        text: "Разница очков победы между сторонами."
+                                        wrapMode: Text.WordWrap
+                                    }
+
+                                    Label {
+                                        text: controller.vpDiffSummary
+                                        wrapMode: Text.WordWrap
+                                        color: "#666666"
+                                    }
+                                }
+                            }
+
+                            GroupBox {
+                                title: "Причины завершения"
+                                Layout.fillWidth: true
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    spacing: root.spacingXs
+
+                                    Item {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
+
+                                        Image {
+                                            id: endReasonChart
+                                            anchors.fill: parent
+                                            source: controller.metricsEndReasonPath
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "Нет данных по причинам завершения."
+                                            color: "#777777"
+                                            visible: endReasonChart.status !== Image.Ready
+                                        }
+                                    }
+
+                                    Label {
+                                        text: "Почему эпизоды завершались."
+                                        wrapMode: Text.WordWrap
+                                    }
                                 }
                             }
                         }
 
                         GroupBox {
-                            title: "Потери (loss)"
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
+                            title: "Состояние модели"
+                            width: parent.width
 
-                            ColumnLayout {
-                                anchors.fill: parent
-                                spacing: root.spacingXs
+                            ScrollView {
+                                width: parent.width
+                                height: Math.round(230 * root.uiScale)
 
-                                Item {
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: true
-
-                                    Image {
-                                        id: lossChart
-                                        anchors.fill: parent
-                                        source: controller.metricsLossPath
-                                        fillMode: Image.PreserveAspectFit
-                                        smooth: true
-                                    }
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "Нет данных по loss."
-                                        color: "#777777"
-                                        visible: lossChart.status !== Image.Ready
-                                    }
-                                }
-
-                                Label {
-                                    text: "Динамика функции потерь."
+                                TextArea {
+                                    width: parent.width
+                                    text: controller.modelStateText
+                                    readOnly: true
                                     wrapMode: Text.WordWrap
-                                }
-                            }
-                        }
-
-                        GroupBox {
-                            title: "Длина эпизода"
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-
-                            ColumnLayout {
-                                anchors.fill: parent
-                                spacing: root.spacingXs
-
-                                Item {
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: true
-
-                                    Image {
-                                        id: epLenChart
-                                        anchors.fill: parent
-                                        source: controller.metricsEpLenPath
-                                        fillMode: Image.PreserveAspectFit
-                                        smooth: true
-                                    }
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "Нет данных по длине эпизода."
-                                        color: "#777777"
-                                        visible: epLenChart.status !== Image.Ready
-                                    }
-                                }
-
-                                Label {
-                                    text: "Сколько ходов длится партия."
-                                    wrapMode: Text.WordWrap
-                                }
-                            }
-                        }
-
-                        GroupBox {
-                            title: "Winrate"
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-
-                            ColumnLayout {
-                                anchors.fill: parent
-                                spacing: root.spacingXs
-
-                                Item {
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: true
-
-                                    Image {
-                                        id: winrateChart
-                                        anchors.fill: parent
-                                        source: controller.metricsWinratePath
-                                        fillMode: Image.PreserveAspectFit
-                                        smooth: true
-                                    }
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "Нет данных по winrate."
-                                        color: "#777777"
-                                        visible: winrateChart.status !== Image.Ready
-                                    }
-                                }
-
-                                Label {
-                                    text: "Доля побед модели по играм."
-                                    wrapMode: Text.WordWrap
-                                }
-                            }
-                        }
-
-                        GroupBox {
-                            title: "Разница VP"
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-
-                            ColumnLayout {
-                                anchors.fill: parent
-                                spacing: root.spacingXs
-
-                                Item {
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: true
-
-                                    Image {
-                                        id: vpDiffChart
-                                        anchors.fill: parent
-                                        source: controller.metricsVpDiffPath
-                                        fillMode: Image.PreserveAspectFit
-                                        smooth: true
-                                    }
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "Нет данных по VP."
-                                        color: "#777777"
-                                        visible: vpDiffChart.status !== Image.Ready
-                                    }
-                                }
-
-                                Label {
-                                    text: "Разница очков победы между сторонами."
-                                    wrapMode: Text.WordWrap
-                                }
-                            }
-                        }
-
-                        GroupBox {
-                            title: "Причины завершения"
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-
-                            ColumnLayout {
-                                anchors.fill: parent
-                                spacing: root.spacingXs
-
-                                Item {
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: true
-
-                                    Image {
-                                        id: endReasonChart
-                                        anchors.fill: parent
-                                        source: controller.metricsEndReasonPath
-                                        fillMode: Image.PreserveAspectFit
-                                        smooth: true
-                                    }
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "Нет данных по причинам завершения."
-                                        color: "#777777"
-                                        visible: endReasonChart.status !== Image.Ready
-                                    }
-                                }
-
-                                Label {
-                                    text: "Почему эпизоды завершались."
-                                    wrapMode: Text.WordWrap
+                                    selectByMouse: true
                                 }
                             }
                         }
@@ -1097,6 +1151,11 @@ ApplicationWindow {
                                         text: "Последняя"
                                         enabled: !controller.running
                                         onClicked: controller.select_latest_eval_model()
+                                    }
+                                    Button {
+                                        text: "Лучшая"
+                                        enabled: !controller.running
+                                        onClicked: controller.select_best_eval_model()
                                     }
                                 }
 

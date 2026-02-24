@@ -15,6 +15,7 @@ from typing import Optional
 import reward_config as reward_cfg
 
 from ..engine.utils import *
+from ..engine.hotloops import scan_targets_in_range
 from ..engine import utils as engine_utils
 from gym_mod.engine.mission import (
     MISSION_NAME,
@@ -856,6 +857,9 @@ class Warhammer40kEnv(gym.Env):
 
         self._prev_vp_diff = 0
         self._objective_hold_streaks = [0] * len(self.coordsOfOM)
+        self._target_cache_epoch = 0
+        self._distance_cache = {}
+        self._shoot_target_cache = {}
         self._agent_log_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "..", "LOGS_FOR_AGENTS.md")
         )
@@ -934,6 +938,72 @@ class Warhammer40kEnv(gym.Env):
         except (TypeError, ValueError):
             return default
 
+    def _invalidate_target_cache(self, reason: str = ""):
+        self._target_cache_epoch += 1
+        self._distance_cache.clear()
+        self._shoot_target_cache.clear()
+
+    def _cached_distance_model_enemy(self, model_idx: int, enemy_idx: int) -> float:
+        key = ("m2e", self._target_cache_epoch, int(model_idx), int(enemy_idx))
+        cached = self._distance_cache.get(key)
+        if cached is not None:
+            return cached
+        value = distance(self.unit_coords[model_idx], self.enemy_coords[enemy_idx])
+        self._distance_cache[key] = value
+        return value
+
+    def _cached_distance_enemy_model(self, enemy_idx: int, model_idx: int) -> float:
+        key = ("e2m", self._target_cache_epoch, int(enemy_idx), int(model_idx))
+        cached = self._distance_cache.get(key)
+        if cached is not None:
+            return cached
+        value = distance(self.enemy_coords[enemy_idx], self.unit_coords[model_idx])
+        self._distance_cache[key] = value
+        return value
+
+    def get_shoot_targets_for_unit(self, side: str, unit_idx: int) -> list[int]:
+        cache_key = (self._target_cache_epoch, side, int(unit_idx))
+        cached = self._shoot_target_cache.get(cache_key)
+        if cached is not None:
+            return list(cached)
+
+        targets = []
+        if side == "model":
+            if not (0 <= unit_idx < len(self.unit_health)):
+                return []
+            if self.unit_health[unit_idx] <= 0 or self.unitFellBack[unit_idx] or self.unitInAttack[unit_idx][0] == 1:
+                return []
+            if self.unit_weapon[unit_idx] == "None":
+                return []
+            range_limit = self.unit_weapon[unit_idx]["Range"]
+            target_ids, _used_numba = scan_targets_in_range(
+                np.asarray(self.unit_coords[unit_idx], dtype=np.float64),
+                np.asarray(self.enemy_coords, dtype=np.float64),
+                np.asarray(self.enemy_health, dtype=np.float64),
+                np.asarray([row[0] for row in self.enemyInAttack], dtype=np.int8),
+                float(range_limit),
+            )
+            targets = [int(idx) for idx in target_ids]
+        else:
+            if not (0 <= unit_idx < len(self.enemy_health)):
+                return []
+            if self.enemy_health[unit_idx] <= 0 or self.enemyFellBack[unit_idx] or self.enemyInAttack[unit_idx][0] == 1:
+                return []
+            if self.enemy_weapon[unit_idx] == "None":
+                return []
+            range_limit = self.enemy_weapon[unit_idx]["Range"]
+            target_ids, _used_numba = scan_targets_in_range(
+                np.asarray(self.enemy_coords[unit_idx], dtype=np.float64),
+                np.asarray(self.unit_coords, dtype=np.float64),
+                np.asarray(self.unit_health, dtype=np.float64),
+                np.asarray([row[0] for row in self.unitInAttack], dtype=np.int8),
+                float(range_limit),
+            )
+            targets = [int(idx) for idx in target_ids]
+
+        self._shoot_target_cache[cache_key] = list(targets)
+        return targets
+
     def _model_wounds_pool_from_hp(self, unit_data: dict, hp_value: float) -> list[int]:
         if not isinstance(unit_data, dict):
             return []
@@ -974,14 +1044,22 @@ class Warhammer40kEnv(gym.Env):
         else:
             enabled = bool(getattr(self, "playType", False))
 
-        if not enabled and not force:
-            return False
+        if not enabled:
+            if not force:
+                return False
+            allow_force_train = str(os.getenv("STATE_FLUSH_ALLOW_FORCE_IN_TRAIN", "0")).strip().lower()
+            if allow_force_train not in {"1", "true", "yes", "on"}:
+                return False
 
         min_interval_ms = 120
         try:
             min_interval_ms = max(0, int(os.getenv("STATE_FLUSH_MIN_INTERVAL_MS", "120")))
         except (TypeError, ValueError):
             min_interval_ms = 120
+
+        # Для GUI по умолчанию делаем чуть более редкий flush, чтобы снизить I/O пики.
+        if bool(getattr(self, "playType", False)) and "STATE_FLUSH_MIN_INTERVAL_MS" not in os.environ:
+            min_interval_ms = max(min_interval_ms, 180)
 
         now = time.monotonic()
         min_interval_s = min_interval_ms / 1000.0
@@ -1102,6 +1180,12 @@ class Warhammer40kEnv(gym.Env):
             for i in range(len(self.enemy_health))
         ]
         self._sync_model_positions_to_anchors()
+
+    def _sync_after_command_phase_reanimation(self, side: str) -> None:
+        # Reanimation меняет суммарный HP; синхронизируем пулы/позиции и сразу обновляем state.json.
+        self._init_model_state_from_health()
+        self._sync_model_positions_to_anchors()
+        self._flush_state_snapshot(reason=f"command_phase_reanimation:{side}", force=True)
 
     def _coherency_required_neighbors(self, alive_models: int) -> int:
         if alive_models >= 7:
@@ -2311,6 +2395,12 @@ class Warhammer40kEnv(gym.Env):
                                     norm_base = max(1.0, float(getattr(reward_cfg, "VP_OBJECTIVE_MISSED_PROGRESS_NORM", 6.0)))
                                     severity = min(1.0, missed_progress / norm_base)
                                     hold_penalty = reward_cfg.VP_OBJECTIVE_HOLD_PENALTY * severity
+                                    round_scale = 1.0
+                                    if self.battle_round <= 2:
+                                        round_scale = 0.5
+                                    elif self.battle_round <= 4:
+                                        round_scale = 0.75
+                                    hold_penalty *= round_scale
                                     reward_delta -= hold_penalty
                                     objective_hold_delta -= hold_penalty
                                     movement_meta["applied_hold_penalty"] = True
@@ -2325,7 +2415,7 @@ class Warhammer40kEnv(gym.Env):
                                         f"(obj={nearest_obj_idx}, d_before={d_before:.3f}, "
                                         f"d_after={d_after:.3f}, d_best={d_best_possible:.3f}, max_reach={max_reach:.3f}, "
                                         f"could_reach_objective={int(could_reach_control)}, severity={severity:.3f}, "
-                                        f"reason={hold_penalty_reason})",
+                                        f"round_scale={round_scale:.2f}, reason={hold_penalty_reason})",
                                     )
                                 else:
                                     hold_penalty_reason = "no_move_cannot_improve"
@@ -2798,14 +2888,7 @@ class Warhammer40kEnv(gym.Env):
                     self._log_unit("MODEL", modelName, i, "Advance без Assault — стрельба пропущена.")
                     continue
 
-                shootAbleUnits = []
-                for j in range(len(self.enemy_health)):
-                    if (
-                        self._distance_between_units("model", i, "enemy", j) <= self.unit_weapon[i]["Range"]
-                        and self.enemy_health[j] > 0
-                        and self.enemyInAttack[j][0] == 0
-                    ):
-                        shootAbleUnits.append(j)
+                shootAbleUnits = self.get_shoot_targets_for_unit("model", i)
                 if len(shootAbleUnits) > 0:
                     valid_target_ids = shootAbleUnits
                     raw = action["shoot"]
@@ -2993,7 +3076,7 @@ class Warhammer40kEnv(gym.Env):
                                 defender_label=self._format_unit_label("enemy", idOfE),
                             )
                     else:
-                        penalty = 0.5 + reward_cfg.SHOOT_REWARD_SKIP_PENALTY
+                        penalty = float(getattr(reward_cfg, "SHOOT_REWARD_INVALID_TARGET_PENALTY", 0.20))
                         reward_delta -= penalty
                         target_list = self._format_unit_choices("enemy", valid_target_ids)
                         self._log_unit(
@@ -3048,14 +3131,7 @@ class Warhammer40kEnv(gym.Env):
                     self._log_unit("enemy", unit_id, i, "Advance без Assault — стрельба пропущена.")
                     continue
 
-                shootAbleUnits = []
-                for j in range(len(self.unit_health)):
-                    if (
-                        self._distance_between_units("enemy", i, "model", j) <= self.enemy_weapon[i]["Range"]
-                        and self.unit_health[j] > 0
-                        and self.unitInAttack[j][0] == 0
-                    ):
-                        shootAbleUnits.append(j)
+                shootAbleUnits = self.get_shoot_targets_for_unit("enemy", i)
                 if len(shootAbleUnits) > 0:
                     valid_target_ids = shootAbleUnits
                     raw = action.get("shoot", 0) if isinstance(action, dict) else 0
@@ -3386,7 +3462,7 @@ class Warhammer40kEnv(gym.Env):
                                 "MODEL",
                                 modelName,
                                 i,
-                                f"Цели в 12\": {target_list}. {roll_text}. Нет достижимых целей.",
+                                f"Цели в 12\": {target_list}. {roll_text}. Чардж пропущен при доступных целях (penalty=0).",
                             )
                         else:
                             self._log_unit("MODEL", modelName, i, "Нет целей в 12\", чардж пропущен.")
@@ -3986,6 +4062,7 @@ class Warhammer40kEnv(gym.Env):
         return self._get_observation(), info
 
     def enemyTurn(self, trunc=False, policy_fn=None):
+        self._invalidate_target_cache("enemy_turn_start")
         self.unitCharged = [0] * len(self.unit_health)
         self.enemyCharged = [0] * len(self.enemy_health)
         if trunc is True:
@@ -3998,9 +4075,11 @@ class Warhammer40kEnv(gym.Env):
             action = policy_fn(obs)
         battle_shock = self.command_phase("enemy", action=action)
         advanced_flags = self.movement_phase("enemy", action=action, battle_shock=battle_shock)
+        self._invalidate_target_cache("enemy_after_movement")
         self.shooting_phase("enemy", advanced_flags=advanced_flags, action=action)
         self.charge_phase("enemy", advanced_flags=advanced_flags, action=action)
         self.fight_phase("enemy")
+        self._invalidate_target_cache("enemy_after_fight")
         apply_end_of_battle(self, log_fn=self._log)
 
         if self.modelStrat["overwatch"] != -1:
@@ -4407,8 +4486,11 @@ class Warhammer40kEnv(gym.Env):
 
 
     def step(self, action):
+        self._invalidate_target_cache("model_step_start")
         reward = 0
         res = 0
+        secondary_interval = max(1, int(os.getenv("REWARD_SECONDARY_INTERVAL", "1")))
+        run_secondary_checks = secondary_interval <= 1 or ((self.iter + 1) % secondary_interval == 0)
         model_hp_start = float(sum(self.unit_health))
         enemy_hp_start = float(sum(self.enemy_health))
         enemy_dead_start = sum(1 for hp in self.enemy_health if hp <= 0)
@@ -4417,7 +4499,7 @@ class Warhammer40kEnv(gym.Env):
         self.refresh_objective_control()
         _, pre_controlled = controlled_objectives(self, "model")
         pre_controlled_set = set(pre_controlled)
-        min_obj_dist_start = self._min_model_obj_distance()
+        min_obj_dist_start = self._min_model_obj_distance() if run_secondary_checks else None
         prev_vp_diff = self._prev_vp_diff
         self.unitCharged = [0] * len(self.unit_health)
         self.enemyCharged = [0] * len(self.enemy_health)
@@ -4427,6 +4509,7 @@ class Warhammer40kEnv(gym.Env):
         if delta != 0:
             self._log_reward(f"Reward (шаг): командование delta={delta:+.3f}")
         advanced_flags, delta, movement_meta = self.movement_phase("model", action=action, battle_shock=battle_shock)
+        self._invalidate_target_cache("model_after_movement")
         reward += delta
         if delta != 0:
             self._log_reward(f"Reward (шаг): движение delta={delta:+.3f}")
@@ -4439,6 +4522,7 @@ class Warhammer40kEnv(gym.Env):
         if charge_delta != 0:
             self._log_reward(f"Reward (шаг): чардж delta={charge_delta:+.3f}")
         fight_delta = self.fight_phase("model") or 0
+        self._invalidate_target_cache("model_after_fight")
         reward += fight_delta
         if fight_delta != 0:
             self._log_reward(f"Reward (шаг): бой delta={fight_delta:+.3f}")
@@ -4515,41 +4599,57 @@ class Warhammer40kEnv(gym.Env):
         kills_dealt = max(0, enemy_dead_end - enemy_dead_start)
         vp_changed = (self.modelVP != pre_model_vp) or (self.enemyVP != pre_enemy_vp)
         control_changed = pre_controlled_set != post_controlled_set
-        near_objective = self._any_model_near_objective()
-        min_obj_dist_end = self._min_model_obj_distance()
+        near_objective = self._any_model_near_objective() if run_secondary_checks else False
+        min_obj_dist_end = self._min_model_obj_distance() if run_secondary_checks else None
         moved_closer = False
         can_measure_move = min_obj_dist_start is not None and min_obj_dist_end is not None
         if can_measure_move:
             moved_closer = min_obj_dist_end < min_obj_dist_start
-        idle_conditions_met = (
-            not near_objective
-            and not vp_changed
-            and not control_changed
-            and damage_dealt <= 0
-            and kills_dealt <= 0
-            and (not moved_closer or not can_measure_move)
-        )
-        hold_penalty_applied = bool(movement_meta.get("applied_hold_penalty", False))
-        if idle_conditions_met and hold_penalty_applied:
-            self._log_reward(
-                "Reward (idle вне цели): "
-                "skip, reason=hold_penalty_already_applied, "
-                f"near_obj={int(near_objective)}, vp_changed={int(vp_changed)}, "
-                f"control_changed={int(control_changed)}, damage={damage_dealt:.2f}, "
-                f"kills={kills_dealt}, moved_closer={int(moved_closer)}, "
-                f"min_dist={min_obj_dist_start}->{min_obj_dist_end}, "
-                f"hold_penalty_events={movement_meta.get('hold_penalty_events', 0)}"
+        if can_measure_move:
+            progress = max(0.0, float(min_obj_dist_start - min_obj_dist_end))
+            if progress > 0:
+                norm_base = max(1.0, float(getattr(reward_cfg, "VP_OBJECTIVE_MISSED_PROGRESS_NORM", 6.0)))
+                progress_norm = progress / norm_base
+                progress_scale = float(getattr(reward_cfg, "OBJECTIVE_PROGRESS_STEP_SCALE", 0.03))
+                progress_cap = float(getattr(reward_cfg, "OBJECTIVE_PROGRESS_STEP_CAP", 0.10))
+                progress_bonus = min(progress_cap, progress_scale * progress_norm)
+                if progress_bonus > 0:
+                    reward += progress_bonus
+                    self._log_reward(
+                        "Reward (progress к objective): "
+                        f"d_before={min_obj_dist_start:.3f}, d_after={min_obj_dist_end:.3f}, "
+                        f"delta={progress:.3f}, norm={progress_norm:.3f}, bonus=+{progress_bonus:.3f}"
+                    )
+        if run_secondary_checks:
+            idle_conditions_met = (
+                not near_objective
+                and not vp_changed
+                and not control_changed
+                and damage_dealt <= 0
+                and kills_dealt <= 0
+                and (not moved_closer or not can_measure_move)
             )
-        elif idle_conditions_met:
-            reward -= reward_cfg.IDLE_OUT_OF_OBJECTIVE_PENALTY
-            self._log_reward(
-                "Reward (idle вне цели): "
-                f"penalty=-{reward_cfg.IDLE_OUT_OF_OBJECTIVE_PENALTY:.3f}, "
-                f"near_obj={int(near_objective)}, vp_changed={int(vp_changed)}, "
-                f"control_changed={int(control_changed)}, damage={damage_dealt:.2f}, "
-                f"kills={kills_dealt}, moved_closer={int(moved_closer)}, "
-                f"min_dist={min_obj_dist_start}->{min_obj_dist_end}"
-            )
+            hold_penalty_applied = bool(movement_meta.get("applied_hold_penalty", False))
+            if idle_conditions_met and hold_penalty_applied:
+                self._log_reward(
+                    "Reward (idle вне цели): "
+                    "skip, reason=hold_penalty_already_applied, "
+                    f"near_obj={int(near_objective)}, vp_changed={int(vp_changed)}, "
+                    f"control_changed={int(control_changed)}, damage={damage_dealt:.2f}, "
+                    f"kills={kills_dealt}, moved_closer={int(moved_closer)}, "
+                    f"min_dist={min_obj_dist_start}->{min_obj_dist_end}, "
+                    f"hold_penalty_events={movement_meta.get('hold_penalty_events', 0)}"
+                )
+            elif idle_conditions_met:
+                reward -= reward_cfg.IDLE_OUT_OF_OBJECTIVE_PENALTY
+                self._log_reward(
+                    "Reward (idle вне цели): "
+                    f"penalty=-{reward_cfg.IDLE_OUT_OF_OBJECTIVE_PENALTY:.3f}, "
+                    f"near_obj={int(near_objective)}, vp_changed={int(vp_changed)}, "
+                    f"control_changed={int(control_changed)}, damage={damage_dealt:.2f}, "
+                    f"kills={kills_dealt}, moved_closer={int(moved_closer)}, "
+                    f"min_dist={min_obj_dist_start}->{min_obj_dist_end}"
+                )
 
         self._advance_turn_order()
         if self.game_over and res == 0:
@@ -4643,7 +4743,8 @@ class Warhammer40kEnv(gym.Env):
         self._sync_model_positions_to_anchors()
         # Принудительный flush в узловых точках (конец шага/фазы).
         if not self._flush_state_snapshot(reason="updateBoard", force=True):
-            write_state_json(self)
+            if bool(getattr(self, "playType", False)):
+                write_state_json(self)
 
     def returnBoard(self):
         return self.board
