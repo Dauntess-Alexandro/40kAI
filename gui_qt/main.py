@@ -1595,74 +1595,275 @@ class GUIController(QtCore.QObject):
             "episode": "—",
             "replay_size": "—",
             "eps": "—",
+            "source": "не определён",
+            "reason": "",
         }
         model_id = self._selected_metrics_model_id
         if not model_id:
+            values["reason"] = "Не выбрана модель в метриках."
             return values
 
-        candidates: list[str] = []
-        if self._selected_metrics_model_path:
-            direct = os.path.splitext(self._selected_metrics_model_path)[0] + ".pth"
-            if os.path.exists(direct):
-                candidates.append(direct)
+        self._emit_log(f"[GUI][METRICS] Поиск state для model_id={model_id}", level="INFO")
 
-        models_path = os.path.join(self._repo_root, "models")
-        if os.path.isdir(models_path):
-            target_name = f"model-{model_id}.pth"
-            for root, _, files in os.walk(models_path):
-                if target_name in files:
-                    candidates.append(os.path.join(root, target_name))
+        selected_episode = self._detect_selected_model_episode(model_id)
+        candidates = self._collect_selected_model_checkpoint_candidates(model_id, selected_episode)
 
         if not candidates:
+            self._emit_log(
+                f"[GUI][METRICS] Не найдено checkpoint-файлов для model_id={model_id}, пробую fallback по логам.",
+                level="WARN",
+            )
+            log_values = self._extract_selected_model_meta_from_logs(model_id)
+            if log_values:
+                values.update(log_values)
+                values["source"] = "логи (fallback)"
+                self._emit_log(
+                    f"[GUI][METRICS] State для model_id={model_id} восстановлен из LOGS_FOR_AGENTS.md.",
+                    level="INFO",
+                )
+                return values
+            values["reason"] = "Не найден checkpoint для выбранной модели (где искали: selected/models/checkpoint_ep/logs)."
             return values
 
         checkpoint = None
+        selected_checkpoint = ""
         try:
             import torch
 
             for path in candidates:
+                self._emit_log(f"[GUI][METRICS] Проверяю checkpoint-кандидат: {path}", level="INFO")
                 try:
                     checkpoint = torch.load(path, map_location="cpu")
-                    if isinstance(checkpoint, dict):
+                    if not isinstance(checkpoint, dict):
+                        self._emit_log(
+                            f"[GUI][METRICS] Кандидат отклонён: checkpoint не dict ({path}).",
+                            level="WARN",
+                        )
+                        continue
+                    selected_checkpoint = path
+                    required = ["global_step", "optimize_steps", "episode"]
+                    missing = [k for k in required if k not in checkpoint]
+                    if missing:
+                        self._emit_log(
+                            f"[GUI][METRICS] Кандидат принят частично ({os.path.basename(path)}), отсутствуют ключи: {missing}.",
+                            level="WARN",
+                        )
+                    else:
+                        self._emit_log(
+                            f"[GUI][METRICS] Выбран checkpoint: {path}",
+                            level="INFO",
+                        )
                         break
-                except Exception:
+                except Exception as exc:
+                    self._emit_log(
+                        f"[GUI][METRICS] Кандидат отклонён: ошибка загрузки ({path}): {exc}",
+                        level="WARN",
+                    )
                     continue
-        except Exception:
+        except Exception as exc:
+            self._emit_log(
+                f"[GUI][METRICS] Не удалось импортировать torch для чтения checkpoint. Детали: {exc}",
+                level="WARN",
+            )
+            values["reason"] = "Не удалось открыть checkpoint (torch недоступен)."
             return values
 
         if not isinstance(checkpoint, dict):
+            values["reason"] = "Checkpoint найден, но не удалось прочитать словарь state."
             return values
+
+        values["source"] = os.path.basename(selected_checkpoint) if selected_checkpoint else "не определён"
 
         values["global_step"] = str(int(checkpoint.get("global_step", 0) or 0))
         values["optimize_steps"] = str(int(checkpoint.get("optimize_steps", 0) or 0))
         values["episode"] = str(int(checkpoint.get("episode", 0) or 0))
 
         replay = checkpoint.get("replay_memory")
-        replay_size = "—"
-        if isinstance(replay, dict):
-            for key in ("size", "length", "count"):
-                if key in replay:
-                    replay_size = str(int(replay.get(key, 0) or 0))
-                    break
-            if replay_size == "—":
-                memory = replay.get("memory")
-                if isinstance(memory, list):
-                    replay_size = str(len(memory))
-        values["replay_size"] = replay_size
+        replay_size = self._extract_replay_size(replay)
+        if replay_size is None:
+            values["replay_size"] = "—"
+            self._emit_log(
+                f"[GUI][METRICS] replay_size не определён для {values['source']}: неизвестная структура replay_memory.",
+                level="WARN",
+            )
+        else:
+            values["replay_size"] = str(replay_size)
 
+        eps_start, eps_end, eps_decay = self._load_eps_hyperparams()
+        eps = self._compute_eps_for_global_step(int(values["global_step"] or 0), eps_start, eps_end, eps_decay)
+        values["eps"] = f"{eps:.4f}"
+
+        return values
+
+    def _collect_selected_model_checkpoint_candidates(self, model_id: str, selected_episode: Optional[int]) -> list[str]:
+        candidates: list[tuple[int, float, str]] = []
+        seen: set[str] = set()
+
+        def _append(priority: int, path: str) -> None:
+            norm = os.path.normpath(path)
+            if norm in seen:
+                return
+            seen.add(norm)
+            try:
+                mtime = os.path.getmtime(path)
+            except OSError:
+                mtime = 0.0
+            candidates.append((priority, -mtime, path))
+
+        if self._selected_metrics_model_path:
+            direct = os.path.splitext(self._selected_metrics_model_path)[0] + ".pth"
+            if os.path.exists(direct):
+                _append(1, direct)
+            else:
+                self._emit_log(f"[GUI][METRICS] Кандидат отклонён: не существует {direct}", level="WARN")
+
+        models_path = os.path.join(self._repo_root, "models")
+        model_dirs: set[str] = set()
+        if self._selected_metrics_model_path:
+            model_dirs.add(os.path.dirname(self._selected_metrics_model_path))
+
+        if os.path.isdir(models_path):
+            target_name = f"model-{model_id}.pth"
+            for root, _, files in os.walk(models_path):
+                if target_name in files:
+                    path = os.path.join(root, target_name)
+                    _append(2, path)
+                    model_dirs.add(root)
+
+        checkpoint_candidates: list[tuple[int, str]] = []
+        for model_dir in model_dirs:
+            if not os.path.isdir(model_dir):
+                continue
+            for name in os.listdir(model_dir):
+                if not (name.startswith("checkpoint_ep") and name.endswith(".pth")):
+                    continue
+                episode = self._extract_checkpoint_episode(name)
+                if episode is None:
+                    continue
+                checkpoint_candidates.append((episode, os.path.join(model_dir, name)))
+
+        if checkpoint_candidates:
+            checkpoint_candidates.sort(key=lambda item: item[0])
+            fallback_path = checkpoint_candidates[-1][1]
+            if selected_episode is not None:
+                eligible = [item for item in checkpoint_candidates if item[0] <= selected_episode]
+                if eligible:
+                    fallback_path = eligible[-1][1]
+            _append(3, fallback_path)
+
+        candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+        return [path for _, _, path in candidates]
+
+    def _detect_selected_model_episode(self, model_id: str) -> Optional[int]:
+        results_path = os.path.join(self._repo_root, "results.txt")
+        if not os.path.exists(results_path):
+            return None
+        pattern = re.compile(r"model-" + re.escape(model_id) + r".*?(?:episode|ep)=(\d+)", re.IGNORECASE)
+        try:
+            with open(results_path, "r", encoding="utf-8", errors="replace") as handle:
+                for line in reversed(handle.readlines()):
+                    match = pattern.search(line)
+                    if match:
+                        return int(match.group(1))
+        except OSError:
+            return None
+        return None
+
+    def _extract_replay_size(self, replay: object) -> Optional[int]:
+        if not isinstance(replay, dict):
+            return None
+        for key in ("size", "length", "count"):
+            if key in replay:
+                try:
+                    return int(replay.get(key, 0) or 0)
+                except (TypeError, ValueError):
+                    continue
+        for key in ("memory", "items", "list", "deque"):
+            value = replay.get(key)
+            if hasattr(value, "__len__"):
+                try:
+                    return len(value)
+                except TypeError:
+                    continue
+        nested = replay.get("buffer")
+        if isinstance(nested, dict):
+            for value in nested.values():
+                if hasattr(value, "__len__"):
+                    try:
+                        return len(value)
+                    except TypeError:
+                        continue
+        return None
+
+    def _load_eps_hyperparams(self) -> tuple[float, float, float]:
+        defaults = (0.9, 0.05, 20000.0)
         try:
             with open(os.path.join(self._repo_root, "hyperparams.json"), "r", encoding="utf-8", errors="replace") as handle:
                 hp = json.load(handle)
-            eps_start = float(hp.get("eps_start", 0.9))
-            eps_end = float(hp.get("eps_end", 0.05))
-            eps_decay = max(1.0, float(hp.get("eps_decay", 20000)))
-            progress = min(float(values["global_step"]) / eps_decay, 1.0)
-            eps = eps_start + (eps_end - eps_start) * progress
-            values["eps"] = f"{eps:.4f}"
-        except (OSError, ValueError, json.JSONDecodeError):
-            pass
+            eps_start = float(hp.get("eps_start", defaults[0]))
+            eps_end = float(hp.get("eps_end", defaults[1]))
+            eps_decay = max(1.0, float(hp.get("eps_decay", defaults[2])))
+            return eps_start, eps_end, eps_decay
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            self._emit_log(
+                "[GUI][METRICS] Не удалось прочитать hyperparams.json, использую defaults eps_start=0.9 eps_end=0.05 eps_decay=20000. "
+                f"Детали: {exc}",
+                level="WARN",
+            )
+            return defaults
 
-        return values
+    def _compute_eps_for_global_step(self, global_step: int, eps_start: float, eps_end: float, eps_decay: float) -> float:
+        progress = min(float(max(global_step, 0)) / max(1.0, float(eps_decay)), 1.0)
+        return eps_start + (eps_end - eps_start) * progress
+
+    def _extract_selected_model_meta_from_logs(self, model_id: str) -> dict[str, str]:
+        logs_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS.md")
+        if not os.path.exists(logs_path):
+            return {}
+        try:
+            with open(logs_path, "r", encoding="utf-8", errors="replace") as handle:
+                lines = handle.readlines()
+        except OSError:
+            return {}
+
+        save_idx = -1
+        needle = f"model-{model_id}.pickle"
+        for idx, line in enumerate(lines):
+            if "[SAVE] pickle" in line and needle in line:
+                save_idx = idx
+        if save_idx < 0:
+            return {}
+
+        start_idx = 0
+        for idx in range(save_idx, -1, -1):
+            if "[TRAIN][START]" in lines[idx]:
+                start_idx = idx
+                break
+        scope = lines[start_idx : save_idx + 1]
+        payload: dict[str, str] = {}
+        for line in scope:
+            for key in ("global_step", "optimize_steps", "episode", "replay_size"):
+                match = re.search(rf"{key}=(\d+)", line)
+                if match:
+                    payload[key] = match.group(1)
+        if "episode" not in payload:
+            for line in scope:
+                ep_match = re.search(r"\[TRAIN\]\[EP\]\s+ep=(\d+)", line)
+                if ep_match:
+                    payload["episode"] = ep_match.group(1)
+        if not payload:
+            return {}
+        payload.setdefault("global_step", "—")
+        payload.setdefault("optimize_steps", "—")
+        payload.setdefault("episode", "—")
+        payload.setdefault("replay_size", "—")
+        eps_start, eps_end, eps_decay = self._load_eps_hyperparams()
+        try:
+            gs = int(payload["global_step"])
+            payload["eps"] = f"{self._compute_eps_for_global_step(gs, eps_start, eps_end, eps_decay):.4f}"
+        except (TypeError, ValueError):
+            payload["eps"] = "—"
+        return payload
 
     def _refresh_metrics_summaries(self) -> None:
         defaults = {
@@ -1714,8 +1915,12 @@ class GUIController(QtCore.QObject):
             f"• optimize_steps: {resume['optimize_steps']}\n"
             f"• episode: {resume['episode']}\n"
             f"• replay_size: {resume['replay_size']}\n"
-            f"• eps: {resume['eps']}"
+            f"• eps: {resume['eps']}\n"
+            f"Источник state: {resume.get('source', 'не определён')}"
         )
+        reason = (resume.get("reason") or "").strip()
+        if reason:
+            model_state += f"\nПричина: {reason}"
 
         self._metric_summary_texts = summaries
         self._model_state_text = model_state
