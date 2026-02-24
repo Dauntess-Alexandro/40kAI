@@ -554,7 +554,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._deploy_context = None
             self._deploy_hover_cell = None
             self._deploy_status_text = ""
-            self.map_scene.set_deploy_ghost([], None, "")
+            self._clear_deploy_overlays()
             if self.controller.is_finished:
                 self.command_prompt.setText("Игра завершена.")
             else:
@@ -572,6 +572,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 self._deploy_visual_reset_done = True
         else:
             self._deploy_visual_reset_done = False
+            self._clear_deploy_overlays()
 
         self._maybe_reset_target_for_request(request)
         self._update_deploy_status_from_request(request)
@@ -969,6 +970,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if self._pending_request is None:
             return
         finished_request = self._pending_request
+        if self._is_deploy_request(finished_request):
+            # Placement confirmed: remove preview/marker immediately
+            # and wait for fresh state redraw with real unit render.
+            self._clear_deploy_overlays()
         self._finish_active_request()
         messages, request = self.controller.answer(value)
         self._append_log(messages)
@@ -986,6 +991,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         else:
             self._set_request(request)
         self._poll_state()
+
+    def _clear_deploy_overlays(self) -> None:
+        self._deploy_context = None
+        self._deploy_hover_cell = None
+        self.map_scene.set_deploy_ghost([], None, "")
+        self.map_scene.clear_target_selection()
 
     def _apply_initial_splitter_sizes(self) -> None:
         total_w = max(self.width(), 2560)
