@@ -351,6 +351,40 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._error_message = message
         self.update()
 
+    def reset_runtime_visuals(self, *, clear_units: bool = True, clear_state: bool = False) -> None:
+        """Clear transient render/session caches without touching camera pan/zoom."""
+        if clear_state:
+            self._state = {}
+        if clear_units:
+            self._units_state = []
+            self._units = []
+            self._unit_by_key = {}
+            self._unit_labels = []
+            self._prev_unit_positions = {}
+            self._curr_unit_positions = {}
+            self._selected_unit_key = None
+            self._active_unit_id = None
+            self._active_unit_side = None
+            self._selected_unit_id = None
+            self._selected_unit_side = None
+        self._target_unit_id = None
+        self._target_cell = None
+        self._hover_cell = None
+        self._deploy_ghost_cells = []
+        self._deploy_ghost_valid = None
+        self._deploy_ghost_unit_name = ""
+        self._move_highlights = []
+        self._target_highlights = []
+        self._objectives = []
+        self._objective_labels = []
+        self._fx_active = []
+        self._particles = []
+        self._particles_last_ts = None
+        self._unit_anim_timer.stop()
+        self._view_anim_timer.stop()
+        self._clear_hover_tooltip(force=True)
+        self.update()
+
     def update_state(self, state: Optional[Dict]) -> None:
         self._state = state or {}
         if not state:

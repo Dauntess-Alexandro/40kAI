@@ -205,6 +205,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._deploy_status_text = ""
         self._deploy_context = None
         self._deploy_hover_cell = None
+        self._deploy_visual_reset_done = False
 
         self._viewer_config = load_viewer_config()
         cell_size = int(self._viewer_config.get("cell_size", 24))
@@ -549,6 +550,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._pending_request = request
         self._awaiting_player_action = request is not None
         if request is None:
+            self._deploy_visual_reset_done = False
             self._deploy_context = None
             self._deploy_hover_cell = None
             self._deploy_status_text = ""
@@ -561,6 +563,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_hint.setText("Горячие клавиши: —")
             self._refresh_active_context()
             return
+
+        if self._is_deploy_request(request):
+            meta = getattr(request, "meta", {}) or {}
+            deploy_index = int(meta.get("deploy_index") or 0)
+            if deploy_index <= 1 and not self._deploy_visual_reset_done:
+                self._reset_viewer_session_visuals(reason="manual_deploy_start")
+                self._deploy_visual_reset_done = True
+        else:
+            self._deploy_visual_reset_done = False
 
         self._maybe_reset_target_for_request(request)
         self._update_deploy_status_from_request(request)
@@ -871,10 +882,26 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._refresh_model_log_view()
 
     def _start_controller(self):
+        self._reset_viewer_session_visuals(reason="new_game_start")
         messages, request = self.controller.start()
         self._append_log(messages)
         self._set_request(request)
         self._poll_state()
+
+    def _reset_viewer_session_visuals(self, reason: str) -> None:
+        self.add_log_line(
+            f"[VIEWER][RESET] reason={reason}. Где: viewer/app.py. Что делаем: очищаем visual state прошлой сессии."
+        )
+        self.map_scene.reset_runtime_visuals(clear_units=True, clear_state=False)
+        self._units_by_key = {}
+        self._unit_row_by_key = {}
+        self._fx_shot_queue.clear()
+        self._fx_parser.reset(preserve_seen=False)
+        self._current_target_id = None
+        self._last_shooter_id = None
+        self._deploy_context = None
+        self._deploy_hover_cell = None
+        self._deploy_status_text = ""
 
     def _submit_text(self):
         text = self.command_input.text().strip()
