@@ -210,6 +210,30 @@ class TestDeploymentStage2ManualRegression(unittest.TestCase):
         self.assertTrue(any("invalid" in line for line in logs))
         self.assertTrue(any("ручной ввод отменён" in line for line in logs))
 
+    def test_manual_player_eof_fallback_to_auto_without_crash(self):
+        class FakeEOFIO:
+            def request_deploy_coord(self, prompt, **kwargs):
+                raise EOFError("stdin closed")
+
+        logs = []
+        mission = _load_mission_module("mission_under_test_stage2_eof", io_instance=FakeEOFIO())
+        model = self._build_units(1, "m")
+        enemy = self._build_units(1, "e")
+
+        mission.deploy_only_war(
+            model,
+            enemy,
+            b_len=40,
+            b_hei=60,
+            attacker_side="model",
+            deployment_seed=5,
+            deployment_mode="manual_player",
+            log_fn=logs.append,
+        )
+
+        self.assertTrue(mission.is_in_deploy_zone("enemy", tuple(enemy[0].unit_coords), 40, 60))
+        self.assertTrue(any("stdin EOF" in line for line in logs))
+
 
 if __name__ == "__main__":
     unittest.main()

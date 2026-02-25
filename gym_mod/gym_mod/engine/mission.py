@@ -516,30 +516,39 @@ def deploy_only_war(
                 )
                 if next_label is not None:
                     prompt += f" Следом: {next_label} [{current_index + 1}/{manual_total}]"
-                response = io.request_deploy_coord(
-                    prompt,
-                    x_min=x_min,
-                    x_max=x_max,
-                    y_min=y_min,
-                    y_max=y_max,
-                    meta={
-                        "deployment_mode": mode,
-                        "deploy_side": side,
-                        "deploy_unit_id": unit_id,
-                        "deploy_unit_label": unit_label,
-                        "deploy_unit_name": unit_name,
-                        "deploy_index": current_index,
-                        "deploy_total": manual_total,
-                        "deploy_remaining": max(0, manual_total - manual_done),
-                        "deploy_next_label": next_label,
-                        "deploy_zone_side": zone_side,
-                        "deploy_b_len": b_len,
-                        "deploy_b_hei": b_hei,
-                        "occupied": [[int(r), int(c)] for r, c in sorted(occupied)],
-                        "occupied_model_cells": [[int(r), int(c)] for r, c in sorted(occupied_model_cells)],
-                        "model_offsets": [[int(dr), int(dc)] for dr, dc in unit_model_offsets],
-                    },
-                )
+                try:
+                    response = io.request_deploy_coord(
+                        prompt,
+                        x_min=x_min,
+                        x_max=x_max,
+                        y_min=y_min,
+                        y_max=y_max,
+                        meta={
+                            "deployment_mode": mode,
+                            "deploy_side": side,
+                            "deploy_unit_id": unit_id,
+                            "deploy_unit_label": unit_label,
+                            "deploy_unit_name": unit_name,
+                            "deploy_index": current_index,
+                            "deploy_total": manual_total,
+                            "deploy_remaining": max(0, manual_total - manual_done),
+                            "deploy_next_label": next_label,
+                            "deploy_zone_side": zone_side,
+                            "deploy_b_len": b_len,
+                            "deploy_b_hei": b_hei,
+                            "occupied": [[int(r), int(c)] for r, c in sorted(occupied)],
+                            "occupied_model_cells": [[int(r), int(c)] for r, c in sorted(occupied_model_cells)],
+                            "model_offsets": [[int(dr), int(dc)] for dr, dc in unit_model_offsets],
+                        },
+                    )
+                except EOFError:
+                    response = None
+                    if log_fn is not None:
+                        log_fn(
+                            f"[DEPLOY][MANUAL] {unit_label}: stdin EOF при ручном деплое. "
+                            "Где: mission.deploy_only_war. Что делать дальше: auto-placement для этого юнита "
+                            "или переключите DEPLOYMENT_MODE на auto/rl_phase для неинтерактивного запуска."
+                        )
                 if response is None:
                     if log_fn is not None:
                         log_fn(
