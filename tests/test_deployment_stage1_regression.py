@@ -149,7 +149,9 @@ class TestDeploymentStage1Regression(unittest.TestCase):
         enemy = self._build_units(1, "e")
 
         old_flag = os.environ.get("DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE")
+        old_scale = os.environ.get("DEPLOYMENT_RL_SCORE_SCALE")
         os.environ["DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE"] = "1"
+        os.environ["DEPLOYMENT_RL_SCORE_SCALE"] = "0"
         try:
             stats = mission.deploy_only_war(
                 model,
@@ -166,6 +168,10 @@ class TestDeploymentStage1Regression(unittest.TestCase):
                 os.environ.pop("DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE", None)
             else:
                 os.environ["DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE"] = old_flag
+            if old_scale is None:
+                os.environ.pop("DEPLOYMENT_RL_SCORE_SCALE", None)
+            else:
+                os.environ["DEPLOYMENT_RL_SCORE_SCALE"] = old_scale
 
         self.assertIsInstance(stats, dict)
         self.assertGreaterEqual(int(stats.get("units", 0)), 1)
@@ -175,6 +181,51 @@ class TestDeploymentStage1Regression(unittest.TestCase):
         self.assertEqual((8, 47), tuple(enemy[0].unit_coords))
         self.assertTrue(any("[DEPLOY][RL]" in line for line in logs))
         self.assertFalse(any("[DEPLOY][RL] invalid" in line for line in logs))
+
+    def test_rl_phase_deploy_score_shaping_logs_delta(self):
+        class FakeIO:
+            def __init__(self):
+                self.answers = iter([
+                    {"x": 47, "y": 8},
+                ])
+
+            def request_deploy_coord(self, prompt, **kwargs):
+                return next(self.answers)
+
+        logs = []
+        mission = _load_mission_module("mission_under_test_stage3_rl_score", io_instance=FakeIO())
+        model = self._build_units(1, "m")
+        enemy = self._build_units(1, "e")
+
+        old_flag = os.environ.get("DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE")
+        old_scale = os.environ.get("DEPLOYMENT_RL_SCORE_SCALE")
+        os.environ["DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE"] = "1"
+        os.environ["DEPLOYMENT_RL_SCORE_SCALE"] = "0.05"
+        try:
+            stats = mission.deploy_only_war(
+                model,
+                enemy,
+                b_len=40,
+                b_hei=60,
+                attacker_side="model",
+                deployment_seed=7,
+                deployment_mode="rl_phase",
+                log_fn=logs.append,
+            )
+        finally:
+            if old_flag is None:
+                os.environ.pop("DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE", None)
+            else:
+                os.environ["DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE"] = old_flag
+            if old_scale is None:
+                os.environ.pop("DEPLOYMENT_RL_SCORE_SCALE", None)
+            else:
+                os.environ["DEPLOYMENT_RL_SCORE_SCALE"] = old_scale
+
+        self.assertIsInstance(stats, dict)
+        self.assertIn("total_deploy_reward", stats)
+        self.assertIn("avg_forward", stats)
+        self.assertTrue(any("score_before=" in line and "reward_delta=" in line for line in logs))
 
 class TestDeploymentStage2ManualRegression(unittest.TestCase):
     def _build_units(self, n, prefix):

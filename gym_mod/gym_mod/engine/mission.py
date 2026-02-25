@@ -160,6 +160,86 @@ def _valid_deploy_cells(
     return valid
 
 
+def _unit_cells_from_anchor(anchor: Sequence[int], offsets: Iterable[Tuple[int, int]] | None) -> List[Tuple[int, int]]:
+    row = int(anchor[0])
+    col = int(anchor[1])
+    data = list(offsets or [(0, 0)])
+    return [(row + int(dr), col + int(dc)) for dr, dc in data]
+
+
+def _deployment_global_score(
+    side: str,
+    b_len: int,
+    b_hei: int,
+    placed_side_units: Sequence[dict],
+    *,
+    cfg: dict,
+) -> Tuple[float, dict]:
+    if not placed_side_units:
+        return 0.0, {"forward": 0.0, "spread": 0.0, "edge": 0.0, "cover": 0.0}
+
+    units_cells: List[List[Tuple[int, int]]] = []
+    centroids: List[Tuple[float, float]] = []
+    for item in placed_side_units:
+        anchor = item.get("anchor", (0, 0))
+        offsets = item.get("offsets", [(0, 0)])
+        cells = _unit_cells_from_anchor(anchor, offsets)
+        if not cells:
+            continue
+        units_cells.append(cells)
+        avg_row = sum(r for r, _ in cells) / len(cells)
+        avg_col = sum(c for _, c in cells) / len(cells)
+        centroids.append((avg_row, avg_col))
+
+    if not units_cells:
+        return 0.0, {"forward": 0.0, "spread": 0.0, "edge": 0.0, "cover": 0.0}
+
+    denom_col = max(1.0, float(b_hei - 1))
+    if side == "enemy":
+        forward_vals = [max(0.0, min(1.0, (denom_col - c) / denom_col)) for _, c in centroids]
+    else:
+        forward_vals = [max(0.0, min(1.0, c / denom_col)) for _, c in centroids]
+    forward_score = float(sum(forward_vals) / max(1, len(forward_vals)))
+
+    spread_target = max(1.0, float(os.getenv("DEPLOYMENT_RL_SPREAD_TARGET", "6.0") or "6.0"))
+    if len(centroids) <= 1:
+        spread_score = 1.0
+    else:
+        deficits: List[float] = []
+        for i in range(len(centroids)):
+            for j in range(i + 1, len(centroids)):
+                dist = abs(float(centroids[i][0]) - float(centroids[j][0]))
+                deficits.append(max(0.0, 1.0 - min(1.0, dist / spread_target)))
+        spread_score = max(0.0, 1.0 - (sum(deficits) / max(1, len(deficits))))
+
+    edge_margin_thr = max(0.5, float(os.getenv("DEPLOYMENT_RL_EDGE_MARGIN_TARGET", "2.0") or "2.0"))
+    edge_vals: List[float] = []
+    for cells in units_cells:
+        min_margin = min(
+            min(r, c, max(0, b_len - 1 - r), max(0, b_hei - 1 - c))
+            for r, c in cells
+        )
+        edge_vals.append(max(0.0, min(1.0, float(min_margin) / edge_margin_thr)))
+    edge_score = float(sum(edge_vals) / max(1, len(edge_vals)))
+
+    # Placeholder for terrain-aware cover readiness. TODO: use actual terrain/LOS data when available.
+    cover_score = 0.0
+    # TODO: formation_flexibility component (space for first move / congestion) can be added here.
+
+    fw = float(cfg.get("forward_w", 1.0))
+    sw = float(cfg.get("spread_w", 0.6))
+    ew = float(cfg.get("edge_w", 0.2))
+    cw = float(cfg.get("cover_w", 0.0))
+    weight_sum = max(1e-9, fw + sw + ew + cw)
+    score = (fw * forward_score + sw * spread_score + ew * edge_score + cw * cover_score) / weight_sum
+    return float(score), {
+        "forward": float(forward_score),
+        "spread": float(spread_score),
+        "edge": float(edge_score),
+        "cover": float(cover_score),
+    }
+
+
 def _choose_rl_deploy_coord(
     side: str,
     b_len: int,
@@ -168,6 +248,7 @@ def _choose_rl_deploy_coord(
     *,
     model_offsets: Iterable[Tuple[int, int]] | None = None,
     occupied_model_cells: Iterable[Tuple[int, int]] | None = None,
+    placed_side_units: Sequence[dict] | None = None,
     rng: random.Random | None = None,
     log_fn: Optional[callable] = None,
     unit_label: str = "",
@@ -187,6 +268,11 @@ def _choose_rl_deploy_coord(
     max_attempts = max(1, int(os.getenv("DEPLOYMENT_RL_MAX_ATTEMPTS", "20") or "20"))
     invalid_penalty = float(os.getenv("DEPLOYMENT_RL_INVALID_PENALTY", "0.0") or "0.0")
     valid_reward = float(os.getenv("DEPLOYMENT_RL_VALID_REWARD", "0.0") or "0.0")
+    score_scale = float(os.getenv("DEPLOYMENT_RL_SCORE_SCALE", "0.05") or "0.05")
+    forward_w = float(os.getenv("DEPLOYMENT_RL_FORWARD_W", "1.0") or "1.0")
+    spread_w = float(os.getenv("DEPLOYMENT_RL_SPREAD_W", "0.6") or "0.6")
+    edge_w = float(os.getenv("DEPLOYMENT_RL_EDGE_W", "0.2") or "0.2")
+    cover_w = float(os.getenv("DEPLOYMENT_RL_COVER_W", "0.0") or "0.0")
     # Stage-1 safety: RL deploy samples only from currently valid cells.
     # Это убирает массовые invalid-попытки и даёт стабильный деплой без смены правил миссии.
     total_cells = max(1, len(valid_cells))
@@ -200,7 +286,28 @@ def _choose_rl_deploy_coord(
         "selected_flat": None,
         "selected_coord": None,
         "selected_reason": "",
+        "deploy_reward_delta": 0.0,
+        "score_before": 0.0,
+        "score_after": 0.0,
+        "forward_score": 0.0,
+        "spread_score": 0.0,
+        "edge_score": 0.0,
+        "cover_score": 0.0,
     }
+
+    score_cfg = {
+        "scale": score_scale,
+        "forward_w": forward_w,
+        "spread_w": spread_w,
+        "edge_w": edge_w,
+        "cover_w": cover_w,
+    }
+    if log_fn is not None:
+        log_fn(
+            "[DEPLOY][RL] score_config "
+            f"scale={score_scale:.3f} w_forward={forward_w:.3f} w_spread={spread_w:.3f} "
+            f"w_edge={edge_w:.3f} w_cover={cover_w:.3f}"
+        )
 
     for _ in range(max_attempts):
         valid_idx = int(policy_rng.randrange(total_cells))
@@ -217,14 +324,40 @@ def _choose_rl_deploy_coord(
             occupied_model_cells=occupied_model_cells,
         )
         if ok:
-            stats["reward"] += valid_reward
+            score_before, before_parts = _deployment_global_score(
+                side,
+                b_len,
+                b_hei,
+                placed_side_units or [],
+                cfg=score_cfg,
+            )
+            score_after, after_parts = _deployment_global_score(
+                side,
+                b_len,
+                b_hei,
+                list(placed_side_units or []) + [{"anchor": coord, "offsets": list(model_offsets or [(0, 0)])}],
+                cfg=score_cfg,
+            )
+            deploy_reward_delta = score_scale * (score_after - score_before)
+            stats["reward"] += valid_reward + deploy_reward_delta
             stats["selected_flat"] = flat
             stats["selected_coord"] = coord
             stats["selected_reason"] = "policy"
+            stats["deploy_reward_delta"] = float(deploy_reward_delta)
+            stats["score_before"] = float(score_before)
+            stats["score_after"] = float(score_after)
+            stats["forward_score"] = float(after_parts.get("forward", 0.0))
+            stats["spread_score"] = float(after_parts.get("spread", 0.0))
+            stats["edge_score"] = float(after_parts.get("edge", 0.0))
+            stats["cover_score"] = float(after_parts.get("cover", 0.0))
             if log_fn is not None:
                 log_fn(
                     f"[DEPLOY][RL] accepted {unit_label or side}: flat={flat}, coord=({coord[0]},{coord[1]}), "
-                    f"attempt={stats['attempts']}, reward={stats['reward']:+.3f}"
+                    f"attempt={stats['attempts']}, reward={stats['reward']:+.3f}, "
+                    f"score_before={score_before:.3f}, score_after={score_after:.3f}, "
+                    f"reward_delta={deploy_reward_delta:+.3f}, "
+                    f"forward={after_parts.get('forward', 0.0):.3f}, spread={after_parts.get('spread', 0.0):.3f}, "
+                    f"edge={after_parts.get('edge', 0.0):.3f}, cover={after_parts.get('cover', 0.0):.3f}"
                 )
             return coord, stats
         stats["invalid"] += 1
@@ -482,7 +615,19 @@ def deploy_only_war(
     }
     manual_total = side_counts.get("enemy", 0)
     manual_done = 0
-    rl_summary = {"attempts": 0, "invalid": 0, "fallback": 0, "reward": 0.0, "units": 0}
+    rl_summary = {
+        "attempts": 0,
+        "invalid": 0,
+        "fallback": 0,
+        "reward": 0.0,
+        "units": 0,
+        "total_deploy_reward": 0.0,
+        "forward_sum": 0.0,
+        "spread_sum": 0.0,
+        "edge_sum": 0.0,
+        "cover_sum": 0.0,
+    }
+    placed_by_side: dict[str, list[dict]] = {"model": [], "enemy": []}
 
     def _place_unit(unit, side: str, unit_idx: int):
         nonlocal manual_done
@@ -590,6 +735,7 @@ def deploy_only_war(
                 occupied,
                 model_offsets=unit_model_offsets,
                 occupied_model_cells=occupied_model_cells,
+                placed_side_units=placed_by_side.get(side, []),
                 rng=rng,
                 log_fn=log_fn,
                 unit_label=unit_label,
@@ -599,6 +745,11 @@ def deploy_only_war(
             rl_summary["fallback"] += int(rl_stats.get("fallback", 0))
             rl_summary["reward"] += float(rl_stats.get("reward", 0.0))
             rl_summary["units"] += 1
+            rl_summary["total_deploy_reward"] += float(rl_stats.get("deploy_reward_delta", 0.0))
+            rl_summary["forward_sum"] += float(rl_stats.get("forward_score", 0.0))
+            rl_summary["spread_sum"] += float(rl_stats.get("spread_score", 0.0))
+            rl_summary["edge_sum"] += float(rl_stats.get("edge_score", 0.0))
+            rl_summary["cover_sum"] += float(rl_stats.get("cover_score", 0.0))
 
         if coord is None:
             coord = get_random_free_deploy_coord(
@@ -638,6 +789,7 @@ def deploy_only_war(
             unit.unit_data["Facing"] = facing
         occupied.add(coord)
         _add_unit_model_cells(occupied_model_cells, coord, unit_model_offsets)
+        placed_by_side.setdefault(side, []).append({"anchor": coord, "offsets": list(unit_model_offsets)})
         if side == "enemy":
             manual_done += 1
         _log_deploy(log_fn, side, unit_idx, coord, unit=unit)
@@ -656,10 +808,21 @@ def deploy_only_war(
             d_idx += 1
 
     if mode == "rl_phase" and log_fn is not None:
+        rl_units = max(1, int(rl_summary["units"]))
+        avg_forward = float(rl_summary["forward_sum"]) / rl_units
+        avg_spread = float(rl_summary["spread_sum"]) / rl_units
+        avg_edge = float(rl_summary["edge_sum"]) / rl_units
+        avg_cover = float(rl_summary["cover_sum"]) / rl_units
+        rl_summary["avg_forward"] = avg_forward
+        rl_summary["avg_spread"] = avg_spread
+        rl_summary["avg_edge"] = avg_edge
+        rl_summary["avg_cover"] = avg_cover
         log_fn(
             "[DEPLOY][RL][SUMMARY] "
             f"units={rl_summary['units']} attempts={rl_summary['attempts']} invalid={rl_summary['invalid']} "
-            f"fallback={rl_summary['fallback']} reward={rl_summary['reward']:+.3f}"
+            f"fallback={rl_summary['fallback']} reward={rl_summary['reward']:+.3f} "
+            f"total_deploy_reward={rl_summary['total_deploy_reward']:+.3f} "
+            f"avg_forward={avg_forward:.3f} avg_spread={avg_spread:.3f} avg_edge={avg_edge:.3f} avg_cover={avg_cover:.3f}"
         )
     return rl_summary if mode == "rl_phase" else None
 
