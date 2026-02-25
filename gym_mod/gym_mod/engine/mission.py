@@ -123,6 +123,129 @@ def _zone_bounds_for_side(side: str, b_hei: int) -> Tuple[int, int]:
     return 0, max(0, depth - 1)
 
 
+def _coord_to_flat(coord: Sequence[int], b_hei: int) -> int:
+    return int(coord[0]) * int(b_hei) + int(coord[1])
+
+
+def _flat_to_coord(flat_idx: int, b_len: int, b_hei: int) -> Tuple[int, int]:
+    total = max(1, int(b_len) * int(b_hei))
+    idx = int(flat_idx) % total
+    row = idx // int(b_hei)
+    col = idx % int(b_hei)
+    return row, col
+
+
+def _valid_deploy_cells(
+    side: str,
+    b_len: int,
+    b_hei: int,
+    occupied: Iterable[Tuple[int, int]],
+    *,
+    model_offsets: Iterable[Tuple[int, int]] | None = None,
+    occupied_model_cells: Iterable[Tuple[int, int]] | None = None,
+) -> List[Tuple[int, int]]:
+    valid: List[Tuple[int, int]] = []
+    for row, col in _zone_coords(side, b_len, b_hei):
+        ok, _ = validate_deploy_coord(
+            side,
+            (row, col),
+            b_len,
+            b_hei,
+            occupied,
+            model_offsets=model_offsets,
+            occupied_model_cells=occupied_model_cells,
+        )
+        if ok:
+            valid.append((row, col))
+    return valid
+
+
+def _choose_rl_deploy_coord(
+    side: str,
+    b_len: int,
+    b_hei: int,
+    occupied: Iterable[Tuple[int, int]],
+    *,
+    model_offsets: Iterable[Tuple[int, int]] | None = None,
+    occupied_model_cells: Iterable[Tuple[int, int]] | None = None,
+    rng: random.Random | None = None,
+    log_fn: Optional[callable] = None,
+    unit_label: str = "",
+) -> Tuple[Tuple[int, int], dict]:
+    valid_cells = _valid_deploy_cells(
+        side,
+        b_len,
+        b_hei,
+        occupied,
+        model_offsets=model_offsets,
+        occupied_model_cells=occupied_model_cells,
+    )
+    if not valid_cells:
+        raise RuntimeError(f"No valid deployment cells for rl_phase side={side}")
+
+    policy_rng = rng if rng is not None else random
+    max_attempts = max(1, int(os.getenv("DEPLOYMENT_RL_MAX_ATTEMPTS", "20") or "20"))
+    invalid_penalty = float(os.getenv("DEPLOYMENT_RL_INVALID_PENALTY", "0.25") or "0.25")
+    valid_reward = float(os.getenv("DEPLOYMENT_RL_VALID_REWARD", "1.0") or "1.0")
+    total_cells = max(1, int(b_len) * int(b_hei))
+
+    stats = {
+        "mode": "rl_phase",
+        "attempts": 0,
+        "invalid": 0,
+        "fallback": 0,
+        "reward": 0.0,
+        "selected_flat": None,
+        "selected_coord": None,
+        "selected_reason": "",
+    }
+
+    for _ in range(max_attempts):
+        flat = int(policy_rng.randrange(total_cells))
+        coord = _flat_to_coord(flat, b_len, b_hei)
+        stats["attempts"] += 1
+        ok, reason = validate_deploy_coord(
+            side,
+            coord,
+            b_len,
+            b_hei,
+            occupied,
+            model_offsets=model_offsets,
+            occupied_model_cells=occupied_model_cells,
+        )
+        if ok:
+            stats["reward"] += valid_reward
+            stats["selected_flat"] = flat
+            stats["selected_coord"] = coord
+            stats["selected_reason"] = "policy"
+            if log_fn is not None:
+                log_fn(
+                    f"[DEPLOY][RL] accepted {unit_label or side}: flat={flat}, coord=({coord[0]},{coord[1]}), "
+                    f"attempt={stats['attempts']}, reward={stats['reward']:+.3f}"
+                )
+            return coord, stats
+        stats["invalid"] += 1
+        stats["reward"] -= invalid_penalty
+        if log_fn is not None:
+            log_fn(
+                f"[DEPLOY][RL] invalid {unit_label or side}: flat={flat}, coord=({coord[0]},{coord[1]}), "
+                f"reason={reason}, penalty=-{invalid_penalty:.3f}"
+            )
+
+    fallback = (policy_rng.choice(valid_cells) if hasattr(policy_rng, "choice") else random.choice(valid_cells))
+    stats["fallback"] = 1
+    stats["reward"] += valid_reward
+    stats["selected_flat"] = _coord_to_flat(fallback, b_hei)
+    stats["selected_coord"] = fallback
+    stats["selected_reason"] = "fallback_valid"
+    if log_fn is not None:
+        log_fn(
+            f"[DEPLOY][RL] fallback {unit_label or side}: coord=({fallback[0]},{fallback[1]}), "
+            f"attempts={stats['attempts']}, invalid={stats['invalid']}, reward={stats['reward']:+.3f}"
+        )
+    return fallback, stats
+
+
 def get_random_free_deploy_coord(
     side: str,
     b_len: int,
@@ -328,7 +451,7 @@ def deploy_only_war(
     strategy_raw = (deployment_strategy or os.getenv("DEPLOYMENT_STRATEGY", "template_jitter")).strip().lower()
     strategy = strategy_raw if strategy_raw in {"random", "template_jitter"} else "template_jitter"
     mode_raw = (deployment_mode or os.getenv("DEPLOYMENT_MODE", "auto")).strip().lower()
-    mode = mode_raw if mode_raw in {"auto", "manual_player"} else "auto"
+    mode = mode_raw if mode_raw in {"auto", "manual_player", "rl_phase"} else "auto"
     rng = _resolve_deploy_rng(deployment_seed)
     attacker_zone_side = "model"
     defender_zone_side = "enemy"
@@ -356,18 +479,26 @@ def deploy_only_war(
     }
     manual_total = side_counts.get("enemy", 0)
     manual_done = 0
+    rl_summary = {"attempts": 0, "invalid": 0, "fallback": 0, "reward": 0.0, "units": 0}
 
     def _place_unit(unit, side: str, unit_idx: int):
         nonlocal manual_done
         zone_side = side_to_zone[side]
         unit_model_offsets = _collect_model_offsets(unit)
         coord = None
-        use_manual = mode == "manual_player" and side == "enemy"
+        unit_id = (11 + unit_idx) if side == "enemy" else (21 + unit_idx)
+        unit_label = format_unit(unit_id, getattr(unit, "unit_data", None), include_instance_id=False)
+        unit_name = ""
+        if isinstance(getattr(unit, "unit_data", None), dict):
+            unit_name = str(getattr(unit, "unit_data", {}).get("Name") or "")
+        use_manual = (mode == "manual_player" and side == "enemy") or (
+            mode == "rl_phase"
+            and side == "enemy"
+            and os.getenv("DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE", "1").strip().lower() not in {"0", "false", "no"}
+        )
+        use_rl_model = mode == "rl_phase" and side == "model"
         if use_manual:
             io = get_active_io()
-            unit_id = 11 + unit_idx
-            unit_label = format_unit(unit_id, getattr(unit, "unit_data", None), include_instance_id=False)
-            unit_name = ""
             if isinstance(getattr(unit, "unit_data", None), dict):
                 unit_name = str(getattr(unit, "unit_data", {}).get("Name") or "")
             x_min, x_max = _zone_bounds_for_side(zone_side, b_hei)
@@ -439,6 +570,24 @@ def deploy_only_war(
                         "Где: mission.deploy_only_war. Что делать дальше: выберите другую клетку в зоне деплоя."
                     )
 
+        if coord is None and use_rl_model:
+            coord, rl_stats = _choose_rl_deploy_coord(
+                zone_side,
+                b_len,
+                b_hei,
+                occupied,
+                model_offsets=unit_model_offsets,
+                occupied_model_cells=occupied_model_cells,
+                rng=rng,
+                log_fn=log_fn,
+                unit_label=unit_label,
+            )
+            rl_summary["attempts"] += int(rl_stats.get("attempts", 0))
+            rl_summary["invalid"] += int(rl_stats.get("invalid", 0))
+            rl_summary["fallback"] += int(rl_stats.get("fallback", 0))
+            rl_summary["reward"] += float(rl_stats.get("reward", 0.0))
+            rl_summary["units"] += 1
+
         if coord is None:
             coord = get_random_free_deploy_coord(
                 zone_side,
@@ -494,6 +643,14 @@ def deploy_only_war(
             _place_unit(defender_units[d_idx], defender_side, d_idx)
             d_idx += 1
 
+    if mode == "rl_phase" and log_fn is not None:
+        log_fn(
+            "[DEPLOY][RL][SUMMARY] "
+            f"units={rl_summary['units']} attempts={rl_summary['attempts']} invalid={rl_summary['invalid']} "
+            f"fallback={rl_summary['fallback']} reward={rl_summary['reward']:+.3f}"
+        )
+    return rl_summary if mode == "rl_phase" else None
+
 
 def post_deploy_setup(log_fn: Optional[callable] = None) -> None:
     if log_fn is not None:
@@ -514,7 +671,7 @@ def deploy_for_mission(
 ) -> None:
     mission = normalize_mission_name(mission_name)
     if mission == MISSION_ONLY_WAR:
-        deploy_only_war(
+        return deploy_only_war(
             model_units,
             enemy_units,
             b_len,
@@ -525,8 +682,7 @@ def deploy_for_mission(
             deployment_strategy=deployment_strategy,
             deployment_mode=deployment_mode,
         )
-        return
-    deploy_only_war(
+    return deploy_only_war(
         model_units,
         enemy_units,
         b_len,

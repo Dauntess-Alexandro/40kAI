@@ -1,4 +1,5 @@
 import importlib.util
+import os
 import sys
 import types
 import unittest
@@ -130,6 +131,47 @@ class TestDeploymentStage1Regression(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual("occupied", reason)
 
+
+
+    def test_rl_phase_applies_to_model_only_player_side_keeps_manual(self):
+        class FakeIO:
+            def __init__(self):
+                self.answers = iter([
+                    {"x": 47, "y": 8},
+                ])
+
+            def request_deploy_coord(self, prompt, **kwargs):
+                return next(self.answers)
+
+        logs = []
+        mission = _load_mission_module("mission_under_test_stage3_rl_phase", io_instance=FakeIO())
+        model = self._build_units(1, "m")
+        enemy = self._build_units(1, "e")
+
+        old_flag = os.environ.get("DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE")
+        os.environ["DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE"] = "1"
+        try:
+            stats = mission.deploy_only_war(
+                model,
+                enemy,
+                b_len=40,
+                b_hei=60,
+                attacker_side="model",
+                deployment_seed=7,
+                deployment_mode="rl_phase",
+                log_fn=logs.append,
+            )
+        finally:
+            if old_flag is None:
+                os.environ.pop("DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE", None)
+            else:
+                os.environ["DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE"] = old_flag
+
+        self.assertIsInstance(stats, dict)
+        self.assertGreaterEqual(int(stats.get("units", 0)), 1)
+        self.assertTrue(mission.is_in_deploy_zone("model", tuple(model[0].unit_coords), 40, 60))
+        self.assertEqual((8, 47), tuple(enemy[0].unit_coords))
+        self.assertTrue(any("[DEPLOY][RL]" in line for line in logs))
 
 class TestDeploymentStage2ManualRegression(unittest.TestCase):
     def _build_units(self, n, prefix):

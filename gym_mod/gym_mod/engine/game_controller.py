@@ -156,11 +156,20 @@ class GameController:
             mission_name = normalize_mission_name(getattr(env.unwrapped, "mission_name", None))
             deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "auto")).strip().lower() or "auto"
             deployment_strategy = str(os.getenv("DEPLOYMENT_STRATEGY", "template_jitter")).strip().lower() or "template_jitter"
-            deployment_seed = os.getenv("DEPLOYMENT_SEED", "").strip()
+            deployment_seed_raw = os.getenv("DEPLOYMENT_SEED", "").strip()
+            deployment_seed = None
+            if deployment_seed_raw:
+                try:
+                    deployment_seed = int(deployment_seed_raw)
+                except ValueError:
+                    self._io.log(
+                        f"[DEPLOY] invalid DEPLOYMENT_SEED='{deployment_seed_raw}'. "
+                        "Где: game_controller._run_game_loop. Что делать дальше: укажите целое число."
+                    )
             self._io.log(
-                f"[DEPLOY] mode={deployment_mode}, strategy={deployment_strategy}, seed={deployment_seed or 'none'}"
+                f"[DEPLOY] mode={deployment_mode}, strategy={deployment_strategy}, seed={deployment_seed_raw or 'none'}"
             )
-            deploy_for_mission(
+            deploy_stats = deploy_for_mission(
                 mission_name,
                 model_units=model,
                 enemy_units=enemy,
@@ -168,13 +177,18 @@ class GameController:
                 b_hei=env.unwrapped.b_hei,
                 attacker_side=attacker_side,
                 log_fn=self._io.log,
+                deployment_seed=deployment_seed,
+                deployment_strategy=deployment_strategy,
                 deployment_mode=deployment_mode,
             )
+            if deploy_stats:
+                self._io.log(f"[DEPLOY] rl_phase stats: {deploy_stats}")
             post_deploy_setup(log_fn=self._io.log)
 
             env.attacker_side = attacker_side
             env.defender_side = defender_side
             env.deployment_mode = deployment_mode
+            env.deployment_rl_stats = deploy_stats if isinstance(deploy_stats, dict) else None
 
             state, info = env.reset(
                 options={"m": model, "e": enemy, "playType": True, "Type": "big", "trunc": True}
