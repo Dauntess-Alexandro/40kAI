@@ -44,6 +44,7 @@ class UnitRender:
     label: str
     icon: Optional[QtGui.QPixmap] = None
     model_centers: Optional[List[QtCore.QPointF]] = None
+    facing: str = "right"
 
 
 @dataclass
@@ -128,6 +129,13 @@ class DecalInstance:
 
 
 @dataclass
+class DeployPlacementFlash:
+    cells: List[Tuple[int, int]]
+    t0: float
+    duration: float
+
+
+@dataclass
 class PropInstance:
     kind: str
     center: QtCore.QPointF
@@ -167,6 +175,8 @@ class TextureManager:
 
 class OpenGLBoardWidget(QOpenGLWidget):
     unit_selected = QtCore.Signal(str, int)
+    cell_clicked = QtCore.Signal(int, int)
+    cell_hovered = QtCore.Signal(object)
 
     def __init__(
         self,
@@ -249,6 +259,15 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._target_unit_id: Optional[int] = None
         self._target_cell: Optional[Tuple[int, int]] = None
         self._hover_cell: Optional[Tuple[int, int]] = None
+        self._deploy_ghost_cells: List[Tuple[int, int]] = []
+        self._deploy_ghost_valid: Optional[bool] = None
+        self._deploy_ghost_unit_name: str = ""
+        self._deploy_ghost_alpha_valid = 0.55
+        self._deploy_ghost_alpha_invalid = 0.40
+        self._deploy_preview_units: List[UnitRender] = []
+        self._deploy_preview_unit_keys: set[Tuple[str, int]] = set()
+        self._deploy_placement_fx: List[DeployPlacementFlash] = []
+        self._deploy_snap_duration_s = 0.22
         self._hover_unit_key: Optional[Tuple[str, int]] = None
         self._hover_tooltip_text: Optional[Dict] = None
         self._hover_tooltip_ts: float = 0.0
@@ -344,6 +363,43 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._error_message = message
         self.update()
 
+    def reset_runtime_visuals(self, *, clear_units: bool = True, clear_state: bool = False) -> None:
+        """Clear transient render/session caches without touching camera pan/zoom."""
+        if clear_state:
+            self._state = {}
+        if clear_units:
+            self._units_state = []
+            self._units = []
+            self._unit_by_key = {}
+            self._unit_labels = []
+            self._prev_unit_positions = {}
+            self._curr_unit_positions = {}
+            self._selected_unit_key = None
+            self._active_unit_id = None
+            self._active_unit_side = None
+            self._selected_unit_id = None
+            self._selected_unit_side = None
+        self._target_unit_id = None
+        self._target_cell = None
+        self._hover_cell = None
+        self._deploy_ghost_cells = []
+        self._deploy_ghost_valid = None
+        self._deploy_ghost_unit_name = ""
+        self._deploy_preview_units = []
+        self._deploy_preview_unit_keys = set()
+        self._deploy_placement_fx = []
+        self._move_highlights = []
+        self._target_highlights = []
+        self._objectives = []
+        self._objective_labels = []
+        self._fx_active = []
+        self._particles = []
+        self._particles_last_ts = None
+        self._unit_anim_timer.stop()
+        self._view_anim_timer.stop()
+        self._clear_hover_tooltip(force=True)
+        self.update()
+
     def update_state(self, state: Optional[Dict]) -> None:
         self._state = state or {}
         if not state:
@@ -368,6 +424,17 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._ensure_props()
 
         self._units_state = raw_units
+        live_keys = {
+            (u.get("side"), u.get("id"))
+            for u in self._units_state
+            if u.get("side") is not None and u.get("id") is not None
+        }
+        if self._deploy_preview_units:
+            self._deploy_preview_units = [
+                render for render in self._deploy_preview_units
+                if render.key not in live_keys
+            ]
+            self._deploy_preview_unit_keys = {render.key for render in self._deploy_preview_units}
         self._prev_unit_positions = dict(self._curr_unit_positions)
         self._curr_unit_positions = {}
         for unit in self._units_state:
@@ -627,6 +694,74 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def set_hover_cell(self, cell: Optional[Tuple[int, int]]) -> None:
         self._hover_cell = self._state_xy_to_view_xy(cell[0], cell[1]) if cell is not None else None
+        self.update()
+
+    def set_deploy_ghost(self, cells: List[Tuple[int, int]], is_valid: Optional[bool], unit_name: str = "") -> None:
+        self._deploy_ghost_cells = list(cells or [])
+        self._deploy_ghost_valid = is_valid
+        self._deploy_ghost_unit_name = str(unit_name or "")
+        self.update()
+
+    def add_temporary_deploy_unit(
+        self,
+        *,
+        unit_side: str,
+        unit_id: int,
+        unit_name: str,
+        model_cells: List[Tuple[int, int]],
+        facing: Optional[str] = None,
+    ) -> None:
+        if not model_cells:
+            return
+        key = (str(unit_side), int(unit_id))
+        self._deploy_preview_units = [render for render in self._deploy_preview_units if render.key != key]
+        color = Theme.player if key[0] == "player" else Theme.model
+        model_centers: List[QtCore.QPointF] = []
+        for state_x, state_y in model_cells:
+            view_cell = self._state_xy_to_view_xy(state_x, state_y)
+            if view_cell is None:
+                continue
+            model_centers.append(
+                QtCore.QPointF(
+                    view_cell[0] * self.cell_size + self.cell_size / 2,
+                    view_cell[1] * self.cell_size + self.cell_size / 2,
+                )
+            )
+        if not model_centers:
+            return
+        center = model_centers[0]
+        render = UnitRender(
+            key=key,
+            center=QtCore.QPointF(center),
+            radius=self.cell_size * 0.35,
+            color=color,
+            label=f"{key[1]}",
+            icon=self._icon_for_unit_name(str(unit_name or "")),
+            model_centers=model_centers,
+            facing=("left" if str(facing).lower() == "left" else "right"),
+        )
+        self._deploy_preview_units.append(render)
+        self._deploy_preview_unit_keys = {r.key for r in self._deploy_preview_units}
+        self.update()
+
+    def trigger_deploy_snap_flash(self, model_cells: List[Tuple[int, int]], duration_s: Optional[float] = None) -> None:
+        cells = [tuple(cell) for cell in (model_cells or []) if isinstance(cell, (list, tuple)) and len(cell) >= 2]
+        if not cells:
+            return
+        self._deploy_placement_fx.append(
+            DeployPlacementFlash(
+                cells=[(int(x), int(y)) for x, y in cells],
+                t0=monotonic(),
+                duration=max(0.05, float(duration_s or self._deploy_snap_duration_s)),
+            )
+        )
+        self.update()
+
+    def clear_temporary_deploy_units(self) -> None:
+        if not self._deploy_preview_units:
+            return
+        self._deploy_preview_units = []
+        self._deploy_preview_unit_keys = set()
         self.update()
 
     def set_active_phase(self, phase: Optional[str]) -> None:
@@ -999,6 +1134,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 label=f"{unit.get('id', '')}{model_label}",
                 icon=self._icon_for_unit_name(unit_name),
                 model_centers=model_centers,
+                facing=self._resolve_render_facing(unit),
             )
             self._units.append(render)
             if key[0] is not None and key[1] is not None:
@@ -1217,6 +1353,12 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._cursor_world_raw = QtCore.QPointF(world)
         self._cursor_world = self._snap_world_to_cell(world)
         self._update_hover_cell(world)
+        state_pos = self._world_to_state_pos(world)
+        if state_pos is None:
+            self.cell_hovered.emit(None)
+        else:
+            # _world_to_state_pos returns (row, col), while viewer deployment API expects (x=col, y=row).
+            self.cell_hovered.emit((int(state_pos[1]), int(state_pos[0])))
         self._update_hover_tooltip(event, world)
         self.update()
         super().mouseMoveEvent(event)
@@ -1226,12 +1368,17 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if self._drag_distance < 4:
                 self._select_unit_at(event.position())
                 world = self._map_to_world(QtCore.QPointF(event.position()))
+                state_pos = self._world_to_state_pos(world)
+                if state_pos is not None:
+                    # _world_to_state_pos returns (row, col), while click contract is (x=col, y=row).
+                    self.cell_clicked.emit(int(state_pos[1]), int(state_pos[0]))
                 self._spawn_particles(world, "smoke", 16)
             self._dragging = False
         super().mouseReleaseEvent(event)
 
     def leaveEvent(self, event: QtCore.QEvent) -> None:
         self._hover_cell = None
+        self.cell_hovered.emit(None)
         self._clear_hover_tooltip()
         self.update()
         super().leaveEvent(event)
@@ -1407,8 +1554,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.setTransform(self._view_transform())
         self._draw_movement_layer(painter)
         self._draw_objective_layer(painter)
+        self._draw_deploy_ghost_layer(painter)
         self._draw_platform_fx_layer(painter)
         self._draw_units_layer(painter)
+        self._draw_deploy_snap_fx_layer(painter)
         self._draw_selection_layer(painter)
         self._draw_shooting_layer(painter)
         if self.render_fx:
@@ -1464,8 +1613,37 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     objective.control_radius,
                 )
 
+    def _resolve_render_facing(self, unit: Optional[dict]) -> str:
+        if not isinstance(unit, dict):
+            return "right"
+        raw = str(unit.get("facing") or "").strip().lower()
+        if raw in {"left", "right"}:
+            return raw
+        x_val = unit.get("x")
+        board_w = self._board_width or ENV_BOARD_WIDTH
+        try:
+            x = float(x_val)
+        except (TypeError, ValueError):
+            return "right"
+        return "right" if x < (float(board_w) / 2.0) else "left"
+
+    def _draw_pixmap_with_facing(self, painter: QtGui.QPainter, rect: QtCore.QRectF, pixmap: QtGui.QPixmap, facing: str) -> None:
+        if facing == "left":
+            painter.save()
+            painter.translate(rect.x() + rect.width(), 0.0)
+            painter.scale(-1.0, 1.0)
+            mirrored_rect = QtCore.QRectF(0.0, rect.y(), rect.width(), rect.height())
+            painter.drawPixmap(mirrored_rect, pixmap, QtCore.QRectF(pixmap.rect()))
+            painter.restore()
+            return
+        painter.drawPixmap(rect, pixmap, QtCore.QRectF(pixmap.rect()))
+
     def _draw_units_layer(self, painter: QtGui.QPainter) -> None:
-        for render in self._units:
+        renders = list(self._units)
+        if self._deploy_preview_units:
+            existing_keys = {render.key for render in self._units}
+            renders.extend(render for render in self._deploy_preview_units if render.key not in existing_keys)
+        for render in renders:
             marker_radius = render.radius
             model_centers = render.model_centers or []
             icon = render.icon
@@ -1480,7 +1658,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                             icon_size,
                             icon_size,
                         )
-                        painter.drawPixmap(rect, icon, QtCore.QRectF(icon.rect()))
+                        self._draw_pixmap_with_facing(painter, rect, icon, render.facing)
                 else:
                     icon_size = marker_radius * self._unit_icon_scale
                     rect = QtCore.QRectF(
@@ -1489,7 +1667,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                         icon_size,
                         icon_size,
                     )
-                    painter.drawPixmap(rect, icon, QtCore.QRectF(icon.rect()))
+                    self._draw_pixmap_with_facing(painter, rect, icon, render.facing)
                 continue
 
             # Fallback без кругов: небольшой квадрат, если иконки нет.
@@ -1501,8 +1679,62 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 rect = QtCore.QRectF(center.x() - size / 2, center.y() - size / 2, size, size)
                 painter.drawRect(rect)
 
+    def _draw_deploy_ghost_layer(self, painter: QtGui.QPainter) -> None:
+        if not self._deploy_ghost_cells:
+            return
+
+        ghost_icon = self._icon_for_unit_name(self._deploy_ghost_unit_name) if self._deploy_ghost_unit_name else None
+        alpha = self._deploy_ghost_alpha_valid if self._deploy_ghost_valid else self._deploy_ghost_alpha_invalid
+
+        painter.save()
+        painter.setOpacity(max(0.0, min(1.0, alpha)))
+
+        if ghost_icon is not None and not ghost_icon.isNull():
+            icon_size = max(6.0, self.cell_size * self._model_icon_scale)
+            for state_x, state_y in self._deploy_ghost_cells:
+                view_cell = self._state_xy_to_view_xy(state_x, state_y)
+                if view_cell is None:
+                    continue
+                center = self._cell_center(view_cell[0], view_cell[1])
+                rect = QtCore.QRectF(
+                    center.x() - icon_size / 2,
+                    center.y() - icon_size / 2,
+                    icon_size,
+                    icon_size,
+                )
+                painter.drawPixmap(rect, ghost_icon, QtCore.QRectF(ghost_icon.rect()))
+        else:
+            # Fallback: если иконка не найдена, оставляем простой ghost-маркер.
+            color = QtGui.QColor(70, 220, 120, 110) if self._deploy_ghost_valid else QtGui.QColor(220, 70, 70, 120)
+            border = QtGui.QColor(70, 220, 120, 190) if self._deploy_ghost_valid else QtGui.QColor(220, 70, 70, 210)
+            painter.setBrush(QtGui.QBrush(color))
+            painter.setPen(QtGui.QPen(border, 1.3))
+            size = self.cell_size * 0.62
+            for state_x, state_y in self._deploy_ghost_cells:
+                view_cell = self._state_xy_to_view_xy(state_x, state_y)
+                if view_cell is None:
+                    continue
+                center = self._cell_center(view_cell[0], view_cell[1])
+                rect = QtCore.QRectF(center.x() - size / 2, center.y() - size / 2, size, size)
+                painter.drawEllipse(rect)
+
+        painter.setOpacity(1.0)
+        if self._deploy_ghost_valid is False:
+            # Для невалидного preview добавляем мягкий красный контур, но не заменяем спрайт.
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.setPen(QtGui.QPen(QtGui.QColor(220, 70, 70, 180), 1.4))
+            ring_size = self.cell_size * 0.68
+            for state_x, state_y in self._deploy_ghost_cells:
+                view_cell = self._state_xy_to_view_xy(state_x, state_y)
+                if view_cell is None:
+                    continue
+                center = self._cell_center(view_cell[0], view_cell[1])
+                rect = QtCore.QRectF(center.x() - ring_size / 2, center.y() - ring_size / 2, ring_size, ring_size)
+                painter.drawEllipse(rect)
+        painter.restore()
+
     def _draw_selection_layer(self, painter: QtGui.QPainter) -> None:
-        # Кольца выбора отключены: используем только платформенный FX под активным юнитом.
+        # Кольца выбора отключены: отдельный слой selection не используется.
         return
 
     def _draw_shooting_layer(self, painter: QtGui.QPainter) -> None:
@@ -1540,6 +1772,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 )
                 remaining.append(particle)
             self._particles = remaining
+        if self._deploy_placement_fx:
+            self._deploy_placement_fx = [
+                fx for fx in self._deploy_placement_fx
+                if (now - fx.t0) < fx.duration
+            ]
         if self.isVisible():
             self.update()
 
@@ -1661,6 +1898,29 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.end()
         self._fx_tinted_cache[key] = tinted
         return tinted
+
+    def _draw_deploy_snap_fx_layer(self, painter: QtGui.QPainter) -> None:
+        if not self._deploy_placement_fx:
+            return
+        now = monotonic()
+        painter.save()
+        painter.setBrush(QtCore.Qt.NoBrush)
+        for fx in self._deploy_placement_fx:
+            elapsed = now - fx.t0
+            if elapsed < 0.0 or elapsed > fx.duration:
+                continue
+            progress = max(0.0, min(1.0, elapsed / fx.duration))
+            alpha = int(180 * (1.0 - progress))
+            radius = self.cell_size * (0.30 + 0.28 * progress)
+            pen = QtGui.QPen(QtGui.QColor(120, 230, 255, alpha), 1.8)
+            painter.setPen(pen)
+            for state_x, state_y in fx.cells:
+                view_cell = self._state_xy_to_view_xy(state_x, state_y)
+                if view_cell is None:
+                    continue
+                center = self._cell_center(view_cell[0], view_cell[1])
+                painter.drawEllipse(center, radius, radius)
+        painter.restore()
 
     def _draw_fx_layer(self, painter: QtGui.QPainter) -> None:
         self._draw_particles_layer(painter)

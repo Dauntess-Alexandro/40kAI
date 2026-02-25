@@ -7,6 +7,7 @@ from __future__ import annotations
 from gym_mod.engine.mission import (
     deploy_depth,
     is_in_deploy_zone,
+    validate_deploy_coord,
     get_random_free_deploy_coord,
     deploy_only_war,
     post_deploy_setup,
@@ -15,6 +16,7 @@ from gym_mod.engine.mission import (
 __all__ = [
     "deploy_depth",
     "is_in_deploy_zone",
+    "validate_deploy_coord",
     "get_random_free_deploy_coord",
     "deploy_only_war",
     "post_deploy_setup",

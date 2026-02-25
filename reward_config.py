@@ -66,6 +66,26 @@ DAMAGE_ON_OBJECTIVE_SCALE = 0.05
 SHOOT_REWARD_INVALID_TARGET_PENALTY = 0.20
 CHARGE_SKIP_WITH_TARGETS_PENALTY = 0.00
 
+# ============================
+# Reward shaping (deployment)
+# ============================
+# RL deployment (Only War): вспомогательный сигнал качества расстановки.
+# Используется как delta-глобального score: score_after - score_before.
+DEPLOYMENT_RL_VALID_REWARD = 0.0
+DEPLOYMENT_RL_INVALID_PENALTY = 0.0
+DEPLOYMENT_RL_SCORE_SCALE = 0.05
+
+# Веса компонент глобального deployment score.
+DEPLOYMENT_RL_FORWARD_W = 1.0
+DEPLOYMENT_RL_SPREAD_W = 0.6
+DEPLOYMENT_RL_EDGE_W = 0.2
+DEPLOYMENT_RL_COVER_W = 0.0
+
+# Нормировки для компонент spread/edge.
+DEPLOYMENT_RL_SPREAD_TARGET = 6.0
+DEPLOYMENT_RL_EDGE_MARGIN_TARGET = 2.0
+
+
 # ======================
 # Reward shaping (fight)
 # ======================

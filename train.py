@@ -631,7 +631,16 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                     manual_roll_allowed=False,
                     log_fn=None,
                 )
-                deploy_for_mission(
+                deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "auto")).strip().lower() or "auto"
+                deployment_strategy = str(os.getenv("DEPLOYMENT_STRATEGY", "template_jitter")).strip().lower() or "template_jitter"
+                deployment_seed_raw = os.getenv("DEPLOYMENT_SEED", "").strip()
+                deployment_seed = None
+                if deployment_seed_raw:
+                    try:
+                        deployment_seed = int(deployment_seed_raw)
+                    except ValueError:
+                        deployment_seed = None
+                deploy_stats = deploy_for_mission(
                     mission_name,
                     model_units=model,
                     enemy_units=enemy,
@@ -639,10 +648,15 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                     b_hei=b_hei,
                     attacker_side=attacker_side,
                     log_fn=None,
+                    deployment_seed=deployment_seed,
+                    deployment_strategy=deployment_strategy,
+                    deployment_mode=deployment_mode,
                 )
                 post_deploy_setup(log_fn=None)
                 env.attacker_side = attacker_side
                 env.defender_side = defender_side
+                env.deployment_mode = deployment_mode
+                env.deployment_rl_stats = deploy_stats if isinstance(deploy_stats, dict) else None
                 state, info = env.reset(
                     options={"m": model, "e": enemy, "Type": "small", "trunc": True}
                 )

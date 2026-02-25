@@ -78,6 +78,7 @@ class Request:
     min_value: Optional[int] = None
     max_value: Optional[int] = None
     count: Optional[int] = None
+    meta: Optional[dict] = None
 
 
 class BaseIO:
@@ -102,6 +103,18 @@ class BaseIO:
         count: int,
         min_value: Optional[int] = None,
         max_value: Optional[int] = None,
+    ):
+        raise NotImplementedError
+
+    def request_deploy_coord(
+        self,
+        prompt: str,
+        *,
+        x_min: int,
+        x_max: int,
+        y_min: int,
+        y_max: int,
+        meta: Optional[dict] = None,
     ):
         raise NotImplementedError
 
@@ -214,6 +227,34 @@ class ConsoleIO(BaseIO):
                     f"Ошибка ввода кубов: нужно ввести {count} значений от {min_val} до {max_val}."
                 )
 
+    def request_deploy_coord(
+        self,
+        prompt: str,
+        *,
+        x_min: int,
+        x_max: int,
+        y_min: int,
+        y_max: int,
+        meta: Optional[dict] = None,
+    ):
+        self.log(prompt)
+        self.log(f"Допустимый диапазон: X={x_min}..{x_max}, Y={y_min}..{y_max}")
+        while True:
+            raw = input("Введите X,Y (например 10,5) или q для авто: ").strip()
+            if raw.lower() in ("q", "quit"):
+                return None
+            parts = [p for p in re.split(r"[\s,;:]+", raw) if p]
+            if len(parts) != 2:
+                self.log("Неверный ввод: нужно два числа X и Y.")
+                continue
+            try:
+                x = int(parts[0])
+                y = int(parts[1])
+            except ValueError:
+                self.log("Неверный ввод: X и Y должны быть целыми числами.")
+                continue
+            return {"x": x, "y": y}
+
 
 class GuiIO(BaseIO):
     def __init__(
@@ -314,6 +355,50 @@ class GuiIO(BaseIO):
                 min_val = 1 if min_value is None else min_value
                 max_val = 6 if max_value is None else max_value
                 return parse_dice_values(answer, count=count, min_value=min_val, max_value=max_val)
+            except ValueError:
+                return None
+        return None
+
+    def request_deploy_coord(
+        self,
+        prompt: str,
+        *,
+        x_min: int,
+        x_max: int,
+        y_min: int,
+        y_max: int,
+        meta: Optional[dict] = None,
+    ):
+        request_meta = {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max}
+        if isinstance(meta, dict):
+            request_meta.update(meta)
+        request = Request(
+            kind="deploy_coord",
+            prompt=prompt,
+            min_value=x_min,
+            max_value=x_max,
+            meta=request_meta,
+        )
+        self.request_queue.put(request)
+        answer = self._wait_for_answer()
+        if answer is None:
+            return None
+        if isinstance(answer, dict):
+            try:
+                return {"x": int(answer.get("x")), "y": int(answer.get("y"))}
+            except (TypeError, ValueError):
+                return None
+        if isinstance(answer, (list, tuple)) and len(answer) >= 2:
+            try:
+                return {"x": int(answer[0]), "y": int(answer[1])}
+            except (TypeError, ValueError):
+                return None
+        if isinstance(answer, str):
+            parts = [p for p in re.split(r"[\s,;:]+", answer.strip()) if p]
+            if len(parts) != 2:
+                return None
+            try:
+                return {"x": int(parts[0]), "y": int(parts[1])}
             except ValueError:
                 return None
         return None
