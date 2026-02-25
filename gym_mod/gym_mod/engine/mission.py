@@ -185,8 +185,8 @@ def _choose_rl_deploy_coord(
 
     policy_rng = rng if rng is not None else random
     max_attempts = max(1, int(os.getenv("DEPLOYMENT_RL_MAX_ATTEMPTS", "20") or "20"))
-    invalid_penalty = float(os.getenv("DEPLOYMENT_RL_INVALID_PENALTY", "0.25") or "0.25")
-    valid_reward = float(os.getenv("DEPLOYMENT_RL_VALID_REWARD", "1.0") or "1.0")
+    invalid_penalty = float(os.getenv("DEPLOYMENT_RL_INVALID_PENALTY", "0.0") or "0.0")
+    valid_reward = float(os.getenv("DEPLOYMENT_RL_VALID_REWARD", "0.0") or "0.0")
     # Stage-1 safety: RL deploy samples only from currently valid cells.
     # Это убирает массовые invalid-попытки и даёт стабильный деплой без смены правил миссии.
     total_cells = max(1, len(valid_cells))
