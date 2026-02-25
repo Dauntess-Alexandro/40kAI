@@ -123,9 +123,9 @@ class GUIController(QtCore.QObject):
         self._disable_train_logging = False
         self._auto_clear_logs = True
         self._deployment_mode_options = ["manual_player", "auto", "rl_phase"]
-        self._deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "manual_player")).strip().lower() or "manual_player"
+        self._deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "rl_phase")).strip().lower() or "rl_phase"
         if self._deployment_mode not in self._deployment_mode_options:
-            self._deployment_mode = "manual_player"
+            self._deployment_mode = "rl_phase"
 
         self._load_available_units()
         self._load_rosters_from_file()
@@ -562,7 +562,7 @@ class GUIController(QtCore.QObject):
     def set_deployment_mode(self, value: str) -> None:
         mode = str(value or "").strip().lower()
         if mode not in self._deployment_mode_options:
-            mode = "manual_player"
+            mode = "rl_phase"
         if self._deployment_mode == mode:
             return
         self._deployment_mode = mode
