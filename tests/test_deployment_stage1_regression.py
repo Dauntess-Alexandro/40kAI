@@ -169,9 +169,11 @@ class TestDeploymentStage1Regression(unittest.TestCase):
 
         self.assertIsInstance(stats, dict)
         self.assertGreaterEqual(int(stats.get("units", 0)), 1)
+        self.assertEqual(0, int(stats.get("invalid", 0)))
         self.assertTrue(mission.is_in_deploy_zone("model", tuple(model[0].unit_coords), 40, 60))
         self.assertEqual((8, 47), tuple(enemy[0].unit_coords))
         self.assertTrue(any("[DEPLOY][RL]" in line for line in logs))
+        self.assertFalse(any("[DEPLOY][RL] invalid" in line for line in logs))
 
 class TestDeploymentStage2ManualRegression(unittest.TestCase):
     def _build_units(self, n, prefix):

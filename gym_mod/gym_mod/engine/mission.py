@@ -187,7 +187,9 @@ def _choose_rl_deploy_coord(
     max_attempts = max(1, int(os.getenv("DEPLOYMENT_RL_MAX_ATTEMPTS", "20") or "20"))
     invalid_penalty = float(os.getenv("DEPLOYMENT_RL_INVALID_PENALTY", "0.25") or "0.25")
     valid_reward = float(os.getenv("DEPLOYMENT_RL_VALID_REWARD", "1.0") or "1.0")
-    total_cells = max(1, int(b_len) * int(b_hei))
+    # Stage-1 safety: RL deploy samples only from currently valid cells.
+    # Это убирает массовые invalid-попытки и даёт стабильный деплой без смены правил миссии.
+    total_cells = max(1, len(valid_cells))
 
     stats = {
         "mode": "rl_phase",
@@ -201,8 +203,9 @@ def _choose_rl_deploy_coord(
     }
 
     for _ in range(max_attempts):
-        flat = int(policy_rng.randrange(total_cells))
-        coord = _flat_to_coord(flat, b_len, b_hei)
+        valid_idx = int(policy_rng.randrange(total_cells))
+        coord = valid_cells[valid_idx]
+        flat = _coord_to_flat(coord, b_hei)
         stats["attempts"] += 1
         ok, reason = validate_deploy_coord(
             side,
