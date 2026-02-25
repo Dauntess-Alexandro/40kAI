@@ -1187,13 +1187,29 @@ class GUIController(QtCore.QObject):
             self._update_progress_stats(current)
 
     def _parse_training_progress(self, line: str, fallback_total: int) -> tuple[Optional[int], int]:
-        tqdm_match = re.search(r"(\d+)\s*/\s*(\d+)", line)
-        if tqdm_match:
-            return int(tqdm_match.group(1)), int(tqdm_match.group(2))
-        ep_match = re.search(r"\bep=(\d+)", line)
+        normalized = line.strip()
+
+        # Важно: парсим формат X/Y только для реальных tqdm-линий,
+        # чтобы случайные "2/2" в других логах не ломали прогресс-бар.
+        if self._is_tqdm_progress_line(normalized):
+            tqdm_match = re.search(r"(\d+)\s*/\s*(\d+)", normalized)
+            if tqdm_match:
+                current = int(tqdm_match.group(1))
+                parsed_total = int(tqdm_match.group(2))
+                if fallback_total > 0:
+                    parsed_total = max(parsed_total, fallback_total)
+                return current, parsed_total
+
+        ep_match = re.search(r"\bep=(\d+)(?:\s*/\s*(\d+))?", normalized)
         if ep_match:
-            return int(ep_match.group(1)), fallback_total
+            current = int(ep_match.group(1))
+            if fallback_total > 0:
+                return current, fallback_total
+            total = int(ep_match.group(2)) if ep_match.group(2) else fallback_total
+            return current, total
+
         return None, fallback_total
+
 
     def _reset_training_stats(self) -> None:
         self._training_samples.clear()
