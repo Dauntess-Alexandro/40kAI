@@ -274,7 +274,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             ("key", "Ключевые события"),
         ]
         self._max_log_lines = 5000
-        self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS.md")
+        self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS_PLAY.md")
         self._log_file_max_bytes = 5 * 1024 * 1024
         self._last_active_side = None
         self._init_log_viewer()
@@ -1594,7 +1594,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         if size <= self._log_file_max_bytes:
             return
-        rotated = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS.old.md")
+        rotated = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS_PLAY.old.md")
         try:
             if os.path.exists(rotated):
                 os.remove(rotated)

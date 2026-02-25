@@ -27,6 +27,9 @@ from gym_mod.engine.mission import (
 )
 from gymnasium import spaces
 
+AGENT_TRAIN_LOG_FILE = "LOGS_FOR_AGENTS_TRAIN.md"
+os.environ.setdefault("AGENT_LOG_FILE", AGENT_TRAIN_LOG_FILE)
+
 from model.DQN import *
 from model.memory import *
 from model.utils import *
@@ -554,12 +557,12 @@ def _flush_agent_log_buffer(force: bool = False) -> None:
         return
 
     script_path = globals().get("__file__") or sys.argv[0] or "train.py"
-    log_path = os.path.join(os.path.dirname(os.path.abspath(script_path)), "LOGS_FOR_AGENTS.md")
+    log_path = os.path.join(os.path.dirname(os.path.abspath(script_path)), AGENT_TRAIN_LOG_FILE)
     try:
         with open(log_path, "a", encoding="utf-8") as log_file:
             log_file.writelines(lines)
     except Exception as exc:
-        print(f"[LOG][WARN] Не удалось записать LOGS_FOR_AGENTS.md: {exc}")
+        print(f"[LOG][WARN] Не удалось записать LOGS_FOR_AGENTS_TRAIN.md: {exc}")
 
 
 atexit.register(lambda: _flush_agent_log_buffer(force=True))
