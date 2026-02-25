@@ -58,6 +58,7 @@ class GUIController(QtCore.QObject):
     autoClearLogsChanged = QtCore.Signal(bool)
     factionIconSizeChanged = QtCore.Signal(int)
     unitIconSizeChanged = QtCore.Signal(int)
+    deploymentModeChanged = QtCore.Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -121,6 +122,10 @@ class GUIController(QtCore.QObject):
         self._resume_from_checkpoint = False
         self._disable_train_logging = False
         self._auto_clear_logs = True
+        self._deployment_mode_options = ["manual_player", "auto", "rl_phase"]
+        self._deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "rl_phase")).strip().lower() or "rl_phase"
+        if self._deployment_mode not in self._deployment_mode_options:
+            self._deployment_mode = "rl_phase"
 
         self._load_available_units()
         self._load_rosters_from_file()
@@ -279,6 +284,15 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(bool, notify=autoClearLogsChanged)
     def autoClearLogs(self) -> bool:
         return self._auto_clear_logs
+
+
+    @QtCore.Property("QStringList", constant=True)
+    def deploymentModeOptions(self):
+        return self._deployment_mode_options
+
+    @QtCore.Property(str, notify=deploymentModeChanged)
+    def deploymentMode(self) -> str:
+        return self._deployment_mode
 
     @QtCore.Property(str, constant=True)
     def modelsFolderUrl(self) -> str:
@@ -543,6 +557,27 @@ class GUIController(QtCore.QObject):
         self._auto_clear_logs = flag
         self.autoClearLogsChanged.emit(flag)
 
+
+    @QtCore.Slot(str)
+    def set_deployment_mode(self, value: str) -> None:
+        mode = str(value or "").strip().lower()
+        if mode not in self._deployment_mode_options:
+            mode = "rl_phase"
+        if self._deployment_mode == mode:
+            return
+        self._deployment_mode = mode
+        self.deploymentModeChanged.emit(mode)
+        self._emit_log(f"[GUI] DEPLOYMENT_MODE={mode}", level="INFO")
+        self._emit_status(f"Режим деплоя: {self._deployment_mode_label(mode)}")
+
+    def _deployment_mode_label(self, mode: str) -> str:
+        labels = {
+            "manual_player": "Ручной игрок (клик в Viewer)",
+            "auto": "Авто-деплой",
+            "rl_phase": "RL-деплой модели (игрок вручную)",
+        }
+        return labels.get(mode, mode)
+
     @QtCore.Slot()
     def stop_process(self) -> None:
         if self._process is None:
@@ -559,13 +594,13 @@ class GUIController(QtCore.QObject):
     def clear_model_cache(self) -> None:
         try:
             self._clear_cache_files()
-            self._emit_status("Кэш моделей, LOGS_FOR_AGENTS.md и results.txt очищены.")
-            self._emit_log("[GUI] Кэш моделей, LOGS_FOR_AGENTS.md и results.txt очищены.")
+            self._emit_status("Кэш моделей, LOGS_FOR_AGENTS_TRAIN.md, LOGS_FOR_AGENTS_PLAY.md и results.txt очищены.")
+            self._emit_log("[GUI] Кэш моделей, LOGS_FOR_AGENTS_TRAIN.md, LOGS_FOR_AGENTS_PLAY.md и results.txt очищены.")
         except OSError as exc:
             message = (
                 "Не удалось очистить кэш и логи. "
                 "Где: gui_qt/main.py (clear_model_cache). "
-                "Что делать: проверьте права доступа к models/, metrics/, LOGS_FOR_AGENTS.md и results.txt, затем повторите."
+                "Что делать: проверьте права доступа к models/, metrics/, LOGS_FOR_AGENTS_TRAIN.md, LOGS_FOR_AGENTS_PLAY.md и results.txt, затем повторите."
             )
             self._emit_status(message)
             self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
@@ -574,13 +609,13 @@ class GUIController(QtCore.QObject):
     def clear_agent_logs(self) -> None:
         try:
             self._clear_runtime_logs()
-            self._emit_status("LOGS_FOR_AGENTS.md и results.txt очищены.")
-            self._emit_log("[GUI] LOGS_FOR_AGENTS.md и results.txt очищены.")
+            self._emit_status("LOGS_FOR_AGENTS_TRAIN.md, LOGS_FOR_AGENTS_PLAY.md и results.txt очищены.")
+            self._emit_log("[GUI] LOGS_FOR_AGENTS_TRAIN.md, LOGS_FOR_AGENTS_PLAY.md и results.txt очищены.")
         except OSError as exc:
             message = (
                 "Не удалось очистить логи. "
                 "Где: gui_qt/main.py (clear_agent_logs). "
-                "Что делать: проверьте путь и права доступа к LOGS_FOR_AGENTS.md и results.txt, затем повторите."
+                "Что делать: проверьте путь и права доступа к LOGS_FOR_AGENTS_TRAIN.md, LOGS_FOR_AGENTS_PLAY.md и results.txt, затем повторите."
             )
             self._emit_status(message)
             self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
@@ -733,6 +768,8 @@ class GUIController(QtCore.QObject):
         env.insert("EVAL_EPSILON", "0")
         env.insert("PYTHONPATH", self._pythonpath_with_gym_mod())
         env.insert("MISSION_NAME", self._selected_mission)
+        env.insert("DEPLOYMENT_MODE", self._deployment_mode)
+        env.insert("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_TRAIN.md")
         self._process.setProcessEnvironment(env)
 
         self._process.readyReadStandardOutput.connect(self._read_stdout)
@@ -784,6 +821,8 @@ class GUIController(QtCore.QObject):
         command = self._build_script_command(script, [model_path])
         env = os.environ.copy()
         env["MISSION_NAME"] = self._selected_mission
+        env["DEPLOYMENT_MODE"] = self._deployment_mode
+        env["AGENT_LOG_FILE"] = "LOGS_FOR_AGENTS_PLAY.md"
         subprocess.Popen(
             command,
             cwd=self._repo_root,
@@ -812,6 +851,8 @@ class GUIController(QtCore.QObject):
         env["FIGHT_REPORT"] = "1"
         env["PLAY_NO_EXPLORATION"] = "1"
         env["MISSION_NAME"] = self._selected_mission
+        env["DEPLOYMENT_MODE"] = self._deployment_mode
+        env["AGENT_LOG_FILE"] = "LOGS_FOR_AGENTS_PLAY.md"
         command = self._build_script_command(script, [])
         subprocess.Popen(
             command,
@@ -910,13 +951,13 @@ class GUIController(QtCore.QObject):
             return
         if self._auto_clear_logs:
             try:
-                self._clear_runtime_logs()
-                self._emit_log("[GUI] Автоочистка: LOGS_FOR_AGENTS.md и results.txt очищены.", level="INFO")
+                self._clear_runtime_logs(clear_play=False, clear_results=False)
+                self._emit_log("[GUI] Автоочистка: LOGS_FOR_AGENTS_TRAIN.md очищен.", level="INFO")
             except OSError as exc:
                 message = (
                     "Не удалось автоматически очистить логи перед тренировкой. "
                     "Где: gui_qt/main.py (_start_training). "
-                    "Что делать: проверьте доступ к LOGS_FOR_AGENTS.md и results.txt или снимите галочку автоочистки."
+                    "Что делать: проверьте доступ к LOGS_FOR_AGENTS_TRAIN.md или снимите галочку автоочистки."
                 )
                 self._emit_status(message)
                 self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
@@ -985,6 +1026,8 @@ class GUIController(QtCore.QObject):
         env.insert("SAVE_EVERY", "500")
         env.insert("CLIP_REWARD", "1")
         env.insert("MISSION_NAME", self._selected_mission)
+        env.insert("DEPLOYMENT_MODE", self._deployment_mode)
+        env.insert("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_TRAIN.md")
         for key, value in env_overrides.items():
             env.insert(key, value)
         self._process.setProcessEnvironment(env)
@@ -1148,13 +1191,29 @@ class GUIController(QtCore.QObject):
             self._update_progress_stats(current)
 
     def _parse_training_progress(self, line: str, fallback_total: int) -> tuple[Optional[int], int]:
-        tqdm_match = re.search(r"(\d+)\s*/\s*(\d+)", line)
-        if tqdm_match:
-            return int(tqdm_match.group(1)), int(tqdm_match.group(2))
-        ep_match = re.search(r"\bep=(\d+)", line)
+        normalized = line.strip()
+
+        # Важно: парсим формат X/Y только для реальных tqdm-линий,
+        # чтобы случайные "2/2" в других логах не ломали прогресс-бар.
+        if self._is_tqdm_progress_line(normalized):
+            tqdm_match = re.search(r"(\d+)\s*/\s*(\d+)", normalized)
+            if tqdm_match:
+                current = int(tqdm_match.group(1))
+                parsed_total = int(tqdm_match.group(2))
+                if fallback_total > 0:
+                    parsed_total = max(parsed_total, fallback_total)
+                return current, parsed_total
+
+        ep_match = re.search(r"\bep=(\d+)(?:\s*/\s*(\d+))?", normalized)
         if ep_match:
-            return int(ep_match.group(1)), fallback_total
+            current = int(ep_match.group(1))
+            if fallback_total > 0:
+                return current, fallback_total
+            total = int(ep_match.group(2)) if ep_match.group(2) else fallback_total
+            return current, total
+
         return None, fallback_total
+
 
     def _reset_training_stats(self) -> None:
         self._training_samples.clear()
@@ -1560,7 +1619,7 @@ class GUIController(QtCore.QObject):
 
         snapshot_episodes = 0
         fixed_episodes = 0
-        logs_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS.md")
+        logs_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS_TRAIN.md")
         if os.path.exists(logs_path):
             try:
                 with open(logs_path, "r", encoding="utf-8", errors="replace") as handle:
@@ -1584,7 +1643,7 @@ class GUIController(QtCore.QObject):
             "replay_size": "—",
             "eps": "—",
         }
-        logs_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS.md")
+        logs_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS_TRAIN.md")
         if not os.path.exists(logs_path):
             return values
         try:
@@ -1940,13 +1999,25 @@ class GUIController(QtCore.QObject):
             else:
                 os.remove(target)
 
-    def _clear_runtime_logs(self) -> None:
-        log_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS.md")
-        with open(log_path, "w", encoding="utf-8"):
-            pass
-        results_path = os.path.join(self._repo_root, "results.txt")
-        with open(results_path, "w", encoding="utf-8"):
-            pass
+    def _clear_runtime_logs(
+        self,
+        *,
+        clear_play: bool = True,
+        clear_results: bool = True,
+        clear_train: bool = True,
+    ) -> None:
+        if clear_train:
+            train_log_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS_TRAIN.md")
+            with open(train_log_path, "w", encoding="utf-8"):
+                pass
+        if clear_play:
+            play_log_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS_PLAY.md")
+            with open(play_log_path, "w", encoding="utf-8"):
+                pass
+        if clear_results:
+            results_path = os.path.join(self._repo_root, "results.txt")
+            with open(results_path, "w", encoding="utf-8"):
+                pass
 
 
 def main() -> int:

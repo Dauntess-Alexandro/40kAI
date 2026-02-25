@@ -1,4 +1,5 @@
 import argparse
+import datetime
 import os
 import pickle
 import sys
@@ -17,14 +18,30 @@ from gym_mod.engine.mission import (
 from gym_mod.envs.warhamEnv import roll_off_attacker_defender
 from model.DQN import DQN
 from model.utils import normalize_state_dict
+
+AGENT_TRAIN_LOG_FILE = "LOGS_FOR_AGENTS_TRAIN.md"
+os.environ.setdefault("AGENT_LOG_FILE", AGENT_TRAIN_LOG_FILE)
 from model.utils import build_shoot_action_mask, convertToDict, unwrap_env
+
+
+def _append_eval_log(message: str) -> None:
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    script_path = globals().get("__file__") or sys.argv[0] or "eval.py"
+    log_path = os.path.join(os.path.dirname(os.path.abspath(script_path)), AGENT_TRAIN_LOG_FILE)
+    try:
+        with open(log_path, "a", encoding="utf-8") as log_file:
+            log_file.write(f"{timestamp} | [EVAL] {message}\n")
+    except Exception:
+        return
 
 
 def log(message: str) -> None:
     if message.startswith("["):
-        print(f"[EVAL]{message}", flush=True)
+        rendered = f"[EVAL]{message}"
     else:
-        print(f"[EVAL] {message}", flush=True)
+        rendered = f"[EVAL] {message}"
+    print(rendered, flush=True)
+    _append_eval_log(message)
 
 
 def _find_checkpoint_for_pickle(pickle_path: str) -> Optional[str]:

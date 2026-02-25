@@ -44,6 +44,7 @@ from viewer.model_log_tree import render_model_log_flat
 from gym_mod.engine.game_controller import GameController
 from gym_mod.engine.game_io import parse_dice_values
 from gym_mod.engine.event_bus import get_event_bus
+from gym_mod.engine.mission import validate_deploy_coord
 
 
 @dataclass
@@ -185,6 +186,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.resize(2560, 1440)
 
         self.controller = GameController(model_path=model_path, state_path=state_path)
+        os.environ.setdefault("DEPLOYMENT_MODE", "manual_player")
         self._pending_request = None
         self._pending_requests: Deque = deque()
         self._awaiting_player_action = False
@@ -200,6 +202,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._unit_row_by_key = {}
         self._did_initial_fit = False
         self._board_debug_logged = False
+        self._deploy_status_text = ""
+        self._deploy_context = None
+        self._deploy_hover_cell = None
+        self._deploy_visual_reset_done = False
 
         self._viewer_config = load_viewer_config()
         cell_size = int(self._viewer_config.get("cell_size", 24))
@@ -217,6 +223,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QSizePolicy.Expanding,
         )
         self.map_scene.unit_selected.connect(self._select_row_for_unit)
+        self.map_scene.cell_clicked.connect(self._on_cell_clicked)
+        self.map_scene.cell_hovered.connect(self._on_cell_hovered)
 
         self.status_round = QtWidgets.QLabel("Раунд: —")
         self.status_turn = QtWidgets.QLabel("Ход: —")
@@ -266,7 +274,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             ("key", "Ключевые события"),
         ]
         self._max_log_lines = 5000
-        self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS.md")
+        self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS_PLAY.md")
         self._log_file_max_bytes = 5 * 1024 * 1024
         self._last_active_side = None
         self._init_log_viewer()
@@ -542,6 +550,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._pending_request = request
         self._awaiting_player_action = request is not None
         if request is None:
+            self._deploy_visual_reset_done = False
+            self._deploy_context = None
+            self._deploy_hover_cell = None
+            self._deploy_status_text = ""
+            self._clear_deploy_overlays()
+            self.map_scene.clear_temporary_deploy_units()
             if self.controller.is_finished:
                 self.command_prompt.setText("Игра завершена.")
             else:
@@ -551,8 +565,21 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._refresh_active_context()
             return
 
+        if self._is_deploy_request(request):
+            meta = getattr(request, "meta", {}) or {}
+            deploy_index = int(meta.get("deploy_index") or 0)
+            if deploy_index <= 1 and not self._deploy_visual_reset_done:
+                self._reset_viewer_session_visuals(reason="manual_deploy_start")
+                self._deploy_visual_reset_done = True
+        else:
+            self._deploy_visual_reset_done = False
+            self._clear_deploy_overlays()
+            self.map_scene.clear_temporary_deploy_units()
+
         self._maybe_reset_target_for_request(request)
-        self.command_prompt.setText(request.prompt)
+        self._update_deploy_status_from_request(request)
+        display_prompt = self._deploy_status_text if self._deploy_status_text else request.prompt
+        self.command_prompt.setText(display_prompt)
         self.command_stack.setEnabled(True)
         kind = getattr(request, "kind", "text")
         if kind == "direction":
@@ -590,6 +617,21 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 + (f" или {compact}" if compact else "")
             )
             self.command_stack.setCurrentIndex(self._command_pages["text"])
+        elif kind == "deploy_coord":
+            meta = getattr(request, "meta", {}) or {}
+            x_min = meta.get("x_min", "?")
+            x_max = meta.get("x_max", "?")
+            y_min = meta.get("y_min", "?")
+            y_max = meta.get("y_max", "?")
+            self.command_input.setPlaceholderText(f"X Y (X={x_min}..{x_max}, Y={y_min}..{y_max})")
+            self.command_stack.setCurrentIndex(self._command_pages["text"])
+            self._deploy_context = dict(meta)
+            current_side = self._deploy_context.get("deploy_side")
+            current_unit_id = self._deploy_context.get("deploy_unit_id")
+            if current_unit_id is not None:
+                side_for_table = "player" if current_side == "enemy" else "model"
+                self._set_selected_unit(side_for_table, int(current_unit_id), source="deploy", select_row=True)
+            self._refresh_deploy_preview()
         else:
             self.command_input.setPlaceholderText("Введите команду...")
             self.command_stack.setCurrentIndex(self._command_pages["text"])
@@ -616,7 +658,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
             )
         )
 
+    def _is_deploy_request(self, request) -> bool:
+        if request is None:
+            return False
+        return str(getattr(request, "kind", "")).strip().lower() == "deploy_coord"
+
     def _maybe_reset_target_for_request(self, request) -> None:
+        if self._is_deploy_request(request):
+            self._set_confirm_enabled(True)
+            return
         if not self._is_target_request(request):
             self._set_confirm_enabled(True)
             return
@@ -677,6 +727,120 @@ class ViewerWindow(QtWidgets.QMainWindow):
         target_label = self._format_unit_label(unit_id)
         self.add_log_line(f"REQ: target selected Unit {target_label}, confirm enabled")
 
+    def _on_cell_clicked(self, x: int, y: int) -> None:
+        if not self._is_deploy_request(self._pending_request):
+            return
+        self.map_scene.set_target_cell((x, y))
+        self.command_input.setText(f"{x} {y}")
+        ok, reason, _ghost_cells = self._validate_deploy_cell(x, y)
+        if ok:
+            self.add_log_line(f"REQ: deploy cell accepted x={x}, y={y}")
+            self._submit_answer({"x": x, "y": y})
+        else:
+            self.add_log_line(
+                f"Ошибка деплоя: reason={reason}, x={x}, y={y}. Где: viewer/app.py (_on_cell_clicked). "
+                "Что делать дальше: выберите клетку в зоне деплоя без коллизий."
+            )
+
+    def _on_cell_hovered(self, state_pos) -> None:
+        if state_pos is None:
+            self._deploy_hover_cell = None
+        else:
+            try:
+                self._deploy_hover_cell = (int(state_pos[0]), int(state_pos[1]))
+            except (TypeError, ValueError, IndexError):
+                self._deploy_hover_cell = None
+        self._refresh_deploy_preview()
+
+    def _update_deploy_status_from_request(self, request) -> None:
+        self._deploy_status_text = ""
+        if not self._is_deploy_request(request):
+            return
+        meta = getattr(request, "meta", {}) or {}
+        label = str(meta.get("deploy_unit_label") or "—")
+        idx = int(meta.get("deploy_index") or 0)
+        total = int(meta.get("deploy_total") or 0)
+        remain = int(meta.get("deploy_remaining") or max(0, total - idx + 1))
+        next_label = meta.get("deploy_next_label")
+        line = f"Расставьте юнита: {label} [{idx}/{total}] • Осталось расставить: {remain}"
+        if next_label:
+            line += f" • Следом: {next_label} [{idx + 1}/{total}]"
+        self._deploy_status_text = line
+
+    def _refresh_deploy_preview(self) -> None:
+        if not self._is_deploy_request(self._pending_request):
+            self.map_scene.set_deploy_ghost([], None, "")
+            return
+        meta = self._deploy_context if isinstance(self._deploy_context, dict) else {}
+        if self._deploy_hover_cell is None:
+            self.map_scene.set_deploy_ghost([], None, "")
+            return
+
+        x, y = self._deploy_hover_cell
+        ok, reason, ghost_cells = self._validate_deploy_cell(x, y)
+        unit_name = str((self._deploy_context or {}).get("deploy_unit_name") or (self._deploy_context or {}).get("deploy_unit_label") or "")
+        self.map_scene.set_deploy_ghost(ghost_cells, ok, unit_name)
+        if not ok:
+            self.command_hint.setText(f"Клик заблокирован: {reason}. Выберите валидную клетку.")
+
+    def _validate_deploy_cell(self, x: int, y: int):
+        offsets = [
+            (int(pair[0]), int(pair[1]))
+            for pair in ((self._deploy_context or {}).get("model_offsets") or [[0, 0]])
+            if isinstance(pair, (list, tuple)) and len(pair) >= 2
+        ]
+        if not offsets:
+            offsets = [(0, 0)]
+        ghost_cells = [(x + dc, y + dr) for dr, dc in offsets]
+
+        meta = self._deploy_context if isinstance(self._deploy_context, dict) else {}
+        occupied = [tuple(pair) for pair in (meta.get("occupied") or []) if isinstance(pair, (list, tuple)) and len(pair) >= 2]
+        occupied_model_cells = [tuple(pair) for pair in (meta.get("occupied_model_cells") or []) if isinstance(pair, (list, tuple)) and len(pair) >= 2]
+        zone_side = str(meta.get("deploy_zone_side") or "enemy")
+        b_len = int(meta.get("deploy_b_len") or 40)
+        b_hei = int(meta.get("deploy_b_hei") or 60)
+        ok, reason = validate_deploy_coord(
+            zone_side,
+            (y, x),
+            b_len,
+            b_hei,
+            occupied,
+            model_offsets=offsets,
+            occupied_model_cells=occupied_model_cells,
+        )
+        return ok, reason, ghost_cells
+
+    def _extract_manual_deploy_cells(self, request_meta, submitted_value):
+        meta = request_meta if isinstance(request_meta, dict) else {}
+        if not isinstance(submitted_value, dict):
+            return []
+        try:
+            anchor_x = int(submitted_value.get("x"))
+            anchor_y = int(submitted_value.get("y"))
+        except (TypeError, ValueError):
+            return []
+        offsets = [
+            (int(pair[0]), int(pair[1]))
+            for pair in (meta.get("model_offsets") or [[0, 0]])
+            if isinstance(pair, (list, tuple)) and len(pair) >= 2
+        ]
+        if not offsets:
+            offsets = [(0, 0)]
+        return [(anchor_x + dc, anchor_y + dr) for dr, dc in offsets]
+
+    def _resolve_deploy_facing(self, request_meta, placed_cells):
+        meta = request_meta if isinstance(request_meta, dict) else {}
+        zone_side = str(meta.get("deploy_zone_side") or "").strip().lower()
+        if zone_side == "model":
+            return "right"
+        if zone_side == "enemy":
+            return "left"
+        if placed_cells:
+            board_w = int(meta.get("deploy_b_hei") or 60)
+            anchor_x = int(placed_cells[0][0])
+            return "right" if anchor_x < (board_w / 2.0) else "left"
+        return "right"
+
     def _update_command_hint(self, kind):
         if kind == "direction":
             self.command_hint.setText("Горячие клавиши: ↑ ↓ ← →, пробел/0 — нет")
@@ -686,6 +850,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_hint.setText("Горячие клавиши: Enter — отправить")
         elif kind == "choice":
             self.command_hint.setText("Горячие клавиши: Enter — выбрать")
+        elif kind == "deploy_coord":
+            self.command_hint.setText("Кликните клетку на поле или введите X Y, затем Enter")
         else:
             self.command_hint.setText("Горячие клавиши: Enter — отправить")
 
@@ -750,13 +916,56 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._refresh_model_log_view()
 
     def _start_controller(self):
+        self._reset_viewer_session_visuals(reason="new_game_start")
         messages, request = self.controller.start()
         self._append_log(messages)
         self._set_request(request)
         self._poll_state()
 
+    def _reset_viewer_session_visuals(self, reason: str) -> None:
+        self.add_log_line(
+            f"[VIEWER][RESET] reason={reason}. Где: viewer/app.py. Что делаем: очищаем visual state прошлой сессии."
+        )
+        self.map_scene.reset_runtime_visuals(clear_units=True, clear_state=False)
+        self._units_by_key = {}
+        self._unit_row_by_key = {}
+        self._fx_shot_queue.clear()
+        self._fx_parser.reset(preserve_seen=False)
+        self._current_target_id = None
+        self._last_shooter_id = None
+        self._deploy_context = None
+        self._deploy_hover_cell = None
+        self._deploy_status_text = ""
+
     def _submit_text(self):
         text = self.command_input.text().strip()
+        if self._is_deploy_request(self._pending_request):
+            parts = [p for p in re.split(r"[\s,;:]+", text) if p]
+            if len(parts) != 2:
+                self.add_log_line(
+                    "Ошибка деплоя: нужно ввести X и Y. Где: viewer/app.py (_submit_text). "
+                    "Что делать дальше: кликните клетку на поле или введите два числа."
+                )
+                return
+            try:
+                x = int(parts[0])
+                y = int(parts[1])
+            except ValueError:
+                self.add_log_line(
+                    "Ошибка деплоя: X/Y должны быть целыми. Где: viewer/app.py (_submit_text). "
+                    "Что делать дальше: введите целые координаты."
+                )
+                return
+            self.map_scene.set_target_cell((x, y))
+            ok, reason, _ghost = self._validate_deploy_cell(x, y)
+            if not ok:
+                self.add_log_line(
+                    f"Ошибка деплоя: reason={reason}, x={x}, y={y}. Где: viewer/app.py (_submit_text). "
+                    "Что делать дальше: выберите валидную клетку деплоя."
+                )
+                return
+            self._submit_answer({"x": x, "y": y})
+            return
         if self._is_target_request(self._pending_request) and self._current_target_id is None:
             return
         if not text:
@@ -794,6 +1003,27 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if self._pending_request is None:
             return
         finished_request = self._pending_request
+        finished_meta = getattr(finished_request, "meta", {}) or {}
+        if self._is_deploy_request(finished_request):
+            placed_cells = self._extract_manual_deploy_cells(finished_meta, value)
+            deploy_side = str(finished_meta.get("deploy_side") or "enemy")
+            unit_side = "player" if deploy_side == "enemy" else "model"
+            unit_id = finished_meta.get("deploy_unit_id")
+            unit_name = str(finished_meta.get("deploy_unit_name") or finished_meta.get("deploy_unit_label") or "")
+            if placed_cells and unit_id is not None:
+                try:
+                    self.map_scene.add_temporary_deploy_unit(
+                        unit_side=unit_side,
+                        unit_id=int(unit_id),
+                        unit_name=unit_name,
+                        model_cells=placed_cells,
+                        facing=self._resolve_deploy_facing(finished_meta, placed_cells),
+                    )
+                    self.map_scene.trigger_deploy_snap_flash(placed_cells, duration_s=0.22)
+                except (TypeError, ValueError):
+                    pass
+            # Placement confirmed: remove preview/marker immediately.
+            self._clear_deploy_overlays()
         self._finish_active_request()
         messages, request = self.controller.answer(value)
         self._append_log(messages)
@@ -811,6 +1041,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         else:
             self._set_request(request)
         self._poll_state()
+
+    def _clear_deploy_overlays(self) -> None:
+        self._deploy_context = None
+        self._deploy_hover_cell = None
+        self.map_scene.set_deploy_ghost([], None, "")
+        self.map_scene.clear_target_selection()
 
     def _apply_initial_splitter_sizes(self) -> None:
         total_w = max(self.width(), 2560)
@@ -864,6 +1100,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             )
         else:
             self.status_deployment.setText("Деплой: ожидание ролл-оффа")
+        if self._deploy_status_text:
+            self.status_deployment.setText(f"Деплой (manual): {self._deploy_status_text}")
 
         self._auto_switch_log_tab(active)
 
@@ -1356,7 +1594,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         if size <= self._log_file_max_bytes:
             return
-        rotated = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS.old.md")
+        rotated = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS_PLAY.old.md")
         try:
             if os.path.exists(rotated):
                 os.remove(rotated)

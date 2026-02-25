@@ -27,6 +27,9 @@ from gym_mod.engine.mission import (
 )
 from gymnasium import spaces
 
+AGENT_TRAIN_LOG_FILE = "LOGS_FOR_AGENTS_TRAIN.md"
+os.environ.setdefault("AGENT_LOG_FILE", AGENT_TRAIN_LOG_FILE)
+
 from model.DQN import *
 from model.memory import *
 from model.utils import *
@@ -554,12 +557,12 @@ def _flush_agent_log_buffer(force: bool = False) -> None:
         return
 
     script_path = globals().get("__file__") or sys.argv[0] or "train.py"
-    log_path = os.path.join(os.path.dirname(os.path.abspath(script_path)), "LOGS_FOR_AGENTS.md")
+    log_path = os.path.join(os.path.dirname(os.path.abspath(script_path)), AGENT_TRAIN_LOG_FILE)
     try:
         with open(log_path, "a", encoding="utf-8") as log_file:
             log_file.writelines(lines)
     except Exception as exc:
-        print(f"[LOG][WARN] Не удалось записать LOGS_FOR_AGENTS.md: {exc}")
+        print(f"[LOG][WARN] Не удалось записать LOGS_FOR_AGENTS_TRAIN.md: {exc}")
 
 
 atexit.register(lambda: _flush_agent_log_buffer(force=True))
@@ -631,7 +634,16 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                     manual_roll_allowed=False,
                     log_fn=None,
                 )
-                deploy_for_mission(
+                deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "auto")).strip().lower() or "auto"
+                deployment_strategy = str(os.getenv("DEPLOYMENT_STRATEGY", "template_jitter")).strip().lower() or "template_jitter"
+                deployment_seed_raw = os.getenv("DEPLOYMENT_SEED", "").strip()
+                deployment_seed = None
+                if deployment_seed_raw:
+                    try:
+                        deployment_seed = int(deployment_seed_raw)
+                    except ValueError:
+                        deployment_seed = None
+                deploy_stats = deploy_for_mission(
                     mission_name,
                     model_units=model,
                     enemy_units=enemy,
@@ -639,10 +651,15 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                     b_hei=b_hei,
                     attacker_side=attacker_side,
                     log_fn=None,
+                    deployment_seed=deployment_seed,
+                    deployment_strategy=deployment_strategy,
+                    deployment_mode=deployment_mode,
                 )
                 post_deploy_setup(log_fn=None)
                 env.attacker_side = attacker_side
                 env.defender_side = defender_side
+                env.deployment_mode = deployment_mode
+                env.deployment_rl_stats = deploy_stats if isinstance(deploy_stats, dict) else None
                 state, info = env.reset(
                     options={"m": model, "e": enemy, "Type": "small", "trunc": True}
                 )

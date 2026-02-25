@@ -1098,9 +1098,91 @@ ApplicationWindow {
             Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Label {
-                    anchors.centerIn: parent
-                    text: "Скоро"
+
+                Item {
+                    anchors.fill: parent
+                    anchors.margins: root.spacingLg
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: root.spacingLg
+
+                        Text {
+                            text: "Настройки деплоя"
+                            font.pixelSize: Math.round(20 * root.uiScale)
+                            font.bold: true
+                        }
+
+                        GroupBox {
+                            title: "Режим DEPLOYMENT_MODE"
+                            Layout.fillWidth: true
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: root.spacingSm
+
+                                Label {
+                                    text: "Выберите, как будет выполняться расстановка юнитов перед боем."
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                }
+
+                                ComboBox {
+                                    id: deploymentModeCombo
+                                    Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(360 * root.uiScale))
+                                    model: [
+                                        { value: "manual_player", label: "Ручной деплой игрока (через Viewer)" },
+                                        { value: "auto", label: "Автоматический деплой" },
+                                        { value: "rl_phase", label: "RL-деплой модели + ручной игрок" }
+                                    ]
+                                    textRole: "label"
+                                    valueRole: "value"
+                                    currentIndex: {
+                                        for (var i = 0; i < model.length; i++) {
+                                            if (model[i].value === controller.deploymentMode)
+                                                return i
+                                        }
+                                        return 0
+                                    }
+                                    onActivated: {
+                                        if (currentIndex >= 0 && currentIndex < model.length)
+                                            controller.set_deployment_mode(model[currentIndex].value)
+                                    }
+                                }
+
+                                Label {
+                                    text: "Текущий DEPLOYMENT_MODE: " + controller.deploymentMode
+                                    color: "#555555"
+                                }
+                            }
+                        }
+
+                        GroupBox {
+                            title: "Где применяется"
+                            Layout.fillWidth: true
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: root.spacingXs
+
+                                Label {
+                                    text: "• Тренировка: значение передаётся в train.py."
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    text: "• Игра в GUI/терминале: значение передаётся в scripts/viewer.* и launch_terminal_manual.*."
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    text: "• Оценка (eval): тоже запускается с выбранным DEPLOYMENT_MODE."
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
