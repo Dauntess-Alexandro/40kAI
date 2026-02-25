@@ -58,6 +58,7 @@ class GUIController(QtCore.QObject):
     autoClearLogsChanged = QtCore.Signal(bool)
     factionIconSizeChanged = QtCore.Signal(int)
     unitIconSizeChanged = QtCore.Signal(int)
+    deploymentModeChanged = QtCore.Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -121,6 +122,10 @@ class GUIController(QtCore.QObject):
         self._resume_from_checkpoint = False
         self._disable_train_logging = False
         self._auto_clear_logs = True
+        self._deployment_mode_options = ["manual_player", "auto", "rl_phase"]
+        self._deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "manual_player")).strip().lower() or "manual_player"
+        if self._deployment_mode not in self._deployment_mode_options:
+            self._deployment_mode = "manual_player"
 
         self._load_available_units()
         self._load_rosters_from_file()
@@ -279,6 +284,15 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(bool, notify=autoClearLogsChanged)
     def autoClearLogs(self) -> bool:
         return self._auto_clear_logs
+
+
+    @QtCore.Property("QStringList", constant=True)
+    def deploymentModeOptions(self):
+        return self._deployment_mode_options
+
+    @QtCore.Property(str, notify=deploymentModeChanged)
+    def deploymentMode(self) -> str:
+        return self._deployment_mode
 
     @QtCore.Property(str, constant=True)
     def modelsFolderUrl(self) -> str:
@@ -543,6 +557,27 @@ class GUIController(QtCore.QObject):
         self._auto_clear_logs = flag
         self.autoClearLogsChanged.emit(flag)
 
+
+    @QtCore.Slot(str)
+    def set_deployment_mode(self, value: str) -> None:
+        mode = str(value or "").strip().lower()
+        if mode not in self._deployment_mode_options:
+            mode = "manual_player"
+        if self._deployment_mode == mode:
+            return
+        self._deployment_mode = mode
+        self.deploymentModeChanged.emit(mode)
+        self._emit_log(f"[GUI] DEPLOYMENT_MODE={mode}", level="INFO")
+        self._emit_status(f"Режим деплоя: {self._deployment_mode_label(mode)}")
+
+    def _deployment_mode_label(self, mode: str) -> str:
+        labels = {
+            "manual_player": "Ручной игрок (клик в Viewer)",
+            "auto": "Авто-деплой",
+            "rl_phase": "RL-деплой модели (игрок вручную)",
+        }
+        return labels.get(mode, mode)
+
     @QtCore.Slot()
     def stop_process(self) -> None:
         if self._process is None:
@@ -733,6 +768,7 @@ class GUIController(QtCore.QObject):
         env.insert("EVAL_EPSILON", "0")
         env.insert("PYTHONPATH", self._pythonpath_with_gym_mod())
         env.insert("MISSION_NAME", self._selected_mission)
+        env.insert("DEPLOYMENT_MODE", self._deployment_mode)
         self._process.setProcessEnvironment(env)
 
         self._process.readyReadStandardOutput.connect(self._read_stdout)
@@ -784,6 +820,7 @@ class GUIController(QtCore.QObject):
         command = self._build_script_command(script, [model_path])
         env = os.environ.copy()
         env["MISSION_NAME"] = self._selected_mission
+        env["DEPLOYMENT_MODE"] = self._deployment_mode
         subprocess.Popen(
             command,
             cwd=self._repo_root,
@@ -812,6 +849,7 @@ class GUIController(QtCore.QObject):
         env["FIGHT_REPORT"] = "1"
         env["PLAY_NO_EXPLORATION"] = "1"
         env["MISSION_NAME"] = self._selected_mission
+        env["DEPLOYMENT_MODE"] = self._deployment_mode
         command = self._build_script_command(script, [])
         subprocess.Popen(
             command,
@@ -985,6 +1023,7 @@ class GUIController(QtCore.QObject):
         env.insert("SAVE_EVERY", "500")
         env.insert("CLIP_REWARD", "1")
         env.insert("MISSION_NAME", self._selected_mission)
+        env.insert("DEPLOYMENT_MODE", self._deployment_mode)
         for key, value in env_overrides.items():
             env.insert(key, value)
         self._process.setProcessEnvironment(env)
