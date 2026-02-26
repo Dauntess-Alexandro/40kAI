@@ -1099,37 +1099,227 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
 
-                Item {
+                ScrollView {
                     anchors.fill: parent
                     anchors.margins: root.spacingLg
+                    clip: true
+
+                    contentWidth: availableWidth
 
                     ColumnLayout {
-                        anchors.fill: parent
-                        spacing: root.spacingLg
+                        width: Math.max(parent.width, root.dialogWidthLg)
+                        spacing: root.spacingMd
 
-                        Text {
-                            text: "Настройки деплоя"
-                            font.pixelSize: Math.round(20 * root.uiScale)
-                            font.bold: true
+                        Item {
+                            Layout.fillWidth: true
+                            implicitHeight: 1
                         }
 
-                        GroupBox {
-                            title: "Режим DEPLOYMENT_MODE"
+                        Label {
+                            text: "Настройка параметров тренировки"
+                            font.pixelSize: Math.round(20 * root.uiScale)
+                            font.bold: true
                             Layout.fillWidth: true
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            radius: Math.round(10 * root.uiScale)
+                            color: "#f8f9fb"
+                            border.color: "#d9dee8"
+                            border.width: 1
+                            implicitHeight: hyperparamsCardLayout.implicitHeight + root.spacingMd * 2
 
                             ColumnLayout {
+                                id: hyperparamsCardLayout
                                 anchors.fill: parent
+                                anchors.margins: root.spacingMd
                                 spacing: root.spacingSm
 
                                 Label {
-                                    text: "Выберите, как будет выполняться расстановка юнитов перед боем."
+                                    text: "Гиперпараметры (hyperparams.json)"
+                                    font.bold: true
+                                    Layout.fillWidth: true
+                                }
+
+                                Label {
+                                    text: "Изменения применяются после сохранения файла."
+                                    color: "#666666"
                                     wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                }
+
+                                GridLayout {
+                                    columns: 2
+                                    columnSpacing: root.spacingMd
+                                    rowSpacing: root.spacingSm
+                                    Layout.fillWidth: true
+
+                                    Label { text: "lr" }
+                                    SpinBox {
+                                        from: 0
+                                        to: 1000000
+                                        stepSize: 1
+                                        editable: true
+                                        property real factor: 1000000
+                                        value: Math.round(controller.hpLr * factor)
+                                        Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                        textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 6) }
+                                        valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
+                                        onValueModified: controller.set_training_hyperparam("lr", (value / factor).toString())
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: "Скорость обучения модели."
+                                    }
+
+                                    Label { text: "tau" }
+                                    SpinBox {
+                                        from: 0
+                                        to: 1000000
+                                        stepSize: 1
+                                        editable: true
+                                        property real factor: 1000000
+                                        value: Math.round(controller.hpTau * factor)
+                                        Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                        textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 6) }
+                                        valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
+                                        onValueModified: controller.set_training_hyperparam("tau", (value / factor).toString())
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: "Скорость обновления target-сети."
+                                    }
+
+                                    Label { text: "eps_start" }
+                                    SpinBox {
+                                        from: 0
+                                        to: 1000
+                                        stepSize: 1
+                                        editable: true
+                                        property real factor: 1000
+                                        value: Math.round(controller.hpEpsStart * factor)
+                                        Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                        textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
+                                        valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
+                                        onValueModified: controller.set_training_hyperparam("eps_start", (value / factor).toString())
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: "Начальное значение epsilon для exploration."
+                                    }
+
+                                    Label { text: "eps_end" }
+                                    SpinBox {
+                                        from: 0
+                                        to: 1000
+                                        stepSize: 1
+                                        editable: true
+                                        property real factor: 1000
+                                        value: Math.round(controller.hpEpsEnd * factor)
+                                        Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                        textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
+                                        valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
+                                        onValueModified: controller.set_training_hyperparam("eps_end", (value / factor).toString())
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: "Минимальное epsilon к концу decay."
+                                    }
+
+                                    Label { text: "gamma" }
+                                    SpinBox {
+                                        from: 0
+                                        to: 1000
+                                        stepSize: 1
+                                        editable: true
+                                        property real factor: 1000
+                                        value: Math.round(controller.hpGamma * factor)
+                                        Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                        textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
+                                        valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
+                                        onValueModified: controller.set_training_hyperparam("gamma", (value / factor).toString())
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: "Коэффициент дисконтирования будущей награды."
+                                    }
+
+                                    Label { text: "eps_decay" }
+                                    SpinBox {
+                                        from: 1
+                                        to: 10000000
+                                        stepSize: 100
+                                        editable: true
+                                        value: controller.hpEpsDecay
+                                        Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                        onValueModified: controller.set_training_hyperparam("eps_decay", value.toString())
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: "Длина затухания epsilon."
+                                    }
+
+                                    Label { text: "batch_size" }
+                                    SpinBox {
+                                        from: 1
+                                        to: 8192
+                                        stepSize: 32
+                                        editable: true
+                                        value: controller.hpBatchSize
+                                        Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                        onValueModified: controller.set_training_hyperparam("batch_size", value.toString())
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: "Размер батча при обучении."
+                                    }
+
+                                    Label { text: "updates_per_step" }
+                                    SpinBox {
+                                        from: 1
+                                        to: 256
+                                        stepSize: 1
+                                        editable: true
+                                        value: controller.hpUpdatesPerStep
+                                        Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                        onValueModified: controller.set_training_hyperparam("updates_per_step", value.toString())
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: "Сколько градиентных обновлений делать за шаг."
+                                    }
+
+                                    Label { text: "warmup_steps" }
+                                    SpinBox {
+                                        from: 0
+                                        to: 10000000
+                                        stepSize: 100
+                                        editable: true
+                                        value: controller.hpWarmupSteps
+                                        Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                        onValueModified: controller.set_training_hyperparam("warmup_steps", value.toString())
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: "Шаги прогрева буфера до полноценного обучения."
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            radius: Math.round(10 * root.uiScale)
+                            color: "#f8f9fb"
+                            border.color: "#d9dee8"
+                            border.width: 1
+                            implicitHeight: deploymentCardLayout.implicitHeight + root.spacingMd * 2
+
+                            ColumnLayout {
+                                id: deploymentCardLayout
+                                anchors.fill: parent
+                                anchors.margins: root.spacingMd
+                                spacing: root.spacingSm
+
+                                Label {
+                                    text: "Настройки деплоя"
+                                    font.bold: true
+                                    Layout.fillWidth: true
+                                }
+
+                                Label {
+                                    text: "Выберите режим расстановки юнитов перед боем."
+                                    wrapMode: Text.WordWrap
+                                    color: "#666666"
                                     Layout.fillWidth: true
                                 }
 
                                 ComboBox {
                                     id: deploymentModeCombo
-                                    Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(360 * root.uiScale))
+                                    Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(420 * root.uiScale))
                                     model: [
                                         { value: "manual_player", label: "Ручной деплой игрока (через Viewer)" },
                                         { value: "auto", label: "Автоматический деплой" },
@@ -1151,36 +1341,58 @@ ApplicationWindow {
                                 }
 
                                 Label {
-                                    text: "Текущий DEPLOYMENT_MODE: " + controller.deploymentMode
+                                    text: "Текущий режим: " + controller.deploymentMode
                                     color: "#555555"
+                                    wrapMode: Text.WordWrap
                                 }
                             }
                         }
 
-                        GroupBox {
-                            title: "Где применяется"
+                        Rectangle {
                             Layout.fillWidth: true
+                            radius: Math.round(10 * root.uiScale)
+                            color: "#f8f9fb"
+                            border.color: "#d9dee8"
+                            border.width: 1
+                            implicitHeight: actionRowLayout.implicitHeight + root.spacingMd * 2
 
-                            ColumnLayout {
+                            RowLayout {
+                                id: actionRowLayout
                                 anchors.fill: parent
-                                spacing: root.spacingXs
+                                anchors.margins: root.spacingMd
+                                spacing: root.spacingSm
+
+                                Button {
+                                    text: "Сохранить"
+                                    font.bold: true
+                                    highlighted: true
+                                    onClicked: controller.save_training_hyperparams()
+                                }
+
+                                Button {
+                                    text: "Перечитать"
+                                    onClicked: controller.reload_training_hyperparams()
+                                }
+
+                                Button {
+                                    text: "По умолчанию"
+                                    onClicked: controller.reset_training_hyperparams()
+                                }
+
+                                Item { Layout.fillWidth: true }
 
                                 Label {
-                                    text: "• Тренировка: значение передаётся в train.py."
-                                    wrapMode: Text.WordWrap
-                                    Layout.fillWidth: true
-                                }
-                                Label {
-                                    text: "• Игра в GUI/терминале: значение передаётся в scripts/viewer.* и launch_terminal_manual.*."
-                                    wrapMode: Text.WordWrap
-                                    Layout.fillWidth: true
-                                }
-                                Label {
-                                    text: "• Оценка (eval): тоже запускается с выбранным DEPLOYMENT_MODE."
-                                    wrapMode: Text.WordWrap
-                                    Layout.fillWidth: true
+                                    text: controller.settingsSaveState
+                                    color: controller.settingsDirty ? "#b24a00" : "#2f7d32"
+                                    font.bold: true
+                                    verticalAlignment: Text.AlignVCenter
                                 }
                             }
+                        }
+
+                        Item {
+                            Layout.fillWidth: true
+                            implicitHeight: root.spacingSm
                         }
                     }
                 }
