@@ -17,6 +17,7 @@ import reward_config as reward_cfg
 from ..engine.utils import *
 from ..engine.hotloops import scan_targets_in_range
 from ..engine import utils as engine_utils
+from ..engine.visibility import evaluate_visibility, normalize_terrain_features
 from gym_mod.engine.mission import (
     MISSION_NAME,
     MAX_BATTLE_ROUNDS,
@@ -30,6 +31,8 @@ from gym_mod.engine.logging_utils import format_unit
 from gym_mod.engine.state_export import write_state_json
 from gym_mod.engine.game_io import get_active_io
 from gym_mod.engine.event_bus import get_event_bus, get_event_recorder
+
+os.environ.setdefault("LOS_DEBUG", "1")
 
 # ============================================================
 # 🔧 FIX: resolve string weapons like "Bolt pistol [PISTOL]"
@@ -860,6 +863,8 @@ class Warhammer40kEnv(gym.Env):
         self._target_cache_epoch = 0
         self._distance_cache = {}
         self._shoot_target_cache = {}
+        self._los_cache = {}
+        self.terrain_features = normalize_terrain_features(getattr(self, "terrain_features", []))
         log_name = str(os.getenv("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_PLAY.md") or "LOGS_FOR_AGENTS_PLAY.md")
         self._agent_log_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "..", log_name)
@@ -943,6 +948,55 @@ class Warhammer40kEnv(gym.Env):
         self._target_cache_epoch += 1
         self._distance_cache.clear()
         self._shoot_target_cache.clear()
+        self._los_cache.clear()
+
+    def _los_debug_enabled(self) -> bool:
+        return os.getenv("LOS_DEBUG", "1") == "1"
+
+    def _log_los(self, msg: str) -> None:
+        if not self._los_debug_enabled():
+            return
+        line = f"[LOS] {msg}"
+        self._ensure_io().log(line)
+        self._append_agent_log(line)
+
+    def _terrain_for_los(self):
+        normalized = normalize_terrain_features(getattr(self, "terrain_features", []))
+        self.terrain_features = normalized
+        return normalized
+
+    def _get_los_result(self, side_a: str, idx_a: int, side_b: str, idx_b: int):
+        key = (self._target_cache_epoch, side_a, int(idx_a), side_b, int(idx_b))
+        cached = self._los_cache.get(key)
+        if cached is not None:
+            return cached
+        pts_a = self._unit_model_points(side_a, idx_a)
+        pts_b = self._unit_model_points(side_b, idx_b)
+        terrain = self._terrain_for_los()
+        if not pts_a or not pts_b:
+            result = evaluate_visibility((0.0, 0.0), (0.0, 0.0), terrain)
+            self._los_cache[key] = result
+            return result
+
+        best = None
+        for pa in pts_a:
+            for pb in pts_b:
+                cur = evaluate_visibility(pa[:2], pb[:2], terrain)
+                if best is None:
+                    best = cur
+                    continue
+                score_cur = (1 if cur.can_see else 0, 1 if cur.fully_visible else 0, -cur.soft_penalty)
+                score_best = (1 if best.can_see else 0, 1 if best.fully_visible else 0, -best.soft_penalty)
+                if score_cur > score_best:
+                    best = cur
+
+        self._los_cache[key] = best
+        self._log_los(
+            f"{self._format_unit_label(side_a, idx_a)} -> {self._format_unit_label(side_b, idx_b)}: "
+            f"can_see={best.can_see}, fully_visible={best.fully_visible}, cover={best.has_cover}, "
+            f"soft_penalty={best.soft_penalty}, blockers={best.blockers}, obscurers={best.obscurers}, soft={best.soft_zones}"
+        )
+        return best
 
     def _cached_distance_model_enemy(self, model_idx: int, enemy_idx: int) -> float:
         key = ("m2e", self._target_cache_epoch, int(model_idx), int(enemy_idx))
@@ -985,6 +1039,16 @@ class Warhammer40kEnv(gym.Env):
                 float(range_limit),
             )
             targets = [int(idx) for idx in target_ids]
+            filtered_targets = []
+            for target_idx in targets:
+                los = self._get_los_result("model", unit_idx, "enemy", target_idx)
+                if los.can_see:
+                    filtered_targets.append(target_idx)
+                else:
+                    self._log_los(
+                        f"{self._format_unit_label('model', unit_idx)} не видит {self._format_unit_label('enemy', target_idx)}: блокер {los.blockers}"
+                    )
+            targets = filtered_targets
         else:
             if not (0 <= unit_idx < len(self.enemy_health)):
                 return []
@@ -1001,6 +1065,16 @@ class Warhammer40kEnv(gym.Env):
                 float(range_limit),
             )
             targets = [int(idx) for idx in target_ids]
+            filtered_targets = []
+            for target_idx in targets:
+                los = self._get_los_result("enemy", unit_idx, "model", target_idx)
+                if los.can_see:
+                    filtered_targets.append(target_idx)
+                else:
+                    self._log_los(
+                        f"{self._format_unit_label('enemy', unit_idx)} не видит {self._format_unit_label('model', target_idx)}: блокер {los.blockers}"
+                    )
+            targets = filtered_targets
 
         self._shoot_target_cache[cache_key] = list(targets)
         return targets
@@ -1817,6 +1891,13 @@ class Warhammer40kEnv(gym.Env):
         )
         return "benefit of cover"
 
+    def _merge_shoot_effect_with_los(self, effect, los_result):
+        if effect == "benefit of cover":
+            return effect
+        if los_result is not None and getattr(los_result, "has_cover", False):
+            return "benefit of cover"
+        return effect
+
     def _collect_overwatch_candidates(self, defender_side: str, moving_unit_side: str, moving_idx: int):
         if defender_side == "model":
             defender_health = self.unit_health
@@ -1842,13 +1923,19 @@ class Warhammer40kEnv(gym.Env):
             if defender_weapon[i] == "None":
                 continue
             if self._distance_between_units(defender_side, i, target_side, moving_idx) <= defender_weapon[i]["Range"]:
-                candidates.append(i)
+                los = self._get_los_result(defender_side, i, target_side, moving_idx)
+                if los.can_see:
+                    candidates.append(i)
+                else:
+                    self._log_los(
+                        f"Overwatch недоступен: {self._format_unit_label(defender_side, i)} не видит {self._format_unit_label(target_side, moving_idx)}"
+                    )
         return candidates
 
     def _resolve_overwatch(self, defender_side: str, moving_unit_side: str, moving_idx: int, phase: str, manual: bool = False):
         """
         10e Fire Overwatch: реакция защитника после завершения перемещения врага.
-        Упрощение: проверяем дальность, не учитываем LOS.
+        Проверяем дальность и базовую LOS через terrain_features.
         """
         side_label = self._side_label(defender_side, manual=manual)
         candidates = self._collect_overwatch_candidates(defender_side, moving_unit_side, moving_idx)
@@ -1911,10 +1998,13 @@ class Warhammer40kEnv(gym.Env):
             target_data = self.unit_data if moving_unit_side == "model" else self.enemy_data
             target_coords = self.unit_coords if moving_unit_side == "model" else self.enemy_coords
 
+        target_side = "enemy" if moving_unit_side == "enemy" else "model"
         distance_to_target = distance(
             self.unit_coords[chosen] if defender_side == "model" else self.enemy_coords[chosen],
             target_coords[moving_idx],
         )
+        los = self._get_los_result(defender_side, chosen, target_side, moving_idx)
+        effect = self._merge_shoot_effect_with_los(None, los)
         _logger = None
         if _verbose_logs_enabled():
             _logger = RollLogger(auto_dice)
@@ -1925,6 +2015,7 @@ class Warhammer40kEnv(gym.Env):
                 attacker_data[chosen],
                 target_health[moving_idx],
                 target_data[moving_idx],
+                effects=effect,
                 distance_to_target=distance_to_target,
                 hit_on_6=True,
                 roller=_logger.roll,
@@ -1936,6 +2027,7 @@ class Warhammer40kEnv(gym.Env):
                 attacker_data[chosen],
                 target_health[moving_idx],
                 target_data[moving_idx],
+                effects=effect,
                 distance_to_target=distance_to_target,
                 hit_on_6=True,
             )
@@ -1954,7 +2046,7 @@ class Warhammer40kEnv(gym.Env):
                 attacker_data=attacker_data[chosen],
                 defender_data=target_data[moving_idx],
                 dmg_list=dmg,
-                effect=None,
+                effect=effect,
                 report_title="ОТЧЁТ ПО OVERWATCH",
                 attacker_label=self._format_unit_label(defender_side, chosen),
                 defender_label=target_label,
@@ -2913,12 +3005,14 @@ class Warhammer40kEnv(gym.Env):
                             i,
                             f"Цели в дальности: {target_list}, выбрана: {self._format_unit_label('enemy', idOfE)} (причина: {reason})",
                         )
+                        los = self._get_los_result("model", i, "enemy", idOfE)
                         effect = self._maybe_use_smokescreen(
                             defender_side="enemy",
                             defender_idx=idOfE,
                             phase="shooting",
                             manual=os.getenv("MANUAL_DICE", "0") == "1",
                         )
+                        effect = self._merge_shoot_effect_with_los(effect, los)
                         _logger = None
                         if _verbose_logs_enabled():
                             _logger = RollLogger(auto_dice)
@@ -3249,12 +3343,14 @@ class Warhammer40kEnv(gym.Env):
                                 shoot_value = str(shoot).strip()
                                 if is_num(shoot_value) is True and int(shoot_value) - 21 in shootAble:
                                     idOfE = int(shoot_value) - 21
+                                    los = self._get_los_result("enemy", i, "model", idOfE)
                                     effect = self._maybe_use_smokescreen(
                                         defender_side="model",
                                         defender_idx=idOfE,
                                         phase="shooting",
                                         manual=False,
                                     )
+                                    effect = self._merge_shoot_effect_with_los(effect, los)
                                     logger = RollLogger(player_dice)
                                     logger.configure_for_weapon(self.enemy_weapon[i])
                                     dmg, modHealth = attack(
@@ -3297,18 +3393,17 @@ class Warhammer40kEnv(gym.Env):
                         if self.trunc is False:
                             self._log(f"{self._format_unit_label('enemy', i)}: Advance без Assault — стрельба пропущена.")
                     else:
-                        shootAbleUnits = []
-                        for j in range(len(self.unit_health)):
-                            if self._distance_between_units("enemy", i, "model", j) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
-                                shootAbleUnits.append(j)
+                        shootAbleUnits = self.get_shoot_targets_for_unit("enemy", i)
                         if len(shootAbleUnits) > 0:
                             idOfM = np.random.choice(shootAbleUnits)
+                            los = self._get_los_result("enemy", i, "model", idOfM)
                             effect = self._maybe_use_smokescreen(
                                 defender_side="model",
                                 defender_idx=idOfM,
                                 phase="shooting",
                                 manual=False,
                             )
+                            effect = self._merge_shoot_effect_with_los(effect, los)
                             dmg, modHealth = attack(
                                 self.enemy_health[i],
                                 self.enemy_weapon[i],

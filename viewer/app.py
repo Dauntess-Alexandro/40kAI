@@ -187,6 +187,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self.controller = GameController(model_path=model_path, state_path=state_path)
         os.environ.setdefault("DEPLOYMENT_MODE", "manual_player")
+        os.environ.setdefault("LOS_DEBUG", "1")
         self._pending_request = None
         self._pending_requests: Deque = deque()
         self._awaiting_player_action = False
@@ -320,6 +321,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._build_command_pages()
         command_layout.addWidget(self.command_stack)
 
+        self.los_debug_checkbox = QtWidgets.QCheckBox("Логи LOS")
+        self.los_debug_checkbox.setChecked(os.getenv("LOS_DEBUG", "1") == "1")
+        self.los_debug_checkbox.toggled.connect(self._toggle_los_debug)
+        command_layout.addWidget(self.los_debug_checkbox)
+
         right_top_widget = QtWidgets.QWidget()
         right_top_layout = QtWidgets.QVBoxLayout(right_top_widget)
         right_top_layout.setSpacing(8)
@@ -381,6 +387,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._show_objective_radius = checked
         self.map_scene.set_objective_radius_visible(checked)
         self.map_scene.refresh_overlays()
+
+    def _toggle_los_debug(self, checked):
+        os.environ["LOS_DEBUG"] = "1" if checked else "0"
+        state = "включены" if checked else "выключены"
+        self.add_log_line(f"[SETTINGS] LOS логи {state}.")
 
     def _apply_dark_theme(self):
         palette = self.palette()
