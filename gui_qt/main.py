@@ -59,6 +59,7 @@ class GUIController(QtCore.QObject):
     factionIconSizeChanged = QtCore.Signal(int)
     unitIconSizeChanged = QtCore.Signal(int)
     deploymentModeChanged = QtCore.Signal(str)
+    terrainDebugChanged = QtCore.Signal(bool)
     trainingHyperparamsChanged = QtCore.Signal()
     settingsDirtyChanged = QtCore.Signal(bool)
     settingsSaveStateChanged = QtCore.Signal(str)
@@ -129,8 +130,10 @@ class GUIController(QtCore.QObject):
         self._deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "rl_phase")).strip().lower() or "rl_phase"
         if self._deployment_mode not in self._deployment_mode_options:
             self._deployment_mode = "rl_phase"
+        self._terrain_debug = True
 
         self._hyperparams_path = os.path.join(self._repo_root, "hyperparams.json")
+        self._gui_settings_path = os.path.join(self._repo_root, "gui_qt", "settings.json")
         self._default_hyperparams = {
             "lr": 0.0001,
             "tau": 0.01,
@@ -146,6 +149,7 @@ class GUIController(QtCore.QObject):
         self._settings_dirty = False
         self._settings_save_state = "✓ Сохранено"
         self._load_hyperparams_from_disk(log_errors=True)
+        self._load_gui_settings_from_disk(log_errors=True)
 
         self._load_available_units()
         self._load_rosters_from_file()
@@ -313,6 +317,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=deploymentModeChanged)
     def deploymentMode(self) -> str:
         return self._deployment_mode
+
+    @QtCore.Property(bool, notify=terrainDebugChanged)
+    def terrainDebug(self) -> bool:
+        return self._terrain_debug
 
     @QtCore.Property(float, notify=trainingHyperparamsChanged)
     def hpLr(self) -> float:
@@ -635,6 +643,18 @@ class GUIController(QtCore.QObject):
         self._emit_status(f"Режим деплоя: {self._deployment_mode_label(mode)}")
         self.mark_settings_dirty()
 
+    @QtCore.Slot(bool)
+    def set_terrain_debug(self, value: bool) -> None:
+        flag = bool(value)
+        if self._terrain_debug == flag:
+            return
+        self._terrain_debug = flag
+        self.terrainDebugChanged.emit(flag)
+        terrain_value = "1" if flag else "0"
+        self._emit_log(f"[GUI][SETTINGS] TERRAIN_DEBUG={terrain_value}", level="INFO")
+        self._emit_status(f"Подробные логи террейна: {'включены' if flag else 'выключены'}.")
+        self.mark_settings_dirty()
+
     def _deployment_mode_label(self, mode: str) -> str:
         labels = {
             "manual_player": "Ручной игрок (клик в Viewer)",
@@ -670,9 +690,11 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Slot()
     def reload_training_hyperparams(self) -> None:
-        if self._load_hyperparams_from_disk(log_errors=True):
+        hp_loaded = self._load_hyperparams_from_disk(log_errors=True)
+        gui_loaded = self._load_gui_settings_from_disk(log_errors=True)
+        if hp_loaded or gui_loaded:
             self.mark_settings_saved("✓ Сохранено")
-            self._emit_status("Параметры тренировки перечитаны из hyperparams.json.")
+            self._emit_status("Настройки перечитаны (hyperparams.json + gui_qt/settings.json).")
 
     @QtCore.Slot()
     def reset_training_hyperparams(self) -> None:
@@ -702,9 +724,17 @@ class GUIController(QtCore.QObject):
             self._emit_log(f"[GUI] Ошибка записи {self._hyperparams_path}: {exc}", level="ERROR")
             return
 
+        if not self._save_gui_settings_to_disk():
+            return
+
         self._emit_log(f"[GUI] hyperparams.json сохранён: {self._hyperparams}", level="INFO")
+        self._emit_log(
+            "[GUI] gui_qt/settings.json сохранён: "
+            f"deployment_mode={self._deployment_mode}, TERRAIN_DEBUG={'1' if self._terrain_debug else '0'}",
+            level="INFO",
+        )
         self.mark_settings_saved("✓ Сохранено")
-        self._emit_status("Параметры тренировки сохранены в hyperparams.json.")
+        self._emit_status("Настройки сохранены (hyperparams.json + gui_qt/settings.json).")
 
     @QtCore.Slot()
     def mark_settings_dirty(self) -> None:
@@ -749,6 +779,60 @@ class GUIController(QtCore.QObject):
         if warmup_steps < 0:
             return "warmup_steps должен быть целым числом >= 0"
         return None
+
+    def _save_gui_settings_to_disk(self) -> bool:
+        payload = {
+            "deployment_mode": self._deployment_mode,
+            "terrain_debug": bool(self._terrain_debug),
+        }
+        try:
+            with open(self._gui_settings_path, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=4, ensure_ascii=False)
+                handle.write("\n")
+        except OSError as exc:
+            self._emit_status(
+                "Не удалось записать gui_qt/settings.json в Настройках. "
+                f"Причина: {exc}. Проверьте права доступа и повторите."
+            )
+            self._emit_log(f"[GUI] Ошибка записи {self._gui_settings_path}: {exc}", level="ERROR")
+            return False
+        return True
+
+    def _load_gui_settings_from_disk(self, log_errors: bool = False) -> bool:
+        if not os.path.exists(self._gui_settings_path):
+            return False
+        try:
+            with open(self._gui_settings_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError) as exc:
+            if log_errors:
+                self._emit_status(
+                    "Не удалось прочитать gui_qt/settings.json в Настройках. "
+                    f"Причина: {exc}. Использую значения по умолчанию."
+                )
+                self._emit_log(f"[GUI] Ошибка чтения {self._gui_settings_path}: {exc}", level="WARN")
+            return False
+
+        changed = False
+        mode = str(payload.get("deployment_mode", self._deployment_mode)).strip().lower()
+        if mode not in self._deployment_mode_options:
+            mode = "rl_phase"
+        if mode != self._deployment_mode:
+            self._deployment_mode = mode
+            self.deploymentModeChanged.emit(mode)
+            changed = True
+
+        terrain_raw = payload.get("terrain_debug", True)
+        if isinstance(terrain_raw, str):
+            terrain_flag = terrain_raw.strip().lower() in {"1", "true", "yes", "on"}
+        else:
+            terrain_flag = bool(terrain_raw)
+        if terrain_flag != self._terrain_debug:
+            self._terrain_debug = terrain_flag
+            self.terrainDebugChanged.emit(terrain_flag)
+            changed = True
+
+        return changed
 
     def _load_hyperparams_from_disk(self, log_errors: bool = False) -> bool:
         try:
@@ -971,6 +1055,7 @@ class GUIController(QtCore.QObject):
         env.insert("PYTHONPATH", self._pythonpath_with_gym_mod())
         env.insert("MISSION_NAME", self._selected_mission)
         env.insert("DEPLOYMENT_MODE", self._deployment_mode)
+        env.insert("TERRAIN_DEBUG", "1" if self._terrain_debug else "0")
         env.insert("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_TRAIN.md")
         self._process.setProcessEnvironment(env)
 
@@ -1024,6 +1109,7 @@ class GUIController(QtCore.QObject):
         env = os.environ.copy()
         env["MISSION_NAME"] = self._selected_mission
         env["DEPLOYMENT_MODE"] = self._deployment_mode
+        env["TERRAIN_DEBUG"] = "1" if self._terrain_debug else "0"
         env["AGENT_LOG_FILE"] = "LOGS_FOR_AGENTS_PLAY.md"
         subprocess.Popen(
             command,
@@ -1054,6 +1140,7 @@ class GUIController(QtCore.QObject):
         env["PLAY_NO_EXPLORATION"] = "1"
         env["MISSION_NAME"] = self._selected_mission
         env["DEPLOYMENT_MODE"] = self._deployment_mode
+        env["TERRAIN_DEBUG"] = "1" if self._terrain_debug else "0"
         env["AGENT_LOG_FILE"] = "LOGS_FOR_AGENTS_PLAY.md"
         command = self._build_script_command(script, [])
         subprocess.Popen(
@@ -1229,6 +1316,7 @@ class GUIController(QtCore.QObject):
         env.insert("CLIP_REWARD", "1")
         env.insert("MISSION_NAME", self._selected_mission)
         env.insert("DEPLOYMENT_MODE", self._deployment_mode)
+        env.insert("TERRAIN_DEBUG", "1" if self._terrain_debug else "0")
         env.insert("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_TRAIN.md")
         for key, value in env_overrides.items():
             env.insert(key, value)

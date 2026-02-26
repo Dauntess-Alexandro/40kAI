@@ -1296,6 +1296,34 @@ ApplicationWindow {
                             color: "#f8f9fb"
                             border.color: "#d9dee8"
                             border.width: 1
+                            implicitHeight: terrainLogsCardLayout.implicitHeight + root.spacingMd * 2
+
+                            ColumnLayout {
+                                id: terrainLogsCardLayout
+                                anchors.fill: parent
+                                anchors.margins: root.spacingMd
+                                spacing: root.spacingSm
+
+                                Label {
+                                    text: "Настройка логов"
+                                    font.bold: true
+                                    Layout.fillWidth: true
+                                }
+
+                                CheckBox {
+                                    text: "Подробные логи террейна (TERRAIN_DEBUG=1)"
+                                    checked: controller.terrainDebug
+                                    onToggled: controller.set_terrain_debug(checked)
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            radius: Math.round(10 * root.uiScale)
+                            color: "#f8f9fb"
+                            border.color: "#d9dee8"
+                            border.width: 1
                             implicitHeight: deploymentCardLayout.implicitHeight + root.spacingMd * 2
 
                             ColumnLayout {
