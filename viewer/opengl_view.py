@@ -1570,6 +1570,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.setTransform(QtGui.QTransform())
         self._draw_grid(painter)
         painter.setTransform(self._view_transform())
+        if self.render_terrain:
+            self._draw_props_layer(painter)
         self._draw_movement_layer(painter)
         self._draw_objective_layer(painter)
         self._draw_deploy_ghost_layer(painter)
