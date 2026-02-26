@@ -60,6 +60,8 @@ class GUIController(QtCore.QObject):
     unitIconSizeChanged = QtCore.Signal(int)
     deploymentModeChanged = QtCore.Signal(str)
     trainingHyperparamsChanged = QtCore.Signal()
+    settingsDirtyChanged = QtCore.Signal(bool)
+    settingsSaveStateChanged = QtCore.Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -141,6 +143,8 @@ class GUIController(QtCore.QObject):
             "warmup_steps": 5000,
         }
         self._hyperparams = dict(self._default_hyperparams)
+        self._settings_dirty = False
+        self._settings_save_state = "✓ Сохранено"
         self._load_hyperparams_from_disk(log_errors=True)
 
         self._load_available_units()
@@ -345,6 +349,14 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(int, notify=trainingHyperparamsChanged)
     def hpWarmupSteps(self) -> int:
         return int(self._hyperparams.get("warmup_steps", self._default_hyperparams["warmup_steps"]))
+
+    @QtCore.Property(bool, notify=settingsDirtyChanged)
+    def settingsDirty(self) -> bool:
+        return self._settings_dirty
+
+    @QtCore.Property(str, notify=settingsSaveStateChanged)
+    def settingsSaveState(self) -> str:
+        return self._settings_save_state
 
     @QtCore.Property(str, constant=True)
     def modelsFolderUrl(self) -> str:
@@ -621,6 +633,7 @@ class GUIController(QtCore.QObject):
         self.deploymentModeChanged.emit(mode)
         self._emit_log(f"[GUI] DEPLOYMENT_MODE={mode}", level="INFO")
         self._emit_status(f"Режим деплоя: {self._deployment_mode_label(mode)}")
+        self.mark_settings_dirty()
 
     def _deployment_mode_label(self, mode: str) -> str:
         labels = {
@@ -653,16 +666,19 @@ class GUIController(QtCore.QObject):
             return
         self._hyperparams[normalized_key] = parsed
         self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
 
     @QtCore.Slot()
     def reload_training_hyperparams(self) -> None:
         if self._load_hyperparams_from_disk(log_errors=True):
+            self.mark_settings_saved("✓ Сохранено")
             self._emit_status("Параметры тренировки перечитаны из hyperparams.json.")
 
     @QtCore.Slot()
     def reset_training_hyperparams(self) -> None:
         self._hyperparams = dict(self._default_hyperparams)
         self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
         self._emit_status("Параметры тренировки сброшены к значениям по умолчанию.")
 
     @QtCore.Slot()
@@ -687,7 +703,23 @@ class GUIController(QtCore.QObject):
             return
 
         self._emit_log(f"[GUI] hyperparams.json сохранён: {self._hyperparams}", level="INFO")
+        self.mark_settings_saved("✓ Сохранено")
         self._emit_status("Параметры тренировки сохранены в hyperparams.json.")
+
+    @QtCore.Slot()
+    def mark_settings_dirty(self) -> None:
+        if self._settings_dirty:
+            return
+        self._settings_dirty = True
+        self._settings_save_state = "● Есть несохранённые изменения"
+        self.settingsDirtyChanged.emit(True)
+        self.settingsSaveStateChanged.emit(self._settings_save_state)
+
+    def mark_settings_saved(self, text: str = "✓ Сохранено") -> None:
+        self._settings_dirty = False
+        self._settings_save_state = text
+        self.settingsDirtyChanged.emit(False)
+        self.settingsSaveStateChanged.emit(self._settings_save_state)
 
     def _validate_hyperparams(self, payload: dict[str, int | float]) -> str | None:
         lr = float(payload["lr"])
