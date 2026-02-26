@@ -1122,17 +1122,18 @@ ApplicationWindow {
                             Layout.fillWidth: true
                         }
 
-                        Frame {
+                        Rectangle {
                             Layout.fillWidth: true
-                            background: Rectangle {
-                                radius: Math.round(10 * root.uiScale)
-                                color: "#f8f9fb"
-                                border.color: "#d9dee8"
-                                border.width: 1
-                            }
+                            radius: Math.round(10 * root.uiScale)
+                            color: "#f8f9fb"
+                            border.color: "#d9dee8"
+                            border.width: 1
+                            implicitHeight: hyperparamsCardLayout.implicitHeight + root.spacingMd * 2
 
                             ColumnLayout {
+                                id: hyperparamsCardLayout
                                 anchors.fill: parent
+                                anchors.margins: root.spacingMd
                                 spacing: root.spacingSm
 
                                 Label {
@@ -1289,17 +1290,18 @@ ApplicationWindow {
                             }
                         }
 
-                        Frame {
+                        Rectangle {
                             Layout.fillWidth: true
-                            background: Rectangle {
-                                radius: Math.round(10 * root.uiScale)
-                                color: "#f8f9fb"
-                                border.color: "#d9dee8"
-                                border.width: 1
-                            }
+                            radius: Math.round(10 * root.uiScale)
+                            color: "#f8f9fb"
+                            border.color: "#d9dee8"
+                            border.width: 1
+                            implicitHeight: deploymentCardLayout.implicitHeight + root.spacingMd * 2
 
                             ColumnLayout {
+                                id: deploymentCardLayout
                                 anchors.fill: parent
+                                anchors.margins: root.spacingMd
                                 spacing: root.spacingSm
 
                                 Label {
@@ -1346,17 +1348,18 @@ ApplicationWindow {
                             }
                         }
 
-                        Frame {
+                        Rectangle {
                             Layout.fillWidth: true
-                            background: Rectangle {
-                                radius: Math.round(10 * root.uiScale)
-                                color: "#f8f9fb"
-                                border.color: "#d9dee8"
-                                border.width: 1
-                            }
+                            radius: Math.round(10 * root.uiScale)
+                            color: "#f8f9fb"
+                            border.color: "#d9dee8"
+                            border.width: 1
+                            implicitHeight: actionRowLayout.implicitHeight + root.spacingMd * 2
 
                             RowLayout {
+                                id: actionRowLayout
                                 anchors.fill: parent
+                                anchors.margins: root.spacingMd
                                 spacing: root.spacingSm
 
                                 Button {
