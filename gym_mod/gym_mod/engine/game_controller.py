@@ -180,6 +180,7 @@ class GameController:
                 deployment_seed=deployment_seed,
                 deployment_strategy=deployment_strategy,
                 deployment_mode=deployment_mode,
+                blocked_cells=(env.unwrapped.get_barricade_cells() if hasattr(env.unwrapped, "get_barricade_cells") else None),
             )
             if deploy_stats:
                 self._io.log(f"[DEPLOY] rl_phase stats: {deploy_stats}")

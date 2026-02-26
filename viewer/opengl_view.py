@@ -312,7 +312,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._props_initialized = False
         self._props_seed = 613
         self._props_board_size: Tuple[int, int] = (0, 0)
-        self.render_terrain = False
+        self.render_terrain = True
         self.render_decals = False
         self.render_prop_shadows = False
         self.render_fx = True
@@ -350,6 +350,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._prop_textures.clear()
         self._shadow_textures.clear()
         self._decal_textures.clear()
+
+        terrain_dir = self._texture_manager._base_dir / "props" / "terrain"
+        if terrain_dir.exists():
+            for path in terrain_dir.glob("*.png"):
+                pixmap = self._texture_manager.load_png(f"props/terrain/{path.name}")
+                if pixmap is not None:
+                    self._prop_textures[path.name] = pixmap
 
         self._fx_particle_textures.clear()
         fx_dir = self._texture_manager._base_dir / "fx"
@@ -421,7 +428,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if (width, height) != self._props_board_size:
                 self._props_board_size = (width, height)
                 self._props_initialized = False
-            self._ensure_props()
+            self._ensure_props_from_state()
 
         self._units_state = raw_units
         live_keys = {
@@ -863,36 +870,47 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._grid_picture = picture
         self._grid_size = (width, height)
 
-    def _ensure_props(self) -> None:
+    def _ensure_props_from_state(self) -> None:
         if not self.render_terrain:
             return
         if self._props_initialized and self._props:
             return
-        if self._board_rect.isEmpty():
-            return
-        if not self._prop_textures:
-            return
-        rng = random.Random(self._props_seed)
-        prop_names = list(self._prop_textures.keys())
-        if not prop_names:
-            return
-        count = rng.randint(30, 60)
-        margin = self.cell_size * 1.5
-        width = max(0.0, self._board_rect.width() - margin * 2)
-        height = max(0.0, self._board_rect.height() - margin * 2)
+        terrain_features = list(self._state.get("terrain_features", []) or [])
         self._props = []
-        for _ in range(count):
-            kind = rng.choice(prop_names)
-            x = margin + rng.random() * width
-            y = margin + rng.random() * height
-            rotation = rng.uniform(-12.0, 12.0)
-            scale = rng.uniform(0.85, 1.25)
+        for feature in terrain_features:
+            if not isinstance(feature, dict):
+                continue
+            if str(feature.get("kind", "")).lower() != "barricade":
+                continue
+            sprite = str(feature.get("sprite") or "")
+            if sprite not in self._prop_textures:
+                continue
+            cells = [tuple(c) for c in (feature.get("cells") or []) if isinstance(c, (list, tuple)) and len(c) >= 2]
+            if len(cells) != 3:
+                continue
+            view_cells = []
+            for row, col in cells:
+                view_cell = self._state_to_view_cell(col, row)
+                if view_cell is None:
+                    continue
+                view_cells.append(view_cell)
+            if len(view_cells) != 3:
+                continue
+            avg_x = sum(c[0] for c in view_cells) / 3.0
+            avg_y = sum(c[1] for c in view_cells) / 3.0
+            center = QtCore.QPointF(
+                avg_x * self.cell_size + self.cell_size / 2,
+                avg_y * self.cell_size + self.cell_size / 2,
+            )
+            rows = {int(c[0]) for c in cells}
+            cols = {int(c[1]) for c in cells}
+            rotation = 90.0 if len(rows) == 3 and len(cols) == 1 else 0.0
             self._props.append(
                 PropInstance(
-                    kind=kind,
-                    center=QtCore.QPointF(x, y),
+                    kind=sprite,
+                    center=center,
                     rotation_deg=rotation,
-                    scale=scale,
+                    scale=1.2,
                 )
             )
         self._props_initialized = True

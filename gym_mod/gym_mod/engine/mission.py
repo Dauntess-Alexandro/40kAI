@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import random
 import os
+import math
 from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -24,6 +25,12 @@ ONLY_WAR_BOARD_WIDTH_INCH = 60
 ONLY_WAR_BOARD_HEIGHT_INCH = 40
 ONLY_WAR_CENTER_OBJECTIVE_ID = 1
 ONLY_WAR_DEPLOY_DEPTH_RATIO = 0.25
+TERRAIN_BARRICADE_ASSETS = (
+    "barrels_black_red_core.png",
+    "barrels_bullets_fire.png",
+    "barrels_red_warning.png",
+    "barrels_skull_chains.png",
+)
 
 # TODO(Only War): support post-deploy units ("set up after both armies deployed").
 # Currently no post-deploy units supported.
@@ -77,6 +84,75 @@ def apply_mission_layout(env, mission_name: str | None = None) -> None:
     env.enemy_obj_oc = np.zeros(len(env.coordsOfOM), dtype=int)
     env._objective_hold_streaks = [0] * len(env.coordsOfOM)
     env.mission_name = mission_display_name(mission)
+    env.terrain_features = _build_only_war_terrain_features(env)
+
+
+def _terrain_debug_enabled() -> bool:
+    return str(os.getenv("TERRAIN_DEBUG", "0")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_mission_seed(env) -> int:
+    for attr in ("mission_seed", "match_seed", "deployment_seed"):
+        value = getattr(env, attr, None)
+        if value is None:
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    for key in ("MISSION_SEED", "MATCH_SEED", "DEPLOYMENT_SEED"):
+        raw = os.getenv(key, "").strip()
+        if not raw:
+            continue
+        try:
+            return int(raw)
+        except ValueError:
+            continue
+    return 0
+
+
+def _build_barricade_cells(anchor: Tuple[int, int], vertical: bool) -> List[Tuple[int, int]]:
+    row, col = int(anchor[0]), int(anchor[1])
+    if vertical:
+        return [(row + i, col) for i in range(3)]
+    return [(row, col + i) for i in range(3)]
+
+
+def _build_only_war_terrain_features(env) -> list[dict]:
+    if normalize_mission_name(getattr(env, "mission_name", None)) != MISSION_ONLY_WAR:
+        return []
+    rng = random.Random(_resolve_mission_seed(env))
+    center_row = int(env.b_len // 2)
+    center_col = int(env.b_hei // 2)
+    vertical = bool(rng.randint(0, 1))
+    row_offset = rng.choice([-6, -4, -2, 2, 4, 6])
+    left_col = center_col - 10
+    right_col = center_col + 8
+    if vertical:
+        left_anchor = (center_row + row_offset, left_col)
+        right_anchor = (center_row + row_offset, right_col)
+    else:
+        left_anchor = (center_row + row_offset, left_col)
+        right_anchor = (center_row + row_offset, right_col)
+
+    features: list[dict] = []
+    for anchor in (left_anchor, right_anchor):
+        cells = _build_barricade_cells(anchor, vertical=vertical)
+        sprite = rng.choice(TERRAIN_BARRICADE_ASSETS)
+        feature = {
+            "kind": "barricade",
+            "cells": [[int(r), int(c)] for r, c in cells],
+            "keywords": ["OBSTACLE", "BARRICADE"],
+            "sprite": sprite,
+        }
+        features.append(feature)
+
+    if _terrain_debug_enabled() and hasattr(env, "_log"):
+        env._log(
+            "[TERRAIN] only_war: добавлены barricade x2; "
+            f"seed={_resolve_mission_seed(env)} vertical={vertical} cells={[(f['cells']) for f in features]}"
+        )
+    return features
 
 
 def deploy_depth(board_width: int) -> int:
@@ -143,6 +219,7 @@ def _valid_deploy_cells(
     *,
     model_offsets: Iterable[Tuple[int, int]] | None = None,
     occupied_model_cells: Iterable[Tuple[int, int]] | None = None,
+    blocked_cells: Iterable[Tuple[int, int]] | None = None,
 ) -> List[Tuple[int, int]]:
     valid: List[Tuple[int, int]] = []
     for row, col in _zone_coords(side, b_len, b_hei):
@@ -154,6 +231,7 @@ def _valid_deploy_cells(
             occupied,
             model_offsets=model_offsets,
             occupied_model_cells=occupied_model_cells,
+            blocked_cells=blocked_cells,
         )
         if ok:
             valid.append((row, col))
@@ -248,6 +326,7 @@ def _choose_rl_deploy_coord(
     *,
     model_offsets: Iterable[Tuple[int, int]] | None = None,
     occupied_model_cells: Iterable[Tuple[int, int]] | None = None,
+    blocked_cells: Iterable[Tuple[int, int]] | None = None,
     placed_side_units: Sequence[dict] | None = None,
     rng: random.Random | None = None,
     log_fn: Optional[callable] = None,
@@ -260,6 +339,7 @@ def _choose_rl_deploy_coord(
         occupied,
         model_offsets=model_offsets,
         occupied_model_cells=occupied_model_cells,
+        blocked_cells=blocked_cells,
     )
     if not valid_cells:
         raise RuntimeError(f"No valid deployment cells for rl_phase side={side}")
@@ -322,6 +402,7 @@ def _choose_rl_deploy_coord(
             occupied,
             model_offsets=model_offsets,
             occupied_model_cells=occupied_model_cells,
+            blocked_cells=blocked_cells,
         )
         if ok:
             score_before, before_parts = _deployment_global_score(
@@ -393,9 +474,11 @@ def get_random_free_deploy_coord(
     unit_idx: int | None = None,
     total_units: int | None = None,
     log_fn: Optional[callable] = None,
+    blocked_cells: Iterable[Tuple[int, int]] | None = None,
 ) -> Tuple[int, int]:
     occupied_set = set((int(row), int(col)) for row, col in occupied)
-    choices = [c for c in _zone_coords(side, b_len, b_hei) if c not in occupied_set]
+    blocked_set = set((int(row), int(col)) for row, col in (blocked_cells or []))
+    choices = [c for c in _zone_coords(side, b_len, b_hei) if c not in occupied_set and c not in blocked_set]
     if not choices:
         raise RuntimeError(f"No free deployment space for side={side}")
 
@@ -421,7 +504,7 @@ def get_random_free_deploy_coord(
             cand = (int(target_row + dr), int(x_center + dc))
             if cand in template_candidates:
                 continue
-            if cand in occupied_set:
+            if cand in occupied_set or cand in blocked_set:
                 continue
             if not _in_bounds(cand, b_len, b_hei):
                 continue
@@ -449,6 +532,7 @@ def validate_deploy_coord(
     *,
     model_offsets: Iterable[Tuple[int, int]] | None = None,
     occupied_model_cells: Iterable[Tuple[int, int]] | None = None,
+    blocked_cells: Iterable[Tuple[int, int]] | None = None,
 ) -> Tuple[bool, str]:
     if not _in_bounds(coord, b_len, b_hei):
         return False, "out_of_bounds"
@@ -461,6 +545,7 @@ def validate_deploy_coord(
 
     offsets = list(model_offsets or [(0, 0)])
     model_occupied_set = set((int(r), int(c)) for r, c in (occupied_model_cells or []))
+    blocked_set = set((int(r), int(c)) for r, c in (blocked_cells or []))
     for dr, dc in offsets:
         m_row = int(coord[0]) + int(dr)
         m_col = int(coord[1]) + int(dc)
@@ -471,6 +556,8 @@ def validate_deploy_coord(
             return False, "outside_deploy_zone"
         if m_coord in model_occupied_set:
             return False, "occupied"
+        if m_coord in blocked_set:
+            return False, "blocked_by_terrain"
 
     return True, "ok"
 
@@ -566,6 +653,7 @@ def deploy_only_war(
     deployment_seed: int | None = None,
     deployment_strategy: str | None = None,
     deployment_mode: str | None = None,
+    blocked_cells: Iterable[Tuple[int, int]] | None = None,
 ) -> None:
     if attacker_side not in ("model", "enemy"):
         raise ValueError(f"Unknown attacker side: {attacker_side}")
@@ -715,6 +803,7 @@ def deploy_only_war(
                     occupied,
                     model_offsets=unit_model_offsets,
                     occupied_model_cells=occupied_model_cells,
+                    blocked_cells=blocked_cells,
                 )
                 if ok:
                     coord = coord_candidate
@@ -735,6 +824,7 @@ def deploy_only_war(
                 occupied,
                 model_offsets=unit_model_offsets,
                 occupied_model_cells=occupied_model_cells,
+                blocked_cells=blocked_cells,
                 placed_side_units=placed_by_side.get(side, []),
                 rng=rng,
                 log_fn=log_fn,
@@ -762,6 +852,7 @@ def deploy_only_war(
                 unit_idx=unit_idx,
                 total_units=side_counts.get(side, 0),
                 log_fn=log_fn,
+                blocked_cells=blocked_cells,
             )
         ok, reason = validate_deploy_coord(
             zone_side,
@@ -771,6 +862,7 @@ def deploy_only_war(
             occupied,
             model_offsets=unit_model_offsets,
             occupied_model_cells=occupied_model_cells,
+            blocked_cells=blocked_cells,
         )
         if not ok:
             raise RuntimeError(
@@ -843,6 +935,7 @@ def deploy_for_mission(
     deployment_seed: int | None = None,
     deployment_strategy: str | None = None,
     deployment_mode: str | None = None,
+    blocked_cells: Iterable[Tuple[int, int]] | None = None,
 ) -> None:
     mission = normalize_mission_name(mission_name)
     if mission == MISSION_ONLY_WAR:
@@ -856,6 +949,7 @@ def deploy_for_mission(
             deployment_seed=deployment_seed,
             deployment_strategy=deployment_strategy,
             deployment_mode=deployment_mode,
+            blocked_cells=blocked_cells,
         )
     return deploy_only_war(
         model_units,
@@ -867,7 +961,41 @@ def deploy_for_mission(
         deployment_seed=deployment_seed,
         deployment_strategy=deployment_strategy,
         deployment_mode=deployment_mode,
+        blocked_cells=blocked_cells,
     )
+
+
+def terrain_features(env) -> list[dict]:
+    return list(getattr(env, "terrain_features", []) or [])
+
+
+def get_barricade_cells(env) -> list[tuple[int, int]]:
+    result: list[tuple[int, int]] = []
+    for feature in terrain_features(env):
+        if str(feature.get("kind", "")).lower() != "barricade":
+            continue
+        for cell in feature.get("cells", []):
+            if not isinstance(cell, (list, tuple)) or len(cell) < 2:
+                continue
+            result.append((int(cell[0]), int(cell[1])))
+    return result
+
+
+def is_barricade_cell(env, row: int, col: int) -> bool:
+    return (int(row), int(col)) in set(get_barricade_cells(env))
+
+
+def distance_cell_to_any_barricade(env, cell: Sequence[int]) -> float:
+    row, col = float(cell[0]), float(cell[1])
+    all_cells = get_barricade_cells(env)
+    if not all_cells:
+        return float("inf")
+    best = float("inf")
+    for b_row, b_col in all_cells:
+        dist = math.sqrt((float(b_row) - row) ** 2 + (float(b_col) - col) ** 2)
+        if dist < best:
+            best = dist
+    return best
 
 
 def controlled_objectives(env, side: str) -> Tuple[int, List[int]]:

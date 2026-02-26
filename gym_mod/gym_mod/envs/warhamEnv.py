@@ -21,10 +21,14 @@ from gym_mod.engine.mission import (
     MISSION_NAME,
     MAX_BATTLE_ROUNDS,
     apply_mission_layout,
+    get_barricade_cells as mission_barricade_cells,
+    is_barricade_cell as mission_is_barricade_cell,
+    distance_cell_to_any_barricade as mission_distance_to_barricade,
     score_end_of_command_phase,
     apply_end_of_battle,
     controlled_objectives,
 )
+from gym_mod.engine.visibility import supercover_line_cells, is_obscured_by_barricade
 from gym_mod.engine.skills import apply_end_of_command_phase
 from gym_mod.engine.logging_utils import format_unit
 from gym_mod.engine.state_export import write_state_json
@@ -870,6 +874,8 @@ class Warhammer40kEnv(gym.Env):
         self.modelUpdates = ""
         get_event_recorder().clear()
 
+        self.terrain_features = list(getattr(self, "terrain_features", []) or [])
+
         for i in range(len(enemy)):
             self.enemy_weapon.append(enemy[i].showWeapon())
             self.enemy_melee.append(enemy[i].showMelee())
@@ -1354,6 +1360,71 @@ class Warhammer40kEnv(gym.Env):
 
     def _is_verbose(self) -> bool:
         return os.getenv("VERBOSE_LOGS", "0") == "1" or os.getenv("MANUAL_DICE", "0") == "1"
+
+    def _terrain_debug(self) -> bool:
+        return str(os.getenv("TERRAIN_DEBUG", "0")).strip().lower() in {"1", "true", "yes", "on"}
+
+    def get_barricade_cells(self) -> list[tuple[int, int]]:
+        return mission_barricade_cells(self)
+
+    def is_barricade_cell(self, row: int, col: int) -> bool:
+        return mission_is_barricade_cell(self, row, col)
+
+    def distance_cell_to_any_barricade(self, cell) -> float:
+        return mission_distance_to_barricade(self, cell)
+
+    def _enforce_non_barricade_destination(self, side: str, idx: int, pos_before) -> None:
+        coords = self.unit_coords if side == "model" else self.enemy_coords
+        if not (0 <= idx < len(coords)):
+            return
+        row, col = int(coords[idx][0]), int(coords[idx][1])
+        if not self.is_barricade_cell(row, col):
+            return
+        coords[idx][0], coords[idx][1] = int(pos_before[0]), int(pos_before[1])
+        if self._terrain_debug():
+            self._log(
+                f"[TERRAIN][MOVE] {self._format_unit_label(side, idx)}: конец хода на barricade ({row},{col}) запрещён, откат на {tuple(coords[idx])}."
+            )
+
+    def _terrain_cover_effect(self, attacker_side: str, attacker_idx: int, target_side: str, target_idx: int, base_effect: str | None = None):
+        effect = base_effect
+        target_data = self.unit_data[target_idx] if target_side == "model" else self.enemy_data[target_idx]
+        if not self._unit_has_keyword(target_data, "infantry"):
+            if self._terrain_debug():
+                self._log(f"[TERRAIN][COVER] цель {self._format_unit_label(target_side, target_idx)}: не INFANTRY, cover=off")
+            return effect
+
+        target_models = self._unit_model_points(target_side, target_idx)
+        if not target_models:
+            return effect
+        tgt_cell = (int(target_models[0][0]), int(target_models[0][1]))
+        dist = self.distance_cell_to_any_barricade(tgt_cell)
+        if dist > 3.0:
+            if self._terrain_debug():
+                self._log(f"[TERRAIN][COVER] цель {self._format_unit_label(target_side, target_idx)}: dist={dist:.2f}>3.0, cover=off")
+            return effect
+
+        barricade_cells = set(self.get_barricade_cells())
+        attacker_models = self._unit_model_points(attacker_side, attacker_idx)
+        fully_visible = True
+        for model in attacker_models:
+            att_cell = (int(model[0]), int(model[1]))
+            line_cells = supercover_line_cells(att_cell, tgt_cell)
+            obscured = is_obscured_by_barricade(att_cell, tgt_cell, barricade_cells)
+            if self._terrain_debug():
+                self._log(
+                    f"[TERRAIN][LOS] {self._format_unit_label(attacker_side, attacker_idx)}->{self._format_unit_label(target_side, target_idx)} line={line_cells} obscured={obscured}"
+                )
+            if obscured:
+                fully_visible = False
+                break
+        if not fully_visible:
+            effect = "benefit of cover"
+            if self._terrain_debug():
+                self._log(f"[TERRAIN][COVER] cover=on, barricade_cells={sorted(list(barricade_cells))[:6]}...")
+        elif self._terrain_debug():
+            self._log("[TERRAIN][COVER] все модели атакующего видят цель полностью, cover=off")
+        return effect
 
     def _ensure_io(self):
         if not hasattr(self, "io") or self.io is None:
@@ -2449,6 +2520,7 @@ class Warhammer40kEnv(gym.Env):
                     for j in range(len(self.enemy_health)):
                         if self.unit_coords[i] == self.enemy_coords[j]:
                             self.unit_coords[i][0] -= 1
+                    self._enforce_non_barricade_destination("model", i, pos_before)
                     pos_after = tuple(self.unit_coords[i])
                     if action["move"] == 4:
                         self._log_unit("MODEL", modelName, i, f"Движение пропущено (no move). Позиция после: {pos_after}")
@@ -2627,6 +2699,7 @@ class Warhammer40kEnv(gym.Env):
                     for j in range(len(self.unit_health)):
                         if self.enemy_coords[i] == self.unit_coords[j]:
                             self.enemy_coords[i][0] -= 1
+                    self._enforce_non_barricade_destination("enemy", i, pos_before)
                     pos_after = tuple(self.enemy_coords[i])
                     if move_dir == 4:
                         self._log_unit("enemy", unit_id, i, f"Движение пропущено (no move). Позиция после: {pos_after}")
@@ -2913,11 +2986,14 @@ class Warhammer40kEnv(gym.Env):
                             i,
                             f"Цели в дальности: {target_list}, выбрана: {self._format_unit_label('enemy', idOfE)} (причина: {reason})",
                         )
-                        effect = self._maybe_use_smokescreen(
-                            defender_side="enemy",
-                            defender_idx=idOfE,
-                            phase="shooting",
-                            manual=os.getenv("MANUAL_DICE", "0") == "1",
+                        effect = self._terrain_cover_effect(
+                            "model", i, "enemy", idOfE,
+                            self._maybe_use_smokescreen(
+                                defender_side="enemy",
+                                defender_idx=idOfE,
+                                phase="shooting",
+                                manual=os.getenv("MANUAL_DICE", "0") == "1",
+                            ),
                         )
                         _logger = None
                         if _verbose_logs_enabled():
@@ -3145,11 +3221,14 @@ class Warhammer40kEnv(gym.Env):
                             i,
                             f"Цели в дальности: {target_list}, выбрана: {self._format_unit_label('model', idOfM)} (причина: выбор политики)",
                         )
-                        effect = self._maybe_use_smokescreen(
-                            defender_side="model",
-                            defender_idx=idOfM,
-                            phase="shooting",
-                            manual=os.getenv("MANUAL_DICE", "0") == "1",
+                        effect = self._terrain_cover_effect(
+                            "enemy", i, "model", idOfM,
+                            self._maybe_use_smokescreen(
+                                defender_side="model",
+                                defender_idx=idOfM,
+                                phase="shooting",
+                                manual=os.getenv("MANUAL_DICE", "0") == "1",
+                            ),
                         )
                         _logger = None
                         if _verbose_logs_enabled():
@@ -3249,11 +3328,14 @@ class Warhammer40kEnv(gym.Env):
                                 shoot_value = str(shoot).strip()
                                 if is_num(shoot_value) is True and int(shoot_value) - 21 in shootAble:
                                     idOfE = int(shoot_value) - 21
-                                    effect = self._maybe_use_smokescreen(
-                                        defender_side="model",
-                                        defender_idx=idOfE,
-                                        phase="shooting",
-                                        manual=False,
+                                    effect = self._terrain_cover_effect(
+                                        "enemy", i, "model", idOfE,
+                                        self._maybe_use_smokescreen(
+                                            defender_side="model",
+                                            defender_idx=idOfE,
+                                            phase="shooting",
+                                            manual=False,
+                                        ),
                                     )
                                     logger = RollLogger(player_dice)
                                     logger.configure_for_weapon(self.enemy_weapon[i])
@@ -3303,11 +3385,14 @@ class Warhammer40kEnv(gym.Env):
                                 shootAbleUnits.append(j)
                         if len(shootAbleUnits) > 0:
                             idOfM = np.random.choice(shootAbleUnits)
-                            effect = self._maybe_use_smokescreen(
-                                defender_side="model",
-                                defender_idx=idOfM,
-                                phase="shooting",
-                                manual=False,
+                            effect = self._terrain_cover_effect(
+                                "enemy", i, "model", idOfM,
+                                self._maybe_use_smokescreen(
+                                    defender_side="model",
+                                    defender_idx=idOfM,
+                                    phase="shooting",
+                                    manual=False,
+                                ),
                             )
                             dmg, modHealth = attack(
                                 self.enemy_health[i],

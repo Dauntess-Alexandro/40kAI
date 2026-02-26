@@ -160,6 +160,17 @@ def write_state_json(env, path=None):
             "y": _safe_int(coords[0], None),
         })
 
+    terrain_features = []
+    for feature in (getattr(env, "terrain_features", []) or []):
+        if not isinstance(feature, dict):
+            continue
+        terrain_features.append({
+            "kind": feature.get("kind"),
+            "cells": feature.get("cells", []),
+            "keywords": feature.get("keywords", []),
+            "sprite": feature.get("sprite"),
+        })
+
     active_side = getattr(env, "active_side", None)
     if active_side == "enemy":
         active_side = "player"
@@ -185,6 +196,7 @@ def write_state_json(env, path=None):
                "model": _safe_int(getattr(env, "modelCP", None), None)},
         "units": units,
         "objectives": objectives,
+        "terrain_features": terrain_features,
         "attacker_side": getattr(env, "attacker_side", None),
         "defender_side": getattr(env, "defender_side", None),
         "deployment": {
