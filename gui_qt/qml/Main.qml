@@ -1108,13 +1108,13 @@ ApplicationWindow {
                         spacing: root.spacingLg
 
                         Text {
-                            text: "Настройки деплоя"
+                            text: "Настройка параметров тренировки"
                             font.pixelSize: Math.round(20 * root.uiScale)
                             font.bold: true
                         }
 
                         GroupBox {
-                            title: "Режим DEPLOYMENT_MODE"
+                            title: "Гиперпараметры (hyperparams.json)"
                             Layout.fillWidth: true
 
                             ColumnLayout {
@@ -1122,14 +1122,124 @@ ApplicationWindow {
                                 spacing: root.spacingSm
 
                                 Label {
-                                    text: "Выберите, как будет выполняться расстановка юнитов перед боем."
+                                    text: "Изменения применяются после сохранения файла."
+                                    color: "#555555"
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                }
+
+                                GridLayout {
+                                    columns: 4
+                                    columnSpacing: root.spacingMd
+                                    rowSpacing: root.spacingSm
+                                    Layout.fillWidth: true
+
+                                    Label { text: "lr" }
+                                    TextField {
+                                        text: controller.hpLr.toString()
+                                        Layout.preferredWidth: root.inputWidthMd
+                                        onEditingFinished: controller.set_training_hyperparam("lr", text)
+                                    }
+
+                                    Label { text: "tau" }
+                                    TextField {
+                                        text: controller.hpTau.toString()
+                                        Layout.preferredWidth: root.inputWidthMd
+                                        onEditingFinished: controller.set_training_hyperparam("tau", text)
+                                    }
+
+                                    Label { text: "eps_start" }
+                                    TextField {
+                                        text: controller.hpEpsStart.toString()
+                                        Layout.preferredWidth: root.inputWidthMd
+                                        onEditingFinished: controller.set_training_hyperparam("eps_start", text)
+                                    }
+
+                                    Label { text: "eps_end" }
+                                    TextField {
+                                        text: controller.hpEpsEnd.toString()
+                                        Layout.preferredWidth: root.inputWidthMd
+                                        onEditingFinished: controller.set_training_hyperparam("eps_end", text)
+                                    }
+
+                                    Label { text: "eps_decay" }
+                                    TextField {
+                                        text: controller.hpEpsDecay.toString()
+                                        validator: IntValidator { bottom: 1 }
+                                        Layout.preferredWidth: root.inputWidthMd
+                                        onEditingFinished: controller.set_training_hyperparam("eps_decay", text)
+                                    }
+
+                                    Label { text: "batch_size" }
+                                    TextField {
+                                        text: controller.hpBatchSize.toString()
+                                        validator: IntValidator { bottom: 1 }
+                                        Layout.preferredWidth: root.inputWidthMd
+                                        onEditingFinished: controller.set_training_hyperparam("batch_size", text)
+                                    }
+
+                                    Label { text: "gamma" }
+                                    TextField {
+                                        text: controller.hpGamma.toString()
+                                        Layout.preferredWidth: root.inputWidthMd
+                                        onEditingFinished: controller.set_training_hyperparam("gamma", text)
+                                    }
+
+                                    Label { text: "updates_per_step" }
+                                    TextField {
+                                        text: controller.hpUpdatesPerStep.toString()
+                                        validator: IntValidator { bottom: 1 }
+                                        Layout.preferredWidth: root.inputWidthMd
+                                        onEditingFinished: controller.set_training_hyperparam("updates_per_step", text)
+                                    }
+
+                                    Label { text: "warmup_steps" }
+                                    TextField {
+                                        text: controller.hpWarmupSteps.toString()
+                                        validator: IntValidator { bottom: 0 }
+                                        Layout.preferredWidth: root.inputWidthMd
+                                        onEditingFinished: controller.set_training_hyperparam("warmup_steps", text)
+                                    }
+                                }
+
+                                RowLayout {
+                                    spacing: root.spacingSm
+
+                                    Button {
+                                        text: "Сохранить hyperparams.json"
+                                        onClicked: controller.save_training_hyperparams()
+                                    }
+
+                                    Button {
+                                        text: "Перечитать файл"
+                                        onClicked: controller.reload_training_hyperparams()
+                                    }
+
+                                    Button {
+                                        text: "Сбросить по умолчанию"
+                                        onClicked: controller.reset_training_hyperparams()
+                                    }
+                                }
+                            }
+                        }
+
+                        GroupBox {
+                            title: "Настройки деплоя"
+                            Layout.fillWidth: true
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: root.spacingSm
+
+                                Label {
+                                    text: "Выберите режим расстановки юнитов перед боем."
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                 }
 
                                 ComboBox {
                                     id: deploymentModeCombo
-                                    Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(360 * root.uiScale))
+                                    Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(420 * root.uiScale))
                                     model: [
                                         { value: "manual_player", label: "Ручной деплой игрока (через Viewer)" },
                                         { value: "auto", label: "Автоматический деплой" },
@@ -1151,34 +1261,9 @@ ApplicationWindow {
                                 }
 
                                 Label {
-                                    text: "Текущий DEPLOYMENT_MODE: " + controller.deploymentMode
+                                    text: "Текущий режим: " + controller.deploymentMode
                                     color: "#555555"
-                                }
-                            }
-                        }
-
-                        GroupBox {
-                            title: "Где применяется"
-                            Layout.fillWidth: true
-
-                            ColumnLayout {
-                                anchors.fill: parent
-                                spacing: root.spacingXs
-
-                                Label {
-                                    text: "• Тренировка: значение передаётся в train.py."
                                     wrapMode: Text.WordWrap
-                                    Layout.fillWidth: true
-                                }
-                                Label {
-                                    text: "• Игра в GUI/терминале: значение передаётся в scripts/viewer.* и launch_terminal_manual.*."
-                                    wrapMode: Text.WordWrap
-                                    Layout.fillWidth: true
-                                }
-                                Label {
-                                    text: "• Оценка (eval): тоже запускается с выбранным DEPLOYMENT_MODE."
-                                    wrapMode: Text.WordWrap
-                                    Layout.fillWidth: true
                                 }
                             }
                         }

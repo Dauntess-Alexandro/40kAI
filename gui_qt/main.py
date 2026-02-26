@@ -59,6 +59,7 @@ class GUIController(QtCore.QObject):
     factionIconSizeChanged = QtCore.Signal(int)
     unitIconSizeChanged = QtCore.Signal(int)
     deploymentModeChanged = QtCore.Signal(str)
+    trainingHyperparamsChanged = QtCore.Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -126,6 +127,21 @@ class GUIController(QtCore.QObject):
         self._deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "rl_phase")).strip().lower() or "rl_phase"
         if self._deployment_mode not in self._deployment_mode_options:
             self._deployment_mode = "rl_phase"
+
+        self._hyperparams_path = os.path.join(self._repo_root, "hyperparams.json")
+        self._default_hyperparams = {
+            "lr": 0.0001,
+            "tau": 0.01,
+            "eps_start": 0.9,
+            "eps_end": 0.05,
+            "eps_decay": 30000,
+            "batch_size": 384,
+            "gamma": 0.99,
+            "updates_per_step": 6,
+            "warmup_steps": 5000,
+        }
+        self._hyperparams = dict(self._default_hyperparams)
+        self._load_hyperparams_from_disk(log_errors=True)
 
         self._load_available_units()
         self._load_rosters_from_file()
@@ -293,6 +309,42 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=deploymentModeChanged)
     def deploymentMode(self) -> str:
         return self._deployment_mode
+
+    @QtCore.Property(float, notify=trainingHyperparamsChanged)
+    def hpLr(self) -> float:
+        return float(self._hyperparams.get("lr", self._default_hyperparams["lr"]))
+
+    @QtCore.Property(float, notify=trainingHyperparamsChanged)
+    def hpTau(self) -> float:
+        return float(self._hyperparams.get("tau", self._default_hyperparams["tau"]))
+
+    @QtCore.Property(float, notify=trainingHyperparamsChanged)
+    def hpEpsStart(self) -> float:
+        return float(self._hyperparams.get("eps_start", self._default_hyperparams["eps_start"]))
+
+    @QtCore.Property(float, notify=trainingHyperparamsChanged)
+    def hpEpsEnd(self) -> float:
+        return float(self._hyperparams.get("eps_end", self._default_hyperparams["eps_end"]))
+
+    @QtCore.Property(int, notify=trainingHyperparamsChanged)
+    def hpEpsDecay(self) -> int:
+        return int(self._hyperparams.get("eps_decay", self._default_hyperparams["eps_decay"]))
+
+    @QtCore.Property(int, notify=trainingHyperparamsChanged)
+    def hpBatchSize(self) -> int:
+        return int(self._hyperparams.get("batch_size", self._default_hyperparams["batch_size"]))
+
+    @QtCore.Property(float, notify=trainingHyperparamsChanged)
+    def hpGamma(self) -> float:
+        return float(self._hyperparams.get("gamma", self._default_hyperparams["gamma"]))
+
+    @QtCore.Property(int, notify=trainingHyperparamsChanged)
+    def hpUpdatesPerStep(self) -> int:
+        return int(self._hyperparams.get("updates_per_step", self._default_hyperparams["updates_per_step"]))
+
+    @QtCore.Property(int, notify=trainingHyperparamsChanged)
+    def hpWarmupSteps(self) -> int:
+        return int(self._hyperparams.get("warmup_steps", self._default_hyperparams["warmup_steps"]))
 
     @QtCore.Property(str, constant=True)
     def modelsFolderUrl(self) -> str:
@@ -577,6 +629,124 @@ class GUIController(QtCore.QObject):
             "rl_phase": "RL-деплой модели (игрок вручную)",
         }
         return labels.get(mode, mode)
+
+    @QtCore.Slot(str, str)
+    def set_training_hyperparam(self, key: str, value: str) -> None:
+        normalized_key = str(key or "").strip()
+        if normalized_key not in self._default_hyperparams:
+            return
+
+        current = self._hyperparams.get(normalized_key, self._default_hyperparams[normalized_key])
+        try:
+            if isinstance(self._default_hyperparams[normalized_key], int):
+                parsed = int(float(str(value).strip()))
+            else:
+                parsed = float(str(value).strip())
+        except (TypeError, ValueError):
+            self._emit_status(
+                f"Некорректное значение параметра '{normalized_key}' в Настройках. "
+                "Проверьте формат и попробуйте снова."
+            )
+            return
+
+        if current == parsed:
+            return
+        self._hyperparams[normalized_key] = parsed
+        self.trainingHyperparamsChanged.emit()
+
+    @QtCore.Slot()
+    def reload_training_hyperparams(self) -> None:
+        if self._load_hyperparams_from_disk(log_errors=True):
+            self._emit_status("Параметры тренировки перечитаны из hyperparams.json.")
+
+    @QtCore.Slot()
+    def reset_training_hyperparams(self) -> None:
+        self._hyperparams = dict(self._default_hyperparams)
+        self.trainingHyperparamsChanged.emit()
+        self._emit_status("Параметры тренировки сброшены к значениям по умолчанию.")
+
+    @QtCore.Slot()
+    def save_training_hyperparams(self) -> None:
+        error = self._validate_hyperparams(self._hyperparams)
+        if error:
+            self._emit_status(
+                f"Не удалось сохранить hyperparams.json в Настройках: {error}. "
+                "Исправьте значения и повторите сохранение."
+            )
+            return
+        try:
+            with open(self._hyperparams_path, "w", encoding="utf-8") as handle:
+                json.dump(self._hyperparams, handle, indent=4, ensure_ascii=False)
+                handle.write("\n")
+        except OSError as exc:
+            self._emit_status(
+                "Не удалось записать hyperparams.json в Настройках. "
+                f"Причина: {exc}. Проверьте права доступа и повторите."
+            )
+            self._emit_log(f"[GUI] Ошибка записи {self._hyperparams_path}: {exc}", level="ERROR")
+            return
+
+        self._emit_log(f"[GUI] hyperparams.json сохранён: {self._hyperparams}", level="INFO")
+        self._emit_status("Параметры тренировки сохранены в hyperparams.json.")
+
+    def _validate_hyperparams(self, payload: dict[str, int | float]) -> str | None:
+        lr = float(payload["lr"])
+        tau = float(payload["tau"])
+        eps_start = float(payload["eps_start"])
+        eps_end = float(payload["eps_end"])
+        eps_decay = int(payload["eps_decay"])
+        batch_size = int(payload["batch_size"])
+        gamma = float(payload["gamma"])
+        updates_per_step = int(payload["updates_per_step"])
+        warmup_steps = int(payload["warmup_steps"])
+
+        if not (0.0 < lr <= 1.0):
+            return "lr должен быть в диапазоне (0, 1]"
+        if not (0.0 < tau <= 1.0):
+            return "tau должен быть в диапазоне (0, 1]"
+        if not (0.0 <= eps_end <= eps_start <= 1.0):
+            return "должно выполняться 0 <= eps_end <= eps_start <= 1"
+        if eps_decay < 1:
+            return "eps_decay должен быть целым числом >= 1"
+        if batch_size < 1:
+            return "batch_size должен быть целым числом >= 1"
+        if not (0.0 < gamma <= 1.0):
+            return "gamma должен быть в диапазоне (0, 1]"
+        if updates_per_step < 1:
+            return "updates_per_step должен быть целым числом >= 1"
+        if warmup_steps < 0:
+            return "warmup_steps должен быть целым числом >= 0"
+        return None
+
+    def _load_hyperparams_from_disk(self, log_errors: bool = False) -> bool:
+        try:
+            with open(self._hyperparams_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError) as exc:
+            self._hyperparams = dict(self._default_hyperparams)
+            self.trainingHyperparamsChanged.emit()
+            if log_errors:
+                self._emit_status(
+                    "Не удалось прочитать hyperparams.json в Настройках. "
+                    f"Причина: {exc}. Использую значения по умолчанию."
+                )
+                self._emit_log(f"[GUI] Ошибка чтения {self._hyperparams_path}: {exc}", level="WARN")
+            return False
+
+        updated = dict(self._default_hyperparams)
+        for key, default_value in self._default_hyperparams.items():
+            raw = payload.get(key, default_value)
+            try:
+                if isinstance(default_value, int):
+                    updated[key] = int(raw)
+                else:
+                    updated[key] = float(raw)
+            except (TypeError, ValueError):
+                updated[key] = default_value
+
+        self._hyperparams = updated
+        self.trainingHyperparamsChanged.emit()
+        return True
 
     @QtCore.Slot()
     def stop_process(self) -> None:
