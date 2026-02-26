@@ -885,6 +885,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
             sprite = str(feature.get("sprite") or "")
             if sprite not in self._prop_textures:
                 continue
+            sprite_pixmap = self._prop_textures.get(sprite)
+            if sprite_pixmap is None or sprite_pixmap.isNull():
+                continue
             cells = [tuple(c) for c in (feature.get("cells") or []) if isinstance(c, (list, tuple)) and len(c) >= 2]
             if len(cells) != 3:
                 continue
@@ -905,12 +908,16 @@ class OpenGLBoardWidget(QOpenGLWidget):
             rows = {int(c[0]) for c in cells}
             cols = {int(c[1]) for c in cells}
             rotation = 90.0 if len(rows) == 3 and len(cols) == 1 else 0.0
+            long_dim_px = max(1.0, float(max(sprite_pixmap.width(), sprite_pixmap.height())))
+            # Barricade должен занимать примерно 3 клетки по длинной стороне.
+            target_long_px = float(self.cell_size) * 3.0 * 0.95
+            sprite_scale = max(0.05, target_long_px / long_dim_px)
             self._props.append(
                 PropInstance(
                     kind=sprite,
                     center=center,
                     rotation_deg=rotation,
-                    scale=1.2,
+                    scale=sprite_scale,
                 )
             )
         self._props_initialized = True
