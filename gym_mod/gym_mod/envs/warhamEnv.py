@@ -1354,6 +1354,8 @@ class Warhammer40kEnv(gym.Env):
         return best
 
     def _should_log(self) -> bool:
+        if self._terrain_debug():
+            return True
         if self._is_verbose():
             return True
         return self.trunc is False
