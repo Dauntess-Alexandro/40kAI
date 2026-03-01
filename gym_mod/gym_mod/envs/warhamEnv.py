@@ -30,6 +30,7 @@ from gym_mod.engine.logging_utils import format_unit
 from gym_mod.engine.state_export import write_state_json
 from gym_mod.engine.game_io import get_active_io
 from gym_mod.engine.event_bus import get_event_bus, get_event_recorder
+from gym_mod.engine.visibility import visibility_report
 
 # ============================================================
 # 🔧 FIX: resolve string weapons like "Bolt pistol [PISTOL]"
@@ -860,6 +861,8 @@ class Warhammer40kEnv(gym.Env):
         self._target_cache_epoch = 0
         self._distance_cache = {}
         self._shoot_target_cache = {}
+        self.terrain_opaque_cells = set()
+        self.terrain_obscuring_cells = set()
         log_name = str(os.getenv("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_PLAY.md") or "LOGS_FOR_AGENTS_PLAY.md")
         self._agent_log_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "..", log_name)
@@ -984,7 +987,15 @@ class Warhammer40kEnv(gym.Env):
                 np.asarray([row[0] for row in self.enemyInAttack], dtype=np.int8),
                 float(range_limit),
             )
-            targets = [int(idx) for idx in target_ids]
+            opaque_cells = {(int(x), int(y)) for x, y in getattr(self, "terrain_opaque_cells", set())}
+            obscuring_cells = {(int(x), int(y)) for x, y in getattr(self, "terrain_obscuring_cells", set())}
+            source_cell = (int(round(self.unit_coords[unit_idx][0])), int(round(self.unit_coords[unit_idx][1])))
+            for idx in target_ids:
+                target_idx = int(idx)
+                target_cell = (int(round(self.enemy_coords[target_idx][0])), int(round(self.enemy_coords[target_idx][1])))
+                report = visibility_report(source_cell, target_cell, opaque_cells, obscuring_cells)
+                if report["los"]:
+                    targets.append(target_idx)
         else:
             if not (0 <= unit_idx < len(self.enemy_health)):
                 return []
@@ -1000,7 +1011,15 @@ class Warhammer40kEnv(gym.Env):
                 np.asarray([row[0] for row in self.unitInAttack], dtype=np.int8),
                 float(range_limit),
             )
-            targets = [int(idx) for idx in target_ids]
+            opaque_cells = {(int(x), int(y)) for x, y in getattr(self, "terrain_opaque_cells", set())}
+            obscuring_cells = {(int(x), int(y)) for x, y in getattr(self, "terrain_obscuring_cells", set())}
+            source_cell = (int(round(self.enemy_coords[unit_idx][0])), int(round(self.enemy_coords[unit_idx][1])))
+            for idx in target_ids:
+                target_idx = int(idx)
+                target_cell = (int(round(self.unit_coords[target_idx][0])), int(round(self.unit_coords[target_idx][1])))
+                report = visibility_report(source_cell, target_cell, opaque_cells, obscuring_cells)
+                if report["los"]:
+                    targets.append(target_idx)
 
         self._shoot_target_cache[cache_key] = list(targets)
         return targets
@@ -3297,10 +3316,7 @@ class Warhammer40kEnv(gym.Env):
                         if self.trunc is False:
                             self._log(f"{self._format_unit_label('enemy', i)}: Advance без Assault — стрельба пропущена.")
                     else:
-                        shootAbleUnits = []
-                        for j in range(len(self.unit_health)):
-                            if self._distance_between_units("enemy", i, "model", j) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
-                                shootAbleUnits.append(j)
+                        shootAbleUnits = self.get_shoot_targets_for_unit("enemy", i)
                         if len(shootAbleUnits) > 0:
                             idOfM = np.random.choice(shootAbleUnits)
                             effect = self._maybe_use_smokescreen(
