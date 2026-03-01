@@ -1,0 +1,11 @@
+episode,ep_reward,ep_len,turn,model_vp,player_vp,vp_diff,result,end_reason,end_code
+1,0.6330539031895693,7,8,0,0,0,win,wipeout_enemy,4
+2,-0.1932886040622532,10,11,0,0,0,loss,wipeout_model,4
+3,-0.15260982627010497,10,11,0,2,-2,loss,turn_limit_Only War,4
+4,-0.03489238655326431,10,11,0,0,0,draw,turn_limit_Only War,4
+5,0.14448455106584704,10,11,0,1,-1,loss,turn_limit_Only War,4
+6,0.2721026634764265,10,11,0,0,0,draw,turn_limit_Only War,4
+7,-0.10350709929961296,10,11,0,1,-1,loss,turn_limit_Only War,4
+8,-0.23447600285119402,10,11,0,0,0,draw,turn_limit_Only War,4
+9,-0.0022572210556982323,10,11,0,1,-1,loss,turn_limit_Only War,4
+10,0.08207022701206959,10,11,0,1,-1,loss,turn_limit_Only War,4

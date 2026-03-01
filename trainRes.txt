@@ -1,1305 +1,150 @@
-Number of Lifetimes ran: 100
+Number of Lifetimes ran: 10
 
-Iteration 0 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 0 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 0 ended with reward 0.032409624730313114, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 0 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 0 ended with reward 0.03931029332703572, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 0 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 0 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 0 ended with reward 0.028125949565940774, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 0 ended with reward 0.013866360675630442, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 0 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 0 ended with reward 0.0003561353405017442, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 0 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
 Iteration 0 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
 Iteration 0 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
 Iteration 0 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 0 ended with reward 0.014424931483241464, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 0 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 0 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 0 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 0 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 0 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 12 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 12 ended with reward -0.045, enemy health [10.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 12 ended with reward 0.04491100731418172, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 12 ended with reward -0.22, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 12 ended with reward 0.009845510658470356, enemy health [10.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 12 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 12 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 12 ended with reward 0.007549774956336482, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 12 ended with reward 0.009823008603133801, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
 Iteration 12 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
 Iteration 12 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 12 ended with reward 0.13, enemy health [8.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 12 ended with reward 0.019519779110706816, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 12 ended with reward 0.08499999999999999, enemy health [9.0, 8.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 12 ended with reward 0.009485863304066502, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 12 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 12 ended with reward 0.21999999999999997, enemy health [1.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 12 ended with reward 0.02488700266298551, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 12 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 12 ended with reward 0.08499999999999999, enemy health [10.0, 8.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 12 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 24 ended with reward -0.5800000000000001, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 24 ended with reward -0.045, enemy health [10.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 24 ended with reward 0.2293235203307496, enemy health [8.0, 4.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 24 ended with reward 0.06500000000000002, enemy health [7.0, 10.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 24 ended with reward 0.08, enemy health [7.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 24 ended with reward -0.06999999999999999, enemy health [10.0, 8.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 24 ended with reward -0.18, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 24 ended with reward 0.59, enemy health [0.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 24 ended with reward 0.17658464361424372, enemy health [4.0, 10.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 24 ended with reward -0.004269664232735802, enemy health [10.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 24 ended with reward 0.255, enemy health [8.0, 9.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
+Iteration 12 ended with reward 0.002166270506873733, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 24 ended with reward 0.03, enemy health [9.0, 10.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
 Iteration 24 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 36 ended with reward 0.18475578081525995, enemy health [5.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 36 ended with reward -0.039999999999999994, enemy health [6.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 36 ended with reward 0.6674642784226794, enemy health [3.0, 6.0], model health [7.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 36 ended with reward 0.16, enemy health [1.0, 10.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 36 ended with reward 0.0454128145686435, enemy health [9.0, 10.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 36 ended with reward 0.06154503541297995, enemy health [8.0, 6.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
+Iteration 24 ended with reward 0.0050000000000000044, enemy health [7.0, 10.0], model health [9.0, 8.0], model VP 0, enemy VP 0, mission Only War
+Iteration 24 ended with reward -0.07, enemy health [9.0, 10.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 24 ended with reward 0.20500000000000002, enemy health [3.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 1, mission Only War
+Iteration 24 ended with reward 0.0007835898561161514, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 24 ended with reward -0.245, enemy health [10.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 24 ended with reward -0.12058405274972063, enemy health [10.0, 10.0], model health [6.0, 9.0], model VP 0, enemy VP 0, mission Only War
+Iteration 24 ended with reward -0.07314453170064825, enemy health [10.0, 10.0], model health [8.0, 9.0], model VP 0, enemy VP 0, mission Only War
+Iteration 24 ended with reward 0.20077379737113252, enemy health [5.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
+Iteration 24 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 24 ended with reward 0.020000000000000004, enemy health [4.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
+Iteration 36 ended with reward 0.19499999999999998, enemy health [6.0, 10.0], model health [8.0, 9.0], model VP 0, enemy VP 0, mission Only War
+Iteration 36 ended with reward 0.20637732232698494, enemy health [8.0, 5.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 36 ended with reward -0.46136540535573317, enemy health [9.0, 5.0], model health [10.0, 5.0], model VP 0, enemy VP 1, mission Only War
+Iteration 36 ended with reward 0.11, enemy health [7.0, 9.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 36 ended with reward -0.02, enemy health [5.0, 10.0], model health [9.0, 9.0], model VP 0, enemy VP 1, mission Only War
+Iteration 36 ended with reward 0.0018811771366334523, enemy health [9.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 36 ended with reward -0.031934267821785225, enemy health [10.0, 9.0], model health [9.0, 9.0], model VP 0, enemy VP 1, mission Only War
+Iteration 36 ended with reward -0.07, enemy health [10.0, 9.0], model health [4.0, 9.0], model VP 0, enemy VP 0, mission Only War
+Iteration 36 ended with reward 0.22999999999999998, enemy health [4.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
+Iteration 36 ended with reward 0.525, enemy health [0.0, 8.0], model health [9.0, 9.0], model VP 0, enemy VP 1, mission Only War
 Iteration 36 ended with reward -0.38, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 36 ended with reward 0.020000000000000004, enemy health [0.0, 4.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 36 ended with reward 0.55, enemy health [0.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 36 ended with reward -0.5800000000000001, enemy health [9.0, 8.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 36 ended with reward -0.14, enemy health [9.0, 8.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 36 ended with reward -0.43, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 48 ended with reward 0.285, enemy health [3.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 48 ended with reward 0.19, enemy health [3.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 48 ended with reward 0.3668492709363268, enemy health [5.0, 4.0], model health [10.0, 5.0], model VP 0, enemy VP 0, mission Only War
-Iteration 48 ended with reward 0.56, enemy health [0.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 48 ended with reward 0.12937483775794978, enemy health [7.0, 9.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 48 ended with reward -0.045, enemy health [9.0, 7.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 48 ended with reward -0.06705876550291337, enemy health [10.0, 10.0], model health [8.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 48 ended with reward 0.21897994243567148, enemy health [0.0, 4.0], model health [9.0, 8.0], model VP 0, enemy VP 1, mission Only War
-Iteration 48 ended with reward 0.009254247053287541, enemy health [0.0, 8.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 48 ended with reward 0.08, enemy health [7.0, 6.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 48 ended with reward 0.9190092878459428, enemy health [2.0, 6.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 48 ended with reward -0.18, enemy health [7.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 2, mission Only War
-Iteration 60 ended with reward 0.055, enemy health [4.0, 10.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 60 ended with reward 0.545, enemy health [0.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 60 ended with reward -0.35157063048632253, enemy health [3.0, 5.0], model health [8.0, 6.0], model VP 0, enemy VP 0, mission Only War
-Iteration 60 ended with reward 0.01735930063491507, enemy health [0.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 60 ended with reward 0.565, enemy health [6.0, 10.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 60 ended with reward 0.835, enemy health [1.0, 9.0], model health [8.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 60 ended with reward 0.6506296727147726, enemy health [3.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 60 ended with reward 3.43, enemy health [0.0, 0.0], model health [10.0, 4.0], model VP 0, enemy VP 1, mission Only War
+Iteration 36 ended with reward 0.12903990540992055, enemy health [2.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 1, mission Only War
+Iteration 48 ended with reward 0.004756708349552736, enemy health [8.0, 9.0], model health [9.0, 7.0], model VP 0, enemy VP 0, mission Only War
+Iteration 48 ended with reward 0.52, enemy health [8.0, 0.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 48 ended with reward 0.23500000000000001, enemy health [8.0, 5.0], model health [8.0, 7.0], model VP 0, enemy VP 1, mission Only War
+Iteration 48 ended with reward 0.16, enemy health [5.0, 9.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
+Iteration 48 ended with reward 0.385, enemy health [3.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
+Iteration 48 ended with reward 0.010000000000000009, enemy health [8.0, 5.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 48 ended with reward 0.14000000000000004, enemy health [7.0, 6.0], model health [10.0, 5.0], model VP 0, enemy VP 1, mission Only War
+Iteration 48 ended with reward 0.19535668847618198, enemy health [7.0, 10.0], model health [5.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 48 ended with reward -0.52, enemy health [4.0, 8.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
+Iteration 48 ended with reward -0.15999999999999998, enemy health [0.0, 8.0], model health [7.0, 10.0], model VP 0, enemy VP 1, mission Only War
+Iteration 48 ended with reward 0.09000000000000001, enemy health [7.0, 9.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 48 ended with reward -0.42000000000000004, enemy health [0.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
+Iteration 60 ended with reward 0.255, enemy health [6.0, 5.0], model health [10.0, 5.0], model VP 0, enemy VP 0, mission Only War
+Iteration 60 ended with reward 0.6100000000000001, enemy health [2.0, 0.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
+Iteration 60 ended with reward -0.51, enemy health [7.0, 8.0], model health [6.0, 6.0], model VP 0, enemy VP 1, mission Only War
+Iteration 60 ended with reward 0.52, enemy health [5.0, 7.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
+Iteration 60 ended with reward -0.5700000000000001, enemy health [3.0, 9.0], model health [8.0, 9.0], model VP 0, enemy VP 1, mission Only War
+Iteration 60 ended with reward 0.4033618677715155, enemy health [8.0, 3.0], model health [6.0, 9.0], model VP 0, enemy VP 0, mission Only War
+Iteration 60 ended with reward 0.5650000000000001, enemy health [8.0, 4.0], model health [6.0, 1.0], model VP 0, enemy VP 1, mission Only War
+Iteration 60 ended with reward -0.9965294643796591, enemy health [9.0, 8.0], model health [5.0, 9.0], model VP 0, enemy VP 0, mission Only War
+Iteration 60 ended with reward 0.33, enemy health [4.0, 5.0], model health [9.0, 8.0], model VP 0, enemy VP 1, mission Only War
+Iteration 60 ended with reward -0.02, enemy health [0.0, 8.0], model health [6.0, 10.0], model VP 0, enemy VP 1, mission Only War
+Iteration 60 ended with reward -0.046180079635723355, enemy health [8.0, 8.0], model health [9.0, 7.0], model VP 0, enemy VP 0, mission Only War
+Iteration 60 ended with reward 0.9242582705689197, enemy health [0.0, 2.0], model health [7.0, 9.0], model VP 0, enemy VP 1, mission Only War
+Iteration 72 ended with reward 0.015555724627670173, enemy health [9.0, 5.0], model health [9.0, 3.0], model VP 0, enemy VP 0, mission Only War
+Iteration 72 ended with reward 3.28, enemy health [0.0, 0.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
 model won!
 Major Victory
 model won!
-Iteration 60 ended with reward 0.14, enemy health [0.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 60 ended with reward 0.01656217265329561, enemy health [4.0, 5.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 60 ended with reward 0.24, enemy health [1.0, 9.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 60 ended with reward 0.055, enemy health [9.0, 8.0], model health [9.0, 10.0], model VP 0, enemy VP 2, mission Only War
-Iteration 72 ended with reward 0.445, enemy health [4.0, 7.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 72 ended with reward 0.14, enemy health [0.0, 7.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 72 ended with reward 0.7044100708085032, enemy health [5.0, 0.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 72 ended with reward 0.19, enemy health [0.0, 7.0], model health [2.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 72 ended with reward -0.51, enemy health [8.0, 6.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 72 ended with reward 0.534336196230514, enemy health [0.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 72 ended with reward -0.37849028301915094, enemy health [2.0, 9.0], model health [9.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 72 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 72 ended with reward -0.005873434342322747, enemy health [0.0, 7.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 72 ended with reward -0.52, enemy health [3.0, 4.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 72 ended with reward -1.045, enemy health [2.0, 10.0], model health [6.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 72 ended with reward -0.52, enemy health [10.0, 8.0], model health [6.0, 10.0], model VP 0, enemy VP 2, mission Only War
-Iteration 84 ended with reward -0.52, enemy health [7.0, 9.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 84 ended with reward -0.51, enemy health [0.0, 5.0], model health [10.0, 8.0], model VP 0, enemy VP 1, mission Only War
-Iteration 84 ended with reward 0.85, enemy health [1.0, 0.0], model health [9.0, 3.0], model VP 0, enemy VP 0, mission Only War
-Iteration 84 ended with reward -0.039999999999999994, enemy health [0.0, 8.0], model health [0.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 84 ended with reward -0.04999999999999999, enemy health [6.0, 6.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 84 ended with reward 0.11, enemy health [0.0, 6.0], model health [4.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 84 ended with reward 0.19834474939403562, enemy health [3.0, 9.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 84 ended with reward -0.07, enemy health [10.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 84 ended with reward -0.045, enemy health [0.0, 9.0], model health [4.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 84 ended with reward 0.007759209362989168, enemy health [4.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 84 ended with reward -0.12000000000000004, enemy health [0.0, 9.0], model health [7.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 84 ended with reward 0.07, enemy health [10.0, 7.0], model health [6.0, 10.0], model VP 0, enemy VP 2, mission Only War
-Iteration 96 ended with reward 0.11704699910719625, enemy health [6.0, 7.0], model health [8.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 96 ended with reward -0.52, enemy health [0.0, 7.0], model health [10.0, 7.0], model VP 0, enemy VP 1, mission Only War
-Iteration 96 ended with reward 3.0070464739069314, enemy health [0.0, 0.0], model health [9.0, 0.0], model VP 0, enemy VP 0, mission Only War
-model won!
+Iteration 72 ended with reward -0.42, enemy health [8.0, 7.0], model health [6.0, 3.0], model VP 0, enemy VP 1, mission Only War
+Iteration 72 ended with reward 0.515, enemy health [3.0, 9.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
+Iteration 72 ended with reward 0.77, enemy health [3.0, 9.0], model health [9.0, 9.0], model VP 0, enemy VP 1, mission Only War
+Iteration 72 ended with reward 0.7649999999999999, enemy health [1.0, 4.0], model health [6.0, 9.0], model VP 0, enemy VP 0, mission Only War
+Iteration 72 ended with reward -0.52, enemy health [10.0, 4.0], model health [8.0, 0.0], model VP 0, enemy VP 1, mission Only War
+Iteration 72 ended with reward 0.03444702518492106, enemy health [7.0, 7.0], model health [5.0, 9.0], model VP 0, enemy VP 0, mission Only War
+Iteration 72 ended with reward 0.43000000000000005, enemy health [4.0, 4.0], model health [9.0, 9.0], model VP 0, enemy VP 1, mission Only War
+Iteration 72 ended with reward -0.02, enemy health [0.0, 9.0], model health [4.0, 8.0], model VP 0, enemy VP 1, mission Only War
+Iteration 72 ended with reward -1.095, enemy health [8.0, 8.0], model health [6.0, 1.0], model VP 0, enemy VP 0, mission Only War
+Iteration 72 ended with reward -0.9864438491884306, enemy health [0.0, 4.0], model health [8.0, 9.0], model VP 0, enemy VP 1, mission Only War
+Iteration 84 ended with reward 0.14000000000000004, enemy health [9.0, 7.0], model health [5.0, 0.0], model VP 0, enemy VP 0, mission Only War
+Iteration 84 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 84 ended with reward -0.06, enemy health [9.0, 6.0], model health [7.0, 0.0], model VP 0, enemy VP 2, mission Only War
+Iteration 84 ended with reward -1.02, enemy health [4.0, 10.0], model health [9.0, 5.0], model VP 0, enemy VP 0, mission Only War
+Iteration 84 ended with reward 0.87, enemy health [5.0, 8.0], model health [10.0, 7.0], model VP 0, enemy VP 1, mission Only War
+Iteration 84 ended with reward 0.485, enemy health [3.0, 4.0], model health [8.0, 6.0], model VP 0, enemy VP 0, mission Only War
+Iteration 84 ended with reward -0.546514963417821, enemy health [10.0, 3.0], model health [6.0, 0.0], model VP 0, enemy VP 1, mission Only War
+Iteration 84 ended with reward -1.02, enemy health [7.0, 8.0], model health [7.0, 7.0], model VP 0, enemy VP 0, mission Only War
+Iteration 84 ended with reward -0.51, enemy health [7.0, 2.0], model health [10.0, 8.0], model VP 0, enemy VP 1, mission Only War
+Iteration 84 ended with reward 0.2149284727495634, enemy health [0.0, 5.0], model health [2.0, 10.0], model VP 0, enemy VP 1, mission Only War
+Iteration 84 ended with reward 0.08, enemy health [9.0, 8.0], model health [4.0, 0.0], model VP 0, enemy VP 0, mission Only War
+Iteration 84 ended with reward -0.22, enemy health [0.0, 6.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
+Iteration 96 ended with reward -0.5470648342753855, enemy health [10.0, 6.0], model health [2.0, 0.0], model VP 0, enemy VP 0, mission Only War
+Iteration 96 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 96 ended with reward 0.185, enemy health [7.0, 7.0], model health [4.0, 0.0], model VP 0, enemy VP 2, mission Only War
+Iteration 96 ended with reward 0.10607613446735692, enemy health [6.0, 9.0], model health [10.0, 4.0], model VP 0, enemy VP 0, mission Only War
+Iteration 96 ended with reward 0.435, enemy health [4.0, 9.0], model health [10.0, 5.0], model VP 0, enemy VP 1, mission Only War
+Iteration 96 ended with reward 0.525, enemy health [3.0, 5.0], model health [8.0, 8.0], model VP 0, enemy VP 0, mission Only War
+Iteration 96 ended with reward 0.24000000000000002, enemy health [9.0, 5.0], model health [9.0, 0.0], model VP 0, enemy VP 1, mission Only War
+Iteration 96 ended with reward 0.315, enemy health [7.0, 9.0], model health [6.0, 3.0], model VP 0, enemy VP 0, mission Only War
+Iteration 96 ended with reward -0.02, enemy health [8.0, 3.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
+Iteration 96 ended with reward -0.04999999999999999, enemy health [0.0, 3.0], model health [3.0, 10.0], model VP 0, enemy VP 1, mission Only War
+Iteration 96 ended with reward 0.5024724115229241, enemy health [9.0, 8.0], model health [5.0, 0.0], model VP 0, enemy VP 0, mission Only War
+Iteration 96 ended with reward 0.23355615081156933, enemy health [0.0, 1.0], model health [6.0, 10.0], model VP 0, enemy VP 1, mission Only War
+Iteration 108 ended with reward -2.02, enemy health [9.0, 9.0], model health [0.0, 0.0], model VP 0, enemy VP 0, mission Only War
+enemy won!
 Major Victory
-model won!
-Iteration 96 ended with reward -0.009999999999999995, enemy health [0.0, 4.0], model health [0.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 96 ended with reward -0.045, enemy health [9.0, 8.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 96 ended with reward 0.08, enemy health [0.0, 8.0], model health [0.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 96 ended with reward 0.1091931380936112, enemy health [4.0, 7.0], model health [3.0, 5.0], model VP 0, enemy VP 0, mission Only War
-Iteration 96 ended with reward 0.11381992036427664, enemy health [10.0, 8.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 96 ended with reward 0.02769606380218447, enemy health [0.0, 10.0], model health [5.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 96 ended with reward 0.11, enemy health [2.0, 6.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 96 ended with reward 0.08, enemy health [0.0, 9.0], model health [4.0, 4.0], model VP 0, enemy VP 1, mission Only War
-Iteration 96 ended with reward 0.31, enemy health [8.0, 7.0], model health [6.0, 9.0], model VP 0, enemy VP 2, mission Only War
-Iteration 108 ended with reward -0.51, enemy health [6.0, 8.0], model health [4.0, 10.0], model VP 0, enemy VP 0, mission Only War
+enemy won!
+Iteration 108 ended with reward -0.22, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
+Iteration 108 ended with reward -0.545, enemy health [7.0, 9.0], model health [3.0, 0.0], model VP 0, enemy VP 2, mission Only War
+enemy won!
+Major Victory
+enemy won!
+Iteration 108 ended with reward -0.33, enemy health [3.0, 8.0], model health [10.0, 3.0], model VP 0, enemy VP 0, mission Only War
 draw!
 Major Victory
 enemy won!
-Iteration 108 ended with reward 0.055, enemy health [0.0, 7.0], model health [9.0, 5.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-model won!
-Iteration 108 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 108 ended with reward -2.02, enemy health [0.0, 3.0], model health [0.0, 0.0], model VP 0, enemy VP 0, mission Only War
+Iteration 108 ended with reward -0.52, enemy health [4.0, 9.0], model health [10.0, 5.0], model VP 0, enemy VP 1, mission Only War
 enemy won!
 Major Victory
 enemy won!
-Iteration 108 ended with reward -0.47565322333292986, enemy health [9.0, 9.0], model health [8.0, 8.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 108 ended with reward 0.09341067426288059, enemy health [0.0, 7.0], model health [0.0, 9.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-model won!
-Iteration 108 ended with reward -0.52, enemy health [5.0, 7.0], model health [0.0, 4.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 108 ended with reward 0.16999999999999998, enemy health [9.0, 6.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 108 ended with reward 0.16999999999999998, enemy health [0.0, 5.0], model health [6.0, 7.0], model VP 0, enemy VP 0, mission Only War
+Iteration 108 ended with reward 0.5700000000000001, enemy health [2.0, 5.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
 draw!
 Major Victory
 model won!
-Iteration 108 ended with reward -0.49458391043508676, enemy health [5.0, 4.0], model health [9.0, 7.0], model VP 0, enemy VP 0, mission Only War
+Iteration 108 ended with reward -0.4966217617565235, enemy health [10.0, 6.0], model health [7.0, 0.0], model VP 0, enemy VP 1, mission Only War
+enemy won!
+Major Victory
+enemy won!
+Iteration 108 ended with reward -0.5700000000000001, enemy health [9.0, 10.0], model health [6.0, 0.0], model VP 0, enemy VP 0, mission Only War
 draw!
 Major Victory
 enemy won!
-Iteration 108 ended with reward 0.019440648609077387, enemy health [0.0, 8.0], model health [0.0, 4.0], model VP 0, enemy VP 1, mission Only War
+Iteration 108 ended with reward 0.1207493125405321, enemy health [6.0, 2.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
 enemy won!
 Major Victory
 model won!
-Iteration 108 ended with reward -0.52, enemy health [10.0, 8.0], model health [5.0, 10.0], model VP 0, enemy VP 2, mission Only War
+Iteration 108 ended with reward 0.27, enemy health [0.0, 3.0], model health [0.0, 9.0], model VP 0, enemy VP 1, mission Only War
 enemy won!
-Major Victory
-enemy won!
-Iteration 120 ended with reward 0.0333949650269283, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 120 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 120 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 120 ended with reward 0.004971014491339822, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 120 ended with reward 0.0018871762616042888, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 120 ended with reward 0.0028051417267847788, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 120 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 120 ended with reward -0.04940098568808804, enemy health [9.0, 7.0], model health [7.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 120 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 120 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 120 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 120 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 132 ended with reward -0.04008810063566927, enemy health [10.0, 10.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 132 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 132 ended with reward 0.006272647785002507, enemy health [10.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 132 ended with reward -0.045, enemy health [10.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 132 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 132 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 132 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 132 ended with reward 0.19, enemy health [7.0, 7.0], model health [8.0, 6.0], model VP 0, enemy VP 0, mission Only War
-Iteration 132 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 132 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 132 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 132 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 144 ended with reward 0.21480897868116003, enemy health [7.0, 7.0], model health [6.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 144 ended with reward -0.18, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 144 ended with reward 0.27999999999999997, enemy health [8.0, 4.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 144 ended with reward -0.42000000000000004, enemy health [10.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 144 ended with reward -0.07, enemy health [10.0, 10.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 144 ended with reward -0.045, enemy health [10.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 144 ended with reward -0.045, enemy health [10.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 144 ended with reward -1.02, enemy health [9.0, 7.0], model health [8.0, 5.0], model VP 0, enemy VP 0, mission Only War
-Iteration 144 ended with reward 0.03966993217909449, enemy health [10.0, 9.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 144 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 144 ended with reward 0.030713181034438722, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 144 ended with reward -0.06757650672131263, enemy health [10.0, 10.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 156 ended with reward 0.028975875401822226, enemy health [9.0, 8.0], model health [7.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 156 ended with reward 0.08008331019803634, enemy health [10.0, 9.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 156 ended with reward 0.13770329614269008, enemy health [8.0, 1.0], model health [9.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 156 ended with reward -0.09999999999999999, enemy health [7.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 156 ended with reward -0.12, enemy health [10.0, 7.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 156 ended with reward -0.09500000000000001, enemy health [10.0, 10.0], model health [9.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 156 ended with reward 0.5192269063339252, enemy health [8.0, 10.0], model health [6.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 156 ended with reward 1.011444134232277, enemy health [9.0, 0.0], model health [8.0, 6.0], model VP 0, enemy VP 0, mission Only War
-Iteration 156 ended with reward -0.02, enemy health [10.0, 6.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 156 ended with reward -0.06376680333957425, enemy health [10.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 156 ended with reward -0.0185727423074599, enemy health [10.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 156 ended with reward 0.0816426404968344, enemy health [10.0, 9.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 168 ended with reward 0.675, enemy health [7.0, 7.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 168 ended with reward 0.2, enemy health [3.0, 8.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 168 ended with reward 0.20000000000000004, enemy health [6.0, 2.0], model health [8.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 168 ended with reward 0.08931447842367721, enemy health [6.0, 6.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 168 ended with reward 0.01847791982455687, enemy health [6.0, 7.0], model health [7.0, 8.0], model VP 0, enemy VP 1, mission Only War
-Iteration 168 ended with reward -0.09999999999999998, enemy health [7.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 168 ended with reward -0.39, enemy health [9.0, 8.0], model health [5.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 168 ended with reward -0.52, enemy health [10.0, 0.0], model health [3.0, 3.0], model VP 0, enemy VP 0, mission Only War
-Iteration 168 ended with reward -0.15999999999999998, enemy health [9.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 168 ended with reward -0.019999999999999962, enemy health [5.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 168 ended with reward 0.06, enemy health [10.0, 7.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 168 ended with reward 0.14495973117704625, enemy health [7.0, 9.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 180 ended with reward 0.15000000000000002, enemy health [10.0, 6.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 180 ended with reward 0.19, enemy health [5.0, 9.0], model health [8.0, 2.0], model VP 0, enemy VP 0, mission Only War
-Iteration 180 ended with reward 0.30500000000000005, enemy health [4.0, 3.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 180 ended with reward -0.545, enemy health [7.0, 5.0], model health [8.0, 6.0], model VP 0, enemy VP 0, mission Only War
-Iteration 180 ended with reward 0.11965385676370452, enemy health [6.0, 5.0], model health [7.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 180 ended with reward 0.010000000000000009, enemy health [9.0, 4.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 180 ended with reward 0.7580733481499883, enemy health [9.0, 1.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 180 ended with reward 0.14, enemy health [9.0, 0.0], model health [0.0, 4.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-model won!
-Iteration 180 ended with reward -0.045, enemy health [8.0, 9.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 180 ended with reward 0.06, enemy health [2.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 180 ended with reward -0.03999999999999998, enemy health [9.0, 6.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 180 ended with reward 0.6197972147390752, enemy health [7.0, 7.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 192 ended with reward -0.4949102028485083, enemy health [10.0, 6.0], model health [8.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 192 ended with reward -0.48680339887498947, enemy health [6.0, 9.0], model health [6.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 192 ended with reward 0.575, enemy health [3.0, 4.0], model health [8.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 192 ended with reward 0.33, enemy health [1.0, 4.0], model health [8.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 192 ended with reward -0.3593479455643573, enemy health [2.0, 4.0], model health [8.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 192 ended with reward 4.582050621392166, enemy health [0.0, 0.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-model won!
-Major Victory
-model won!
-Iteration 192 ended with reward -1.045, enemy health [7.0, 3.0], model health [5.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 192 ended with reward 0.004498752040288085, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 192 ended with reward 0.15000000000000002, enemy health [10.0, 4.0], model health [9.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 192 ended with reward 0.020000000000000018, enemy health [1.0, 8.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 192 ended with reward -0.04199427174807726, enemy health [8.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 2, mission Only War
-Iteration 192 ended with reward 0.365, enemy health [5.0, 7.0], model health [5.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 204 ended with reward 0.27999999999999997, enemy health [3.0, 6.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 204 ended with reward -2.02, enemy health [7.0, 10.0], model health [0.0, 0.0], model VP 0, enemy VP 0, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 204 ended with reward -0.9876951901790022, enemy health [6.0, 6.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 204 ended with reward -0.33, enemy health [1.0, 1.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 204 ended with reward 0.7487370671192849, enemy health [1.0, 2.0], model health [8.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 204 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 204 ended with reward 1.137062223501224, enemy health [10.0, 0.0], model health [0.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 204 ended with reward -0.42000000000000004, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 204 ended with reward 0.5419789375559548, enemy health [8.0, 0.0], model health [7.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 204 ended with reward 0.145, enemy health [2.0, 4.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 204 ended with reward -0.03999999999999998, enemy health [9.0, 8.0], model health [10.0, 10.0], model VP 0, enemy VP 2, mission Only War
-Iteration 204 ended with reward -0.4990061798917205, enemy health [4.0, 8.0], model health [5.0, 6.0], model VP 0, enemy VP 0, mission Only War
-Iteration 216 ended with reward -0.22, enemy health [0.0, 7.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 216 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 216 ended with reward 0.08981244318007313, enemy health [5.0, 5.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-model won!
-Iteration 216 ended with reward 4.675, enemy health [0.0, 0.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-model won!
-Major Victory
-model won!
-Iteration 216 ended with reward 0.09234507965343747, enemy health [2.0, 0.0], model health [9.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 216 ended with reward 0.012226335115012291, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 216 ended with reward 0.01802383122638803, enemy health [10.0, 0.0], model health [0.0, 3.0], model VP 0, enemy VP 0, mission Only War
-Iteration 216 ended with reward 0.4394427190999916, enemy health [9.0, 10.0], model health [6.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 216 ended with reward -1.0244707885753996, enemy health [9.0, 0.0], model health [5.0, 2.0], model VP 0, enemy VP 0, mission Only War
-Iteration 216 ended with reward 0.08, enemy health [4.0, 3.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 216 ended with reward -0.34889734393212646, enemy health [10.0, 10.0], model health [9.0, 7.0], model VP 0, enemy VP 3, mission Only War
-Iteration 216 ended with reward 0.475, enemy health [2.0, 6.0], model health [5.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 228 ended with reward 0.28, enemy health [0.0, 8.0], model health [6.0, 7.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-model won!
-Iteration 228 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 228 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 228 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 228 ended with reward 0.27, enemy health [3.0, 0.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-model won!
-Iteration 228 ended with reward -0.5800000000000001, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 228 ended with reward -2.02, enemy health [10.0, 0.0], model health [0.0, 0.0], model VP 0, enemy VP 0, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 228 ended with reward 0.7, enemy health [9.0, 6.0], model health [8.0, 6.0], model VP 0, enemy VP 1, mission Only War
-Iteration 228 ended with reward 0.030539499721454675, enemy health [10.0, 0.0], model health [0.0, 4.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-model won!
-Iteration 228 ended with reward -0.9874920816603108, enemy health [6.0, 1.0], model health [10.0, 6.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 228 ended with reward 0.08013878188659973, enemy health [8.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 3, mission Only War
-enemy won!
-Major Victory
-model won!
-Iteration 228 ended with reward -1.02, enemy health [1.0, 8.0], model health [6.0, 9.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 240 ended with reward 0.005320386078425762, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 240 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 240 ended with reward -0.045, enemy health [10.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 240 ended with reward -0.07, enemy health [10.0, 10.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 240 ended with reward 0.028424176232190224, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 240 ended with reward 0.11999999999999998, enemy health [5.0, 9.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 240 ended with reward 0.0024384943082233867, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 240 ended with reward -0.41, enemy health [10.0, 5.0], model health [7.0, 5.0], model VP 0, enemy VP 2, mission Only War
-Iteration 240 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 240 ended with reward 0.011165221270443604, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 240 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 240 ended with reward 0.010015188883233356, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 252 ended with reward -0.0200425199816808, enemy health [10.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 252 ended with reward 0.10380441182517515, enemy health [5.0, 10.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 252 ended with reward -0.02, enemy health [9.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 252 ended with reward 0.2537513355572813, enemy health [10.0, 5.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 252 ended with reward -0.1983057970249423, enemy health [10.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 252 ended with reward 0.7217487406821073, enemy health [8.0, 2.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 252 ended with reward 0.02511356829059724, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 252 ended with reward 0.042125424343860754, enemy health [9.0, 6.0], model health [9.0, 4.0], model VP 0, enemy VP 3, mission Only War
-Iteration 252 ended with reward -0.245, enemy health [10.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 252 ended with reward 0.16000000000000003, enemy health [8.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 252 ended with reward 0.029222285709561344, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 252 ended with reward -0.19698598810977172, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 264 ended with reward 0.08, enemy health [10.0, 7.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 264 ended with reward -0.02, enemy health [6.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 264 ended with reward 0.0049999999999999975, enemy health [8.0, 10.0], model health [9.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 264 ended with reward 0.09999999999999998, enemy health [9.0, 1.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 264 ended with reward -0.0013305435195312548, enemy health [9.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 264 ended with reward 0.325, enemy health [5.0, 3.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 264 ended with reward -0.07, enemy health [10.0, 9.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 264 ended with reward -0.02, enemy health [7.0, 9.0], model health [10.0, 5.0], model VP 0, enemy VP 3, mission Only War
-Iteration 264 ended with reward -0.02, enemy health [8.0, 9.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 264 ended with reward -0.009999999999999967, enemy health [5.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 264 ended with reward 0.08898031343499577, enemy health [7.0, 10.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 264 ended with reward -0.145, enemy health [9.0, 10.0], model health [10.0, 7.0], model VP 0, enemy VP 1, mission Only War
-Iteration 276 ended with reward 1.0255634390090536, enemy health [5.0, 6.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 276 ended with reward 0.060766578012577135, enemy health [6.0, 7.0], model health [9.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 276 ended with reward 0.14, enemy health [7.0, 9.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 276 ended with reward 0.59, enemy health [9.0, 0.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 276 ended with reward -0.545, enemy health [10.0, 7.0], model health [8.0, 4.0], model VP 0, enemy VP 0, mission Only War
-Iteration 276 ended with reward -0.37580255627127024, enemy health [4.0, 1.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 276 ended with reward 0.1540556281903837, enemy health [5.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 1, mission Only War
-Iteration 276 ended with reward 0.08986024149136346, enemy health [7.0, 8.0], model health [10.0, 8.0], model VP 0, enemy VP 3, mission Only War
-Iteration 276 ended with reward 0.1203708798216374, enemy health [9.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 276 ended with reward -0.545, enemy health [4.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 276 ended with reward 0.08986832980505137, enemy health [5.0, 9.0], model health [8.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 276 ended with reward 0.06, enemy health [8.0, 9.0], model health [10.0, 6.0], model VP 0, enemy VP 2, mission Only War
-Iteration 288 ended with reward -0.5353650852363964, enemy health [7.0, 5.0], model health [9.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 288 ended with reward 0.18500000000000003, enemy health [6.0, 8.0], model health [4.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 288 ended with reward 0.5427908791080092, enemy health [7.0, 9.0], model health [10.0, 5.0], model VP 0, enemy VP 1, mission Only War
-Iteration 288 ended with reward -0.045, enemy health [9.0, 0.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 288 ended with reward 0.30000000000000004, enemy health [8.0, 8.0], model health [9.0, 1.0], model VP 1, enemy VP 1, mission Only War
-Iteration 288 ended with reward 0.29000000000000004, enemy health [3.0, 0.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 288 ended with reward 0.025786426327072388, enemy health [4.0, 9.0], model health [9.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 288 ended with reward -0.52, enemy health [8.0, 6.0], model health [9.0, 10.0], model VP 0, enemy VP 3, mission Only War
-Iteration 288 ended with reward 0.6781380137716274, enemy health [7.0, 6.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 288 ended with reward -1.045, enemy health [5.0, 9.0], model health [3.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 288 ended with reward -1.02, enemy health [4.0, 6.0], model health [5.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 288 ended with reward -0.5173719113678806, enemy health [9.0, 10.0], model health [8.0, 4.0], model VP 0, enemy VP 2, mission Only War
-Iteration 300 ended with reward 0.14863209124914054, enemy health [7.0, 5.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 300 ended with reward 0.06499999999999999, enemy health [8.0, 10.0], model health [1.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 300 ended with reward -1.07, enemy health [9.0, 8.0], model health [2.0, 5.0], model VP 0, enemy VP 1, mission Only War
-Iteration 300 ended with reward -0.21854571092396646, enemy health [10.0, 0.0], model health [2.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 300 ended with reward -0.2408113883008419, enemy health [9.0, 9.0], model health [9.0, 0.0], model VP 2, enemy VP 1, mission Only War
-Iteration 300 ended with reward 0.32, enemy health [3.0, 0.0], model health [7.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 300 ended with reward 0.5499999999999999, enemy health [5.0, 0.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 300 ended with reward -0.44, enemy health [4.0, 4.0], model health [8.0, 10.0], model VP 0, enemy VP 4, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 300 ended with reward -0.5700000000000001, enemy health [7.0, 8.0], model health [6.0, 2.0], model VP 0, enemy VP 0, mission Only War
-Iteration 300 ended with reward -1.02, enemy health [7.0, 10.0], model health [3.0, 4.0], model VP 0, enemy VP 1, mission Only War
-Iteration 300 ended with reward -0.02, enemy health [5.0, 9.0], model health [7.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 300 ended with reward -0.02, enemy health [10.0, 9.0], model health [8.0, 4.0], model VP 0, enemy VP 2, mission Only War
-Iteration 312 ended with reward 0.14, enemy health [5.0, 8.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 312 ended with reward 0.08930682682157573, enemy health [10.0, 10.0], model health [2.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 312 ended with reward -2.02, enemy health [10.0, 10.0], model health [0.0, 0.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 312 ended with reward -0.9948478181956696, enemy health [9.0, 0.0], model health [2.0, 5.0], model VP 0, enemy VP 0, mission Only War
-Iteration 312 ended with reward 0.05, enemy health [10.0, 6.0], model health [7.0, 0.0], model VP 3, enemy VP 1, mission Only War
-Iteration 312 ended with reward 0.24500000000000002, enemy health [4.0, 0.0], model health [0.0, 9.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-model won!
-Iteration 312 ended with reward 3.57992158663136, enemy health [0.0, 0.0], model health [6.0, 10.0], model VP 0, enemy VP 1, mission Only War
-model won!
-Major Victory
-model won!
-Iteration 312 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 312 ended with reward 0.21500000000000002, enemy health [6.0, 10.0], model health [6.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 312 ended with reward -2.02, enemy health [10.0, 9.0], model health [0.0, 0.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 312 ended with reward 0.16, enemy health [8.0, 7.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 312 ended with reward -0.52, enemy health [10.0, 7.0], model health [9.0, 5.0], model VP 0, enemy VP 2, mission Only War
-Iteration 324 ended with reward 0.35000000000000003, enemy health [1.0, 7.0], model health [6.0, 8.0], model VP 0, enemy VP 1, mission Only War
-Iteration 324 ended with reward 0.00042937883364617234, enemy health [10.0, 8.0], model health [1.0, 9.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-model won!
-Iteration 324 ended with reward 0.014362260014646945, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 324 ended with reward -2.02, enemy health [10.0, 0.0], model health [0.0, 0.0], model VP 0, enemy VP 0, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 324 ended with reward -0.09500000000000001, enemy health [9.0, 6.0], model health [2.0, 0.0], model VP 3, enemy VP 2, mission Only War
-Iteration 324 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 324 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 324 ended with reward -0.07, enemy health [10.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 324 ended with reward -0.52, enemy health [9.0, 10.0], model health [4.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 324 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 324 ended with reward 0.555, enemy health [3.0, 7.0], model health [7.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 324 ended with reward 0.012219814582758648, enemy health [8.0, 6.0], model health [9.0, 7.0], model VP 0, enemy VP 2, mission Only War
-Iteration 336 ended with reward 0.17, enemy health [0.0, 8.0], model health [5.0, 8.0], model VP 0, enemy VP 1, mission Only War
-Iteration 336 ended with reward 0.022386363978721492, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 336 ended with reward -0.22, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 336 ended with reward 0.023849906208783123, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 336 ended with reward -2.02, enemy health [10.0, 8.0], model health [0.0, 0.0], model VP 3, enemy VP 2, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 336 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 336 ended with reward 0.025743543074880807, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 336 ended with reward 0.03, enemy health [10.0, 9.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 336 ended with reward -2.02, enemy health [10.0, 10.0], model health [0.0, 0.0], model VP 0, enemy VP 0, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 336 ended with reward 0.26875159805152377, enemy health [8.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 336 ended with reward 0.04500000000000001, enemy health [6.0, 6.0], model health [8.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 336 ended with reward 0.33299921640339797, enemy health [6.0, 1.0], model health [9.0, 8.0], model VP 0, enemy VP 2, mission Only War
-Iteration 348 ended with reward -0.6947953974427516, enemy health [0.0, 10.0], model health [5.0, 4.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 348 ended with reward 0.03530856894623755, enemy health [8.0, 10.0], model health [7.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 348 ended with reward -0.06999999999999999, enemy health [8.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 348 ended with reward -0.045, enemy health [10.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 348 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 348 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 348 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 348 ended with reward 0.043833537176125655, enemy health [6.0, 10.0], model health [7.0, 8.0], model VP 0, enemy VP 1, mission Only War
-Iteration 348 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 348 ended with reward 0.21999999999999997, enemy health [2.0, 8.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 348 ended with reward -0.9941709459319847, enemy health [8.0, 6.0], model health [5.0, 9.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 348 ended with reward 0.5577137337219733, enemy health [8.0, 0.0], model health [9.0, 8.0], model VP 0, enemy VP 2, mission Only War
-enemy won!
-Major Victory
-model won!
-Iteration 360 ended with reward 0.0011187420807834236, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 360 ended with reward 0.11, enemy health [8.0, 10.0], model health [8.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 360 ended with reward -0.165, enemy health [9.0, 6.0], model health [7.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 360 ended with reward -0.07, enemy health [10.0, 8.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 360 ended with reward -0.22459276795882419, enemy health [10.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 360 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 360 ended with reward 0.014247626127786753, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 360 ended with reward -0.04999999999999999, enemy health [4.0, 8.0], model health [9.0, 5.0], model VP 0, enemy VP 1, mission Only War
-Iteration 360 ended with reward 0.000599014311911965, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 360 ended with reward -0.07272077938642145, enemy health [2.0, 7.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 360 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 360 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 372 ended with reward 0.255, enemy health [10.0, 7.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 372 ended with reward 0.335, enemy health [7.0, 9.0], model health [4.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 372 ended with reward -0.47, enemy health [9.0, 7.0], model health [8.0, 3.0], model VP 0, enemy VP 0, mission Only War
-Iteration 372 ended with reward -0.03273081071146635, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 2, mission Only War
-Iteration 372 ended with reward -0.02, enemy health [10.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 372 ended with reward -0.24, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 372 ended with reward -0.095, enemy health [9.0, 9.0], model health [9.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 372 ended with reward 0.0032006059983303455, enemy health [7.0, 9.0], model health [8.0, 2.0], model VP 0, enemy VP 1, mission Only War
-Iteration 372 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 372 ended with reward -1.0180042372120595, enemy health [3.0, 4.0], model health [8.0, 6.0], model VP 0, enemy VP 0, mission Only War
-Iteration 372 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 372 ended with reward -0.22020269845929413, enemy health [10.0, 10.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 384 ended with reward 0.62286966774648, enemy health [10.0, 6.0], model health [9.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 384 ended with reward 0.4167420759761733, enemy health [6.0, 10.0], model health [6.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 384 ended with reward 0.029719862811785, enemy health [10.0, 7.0], model health [9.0, 3.0], model VP 0, enemy VP 0, mission Only War
-Iteration 384 ended with reward 0.17155112911132123, enemy health [8.0, 3.0], model health [10.0, 10.0], model VP 0, enemy VP 2, mission Only War
-Iteration 384 ended with reward 0.19437776018107866, enemy health [5.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 384 ended with reward -0.24, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 384 ended with reward -0.5942825822161311, enemy health [9.0, 8.0], model health [8.0, 4.0], model VP 0, enemy VP 0, mission Only War
-Iteration 384 ended with reward 0.0024724115229241405, enemy health [8.0, 9.0], model health [8.0, 0.0], model VP 0, enemy VP 1, mission Only War
-Iteration 384 ended with reward -0.18, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 384 ended with reward -0.02, enemy health [3.0, 7.0], model health [10.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 384 ended with reward -0.12000000000000001, enemy health [10.0, 10.0], model health [8.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 384 ended with reward 0.06041699201790187, enemy health [5.0, 7.0], model health [6.0, 8.0], model VP 0, enemy VP 1, mission Only War
-Iteration 396 ended with reward -0.59, enemy health [10.0, 9.0], model health [7.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 396 ended with reward -1.02, enemy health [5.0, 10.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 396 ended with reward -0.52, enemy health [10.0, 7.0], model health [3.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 396 ended with reward 0.03999999999999998, enemy health [4.0, 2.0], model health [10.0, 10.0], model VP 0, enemy VP 2, mission Only War
-Iteration 396 ended with reward 0.29000000000000004, enemy health [4.0, 4.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 396 ended with reward -0.04576869178269916, enemy health [10.0, 10.0], model health [7.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 396 ended with reward 0.2597601336828845, enemy health [5.0, 9.0], model health [2.0, 6.0], model VP 0, enemy VP 0, mission Only War
-Iteration 396 ended with reward 0.10999999999999999, enemy health [9.0, 3.0], model health [9.0, 0.0], model VP 0, enemy VP 1, mission Only War
-Iteration 396 ended with reward -0.07, enemy health [10.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 396 ended with reward -0.045, enemy health [4.0, 9.0], model health [9.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 396 ended with reward -0.22999999999999998, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 2, mission Only War
-Iteration 396 ended with reward 0.5800000000000001, enemy health [4.0, 3.0], model health [6.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 408 ended with reward -0.33, enemy health [5.0, 7.0], model health [6.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 408 ended with reward 0.56, enemy health [2.0, 8.0], model health [10.0, 6.0], model VP 0, enemy VP 0, mission Only War
-Iteration 408 ended with reward -2.02, enemy health [8.0, 8.0], model health [0.0, 0.0], model VP 0, enemy VP 0, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 408 ended with reward 4.67, enemy health [0.0, 0.0], model health [9.0, 9.0], model VP 0, enemy VP 2, mission Only War
-model won!
-Major Victory
-model won!
-Iteration 408 ended with reward -0.9964109527261134, enemy health [3.0, 4.0], model health [8.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 408 ended with reward 0.08449592122065265, enemy health [10.0, 7.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 408 ended with reward 0.265, enemy health [4.0, 9.0], model health [0.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 408 ended with reward -0.52, enemy health [8.0, 5.0], model health [4.0, 0.0], model VP 0, enemy VP 1, mission Only War
-Iteration 408 ended with reward 0.015075210302761429, enemy health [10.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 408 ended with reward -0.039999999999999994, enemy health [4.0, 7.0], model health [7.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 408 ended with reward -0.030000000000000013, enemy health [10.0, 4.0], model health [10.0, 10.0], model VP 0, enemy VP 2, mission Only War
-Iteration 408 ended with reward 0.19, enemy health [2.0, 5.0], model health [6.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 420 ended with reward -0.5700000000000001, enemy health [7.0, 6.0], model health [0.0, 8.0], model VP 0, enemy VP 1, mission Only War
-Iteration 420 ended with reward -0.08670243434207602, enemy health [0.0, 10.0], model health [4.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 420 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 420 ended with reward 0.00628882368278969, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 420 ended with reward 0.029965339608043404, enemy health [3.0, 6.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 420 ended with reward 0.2795597069697311, enemy health [10.0, 4.0], model health [7.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 420 ended with reward 0.29000000000000004, enemy health [2.0, 10.0], model health [0.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 420 ended with reward -2.02, enemy health [10.0, 4.0], model health [0.0, 0.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 420 ended with reward 0.08, enemy health [10.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 420 ended with reward 0.18500000000000003, enemy health [5.0, 8.0], model health [6.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 420 ended with reward 0.43442253286932453, enemy health [8.0, 6.0], model health [10.0, 10.0], model VP 0, enemy VP 2, mission Only War
-Iteration 420 ended with reward -1.02, enemy health [3.0, 7.0], model health [6.0, 7.0], model VP 0, enemy VP 1, mission Only War
-Iteration 432 ended with reward 0.16999999999999998, enemy health [2.0, 7.0], model health [0.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 432 ended with reward -2.02, enemy health [0.0, 10.0], model health [0.0, 0.0], model VP 0, enemy VP 0, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 432 ended with reward 0.03237394526506296, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 432 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 432 ended with reward 0.11, enemy health [3.0, 3.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 432 ended with reward 0.21, enemy health [7.0, 4.0], model health [6.0, 7.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-model won!
-Iteration 432 ended with reward 0.78, enemy health [0.0, 10.0], model health [0.0, 9.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-model won!
-Iteration 432 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 432 ended with reward -0.36, enemy health [10.0, 3.0], model health [9.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 432 ended with reward 0.2, enemy health [6.0, 9.0], model health [5.0, 0.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-model won!
-Iteration 432 ended with reward -0.42, enemy health [6.0, 5.0], model health [9.0, 10.0], model VP 0, enemy VP 2, mission Only War
-Iteration 432 ended with reward -0.545, enemy health [4.0, 7.0], model health [1.0, 2.0], model VP 0, enemy VP 1, mission Only War
-Iteration 444 ended with reward 0.315, enemy health [1.0, 9.0], model health [0.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 444 ended with reward -0.045, enemy health [10.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 444 ended with reward 0.15786600053497557, enemy health [8.0, 8.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 444 ended with reward -0.028909968717476746, enemy health [8.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 444 ended with reward -1.02, enemy health [4.0, 2.0], model health [10.0, 6.0], model VP 0, enemy VP 0, mission Only War
-Iteration 444 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 444 ended with reward 0.03935769685735046, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 444 ended with reward 0.01591820416095885, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 444 ended with reward -0.9954074702642542, enemy health [7.0, 2.0], model health [8.0, 3.0], model VP 0, enemy VP 0, mission Only War
-Iteration 444 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 444 ended with reward 0.11319474155855769, enemy health [6.0, 5.0], model health [8.0, 9.0], model VP 0, enemy VP 2, mission Only War
-Iteration 444 ended with reward -2.045, enemy health [7.0, 8.0], model health [0.0, 0.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 456 ended with reward 0.78, enemy health [0.0, 10.0], model health [0.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 456 ended with reward -0.045, enemy health [10.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 456 ended with reward 0.20991189936433075, enemy health [4.0, 8.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 456 ended with reward 0.20676711581180937, enemy health [5.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 456 ended with reward -0.08999999999999997, enemy health [0.0, 3.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 456 ended with reward -0.12076525379396988, enemy health [10.0, 10.0], model health [6.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 456 ended with reward -0.245, enemy health [10.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 456 ended with reward -0.029881019791856808, enemy health [10.0, 10.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 456 ended with reward -0.9987626144851667, enemy health [8.0, 4.0], model health [8.0, 1.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 456 ended with reward 0.010070288096764295, enemy health [10.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 456 ended with reward 0.625, enemy health [8.0, 2.0], model health [5.0, 10.0], model VP 0, enemy VP 2, mission Only War
-Iteration 456 ended with reward 0.02700907567377265, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 468 ended with reward -0.49591533499907464, enemy health [0.0, 7.0], model health [0.0, 4.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 468 ended with reward 0.16999999999999998, enemy health [4.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 468 ended with reward -0.46091209848302905, enemy health [2.0, 8.0], model health [10.0, 5.0], model VP 0, enemy VP 0, mission Only War
-Iteration 468 ended with reward 0.09000000000000001, enemy health [3.0, 9.0], model health [8.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 468 ended with reward 0.009863537800196375, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 468 ended with reward 0.02897691663778487, enemy health [7.0, 9.0], model health [5.0, 5.0], model VP 0, enemy VP 0, mission Only War
-Iteration 468 ended with reward -0.04927283133495811, enemy health [9.0, 10.0], model health [7.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 468 ended with reward 0.63, enemy health [7.0, 7.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 468 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 468 ended with reward -0.48, enemy health [6.0, 10.0], model health [9.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 468 ended with reward 0.235, enemy health [10.0, 3.0], model health [5.0, 9.0], model VP 0, enemy VP 2, mission Only War
-enemy won!
-Major Victory
-model won!
-Iteration 468 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 480 ended with reward 0.026584643614243706, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 480 ended with reward -0.53, enemy health [2.0, 10.0], model health [10.0, 3.0], model VP 0, enemy VP 1, mission Only War
-Iteration 480 ended with reward -0.45999999999999996, enemy health [1.0, 8.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 480 ended with reward 0.010597530186682462, enemy health [5.0, 7.0], model health [8.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 480 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 480 ended with reward -0.42, enemy health [7.0, 8.0], model health [2.0, 5.0], model VP 0, enemy VP 0, mission Only War
-Iteration 480 ended with reward -0.02, enemy health [9.0, 10.0], model health [9.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 480 ended with reward 0.115, enemy health [5.0, 8.0], model health [9.0, 6.0], model VP 0, enemy VP 0, mission Only War
-Iteration 480 ended with reward -0.020182540029810188, enemy health [10.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 480 ended with reward 0.14882524421726329, enemy health [5.0, 10.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 480 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 480 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 492 ended with reward -0.04136540535573317, enemy health [10.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 492 ended with reward -0.33999999999999997, enemy health [1.0, 10.0], model health [10.0, 4.0], model VP 0, enemy VP 1, mission Only War
-Iteration 492 ended with reward -0.52, enemy health [4.0, 9.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 492 ended with reward 0.31, enemy health [2.0, 8.0], model health [8.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 492 ended with reward 0.018593363781572683, enemy health [10.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 492 ended with reward 0.55, enemy health [5.0, 9.0], model health [5.0, 6.0], model VP 0, enemy VP 0, mission Only War
-Iteration 492 ended with reward 0.3424384943082234, enemy health [1.0, 10.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 492 ended with reward -0.41500814994303226, enemy health [7.0, 9.0], model health [8.0, 5.0], model VP 0, enemy VP 0, mission Only War
-Iteration 492 ended with reward -0.02, enemy health [9.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 492 ended with reward 0.49, enemy health [0.0, 9.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 492 ended with reward 0.14, enemy health [10.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 492 ended with reward 0.08169770977408845, enemy health [9.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 504 ended with reward 0.020000000000000018, enemy health [3.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 504 ended with reward 0.024275624349479514, enemy health [3.0, 9.0], model health [10.0, 6.0], model VP 0, enemy VP 1, mission Only War
-Iteration 504 ended with reward 0.08999999999999997, enemy health [0.0, 8.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 504 ended with reward 0.385, enemy health [3.0, 8.0], model health [8.0, 3.0], model VP 0, enemy VP 1, mission Only War
-Iteration 504 ended with reward 0.23500000000000001, enemy health [10.0, 3.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 504 ended with reward 0.28, enemy health [4.0, 9.0], model health [3.0, 3.0], model VP 0, enemy VP 0, mission Only War
-Iteration 504 ended with reward 0.56, enemy health [0.0, 9.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 504 ended with reward 0.020000000000000018, enemy health [10.0, 7.0], model health [10.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 504 ended with reward 0.08361046444100817, enemy health [8.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 504 ended with reward -0.02, enemy health [0.0, 9.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 504 ended with reward 0.09999999999999998, enemy health [4.0, 6.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 504 ended with reward -0.15999999999999998, enemy health [9.0, 8.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 516 ended with reward 1.0895965690468057, enemy health [0.0, 5.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 516 ended with reward 0.08, enemy health [3.0, 10.0], model health [10.0, 7.0], model VP 0, enemy VP 1, mission Only War
-Iteration 516 ended with reward 0.08000000000000002, enemy health [0.0, 7.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 516 ended with reward -1.02, enemy health [6.0, 10.0], model health [7.0, 6.0], model VP 0, enemy VP 1, mission Only War
-Iteration 516 ended with reward 0.11, enemy health [8.0, 4.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 516 ended with reward 0.29000000000000004, enemy health [5.0, 8.0], model health [4.0, 2.0], model VP 0, enemy VP 0, mission Only War
-Iteration 516 ended with reward 0.6651135682905972, enemy health [0.0, 7.0], model health [4.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 516 ended with reward -0.02, enemy health [10.0, 8.0], model health [10.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 516 ended with reward 0.0936022699657406, enemy health [6.0, 10.0], model health [8.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 516 ended with reward 0.0004114767256631069, enemy health [0.0, 10.0], model health [8.0, 5.0], model VP 0, enemy VP 0, mission Only War
-Iteration 516 ended with reward 0.7400000000000001, enemy health [0.0, 2.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 516 ended with reward -0.13, enemy health [8.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 528 ended with reward -0.02, enemy health [0.0, 7.0], model health [8.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 528 ended with reward 0.12167862958995487, enemy health [3.0, 9.0], model health [10.0, 7.0], model VP 0, enemy VP 1, mission Only War
-Iteration 528 ended with reward -0.72, enemy health [0.0, 7.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 528 ended with reward -0.010000000000000016, enemy health [9.0, 7.0], model health [7.0, 6.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 528 ended with reward 0.47772001872658765, enemy health [10.0, 6.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 528 ended with reward -0.52, enemy health [7.0, 10.0], model health [6.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 528 ended with reward -0.4830199171142004, enemy health [0.0, 7.0], model health [2.0, 6.0], model VP 0, enemy VP 0, mission Only War
-Iteration 528 ended with reward 0.004061124922092155, enemy health [9.0, 7.0], model health [8.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 528 ended with reward 0.15983556545411337, enemy health [5.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 528 ended with reward -0.486218135731276, enemy health [0.0, 7.0], model health [9.0, 5.0], model VP 0, enemy VP 0, mission Only War
-Iteration 528 ended with reward 0.14449280627365416, enemy health [0.0, 2.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 528 ended with reward -0.44, enemy health [9.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 540 ended with reward -0.07, enemy health [0.0, 8.0], model health [7.0, 0.0], model VP 0, enemy VP 1, mission Only War
-Iteration 540 ended with reward 0.1798889017055265, enemy health [1.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 540 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 540 ended with reward -0.22694325743839397, enemy health [10.0, 10.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 540 ended with reward 0.9199999999999999, enemy health [6.0, 3.0], model health [10.0, 10.0], model VP 1, enemy VP 0, mission Only War
-Iteration 540 ended with reward 0.08, enemy health [6.0, 9.0], model health [3.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 540 ended with reward 0.21999999999999997, enemy health [0.0, 4.0], model health [4.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 540 ended with reward -0.018855228187947593, enemy health [10.0, 5.0], model health [6.0, 0.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 540 ended with reward -0.62, enemy health [7.0, 5.0], model health [7.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 540 ended with reward 0.5344379898047625, enemy health [0.0, 7.0], model health [4.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 540 ended with reward 0.27, enemy health [0.0, 3.0], model health [9.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 540 ended with reward 0.05646062134370435, enemy health [9.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 552 ended with reward 0.14, enemy health [0.0, 6.0], model health [9.0, 0.0], model VP 0, enemy VP 1, mission Only War
-Iteration 552 ended with reward 0.33000000000000007, enemy health [0.0, 8.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-model won!
-Iteration 552 ended with reward 0.002577378627184821, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 552 ended with reward 0.28, enemy health [10.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 552 ended with reward -0.45, enemy health [8.0, 6.0], model health [9.0, 10.0], model VP 2, enemy VP 0, mission Only War
-Iteration 552 ended with reward -0.02, enemy health [7.0, 10.0], model health [3.0, 0.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 552 ended with reward -0.44, enemy health [0.0, 6.0], model health [7.0, 10.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 552 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 552 ended with reward -0.67, enemy health [9.0, 6.0], model health [8.0, 2.0], model VP 0, enemy VP 1, mission Only War
-Iteration 552 ended with reward 0.05, enemy health [0.0, 8.0], model health [0.0, 9.0], model VP 1, enemy VP 0, mission Only War
-model won!
-Major Victory
-model won!
-Iteration 552 ended with reward -0.42, enemy health [0.0, 5.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 552 ended with reward 0.10840770846134704, enemy health [8.0, 9.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 564 ended with reward -0.02, enemy health [0.0, 5.0], model health [10.0, 0.0], model VP 0, enemy VP 1, mission Only War
-Iteration 564 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 564 ended with reward -0.09999999999999999, enemy health [9.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 564 ended with reward 0.11000000000000003, enemy health [7.0, 3.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 564 ended with reward 0.7999999999999999, enemy health [6.0, 4.0], model health [9.0, 10.0], model VP 2, enemy VP 0, mission Only War
-Iteration 564 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 564 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 564 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 564 ended with reward -0.02, enemy health [9.0, 6.0], model health [10.0, 0.0], model VP 0, enemy VP 1, mission Only War
-Iteration 564 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 564 ended with reward 0.11, enemy health [0.0, 3.0], model health [9.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 564 ended with reward 0.32, enemy health [4.0, 9.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-model won!
-Iteration 576 ended with reward -0.4798344193017077, enemy health [0.0, 5.0], model health [8.0, 0.0], model VP 0, enemy VP 1, mission Only War
-Iteration 576 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 576 ended with reward 0.15499999999999997, enemy health [4.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 576 ended with reward -0.33, enemy health [2.0, 1.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 576 ended with reward -0.54, enemy health [8.0, 4.0], model health [9.0, 8.0], model VP 2, enemy VP 0, mission Only War
-model won!
-Major Victory
-enemy won!
-Iteration 576 ended with reward 0.01693304873944374, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 576 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 576 ended with reward 0.14, enemy health [10.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 576 ended with reward -0.02, enemy health [9.0, 8.0], model health [10.0, 0.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 576 ended with reward 0.029061124922092157, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 576 ended with reward 3.35, enemy health [0.0, 0.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
-model won!
-Major Victory
-model won!
-Iteration 576 ended with reward 0.032698526295852, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 588 ended with reward -0.4828045554270711, enemy health [0.0, 6.0], model health [6.0, 0.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 588 ended with reward -0.06000000000000001, enemy health [10.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 1, mission Only War
-Iteration 588 ended with reward 0.4700000000000002, enemy health [0.0, 8.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 588 ended with reward -0.22, enemy health [1.0, 0.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 588 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 588 ended with reward -0.03397674732957374, enemy health [10.0, 10.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 588 ended with reward -0.18, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 588 ended with reward 0.06, enemy health [10.0, 8.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 588 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 588 ended with reward -0.36, enemy health [2.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 588 ended with reward 0.055, enemy health [9.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 588 ended with reward -0.07, enemy health [9.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 600 ended with reward 0.03134729438121155, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 600 ended with reward 0.14, enemy health [9.0, 8.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 600 ended with reward -0.52, enemy health [0.0, 7.0], model health [10.0, 7.0], model VP 0, enemy VP 1, mission Only War
-Iteration 600 ended with reward 0.10794915583007417, enemy health [2.0, 0.0], model health [8.0, 8.0], model VP 0, enemy VP 1, mission Only War
-Iteration 600 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 600 ended with reward 0.325, enemy health [2.0, 9.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 600 ended with reward -0.15, enemy health [10.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 600 ended with reward 0.5900000000000001, enemy health [6.0, 0.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 600 ended with reward -0.009999999999999995, enemy health [8.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 600 ended with reward 0.27499999999999997, enemy health [2.0, 10.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 600 ended with reward 0.10000000000000003, enemy health [5.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 600 ended with reward 0.03999999999999998, enemy health [5.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 612 ended with reward -0.01876465784329996, enemy health [10.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 612 ended with reward 0.21500000000000002, enemy health [10.0, 9.0], model health [8.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 612 ended with reward 0.26, enemy health [0.0, 5.0], model health [10.0, 7.0], model VP 0, enemy VP 1, mission Only War
-Iteration 612 ended with reward 0.013292209314379955, enemy health [3.0, 0.0], model health [10.0, 5.0], model VP 0, enemy VP 1, mission Only War
-Iteration 612 ended with reward -0.1985183659393532, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 612 ended with reward 0.7050000000000001, enemy health [0.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 612 ended with reward 0.08, enemy health [10.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 612 ended with reward 0.205, enemy health [2.0, 0.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 612 ended with reward -0.07, enemy health [9.0, 10.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 612 ended with reward 0.135, enemy health [2.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 612 ended with reward 0.007321245982864894, enemy health [5.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 612 ended with reward -0.02, enemy health [7.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 624 ended with reward 0.51, enemy health [6.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 624 ended with reward -0.545, enemy health [10.0, 10.0], model health [9.0, 5.0], model VP 0, enemy VP 1, mission Only War
-Iteration 624 ended with reward 0.715, enemy health [0.0, 3.0], model health [10.0, 7.0], model VP 0, enemy VP 1, mission Only War
-Iteration 624 ended with reward 3.59, enemy health [0.0, 0.0], model health [7.0, 8.0], model VP 0, enemy VP 1, mission Only War
-model won!
-Major Victory
-model won!
-Iteration 624 ended with reward 0.26, enemy health [3.0, 9.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 624 ended with reward -0.02, enemy health [0.0, 8.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 624 ended with reward 0.08, enemy health [10.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 624 ended with reward 3.560931539253987, enemy health [0.0, 0.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-model won!
-Major Victory
-model won!
-Iteration 624 ended with reward 0.04036752061379175, enemy health [9.0, 5.0], model health [8.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 624 ended with reward -0.52, enemy health [2.0, 8.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 624 ended with reward -0.52, enemy health [7.0, 9.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 624 ended with reward 0.08, enemy health [4.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 636 ended with reward -0.044999999999999984, enemy health [6.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 636 ended with reward 0.031887035843926465, enemy health [8.0, 7.0], model health [10.0, 5.0], model VP 0, enemy VP 1, mission Only War
-Iteration 636 ended with reward 0.225, enemy health [0.0, 4.0], model health [5.0, 7.0], model VP 0, enemy VP 1, mission Only War
-Iteration 636 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 636 ended with reward 0.21999999999999997, enemy health [2.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 636 ended with reward 0.22000000000000003, enemy health [0.0, 3.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 636 ended with reward -0.15999999999999998, enemy health [9.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 636 ended with reward 0.007321245982864894, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 636 ended with reward 0.705, enemy health [1.0, 4.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 636 ended with reward 0.030000000000000027, enemy health [0.0, 7.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 636 ended with reward 0.775, enemy health [1.0, 9.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 636 ended with reward 0.08499999999999999, enemy health [4.0, 9.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 648 ended with reward 0.207953912549349, enemy health [6.0, 9.0], model health [6.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 648 ended with reward -0.02832519190768091, enemy health [10.0, 8.0], model health [9.0, 4.0], model VP 0, enemy VP 1, mission Only War
-Iteration 648 ended with reward -0.72, enemy health [0.0, 5.0], model health [4.0, 8.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 648 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 648 ended with reward 0.26, enemy health [2.0, 9.0], model health [6.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 648 ended with reward -0.005413812651491098, enemy health [0.0, 4.0], model health [9.0, 6.0], model VP 0, enemy VP 0, mission Only War
-Iteration 648 ended with reward 0.14, enemy health [8.0, 6.0], model health [10.0, 8.0], model VP 0, enemy VP 1, mission Only War
-Iteration 648 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 648 ended with reward 0.24000000000000002, enemy health [2.0, 5.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 648 ended with reward 0.860076071369634, enemy health [0.0, 3.0], model health [7.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 648 ended with reward -0.030000000000000027, enemy health [0.0, 9.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 648 ended with reward 0.034093393103004715, enemy health [0.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 660 ended with reward -0.39, enemy health [7.0, 9.0], model health [7.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 660 ended with reward -0.031980390271855674, enemy health [7.0, 7.0], model health [10.0, 7.0], model VP 0, enemy VP 1, mission Only War
-Iteration 660 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 660 ended with reward 0.26, enemy health [10.0, 6.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 660 ended with reward 0.6787938803298914, enemy health [0.0, 6.0], model health [7.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 660 ended with reward -0.02, enemy health [0.0, 4.0], model health [9.0, 5.0], model VP 0, enemy VP 0, mission Only War
-Iteration 660 ended with reward -1.02, enemy health [9.0, 5.0], model health [5.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 660 ended with reward -0.03999999999999998, enemy health [10.0, 6.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 660 ended with reward 0.14, enemy health [0.0, 6.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 660 ended with reward -0.52, enemy health [0.0, 4.0], model health [7.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 660 ended with reward -0.52, enemy health [0.0, 8.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 660 ended with reward 0.11491625353493623, enemy health [0.0, 5.0], model health [6.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 672 ended with reward -0.02, enemy health [10.0, 10.0], model health [8.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 672 ended with reward -1.02, enemy health [4.0, 4.0], model health [10.0, 6.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 672 ended with reward -0.045, enemy health [9.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 672 ended with reward 0.04475085723478368, enemy health [9.0, 4.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 672 ended with reward 0.23, enemy health [0.0, 5.0], model health [6.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 672 ended with reward -0.02, enemy health [0.0, 4.0], model health [7.0, 6.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 672 ended with reward -1.02, enemy health [10.0, 4.0], model health [5.0, 10.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 672 ended with reward 0.11983351810813547, enemy health [9.0, 3.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 672 ended with reward -0.485139937792779, enemy health [0.0, 7.0], model health [7.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 672 ended with reward 0.32, enemy health [0.0, 2.0], model health [9.0, 7.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-model won!
-Iteration 672 ended with reward 0.2505289644919528, enemy health [0.0, 4.0], model health [9.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 672 ended with reward 0.11, enemy health [0.0, 4.0], model health [5.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 684 ended with reward 0.5168656620937231, enemy health [9.0, 9.0], model health [8.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 684 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 684 ended with reward 0.25, enemy health [4.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 684 ended with reward 0.8795274572632674, enemy health [2.0, 6.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 684 ended with reward 0.165, enemy health [0.0, 8.0], model health [7.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 684 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 684 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 684 ended with reward -0.07, enemy health [9.0, 4.0], model health [8.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 684 ended with reward -0.02, enemy health [0.0, 9.0], model health [9.0, 6.0], model VP 0, enemy VP 0, mission Only War
-Iteration 684 ended with reward 0.0013808797784988513, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 684 ended with reward 0.20833248030855406, enemy health [0.0, 3.0], model health [7.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 684 ended with reward 0.16999999999999998, enemy health [0.0, 1.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-model won!
-Iteration 696 ended with reward -0.02, enemy health [8.0, 9.0], model health [8.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 696 ended with reward -0.009828958029186645, enemy health [10.0, 10.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 696 ended with reward 0.09000000000000002, enemy health [1.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 696 ended with reward 0.34500000000000003, enemy health [4.0, 7.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 696 ended with reward -0.52, enemy health [0.0, 8.0], model health [3.0, 5.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 696 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 696 ended with reward -0.0052473307596265645, enemy health [10.0, 10.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 696 ended with reward 0.14, enemy health [8.0, 1.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 696 ended with reward 0.16083788262152948, enemy health [0.0, 6.0], model health [10.0, 6.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-model won!
-Iteration 696 ended with reward 0.04994562903143094, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 696 ended with reward -0.32, enemy health [0.0, 6.0], model health [7.0, 0.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 696 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 708 ended with reward 0.05499999999999999, enemy health [8.0, 9.0], model health [4.0, 0.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-model won!
-Iteration 708 ended with reward 0.24375513243505773, enemy health [3.0, 8.0], model health [8.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 708 ended with reward -0.52, enemy health [3.0, 7.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 708 ended with reward 0.365, enemy health [1.0, 8.0], model health [5.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 708 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 708 ended with reward -0.37000000000000005, enemy health [10.0, 10.0], model health [10.0, 6.0], model VP 0, enemy VP 1, mission Only War
-Iteration 708 ended with reward 0.9783427448396257, enemy health [3.0, 8.0], model health [7.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 708 ended with reward 0.0034146794338951736, enemy health [8.0, 1.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 708 ended with reward 0.022354253421908953, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 708 ended with reward -0.07, enemy health [10.0, 9.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 708 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 708 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 720 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 720 ended with reward 0.11, enemy health [0.0, 8.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 720 ended with reward 0.75, enemy health [0.0, 7.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 720 ended with reward -0.11659229153865297, enemy health [3.0, 10.0], model health [4.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 720 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 720 ended with reward 0.0028215221565815437, enemy health [8.0, 10.0], model health [9.0, 7.0], model VP 0, enemy VP 1, mission Only War
-Iteration 720 ended with reward -0.5700000000000001, enemy health [4.0, 10.0], model health [5.0, 8.0], model VP 0, enemy VP 2, mission Only War
-Iteration 720 ended with reward -0.9932738247007125, enemy health [9.0, 0.0], model health [3.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 720 ended with reward 0.009502347573741604, enemy health [9.0, 10.0], model health [9.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 720 ended with reward -0.01269796789158024, enemy health [10.0, 10.0], model health [9.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 720 ended with reward -0.043528282364484173, enemy health [10.0, 10.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 720 ended with reward 0.004453366736223409, enemy health [10.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 732 ended with reward -0.07, enemy health [10.0, 10.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 732 ended with reward 0.27999999999999997, enemy health [0.0, 2.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 732 ended with reward 0.08, enemy health [0.0, 7.0], model health [6.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 732 ended with reward 0.35500000000000004, enemy health [3.0, 10.0], model health [3.0, 4.0], model VP 0, enemy VP 1, mission Only War
-Iteration 732 ended with reward 0.09000000000000001, enemy health [7.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 1, mission Only War
-Iteration 732 ended with reward 0.12523770826803882, enemy health [5.0, 9.0], model health [10.0, 7.0], model VP 0, enemy VP 2, mission Only War
-Iteration 732 ended with reward 0.09000000000000002, enemy health [6.0, 10.0], model health [4.0, 7.0], model VP 0, enemy VP 3, mission Only War
-Iteration 732 ended with reward 0.15500000000000003, enemy health [10.0, 0.0], model health [0.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 732 ended with reward 0.11, enemy health [9.0, 7.0], model health [9.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 732 ended with reward 0.215, enemy health [10.0, 7.0], model health [7.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 732 ended with reward 0.14, enemy health [10.0, 6.0], model health [7.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 732 ended with reward 0.11500000000000002, enemy health [5.0, 9.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 744 ended with reward -0.18, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 744 ended with reward -0.02, enemy health [0.0, 5.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 744 ended with reward 0.047259537923665364, enemy health [0.0, 8.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 744 ended with reward 0.375, enemy health [4.0, 8.0], model health [3.0, 6.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-model won!
-Iteration 744 ended with reward 0.16999999999999998, enemy health [3.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 744 ended with reward -0.52, enemy health [4.0, 9.0], model health [9.0, 6.0], model VP 0, enemy VP 2, mission Only War
-Iteration 744 ended with reward -0.38, enemy health [3.0, 10.0], model health [4.0, 8.0], model VP 0, enemy VP 4, mission Only War
-Iteration 744 ended with reward -0.52, enemy health [9.0, 0.0], model health [0.0, 8.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 744 ended with reward 0.03999999999999998, enemy health [7.0, 6.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 744 ended with reward -0.42, enemy health [7.0, 8.0], model health [7.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 744 ended with reward 0.03706352161678867, enemy health [8.0, 7.0], model health [8.0, 7.0], model VP 0, enemy VP 1, mission Only War
-Iteration 744 ended with reward 1.1372912579568235, enemy health [0.0, 7.0], model health [7.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 756 ended with reward 0.0050000000000000044, enemy health [9.0, 8.0], model health [8.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 756 ended with reward 0.08, enemy health [0.0, 4.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 756 ended with reward 0.11, enemy health [0.0, 7.0], model health [8.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 756 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 756 ended with reward -0.07, enemy health [3.0, 8.0], model health [9.0, 10.0], model VP 0, enemy VP 2, mission Only War
-Iteration 756 ended with reward 0.11, enemy health [7.0, 8.0], model health [9.0, 6.0], model VP 0, enemy VP 2, mission Only War
-Iteration 756 ended with reward -0.325, enemy health [6.0, 7.0], model health [2.0, 8.0], model VP 0, enemy VP 4, mission Only War
-Iteration 756 ended with reward 0.005319411623198089, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 756 ended with reward -0.5122398609135203, enemy health [7.0, 3.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 756 ended with reward -0.51, enemy health [9.0, 5.0], model health [7.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 756 ended with reward -0.42, enemy health [8.0, 7.0], model health [9.0, 7.0], model VP 0, enemy VP 1, mission Only War
-Iteration 756 ended with reward -0.039999999999999994, enemy health [0.0, 9.0], model health [3.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 768 ended with reward 0.5562592339553183, enemy health [8.0, 7.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 768 ended with reward 0.3372007872506428, enemy health [0.0, 2.0], model health [9.0, 5.0], model VP 0, enemy VP 0, mission Only War
-Iteration 768 ended with reward 0.28, enemy health [0.0, 3.0], model health [5.0, 9.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-model won!
-Iteration 768 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 768 ended with reward 0.28500719253011725, enemy health [5.0, 2.0], model health [9.0, 10.0], model VP 0, enemy VP 2, mission Only War
-Iteration 768 ended with reward -0.03304205912651208, enemy health [9.0, 9.0], model health [7.0, 0.0], model VP 0, enemy VP 2, mission Only War
-Iteration 768 ended with reward 0.3449640736573805, enemy health [6.0, 9.0], model health [4.0, 5.0], model VP 0, enemy VP 5, mission Only War
-Iteration 768 ended with reward 0.022433226165524896, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 768 ended with reward -0.3628990029658735, enemy health [1.0, 3.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 768 ended with reward -0.545, enemy health [10.0, 5.0], model health [6.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 768 ended with reward 0.13, enemy health [1.0, 7.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 768 ended with reward -0.02, enemy health [0.0, 10.0], model health [4.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 780 ended with reward 0.805, enemy health [10.0, 0.0], model health [9.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 780 ended with reward 0.335, enemy health [0.0, 2.0], model health [10.0, 3.0], model VP 0, enemy VP 0, mission Only War
-Iteration 780 ended with reward 0.006965154437308421, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 780 ended with reward -0.245, enemy health [10.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 780 ended with reward 0.06000000000000005, enemy health [5.0, 0.0], model health [8.0, 10.0], model VP 0, enemy VP 2, mission Only War
-Iteration 780 ended with reward -2.02, enemy health [9.0, 10.0], model health [0.0, 0.0], model VP 0, enemy VP 2, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 780 ended with reward -1.02, enemy health [7.0, 10.0], model health [4.0, 6.0], model VP 0, enemy VP 5, mission Only War
-Iteration 780 ended with reward -0.03286689740250301, enemy health [10.0, 9.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 780 ended with reward 0.7000000000000001, enemy health [1.0, 0.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 780 ended with reward -1.02, enemy health [8.0, 6.0], model health [2.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 780 ended with reward 0.1823127003853262, enemy health [1.0, 4.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 780 ended with reward 1.0408340855860843e-17, enemy health [0.0, 10.0], model health [1.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 792 ended with reward -0.52, enemy health [10.0, 0.0], model health [7.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 792 ended with reward -0.52, enemy health [0.0, 4.0], model health [9.0, 3.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 792 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 792 ended with reward 0.25141334812999167, enemy health [7.0, 7.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 792 ended with reward -1.02, enemy health [6.0, 0.0], model health [2.0, 7.0], model VP 0, enemy VP 2, mission Only War
-Iteration 792 ended with reward 0.03496117814536831, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 792 ended with reward -0.02, enemy health [9.0, 10.0], model health [6.0, 1.0], model VP 0, enemy VP 5, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 792 ended with reward 0.4315774329475379, enemy health [9.0, 6.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 792 ended with reward 2.98, enemy health [0.0, 0.0], model health [10.0, 5.0], model VP 0, enemy VP 0, mission Only War
-model won!
-Major Victory
-model won!
-Iteration 792 ended with reward 0.11, enemy health [8.0, 6.0], model health [2.0, 10.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-model won!
-Iteration 792 ended with reward -0.02, enemy health [3.0, 6.0], model health [10.0, 8.0], model VP 0, enemy VP 1, mission Only War
-Iteration 792 ended with reward -2.02, enemy health [0.0, 10.0], model health [0.0, 0.0], model VP 0, enemy VP 0, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 804 ended with reward -0.52, enemy health [10.0, 0.0], model health [2.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 804 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 804 ended with reward -0.09500000000000001, enemy health [9.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 804 ended with reward 0.11500000000000002, enemy health [7.0, 5.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 804 ended with reward -0.49603081866510235, enemy health [7.0, 0.0], model health [0.0, 6.0], model VP 0, enemy VP 2, mission Only War
-Iteration 804 ended with reward -0.045, enemy health [10.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 804 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 804 ended with reward -0.4758450595861439, enemy health [9.0, 7.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 804 ended with reward 0.029645655973204562, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 804 ended with reward 0.01235455276791944, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 804 ended with reward 0.11, enemy health [5.0, 4.0], model health [10.0, 7.0], model VP 0, enemy VP 1, mission Only War
-Iteration 804 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 816 ended with reward -2.02, enemy health [10.0, 0.0], model health [0.0, 0.0], model VP 0, enemy VP 0, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 816 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 816 ended with reward 0.00042937883364617234, enemy health [7.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 816 ended with reward -0.013998694629368244, enemy health [9.0, 2.0], model health [9.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 816 ended with reward -2.02, enemy health [10.0, 0.0], model health [0.0, 0.0], model VP 0, enemy VP 2, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 816 ended with reward -0.44500000000000006, enemy health [9.0, 10.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 816 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 816 ended with reward -0.02, enemy health [8.0, 5.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 816 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 816 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 816 ended with reward -0.6941709459319847, enemy health [7.0, 1.0], model health [9.0, 8.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 816 ended with reward 0.019747265340274288, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 828 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 828 ended with reward -0.032040456271339474, enemy health [9.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 828 ended with reward 0.27, enemy health [4.0, 8.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 828 ended with reward 0.20014819777464438, enemy health [6.0, 5.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 828 ended with reward 0.022802139485233075, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 828 ended with reward 0.10999999999999997, enemy health [2.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 828 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 828 ended with reward -0.02, enemy health [7.0, 5.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 828 ended with reward -0.029647535701145034, enemy health [10.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 828 ended with reward 0.14, enemy health [8.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 828 ended with reward 0.014808978681160009, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 828 ended with reward -0.19838246903292586, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 840 ended with reward 0.09186327482565558, enemy health [10.0, 8.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 840 ended with reward 0.013634921540449926, enemy health [7.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 840 ended with reward -0.52, enemy health [6.0, 7.0], model health [9.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 840 ended with reward -0.07999999999999999, enemy health [6.0, 5.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 840 ended with reward -0.045, enemy health [10.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 840 ended with reward -0.045, enemy health [3.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 840 ended with reward -0.18, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 840 ended with reward -0.5975658350974743, enemy health [7.0, 5.0], model health [10.0, 4.0], model VP 0, enemy VP 0, mission Only War
-Iteration 840 ended with reward 0.06, enemy health [5.0, 9.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 840 ended with reward 0.14, enemy health [8.0, 5.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 840 ended with reward 0.12967064318131816, enemy health [7.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 840 ended with reward 0.039961712502581355, enemy health [10.0, 8.0], model health [9.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 852 ended with reward 0.16241170857586348, enemy health [10.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 852 ended with reward -0.51, enemy health [5.0, 7.0], model health [7.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 852 ended with reward -0.33, enemy health [3.0, 7.0], model health [5.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 852 ended with reward -0.49655262608250034, enemy health [5.0, 5.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 852 ended with reward 0.09147344063956181, enemy health [10.0, 8.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 852 ended with reward 0.5697193935544103, enemy health [0.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 852 ended with reward -0.24, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 852 ended with reward 0.8750000000000001, enemy health [8.0, 8.0], model health [9.0, 2.0], model VP 1, enemy VP 0, mission Only War
-Iteration 852 ended with reward 0.25, enemy health [2.0, 8.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 852 ended with reward -0.08500000000000002, enemy health [8.0, 2.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 852 ended with reward 0.56, enemy health [0.0, 9.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 852 ended with reward 0.87, enemy health [9.0, 3.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 864 ended with reward 0.11085049207345966, enemy health [10.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 864 ended with reward 0.13143536655631438, enemy health [7.0, 8.0], model health [2.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 864 ended with reward 0.5744556951675298, enemy health [1.0, 7.0], model health [4.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 864 ended with reward -0.990451407051477, enemy health [5.0, 5.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 864 ended with reward 0.007423493278687374, enemy health [10.0, 10.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 864 ended with reward 0.06, enemy health [0.0, 6.0], model health [9.0, 8.0], model VP 0, enemy VP 1, mission Only War
-Iteration 864 ended with reward -0.0729309367425445, enemy health [10.0, 10.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 864 ended with reward -0.039999999999999994, enemy health [8.0, 10.0], model health [8.0, 0.0], model VP 1, enemy VP 0, mission Only War
-model won!
-Major Victory
-enemy won!
-Iteration 864 ended with reward 0.14, enemy health [3.0, 6.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 864 ended with reward -0.020000000000000018, enemy health [4.0, 5.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 864 ended with reward -0.020000000000000004, enemy health [0.0, 5.0], model health [9.0, 5.0], model VP 0, enemy VP 1, mission Only War
-Iteration 864 ended with reward 0.3716972696365196, enemy health [10.0, 1.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 876 ended with reward 0.43781393381803374, enemy health [10.0, 8.0], model health [4.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 876 ended with reward 0.21999999999999997, enemy health [6.0, 10.0], model health [2.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 876 ended with reward -1.02, enemy health [2.0, 8.0], model health [4.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 876 ended with reward -0.07, enemy health [10.0, 10.0], model health [8.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 876 ended with reward 0.22000000000000003, enemy health [3.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 876 ended with reward 0.585, enemy health [0.0, 2.0], model health [7.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 876 ended with reward -0.42000000000000004, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 876 ended with reward 0.017637603187266215, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 876 ended with reward -0.22, enemy health [2.0, 6.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 876 ended with reward -0.5700000000000001, enemy health [5.0, 8.0], model health [4.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 876 ended with reward -0.54, enemy health [0.0, 6.0], model health [4.0, 2.0], model VP 0, enemy VP 1, mission Only War
-Iteration 876 ended with reward -1.02, enemy health [9.0, 2.0], model health [10.0, 8.0], model VP 0, enemy VP 1, mission Only War
-Iteration 888 ended with reward -0.39, enemy health [6.0, 10.0], model health [5.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 888 ended with reward 0.25, enemy health [8.0, 4.0], model health [5.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 888 ended with reward 0.07999999999999997, enemy health [0.0, 8.0], model health [4.0, 10.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-model won!
-Iteration 888 ended with reward 0.004944714143372426, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 888 ended with reward -0.13, enemy health [2.0, 8.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 888 ended with reward -0.6922452415208897, enemy health [0.0, 2.0], model health [9.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 888 ended with reward 0.18077794898144042, enemy health [10.0, 4.0], model health [9.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 888 ended with reward -0.045, enemy health [10.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 888 ended with reward 0.08499999999999999, enemy health [2.0, 7.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 888 ended with reward 0.22000000000000003, enemy health [7.0, 5.0], model health [7.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 888 ended with reward 0.085, enemy health [0.0, 6.0], model health [1.0, 4.0], model VP 0, enemy VP 1, mission Only War
-Iteration 888 ended with reward -1.02, enemy health [9.0, 1.0], model health [9.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 900 ended with reward 0.19, enemy health [7.0, 7.0], model health [3.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 900 ended with reward 0.2978889744907202, enemy health [8.0, 3.0], model health [4.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 900 ended with reward 0.0019254384706509772, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 900 ended with reward -0.42000000000000004, enemy health [10.0, 8.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 900 ended with reward -0.3925321376109008, enemy health [0.0, 10.0], model health [10.0, 6.0], model VP 0, enemy VP 0, mission Only War
-Iteration 900 ended with reward 3.463939960746275, enemy health [0.0, 0.0], model health [5.0, 10.0], model VP 0, enemy VP 1, mission Only War
-model won!
-Major Victory
-model won!
-Iteration 900 ended with reward 0.4967582025662803, enemy health [10.0, 5.0], model health [10.0, 6.0], model VP 0, enemy VP 0, mission Only War
-Iteration 900 ended with reward -0.0748528137423857, enemy health [10.0, 7.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 900 ended with reward 0.55, enemy health [0.0, 2.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 900 ended with reward -0.52, enemy health [9.0, 6.0], model health [10.0, 6.0], model VP 0, enemy VP 0, mission Only War
-Iteration 900 ended with reward -0.42000000000000004, enemy health [0.0, 8.0], model health [4.0, 5.0], model VP 0, enemy VP 1, mission Only War
-Iteration 900 ended with reward -1.02, enemy health [8.0, 1.0], model health [7.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 912 ended with reward 0.4255109505639756, enemy health [9.0, 9.0], model health [4.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 912 ended with reward -0.9919202168650487, enemy health [8.0, 5.0], model health [3.0, 9.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 912 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 912 ended with reward 0.22693588265911405, enemy health [6.0, 6.0], model health [10.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 912 ended with reward 0.11, enemy health [0.0, 6.0], model health [9.0, 3.0], model VP 0, enemy VP 0, mission Only War
-Iteration 912 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 912 ended with reward 0.465, enemy health [10.0, 6.0], model health [10.0, 7.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-model won!
-Iteration 912 ended with reward -0.07, enemy health [10.0, 8.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 912 ended with reward 3.5300000000000002, enemy health [0.0, 0.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-model won!
-Major Victory
-model won!
-Iteration 912 ended with reward -0.02, enemy health [10.0, 7.0], model health [8.0, 7.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 912 ended with reward -0.02, enemy health [0.0, 7.0], model health [0.0, 6.0], model VP 0, enemy VP 1, mission Only War
-Iteration 912 ended with reward 0.5800000000000001, enemy health [3.0, 1.0], model health [8.0, 10.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-model won!
-Iteration 924 ended with reward 0.105, enemy health [10.0, 10.0], model health [5.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 924 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 924 ended with reward -0.18, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 924 ended with reward 1.0681380137716274, enemy health [7.0, 0.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 924 ended with reward 0.020000000000000018, enemy health [0.0, 2.0], model health [10.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 924 ended with reward -0.32, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 924 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 924 ended with reward 0.23096692229072263, enemy health [5.0, 7.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 924 ended with reward -0.12, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 924 ended with reward 0.0018443204611992136, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 924 ended with reward -0.045, enemy health [0.0, 8.0], model health [0.0, 1.0], model VP 0, enemy VP 1, mission Only War
-Iteration 924 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 936 ended with reward -0.52, enemy health [10.0, 9.0], model health [7.0, 0.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 936 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 936 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 936 ended with reward -0.49392483938118775, enemy health [7.0, 0.0], model health [10.0, 6.0], model VP 0, enemy VP 0, mission Only War
-Iteration 936 ended with reward -0.02, enemy health [0.0, 3.0], model health [3.0, 0.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 936 ended with reward 0.02707169108519748, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 936 ended with reward -0.2337626854385005, enemy health [10.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 936 ended with reward -0.5356879363444952, enemy health [6.0, 8.0], model health [3.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 936 ended with reward 0.009700958081777279, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 936 ended with reward -0.01661316347822034, enemy health [10.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 936 ended with reward -2.02, enemy health [0.0, 9.0], model health [0.0, 0.0], model VP 0, enemy VP 1, mission Only War
-enemy won!
-Major Victory
-enemy won!
-Iteration 936 ended with reward -0.18, enemy health [10.0, 6.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 948 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 948 ended with reward -0.07, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 948 ended with reward -0.32, enemy health [9.0, 8.0], model health [8.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 948 ended with reward 0.22000000000000003, enemy health [6.0, 0.0], model health [9.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 948 ended with reward -0.02, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 948 ended with reward -0.145, enemy health [8.0, 7.0], model health [9.0, 8.0], model VP 0, enemy VP 1, mission Only War
-Iteration 948 ended with reward 0.13, enemy health [9.0, 4.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 948 ended with reward 0.32000000000000006, enemy health [5.0, 7.0], model health [0.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 948 ended with reward -0.42000000000000004, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 948 ended with reward 0.027418168355415933, enemy health [9.0, 9.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 948 ended with reward 0.0030582546467165447, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 948 ended with reward 0.6166986684998793, enemy health [2.0, 6.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 960 ended with reward 0.04379418403139947, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 960 ended with reward -0.22, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 960 ended with reward 0.6814897679844037, enemy health [8.0, 7.0], model health [9.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 960 ended with reward -0.07, enemy health [7.0, 0.0], model health [7.0, 2.0], model VP 0, enemy VP 0, mission Only War
-Iteration 960 ended with reward -0.1966050982293999, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 960 ended with reward 0.15000000000000002, enemy health [9.0, 8.0], model health [6.0, 10.0], model VP 0, enemy VP 1, mission Only War
-Iteration 960 ended with reward -0.01999999999999999, enemy health [5.0, 4.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 960 ended with reward -0.02, enemy health [7.0, 10.0], model health [0.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 960 ended with reward -0.09500000000000001, enemy health [10.0, 9.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 960 ended with reward 0.19, enemy health [6.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 960 ended with reward -0.095, enemy health [10.0, 10.0], model health [9.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 960 ended with reward 0.87, enemy health [0.0, 4.0], model health [9.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 972 ended with reward -0.12000000000000001, enemy health [10.0, 10.0], model health [9.0, 7.0], model VP 0, enemy VP 0, mission Only War
-Iteration 972 ended with reward 0.04292956505943653, enemy health [8.0, 9.0], model health [9.0, 9.0], model VP 0, enemy VP 2, mission Only War
-Iteration 972 ended with reward -1.02, enemy health [9.0, 8.0], model health [3.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 972 ended with reward 0.35, enemy health [3.0, 0.0], model health [8.0, 0.0], model VP 0, enemy VP 0, mission Only War
-Iteration 972 ended with reward 0.08499999999999999, enemy health [10.0, 7.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 972 ended with reward -0.33, enemy health [5.0, 8.0], model health [7.0, 7.0], model VP 0, enemy VP 1, mission Only War
-Iteration 972 ended with reward 0.37, enemy health [1.0, 1.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 972 ended with reward 0.095, enemy health [8.0, 10.0], model health [0.0, 3.0], model VP 0, enemy VP 0, mission Only War
-Iteration 972 ended with reward 0.008735065512320936, enemy health [10.0, 10.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 972 ended with reward 0.06, enemy health [6.0, 9.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 972 ended with reward -0.17104686356149273, enemy health [10.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 972 ended with reward -0.479585395410976, enemy health [0.0, 5.0], model health [10.0, 9.0], model VP 0, enemy VP 1, mission Only War
-Iteration 984 ended with reward 0.1104664797735785, enemy health [6.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 984 ended with reward -0.02, enemy health [10.0, 10.0], model health [9.0, 10.0], model VP 0, enemy VP 2, mission Only War
-Iteration 984 ended with reward 0.305, enemy health [7.0, 7.0], model health [3.0, 3.0], model VP 0, enemy VP 1, mission Only War
-Iteration 984 ended with reward -0.513490283019151, enemy health [3.0, 0.0], model health [7.0, 0.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 984 ended with reward 0.15999999999999998, enemy health [4.0, 8.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 984 ended with reward -0.52, enemy health [6.0, 7.0], model health [9.0, 5.0], model VP 0, enemy VP 1, mission Only War
-Iteration 984 ended with reward 0.09000000000000001, enemy health [1.0, 0.0], model health [9.0, 9.0], model VP 0, enemy VP 0, mission Only War
-Iteration 984 ended with reward -0.4894756725759163, enemy health [10.0, 10.0], model health [0.0, 4.0], model VP 0, enemy VP 0, mission Only War
-draw!
-Major Victory
-enemy won!
-Iteration 984 ended with reward 0.5800000000000001, enemy health [9.0, 3.0], model health [10.0, 8.0], model VP 0, enemy VP 1, mission Only War
-Iteration 984 ended with reward 0.8300000000000001, enemy health [0.0, 5.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 984 ended with reward 0.36000000000000004, enemy health [6.0, 5.0], model health [6.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 984 ended with reward 3.572057243830288, enemy health [0.0, 0.0], model health [6.0, 10.0], model VP 0, enemy VP 1, mission Only War
-model won!
-Major Victory
-model won!
-Iteration 996 ended with reward 0.06, enemy health [4.0, 10.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-Iteration 996 ended with reward 0.03, enemy health [8.0, 10.0], model health [7.0, 8.0], model VP 0, enemy VP 2, mission Only War
-Iteration 996 ended with reward 0.2, enemy health [9.0, 9.0], model health [4.0, 1.0], model VP 0, enemy VP 1, mission Only War
-Iteration 996 ended with reward 0.03995733642597715, enemy health [10.0, 10.0], model health [10.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 996 ended with reward 0.06776946447093263, enemy health [6.0, 8.0], model health [9.0, 10.0], model VP 0, enemy VP 0, mission Only War
-Iteration 996 ended with reward -0.42, enemy health [9.0, 6.0], model health [5.0, 6.0], model VP 0, enemy VP 1, mission Only War
-Iteration 996 ended with reward 3.45, enemy health [0.0, 0.0], model health [10.0, 8.0], model VP 0, enemy VP 0, mission Only War
-model won!
 Major Victory
 model won!

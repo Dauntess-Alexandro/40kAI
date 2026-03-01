@@ -1,0 +1,1 @@
+время=2026-03-01 17:26:57 длительность_с=22.10 модель=M_Necrons_vs_P_Necrons/model-55-387736 run_id=2833192 эпизоды=10 winrate_mean=0.1000 vp_diff_mean=-0.6000 reward_mean=0.041068 ep_len_mean=9.70 turn_mean=10.70

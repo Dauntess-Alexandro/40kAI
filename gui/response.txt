@@ -7873,3 +7873,151 @@ Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move
 Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
 Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
 Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=45..59, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+Допустимый диапазон: X=45..59, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=45..59, Y=0..39.
+Допустимый диапазон: X=45..59, Y=0..39
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=45..59, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+Допустимый диапазон: X=45..59, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=45..59, Y=0..39.
+Допустимый диапазон: X=45..59, Y=0..39
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=45..59, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+Допустимый диапазон: X=45..59, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=45..59, Y=0..39.
+Допустимый диапазон: X=45..59, Y=0..39
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=45..59, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+Допустимый диапазон: X=45..59, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=45..59, Y=0..39.
+Допустимый диапазон: X=45..59, Y=0..39
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=45..59, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+Допустимый диапазон: X=45..59, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=45..59, Y=0..39.
+Допустимый диапазон: X=45..59, Y=0..39
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=45..59, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=45..59, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=45..59, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=45..59, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Допустимый диапазон: X=45..59, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=45..59, Y=0..39.
+Допустимый диапазон: X=45..59, Y=0..39
+Допустимый диапазон: X=45..59, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=45..59, Y=0..39.
+Допустимый диапазон: X=45..59, Y=0..39
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Допустимый диапазон: X=45..59, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=45..59, Y=0..39.
+Допустимый диапазон: X=45..59, Y=0..39
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Допустимый диапазон: X=45..59, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=45..59, Y=0..39.
+Допустимый диапазон: X=45..59, Y=0..39
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=45..59, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=45..59, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=45..59, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=45..59, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=0..14, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]
+Допустимый диапазон: X=45..59, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=45..59, Y=0..39.
+Допустимый диапазон: X=45..59, Y=0..39
+Допустимый диапазон: X=45..59, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=45..59, Y=0..39.
+Допустимый диапазон: X=45..59, Y=0..39
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Допустимый диапазон: X=45..59, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=45..59, Y=0..39.
+Допустимый диапазон: X=45..59, Y=0..39
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
+Допустимый диапазон: X=45..59, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=45..59, Y=0..39.
+Допустимый диапазон: X=45..59, Y=0..39
+Допустимый диапазон: X=0..14, Y=0..39
+[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.
+Допустимый диапазон: X=0..14, Y=0..39
