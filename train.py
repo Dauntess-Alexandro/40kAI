@@ -975,6 +975,58 @@ def main():
     env_contexts = []
     subproc_envs = []
     subproc_conns = []
+    subproc_ctx = None
+
+    def _start_subproc_env(env_idx: int):
+        nonlocal subproc_ctx
+        if subproc_ctx is None:
+            subproc_ctx = mp.get_context("spawn")
+        parent_conn, child_conn = subproc_ctx.Pipe()
+        proc = subproc_ctx.Process(
+            target=_env_worker,
+            args=(child_conn, roster_config, b_len, b_hei, trunc),
+            daemon=True,
+        )
+        proc.start()
+        init_payload = parent_conn.recv()
+        if isinstance(init_payload, dict) and init_payload.get("error"):
+            raise RuntimeError(init_payload["error"])
+        return {
+            "conn": parent_conn,
+            "state": init_payload["state"],
+            "info": init_payload["info"],
+            "len_model": init_payload["len_model"],
+            "env_idx": int(env_idx),
+        }, proc, parent_conn
+
+    def _recover_subproc_env(ctx_obj: dict, where: str) -> bool:
+        env_idx = int(ctx_obj.get("env_idx", -1))
+        msg = (
+            f"[TRAIN][SUBPROC][WARN] Потеряно соединение с env_idx={env_idx}. Где: {where}. "
+            "Что делать дальше: перезапускаю subprocess env и продолжаю обучение."
+        )
+        print(msg)
+        append_agent_log(msg)
+        try:
+            new_ctx, new_proc, new_conn = _start_subproc_env(env_idx)
+        except Exception as exc:
+            err = (
+                f"[TRAIN][SUBPROC][ERROR] Не удалось перезапустить env_idx={env_idx}. Где: {where}. "
+                f"Что делать дальше: проверить _env_worker traceback и конфиг roster/deployment. Ошибка: {exc}"
+            )
+            print(err)
+            append_agent_log(err)
+            return False
+
+        ctx_obj["conn"] = new_ctx["conn"]
+        ctx_obj["state"] = new_ctx["state"]
+        ctx_obj["info"] = new_ctx["info"]
+        ctx_obj["len_model"] = new_ctx["len_model"]
+        if 0 <= env_idx < len(subproc_envs):
+            subproc_envs[env_idx] = new_proc
+        if 0 <= env_idx < len(subproc_conns):
+            subproc_conns[env_idx] = new_conn
+        return True
     
     
     verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
@@ -989,26 +1041,9 @@ def main():
             print("Name:", spec["name"], "Weapons: ", spec["weapons"][0], spec["weapons"][1])
     
     if USE_SUBPROC_ENVS:
-        ctx = mp.get_context("spawn")
         for env_idx in range(vec_env_count):
-            parent_conn, child_conn = ctx.Pipe()
-            proc = ctx.Process(
-                target=_env_worker,
-                args=(child_conn, roster_config, b_len, b_hei, trunc),
-                daemon=True,
-            )
-            proc.start()
-            init_payload = parent_conn.recv()
-            if isinstance(init_payload, dict) and init_payload.get("error"):
-                raise RuntimeError(init_payload["error"])
-            env_contexts.append(
-                {
-                    "conn": parent_conn,
-                    "state": init_payload["state"],
-                    "info": init_payload["info"],
-                    "len_model": init_payload["len_model"],
-                }
-            )
+            env_ctx, proc, parent_conn = _start_subproc_env(env_idx)
+            env_contexts.append(env_ctx)
             subproc_envs.append(proc)
             subproc_conns.append(parent_conn)
     else:
@@ -1258,8 +1293,18 @@ def main():
     
     for ctx in env_contexts:
         if USE_SUBPROC_ENVS:
-            ctx["conn"].send(("reset", None))
-            ctx["state"], ctx["info"] = ctx["conn"].recv()
+            try:
+                ctx["conn"].send(("reset", None))
+                ctx["state"], ctx["info"] = ctx["conn"].recv()
+            except (BrokenPipeError, EOFError, OSError) as exc:
+                err = (
+                    f"[TRAIN][SUBPROC][WARN] reset не получен из worker (инициализация). "
+                    f"Где: train.main/reset-loop. Что делать дальше: перезапуск env. Ошибка: {exc}"
+                )
+                print(err)
+                append_agent_log(err)
+                if not _recover_subproc_env(ctx, where="train.main/reset-loop"):
+                    raise
         else:
             ctx["state"], ctx["info"] = ctx["env"].reset(
                 options={"m": ctx["model"], "e": ctx["enemy"], "Type": "big", "trunc": True}
@@ -1781,8 +1826,18 @@ def main():
                         )
     
                 if USE_SUBPROC_ENVS:
-                    ctx["conn"].send(("reset", None))
-                    ctx["state"], ctx["info"] = ctx["conn"].recv()
+                    try:
+                        ctx["conn"].send(("reset", None))
+                        ctx["state"], ctx["info"] = ctx["conn"].recv()
+                    except (BrokenPipeError, EOFError, OSError) as exc:
+                        err = (
+                            f"[TRAIN][SUBPROC][WARN] reset не получен из worker после завершения эпизода. "
+                            f"Где: train.main/episode-reset. Что делать дальше: перезапуск env. Ошибка: {exc}"
+                        )
+                        print(err)
+                        append_agent_log(err)
+                        if not _recover_subproc_env(ctx, where="train.main/episode-reset"):
+                            raise
                 else:
                     mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
                     attacker_side, defender_side = roll_off_attacker_defender(

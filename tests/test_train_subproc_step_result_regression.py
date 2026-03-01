@@ -15,6 +15,12 @@ class TestTrainSubprocStepResultRegression(unittest.TestCase):
         self.assertIn("step_results[idx] = _normalize_step_result(step_results[idx], idx)", self.source)
         self.assertIn("for idx, (_next_observation, _reward, done, _res, _info) in enumerate(step_results)", self.source)
 
+    def test_train_has_subproc_recovery_on_reset_recv_errors(self):
+        self.assertIn("def _recover_subproc_env", self.source)
+        self.assertIn("reset не получен из worker (инициализация)", self.source)
+        self.assertIn("reset не получен из worker после завершения эпизода", self.source)
+        self.assertIn("_recover_subproc_env(ctx, where=\"train.main/episode-reset\")", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
