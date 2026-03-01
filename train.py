@@ -1531,10 +1531,56 @@ def main():
         if USE_SUBPROC_ENVS:
             # Batched IPC: сначала отправляем step всем env, затем собираем ответы.
             step_start = time.perf_counter()
+            step_sent_indices = []
             for idx, ctx in enumerate(env_contexts):
-                ctx["conn"].send(("step", action_dicts[idx]))
-            for idx, ctx in enumerate(env_contexts):
-                step_results[idx] = ctx["conn"].recv()
+                try:
+                    ctx["conn"].send(("step", action_dicts[idx]))
+                    step_sent_indices.append(idx)
+                except (BrokenPipeError, EOFError, OSError) as exc:
+                    err = (
+                        f"[TRAIN][SUBPROC][WARN] step send не доставлен в worker env_idx={idx}. "
+                        f"Где: train.main/step-send. Что делать дальше: перезапуск env. Ошибка: {exc}"
+                    )
+                    print(err)
+                    append_agent_log(err)
+                    if not _recover_subproc_env(ctx, where="train.main/step-send"):
+                        raise
+                    step_results[idx] = (ctx.get("state"), -1.0, True, False, {
+                        "model health": [],
+                        "player health": [],
+                        "in attack": 0,
+                        "model VP": 0,
+                        "player VP": 0,
+                        "mission": DEFAULT_MISSION_NAME,
+                        "end reason": "subproc_step_send_error",
+                        "winner": None,
+                        "turn": 0,
+                    })
+
+            for idx in step_sent_indices:
+                ctx = env_contexts[idx]
+                try:
+                    step_results[idx] = ctx["conn"].recv()
+                except (BrokenPipeError, EOFError, OSError) as exc:
+                    err = (
+                        f"[TRAIN][SUBPROC][WARN] step recv не получен из worker env_idx={idx}. "
+                        f"Где: train.main/step-recv. Что делать дальше: перезапуск env. Ошибка: {exc}"
+                    )
+                    print(err)
+                    append_agent_log(err)
+                    if not _recover_subproc_env(ctx, where="train.main/step-recv"):
+                        raise
+                    step_results[idx] = (ctx.get("state"), -1.0, True, False, {
+                        "model health": [],
+                        "player health": [],
+                        "in attack": 0,
+                        "model VP": 0,
+                        "player VP": 0,
+                        "mission": DEFAULT_MISSION_NAME,
+                        "end reason": "subproc_step_recv_error",
+                        "winner": None,
+                        "turn": 0,
+                    })
             perf_stats["env_step_s"] += time.perf_counter() - step_start
             perf_counts["env_steps"] += len(env_contexts)
 
@@ -1544,10 +1590,31 @@ def main():
                 step_results[idx] = _normalize_step_result(step_results[idx], idx)
             for idx, (_next_observation, _reward, done, _res, _info) in enumerate(step_results):
                 if not done:
-                    env_contexts[idx]["conn"].send(("get_shoot_mask", None))
-                    pending_next_mask_indices.append(idx)
+                    try:
+                        env_contexts[idx]["conn"].send(("get_shoot_mask", None))
+                        pending_next_mask_indices.append(idx)
+                    except (BrokenPipeError, EOFError, OSError) as exc:
+                        err = (
+                            f"[TRAIN][SUBPROC][WARN] get_shoot_mask send не доставлен env_idx={idx}. "
+                            f"Где: train.main/get_shoot_mask-send. Что делать дальше: перезапуск env. Ошибка: {exc}"
+                        )
+                        print(err)
+                        append_agent_log(err)
+                        if not _recover_subproc_env(env_contexts[idx], where="train.main/get_shoot_mask-send"):
+                            raise
             for idx in pending_next_mask_indices:
-                next_shoot_masks[idx] = env_contexts[idx]["conn"].recv()
+                try:
+                    next_shoot_masks[idx] = env_contexts[idx]["conn"].recv()
+                except (BrokenPipeError, EOFError, OSError) as exc:
+                    err = (
+                        f"[TRAIN][SUBPROC][WARN] get_shoot_mask recv не получен env_idx={idx}. "
+                        f"Где: train.main/get_shoot_mask-recv. Что делать дальше: перезапуск env. Ошибка: {exc}"
+                    )
+                    print(err)
+                    append_agent_log(err)
+                    if not _recover_subproc_env(env_contexts[idx], where="train.main/get_shoot_mask-recv"):
+                        raise
+                    next_shoot_masks[idx] = None
 
         for idx, ctx in enumerate(env_contexts):
             step_start = time.perf_counter()

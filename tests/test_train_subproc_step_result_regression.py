@@ -21,6 +21,12 @@ class TestTrainSubprocStepResultRegression(unittest.TestCase):
         self.assertIn("reset не получен из worker после завершения эпизода", self.source)
         self.assertIn("_recover_subproc_env(ctx, where=\"train.main/episode-reset\")", self.source)
 
+    def test_train_has_subproc_recovery_on_step_and_mask_ipc_errors(self):
+        self.assertIn("step send не доставлен в worker", self.source)
+        self.assertIn("step recv не получен из worker", self.source)
+        self.assertIn("get_shoot_mask send не доставлен", self.source)
+        self.assertIn("get_shoot_mask recv не получен", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
