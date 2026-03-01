@@ -1445,6 +1445,44 @@ def main():
 
         step_results = [None] * len(env_contexts)
         next_shoot_masks = [None] * len(env_contexts)
+
+        def _normalize_step_result(raw_result, env_idx: int):
+            if isinstance(raw_result, tuple) and len(raw_result) == 5:
+                return raw_result
+
+            if isinstance(raw_result, dict) and raw_result.get("error"):
+                err_text = str(raw_result.get("error"))
+                msg = (
+                    f"[TRAIN][SUBPROC][ERROR] env_idx={env_idx}: worker вернул error вместо step tuple. "
+                    f"Где: train.main/_env_worker(step). Что делать дальше: проверить exception в worker и логи. "
+                    f"Ошибка: {err_text}"
+                )
+                print(msg)
+                append_agent_log(msg)
+            else:
+                msg = (
+                    f"[TRAIN][SUBPROC][WARN] env_idx={env_idx}: неожиданный формат step result: {type(raw_result).__name__}. "
+                    f"Где: train.main (обработка step_results). Что делать дальше: проверить протокол IPC step/recv."
+                )
+                print(msg)
+                append_agent_log(msg)
+
+            fallback_info = env_contexts[env_idx].get("info") if isinstance(env_contexts[env_idx], dict) else None
+            if not isinstance(fallback_info, dict):
+                fallback_info = {}
+            fallback_info = {
+                "model health": fallback_info.get("model health", []),
+                "player health": fallback_info.get("player health", []),
+                "in attack": fallback_info.get("in attack", 0),
+                "model VP": fallback_info.get("model VP", 0),
+                "player VP": fallback_info.get("player VP", 0),
+                "mission": fallback_info.get("mission", DEFAULT_MISSION_NAME),
+                "end reason": fallback_info.get("end reason", "subproc_step_error"),
+                "winner": fallback_info.get("winner", None),
+                "turn": fallback_info.get("turn", 0),
+            }
+            return env_contexts[env_idx].get("state"), -1.0, True, False, fallback_info
+
         if USE_SUBPROC_ENVS:
             # Batched IPC: сначала отправляем step всем env, затем собираем ответы.
             step_start = time.perf_counter()
@@ -1457,6 +1495,8 @@ def main():
 
             # Batched IPC для масок стрельбы после шага (только где эпизод не завершён).
             pending_next_mask_indices = []
+            for idx in range(len(step_results)):
+                step_results[idx] = _normalize_step_result(step_results[idx], idx)
             for idx, (_next_observation, _reward, done, _res, _info) in enumerate(step_results):
                 if not done:
                     env_contexts[idx]["conn"].send(("get_shoot_mask", None))
