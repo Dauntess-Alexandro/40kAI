@@ -30,6 +30,14 @@ from gym_mod.engine.logging_utils import format_unit
 from gym_mod.engine.state_export import write_state_json
 from gym_mod.engine.game_io import get_active_io
 from gym_mod.engine.event_bus import get_event_bus, get_event_recorder
+from gym_mod.engine.los_contract import (
+    LosCheckRequest,
+    LosCheckResult,
+    LosReason,
+    LosRuleFlags,
+    LosSamplingConfig,
+    evaluate_unit_visibility,
+)
 
 # ============================================================
 # 🔧 FIX: resolve string weapons like "Bolt pistol [PISTOL]"
@@ -860,10 +868,21 @@ class Warhammer40kEnv(gym.Env):
         self._target_cache_epoch = 0
         self._distance_cache = {}
         self._shoot_target_cache = {}
-        log_name = str(os.getenv("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_PLAY.md") or "LOGS_FOR_AGENTS_PLAY.md")
-        self._agent_log_path = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "..", "..", "..", log_name)
-        )
+        self._los_cache = {}
+
+        self._los_sampling_count = max(1, int(os.getenv("LOS_SAMPLE_COUNT", "5") or "5"))
+        self._los_include_diagonals = str(os.getenv("LOS_INCLUDE_DIAGONALS", "0")).strip().lower() in {
+            "1", "true", "yes", "on"
+        }
+        self._los_required_front_samples = max(1, int(os.getenv("LOS_FRONT_ARC_SAMPLES", "3") or "3"))
+
+        if "VERBOSE_LOGS" not in os.environ:
+            os.environ["VERBOSE_LOGS"] = "1"
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+        self._agent_log_paths = [
+            os.path.join(project_root, "LOGS_FOR_AGENTS_TRAIN.md"),
+            os.path.join(project_root, "LOGS_FOR_AGENTS_PLAY.md"),
+        ]
 
         self.modelOC = []
         self.enemyOC = []
@@ -943,6 +962,7 @@ class Warhammer40kEnv(gym.Env):
         self._target_cache_epoch += 1
         self._distance_cache.clear()
         self._shoot_target_cache.clear()
+        self._los_cache.clear()
 
     def _cached_distance_model_enemy(self, model_idx: int, enemy_idx: int) -> float:
         key = ("m2e", self._target_cache_epoch, int(model_idx), int(enemy_idx))
@@ -1002,8 +1022,22 @@ class Warhammer40kEnv(gym.Env):
             )
             targets = [int(idx) for idx in target_ids]
 
-        self._shoot_target_cache[cache_key] = list(targets)
-        return targets
+        los_filtered = []
+        for target_idx in targets:
+            model_los, unit_summary = self._check_unit_visibility(side, unit_idx, "enemy" if side == "model" else "model", int(target_idx))
+            if unit_summary.unit_visible:
+                los_filtered.append(int(target_idx))
+                self._log_los_decision(
+                    "shoot_target", side, unit_idx, "enemy" if side == "model" else "model", int(target_idx),
+                    model_los, unit_summary, accepted=True
+                )
+            else:
+                self._log_los_decision(
+                    "shoot_target", side, unit_idx, "enemy" if side == "model" else "model", int(target_idx),
+                    model_los, unit_summary, accepted=False
+                )
+        self._shoot_target_cache[cache_key] = list(los_filtered)
+        return los_filtered
 
     def _model_wounds_pool_from_hp(self, unit_data: dict, hp_value: float) -> list[int]:
         if not isinstance(unit_data, dict):
@@ -1347,6 +1381,323 @@ class Warhammer40kEnv(gym.Env):
                     best = d
         return best
 
+
+    def _build_model_samples(self, point: list[float], sampling: LosSamplingConfig) -> list[list[float]]:
+        x = float(point[0])
+        y = float(point[1])
+        samples = [[x, y]]
+        if sampling.sample_count <= 1:
+            return samples
+        offsets = [(-0.35, 0.0), (0.35, 0.0), (0.0, -0.35), (0.0, 0.35)]
+        if sampling.include_diagonals:
+            offsets.extend([(-0.25, -0.25), (-0.25, 0.25), (0.25, -0.25), (0.25, 0.25)])
+        for dx, dy in offsets:
+            if len(samples) >= sampling.sample_count:
+                break
+            samples.append([x + dx, y + dy])
+        return samples
+
+    def _line_cells_between_points(self, start_xy: list[float], end_xy: list[float]) -> list[tuple[int, int]]:
+        x0, y0 = int(round(start_xy[0])), int(round(start_xy[1]))
+        x1, y1 = int(round(end_xy[0])), int(round(end_xy[1]))
+        cells = []
+        dx = abs(x1 - x0)
+        dy = abs(y1 - y0)
+        sx = 1 if x0 < x1 else -1
+        sy = 1 if y0 < y1 else -1
+        err = dx - dy
+        x, y = x0, y0
+        while True:
+            cells.append((x, y))
+            if x == x1 and y == y1:
+                break
+            e2 = 2 * err
+            if e2 > -dy:
+                err -= dy
+                x += sx
+            if e2 < dx:
+                err += dx
+                y += sy
+        return cells
+
+    def _terrain_blocks_los(self, cell: tuple[int, int]) -> bool:
+        terrain = getattr(self, "terrain_blocks", None)
+        if isinstance(terrain, set):
+            return cell in terrain
+        return False
+
+    def _models_blocking_los(
+        self,
+        observer_side: str,
+        observer_idx: int,
+        target_side: str,
+        target_idx: int,
+        flags: LosRuleFlags,
+        for_full_visibility: bool,
+    ) -> set[tuple[int, int]]:
+        blockers = set()
+        for side_name, coords in (("model", self.unit_coords), ("enemy", self.enemy_coords)):
+            for i, pos in enumerate(coords):
+                if side_name == observer_side and i == observer_idx:
+                    continue
+                if side_name == target_side and i == target_idx:
+                    continue
+                if flags.see_through_observer_unit_models and side_name == observer_side:
+                    continue
+                if for_full_visibility and flags.see_through_target_unit_models_for_full and side_name == target_side:
+                    continue
+                if i < (len(self.unit_health) if side_name == "model" else len(self.enemy_health)):
+                    hp = self.unit_health[i] if side_name == "model" else self.enemy_health[i]
+                    if hp <= 0:
+                        continue
+                blockers.add((int(round(pos[0])), int(round(pos[1]))))
+        return blockers
+
+    def _has_clear_los(
+        self,
+        observer_sample: list[float],
+        target_sample: list[float],
+        blockers: set[tuple[int, int]],
+        flags: LosRuleFlags,
+    ) -> tuple[bool, Optional[LosReason]]:
+        cells = self._line_cells_between_points(observer_sample, target_sample)
+        for cell in cells[1:-1]:
+            if flags.block_by_terrain and self._terrain_blocks_los(cell):
+                return False, LosReason.BLOCKED_BY_TERRAIN
+            if flags.block_by_models and cell in blockers:
+                return False, LosReason.BLOCKED_BY_MODEL
+        return True, None
+
+    def _check_model_los(self, request: LosCheckRequest, for_full_visibility: bool = False) -> LosCheckResult:
+        cache_key = (
+            self._target_cache_epoch,
+            request.observer_side,
+            int(request.observer_idx),
+            request.target_side,
+            int(request.target_idx),
+            bool(for_full_visibility),
+            request.flags,
+            request.sampling,
+        )
+        cached = self._los_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        observer_points = self._unit_model_points(request.observer_side, request.observer_idx)
+        target_points = self._unit_model_points(request.target_side, request.target_idx)
+        if not observer_points:
+            result = LosCheckResult(visible=False, fully_visible=False, reason_codes=(LosReason.INVALID_OBSERVER,))
+            self._los_cache[cache_key] = result
+            return result
+        if not target_points:
+            result = LosCheckResult(visible=False, fully_visible=False, reason_codes=(LosReason.INVALID_TARGET,))
+            self._los_cache[cache_key] = result
+            return result
+
+        observer_samples = self._build_model_samples(observer_points[0], request.sampling)
+        target_samples_all = self._build_model_samples(target_points[0], request.sampling)
+        if for_full_visibility:
+            req_count = max(1, min(request.sampling.required_front_arc_samples, len(target_samples_all)))
+            target_samples = target_samples_all[:req_count]
+        else:
+            target_samples = target_samples_all
+
+        blockers = self._models_blocking_los(
+            request.observer_side, request.observer_idx, request.target_side, request.target_idx, request.flags, for_full_visibility
+        )
+
+        total_rays = 0
+        passed_rays = 0
+        blocked_reasons = []
+        for osmp in observer_samples:
+            for tsmp in target_samples:
+                total_rays += 1
+                clear, reason = self._has_clear_los(osmp, tsmp, blockers, request.flags)
+                if clear:
+                    passed_rays += 1
+                elif reason is not None:
+                    blocked_reasons.append(reason)
+
+        visible = passed_rays > 0
+        if for_full_visibility:
+            fully_visible = passed_rays == total_rays and total_rays > 0
+        else:
+            fully_visible = False
+
+        reasons = []
+        if visible:
+            reasons.append(LosReason.VISIBLE)
+        if fully_visible:
+            reasons.append(LosReason.FULLY_VISIBLE)
+        if not visible and blocked_reasons:
+            seen = set()
+            for r in blocked_reasons:
+                if r not in seen:
+                    seen.add(r)
+                    reasons.append(r)
+        if not visible and not reasons:
+            reasons.append(LosReason.NO_VISIBLE_SAMPLES)
+
+        result = LosCheckResult(
+            visible=bool(visible),
+            fully_visible=bool(fully_visible),
+            reason_codes=tuple(reasons),
+            passed_rays=int(passed_rays),
+            total_rays=int(total_rays),
+        )
+        self._los_cache[cache_key] = result
+        return result
+
+    def _check_unit_visibility(self, observer_side: str, observer_idx: int, target_side: str, target_idx: int):
+        flags = LosRuleFlags()
+        sampling = LosSamplingConfig(
+            sample_count=self._los_sampling_count,
+            include_diagonals=self._los_include_diagonals,
+            required_front_arc_samples=self._los_required_front_samples,
+        )
+        observer_points = self._unit_model_points(observer_side, observer_idx)
+        target_points = self._unit_model_points(target_side, target_idx)
+        if not observer_points:
+            single = LosCheckResult(visible=False, fully_visible=False, reason_codes=(LosReason.INVALID_OBSERVER,))
+            return single, evaluate_unit_visibility((single,))
+        if not target_points:
+            single = LosCheckResult(visible=False, fully_visible=False, reason_codes=(LosReason.INVALID_TARGET,))
+            return single, evaluate_unit_visibility((single,))
+
+        observer_samples = []
+        for point in observer_points:
+            observer_samples.extend(self._build_model_samples(point, sampling))
+
+        model_results = []
+        for model_point in target_points:
+            target_samples_all = self._build_model_samples(model_point, sampling)
+            req_count = max(1, min(sampling.required_front_arc_samples, len(target_samples_all)))
+            target_samples_front = target_samples_all[:req_count]
+            blockers_normal = self._models_blocking_los(
+                observer_side, observer_idx, target_side, target_idx, flags, for_full_visibility=False
+            )
+            blockers_full = self._models_blocking_los(
+                observer_side, observer_idx, target_side, target_idx, flags, for_full_visibility=True
+            )
+
+            total_rays = 0
+            passed_rays = 0
+            blocked_reasons = []
+            for osmp in observer_samples:
+                for tsmp in target_samples_all:
+                    total_rays += 1
+                    clear, reason = self._has_clear_los(osmp, tsmp, blockers_normal, flags)
+                    if clear:
+                        passed_rays += 1
+                    elif reason is not None:
+                        blocked_reasons.append(reason)
+
+            total_front_rays = 0
+            passed_front_rays = 0
+            blocked_full_reasons = []
+            for osmp in observer_samples:
+                for tsmp in target_samples_front:
+                    total_front_rays += 1
+                    clear, reason = self._has_clear_los(osmp, tsmp, blockers_full, flags)
+                    if clear:
+                        passed_front_rays += 1
+                    elif reason is not None:
+                        blocked_full_reasons.append(reason)
+
+            visible = passed_rays > 0
+            fully_visible = total_front_rays > 0 and passed_front_rays == total_front_rays
+            reasons = []
+            if visible:
+                reasons.append(LosReason.VISIBLE)
+            if fully_visible:
+                reasons.append(LosReason.FULLY_VISIBLE)
+            if not visible:
+                seen = set()
+                for r in blocked_reasons:
+                    if r not in seen:
+                        seen.add(r)
+                        reasons.append(r)
+            if visible and not fully_visible:
+                seen_full = set()
+                for r in blocked_full_reasons:
+                    if r not in seen_full:
+                        seen_full.add(r)
+                        reasons.append(r)
+            if not reasons:
+                reasons.append(LosReason.NO_VISIBLE_SAMPLES)
+            model_results.append(
+                LosCheckResult(
+                    visible=bool(visible),
+                    fully_visible=bool(fully_visible),
+                    reason_codes=tuple(reasons),
+                    passed_rays=int(passed_rays),
+                    total_rays=int(total_rays),
+                )
+            )
+
+        summary = evaluate_unit_visibility(tuple(model_results))
+        merged_reasons = tuple(dict.fromkeys(r for m in model_results for r in m.reason_codes))
+        merged = LosCheckResult(
+            visible=summary.unit_visible,
+            fully_visible=summary.unit_fully_visible,
+            reason_codes=merged_reasons,
+            passed_rays=int(sum(m.passed_rays for m in model_results)),
+            total_rays=int(sum(m.total_rays for m in model_results)),
+        )
+        return merged, summary
+
+    def _log_los_decision(
+        self,
+        action: str,
+        observer_side: str,
+        observer_idx: int,
+        target_side: str,
+        target_idx: int,
+        result: LosCheckResult,
+        summary,
+        accepted: bool,
+    ) -> None:
+        state = "accept" if accepted else "reject"
+        observer_label = self._format_unit_label(observer_side, observer_idx)
+        target_label = self._format_unit_label(target_side, target_idx)
+        self._log(
+            f"[LOS:{action}] {state} observer={observer_label} target={target_label} "
+            f"unit_visible={int(bool(getattr(summary, 'unit_visible', False)))} "
+            f"unit_fully_visible={int(bool(getattr(summary, 'unit_fully_visible', False)))} "
+            f"reasons={self._format_los_reasons(result.reason_codes)} rays={result.passed_rays}/{result.total_rays}"
+        )
+
+    def _build_unit_los_snapshot(self, side: str, idx: int) -> dict:
+        enemy_side = "enemy" if side == "model" else "model"
+        enemy_health = self.enemy_health if side == "model" else self.unit_health
+        if idx < 0:
+            return {"nearest_target": None, "visible": False, "fully_visible": False, "reasons": "invalid_observer"}
+        alive_targets = [j for j in range(len(enemy_health)) if enemy_health[j] > 0]
+        if not alive_targets:
+            return {"nearest_target": None, "visible": False, "fully_visible": False, "reasons": "no_targets"}
+        nearest = min(alive_targets, key=lambda j: self._distance_between_units(side, idx, enemy_side, j))
+        result, summary = self._check_unit_visibility(side, idx, enemy_side, nearest)
+        return {
+            "nearest_target": int(nearest),
+            "visible": bool(summary.unit_visible),
+            "fully_visible": bool(summary.unit_fully_visible),
+            "reasons": self._format_los_reasons(result.reason_codes),
+            "rays_passed": int(result.passed_rays),
+            "rays_total": int(result.total_rays),
+        }
+
+    def _format_los_reasons(self, reasons: tuple[LosReason, ...]) -> str:
+        labels = {
+            LosReason.VISIBLE: "visible",
+            LosReason.FULLY_VISIBLE: "fully_visible",
+            LosReason.BLOCKED_BY_TERRAIN: "blocked_by_terrain",
+            LosReason.BLOCKED_BY_MODEL: "blocked_by_model",
+            LosReason.NO_VISIBLE_SAMPLES: "no_visible_samples",
+            LosReason.INVALID_OBSERVER: "invalid_observer",
+            LosReason.INVALID_TARGET: "invalid_target",
+        }
+        return ",".join(labels.get(r, str(r)) for r in reasons) if reasons else "none"
+
     def _should_log(self) -> bool:
         if self._is_verbose():
             return True
@@ -1366,6 +1717,7 @@ class Warhammer40kEnv(gym.Env):
         if not self._should_log():
             return
         self._ensure_io().log(msg)
+        self._append_agent_log(msg)
         if self.active_side == "model" and self._looks_like_dice_log(msg):
             self._emit_event(
                 {
@@ -1418,15 +1770,15 @@ class Warhammer40kEnv(gym.Env):
             return
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         full_line = f"{timestamp} | {msg}"
-        try:
-            with open(self._agent_log_path, "a", encoding="utf-8") as log_file:
-                log_file.write(full_line + "\n")
-        except Exception:
-            return
+        for path in getattr(self, "_agent_log_paths", []):
+            try:
+                with open(path, "a", encoding="utf-8") as log_file:
+                    log_file.write(full_line + "\n")
+            except Exception:
+                continue
 
     def _log_reward(self, msg: str, unit_id: int | None = None, unit_name: str | None = None) -> None:
         self._log(msg)
-        self._append_agent_log(msg)
         if self.active_side == "model":
             self._emit_event(
                 {
@@ -1841,14 +2193,26 @@ class Warhammer40kEnv(gym.Env):
                 continue
             if defender_weapon[i] == "None":
                 continue
-            if self._distance_between_units(defender_side, i, target_side, moving_idx) <= defender_weapon[i]["Range"]:
+            if self._distance_between_units(defender_side, i, target_side, moving_idx) > defender_weapon[i]["Range"]:
+                continue
+            model_los, unit_summary = self._check_unit_visibility(defender_side, i, target_side, moving_idx)
+            if unit_summary.unit_visible:
                 candidates.append(i)
+                self._log_los_decision(
+                    "overwatch_candidate", defender_side, i, target_side, moving_idx,
+                    model_los, unit_summary, accepted=True
+                )
+            else:
+                self._log_los_decision(
+                    "overwatch_candidate", defender_side, i, target_side, moving_idx,
+                    model_los, unit_summary, accepted=False
+                )
         return candidates
 
     def _resolve_overwatch(self, defender_side: str, moving_unit_side: str, moving_idx: int, phase: str, manual: bool = False):
         """
         10e Fire Overwatch: реакция защитника после завершения перемещения врага.
-        Упрощение: проверяем дальность, не учитываем LOS.
+        Проверяем дальность и LOS (Hybrid LOS).
         """
         side_label = self._side_label(defender_side, manual=manual)
         candidates = self._collect_overwatch_candidates(defender_side, moving_unit_side, moving_idx)

@@ -97,7 +97,7 @@ def _read_event_tail(default_max_events=500):
     return recorder.snapshot(limit=limit)
 
 
-def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, anchor=None, model_positions=None, facing=None):
+def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, anchor=None, model_positions=None, facing=None, los=None):
     name = "—"
     models = None
     if isinstance(unit_data, dict):
@@ -117,6 +117,7 @@ def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, ancho
         "anchor_y": _safe_int(anchor[0], None) if anchor is not None else None,
         "model_positions": model_positions or [],
         "facing": facing,
+        "los": los if isinstance(los, dict) else None,
     }
 
 
@@ -138,7 +139,9 @@ def write_state_json(env, path=None):
                                    model_positions=([{"x": _safe_int(pos[1], None), "y": _safe_int(pos[0], None), "z": _safe_int(pos[2], 0)}
                                                      for pos in env.enemy_model_positions[idx]]
                                                     if hasattr(env, "enemy_model_positions") and idx < len(env.enemy_model_positions) else []),
-                                   facing=_resolve_unit_facing(unit_data, coords, board_width)))
+                                   facing=_resolve_unit_facing(unit_data, coords, board_width),
+                                   los=(env._build_unit_los_snapshot("enemy", idx)
+                                        if hasattr(env, "_build_unit_los_snapshot") else None)))
 
     for idx, coords in enumerate(getattr(env, "unit_coords", [])):
         unit_id = env._unit_id("model", idx)
@@ -150,7 +153,9 @@ def write_state_json(env, path=None):
                                    model_positions=([{"x": _safe_int(pos[1], None), "y": _safe_int(pos[0], None), "z": _safe_int(pos[2], 0)}
                                                      for pos in env.unit_model_positions[idx]]
                                                     if hasattr(env, "unit_model_positions") and idx < len(env.unit_model_positions) else []),
-                                   facing=_resolve_unit_facing(unit_data, coords, board_width)))
+                                   facing=_resolve_unit_facing(unit_data, coords, board_width),
+                                   los=(env._build_unit_los_snapshot("model", idx)
+                                        if hasattr(env, "_build_unit_los_snapshot") else None)))
 
     objectives = []
     for idx, coords in enumerate(getattr(env, "coordsOfOM", [])):
