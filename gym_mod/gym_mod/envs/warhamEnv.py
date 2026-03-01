@@ -16,6 +16,7 @@ import reward_config as reward_cfg
 
 from ..engine.utils import *
 from ..engine.hotloops import scan_targets_in_range
+from ..engine.visibility import visibility_report
 from ..engine import utils as engine_utils
 from gym_mod.engine.mission import (
     MISSION_NAME,
@@ -860,6 +861,8 @@ class Warhammer40kEnv(gym.Env):
         self._target_cache_epoch = 0
         self._distance_cache = {}
         self._shoot_target_cache = {}
+        self.terrain_opaque_cells: set[tuple[int, int]] = set()
+        self.terrain_obscuring_cells: set[tuple[int, int]] = set()
         log_name = str(os.getenv("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_PLAY.md") or "LOGS_FOR_AGENTS_PLAY.md")
         self._agent_log_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "..", log_name)
@@ -984,7 +987,7 @@ class Warhammer40kEnv(gym.Env):
                 np.asarray([row[0] for row in self.enemyInAttack], dtype=np.int8),
                 float(range_limit),
             )
-            targets = [int(idx) for idx in target_ids]
+            targets = [int(idx) for idx in target_ids if self._has_line_of_sight("model", unit_idx, "enemy", int(idx))]
         else:
             if not (0 <= unit_idx < len(self.enemy_health)):
                 return []
@@ -1000,10 +1003,44 @@ class Warhammer40kEnv(gym.Env):
                 np.asarray([row[0] for row in self.unitInAttack], dtype=np.int8),
                 float(range_limit),
             )
-            targets = [int(idx) for idx in target_ids]
+            targets = [int(idx) for idx in target_ids if self._has_line_of_sight("enemy", unit_idx, "model", int(idx))]
 
         self._shoot_target_cache[cache_key] = list(targets)
         return targets
+
+    def _cell_from_coord(self, coord) -> tuple[int, int]:
+        return int(round(float(coord[0]))), int(round(float(coord[1])))
+
+    def _los_debug_enabled(self) -> bool:
+        raw = str(os.getenv("LOS_DEBUG", "1")).strip().lower()
+        return raw not in {"0", "false", "off", "no"}
+
+    def _log_los_debug(self, attacker_cell: tuple[int, int], target_cell: tuple[int, int], report: dict) -> None:
+        if not self._los_debug_enabled():
+            return
+        crossed = report.get("crossed_cells") or []
+        preview = crossed if len(crossed) <= 12 else (crossed[:6] + ["..."] + crossed[-5:])
+        self._append_agent_log(
+            "LOS_DEBUG | "
+            f"a_cell={attacker_cell} b_cell={target_cell} "
+            f"crossed_cells={preview} los={report.get('los')} "
+            f"obscured={report.get('obscured')} blocked_by={report.get('blocked_by')}"
+        )
+
+    def _has_line_of_sight(self, attacker_side: str, attacker_idx: int, target_side: str, target_idx: int) -> bool:
+        attacker_coords = self.unit_coords if attacker_side == "model" else self.enemy_coords
+        target_coords = self.unit_coords if target_side == "model" else self.enemy_coords
+        attacker_cell = self._cell_from_coord(attacker_coords[int(attacker_idx)])
+        target_cell = self._cell_from_coord(target_coords[int(target_idx)])
+
+        report = visibility_report(
+            attacker_cell,
+            target_cell,
+            opaque_cells_set=self.terrain_opaque_cells,
+            obscuring_cells_set=self.terrain_obscuring_cells,
+        )
+        self._log_los_debug(attacker_cell, target_cell, report)
+        return bool(report.get("los", False))
 
     def _model_wounds_pool_from_hp(self, unit_data: dict, hp_value: float) -> list[int]:
         if not isinstance(unit_data, dict):
