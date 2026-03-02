@@ -316,6 +316,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._terrain_log_signature: Optional[tuple] = None
         self._terrain_sprite_log_cache: set[str] = set()
         self._terrain_texture_cache: Dict[str, QtGui.QPixmap] = {}
+        self._terrain_source_rect_cache: Dict[str, QtCore.QRectF] = {}
         self._particles: List[ParticleInstance] = []
         self._particles_last_ts: Optional[float] = None
         self._props_initialized = False
@@ -1598,16 +1599,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
                         alpha=0.7,
                     )
             if prop.draw_rect is not None:
+                source_rect = self._terrain_content_rect(prop.sprite_name, prop_pixmap)
                 draw_rect = self._fit_pixmap_in_rect(
                     prop_pixmap,
                     prop.draw_rect,
                     inset_ratio=self._terrain_barrel_cell_scale,
+                    source_rect=source_rect,
                 )
-                painter.drawPixmap(
-                    draw_rect,
-                    prop_pixmap,
-                    QtCore.QRectF(0, 0, prop_pixmap.width(), prop_pixmap.height()),
-                )
+                painter.drawPixmap(draw_rect, prop_pixmap, source_rect)
                 continue
 
             self._draw_sprite(
@@ -1634,17 +1633,59 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._terrain_texture_cache[key] = pixmap
         return pixmap
 
+    def _terrain_content_rect(self, sprite_name: str, pixmap: QtGui.QPixmap) -> QtCore.QRectF:
+        key = str(sprite_name or "").strip()
+        cached = self._terrain_source_rect_cache.get(key)
+        if cached is not None:
+            return cached
+        if pixmap.isNull():
+            fallback = QtCore.QRectF(0, 0, 1, 1)
+            if key:
+                self._terrain_source_rect_cache[key] = fallback
+            return fallback
+
+        image = pixmap.toImage().convertToFormat(QtGui.QImage.Format_ARGB32)
+        width = image.width()
+        height = image.height()
+        alpha_threshold = 10
+        min_x, min_y = width, height
+        max_x, max_y = -1, -1
+
+        for y in range(height):
+            for x in range(width):
+                if QtGui.qAlpha(image.pixel(x, y)) <= alpha_threshold:
+                    continue
+                if x < min_x:
+                    min_x = x
+                if y < min_y:
+                    min_y = y
+                if x > max_x:
+                    max_x = x
+                if y > max_y:
+                    max_y = y
+
+        if max_x < min_x or max_y < min_y:
+            rect = QtCore.QRectF(0, 0, width, height)
+        else:
+            rect = QtCore.QRectF(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
+
+        if key:
+            self._terrain_source_rect_cache[key] = rect
+        return rect
+
     @staticmethod
     def _fit_pixmap_in_rect(
         pixmap: QtGui.QPixmap,
         target_rect: QtCore.QRectF,
         *,
         inset_ratio: float = 1.0,
+        source_rect: Optional[QtCore.QRectF] = None,
     ) -> QtCore.QRectF:
         if pixmap.isNull() or target_rect.width() <= 0 or target_rect.height() <= 0:
             return target_rect
-        tex_w = max(1.0, float(pixmap.width()))
-        tex_h = max(1.0, float(pixmap.height()))
+        source = source_rect or QtCore.QRectF(0, 0, pixmap.width(), pixmap.height())
+        tex_w = max(1.0, float(source.width()))
+        tex_h = max(1.0, float(source.height()))
         s = min(target_rect.width() / tex_w, target_rect.height() / tex_h)
         s *= max(0.01, float(inset_ratio))
         draw_w = tex_w * s
