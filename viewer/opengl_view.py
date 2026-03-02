@@ -1569,14 +1569,29 @@ class OpenGLBoardWidget(QOpenGLWidget):
                         scale=prop.scale,
                         alpha=0.7,
                     )
-            self._draw_sprite(
-                painter,
-                prop_pixmap,
-                prop.center,
-                rotation_deg=prop.rotation_deg,
-                scale=prop.scale,
-                alpha=1.0,
-            )
+            if prop.debug_rect is not None:
+                target_rect = QtCore.QRectF(prop.debug_rect)
+                painter.save()
+                painter.setOpacity(1.0)
+                painter.translate(target_rect.center())
+                if prop.rotation_deg:
+                    painter.rotate(prop.rotation_deg)
+                draw_w = float(target_rect.width())
+                draw_h = float(target_rect.height())
+                if int(abs(prop.rotation_deg)) % 180 == 90:
+                    draw_w, draw_h = draw_h, draw_w
+                draw_rect = QtCore.QRectF(-draw_w / 2.0, -draw_h / 2.0, draw_w, draw_h)
+                painter.drawPixmap(draw_rect, prop_pixmap, QtCore.QRectF(prop_pixmap.rect()))
+                painter.restore()
+            else:
+                self._draw_sprite(
+                    painter,
+                    prop_pixmap,
+                    prop.center,
+                    rotation_deg=prop.rotation_deg,
+                    scale=prop.scale,
+                    alpha=1.0,
+                )
         painter.restore()
 
     def _draw_particles_layer(self, painter: QtGui.QPainter) -> None:
