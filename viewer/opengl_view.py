@@ -1565,8 +1565,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 rotated_w = float(prop_pixmap.height()) if rotation_quadrants else float(prop_pixmap.width())
                 rotated_h = float(prop_pixmap.width()) if rotation_quadrants else float(prop_pixmap.height())
                 if rotated_w > 0.0 and rotated_h > 0.0:
-                    fit_scale = min(prop.fit_rect.width() / rotated_w, prop.fit_rect.height() / rotated_h)
+                    fit_scale = max(prop.fit_rect.width() / rotated_w, prop.fit_rect.height() / rotated_h)
                     prop_scale *= max(0.01, fit_scale)
+            if prop.fit_rect is not None and not prop.fit_rect.isEmpty():
+                painter.save()
+                painter.setClipRect(prop.fit_rect, QtCore.Qt.IntersectClip)
             if self.render_prop_shadows:
                 shadow_pixmap = self._shadow_textures.get(prop.kind)
                 if shadow_pixmap is not None:
@@ -1587,6 +1590,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 scale=prop_scale,
                 alpha=1.0,
             )
+            if prop.fit_rect is not None and not prop.fit_rect.isEmpty():
+                painter.restore()
         painter.restore()
 
     def _draw_particles_layer(self, painter: QtGui.QPainter) -> None:
