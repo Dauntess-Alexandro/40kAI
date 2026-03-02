@@ -143,6 +143,7 @@ class PropInstance:
     scale: float
     debug_rect: Optional[QtCore.QRectF] = None
     sprite_name: str = ""
+    fit_rect: Optional[QtCore.QRectF] = None
 
 
 @dataclass
@@ -943,7 +944,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 (max_row - min_row + 1) * self.cell_size,
             )
 
-            sprite_name = str(feature.get("sprite") or "")
+            sprite_name = "barrels.png"
             sprite_path = self._texture_manager._base_dir / "props" / "terrain" / sprite_name
             exists = bool(sprite_name) and sprite_path.exists()
             sprite_log_key = f"{sprite_name}|{sprite_path}"
@@ -962,6 +963,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     scale=1.0,
                     debug_rect=rect,
                     sprite_name=sprite_name,
+                    fit_rect=rect,
                 )
             )
 
@@ -1557,6 +1559,17 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     painter.drawRect(prop.debug_rect)
                     painter.restore()
                 continue
+            prop_scale = prop.scale
+            if prop.fit_rect is not None and not prop.fit_rect.isEmpty():
+                rotation_quadrants = int(round(prop.rotation_deg / 90.0)) % 2
+                rotated_w = float(prop_pixmap.height()) if rotation_quadrants else float(prop_pixmap.width())
+                rotated_h = float(prop_pixmap.width()) if rotation_quadrants else float(prop_pixmap.height())
+                if rotated_w > 0.0 and rotated_h > 0.0:
+                    fit_scale = max(prop.fit_rect.width() / rotated_w, prop.fit_rect.height() / rotated_h)
+                    prop_scale *= max(0.01, fit_scale)
+            if prop.fit_rect is not None and not prop.fit_rect.isEmpty():
+                painter.save()
+                painter.setClipRect(prop.fit_rect, QtCore.Qt.IntersectClip)
             if self.render_prop_shadows:
                 shadow_pixmap = self._shadow_textures.get(prop.kind)
                 if shadow_pixmap is not None:
@@ -1566,7 +1579,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                         shadow_pixmap,
                         shadow_center,
                         rotation_deg=prop.rotation_deg,
-                        scale=prop.scale,
+                        scale=prop_scale,
                         alpha=0.7,
                     )
             self._draw_sprite(
@@ -1574,9 +1587,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 prop_pixmap,
                 prop.center,
                 rotation_deg=prop.rotation_deg,
-                scale=prop.scale,
+                scale=prop_scale,
                 alpha=1.0,
             )
+            if prop.fit_rect is not None and not prop.fit_rect.isEmpty():
+                painter.restore()
         painter.restore()
 
     def _draw_particles_layer(self, painter: QtGui.QPainter) -> None:
