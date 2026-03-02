@@ -1571,15 +1571,38 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     )
             if prop.debug_rect is not None:
                 target_rect = QtCore.QRectF(prop.debug_rect)
+                dest_w = max(1.0, float(target_rect.width()))
+                dest_h = max(1.0, float(target_rect.height()))
+
+                tex_w = max(1.0, float(prop_pixmap.width()))
+                tex_h = max(1.0, float(prop_pixmap.height()))
+
+                base_rot = float(prop.rotation_deg or 0.0)
+                base_rot_norm = int(abs(base_rot)) % 180
+                eff_tex_w, eff_tex_h = (tex_h, tex_w) if base_rot_norm == 90 else (tex_w, tex_h)
+
+                bbox_horizontal = dest_w > dest_h
+                tex_vertical = eff_tex_h > eff_tex_w
+                extra_rot = 0.0
+                if bbox_horizontal and tex_vertical:
+                    extra_rot = 90.0
+                elif (not bbox_horizontal) and (eff_tex_w > eff_tex_h):
+                    extra_rot = 90.0
+
+                total_rot = base_rot + extra_rot
+                total_rot_norm = int(abs(total_rot)) % 180
+                rot_tex_w, rot_tex_h = (tex_h, tex_w) if total_rot_norm == 90 else (tex_w, tex_h)
+
+                scale = min(dest_w / max(1.0, rot_tex_w), dest_h / max(1.0, rot_tex_h))
+                scale *= 0.92
+                draw_w = max(1.0, rot_tex_w * scale)
+                draw_h = max(1.0, rot_tex_h * scale)
+
                 painter.save()
                 painter.setOpacity(1.0)
                 painter.translate(target_rect.center())
-                if prop.rotation_deg:
-                    painter.rotate(prop.rotation_deg)
-                draw_w = float(target_rect.width())
-                draw_h = float(target_rect.height())
-                if int(abs(prop.rotation_deg)) % 180 == 90:
-                    draw_w, draw_h = draw_h, draw_w
+                if total_rot:
+                    painter.rotate(total_rot)
                 draw_rect = QtCore.QRectF(-draw_w / 2.0, -draw_h / 2.0, draw_w, draw_h)
                 painter.drawPixmap(draw_rect, prop_pixmap, QtCore.QRectF(prop_pixmap.rect()))
                 painter.restore()
