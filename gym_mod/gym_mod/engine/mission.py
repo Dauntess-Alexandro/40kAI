@@ -36,6 +36,7 @@ TerrainFeature = dict
 _TERRAIN_SPRITE_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "viewer", "assets", "props", "terrain")
 )
+_BARRICADE_SPRITE_NAME = "barrels_red_warning_3x1.png"
 
 
 def _terrain_sprite_candidates() -> list[str]:
@@ -75,7 +76,6 @@ def _make_terrain_feature(cells: list[tuple[int, int]], sprite_name: str) -> Ter
 
 
 def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.Random) -> list[TerrainFeature]:
-    sprites = _terrain_sprite_candidates()
     count = 4 if rng.random() < 0.5 else 2
     pair_count = max(1, count // 2)
     center_col = int(b_hei // 2)
@@ -117,10 +117,8 @@ def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.R
             if any(is_in_deploy_zone("model", cell, b_len, b_hei) or is_in_deploy_zone("enemy", cell, b_len, b_hei) for cell in pair_cells):
                 continue
 
-            sprite_left = rng.choice(sprites) if sprites else ""
-            sprite_right = rng.choice(sprites) if sprites else ""
-            features.append(_make_terrain_feature(left_cells, sprite_left))
-            features.append(_make_terrain_feature(right_cells, sprite_right))
+            features.append(_make_terrain_feature(left_cells, _BARRICADE_SPRITE_NAME))
+            features.append(_make_terrain_feature(right_cells, _BARRICADE_SPRITE_NAME))
             used_cells.update(pair_cells)
             attempt_ok = True
             break
@@ -194,6 +192,12 @@ def apply_mission_layout(env, mission_name: str | None = None) -> None:
     env._objective_hold_streaks = [0] * len(env.coordsOfOM)
     env.mission_name = mission_display_name(mission)
     env.terrain_features = only_war_terrain_features(env.b_len, env.b_hei)
+    io = get_active_io()
+    sprite_exists = (_TERRAIN_SPRITE_DIR and os.path.exists(os.path.join(_TERRAIN_SPRITE_DIR, _BARRICADE_SPRITE_NAME)))
+    io.log(
+        f"[MISSION][TERRAIN] kind=barricade sprite={_BARRICADE_SPRITE_NAME} "
+        f"count={len(env.terrain_features)} exists={sprite_exists}"
+    )
 
 
 def deploy_depth(board_width: int) -> int:
