@@ -35,6 +35,10 @@ def resolve_asset_path(rel_path: str) -> Path:
     return Path(__file__).resolve().parent / "assets" / rel_path
 
 
+def resolve_viewer_root() -> Path:
+    return Path(__file__).resolve().parent
+
+
 @dataclass
 class UnitRender:
     key: Tuple[str, int]
@@ -137,10 +141,9 @@ class DeployPlacementFlash:
 
 @dataclass
 class PropInstance:
-    kind: str
-    center: QtCore.QPointF
+    texture_key: str
+    draw_rect: QtCore.QRectF
     rotation_deg: float
-    scale: float
     debug_rect: Optional[QtCore.QRectF] = None
     sprite_name: str = ""
 
@@ -301,9 +304,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
         assets_root = resolve_asset_path("")
         self._texture_manager = TextureManager(assets_root)
+        self._viewer_root = resolve_viewer_root()
         self._unit_icon_by_name = self._build_unit_icon_map()
         self._ground_textures: List[QtGui.QPixmap] = []
         self._prop_textures: Dict[str, QtGui.QPixmap] = {}
+        self._terrain_texture_cache: Dict[str, QtGui.QPixmap] = {}
         self._shadow_textures: Dict[str, QtGui.QPixmap] = {}
         self._decal_textures: Dict[str, QtGui.QPixmap] = {}
         self._fx_particle_textures: Dict[str, QtGui.QPixmap] = {}
@@ -353,15 +358,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 self._ground_textures.append(pixmap)
 
         self._prop_textures.clear()
+        self._terrain_texture_cache.clear()
         self._shadow_textures.clear()
         self._decal_textures.clear()
-
-        terrain_dir = self._texture_manager._base_dir / "props" / "terrain"
-        if terrain_dir.exists():
-            for path in sorted(terrain_dir.glob("*.png")):
-                pixmap = self._texture_manager.load_png(f"props/terrain/{path.name}")
-                if pixmap is not None:
-                    self._prop_textures[path.name] = pixmap
 
         self._fx_particle_textures.clear()
         fx_dir = self._texture_manager._base_dir / "fx"
@@ -370,6 +369,23 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 pixmap = self._texture_manager.load_png(f"fx/{path.name}")
                 if pixmap is not None:
                     self._fx_particle_textures[path.stem] = pixmap
+
+    def _get_terrain_texture(self, sprite_name: str) -> Optional[QtGui.QPixmap]:
+        filename = str(sprite_name or "").strip()
+        if not filename:
+            return None
+        cached = self._terrain_texture_cache.get(filename)
+        if cached is not None:
+            return cached
+        sprite_path = self._viewer_root / "assets" / "props" / "terrain" / filename
+        if not sprite_path.exists():
+            return None
+        image = QtGui.QImage(str(sprite_path))
+        if image.isNull():
+            return None
+        pixmap = QtGui.QPixmap.fromImage(image)
+        self._terrain_texture_cache[filename] = pixmap
+        return pixmap
 
     def set_error_message(self, message: Optional[str]) -> None:
         self._error_message = message
@@ -932,19 +948,17 @@ class OpenGLBoardWidget(QOpenGLWidget):
             cols = [cell[1] for cell in cells]
             min_row, max_row = min(rows), max(rows)
             min_col, max_col = min(cols), max(cols)
-            center_col = (min_col + max_col + 1) * 0.5
-            center_row = (min_row + max_row + 1) * 0.5
-            center = QtCore.QPointF(center_col * self.cell_size, center_row * self.cell_size)
-            is_vertical = len(set(cols)) == 1
+            span_x = max_col - min_col + 1
+            span_y = max_row - min_row + 1
             rect = QtCore.QRectF(
                 min_col * self.cell_size,
                 min_row * self.cell_size,
-                (max_col - min_col + 1) * self.cell_size,
-                (max_row - min_row + 1) * self.cell_size,
+                span_x * self.cell_size,
+                span_y * self.cell_size,
             )
 
             sprite_name = str(feature.get("sprite") or "")
-            sprite_path = self._texture_manager._base_dir / "props" / "terrain" / sprite_name
+            sprite_path = self._viewer_root / "assets" / "props" / "terrain" / sprite_name
             exists = bool(sprite_name) and sprite_path.exists()
             sprite_log_key = f"{sprite_name}|{sprite_path}"
             if sprite_log_key not in self._terrain_sprite_log_cache:
@@ -953,13 +967,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     f"[VIEWER][TERRAIN] load sprite={sprite_name or '(empty)'} path={sprite_path} exists={exists}"
                 )
 
-            texture_key = sprite_name if sprite_name in self._prop_textures else ""
+            prop_pixmap = self._get_terrain_texture(sprite_name)
+            rotation_deg = 0.0
+            if prop_pixmap is not None:
+                bbox_is_horizontal = span_x > span_y
+                tex_is_horizontal = prop_pixmap.width() > prop_pixmap.height()
+                if bbox_is_horizontal ^ tex_is_horizontal:
+                    rotation_deg = 90.0
+            texture_key = sprite_name if prop_pixmap is not None else ""
             self._props.append(
                 PropInstance(
-                    kind=texture_key,
-                    center=center,
-                    rotation_deg=90.0 if is_vertical else 0.0,
-                    scale=1.0,
+                    texture_key=texture_key,
+                    draw_rect=rect,
+                    rotation_deg=rotation_deg,
                     debug_rect=rect,
                     sprite_name=sprite_name,
                 )
@@ -1546,7 +1566,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.save()
         painter.setClipRect(self._board_rect)
         for prop in self._props:
-            prop_pixmap = self._prop_textures.get(prop.kind) if prop.kind else None
+            prop_pixmap = self._get_terrain_texture(prop.texture_key) if prop.texture_key else None
             if prop_pixmap is None:
                 if prop.debug_rect is not None:
                     painter.save()
@@ -1558,25 +1578,39 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     painter.restore()
                 continue
             if self.render_prop_shadows:
-                shadow_pixmap = self._shadow_textures.get(prop.kind)
+                shadow_pixmap = self._shadow_textures.get(prop.texture_key)
                 if shadow_pixmap is not None:
-                    shadow_center = prop.center + QtCore.QPointF(8.0, 12.0)
+                    shadow_center = prop.draw_rect.center() + QtCore.QPointF(8.0, 12.0)
                     self._draw_sprite(
                         painter,
                         shadow_pixmap,
                         shadow_center,
                         rotation_deg=prop.rotation_deg,
-                        scale=prop.scale,
+                        scale=1.0,
                         alpha=0.7,
                     )
-            self._draw_sprite(
-                painter,
+            tex_w = float(prop_pixmap.width())
+            tex_h = float(prop_pixmap.height())
+            if prop.rotation_deg % 180:
+                tex_w, tex_h = tex_h, tex_w
+            if tex_w <= 0.0 or tex_h <= 0.0:
+                continue
+            dest_rect = prop.draw_rect
+            s = min(dest_rect.width() / tex_w, dest_rect.height() / tex_h) * 0.95
+            draw_w = tex_w * s
+            draw_h = tex_h * s
+            draw_center = dest_rect.center()
+            painter.save()
+            painter.setOpacity(1.0)
+            painter.translate(draw_center)
+            if prop.rotation_deg:
+                painter.rotate(prop.rotation_deg)
+            painter.drawPixmap(
+                QtCore.QRectF(-draw_w * 0.5, -draw_h * 0.5, draw_w, draw_h),
                 prop_pixmap,
-                prop.center,
-                rotation_deg=prop.rotation_deg,
-                scale=prop.scale,
-                alpha=1.0,
+                QtCore.QRectF(0, 0, prop_pixmap.width(), prop_pixmap.height()),
             )
+            painter.restore()
         painter.restore()
 
     def _draw_particles_layer(self, painter: QtGui.QPainter) -> None:

@@ -33,6 +33,8 @@ VP_CAP_PER_COMMAND = reward_cfg.VP_CAP_PER_COMMAND
 
 TerrainFeature = dict
 
+_BARRICADE_SPRITE = "barrels.png"
+
 _TERRAIN_SPRITE_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "viewer", "assets", "props", "terrain")
 )
@@ -70,12 +72,11 @@ def _make_terrain_feature(cells: list[tuple[int, int]], sprite_name: str) -> Ter
         "cells": [[int(r), int(c)] for r, c in cells],
         "tags": ["OBSTACLE", "BARRICADE"],
         "opacity": "obscuring",
-        "sprite": str(sprite_name or ""),
+        "sprite": str(sprite_name or _BARRICADE_SPRITE),
     }
 
 
 def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.Random) -> list[TerrainFeature]:
-    sprites = _terrain_sprite_candidates()
     count = 4 if rng.random() < 0.5 else 2
     pair_count = max(1, count // 2)
     center_col = int(b_hei // 2)
@@ -117,10 +118,8 @@ def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.R
             if any(is_in_deploy_zone("model", cell, b_len, b_hei) or is_in_deploy_zone("enemy", cell, b_len, b_hei) for cell in pair_cells):
                 continue
 
-            sprite_left = rng.choice(sprites) if sprites else ""
-            sprite_right = rng.choice(sprites) if sprites else ""
-            features.append(_make_terrain_feature(left_cells, sprite_left))
-            features.append(_make_terrain_feature(right_cells, sprite_right))
+            features.append(_make_terrain_feature(left_cells, _BARRICADE_SPRITE))
+            features.append(_make_terrain_feature(right_cells, _BARRICADE_SPRITE))
             used_cells.update(pair_cells)
             attempt_ok = True
             break

@@ -7,6 +7,8 @@ class TestTerrainFeatures(unittest.TestCase):
         source = Path("gym_mod/gym_mod/engine/mission.py").read_text(encoding="utf-8")
         self.assertIn("def only_war_terrain_features(b_len: int, b_hei: int)", source)
         self.assertIn('"kind": "barricade"', source)
+        self.assertIn('_BARRICADE_SPRITE = "barrels.png"', source)
+        self.assertIn('"sprite": str(sprite_name or _BARRICADE_SPRITE)', source)
         self.assertIn('"tags": ["OBSTACLE", "BARRICADE"]', source)
         self.assertIn('"opacity": "obscuring"', source)
 
