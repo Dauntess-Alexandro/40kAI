@@ -5,6 +5,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import datetime
+import json
 import os
 import random
 import re
@@ -32,6 +33,16 @@ from gym_mod.engine.logging_utils import format_unit
 from gym_mod.engine.state_export import write_state_json
 from gym_mod.engine.game_io import get_active_io
 from gym_mod.engine.event_bus import get_event_bus, get_event_recorder
+
+try:
+    import fcntl  # type: ignore[attr-defined]
+except Exception:  # pragma: no cover - Windows fallback
+    fcntl = None
+
+try:
+    import msvcrt  # type: ignore[attr-defined]
+except Exception:  # pragma: no cover - Linux fallback
+    msvcrt = None
 
 # ============================================================
 # 🔧 FIX: resolve string weapons like "Bolt pistol [PISTOL]"
@@ -1069,13 +1080,18 @@ class Warhammer40kEnv(gym.Env):
             return
         crossed = report.get("crossed_cells") or []
         preview = crossed if len(crossed) <= 12 else (crossed[:6] + ["..."] + crossed[-5:])
+        blocked_by = report.get("blocked_by")
+        blocked_by_text = "None" if blocked_by is None else str(blocked_by).replace("\n", "\\n")
+        rec_id = f"los-{time.time_ns()}"
         self._append_agent_log(
             "LOS_DEBUG | "
+            f"rec_id={rec_id} "
             f"mode={report.get('visibility_mode')} a_cell={attacker_cell} b_cell={target_cell} "
             f"crossed_cells={preview} los={report.get('los')} "
             f"obscured={report.get('obscured')} fully_visible={report.get('fully_visible')} "
-            f"rays={report.get('rays_clear')}/{report.get('rays_total')} blocked_by={report.get('blocked_by')}"
+            f"rays={report.get('rays_clear')}/{report.get('rays_total')} blocked_by={blocked_by_text}"
         )
+        self._append_los_debug_jsonl(attacker_cell, target_cell, report)
 
     def _has_line_of_sight(self, attacker_side: str, attacker_idx: int, target_side: str, target_idx: int) -> bool:
         attacker_coords = self.unit_coords if attacker_side == "model" else self.enemy_coords
@@ -1512,7 +1528,54 @@ class Warhammer40kEnv(gym.Env):
         full_line = f"{timestamp} | {msg}"
         try:
             with open(self._agent_log_path, "a", encoding="utf-8") as log_file:
+                self._lock_log_file(log_file)
                 log_file.write(full_line + "\n")
+                log_file.flush()
+                self._unlock_log_file(log_file)
+        except Exception:
+            return
+
+    def _lock_log_file(self, log_file) -> None:
+        try:
+            if fcntl is not None:
+                fcntl.flock(log_file.fileno(), fcntl.LOCK_EX)
+                return
+            if msvcrt is not None:
+                msvcrt.locking(log_file.fileno(), msvcrt.LK_LOCK, 1)
+        except Exception:
+            return
+
+    def _unlock_log_file(self, log_file) -> None:
+        try:
+            if fcntl is not None:
+                fcntl.flock(log_file.fileno(), fcntl.LOCK_UN)
+                return
+            if msvcrt is not None:
+                msvcrt.locking(log_file.fileno(), msvcrt.LK_UNLCK, 1)
+        except Exception:
+            return
+
+    def _append_los_debug_jsonl(self, attacker_cell: tuple[int, int], target_cell: tuple[int, int], report: dict) -> None:
+        log_path = f"{self._agent_log_path}.los.jsonl"
+        rec = {
+            "ts": datetime.datetime.now().isoformat(timespec="seconds"),
+            "kind": "LOS_DEBUG",
+            "visibility_mode": report.get("visibility_mode"),
+            "a_cell": list(attacker_cell),
+            "b_cell": list(target_cell),
+            "los": bool(report.get("los", False)),
+            "obscured": bool(report.get("obscured", False)),
+            "fully_visible": bool(report.get("fully_visible", False)),
+            "rays_clear": report.get("rays_clear"),
+            "rays_total": report.get("rays_total"),
+            "blocked_by": report.get("blocked_by"),
+        }
+        try:
+            with open(log_path, "a", encoding="utf-8") as handle:
+                self._lock_log_file(handle)
+                handle.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                handle.flush()
+                self._unlock_log_file(handle)
         except Exception:
             return
 

@@ -14,6 +14,16 @@ import json
 import math
 import os
 from pathlib import Path
+
+try:
+    import fcntl  # type: ignore[attr-defined]
+except Exception:  # pragma: no cover - Windows fallback
+    fcntl = None
+
+try:
+    import msvcrt  # type: ignore[attr-defined]
+except Exception:  # pragma: no cover - Linux fallback
+    msvcrt = None
 import random
 from time import monotonic, perf_counter
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -872,7 +882,16 @@ class OpenGLBoardWidget(QOpenGLWidget):
             log_path = Path(__file__).resolve().parent.parent / "LOGS_FOR_AGENTS_PLAY.md"
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with open(log_path, "a", encoding="utf-8") as handle:
+                if fcntl is not None:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                elif msvcrt is not None:
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
                 handle.write(f"{timestamp} | {msg}\n")
+                handle.flush()
+                if fcntl is not None:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                elif msvcrt is not None:
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
         except Exception:
             return
 

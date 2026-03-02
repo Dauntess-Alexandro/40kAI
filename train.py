@@ -15,6 +15,17 @@ import time
 import multiprocessing as mp
 import threading
 import atexit
+
+try:
+    import fcntl  # type: ignore[attr-defined]
+except Exception:  # pragma: no cover - Windows fallback
+    fcntl = None
+
+try:
+    import msvcrt  # type: ignore[attr-defined]
+except Exception:  # pragma: no cover - Linux fallback
+    msvcrt = None
+
 from tqdm import tqdm
 from gym_mod.envs.warhamEnv import *
 from gym_mod.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
@@ -560,10 +571,36 @@ def _flush_agent_log_buffer(force: bool = False) -> None:
     log_path = os.path.join(os.path.dirname(os.path.abspath(script_path)), AGENT_TRAIN_LOG_FILE)
     try:
         with open(log_path, "a", encoding="utf-8") as log_file:
+            _lock_log_file(log_file)
             log_file.writelines(lines)
+            log_file.flush()
+            _unlock_log_file(log_file)
     except Exception as exc:
         print(f"[LOG][WARN] Не удалось записать LOGS_FOR_AGENTS_TRAIN.md: {exc}")
 
+
+
+
+def _lock_log_file(handle) -> None:
+    try:
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            return
+        if msvcrt is not None:
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+    except Exception:
+        return
+
+
+def _unlock_log_file(handle) -> None:
+    try:
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            return
+        if msvcrt is not None:
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+    except Exception:
+        return
 
 atexit.register(lambda: _flush_agent_log_buffer(force=True))
 
