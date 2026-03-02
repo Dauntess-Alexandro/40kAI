@@ -180,6 +180,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
     cell_clicked = QtCore.Signal(int, int)
     cell_hovered = QtCore.Signal(object)
 
+    _TERRAIN_LONG_SIDE_MULT = 1.08
+    _TERRAIN_SHORT_SIDE_MULT = 1.15
+
     def __init__(
         self,
         cell_size: int = 24,
@@ -954,18 +957,43 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 )
 
             texture_key = sprite_name if sprite_name in self._prop_textures else ""
+            prop_scale = 1.0
+            if texture_key:
+                prop_pixmap = self._prop_textures.get(texture_key)
+                if prop_pixmap is not None:
+                    prop_scale = self._compute_terrain_scale(prop_pixmap, rect)
             self._props.append(
                 PropInstance(
                     kind=texture_key,
                     center=center,
                     rotation_deg=90.0 if is_vertical else 0.0,
-                    scale=1.0,
+                    scale=prop_scale,
                     debug_rect=rect,
                     sprite_name=sprite_name,
                 )
             )
 
         self._props_initialized = True
+
+    def _compute_terrain_scale(self, pixmap: QtGui.QPixmap, footprint_rect: QtCore.QRectF) -> float:
+        """Fit terrain sprite into board footprint without stretching."""
+        if pixmap.isNull():
+            return 1.0
+
+        sprite_w = float(max(1, pixmap.width()))
+        sprite_h = float(max(1, pixmap.height()))
+        sprite_long = max(sprite_w, sprite_h)
+        sprite_short = min(sprite_w, sprite_h)
+
+        footprint_long = max(footprint_rect.width(), footprint_rect.height())
+        footprint_short = min(footprint_rect.width(), footprint_rect.height())
+        if footprint_long <= 0 or footprint_short <= 0:
+            return 1.0
+
+        target_long = footprint_long * self._TERRAIN_LONG_SIDE_MULT
+        target_short = footprint_short * self._TERRAIN_SHORT_SIDE_MULT
+        scale = min(target_long / sprite_long, target_short / sprite_short)
+        return max(0.05, min(1.0, scale))
 
     def _view_world_rect(self) -> QtCore.QRectF:
         pan_x, pan_y = self._snap_pan_to_pixels(self._pan)
