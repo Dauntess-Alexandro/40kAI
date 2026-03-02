@@ -141,6 +141,8 @@ class PropInstance:
     center: QtCore.QPointF
     rotation_deg: float
     scale: float
+    debug_rect: Optional[QtCore.QRectF] = None
+    sprite_name: str = ""
 
 
 @dataclass
@@ -308,6 +310,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._decals: List[DecalInstance] = []
         self._props: List[PropInstance] = []
         self._terrain_features_state: List[dict] = []
+        self._terrain_log_signature: Optional[tuple] = None
+        self._terrain_sprite_log_cache: set[str] = set()
         self._particles: List[ParticleInstance] = []
         self._particles_last_ts: Optional[float] = None
         self._props_initialized = False
@@ -426,6 +430,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._board_rect = QtCore.QRectF(0, 0, width * self.cell_size, height * self.cell_size)
         self._ensure_grid_cache(width, height)
         self._terrain_features_state = list(self._state.get("terrain_features", []) or [])
+        self._log_terrain_features_once()
         if self.render_terrain:
             if (width, height) != self._props_board_size:
                 self._props_board_size = (width, height)
@@ -854,6 +859,33 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._pan = view_center - board_center * self._scale
         self._target_pan = QtCore.QPointF(self._pan)
 
+    def _append_agent_log(self, msg: str) -> None:
+        if not msg:
+            return
+        try:
+            import datetime
+            log_path = Path(__file__).resolve().parent.parent / "LOGS_FOR_AGENTS_PLAY.md"
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with open(log_path, "a", encoding="utf-8") as handle:
+                handle.write(f"{timestamp} | {msg}\n")
+        except Exception:
+            return
+
+    def _log_terrain_features_once(self) -> None:
+        sig = tuple(
+            (
+                str(feature.get("kind") or ""),
+                tuple(tuple(cell) for cell in (feature.get("cells") or []) if isinstance(cell, (list, tuple))),
+                str(feature.get("sprite") or ""),
+            )
+            for feature in self._terrain_features_state
+            if isinstance(feature, dict)
+        )
+        if sig == self._terrain_log_signature:
+            return
+        self._terrain_log_signature = sig
+        self._append_agent_log(f"[VIEWER][TERRAIN] features={len(sig)}")
+
     def _ensure_grid_cache(self, width: int, height: int) -> None:
         if self._grid_picture and self._grid_size == (width, height):
             return
@@ -879,13 +911,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return
         if self._board_rect.isEmpty():
             return
-        if not self._prop_textures:
-            return
 
         self._props = []
         for feature in self._terrain_features_state:
             if not isinstance(feature, dict):
                 continue
+            if str(feature.get("kind") or "").strip().lower() != "barricade":
+                continue
+
             cells_raw = feature.get("cells") or []
             cells = []
             for cell in cells_raw:
@@ -893,12 +926,6 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     continue
                 cells.append((int(cell[0]), int(cell[1])))
             if len(cells) != 3:
-                continue
-
-            sprite_name = str(feature.get("sprite") or "")
-            if sprite_name not in self._prop_textures:
-                sprite_name = next(iter(self._prop_textures.keys()), "")
-            if not sprite_name:
                 continue
 
             rows = [cell[0] for cell in cells]
@@ -909,13 +936,32 @@ class OpenGLBoardWidget(QOpenGLWidget):
             center_row = (min_row + max_row + 1) * 0.5
             center = QtCore.QPointF(center_col * self.cell_size, center_row * self.cell_size)
             is_vertical = len(set(cols)) == 1
+            rect = QtCore.QRectF(
+                min_col * self.cell_size,
+                min_row * self.cell_size,
+                (max_col - min_col + 1) * self.cell_size,
+                (max_row - min_row + 1) * self.cell_size,
+            )
 
+            sprite_name = str(feature.get("sprite") or "")
+            sprite_path = self._texture_manager._base_dir / "props" / "terrain" / sprite_name
+            exists = bool(sprite_name) and sprite_path.exists()
+            sprite_log_key = f"{sprite_name}|{sprite_path}"
+            if sprite_log_key not in self._terrain_sprite_log_cache:
+                self._terrain_sprite_log_cache.add(sprite_log_key)
+                self._append_agent_log(
+                    f"[VIEWER][TERRAIN] load sprite={sprite_name or '(empty)'} path={sprite_path} exists={exists}"
+                )
+
+            texture_key = sprite_name if sprite_name in self._prop_textures else ""
             self._props.append(
                 PropInstance(
-                    kind=sprite_name,
+                    kind=texture_key,
                     center=center,
                     rotation_deg=90.0 if is_vertical else 0.0,
                     scale=1.0,
+                    debug_rect=rect,
+                    sprite_name=sprite_name,
                 )
             )
 
@@ -1495,13 +1541,21 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.restore()
 
     def _draw_props_layer(self, painter: QtGui.QPainter) -> None:
-        if not self._props or not self._prop_textures:
+        if not self._props:
             return
         painter.save()
         painter.setClipRect(self._board_rect)
         for prop in self._props:
-            prop_pixmap = self._prop_textures.get(prop.kind)
+            prop_pixmap = self._prop_textures.get(prop.kind) if prop.kind else None
             if prop_pixmap is None:
+                if prop.debug_rect is not None:
+                    painter.save()
+                    pen = QtGui.QPen(QtGui.QColor(220, 80, 80, 220), 2)
+                    pen.setCosmetic(True)
+                    painter.setPen(pen)
+                    painter.setBrush(QtGui.QColor(220, 80, 80, 60))
+                    painter.drawRect(prop.debug_rect)
+                    painter.restore()
                 continue
             if self.render_prop_shadows:
                 shadow_pixmap = self._shadow_textures.get(prop.kind)
@@ -1580,6 +1634,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._draw_objective_layer(painter)
         self._draw_deploy_ghost_layer(painter)
         self._draw_platform_fx_layer(painter)
+        if self.render_terrain:
+            self._draw_props_layer(painter)
         self._draw_units_layer(painter)
         self._draw_deploy_snap_fx_layer(painter)
         self._draw_selection_layer(painter)
