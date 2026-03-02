@@ -31,6 +31,122 @@ MAX_BATTLE_ROUNDS = 10
 START_SCORING_ROUND = reward_cfg.VP_START_SCORING_ROUND
 VP_CAP_PER_COMMAND = reward_cfg.VP_CAP_PER_COMMAND
 
+TerrainFeature = dict
+
+_TERRAIN_SPRITE_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "viewer", "assets", "props", "terrain")
+)
+
+
+def _terrain_sprite_candidates() -> list[str]:
+    try:
+        names = sorted(
+            file_name
+            for file_name in os.listdir(_TERRAIN_SPRITE_DIR)
+            if file_name.lower().endswith(".png")
+        )
+        return names
+    except Exception:
+        return []
+
+
+def _terrain_seed() -> int:
+    raw = str(os.getenv("TERRAIN_SEED", "1040") or "1040").strip()
+    try:
+        return int(raw)
+    except ValueError:
+        return 1040
+
+
+def _make_barricade_cells(anchor_row: int, anchor_col: int, orientation: str) -> list[tuple[int, int]]:
+    if orientation == "vertical":
+        return [(anchor_row + i, anchor_col) for i in range(3)]
+    return [(anchor_row, anchor_col + i) for i in range(3)]
+
+
+def _make_terrain_feature(cells: list[tuple[int, int]], sprite_name: str) -> TerrainFeature:
+    return {
+        "kind": "barricade",
+        "cells": [[int(r), int(c)] for r, c in cells],
+        "tags": ["OBSTACLE", "BARRICADE"],
+        "opacity": "obscuring",
+        "sprite": str(sprite_name or ""),
+    }
+
+
+def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.Random) -> list[TerrainFeature]:
+    sprites = _terrain_sprite_candidates()
+    count = 4 if rng.random() < 0.5 else 2
+    pair_count = max(1, count // 2)
+    center_col = int(b_hei // 2)
+    depth = deploy_depth(b_hei)
+
+    objective_cells = {(int(b_len // 2), int(b_hei // 2))}
+    used_cells: set[tuple[int, int]] = set()
+    features: list[TerrainFeature] = []
+
+    candidate_rows = [max(1, b_len // 4), max(1, b_len // 2 - 2), min(b_len - 4, (3 * b_len) // 4)]
+    rng.shuffle(candidate_rows)
+
+    safe_left_min = max(depth + 1, 6)
+    safe_left_max = max(safe_left_min, center_col - 5)
+
+    rows_iter = candidate_rows[:]
+    while len(rows_iter) < pair_count:
+        rows_iter.append(rng.randint(1, max(1, b_len - 4)))
+
+    for pair_idx in range(pair_count):
+        row = int(max(1, min(b_len - 4, rows_iter[pair_idx])))
+        orientation = "horizontal" if rng.random() < 0.5 else "vertical"
+
+        attempt_ok = False
+        for _ in range(20):
+            left_col = int(rng.randint(safe_left_min, safe_left_max))
+            mirror_col = int((b_hei - 1) - left_col)
+
+            left_cells = _make_barricade_cells(row, left_col, orientation)
+            right_cells = _make_barricade_cells(row, mirror_col - (2 if orientation == "horizontal" else 0), orientation)
+
+            pair_cells = left_cells + right_cells
+            if any(not _in_bounds(cell, b_len, b_hei) for cell in pair_cells):
+                continue
+            if any(cell in objective_cells for cell in pair_cells):
+                continue
+            if any(cell in used_cells for cell in pair_cells):
+                continue
+            if any(is_in_deploy_zone("model", cell, b_len, b_hei) or is_in_deploy_zone("enemy", cell, b_len, b_hei) for cell in pair_cells):
+                continue
+
+            sprite_left = rng.choice(sprites) if sprites else ""
+            sprite_right = rng.choice(sprites) if sprites else ""
+            features.append(_make_terrain_feature(left_cells, sprite_left))
+            features.append(_make_terrain_feature(right_cells, sprite_right))
+            used_cells.update(pair_cells)
+            attempt_ok = True
+            break
+
+        if not attempt_ok:
+            continue
+
+    return features
+
+
+def only_war_terrain_features(b_len: int, b_hei: int) -> list[TerrainFeature]:
+    rng = random.Random(_terrain_seed() + int(b_len) * 1000 + int(b_hei))
+    return _generate_only_war_terrain_features(int(b_len), int(b_hei), rng=rng)
+
+
+def terrain_cells_from_features(terrain_features: Iterable[dict] | None) -> set[tuple[int, int]]:
+    cells: set[tuple[int, int]] = set()
+    for feature in (terrain_features or []):
+        if not isinstance(feature, dict):
+            continue
+        for cell in (feature.get("cells") or []):
+            if not isinstance(cell, (list, tuple)) or len(cell) < 2:
+                continue
+            cells.add((int(cell[0]), int(cell[1])))
+    return cells
+
 
 def normalize_mission_name(value: str | None) -> str:
     raw = (value or MISSION_ONLY_WAR).strip().lower().replace("-", "_").replace(" ", "_")
@@ -77,6 +193,7 @@ def apply_mission_layout(env, mission_name: str | None = None) -> None:
     env.enemy_obj_oc = np.zeros(len(env.coordsOfOM), dtype=int)
     env._objective_hold_streaks = [0] * len(env.coordsOfOM)
     env.mission_name = mission_display_name(mission)
+    env.terrain_features = only_war_terrain_features(env.b_len, env.b_hei)
 
 
 def deploy_depth(board_width: int) -> int:
@@ -143,6 +260,7 @@ def _valid_deploy_cells(
     *,
     model_offsets: Iterable[Tuple[int, int]] | None = None,
     occupied_model_cells: Iterable[Tuple[int, int]] | None = None,
+    terrain_cells: Iterable[Tuple[int, int]] | None = None,
 ) -> List[Tuple[int, int]]:
     valid: List[Tuple[int, int]] = []
     for row, col in _zone_coords(side, b_len, b_hei):
@@ -154,6 +272,7 @@ def _valid_deploy_cells(
             occupied,
             model_offsets=model_offsets,
             occupied_model_cells=occupied_model_cells,
+            terrain_cells=terrain_cells,
         )
         if ok:
             valid.append((row, col))
@@ -249,6 +368,7 @@ def _choose_rl_deploy_coord(
     model_offsets: Iterable[Tuple[int, int]] | None = None,
     occupied_model_cells: Iterable[Tuple[int, int]] | None = None,
     placed_side_units: Sequence[dict] | None = None,
+    terrain_cells: Iterable[Tuple[int, int]] | None = None,
     rng: random.Random | None = None,
     log_fn: Optional[callable] = None,
     unit_label: str = "",
@@ -260,6 +380,7 @@ def _choose_rl_deploy_coord(
         occupied,
         model_offsets=model_offsets,
         occupied_model_cells=occupied_model_cells,
+        terrain_cells=terrain_cells,
     )
     if not valid_cells:
         raise RuntimeError(f"No valid deployment cells for rl_phase side={side}")
@@ -322,6 +443,7 @@ def _choose_rl_deploy_coord(
             occupied,
             model_offsets=model_offsets,
             occupied_model_cells=occupied_model_cells,
+            terrain_cells=terrain_cells,
         )
         if ok:
             score_before, before_parts = _deployment_global_score(
@@ -449,6 +571,7 @@ def validate_deploy_coord(
     *,
     model_offsets: Iterable[Tuple[int, int]] | None = None,
     occupied_model_cells: Iterable[Tuple[int, int]] | None = None,
+    terrain_cells: Iterable[Tuple[int, int]] | None = None,
 ) -> Tuple[bool, str]:
     if not _in_bounds(coord, b_len, b_hei):
         return False, "out_of_bounds"
@@ -456,8 +579,11 @@ def validate_deploy_coord(
         return False, "outside_deploy_zone"
     key = (int(coord[0]), int(coord[1]))
     occupied_set = set((int(r), int(c)) for r, c in occupied)
+    terrain_set = set((int(r), int(c)) for r, c in (terrain_cells or []))
     if key in occupied_set:
         return False, "occupied"
+    if key in terrain_set:
+        return False, "terrain_no_deploy"
 
     offsets = list(model_offsets or [(0, 0)])
     model_occupied_set = set((int(r), int(c)) for r, c in (occupied_model_cells or []))
@@ -471,6 +597,8 @@ def validate_deploy_coord(
             return False, "outside_deploy_zone"
         if m_coord in model_occupied_set:
             return False, "occupied"
+        if m_coord in terrain_set:
+            return False, "terrain_no_deploy"
 
     return True, "ok"
 
@@ -609,6 +737,7 @@ def deploy_only_war(
 
     occupied: set[Tuple[int, int]] = set()
     occupied_model_cells: set[Tuple[int, int]] = set()
+    terrain_cells = terrain_cells_from_features(only_war_terrain_features(b_len, b_hei))
     side_counts = {
         "model": len(model_units),
         "enemy": len(enemy_units),
@@ -686,6 +815,7 @@ def deploy_only_war(
                             "deploy_b_hei": b_hei,
                             "occupied": [[int(r), int(c)] for r, c in sorted(occupied)],
                             "occupied_model_cells": [[int(r), int(c)] for r, c in sorted(occupied_model_cells)],
+                            "terrain_cells": [[int(r), int(c)] for r, c in sorted(terrain_cells)],
                             "model_offsets": [[int(dr), int(dc)] for dr, dc in unit_model_offsets],
                         },
                     )
@@ -715,6 +845,7 @@ def deploy_only_war(
                     occupied,
                     model_offsets=unit_model_offsets,
                     occupied_model_cells=occupied_model_cells,
+                    terrain_cells=terrain_cells,
                 )
                 if ok:
                     coord = coord_candidate
@@ -735,6 +866,7 @@ def deploy_only_war(
                 occupied,
                 model_offsets=unit_model_offsets,
                 occupied_model_cells=occupied_model_cells,
+                terrain_cells=terrain_cells,
                 placed_side_units=placed_by_side.get(side, []),
                 rng=rng,
                 log_fn=log_fn,
@@ -771,6 +903,7 @@ def deploy_only_war(
             occupied,
             model_offsets=unit_model_offsets,
             occupied_model_cells=occupied_model_cells,
+            terrain_cells=terrain_cells,
         )
         if not ok:
             raise RuntimeError(

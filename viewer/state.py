@@ -16,6 +16,7 @@ def _default_state() -> Dict[str, Any]:
         "cp": {"player": None, "model": None},
         "units": [],
         "objectives": [],
+        "terrain_features": [],
         "log_tail": [],
     }
 

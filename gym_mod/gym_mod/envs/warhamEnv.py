@@ -25,6 +25,7 @@ from gym_mod.engine.mission import (
     score_end_of_command_phase,
     apply_end_of_battle,
     controlled_objectives,
+    terrain_cells_from_features,
 )
 from gym_mod.engine.skills import apply_end_of_command_phase
 from gym_mod.engine.logging_utils import format_unit
@@ -861,8 +862,9 @@ class Warhammer40kEnv(gym.Env):
         self._target_cache_epoch = 0
         self._distance_cache = {}
         self._shoot_target_cache = {}
+        self.terrain_features = list(getattr(self, "terrain_features", []) or [])
         self.terrain_opaque_cells: set[tuple[int, int]] = set()
-        self.terrain_obscuring_cells: set[tuple[int, int]] = set()
+        self.terrain_obscuring_cells: set[tuple[int, int]] = self.get_terrain_obscuring_cells_set()
         self.visibility_mode = str(os.getenv("VISIBILITY_MODE", "multi_ray_5") or "multi_ray_5").strip().lower()
         log_name = str(os.getenv("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_PLAY.md") or "LOGS_FOR_AGENTS_PLAY.md")
         self._agent_log_path = os.path.abspath(
@@ -1012,6 +1014,52 @@ class Warhammer40kEnv(gym.Env):
     def _cell_from_coord(self, coord) -> tuple[int, int]:
         return int(round(float(coord[0]))), int(round(float(coord[1])))
 
+    def get_terrain_obscuring_cells_set(self) -> set[tuple[int, int]]:
+        return terrain_cells_from_features(getattr(self, "terrain_features", []))
+
+    def is_terrain_cell(self, x: int, y: int) -> bool:
+        return (int(x), int(y)) in self.get_terrain_obscuring_cells_set()
+
+    def _adjust_end_move_from_terrain(self, side: str, unit_idx: int, pos_before: tuple[int, int], phase: str) -> None:
+        coords = self.unit_coords if side == "model" else self.enemy_coords
+        if not (0 <= unit_idx < len(coords)):
+            return
+        curr = self._cell_from_coord(coords[unit_idx])
+        if not self.is_terrain_cell(curr[0], curr[1]):
+            return
+
+        fallback = self._cell_from_coord(pos_before)
+        unit_id = unit_idx + (21 if side == "model" else 11)
+        if not self.is_terrain_cell(fallback[0], fallback[1]):
+            coords[unit_idx] = [fallback[0], fallback[1]]
+            self._log_unit(
+                "MODEL" if side == "model" else "enemy",
+                unit_id,
+                unit_idx,
+                f"Движение завершено на террейне {curr}, откат на {fallback}. Где: {phase}. Что делать дальше: выбрать другую конечную клетку.",
+            )
+            return
+
+        for radius in range(1, 4):
+            for dx in range(-radius, radius + 1):
+                for dy in range(-radius, radius + 1):
+                    if max(abs(dx), abs(dy)) != radius:
+                        continue
+                    cand = (curr[0] + dx, curr[1] + dy)
+                    if not (0 <= cand[0] < self.b_len and 0 <= cand[1] < self.b_hei):
+                        continue
+                    if self.is_terrain_cell(cand[0], cand[1]):
+                        continue
+                    coords[unit_idx] = [cand[0], cand[1]]
+                    self._log_unit(
+                        "MODEL" if side == "model" else "enemy",
+                        unit_id,
+                        unit_idx,
+                        f"Движение завершено на террейне {curr}, сдвиг на {cand}. Где: {phase}. Что делать дальше: выбрать клетку без террейна.",
+                    )
+                    return
+
+
     def _los_debug_enabled(self) -> bool:
         raw = str(os.getenv("LOS_DEBUG", "1")).strip().lower()
         return raw not in {"0", "false", "off", "no"}
@@ -1035,11 +1083,13 @@ class Warhammer40kEnv(gym.Env):
         attacker_cell = self._cell_from_coord(attacker_coords[int(attacker_idx)])
         target_cell = self._cell_from_coord(target_coords[int(target_idx)])
 
+        obscuring_cells = self.get_terrain_obscuring_cells_set()
+        self.terrain_obscuring_cells = set(obscuring_cells)
         report = visibility_report(
             attacker_cell,
             target_cell,
             opaque_cells_set=self.terrain_opaque_cells,
-            obscuring_cells_set=self.terrain_obscuring_cells,
+            obscuring_cells_set=obscuring_cells,
             visibility_mode=self.visibility_mode,
         )
         self._log_los_debug(attacker_cell, target_cell, report)
@@ -1288,6 +1338,8 @@ class Warhammer40kEnv(gym.Env):
             if not self._is_model_cell_in_bounds(cell):
                 return False
             if cell in occupied or cell in used:
+                return False
+            if self.is_terrain_cell(cell[0], cell[1]):
                 return False
             used.add(cell)
         return True
@@ -2562,6 +2614,8 @@ class Warhammer40kEnv(gym.Env):
                                 if diceRoll < 3:
                                     self.unit_health[i] -= self.unit_data[i]["W"]
                             self.unit_coords[i][0] += self.unit_data[i]["Movement"]
+                            self.unit_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
+                            self._adjust_end_move_from_terrain("model", i, pos_before, "movement_phase:model_fallback")
                             self.unitInAttack[i][0] = 0
                             self.unitInAttack[i][1] = 0
                             self.enemyInAttack[idOfE][0] = 0
@@ -2667,6 +2721,7 @@ class Warhammer40kEnv(gym.Env):
                     for j in range(len(self.unit_health)):
                         if self.enemy_coords[i] == self.unit_coords[j]:
                             self.enemy_coords[i][0] -= 1
+                    self._adjust_end_move_from_terrain("enemy", i, pos_before, "movement_phase:enemy")
                     pos_after = tuple(self.enemy_coords[i])
                     if move_dir == 4:
                         self._log_unit("enemy", unit_id, i, f"Движение пропущено (no move). Позиция после: {pos_after}")
@@ -2709,6 +2764,8 @@ class Warhammer40kEnv(gym.Env):
                                 if diceRoll < 3:
                                     self.enemy_health[i] -= self.enemy_data[i]["W"]
                             self.enemy_coords[i][0] -= self.enemy_data[i]["Movement"]
+                            self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                            self._adjust_end_move_from_terrain("enemy", i, pos_before, "movement_phase:enemy_fallback")
                             self.enemyInAttack[i][0] = 0
                             self.enemyInAttack[i][1] = 0
                             self.unitInAttack[idOfM][0] = 0
@@ -2891,6 +2948,7 @@ class Warhammer40kEnv(gym.Env):
                     for j in range(len(self.unit_health)):
                         if self.enemy_coords[i] == self.unit_coords[j]:
                             self.enemy_coords[i][0] -= 1
+                    self._adjust_end_move_from_terrain("enemy", i, pos_before, "movement_phase:enemy")
                     advanced_flags[i] = advanced
 
                     pos_after = tuple(self.enemy_coords[i])
@@ -3439,6 +3497,7 @@ class Warhammer40kEnv(gym.Env):
                             self.unit_coords[i][0] = self.enemy_coords[idOfE][0] + 1
                             self.unit_coords[i][1] = self.enemy_coords[idOfE][1] + 1
                             self.unit_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
+                            self._adjust_end_move_from_terrain("model", i, pos_before, "charge_phase:model")
                             self.enemyInAttack[idOfE][0] = 1
                             self.enemyInAttack[idOfE][1] = i
                             self.unitCharged[i] = 1
@@ -3591,6 +3650,7 @@ class Warhammer40kEnv(gym.Env):
                             self.enemy_coords[i][0] = self.unit_coords[idOfM][0] + 1
                             self.enemy_coords[i][1] = self.unit_coords[idOfM][1] + 1
                             self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                            self._adjust_end_move_from_terrain("enemy", i, pos_before, "charge_phase:enemy")
                             self.unitInAttack[idOfM][0] = 1
                             self.unitInAttack[idOfM][1] = i
                             self.enemyCharged[i] = 1
@@ -3704,6 +3764,7 @@ class Warhammer40kEnv(gym.Env):
                                 self.enemy_coords[i][0] = self.unit_coords[j][0] + 1
                                 self.enemy_coords[i][1] = self.unit_coords[j][1] + 1
                                 self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                                self._adjust_end_move_from_terrain("enemy", i, pos_before, "charge_phase:enemy_manual")
                                 self.enemyCharged[i] = 1
                                 self.updateBoard()
                                 self.unitInAttack[j][0] = 1
@@ -3767,6 +3828,7 @@ class Warhammer40kEnv(gym.Env):
                             self.enemy_coords[i][0] = self.unit_coords[idOfM][0] + 1
                             self.enemy_coords[i][1] = self.unit_coords[idOfM][1]
                             self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
+                            self._adjust_end_move_from_terrain("enemy", i, pos_before, "charge_phase:enemy")
                             self.enemyInAttack[i][0] = 1
                             self.enemyInAttack[i][1] = idOfM
                             self.unitInAttack[idOfM][0] = 1

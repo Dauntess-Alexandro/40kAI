@@ -796,6 +796,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         meta = self._deploy_context if isinstance(self._deploy_context, dict) else {}
         occupied = [tuple(pair) for pair in (meta.get("occupied") or []) if isinstance(pair, (list, tuple)) and len(pair) >= 2]
         occupied_model_cells = [tuple(pair) for pair in (meta.get("occupied_model_cells") or []) if isinstance(pair, (list, tuple)) and len(pair) >= 2]
+        terrain_cells = [tuple(pair) for pair in (meta.get("terrain_cells") or []) if isinstance(pair, (list, tuple)) and len(pair) >= 2]
         zone_side = str(meta.get("deploy_zone_side") or "enemy")
         b_len = int(meta.get("deploy_b_len") or 40)
         b_hei = int(meta.get("deploy_b_hei") or 60)
@@ -807,6 +808,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             occupied,
             model_offsets=offsets,
             occupied_model_cells=occupied_model_cells,
+            terrain_cells=terrain_cells,
         )
         return ok, reason, ghost_cells
 

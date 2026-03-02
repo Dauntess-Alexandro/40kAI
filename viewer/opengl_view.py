@@ -307,12 +307,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._fx_particle_textures: Dict[str, QtGui.QPixmap] = {}
         self._decals: List[DecalInstance] = []
         self._props: List[PropInstance] = []
+        self._terrain_features_state: List[dict] = []
         self._particles: List[ParticleInstance] = []
         self._particles_last_ts: Optional[float] = None
         self._props_initialized = False
         self._props_seed = 613
         self._props_board_size: Tuple[int, int] = (0, 0)
-        self.render_terrain = False
+        self.render_terrain = True
         self.render_decals = False
         self.render_prop_shadows = False
         self.render_fx = True
@@ -350,6 +351,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._prop_textures.clear()
         self._shadow_textures.clear()
         self._decal_textures.clear()
+
+        terrain_dir = self._texture_manager._base_dir / "props" / "terrain"
+        if terrain_dir.exists():
+            for path in sorted(terrain_dir.glob("*.png")):
+                pixmap = self._texture_manager.load_png(f"props/terrain/{path.name}")
+                if pixmap is not None:
+                    self._prop_textures[path.name] = pixmap
 
         self._fx_particle_textures.clear()
         fx_dir = self._texture_manager._base_dir / "fx"
@@ -417,6 +425,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._board_height = height
         self._board_rect = QtCore.QRectF(0, 0, width * self.cell_size, height * self.cell_size)
         self._ensure_grid_cache(width, height)
+        self._terrain_features_state = list(self._state.get("terrain_features", []) or [])
         if self.render_terrain:
             if (width, height) != self._props_board_size:
                 self._props_board_size = (width, height)
@@ -872,29 +881,44 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return
         if not self._prop_textures:
             return
-        rng = random.Random(self._props_seed)
-        prop_names = list(self._prop_textures.keys())
-        if not prop_names:
-            return
-        count = rng.randint(30, 60)
-        margin = self.cell_size * 1.5
-        width = max(0.0, self._board_rect.width() - margin * 2)
-        height = max(0.0, self._board_rect.height() - margin * 2)
+
         self._props = []
-        for _ in range(count):
-            kind = rng.choice(prop_names)
-            x = margin + rng.random() * width
-            y = margin + rng.random() * height
-            rotation = rng.uniform(-12.0, 12.0)
-            scale = rng.uniform(0.85, 1.25)
+        for feature in self._terrain_features_state:
+            if not isinstance(feature, dict):
+                continue
+            cells_raw = feature.get("cells") or []
+            cells = []
+            for cell in cells_raw:
+                if not isinstance(cell, (list, tuple)) or len(cell) < 2:
+                    continue
+                cells.append((int(cell[0]), int(cell[1])))
+            if len(cells) != 3:
+                continue
+
+            sprite_name = str(feature.get("sprite") or "")
+            if sprite_name not in self._prop_textures:
+                sprite_name = next(iter(self._prop_textures.keys()), "")
+            if not sprite_name:
+                continue
+
+            rows = [cell[0] for cell in cells]
+            cols = [cell[1] for cell in cells]
+            min_row, max_row = min(rows), max(rows)
+            min_col, max_col = min(cols), max(cols)
+            center_col = (min_col + max_col + 1) * 0.5
+            center_row = (min_row + max_row + 1) * 0.5
+            center = QtCore.QPointF(center_col * self.cell_size, center_row * self.cell_size)
+            is_vertical = len(set(cols)) == 1
+
             self._props.append(
                 PropInstance(
-                    kind=kind,
-                    center=QtCore.QPointF(x, y),
-                    rotation_deg=rotation,
-                    scale=scale,
+                    kind=sprite_name,
+                    center=center,
+                    rotation_deg=90.0 if is_vertical else 0.0,
+                    scale=1.0,
                 )
             )
+
         self._props_initialized = True
 
     def _view_world_rect(self) -> QtCore.QRectF:
