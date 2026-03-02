@@ -186,6 +186,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         cell_size: int = 24,
         unit_icon_scale: float = 2.75,
         model_icon_scale: float = 0.75,
+        terrain_barrel_cell_scale: float = 0.92,
         parent: Optional[QtWidgets.QWidget] = None,
     ):
         super().__init__(parent)
@@ -245,6 +246,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._fit_padding = 0.96
         self._unit_icon_scale = max(0.25, float(unit_icon_scale))
         self._model_icon_scale = max(0.2, float(model_icon_scale))
+        self._terrain_barrel_cell_scale = max(0.1, min(1.0, float(terrain_barrel_cell_scale)))
         self._pan = QtCore.QPointF(0, 0)
         self._target_scale = self._scale
         self._target_pan = QtCore.QPointF(0, 0)
@@ -1596,7 +1598,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
                         alpha=0.7,
                     )
             if prop.draw_rect is not None:
-                draw_rect = self._fit_pixmap_in_rect(prop_pixmap, prop.draw_rect, inset_ratio=0.92)
+                draw_rect = self._fit_pixmap_in_rect(
+                    prop_pixmap,
+                    prop.draw_rect,
+                    inset_ratio=self._terrain_barrel_cell_scale,
+                )
                 painter.drawPixmap(
                     draw_rect,
                     prop_pixmap,
