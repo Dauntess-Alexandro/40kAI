@@ -65,17 +65,17 @@ def _make_barricade_cells(anchor_row: int, anchor_col: int, orientation: str) ->
 
 
 def _make_terrain_feature(cells: list[tuple[int, int]], sprite_name: str) -> TerrainFeature:
+    final_sprite = "barrel.png" if sprite_name != "barrel.png" else sprite_name
     return {
         "kind": "barricade",
         "cells": [[int(r), int(c)] for r, c in cells],
         "tags": ["OBSTACLE", "BARRICADE"],
         "opacity": "obscuring",
-        "sprite": str(sprite_name or ""),
+        "sprite": str(final_sprite),
     }
 
 
 def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.Random) -> list[TerrainFeature]:
-    sprites = _terrain_sprite_candidates()
     count = 4 if rng.random() < 0.5 else 2
     pair_count = max(1, count // 2)
     center_col = int(b_hei // 2)
@@ -117,10 +117,8 @@ def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.R
             if any(is_in_deploy_zone("model", cell, b_len, b_hei) or is_in_deploy_zone("enemy", cell, b_len, b_hei) for cell in pair_cells):
                 continue
 
-            sprite_left = rng.choice(sprites) if sprites else ""
-            sprite_right = rng.choice(sprites) if sprites else ""
-            features.append(_make_terrain_feature(left_cells, sprite_left))
-            features.append(_make_terrain_feature(right_cells, sprite_right))
+            features.append(_make_terrain_feature(left_cells, "barrel.png"))
+            features.append(_make_terrain_feature(right_cells, "barrel.png"))
             used_cells.update(pair_cells)
             attempt_ok = True
             break

@@ -143,6 +143,7 @@ class PropInstance:
     scale: float
     debug_rect: Optional[QtCore.QRectF] = None
     sprite_name: str = ""
+    draw_rect: Optional[QtCore.QRectF] = None
 
 
 @dataclass
@@ -312,6 +313,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._terrain_features_state: List[dict] = []
         self._terrain_log_signature: Optional[tuple] = None
         self._terrain_sprite_log_cache: set[str] = set()
+        self._terrain_texture_cache: Dict[str, QtGui.QPixmap] = {}
         self._particles: List[ParticleInstance] = []
         self._particles_last_ts: Optional[float] = None
         self._props_initialized = False
@@ -928,6 +930,39 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if len(cells) != 3:
                 continue
 
+            sprite_name = str(feature.get("sprite") or "")
+            sprite_path = self._texture_manager._base_dir / "props" / "terrain" / sprite_name
+            exists = bool(sprite_name) and sprite_path.exists()
+            sprite_log_key = f"{sprite_name}|{sprite_path}"
+            if sprite_log_key not in self._terrain_sprite_log_cache:
+                self._terrain_sprite_log_cache.add(sprite_log_key)
+                self._append_agent_log(
+                    f"[VIEWER][TERRAIN] load sprite={sprite_name or '(empty)'} path={sprite_path} exists={exists}"
+                )
+
+            texture_key = sprite_name if sprite_name in self._prop_textures else ""
+
+            if sprite_name == "barrel.png":
+                for row, col in cells:
+                    cell_rect = QtCore.QRectF(
+                        col * self.cell_size,
+                        row * self.cell_size,
+                        self.cell_size,
+                        self.cell_size,
+                    )
+                    self._props.append(
+                        PropInstance(
+                            kind=texture_key,
+                            center=cell_rect.center(),
+                            rotation_deg=0.0,
+                            scale=1.0,
+                            debug_rect=cell_rect,
+                            sprite_name=sprite_name,
+                            draw_rect=cell_rect,
+                        )
+                    )
+                continue
+
             rows = [cell[0] for cell in cells]
             cols = [cell[1] for cell in cells]
             min_row, max_row = min(rows), max(rows)
@@ -943,17 +978,6 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 (max_row - min_row + 1) * self.cell_size,
             )
 
-            sprite_name = str(feature.get("sprite") or "")
-            sprite_path = self._texture_manager._base_dir / "props" / "terrain" / sprite_name
-            exists = bool(sprite_name) and sprite_path.exists()
-            sprite_log_key = f"{sprite_name}|{sprite_path}"
-            if sprite_log_key not in self._terrain_sprite_log_cache:
-                self._terrain_sprite_log_cache.add(sprite_log_key)
-                self._append_agent_log(
-                    f"[VIEWER][TERRAIN] load sprite={sprite_name or '(empty)'} path={sprite_path} exists={exists}"
-                )
-
-            texture_key = sprite_name if sprite_name in self._prop_textures else ""
             self._props.append(
                 PropInstance(
                     kind=texture_key,
@@ -1546,7 +1570,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.save()
         painter.setClipRect(self._board_rect)
         for prop in self._props:
-            prop_pixmap = self._prop_textures.get(prop.kind) if prop.kind else None
+            prop_pixmap = self._terrain_texture_by_name(prop.sprite_name) if prop.sprite_name else None
+            if prop_pixmap is None:
+                prop_pixmap = self._prop_textures.get(prop.kind) if prop.kind else None
             if prop_pixmap is None:
                 if prop.debug_rect is not None:
                     painter.save()
@@ -1569,6 +1595,15 @@ class OpenGLBoardWidget(QOpenGLWidget):
                         scale=prop.scale,
                         alpha=0.7,
                     )
+            if prop.draw_rect is not None:
+                draw_rect = self._fit_pixmap_in_rect(prop_pixmap, prop.draw_rect, inset_ratio=0.92)
+                painter.drawPixmap(
+                    draw_rect,
+                    prop_pixmap,
+                    QtCore.QRectF(0, 0, prop_pixmap.width(), prop_pixmap.height()),
+                )
+                continue
+
             self._draw_sprite(
                 painter,
                 prop_pixmap,
@@ -1578,6 +1613,39 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 alpha=1.0,
             )
         painter.restore()
+
+    def _terrain_texture_by_name(self, sprite_name: str) -> Optional[QtGui.QPixmap]:
+        key = str(sprite_name or "").strip()
+        if not key:
+            return None
+        cached = self._terrain_texture_cache.get(key)
+        if cached is not None:
+            return cached
+        rel_path = f"props/terrain/{key}"
+        pixmap = self._texture_manager.load_png(rel_path)
+        if pixmap is None:
+            return None
+        self._terrain_texture_cache[key] = pixmap
+        return pixmap
+
+    @staticmethod
+    def _fit_pixmap_in_rect(
+        pixmap: QtGui.QPixmap,
+        target_rect: QtCore.QRectF,
+        *,
+        inset_ratio: float = 1.0,
+    ) -> QtCore.QRectF:
+        if pixmap.isNull() or target_rect.width() <= 0 or target_rect.height() <= 0:
+            return target_rect
+        tex_w = max(1.0, float(pixmap.width()))
+        tex_h = max(1.0, float(pixmap.height()))
+        s = min(target_rect.width() / tex_w, target_rect.height() / tex_h)
+        s *= max(0.01, float(inset_ratio))
+        draw_w = tex_w * s
+        draw_h = tex_h * s
+        draw_x = target_rect.x() + (target_rect.width() - draw_w) * 0.5
+        draw_y = target_rect.y() + (target_rect.height() - draw_h) * 0.5
+        return QtCore.QRectF(draw_x, draw_y, draw_w, draw_h)
 
     def _draw_particles_layer(self, painter: QtGui.QPainter) -> None:
         if not self._particles or not self._fx_particle_textures:
