@@ -291,6 +291,7 @@ def _deployment_global_score(
     placed_side_units: Sequence[dict],
     *,
     cfg: dict,
+    terrain_cells: Iterable[Tuple[int, int]] | None = None,
 ) -> Tuple[float, dict]:
     if not placed_side_units:
         return 0.0, {"forward": 0.0, "spread": 0.0, "edge": 0.0, "cover": 0.0}
@@ -339,8 +340,62 @@ def _deployment_global_score(
         edge_vals.append(max(0.0, min(1.0, float(min_margin) / edge_margin_thr)))
     edge_score = float(sum(edge_vals) / max(1, len(edge_vals)))
 
-    # Placeholder for terrain-aware cover readiness. TODO: use actual terrain/LOS data when available.
-    cover_score = 0.0
+    terrain_set = set((int(r), int(c)) for r, c in (terrain_cells or []))
+    cover_radius = max(
+        1.0,
+        float(
+            os.getenv(
+                "DEPLOYMENT_RL_COVER_RADIUS",
+                str(getattr(reward_cfg, "DEPLOYMENT_RL_COVER_RADIUS", 2.0)),
+            )
+            or str(getattr(reward_cfg, "DEPLOYMENT_RL_COVER_RADIUS", 2.0))
+        ),
+    )
+    cover_near_target = max(
+        1.0,
+        float(
+            os.getenv(
+                "DEPLOYMENT_RL_COVER_NEAR_TARGET",
+                str(getattr(reward_cfg, "DEPLOYMENT_RL_COVER_NEAR_TARGET", 3.0)),
+            )
+            or str(getattr(reward_cfg, "DEPLOYMENT_RL_COVER_NEAR_TARGET", 3.0))
+        ),
+    )
+    cover_congestion_target = max(
+        1.0,
+        float(
+            os.getenv(
+                "DEPLOYMENT_RL_COVER_CONGESTION_TARGET",
+                str(getattr(reward_cfg, "DEPLOYMENT_RL_COVER_CONGESTION_TARGET", 6.0)),
+            )
+            or str(getattr(reward_cfg, "DEPLOYMENT_RL_COVER_CONGESTION_TARGET", 6.0))
+        ),
+    )
+
+    near_hits = 0.0
+    congestion_hits = 0.0
+    for idx, cells in enumerate(units_cells):
+        own = set((int(r), int(c)) for r, c in cells)
+        other_friendly = set()
+        for j, other_cells in enumerate(units_cells):
+            if j == idx:
+                continue
+            other_friendly.update((int(r), int(c)) for r, c in other_cells)
+
+        for r, c in own:
+            terrain_close = any(
+                max(abs(int(r) - int(tr)), abs(int(c) - int(tc))) <= cover_radius
+                for tr, tc in terrain_set
+            )
+            if terrain_close:
+                near_hits += 1.0
+            for fr, fc in other_friendly:
+                if max(abs(int(r) - int(fr)), abs(int(c) - int(fc))) <= 1:
+                    congestion_hits += 1.0
+
+    near_score = max(0.0, min(1.0, near_hits / cover_near_target))
+    congestion_penalty = max(0.0, min(1.0, congestion_hits / cover_congestion_target))
+    cover_score = max(0.0, min(1.0, near_score - 0.5 * congestion_penalty))
     # TODO: formation_flexibility component (space for first move / congestion) can be added here.
 
     fw = float(cfg.get("forward_w", 1.0))
@@ -354,6 +409,8 @@ def _deployment_global_score(
         "spread": float(spread_score),
         "edge": float(edge_score),
         "cover": float(cover_score),
+        "cover_near": float(near_score),
+        "cover_congestion": float(congestion_penalty),
     }
 
 
@@ -450,6 +507,7 @@ def _choose_rl_deploy_coord(
                 b_hei,
                 placed_side_units or [],
                 cfg=score_cfg,
+                terrain_cells=terrain_cells,
             )
             score_after, after_parts = _deployment_global_score(
                 side,
@@ -457,6 +515,7 @@ def _choose_rl_deploy_coord(
                 b_hei,
                 list(placed_side_units or []) + [{"anchor": coord, "offsets": list(model_offsets or [(0, 0)])}],
                 cfg=score_cfg,
+                terrain_cells=terrain_cells,
             )
             deploy_reward_delta = score_scale * (score_after - score_before)
             stats["reward"] += valid_reward + deploy_reward_delta
@@ -477,7 +536,10 @@ def _choose_rl_deploy_coord(
                     f"score_before={score_before:.3f}, score_after={score_after:.3f}, "
                     f"reward_delta={deploy_reward_delta:+.3f}, "
                     f"forward={after_parts.get('forward', 0.0):.3f}, spread={after_parts.get('spread', 0.0):.3f}, "
-                    f"edge={after_parts.get('edge', 0.0):.3f}, cover={after_parts.get('cover', 0.0):.3f}"
+                    f"edge={after_parts.get('edge', 0.0):.3f}, cover={after_parts.get('cover', 0.0):.3f}, "
+                    f"cover_near={after_parts.get('cover_near', 0.0):.3f}, "
+                    f"congestion={after_parts.get('cover_congestion', 0.0):.3f}, "
+                    f"final_cover={after_parts.get('cover', 0.0):.3f}"
                 )
             return coord, stats
         stats["invalid"] += 1

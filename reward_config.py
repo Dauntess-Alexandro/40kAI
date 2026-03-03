@@ -116,14 +116,20 @@ DEPLOYMENT_RL_FORWARD_W = 1.0
 DEPLOYMENT_RL_SPREAD_W = 0.6
 # Вклад запаса до краёв карты (edge margin).
 DEPLOYMENT_RL_EDGE_W = 0.2
-# Вклад cover/terrain-компоненты (сейчас обычно 0.0, заглушка).
-DEPLOYMENT_RL_COVER_W = 0.0
+# Вклад cover/terrain-компоненты (бонус за близость к укрытиям и отсутствие скученности).
+DEPLOYMENT_RL_COVER_W = 0.15
 
 # Нормировки компонент deployment score.
 # Целевая дистанция spread по row/y (после неё эффект насыщается).
 DEPLOYMENT_RL_SPREAD_TARGET = 6.0
 # Целевой минимальный отступ модели до границы поля (в клетках).
 DEPLOYMENT_RL_EDGE_MARGIN_TARGET = 2.0
+# Радиус (Chebyshev) поиска ближайшего террейна для cover-бонуса.
+DEPLOYMENT_RL_COVER_RADIUS = 2.0
+# Нормировка количества «прикрытых» клеток отряда (после неё эффект насыщается).
+DEPLOYMENT_RL_COVER_NEAR_TARGET = 3.0
+# Нормировка штрафа за скученность рядом со своими моделями (после неё штраф насыщается).
+DEPLOYMENT_RL_COVER_CONGESTION_TARGET = 6.0
 
 
 # =========================
