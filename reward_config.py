@@ -117,7 +117,7 @@ DEPLOYMENT_RL_SPREAD_W = 0.6
 # Вклад запаса до краёв карты (edge margin).
 DEPLOYMENT_RL_EDGE_W = 0.2
 # Вклад cover/terrain-компоненты (бонус за близость к укрытиям и отсутствие скученности).
-DEPLOYMENT_RL_COVER_W = 0.15
+DEPLOYMENT_RL_COVER_W = 0.35
 
 # Нормировки компонент deployment score.
 # Целевая дистанция spread по row/y (после неё эффект насыщается).
@@ -130,6 +130,38 @@ DEPLOYMENT_RL_COVER_RADIUS = 2.0
 DEPLOYMENT_RL_COVER_NEAR_TARGET = 3.0
 # Нормировка штрафа за скученность рядом со своими моделями (после неё штраф насыщается).
 DEPLOYMENT_RL_COVER_CONGESTION_TARGET = 6.0
+
+
+# ======================================
+# Terrain shaping (боевые шаги, RL step)
+# ======================================
+# Потенциал: r_potential = gamma * Φ(s') - Φ(s)
+TERRAIN_POTENTIAL_GAMMA = 0.99
+# Φ(s) = w_cover * cover_score + w_threat * threat_score + w_guard * guard_score
+TERRAIN_POTENTIAL_W_COVER = 0.08
+TERRAIN_POTENTIAL_W_THREAT = 0.10
+TERRAIN_POTENTIAL_W_GUARD = 0.04
+
+# Cover-score: INFANTRY + within 3" (Chebyshev/grid) от barricade + not fully visible.
+TERRAIN_COVER_RADIUS = 3.0
+# Нормировка cover-score по количеству живых юнитов.
+TERRAIN_COVER_SCORE_NORM = 2.0
+
+# Threat-score: только реальные угрозы (LOS + range + enemy_can_shoot).
+TERRAIN_THREAT_COUNT_NORM = 3.0
+
+# Guard-score: слабый сигнал охраны objective из cover.
+TERRAIN_GUARD_RANGE_NORM = 12.0
+TERRAIN_GUARD_PROGRESS_BONUS = 0.20
+
+# Event-бонус за выстрел из cover при не-росте угрозы, 1 раз за ход/юнит.
+TERRAIN_EVENT_SHOT_FROM_COVER_BONUS = 0.03
+
+# Exposure penalty: fully_visible=True при наличии реальной угрозы.
+TERRAIN_EXPOSURE_PENALTY = 0.02
+
+# Анти-абьюз: clamp суммарного terrain-shaping за шаг.
+TERRAIN_SHAPING_STEP_RCAP = 0.12
 
 
 # =========================
