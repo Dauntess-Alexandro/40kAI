@@ -126,6 +126,28 @@ def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.R
         if not attempt_ok:
             continue
 
+    # Фиксированная пара «бочек» у центральной зоны (по маркерам на карте).
+    # Держим симметрию по оси стола и не заходим в деплой/objective/занятые клетки.
+    marker_row = int(max(1, min(b_len - 4, (b_len // 2) - 2)))
+    marker_left_col = int(max(safe_left_min, min(safe_left_max, center_col - 20)))
+    marker_right_col = int((b_hei - 1) - marker_left_col)
+    marker_left = _make_barricade_cells(marker_row, marker_left_col, "vertical")
+    marker_right = _make_barricade_cells(marker_row, marker_right_col, "vertical")
+    marker_pair_cells = marker_left + marker_right
+    marker_pair_valid = (
+        all(_in_bounds(cell, b_len, b_hei) for cell in marker_pair_cells)
+        and not any(cell in objective_cells for cell in marker_pair_cells)
+        and not any(cell in used_cells for cell in marker_pair_cells)
+        and not any(
+            is_in_deploy_zone("model", cell, b_len, b_hei) or is_in_deploy_zone("enemy", cell, b_len, b_hei)
+            for cell in marker_pair_cells
+        )
+    )
+    if marker_pair_valid:
+        features.append(_make_terrain_feature(marker_left, "barrel.png"))
+        features.append(_make_terrain_feature(marker_right, "barrel.png"))
+        used_cells.update(marker_pair_cells)
+
     return features
 
 
