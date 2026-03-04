@@ -59,7 +59,9 @@ def _terrain_seed() -> int:
 
 
 def _make_barricade_cells(anchor_row: int, anchor_col: int) -> list[tuple[int, int]]:
-    return [(anchor_row, anchor_col + i) for i in range(3)]
+    # Баррикада = 3 клетки в колонку (1x3), чтобы в движке и Viewer
+    # всегда читалась как единая вертикальная линия укрытия.
+    return [(anchor_row + i, anchor_col) for i in range(3)]
 
 
 def _make_terrain_feature(
@@ -112,7 +114,7 @@ def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.R
             mirror_col = int((b_hei - 1) - left_col)
 
             left_cells = _make_barricade_cells(row, left_col)
-            right_cells = _make_barricade_cells(row, mirror_col - 2)
+            right_cells = _make_barricade_cells(row, mirror_col)
 
             pair_cells = left_cells + right_cells
             if any(not _in_bounds(cell, b_len, b_hei) for cell in pair_cells):
@@ -124,8 +126,8 @@ def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.R
             if any(is_in_deploy_zone("model", cell, b_len, b_hei) or is_in_deploy_zone("enemy", cell, b_len, b_hei) for cell in pair_cells):
                 continue
 
-            # Все barricade должны читаться как горизонтальная линия укрытия (3x1).
-            # Поэтому не поворачиваем отдельные бочки внутри тройки.
+            # Не поворачиваем отдельные бочки внутри тройки:
+            # ориентация задаётся расположением клеток (вертикальная 1x3).
             left_rot = [0, 0, 0]
             right_rot = [0, 0, 0]
             features.append(_make_terrain_feature(left_cells, "barrel.png", cell_rotations=left_rot))

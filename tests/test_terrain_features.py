@@ -21,6 +21,11 @@ class TestTerrainFeatures(unittest.TestCase):
         self.assertIn("def is_terrain_cell(self, x: int, y: int)", source)
         self.assertIn("obscuring_cells_set=obscuring_cells", source)
 
+    def test_barricades_are_vertical_1x3(self):
+        source = Path("gym_mod/gym_mod/engine/mission.py").read_text(encoding="utf-8")
+        self.assertIn("return [(anchor_row + i, anchor_col) for i in range(3)]", source)
+        self.assertIn("right_cells = _make_barricade_cells(row, mirror_col)", source)
+
 
 if __name__ == "__main__":
     unittest.main()
