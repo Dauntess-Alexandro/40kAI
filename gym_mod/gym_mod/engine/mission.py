@@ -105,7 +105,6 @@ def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.R
 
     for pair_idx in range(pair_count):
         row = int(max(1, min(b_len - 4, rows_iter[pair_idx])))
-        top_half = row < (b_len // 2)
 
         attempt_ok = False
         for _ in range(20):
@@ -125,18 +124,10 @@ def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.R
             if any(is_in_deploy_zone("model", cell, b_len, b_hei) or is_in_deploy_zone("enemy", cell, b_len, b_hei) for cell in pair_cells):
                 continue
 
-            # Поворот конкретной бочки в тройке задаём прямо в state:
-            # верхняя пара -> поворачиваем внутреннюю бочку,
-            # нижняя пара -> поворачиваем внешнюю бочку.
+            # Все barricade должны читаться как горизонтальная линия укрытия (3x1).
+            # Поэтому не поворачиваем отдельные бочки внутри тройки.
             left_rot = [0, 0, 0]
             right_rot = [0, 0, 0]
-            if top_half:
-                left_rot[2] = 90
-                right_rot[0] = 90
-            else:
-                left_rot[0] = 90
-                right_rot[2] = 90
-
             features.append(_make_terrain_feature(left_cells, "barrel.png", cell_rotations=left_rot))
             features.append(_make_terrain_feature(right_cells, "barrel.png", cell_rotations=right_rot))
             used_cells.update(pair_cells)

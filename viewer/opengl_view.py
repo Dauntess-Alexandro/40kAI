@@ -973,6 +973,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
             texture_key = sprite_name if sprite_name in self._prop_textures else feature_kind
             cell_rot = list(feature.get("cell_rotations") or [])
+            if feature_kind.lower() == "barricade":
+                cell_rot = [0] * len(cells)
             for idx, (row, col) in enumerate(cells):
                 rot = float(cell_rot[idx]) if idx < len(cell_rot) else 0.0
                 cell_rect = QtCore.QRectF(
