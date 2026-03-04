@@ -900,7 +900,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 if not isinstance(cell, (list, tuple)) or len(cell) < 2:
                     continue
                 cells.append((int(cell[0]), int(cell[1])))
-            parsed.append({"kind": kind, "sprite": sprite, "cells": cells})
+            cell_rot = [int(v) for v in list(feature.get("cell_rotations") or [])]
+            parsed.append({"kind": kind, "sprite": sprite, "cells": cells, "cell_rotations": cell_rot})
         return parsed
 
     def _log_terrain_features_once(self) -> None:
@@ -971,7 +972,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 )
 
             texture_key = sprite_name if sprite_name in self._prop_textures else feature_kind
-            for row, col in cells:
+            cell_rot = list(feature.get("cell_rotations") or [])
+            for idx, (row, col) in enumerate(cells):
+                rot = float(cell_rot[idx]) if idx < len(cell_rot) else 0.0
                 cell_rect = QtCore.QRectF(
                     col * self.cell_size,
                     row * self.cell_size,
@@ -982,7 +985,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     PropInstance(
                         kind=texture_key,
                         center=cell_rect.center(),
-                        rotation_deg=0.0,
+                        rotation_deg=rot,
                         scale=1.0,
                         debug_rect=cell_rect,
                         sprite_name=sprite_name,
@@ -1611,7 +1614,20 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     inset_ratio=self._terrain_barrel_cell_scale,
                     source_rect=source_rect,
                 )
-                painter.drawPixmap(draw_rect, prop_pixmap, source_rect)
+                if prop.rotation_deg:
+                    painter.save()
+                    painter.translate(draw_rect.center())
+                    painter.rotate(prop.rotation_deg)
+                    rotated_rect = QtCore.QRectF(
+                        -draw_rect.width() * 0.5,
+                        -draw_rect.height() * 0.5,
+                        draw_rect.width(),
+                        draw_rect.height(),
+                    )
+                    painter.drawPixmap(rotated_rect, prop_pixmap, source_rect)
+                    painter.restore()
+                else:
+                    painter.drawPixmap(draw_rect, prop_pixmap, source_rect)
                 continue
 
             self._draw_sprite(

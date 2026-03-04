@@ -62,14 +62,23 @@ def _make_barricade_cells(anchor_row: int, anchor_col: int) -> list[tuple[int, i
     return [(anchor_row, anchor_col + i) for i in range(3)]
 
 
-def _make_terrain_feature(cells: list[tuple[int, int]], sprite_name: str) -> TerrainFeature:
+def _make_terrain_feature(
+    cells: list[tuple[int, int]],
+    sprite_name: str,
+    *,
+    cell_rotations: list[int] | None = None,
+) -> TerrainFeature:
     final_sprite = "barrel.png" if sprite_name != "barrel.png" else sprite_name
+    normalized_rot = list(cell_rotations or [])
+    if len(normalized_rot) != len(cells):
+        normalized_rot = [0] * len(cells)
     return {
         "kind": "barricade",
         "cells": [[int(r), int(c)] for r, c in cells],
         "tags": ["OBSTACLE", "BARRICADE"],
         "opacity": "obscuring",
         "sprite": str(final_sprite),
+        "cell_rotations": [int(v) for v in normalized_rot],
     }
 
 
@@ -96,6 +105,7 @@ def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.R
 
     for pair_idx in range(pair_count):
         row = int(max(1, min(b_len - 4, rows_iter[pair_idx])))
+        top_half = row < (b_len // 2)
 
         attempt_ok = False
         for _ in range(20):
@@ -115,8 +125,20 @@ def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.R
             if any(is_in_deploy_zone("model", cell, b_len, b_hei) or is_in_deploy_zone("enemy", cell, b_len, b_hei) for cell in pair_cells):
                 continue
 
-            features.append(_make_terrain_feature(left_cells, "barrel.png"))
-            features.append(_make_terrain_feature(right_cells, "barrel.png"))
+            # Поворот конкретной бочки в тройке задаём прямо в state:
+            # верхняя пара -> поворачиваем внутреннюю бочку,
+            # нижняя пара -> поворачиваем внешнюю бочку.
+            left_rot = [0, 0, 0]
+            right_rot = [0, 0, 0]
+            if top_half:
+                left_rot[2] = 90
+                right_rot[0] = 90
+            else:
+                left_rot[0] = 90
+                right_rot[2] = 90
+
+            features.append(_make_terrain_feature(left_cells, "barrel.png", cell_rotations=left_rot))
+            features.append(_make_terrain_feature(right_cells, "barrel.png", cell_rotations=right_rot))
             used_cells.update(pair_cells)
             attempt_ok = True
             break
