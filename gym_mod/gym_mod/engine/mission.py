@@ -64,6 +64,12 @@ def _make_barricade_cells(anchor_row: int, anchor_col: int, orientation: str) ->
     return [(anchor_row, anchor_col + i) for i in range(3)]
 
 
+def _min_chebyshev_to_cells(cells: Sequence[tuple[int, int]], targets: set[tuple[int, int]]) -> int:
+    if not cells or not targets:
+        return 999
+    return min(max(abs(r - tr), abs(c - tc)) for r, c in cells for tr, tc in targets)
+
+
 def _make_terrain_feature(cells: list[tuple[int, int]], sprite_name: str) -> TerrainFeature:
     final_sprite = "barrel.png" if sprite_name != "barrel.png" else sprite_name
     return {
@@ -125,6 +131,37 @@ def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.R
 
         if not attempt_ok:
             continue
+
+    # Дополнительные укрытия в центре поля: симметричные пары по X.
+    # Держим дистанцию до objective >= 2 клетки и не лезем в деплой/существующие terrain.
+    center_row = int(b_len // 2)
+    center_col = int(b_hei // 2)
+    extra_pairs = [
+        (max(2, center_row - 4), max(depth + 2, center_col - 8), "horizontal"),
+        (min(b_len - 3, center_row + 2), max(depth + 2, center_col - 10), "horizontal"),
+    ]
+
+    for row, left_col, orientation in extra_pairs:
+        mirror_col = int((b_hei - 1) - left_col)
+        right_anchor = mirror_col - (2 if orientation == "horizontal" else 0)
+        left_cells = _make_barricade_cells(int(row), int(left_col), orientation)
+        right_cells = _make_barricade_cells(int(row), int(right_anchor), orientation)
+        pair_cells = left_cells + right_cells
+
+        if any(not _in_bounds(cell, b_len, b_hei) for cell in pair_cells):
+            continue
+        if any(is_in_deploy_zone("model", cell, b_len, b_hei) or is_in_deploy_zone("enemy", cell, b_len, b_hei) for cell in pair_cells):
+            continue
+        if any(cell in used_cells for cell in pair_cells):
+            continue
+        if any(cell in objective_cells for cell in pair_cells):
+            continue
+        if _min_chebyshev_to_cells(pair_cells, objective_cells) < 2:
+            continue
+
+        features.append(_make_terrain_feature(left_cells, "barrel.png"))
+        features.append(_make_terrain_feature(right_cells, "barrel.png"))
+        used_cells.update(pair_cells)
 
     return features
 
