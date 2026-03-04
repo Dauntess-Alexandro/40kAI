@@ -58,9 +58,7 @@ def _terrain_seed() -> int:
         return 1040
 
 
-def _make_barricade_cells(anchor_row: int, anchor_col: int, orientation: str) -> list[tuple[int, int]]:
-    if orientation == "vertical":
-        return [(anchor_row + i, anchor_col) for i in range(3)]
+def _make_barricade_cells(anchor_row: int, anchor_col: int) -> list[tuple[int, int]]:
     return [(anchor_row, anchor_col + i) for i in range(3)]
 
 
@@ -96,19 +94,16 @@ def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.R
     while len(rows_iter) < pair_count:
         rows_iter.append(rng.randint(1, max(1, b_len - 4)))
 
-    center_row = int(b_len // 2)
     for pair_idx in range(pair_count):
         row = int(max(1, min(b_len - 4, rows_iter[pair_idx])))
-        # Верхние barricade всегда кладём горизонтально по запросу UX.
-        orientation = "horizontal" if row < center_row else ("horizontal" if rng.random() < 0.5 else "vertical")
 
         attempt_ok = False
         for _ in range(20):
             left_col = int(rng.randint(safe_left_min, safe_left_max))
             mirror_col = int((b_hei - 1) - left_col)
 
-            left_cells = _make_barricade_cells(row, left_col, orientation)
-            right_cells = _make_barricade_cells(row, mirror_col - (2 if orientation == "horizontal" else 0), orientation)
+            left_cells = _make_barricade_cells(row, left_col)
+            right_cells = _make_barricade_cells(row, mirror_col - 2)
 
             pair_cells = left_cells + right_cells
             if any(not _in_bounds(cell, b_len, b_hei) for cell in pair_cells):
