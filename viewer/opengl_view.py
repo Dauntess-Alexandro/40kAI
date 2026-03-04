@@ -960,6 +960,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
             cells = list(feature.get("cells") or [])
             if not cells:
                 continue
+            rows = {int(cell[0]) for cell in cells}
+            cols = {int(cell[1]) for cell in cells}
+            is_horizontal = len(rows) == 1 and len(cols) > 1
+            feature_rotation = 90.0 if is_horizontal else 0.0
             sprite_name = str(feature.get("sprite") or "")
             sprite_path = self._texture_manager._base_dir / "props" / "terrain" / sprite_name
             exists = bool(sprite_name) and sprite_path.exists()
@@ -982,7 +986,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     PropInstance(
                         kind=texture_key,
                         center=cell_rect.center(),
-                        rotation_deg=0.0,
+                        rotation_deg=feature_rotation,
                         scale=1.0,
                         debug_rect=cell_rect,
                         sprite_name=sprite_name,
@@ -1611,7 +1615,20 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     inset_ratio=self._terrain_barrel_cell_scale,
                     source_rect=source_rect,
                 )
-                painter.drawPixmap(draw_rect, prop_pixmap, source_rect)
+                if prop.rotation_deg:
+                    painter.save()
+                    painter.translate(draw_rect.center())
+                    painter.rotate(prop.rotation_deg)
+                    rotated_rect = QtCore.QRectF(
+                        -draw_rect.width() * 0.5,
+                        -draw_rect.height() * 0.5,
+                        draw_rect.width(),
+                        draw_rect.height(),
+                    )
+                    painter.drawPixmap(rotated_rect, prop_pixmap, source_rect)
+                    painter.restore()
+                else:
+                    painter.drawPixmap(draw_rect, prop_pixmap, source_rect)
                 continue
 
             self._draw_sprite(
