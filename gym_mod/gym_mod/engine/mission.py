@@ -96,9 +96,11 @@ def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.R
     while len(rows_iter) < pair_count:
         rows_iter.append(rng.randint(1, max(1, b_len - 4)))
 
+    center_row = int(b_len // 2)
     for pair_idx in range(pair_count):
         row = int(max(1, min(b_len - 4, rows_iter[pair_idx])))
-        orientation = "horizontal" if rng.random() < 0.5 else "vertical"
+        # Верхние barricade всегда кладём горизонтально по запросу UX.
+        orientation = "horizontal" if row < center_row else ("horizontal" if rng.random() < 0.5 else "vertical")
 
         attempt_ok = False
         for _ in range(20):
