@@ -7,8 +7,8 @@
     "cols": 60,
     "rows": 40
   },
-  "turn": 7,
-  "round": 7,
+  "turn": 1,
+  "round": 1,
   "phase": "command",
   "active": "player",
   "vp": {
@@ -16,8 +16,8 @@
     "model": 0
   },
   "cp": {
-    "player": 12,
-    "model": 12
+    "player": 0,
+    "model": 0
   },
   "units": [
     {
@@ -27,59 +27,59 @@
       "models": 10,
       "alive_models": 10,
       "hp": 10.0,
-      "x": 39,
-      "y": 31,
-      "anchor_x": 39,
-      "anchor_y": 31,
+      "x": 49,
+      "y": 28,
+      "anchor_x": 49,
+      "anchor_y": 28,
       "model_positions": [
         {
-          "x": 39,
-          "y": 31,
+          "x": 49,
+          "y": 28,
           "z": 0
         },
         {
-          "x": 40,
-          "y": 31,
+          "x": 50,
+          "y": 28,
           "z": 0
         },
         {
-          "x": 38,
-          "y": 31,
+          "x": 48,
+          "y": 28,
           "z": 0
         },
         {
-          "x": 39,
-          "y": 32,
+          "x": 49,
+          "y": 29,
           "z": 0
         },
         {
-          "x": 39,
-          "y": 30,
+          "x": 49,
+          "y": 27,
           "z": 0
         },
         {
-          "x": 40,
-          "y": 32,
+          "x": 50,
+          "y": 29,
           "z": 0
         },
         {
-          "x": 38,
-          "y": 32,
+          "x": 48,
+          "y": 29,
           "z": 0
         },
         {
-          "x": 40,
-          "y": 30,
+          "x": 50,
+          "y": 27,
           "z": 0
         },
         {
-          "x": 38,
-          "y": 30,
+          "x": 48,
+          "y": 27,
           "z": 0
         },
         {
-          "x": 41,
-          "y": 31,
+          "x": 51,
+          "y": 28,
           "z": 0
         }
       ],
@@ -92,59 +92,59 @@
       "models": 10,
       "alive_models": 10,
       "hp": 10.0,
-      "x": 54,
-      "y": 21,
-      "anchor_x": 54,
-      "anchor_y": 21,
+      "x": 48,
+      "y": 17,
+      "anchor_x": 48,
+      "anchor_y": 17,
       "model_positions": [
         {
-          "x": 54,
-          "y": 21,
+          "x": 48,
+          "y": 17,
           "z": 0
         },
         {
-          "x": 55,
-          "y": 21,
+          "x": 49,
+          "y": 17,
           "z": 0
         },
         {
-          "x": 53,
-          "y": 21,
+          "x": 47,
+          "y": 17,
           "z": 0
         },
         {
-          "x": 54,
-          "y": 22,
+          "x": 48,
+          "y": 18,
           "z": 0
         },
         {
-          "x": 54,
-          "y": 20,
+          "x": 48,
+          "y": 16,
           "z": 0
         },
         {
-          "x": 55,
-          "y": 22,
+          "x": 49,
+          "y": 18,
           "z": 0
         },
         {
-          "x": 53,
-          "y": 22,
+          "x": 47,
+          "y": 18,
           "z": 0
         },
         {
-          "x": 55,
-          "y": 20,
+          "x": 49,
+          "y": 16,
           "z": 0
         },
         {
-          "x": 53,
-          "y": 20,
+          "x": 47,
+          "y": 16,
           "z": 0
         },
         {
-          "x": 56,
-          "y": 21,
+          "x": 50,
+          "y": 17,
           "z": 0
         }
       ],
@@ -157,59 +157,59 @@
       "models": 10,
       "alive_models": 10,
       "hp": 10.0,
-      "x": 25,
-      "y": 7,
-      "anchor_x": 25,
-      "anchor_y": 7,
+      "x": 8,
+      "y": 22,
+      "anchor_x": 8,
+      "anchor_y": 22,
       "model_positions": [
         {
-          "x": 25,
-          "y": 7,
+          "x": 8,
+          "y": 22,
           "z": 0
         },
         {
-          "x": 26,
-          "y": 7,
+          "x": 9,
+          "y": 22,
           "z": 0
         },
         {
-          "x": 24,
-          "y": 7,
+          "x": 7,
+          "y": 22,
           "z": 0
         },
         {
-          "x": 25,
-          "y": 8,
+          "x": 8,
+          "y": 23,
           "z": 0
         },
         {
-          "x": 25,
-          "y": 6,
+          "x": 8,
+          "y": 21,
           "z": 0
         },
         {
-          "x": 26,
-          "y": 8,
+          "x": 9,
+          "y": 23,
           "z": 0
         },
         {
-          "x": 24,
-          "y": 8,
+          "x": 7,
+          "y": 23,
           "z": 0
         },
         {
-          "x": 26,
-          "y": 6,
+          "x": 9,
+          "y": 21,
           "z": 0
         },
         {
-          "x": 24,
-          "y": 6,
+          "x": 7,
+          "y": 21,
           "z": 0
         },
         {
-          "x": 27,
-          "y": 7,
+          "x": 10,
+          "y": 22,
           "z": 0
         }
       ],
@@ -222,59 +222,59 @@
       "models": 10,
       "alive_models": 10,
       "hp": 10.0,
-      "x": 13,
-      "y": 9,
-      "anchor_x": 13,
-      "anchor_y": 9,
+      "x": 7,
+      "y": 14,
+      "anchor_x": 7,
+      "anchor_y": 14,
       "model_positions": [
         {
-          "x": 13,
-          "y": 9,
+          "x": 7,
+          "y": 14,
           "z": 0
         },
         {
-          "x": 14,
-          "y": 9,
+          "x": 8,
+          "y": 14,
           "z": 0
         },
         {
-          "x": 12,
-          "y": 9,
+          "x": 6,
+          "y": 14,
           "z": 0
         },
         {
-          "x": 13,
-          "y": 10,
+          "x": 7,
+          "y": 15,
           "z": 0
         },
         {
-          "x": 13,
-          "y": 8,
+          "x": 7,
+          "y": 13,
           "z": 0
         },
         {
-          "x": 14,
-          "y": 10,
+          "x": 8,
+          "y": 15,
           "z": 0
         },
         {
-          "x": 12,
-          "y": 10,
+          "x": 6,
+          "y": 15,
           "z": 0
         },
         {
-          "x": 14,
-          "y": 8,
+          "x": 8,
+          "y": 13,
           "z": 0
         },
         {
-          "x": 12,
-          "y": 8,
+          "x": 6,
+          "y": 13,
           "z": 0
         },
         {
-          "x": 15,
-          "y": 9,
+          "x": 9,
+          "y": 14,
           "z": 0
         }
       ],
@@ -294,16 +294,21 @@
       "cells": [
         [
           30,
-          22
+          25
         ],
         [
-          31,
-          22
+          30,
+          26
         ],
         [
-          32,
-          22
+          30,
+          27
         ]
+      ],
+      "cell_rotations": [
+        0,
+        0,
+        0
       ],
       "tags": [
         "OBSTACLE",
@@ -317,16 +322,77 @@
       "cells": [
         [
           30,
-          37
+          32
         ],
         [
-          31,
-          37
+          30,
+          33
         ],
         [
-          32,
+          30,
+          34
+        ]
+      ],
+      "cell_rotations": [
+        0,
+        0,
+        0
+      ],
+      "tags": [
+        "OBSTACLE",
+        "BARRICADE"
+      ],
+      "opacity": "obscuring",
+      "sprite": "barrel.png"
+    },
+    {
+      "kind": "barricade",
+      "cells": [
+        [
+          10,
+          22
+        ],
+        [
+          10,
+          23
+        ],
+        [
+          10,
+          24
+        ]
+      ],
+      "cell_rotations": [
+        0,
+        0,
+        0
+      ],
+      "tags": [
+        "OBSTACLE",
+        "BARRICADE"
+      ],
+      "opacity": "obscuring",
+      "sprite": "barrel.png"
+    },
+    {
+      "kind": "barricade",
+      "cells": [
+        [
+          10,
+          35
+        ],
+        [
+          10,
+          36
+        ],
+        [
+          10,
           37
         ]
+      ],
+      "cell_rotations": [
+        0,
+        0,
+        0
       ],
       "tags": [
         "OBSTACLE",
@@ -344,6 +410,39 @@
     "mode": null,
     "rl_stats": null
   },
-  "payload_kind": "light",
-  "generated_at": "2026-03-03T07:17:19.570586Z"
+  "payload_kind": "full",
+  "generated_at": "2026-03-04T10:02:25.155726Z",
+  "log_tail": [
+    "[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=45..59, Y=0..39.",
+    "Допустимый диапазон: X=45..59, Y=0..39",
+    "Допустимый диапазон: X=45..59, Y=0..39",
+    "[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=45..59, Y=0..39.",
+    "Допустимый диапазон: X=45..59, Y=0..39",
+    "Допустимый диапазон: X=0..14, Y=0..39",
+    "[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=0..14, Y=0..39.",
+    "Допустимый диапазон: X=0..14, Y=0..39",
+    "[DEPLOY][MANUAL] Расставьте юнита: Unit 11 — Necrons Necron Warriors (x10 моделей) [1/2]. Осталось расставить: 2. Зона: X=45..59, Y=0..39. Следом: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]",
+    "Допустимый диапазон: X=45..59, Y=0..39",
+    "[DEPLOY][MANUAL] Расставьте юнита: Unit 12 — Necrons Necron Warriors (x10 моделей) [2/2]. Осталось расставить: 1. Зона: X=45..59, Y=0..39.",
+    "Допустимый диапазон: X=45..59, Y=0..39",
+    "[MODEL] pickle=C:\\40kAI\\models\\M_Necrons_vs_P_Necrons\\model-21-622590.pickle",
+    "[MODEL] checkpoint=C:\\40kAI\\models\\M_Necrons_vs_P_Necrons\\model-21-622590.pth",
+    "[MODEL] Viewer запущен в greedy-режиме: exploration отключен (epsilon=0).",
+    "Roll-off Attacker/Defender: enemy=1 model=6 -> attacker=model",
+    "Юниты: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]",
+    "[DEPLOY] mode=rl_phase, strategy=template_jitter, seed=none",
+    "[DEPLOY][Only War] attacker=model -> LEFT x=0..14; defender=enemy -> RIGHT x=45..59",
+    "[DEPLOY][AUTO] mode=rl_phase strategy=template_jitter seed=none",
+    "[DEPLOY] Order: model first, alternating",
+    "[DEPLOY][RL] score_config scale=0.050 w_forward=1.000 w_spread=0.600 w_edge=0.200 w_cover=0.350",
+    "[DEPLOY][RL] accepted Unit 21 — Necrons Necron Warriors (x10 моделей): flat=1328, coord=(22,8), attempt=1, reward=+0.022, score_before=0.000, score_after=0.437, reward_delta=+0.022, forward=0.139, spread=1.000, edge=1.000, cover=0.000, cover_near=0.000, congestion=0.000, final_cover=0.000",
+    "[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (22,8)",
+    "[DEPLOY][MANUAL] accepted Unit 11 — Necrons Necron Warriors (x10 моделей) -> (28,49)",
+    "[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (28,49)",
+    "[DEPLOY][RL] score_config scale=0.050 w_forward=1.000 w_spread=0.600 w_edge=0.200 w_cover=0.350",
+    "[DEPLOY][RL] accepted Unit 22 — Necrons Necron Warriors (x10 моделей): flat=847, coord=(14,7), attempt=1, reward=-0.000, score_before=0.437, score_after=0.433, reward_delta=-0.000, forward=0.131, spread=1.000, edge=1.000, cover=0.000, cover_near=0.000, congestion=0.000, final_cover=0.000",
+    "[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (14,7)",
+    "[DEPLOY][MANUAL] accepted Unit 12 — Necrons Necron Warriors (x10 моделей) -> (17,48)"
+  ],
+  "model_events": []
 }
