@@ -76,7 +76,8 @@ def _make_terrain_feature(cells: list[tuple[int, int]], sprite_name: str) -> Ter
 
 
 def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.Random) -> list[TerrainFeature]:
-    count = 4 if rng.random() < 0.5 else 2
+    # Больше barricade-бочек на карте: теперь 2-3 зеркальные пары (4 или 6 объектов).
+    count = 6 if rng.random() < 0.5 else 4
     pair_count = max(1, count // 2)
     center_col = int(b_hei // 2)
     depth = deploy_depth(b_hei)
