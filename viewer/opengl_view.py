@@ -443,6 +443,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     feature["kind"],
                     feature["sprite"],
                     tuple(feature["cells"]),
+                    tuple(feature.get("cell_rotations") or []),
                 )
                 for feature in self._terrain_features_state
             )
@@ -901,6 +902,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     continue
                 cells.append((int(cell[0]), int(cell[1])))
             cell_rot = [int(v) for v in list(feature.get("cell_rotations") or [])]
+            if kind.lower() == "barricade":
+                cell_rot = [0] * len(cells)
             parsed.append({"kind": kind, "sprite": sprite, "cells": cells, "cell_rotations": cell_rot})
         return parsed
 
