@@ -19,7 +19,9 @@ from gym_mod.engine.logging_utils import format_unit
 from gym_mod.engine.game_io import get_active_io
 
 MISSION_ONLY_WAR = "only_war"
+MISSION_TRAINING_GROUNDS = "training_grounds"
 MISSION_NAME = "Only War"
+MISSION_NAME_TRAINING_GROUNDS = "Training Grounds"
 ONLY_WAR_BOARD_WIDTH_INCH = 60
 ONLY_WAR_BOARD_HEIGHT_INCH = 40
 ONLY_WAR_CENTER_OBJECTIVE_ID = 1
@@ -159,37 +161,76 @@ def terrain_cells_from_features(terrain_features: Iterable[dict] | None) -> set[
     return cells
 
 
+def _center_objective_coords(b_len: int, b_hei: int) -> np.ndarray:
+    center_row = int(b_len // 2)
+    center_col = int(b_hei // 2)
+    return np.array([[center_row, center_col]])
+
+
+MISSION_REGISTRY: dict[str, dict] = {
+    MISSION_ONLY_WAR: {
+        "aliases": {"only_war", "onlywar", "only"},
+        "display_name": MISSION_NAME,
+        "board_dims": lambda: (int(ONLY_WAR_BOARD_HEIGHT_INCH), int(ONLY_WAR_BOARD_WIDTH_INCH)),
+        "objective_coords": _center_objective_coords,
+        "terrain_generator": only_war_terrain_features,
+    },
+    # Тренировочный профиль с теми же размерами/целями, но отдельным ключом миссии.
+    # Нужен чтобы легко подключать другой террейн, не ломая базовый Only War.
+    MISSION_TRAINING_GROUNDS: {
+        "aliases": {"training_grounds", "training", "tg"},
+        "display_name": MISSION_NAME_TRAINING_GROUNDS,
+        "board_dims": lambda: (int(ONLY_WAR_BOARD_HEIGHT_INCH), int(ONLY_WAR_BOARD_WIDTH_INCH)),
+        "objective_coords": _center_objective_coords,
+        "terrain_generator": only_war_terrain_features,
+    },
+}
+
+
+def _mission_def(value: str | None) -> dict:
+    mission_key = normalize_mission_name(value)
+    return MISSION_REGISTRY.get(mission_key, MISSION_REGISTRY[MISSION_ONLY_WAR])
+
+
 def normalize_mission_name(value: str | None) -> str:
     raw = (value or MISSION_ONLY_WAR).strip().lower().replace("-", "_").replace(" ", "_")
-    if raw in {"only_war", "onlywar", "only"}:
-        return MISSION_ONLY_WAR
+    for mission_key, mission_def in MISSION_REGISTRY.items():
+        aliases = set(mission_def.get("aliases") or [])
+        if raw == mission_key or raw in aliases:
+            return mission_key
     return MISSION_ONLY_WAR
 
 
 def mission_display_name(value: str | None) -> str:
-    mission = normalize_mission_name(value)
-    if mission == MISSION_ONLY_WAR:
-        return MISSION_NAME
-    return MISSION_NAME
+    mission_def = _mission_def(value)
+    return str(mission_def.get("display_name") or MISSION_NAME)
 
 
 def board_dims_for_mission(value: str | None) -> Tuple[int, int]:
     """Returns env grid dims as (rows=b_len, cols=b_hei)."""
-    mission = normalize_mission_name(value)
-    if mission == MISSION_ONLY_WAR:
-        return int(ONLY_WAR_BOARD_HEIGHT_INCH), int(ONLY_WAR_BOARD_WIDTH_INCH)
+    mission_def = _mission_def(value)
+    board_dims_fn = mission_def.get("board_dims")
+    if callable(board_dims_fn):
+        b_len, b_hei = board_dims_fn()
+        return int(b_len), int(b_hei)
     return int(ONLY_WAR_BOARD_HEIGHT_INCH), int(ONLY_WAR_BOARD_WIDTH_INCH)
 
 
 def objective_coords_for_mission(value: str | None, b_len: int, b_hei: int) -> np.ndarray:
-    mission = normalize_mission_name(value)
-    if mission == MISSION_ONLY_WAR:
-        center_row = int(b_len // 2)
-        center_col = int(b_hei // 2)
-        return np.array([[center_row, center_col]])
-    center_row = int(b_len // 2)
-    center_col = int(b_hei // 2)
-    return np.array([[center_row, center_col]])
+    mission_def = _mission_def(value)
+    objective_fn = mission_def.get("objective_coords")
+    if callable(objective_fn):
+        coords = objective_fn(int(b_len), int(b_hei))
+        return np.array(coords)
+    return _center_objective_coords(int(b_len), int(b_hei))
+
+
+def terrain_features_for_mission(value: str | None, b_len: int, b_hei: int) -> list[TerrainFeature]:
+    mission_def = _mission_def(value)
+    terrain_fn = mission_def.get("terrain_generator")
+    if callable(terrain_fn):
+        return list(terrain_fn(int(b_len), int(b_hei)) or [])
+    return list(only_war_terrain_features(int(b_len), int(b_hei)) or [])
 
 
 def apply_mission_layout(env, mission_name: str | None = None) -> None:
@@ -204,7 +245,7 @@ def apply_mission_layout(env, mission_name: str | None = None) -> None:
     env.enemy_obj_oc = np.zeros(len(env.coordsOfOM), dtype=int)
     env._objective_hold_streaks = [0] * len(env.coordsOfOM)
     env.mission_name = mission_display_name(mission)
-    env.terrain_features = only_war_terrain_features(env.b_len, env.b_hei)
+    env.terrain_features = terrain_features_for_mission(mission, env.b_len, env.b_hei)
 
 
 def deploy_depth(board_width: int) -> int:
@@ -767,6 +808,7 @@ def deploy_only_war(
     deployment_seed: int | None = None,
     deployment_strategy: str | None = None,
     deployment_mode: str | None = None,
+    terrain_features: Iterable[dict] | None = None,
 ) -> None:
     if attacker_side not in ("model", "enemy"):
         raise ValueError(f"Unknown attacker side: {attacker_side}")
@@ -810,7 +852,9 @@ def deploy_only_war(
 
     occupied: set[Tuple[int, int]] = set()
     occupied_model_cells: set[Tuple[int, int]] = set()
-    terrain_cells = terrain_cells_from_features(only_war_terrain_features(b_len, b_hei))
+    if terrain_features is None:
+        terrain_features = terrain_features_for_mission(MISSION_ONLY_WAR, b_len, b_hei)
+    terrain_cells = terrain_cells_from_features(terrain_features)
     side_counts = {
         "model": len(model_units),
         "enemy": len(enemy_units),
@@ -1051,7 +1095,7 @@ def deploy_for_mission(
     deployment_mode: str | None = None,
 ) -> None:
     mission = normalize_mission_name(mission_name)
-    if mission == MISSION_ONLY_WAR:
+    if mission in MISSION_REGISTRY:
         return deploy_only_war(
             model_units,
             enemy_units,
@@ -1062,6 +1106,7 @@ def deploy_for_mission(
             deployment_seed=deployment_seed,
             deployment_strategy=deployment_strategy,
             deployment_mode=deployment_mode,
+            terrain_features=terrain_features_for_mission(mission, b_len, b_hei),
         )
     return deploy_only_war(
         model_units,
@@ -1073,6 +1118,7 @@ def deploy_for_mission(
         deployment_seed=deployment_seed,
         deployment_strategy=deployment_strategy,
         deployment_mode=deployment_mode,
+        terrain_features=terrain_features_for_mission(mission, b_len, b_hei),
     )
 
 
