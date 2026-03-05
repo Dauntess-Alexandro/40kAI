@@ -314,6 +314,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._props: List[PropInstance] = []
         self._terrain_features_state: List[dict] = []
         self._terrain_log_signature: Optional[tuple] = None
+        self._terrain_props_signature: Optional[tuple] = None
         self._terrain_sprite_log_cache: set[str] = set()
         self._terrain_texture_cache: Dict[str, QtGui.QPixmap] = {}
         self._terrain_source_rect_cache: Dict[str, QtCore.QRectF] = {}
@@ -434,9 +435,21 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._board_height = height
         self._board_rect = QtCore.QRectF(0, 0, width * self.cell_size, height * self.cell_size)
         self._ensure_grid_cache(width, height)
-        self._terrain_features_state = list(self._state.get("terrain_features", []) or [])
+        self._terrain_features_state = self._parse_terrain_features(self._state.get("terrain_features", []) or [])
         self._log_terrain_features_once()
         if self.render_terrain:
+            terrain_sig = tuple(
+                (
+                    feature["kind"],
+                    feature["sprite"],
+                    tuple(feature["cells"]),
+                    tuple(feature.get("cell_rotations") or []),
+                )
+                for feature in self._terrain_features_state
+            )
+            if terrain_sig != self._terrain_props_signature:
+                self._terrain_props_signature = terrain_sig
+                self._props_initialized = False
             if (width, height) != self._props_board_size:
                 self._props_board_size = (width, height)
                 self._props_initialized = False
@@ -876,11 +889,29 @@ class OpenGLBoardWidget(QOpenGLWidget):
         except Exception:
             return
 
+    def _parse_terrain_features(self, features_raw: List[dict]) -> List[dict]:
+        parsed: List[dict] = []
+        for feature in features_raw:
+            if not isinstance(feature, dict):
+                continue
+            kind = str(feature.get("kind") or "terrain_feature").strip() or "terrain_feature"
+            sprite = str(feature.get("sprite") or "").strip()
+            cells: List[Tuple[int, int]] = []
+            for cell in (feature.get("cells") or []):
+                if not isinstance(cell, (list, tuple)) or len(cell) < 2:
+                    continue
+                cells.append((int(cell[0]), int(cell[1])))
+            cell_rot = [int(v) for v in list(feature.get("cell_rotations") or [])]
+            if kind.lower() == "barricade":
+                cell_rot = [0] * len(cells)
+            parsed.append({"kind": kind, "sprite": sprite, "cells": cells, "cell_rotations": cell_rot})
+        return parsed
+
     def _log_terrain_features_once(self) -> None:
         sig = tuple(
             (
                 str(feature.get("kind") or ""),
-                tuple(tuple(cell) for cell in (feature.get("cells") or []) if isinstance(cell, (list, tuple))),
+                tuple(feature.get("cells") or []),
                 str(feature.get("sprite") or ""),
             )
             for feature in self._terrain_features_state
@@ -889,7 +920,15 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if sig == self._terrain_log_signature:
             return
         self._terrain_log_signature = sig
-        self._append_agent_log(f"[VIEWER][TERRAIN] features={len(sig)}")
+        if sig:
+            first_kind = str(sig[0][0] or "")
+            first_sprite = str(sig[0][2] or "")
+            first_cells_count = len(sig[0][1])
+            self._append_agent_log(
+                f"[VIEWER][TERRAIN] features={len(sig)} first=<{first_kind},{first_sprite},{first_cells_count}>"
+            )
+            return
+        self._append_agent_log("[VIEWER][TERRAIN] features=0")
 
     def _ensure_grid_cache(self, width: int, height: int) -> None:
         if self._grid_picture and self._grid_size == (width, height):
@@ -912,7 +951,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def _ensure_props(self) -> None:
         if not self.render_terrain:
             return
-        if self._props_initialized and self._props:
+        if self._props_initialized:
             return
         if self._board_rect.isEmpty():
             return
@@ -921,18 +960,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         for feature in self._terrain_features_state:
             if not isinstance(feature, dict):
                 continue
-            if str(feature.get("kind") or "").strip().lower() != "barricade":
+            feature_kind = str(feature.get("kind") or "terrain_feature").strip() or "terrain_feature"
+            cells = list(feature.get("cells") or [])
+            if not cells:
                 continue
-
-            cells_raw = feature.get("cells") or []
-            cells = []
-            for cell in cells_raw:
-                if not isinstance(cell, (list, tuple)) or len(cell) < 2:
-                    continue
-                cells.append((int(cell[0]), int(cell[1])))
-            if len(cells) != 3:
-                continue
-
             sprite_name = str(feature.get("sprite") or "")
             sprite_path = self._texture_manager._base_dir / "props" / "terrain" / sprite_name
             exists = bool(sprite_name) and sprite_path.exists()
@@ -943,54 +974,29 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     f"[VIEWER][TERRAIN] load sprite={sprite_name or '(empty)'} path={sprite_path} exists={exists}"
                 )
 
-            texture_key = sprite_name if sprite_name in self._prop_textures else ""
-
-            if sprite_name == "barrel.png":
-                for row, col in cells:
-                    cell_rect = QtCore.QRectF(
-                        col * self.cell_size,
-                        row * self.cell_size,
-                        self.cell_size,
-                        self.cell_size,
-                    )
-                    self._props.append(
-                        PropInstance(
-                            kind=texture_key,
-                            center=cell_rect.center(),
-                            rotation_deg=0.0,
-                            scale=1.0,
-                            debug_rect=cell_rect,
-                            sprite_name=sprite_name,
-                            draw_rect=cell_rect,
-                        )
-                    )
-                continue
-
-            rows = [cell[0] for cell in cells]
-            cols = [cell[1] for cell in cells]
-            min_row, max_row = min(rows), max(rows)
-            min_col, max_col = min(cols), max(cols)
-            center_col = (min_col + max_col + 1) * 0.5
-            center_row = (min_row + max_row + 1) * 0.5
-            center = QtCore.QPointF(center_col * self.cell_size, center_row * self.cell_size)
-            is_vertical = len(set(cols)) == 1
-            rect = QtCore.QRectF(
-                min_col * self.cell_size,
-                min_row * self.cell_size,
-                (max_col - min_col + 1) * self.cell_size,
-                (max_row - min_row + 1) * self.cell_size,
-            )
-
-            self._props.append(
-                PropInstance(
-                    kind=texture_key,
-                    center=center,
-                    rotation_deg=90.0 if is_vertical else 0.0,
-                    scale=1.0,
-                    debug_rect=rect,
-                    sprite_name=sprite_name,
+            texture_key = sprite_name if sprite_name in self._prop_textures else feature_kind
+            cell_rot = list(feature.get("cell_rotations") or [])
+            if feature_kind.lower() == "barricade":
+                cell_rot = [0] * len(cells)
+            for idx, (row, col) in enumerate(cells):
+                rot = float(cell_rot[idx]) if idx < len(cell_rot) else 0.0
+                cell_rect = QtCore.QRectF(
+                    col * self.cell_size,
+                    row * self.cell_size,
+                    self.cell_size,
+                    self.cell_size,
                 )
-            )
+                self._props.append(
+                    PropInstance(
+                        kind=texture_key,
+                        center=cell_rect.center(),
+                        rotation_deg=rot,
+                        scale=1.0,
+                        debug_rect=cell_rect,
+                        sprite_name=sprite_name,
+                        draw_rect=cell_rect,
+                    )
+                )
 
         self._props_initialized = True
 
@@ -1579,11 +1585,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if prop_pixmap is None:
                 if prop.debug_rect is not None:
                     painter.save()
-                    pen = QtGui.QPen(QtGui.QColor(220, 80, 80, 220), 2)
+                    pen = QtGui.QPen(QtGui.QColor(220, 80, 80, 220), 1.5)
                     pen.setCosmetic(True)
                     painter.setPen(pen)
-                    painter.setBrush(QtGui.QColor(220, 80, 80, 60))
+                    painter.setBrush(QtGui.QColor(220, 80, 80, 90))
                     painter.drawRect(prop.debug_rect)
+                    painter.setPen(QtGui.QColor(240, 235, 235, 235))
+                    painter.setFont(Theme.font(size=8, bold=True))
+                    painter.drawText(
+                        prop.debug_rect.adjusted(2.0, 2.0, -2.0, -2.0),
+                        QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop,
+                        str(prop.kind or "terrain"),
+                    )
                     painter.restore()
                 continue
             if self.render_prop_shadows:
@@ -1606,7 +1619,20 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     inset_ratio=self._terrain_barrel_cell_scale,
                     source_rect=source_rect,
                 )
-                painter.drawPixmap(draw_rect, prop_pixmap, source_rect)
+                if prop.rotation_deg:
+                    painter.save()
+                    painter.translate(draw_rect.center())
+                    painter.rotate(prop.rotation_deg)
+                    rotated_rect = QtCore.QRectF(
+                        -draw_rect.width() * 0.5,
+                        -draw_rect.height() * 0.5,
+                        draw_rect.width(),
+                        draw_rect.height(),
+                    )
+                    painter.drawPixmap(rotated_rect, prop_pixmap, source_rect)
+                    painter.restore()
+                else:
+                    painter.drawPixmap(draw_rect, prop_pixmap, source_rect)
                 continue
 
             self._draw_sprite(
@@ -1750,7 +1776,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._draw_deploy_ghost_layer(painter)
         self._draw_platform_fx_layer(painter)
         if self.render_terrain:
-            self._draw_props_layer(painter)
+            self.draw_terrain_features(painter)
         self._draw_units_layer(painter)
         self._draw_deploy_snap_fx_layer(painter)
         self._draw_selection_layer(painter)
@@ -3463,3 +3489,5 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def _tooltip_mods_status(self, unit: dict) -> str:
         return "—"
+    def draw_terrain_features(self, painter: QtGui.QPainter) -> None:
+        self._draw_props_layer(painter)

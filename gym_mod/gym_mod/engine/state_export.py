@@ -172,6 +172,7 @@ def write_state_json(env, path=None):
         terrain_features.append({
             "kind": str(feature.get("kind") or "barricade"),
             "cells": cells,
+            "cell_rotations": [_safe_int(v, 0) for v in list(feature.get("cell_rotations") or [])],
             "tags": list(feature.get("tags") or feature.get("keywords") or []),
             "opacity": str(feature.get("opacity") or "obscuring"),
             "sprite": str(feature.get("sprite") or ""),

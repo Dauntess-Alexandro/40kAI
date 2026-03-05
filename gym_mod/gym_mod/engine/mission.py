@@ -19,7 +19,9 @@ from gym_mod.engine.logging_utils import format_unit
 from gym_mod.engine.game_io import get_active_io
 
 MISSION_ONLY_WAR = "only_war"
+MISSION_TRAINING_GROUNDS = "training_grounds"
 MISSION_NAME = "Only War"
+MISSION_NAME_TRAINING_GROUNDS = "Training Grounds"
 ONLY_WAR_BOARD_WIDTH_INCH = 60
 ONLY_WAR_BOARD_HEIGHT_INCH = 40
 ONLY_WAR_CENTER_OBJECTIVE_ID = 1
@@ -58,25 +60,35 @@ def _terrain_seed() -> int:
         return 1040
 
 
-def _make_barricade_cells(anchor_row: int, anchor_col: int, orientation: str) -> list[tuple[int, int]]:
-    if orientation == "vertical":
-        return [(anchor_row + i, anchor_col) for i in range(3)]
-    return [(anchor_row, anchor_col + i) for i in range(3)]
+def _make_barricade_cells(anchor_row: int, anchor_col: int) -> list[tuple[int, int]]:
+    # Баррикада = 3 клетки в колонку (1x3), чтобы в движке и Viewer
+    # всегда читалась как единая вертикальная линия укрытия.
+    return [(anchor_row + i, anchor_col) for i in range(3)]
 
 
-def _make_terrain_feature(cells: list[tuple[int, int]], sprite_name: str) -> TerrainFeature:
+def _make_terrain_feature(
+    cells: list[tuple[int, int]],
+    sprite_name: str,
+    *,
+    cell_rotations: list[int] | None = None,
+) -> TerrainFeature:
     final_sprite = "barrel.png" if sprite_name != "barrel.png" else sprite_name
+    normalized_rot = list(cell_rotations or [])
+    if len(normalized_rot) != len(cells):
+        normalized_rot = [0] * len(cells)
     return {
         "kind": "barricade",
         "cells": [[int(r), int(c)] for r, c in cells],
         "tags": ["OBSTACLE", "BARRICADE"],
         "opacity": "obscuring",
         "sprite": str(final_sprite),
+        "cell_rotations": [int(v) for v in normalized_rot],
     }
 
 
 def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.Random) -> list[TerrainFeature]:
-    count = 4 if rng.random() < 0.5 else 2
+    # Больше barricade-бочек на карте: теперь 2-3 зеркальные пары (4 или 6 объектов).
+    count = 6 if rng.random() < 0.5 else 4
     pair_count = max(1, count // 2)
     center_col = int(b_hei // 2)
     depth = deploy_depth(b_hei)
@@ -97,15 +109,14 @@ def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.R
 
     for pair_idx in range(pair_count):
         row = int(max(1, min(b_len - 4, rows_iter[pair_idx])))
-        orientation = "horizontal" if rng.random() < 0.5 else "vertical"
 
         attempt_ok = False
         for _ in range(20):
             left_col = int(rng.randint(safe_left_min, safe_left_max))
             mirror_col = int((b_hei - 1) - left_col)
 
-            left_cells = _make_barricade_cells(row, left_col, orientation)
-            right_cells = _make_barricade_cells(row, mirror_col - (2 if orientation == "horizontal" else 0), orientation)
+            left_cells = _make_barricade_cells(row, left_col)
+            right_cells = _make_barricade_cells(row, mirror_col)
 
             pair_cells = left_cells + right_cells
             if any(not _in_bounds(cell, b_len, b_hei) for cell in pair_cells):
@@ -117,8 +128,12 @@ def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.R
             if any(is_in_deploy_zone("model", cell, b_len, b_hei) or is_in_deploy_zone("enemy", cell, b_len, b_hei) for cell in pair_cells):
                 continue
 
-            features.append(_make_terrain_feature(left_cells, "barrel.png"))
-            features.append(_make_terrain_feature(right_cells, "barrel.png"))
+            # Не поворачиваем отдельные бочки внутри тройки:
+            # ориентация задаётся расположением клеток (вертикальная 1x3).
+            left_rot = [0, 0, 0]
+            right_rot = [0, 0, 0]
+            features.append(_make_terrain_feature(left_cells, "barrel.png", cell_rotations=left_rot))
+            features.append(_make_terrain_feature(right_cells, "barrel.png", cell_rotations=right_rot))
             used_cells.update(pair_cells)
             attempt_ok = True
             break
@@ -146,37 +161,76 @@ def terrain_cells_from_features(terrain_features: Iterable[dict] | None) -> set[
     return cells
 
 
+def _center_objective_coords(b_len: int, b_hei: int) -> np.ndarray:
+    center_row = int(b_len // 2)
+    center_col = int(b_hei // 2)
+    return np.array([[center_row, center_col]])
+
+
+MISSION_REGISTRY: dict[str, dict] = {
+    MISSION_ONLY_WAR: {
+        "aliases": {"only_war", "onlywar", "only"},
+        "display_name": MISSION_NAME,
+        "board_dims": lambda: (int(ONLY_WAR_BOARD_HEIGHT_INCH), int(ONLY_WAR_BOARD_WIDTH_INCH)),
+        "objective_coords": _center_objective_coords,
+        "terrain_generator": only_war_terrain_features,
+    },
+    # Тренировочный профиль с теми же размерами/целями, но отдельным ключом миссии.
+    # Нужен чтобы легко подключать другой террейн, не ломая базовый Only War.
+    MISSION_TRAINING_GROUNDS: {
+        "aliases": {"training_grounds", "training", "tg"},
+        "display_name": MISSION_NAME_TRAINING_GROUNDS,
+        "board_dims": lambda: (int(ONLY_WAR_BOARD_HEIGHT_INCH), int(ONLY_WAR_BOARD_WIDTH_INCH)),
+        "objective_coords": _center_objective_coords,
+        "terrain_generator": only_war_terrain_features,
+    },
+}
+
+
+def _mission_def(value: str | None) -> dict:
+    mission_key = normalize_mission_name(value)
+    return MISSION_REGISTRY.get(mission_key, MISSION_REGISTRY[MISSION_ONLY_WAR])
+
+
 def normalize_mission_name(value: str | None) -> str:
     raw = (value or MISSION_ONLY_WAR).strip().lower().replace("-", "_").replace(" ", "_")
-    if raw in {"only_war", "onlywar", "only"}:
-        return MISSION_ONLY_WAR
+    for mission_key, mission_def in MISSION_REGISTRY.items():
+        aliases = set(mission_def.get("aliases") or [])
+        if raw == mission_key or raw in aliases:
+            return mission_key
     return MISSION_ONLY_WAR
 
 
 def mission_display_name(value: str | None) -> str:
-    mission = normalize_mission_name(value)
-    if mission == MISSION_ONLY_WAR:
-        return MISSION_NAME
-    return MISSION_NAME
+    mission_def = _mission_def(value)
+    return str(mission_def.get("display_name") or MISSION_NAME)
 
 
 def board_dims_for_mission(value: str | None) -> Tuple[int, int]:
     """Returns env grid dims as (rows=b_len, cols=b_hei)."""
-    mission = normalize_mission_name(value)
-    if mission == MISSION_ONLY_WAR:
-        return int(ONLY_WAR_BOARD_HEIGHT_INCH), int(ONLY_WAR_BOARD_WIDTH_INCH)
+    mission_def = _mission_def(value)
+    board_dims_fn = mission_def.get("board_dims")
+    if callable(board_dims_fn):
+        b_len, b_hei = board_dims_fn()
+        return int(b_len), int(b_hei)
     return int(ONLY_WAR_BOARD_HEIGHT_INCH), int(ONLY_WAR_BOARD_WIDTH_INCH)
 
 
 def objective_coords_for_mission(value: str | None, b_len: int, b_hei: int) -> np.ndarray:
-    mission = normalize_mission_name(value)
-    if mission == MISSION_ONLY_WAR:
-        center_row = int(b_len // 2)
-        center_col = int(b_hei // 2)
-        return np.array([[center_row, center_col]])
-    center_row = int(b_len // 2)
-    center_col = int(b_hei // 2)
-    return np.array([[center_row, center_col]])
+    mission_def = _mission_def(value)
+    objective_fn = mission_def.get("objective_coords")
+    if callable(objective_fn):
+        coords = objective_fn(int(b_len), int(b_hei))
+        return np.array(coords)
+    return _center_objective_coords(int(b_len), int(b_hei))
+
+
+def terrain_features_for_mission(value: str | None, b_len: int, b_hei: int) -> list[TerrainFeature]:
+    mission_def = _mission_def(value)
+    terrain_fn = mission_def.get("terrain_generator")
+    if callable(terrain_fn):
+        return list(terrain_fn(int(b_len), int(b_hei)) or [])
+    return list(only_war_terrain_features(int(b_len), int(b_hei)) or [])
 
 
 def apply_mission_layout(env, mission_name: str | None = None) -> None:
@@ -191,7 +245,7 @@ def apply_mission_layout(env, mission_name: str | None = None) -> None:
     env.enemy_obj_oc = np.zeros(len(env.coordsOfOM), dtype=int)
     env._objective_hold_streaks = [0] * len(env.coordsOfOM)
     env.mission_name = mission_display_name(mission)
-    env.terrain_features = only_war_terrain_features(env.b_len, env.b_hei)
+    env.terrain_features = terrain_features_for_mission(mission, env.b_len, env.b_hei)
 
 
 def deploy_depth(board_width: int) -> int:
@@ -291,6 +345,7 @@ def _deployment_global_score(
     placed_side_units: Sequence[dict],
     *,
     cfg: dict,
+    terrain_cells: Iterable[Tuple[int, int]] | None = None,
 ) -> Tuple[float, dict]:
     if not placed_side_units:
         return 0.0, {"forward": 0.0, "spread": 0.0, "edge": 0.0, "cover": 0.0}
@@ -339,8 +394,62 @@ def _deployment_global_score(
         edge_vals.append(max(0.0, min(1.0, float(min_margin) / edge_margin_thr)))
     edge_score = float(sum(edge_vals) / max(1, len(edge_vals)))
 
-    # Placeholder for terrain-aware cover readiness. TODO: use actual terrain/LOS data when available.
-    cover_score = 0.0
+    terrain_set = set((int(r), int(c)) for r, c in (terrain_cells or []))
+    cover_radius = max(
+        1.0,
+        float(
+            os.getenv(
+                "DEPLOYMENT_RL_COVER_RADIUS",
+                str(getattr(reward_cfg, "DEPLOYMENT_RL_COVER_RADIUS", 2.0)),
+            )
+            or str(getattr(reward_cfg, "DEPLOYMENT_RL_COVER_RADIUS", 2.0))
+        ),
+    )
+    cover_near_target = max(
+        1.0,
+        float(
+            os.getenv(
+                "DEPLOYMENT_RL_COVER_NEAR_TARGET",
+                str(getattr(reward_cfg, "DEPLOYMENT_RL_COVER_NEAR_TARGET", 3.0)),
+            )
+            or str(getattr(reward_cfg, "DEPLOYMENT_RL_COVER_NEAR_TARGET", 3.0))
+        ),
+    )
+    cover_congestion_target = max(
+        1.0,
+        float(
+            os.getenv(
+                "DEPLOYMENT_RL_COVER_CONGESTION_TARGET",
+                str(getattr(reward_cfg, "DEPLOYMENT_RL_COVER_CONGESTION_TARGET", 6.0)),
+            )
+            or str(getattr(reward_cfg, "DEPLOYMENT_RL_COVER_CONGESTION_TARGET", 6.0))
+        ),
+    )
+
+    near_hits = 0.0
+    congestion_hits = 0.0
+    for idx, cells in enumerate(units_cells):
+        own = set((int(r), int(c)) for r, c in cells)
+        other_friendly = set()
+        for j, other_cells in enumerate(units_cells):
+            if j == idx:
+                continue
+            other_friendly.update((int(r), int(c)) for r, c in other_cells)
+
+        for r, c in own:
+            terrain_close = any(
+                max(abs(int(r) - int(tr)), abs(int(c) - int(tc))) <= cover_radius
+                for tr, tc in terrain_set
+            )
+            if terrain_close:
+                near_hits += 1.0
+            for fr, fc in other_friendly:
+                if max(abs(int(r) - int(fr)), abs(int(c) - int(fc))) <= 1:
+                    congestion_hits += 1.0
+
+    near_score = max(0.0, min(1.0, near_hits / cover_near_target))
+    congestion_penalty = max(0.0, min(1.0, congestion_hits / cover_congestion_target))
+    cover_score = max(0.0, min(1.0, near_score - 0.5 * congestion_penalty))
     # TODO: formation_flexibility component (space for first move / congestion) can be added here.
 
     fw = float(cfg.get("forward_w", 1.0))
@@ -354,6 +463,8 @@ def _deployment_global_score(
         "spread": float(spread_score),
         "edge": float(edge_score),
         "cover": float(cover_score),
+        "cover_near": float(near_score),
+        "cover_congestion": float(congestion_penalty),
     }
 
 
@@ -450,6 +561,7 @@ def _choose_rl_deploy_coord(
                 b_hei,
                 placed_side_units or [],
                 cfg=score_cfg,
+                terrain_cells=terrain_cells,
             )
             score_after, after_parts = _deployment_global_score(
                 side,
@@ -457,6 +569,7 @@ def _choose_rl_deploy_coord(
                 b_hei,
                 list(placed_side_units or []) + [{"anchor": coord, "offsets": list(model_offsets or [(0, 0)])}],
                 cfg=score_cfg,
+                terrain_cells=terrain_cells,
             )
             deploy_reward_delta = score_scale * (score_after - score_before)
             stats["reward"] += valid_reward + deploy_reward_delta
@@ -477,7 +590,10 @@ def _choose_rl_deploy_coord(
                     f"score_before={score_before:.3f}, score_after={score_after:.3f}, "
                     f"reward_delta={deploy_reward_delta:+.3f}, "
                     f"forward={after_parts.get('forward', 0.0):.3f}, spread={after_parts.get('spread', 0.0):.3f}, "
-                    f"edge={after_parts.get('edge', 0.0):.3f}, cover={after_parts.get('cover', 0.0):.3f}"
+                    f"edge={after_parts.get('edge', 0.0):.3f}, cover={after_parts.get('cover', 0.0):.3f}, "
+                    f"cover_near={after_parts.get('cover_near', 0.0):.3f}, "
+                    f"congestion={after_parts.get('cover_congestion', 0.0):.3f}, "
+                    f"final_cover={after_parts.get('cover', 0.0):.3f}"
                 )
             return coord, stats
         stats["invalid"] += 1
@@ -692,6 +808,7 @@ def deploy_only_war(
     deployment_seed: int | None = None,
     deployment_strategy: str | None = None,
     deployment_mode: str | None = None,
+    terrain_features: Iterable[dict] | None = None,
 ) -> None:
     if attacker_side not in ("model", "enemy"):
         raise ValueError(f"Unknown attacker side: {attacker_side}")
@@ -735,7 +852,9 @@ def deploy_only_war(
 
     occupied: set[Tuple[int, int]] = set()
     occupied_model_cells: set[Tuple[int, int]] = set()
-    terrain_cells = terrain_cells_from_features(only_war_terrain_features(b_len, b_hei))
+    if terrain_features is None:
+        terrain_features = terrain_features_for_mission(MISSION_ONLY_WAR, b_len, b_hei)
+    terrain_cells = terrain_cells_from_features(terrain_features)
     side_counts = {
         "model": len(model_units),
         "enemy": len(enemy_units),
@@ -976,7 +1095,7 @@ def deploy_for_mission(
     deployment_mode: str | None = None,
 ) -> None:
     mission = normalize_mission_name(mission_name)
-    if mission == MISSION_ONLY_WAR:
+    if mission in MISSION_REGISTRY:
         return deploy_only_war(
             model_units,
             enemy_units,
@@ -987,6 +1106,7 @@ def deploy_for_mission(
             deployment_seed=deployment_seed,
             deployment_strategy=deployment_strategy,
             deployment_mode=deployment_mode,
+            terrain_features=terrain_features_for_mission(mission, b_len, b_hei),
         )
     return deploy_only_war(
         model_units,
@@ -998,6 +1118,7 @@ def deploy_for_mission(
         deployment_seed=deployment_seed,
         deployment_strategy=deployment_strategy,
         deployment_mode=deployment_mode,
+        terrain_features=terrain_features_for_mission(mission, b_len, b_hei),
     )
 
 

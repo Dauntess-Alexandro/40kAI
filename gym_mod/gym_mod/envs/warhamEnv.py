@@ -866,6 +866,7 @@ class Warhammer40kEnv(gym.Env):
         self.terrain_opaque_cells: set[tuple[int, int]] = set()
         self.terrain_obscuring_cells: set[tuple[int, int]] = self.get_terrain_obscuring_cells_set()
         self.visibility_mode = str(os.getenv("VISIBILITY_MODE", "multi_ray_5") or "multi_ray_5").strip().lower()
+        self._terrain_shaping_shot_bonus_units: set[int] = set()
         log_name = str(os.getenv("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_PLAY.md") or "LOGS_FOR_AGENTS_PLAY.md")
         self._agent_log_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "..", log_name)
@@ -1094,6 +1095,171 @@ class Warhammer40kEnv(gym.Env):
         )
         self._log_los_debug(attacker_cell, target_cell, report)
         return bool(report.get("los", False))
+
+    def _grid_distance_chebyshev(self, a: tuple[int, int], b: tuple[int, int]) -> int:
+        return max(abs(int(a[0]) - int(b[0])), abs(int(a[1]) - int(b[1])))
+
+    def _barricade_cells(self) -> list[tuple[int, int]]:
+        cells: list[tuple[int, int]] = []
+        for feature in (self.terrain_features or []):
+            if not isinstance(feature, dict):
+                continue
+            kind = str(feature.get("kind") or "").strip().lower()
+            tags_blob = " ".join(str(tag) for tag in (feature.get("tags") or []))
+            if kind != "barricade" and "barricade" not in tags_blob.lower():
+                continue
+            for raw_cell in (feature.get("cells") or []):
+                if isinstance(raw_cell, (list, tuple)) and len(raw_cell) >= 2:
+                    cells.append((int(raw_cell[0]), int(raw_cell[1])))
+        return cells
+
+    def _visibility_report_between_units(self, attacker_side: str, attacker_idx: int, target_side: str, target_idx: int) -> dict:
+        attacker_coords = self.unit_coords if attacker_side == "model" else self.enemy_coords
+        target_coords = self.unit_coords if target_side == "model" else self.enemy_coords
+        attacker_cell = self._cell_from_coord(attacker_coords[int(attacker_idx)])
+        target_cell = self._cell_from_coord(target_coords[int(target_idx)])
+        return visibility_report(
+            attacker_cell,
+            target_cell,
+            opaque_cells_set=self.terrain_opaque_cells,
+            obscuring_cells_set=self.get_terrain_obscuring_cells_set(),
+            visibility_mode=self.visibility_mode,
+        )
+
+    def _unit_can_shoot_now(self, side: str, unit_idx: int) -> bool:
+        if side == "enemy":
+            if not (0 <= unit_idx < len(self.enemy_health)):
+                return False
+            return (
+                self.enemy_health[unit_idx] > 0
+                and not self.enemyFellBack[unit_idx]
+                and self.enemyInAttack[unit_idx][0] != 1
+                and self.enemy_weapon[unit_idx] != "None"
+            )
+        if not (0 <= unit_idx < len(self.unit_health)):
+            return False
+        return (
+            self.unit_health[unit_idx] > 0
+            and not self.unitFellBack[unit_idx]
+            and self.unitInAttack[unit_idx][0] != 1
+            and self.unit_weapon[unit_idx] != "None"
+        )
+
+    def _count_real_threats_to_model_unit(self, model_idx: int) -> tuple[int, bool, int]:
+        if not (0 <= model_idx < len(self.unit_health)) or self.unit_health[model_idx] <= 0:
+            return 0, False, 0
+        threat_count = 0
+        has_fully_visible_threat = False
+        obscured_threats = 0
+        for enemy_idx in range(len(self.enemy_health)):
+            if not self._unit_can_shoot_now("enemy", enemy_idx):
+                continue
+            report = self._visibility_report_between_units("enemy", enemy_idx, "model", model_idx)
+            if not bool(report.get("los", False)):
+                continue
+            distance_to_unit = self._distance_between_units("enemy", enemy_idx, "model", model_idx)
+            range_limit = float(self.enemy_weapon[enemy_idx].get("Range", 0) or 0)
+            if distance_to_unit > range_limit:
+                continue
+            threat_count += 1
+            fully_visible = bool(report.get("fully_visible", True))
+            if fully_visible:
+                has_fully_visible_threat = True
+            else:
+                obscured_threats += 1
+        return threat_count, has_fully_visible_threat, obscured_threats
+
+    def _model_unit_cover_state(self, unit_idx: int) -> tuple[bool, float, str]:
+        if not (0 <= unit_idx < len(self.unit_health)) or self.unit_health[unit_idx] <= 0:
+            return False, 0.0, "юнит мёртв"
+        if not self._unit_has_keyword(self.unit_data[unit_idx], "infantry"):
+            return False, 0.0, "не INFANTRY"
+        barricades = self._barricade_cells()
+        if not barricades:
+            return False, 0.0, "на карте нет barricade"
+        unit_cell = self._cell_from_coord(self.unit_coords[unit_idx])
+        min_dist = min(self._grid_distance_chebyshev(unit_cell, cell) for cell in barricades)
+        cover_radius = float(getattr(reward_cfg, "TERRAIN_COVER_RADIUS", 3.0))
+        if min_dist > cover_radius:
+            return False, 0.0, f"далеко от barricade (dist={min_dist}, need<={cover_radius:.0f})"
+        threat_count, _has_full_visible, obscured_threats = self._count_real_threats_to_model_unit(unit_idx)
+        if threat_count <= 0:
+            return False, 0.0, "нет реальных угроз для оценки fully_visible"
+        # Мягкий вариант: доля угроз, в которых лучи дают fully_visible=False.
+        cover_soft = obscured_threats / max(1.0, float(threat_count))
+        if cover_soft <= 0:
+            return False, 0.0, "все реальные угрозы видят юнит полностью"
+        return True, float(cover_soft), f"near_barricade=1, obscured_threats={obscured_threats}/{threat_count}"
+
+    def _terrain_potential_snapshot(self, start_dists: list[float]) -> dict:
+        alive_units = [idx for idx, hp in enumerate(self.unit_health) if hp > 0]
+        if not alive_units:
+            return {
+                "phi": 0.0,
+                "cover_score": 0.0,
+                "threat_score": 0.0,
+                "guard_score": 0.0,
+                "threat_count_total": 0,
+                "cover_units": 0,
+                "exposed_units": 0,
+            }
+
+        cover_acc = 0.0
+        threat_acc = 0.0
+        guard_acc = 0.0
+        threat_total = 0
+        covered_units = 0
+        exposed_units = 0
+        guard_norm = max(1.0, float(getattr(reward_cfg, "TERRAIN_GUARD_RANGE_NORM", 12.0)))
+        threat_norm = max(1.0, float(getattr(reward_cfg, "TERRAIN_THREAT_COUNT_NORM", 3.0)))
+        cover_norm = max(1.0, float(getattr(reward_cfg, "TERRAIN_COVER_SCORE_NORM", 2.0)))
+        guard_progress_bonus = float(getattr(reward_cfg, "TERRAIN_GUARD_PROGRESS_BONUS", 0.20))
+
+        for idx in alive_units:
+            cover_ok, cover_soft, _reason = self._model_unit_cover_state(idx)
+            threat_count, has_full_visible_threat, _ = self._count_real_threats_to_model_unit(idx)
+            threat_total += threat_count
+            threat_acc += min(1.0, threat_count / threat_norm)
+            if cover_ok:
+                covered_units += 1
+                cover_acc += max(0.0, min(1.0, cover_soft))
+            if threat_count > 0 and has_full_visible_threat:
+                exposed_units += 1
+
+            guard_unit = 0.0
+            if cover_ok and len(self.coordsOfOM) > 0:
+                unit_pos = self.unit_coords[idx]
+                obj_dist = min(distance(unit_pos, objective) for objective in self.coordsOfOM)
+                weapon_range = float(self.unit_weapon[idx].get("Range", 0) or 0) if self.unit_weapon[idx] != "None" else 0.0
+                in_guard_range = obj_dist <= max(1.0, weapon_range)
+                if in_guard_range:
+                    range_factor = max(0.0, 1.0 - (obj_dist / guard_norm))
+                    guard_unit = 0.6 + (0.4 * range_factor)
+                    if idx < len(start_dists):
+                        if obj_dist + 1e-6 < float(start_dists[idx]):
+                            guard_unit += guard_progress_bonus
+                        elif abs(obj_dist - float(start_dists[idx])) <= 1.0:
+                            guard_unit += 0.5 * guard_progress_bonus
+            guard_acc += min(1.0, guard_unit)
+
+        alive_count = max(1.0, float(len(alive_units)))
+        cover_score = min(1.0, (cover_acc / alive_count) * (alive_count / cover_norm))
+        threat_score = -min(1.0, (threat_acc / alive_count))
+        guard_score = min(1.0, guard_acc / alive_count)
+
+        w_cover = float(getattr(reward_cfg, "TERRAIN_POTENTIAL_W_COVER", 0.08))
+        w_threat = float(getattr(reward_cfg, "TERRAIN_POTENTIAL_W_THREAT", 0.10))
+        w_guard = float(getattr(reward_cfg, "TERRAIN_POTENTIAL_W_GUARD", 0.04))
+        phi = (w_cover * cover_score) + (w_threat * threat_score) + (w_guard * guard_score)
+        return {
+            "phi": float(phi),
+            "cover_score": float(cover_score),
+            "threat_score": float(threat_score),
+            "guard_score": float(guard_score),
+            "threat_count_total": int(threat_total),
+            "cover_units": int(covered_units),
+            "exposed_units": int(exposed_units),
+        }
 
     def _model_wounds_pool_from_hp(self, unit_data: dict, hp_value: float) -> list[int]:
         if not isinstance(unit_data, dict):
@@ -2219,6 +2385,7 @@ class Warhammer40kEnv(gym.Env):
     def command_phase(self, side: str, action=None, manual: bool = False):
         self.begin_phase(side, "command")
         if side == "model":
+            self._terrain_shaping_shot_bonus_units = set()
             self.modelCP += 1
             self.enemyCP += 1
             reward_delta = 0
@@ -3017,6 +3184,7 @@ class Warhammer40kEnv(gym.Env):
                             phase="shooting",
                             manual=os.getenv("MANUAL_DICE", "0") == "1",
                         )
+                        threat_count_before_shot, _, _ = self._count_real_threats_to_model_unit(i)
                         _logger = None
                         if _verbose_logs_enabled():
                             _logger = RollLogger(auto_dice)
@@ -3128,6 +3296,46 @@ class Warhammer40kEnv(gym.Env):
                                 "Reward (стрельба): "
                                 f"action_bonus=+{action_bonus:.3f}",
                             )
+
+                        event_bonus = 0.0
+                        if i in self._terrain_shaping_shot_bonus_units:
+                            self._log_reward_unit(
+                                "model",
+                                modelName,
+                                i,
+                                "Reward (terrain event): бонус за выстрел из cover уже получен в этом ходу, повтор не начисляется.",
+                            )
+                        else:
+                            pre_threat_count = int(threat_count_before_shot)
+                            cover_ok, cover_soft, cover_reason = self._model_unit_cover_state(i)
+                            post_threat_count, _, _ = self._count_real_threats_to_model_unit(i)
+                            if not cover_ok:
+                                self._log_reward_unit(
+                                    "model",
+                                    modelName,
+                                    i,
+                                    f"Reward (terrain event): бонус за выстрел из cover не начислен, причина: {cover_reason}.",
+                                )
+                            elif post_threat_count > pre_threat_count:
+                                self._log_reward_unit(
+                                    "model",
+                                    modelName,
+                                    i,
+                                    "Reward (terrain event): бонус за выстрел из cover не начислен, "
+                                    f"угроза выросла ({pre_threat_count} -> {post_threat_count}).",
+                                )
+                            else:
+                                event_bonus = float(getattr(reward_cfg, "TERRAIN_EVENT_SHOT_FROM_COVER_BONUS", 0.03))
+                                reward_delta += event_bonus
+                                self._terrain_shaping_shot_bonus_units.add(i)
+                                self._log_reward_unit(
+                                    "model",
+                                    modelName,
+                                    i,
+                                    "Reward (terrain event): "
+                                    f"shot_from_cover=+{event_bonus:.3f} (cover_soft={cover_soft:.3f}, threat={pre_threat_count}->{post_threat_count}).",
+                                )
+
                         shot_reward = (
                             damage_term
                             + kill_term
@@ -3136,6 +3344,7 @@ class Warhammer40kEnv(gym.Env):
                             + objective_damage_term
                             + objective_kill_term
                             + action_bonus
+                            + event_bonus
                         )
                         self._log_reward_unit(
                             "model",
@@ -3146,7 +3355,7 @@ class Warhammer40kEnv(gym.Env):
                             f"kill={kill_term:.3f}, overkill=-{overkill_penalty:.3f}, "
                             f"quality={quality_term:.3f}, "
                             f"obj_damage={objective_damage_term:.3f}, obj_kill={objective_kill_term:.3f}, "
-                            f"action={action_bonus:.3f}, total={shot_reward:.3f}",
+                            f"action={action_bonus:.3f}, terrain_event={event_bonus:.3f}, total={shot_reward:.3f}",
                         )
                         self._log_unit(
                             "MODEL",
@@ -4121,6 +4330,7 @@ class Warhammer40kEnv(gym.Env):
         self._objective_hold_streaks = [0] * len(self.coordsOfOM)
         self._phase_event_emitted = False
         self._phase_unit_logged = set()
+        self._terrain_shaping_shot_bonus_units = set()
         get_event_recorder().clear()
 
         for i in range(len(self.enemy_data)):
@@ -4603,6 +4813,11 @@ class Warhammer40kEnv(gym.Env):
         _, pre_controlled = controlled_objectives(self, "model")
         pre_controlled_set = set(pre_controlled)
         min_obj_dist_start = self._min_model_obj_distance() if run_secondary_checks else None
+        start_obj_dists = [
+            min(distance(self.unit_coords[idx], obj) for obj in self.coordsOfOM) if len(self.coordsOfOM) > 0 else 0.0
+            for idx in range(len(self.unit_health))
+        ]
+        terrain_snapshot_before = self._terrain_potential_snapshot(start_obj_dists)
         prev_vp_diff = self._prev_vp_diff
         self.unitCharged = [0] * len(self.unit_health)
         self.enemyCharged = [0] * len(self.enemy_health)
@@ -4753,6 +4968,50 @@ class Warhammer40kEnv(gym.Env):
                     f"kills={kills_dealt}, moved_closer={int(moved_closer)}, "
                     f"min_dist={min_obj_dist_start}->{min_obj_dist_end}"
                 )
+
+        terrain_snapshot_after = self._terrain_potential_snapshot(start_obj_dists)
+        terrain_gamma = float(getattr(reward_cfg, "TERRAIN_POTENTIAL_GAMMA", 0.99))
+        terrain_potential_delta = (terrain_gamma * terrain_snapshot_after["phi"]) - terrain_snapshot_before["phi"]
+        terrain_reward_total = terrain_potential_delta
+        self._log_reward(
+            "Reward (terrain/potential): "
+            f"gamma={terrain_gamma:.3f}, phi_before={terrain_snapshot_before['phi']:+.3f}, "
+            f"phi_after={terrain_snapshot_after['phi']:+.3f}, delta={terrain_potential_delta:+.3f}; "
+            f"cover={terrain_snapshot_before['cover_score']:.3f}->{terrain_snapshot_after['cover_score']:.3f}, "
+            f"threat={terrain_snapshot_before['threat_score']:.3f}->{terrain_snapshot_after['threat_score']:.3f}, "
+            f"guard={terrain_snapshot_before['guard_score']:.3f}->{terrain_snapshot_after['guard_score']:.3f}"
+        )
+
+        exposure_penalty_cfg = float(getattr(reward_cfg, "TERRAIN_EXPOSURE_PENALTY", 0.02))
+        if terrain_snapshot_after["threat_count_total"] <= 0:
+            self._log_reward("Reward (terrain/exposure): skip, reason=нет реальных угроз (threat_count=0).")
+        elif terrain_snapshot_after["exposed_units"] <= 0:
+            self._log_reward(
+                "Reward (terrain/exposure): skip, reason=нет юнитов fully_visible=True под реальной угрозой."
+            )
+        else:
+            alive_units = max(1, sum(1 for hp in self.unit_health if hp > 0))
+            exposure_penalty = exposure_penalty_cfg * (terrain_snapshot_after["exposed_units"] / alive_units)
+            terrain_reward_total -= exposure_penalty
+            self._log_reward(
+                "Reward (terrain/exposure): "
+                f"penalty=-{exposure_penalty:.3f} (exposed_units={terrain_snapshot_after['exposed_units']}, "
+                f"alive_units={alive_units}, threat_count={terrain_snapshot_after['threat_count_total']})"
+            )
+
+        terrain_cap = abs(float(getattr(reward_cfg, "TERRAIN_SHAPING_STEP_RCAP", 0.12)))
+        terrain_reward_clamped = max(-terrain_cap, min(terrain_cap, terrain_reward_total))
+        if abs(terrain_reward_clamped - terrain_reward_total) > 1e-9:
+            self._log_reward(
+                "Reward (terrain/clamp): "
+                f"raw={terrain_reward_total:+.3f}, cap=±{terrain_cap:.3f}, clamped={terrain_reward_clamped:+.3f}"
+            )
+        else:
+            self._log_reward(
+                "Reward (terrain/clamp): "
+                f"raw={terrain_reward_total:+.3f}, cap=±{terrain_cap:.3f}, clamp не сработал"
+            )
+        reward += terrain_reward_clamped
 
         self._advance_turn_order()
         if self.game_over and res == 0:

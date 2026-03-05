@@ -9,15 +9,15 @@
   },
   "turn": 1,
   "round": 1,
-  "phase": "movement",
+  "phase": "command",
   "active": "player",
   "vp": {
     "player": 0,
     "model": 0
   },
   "cp": {
-    "player": 1,
-    "model": 1
+    "player": 0,
+    "model": 0
   },
   "units": [
     {
@@ -27,59 +27,59 @@
       "models": 10,
       "alive_models": 10,
       "hp": 10.0,
-      "x": 51,
-      "y": 31,
-      "anchor_x": 51,
-      "anchor_y": 31,
+      "x": 52,
+      "y": 30,
+      "anchor_x": 52,
+      "anchor_y": 30,
       "model_positions": [
         {
-          "x": 51,
-          "y": 31,
-          "z": 0
-        },
-        {
           "x": 52,
-          "y": 31,
-          "z": 0
-        },
-        {
-          "x": 50,
-          "y": 31,
-          "z": 0
-        },
-        {
-          "x": 51,
-          "y": 32,
-          "z": 0
-        },
-        {
-          "x": 51,
-          "y": 30,
-          "z": 0
-        },
-        {
-          "x": 52,
-          "y": 32,
-          "z": 0
-        },
-        {
-          "x": 50,
-          "y": 32,
-          "z": 0
-        },
-        {
-          "x": 52,
-          "y": 30,
-          "z": 0
-        },
-        {
-          "x": 50,
           "y": 30,
           "z": 0
         },
         {
           "x": 53,
+          "y": 30,
+          "z": 0
+        },
+        {
+          "x": 51,
+          "y": 30,
+          "z": 0
+        },
+        {
+          "x": 52,
           "y": 31,
+          "z": 0
+        },
+        {
+          "x": 52,
+          "y": 29,
+          "z": 0
+        },
+        {
+          "x": 53,
+          "y": 31,
+          "z": 0
+        },
+        {
+          "x": 51,
+          "y": 31,
+          "z": 0
+        },
+        {
+          "x": 53,
+          "y": 29,
+          "z": 0
+        },
+        {
+          "x": 51,
+          "y": 29,
+          "z": 0
+        },
+        {
+          "x": 54,
+          "y": 30,
           "z": 0
         }
       ],
@@ -92,34 +92,24 @@
       "models": 10,
       "alive_models": 10,
       "hp": 10.0,
-      "x": 50,
+      "x": 51,
       "y": 17,
-      "anchor_x": 50,
+      "anchor_x": 51,
       "anchor_y": 17,
       "model_positions": [
         {
-          "x": 50,
-          "y": 17,
-          "z": 0
-        },
-        {
           "x": 51,
           "y": 17,
           "z": 0
         },
         {
-          "x": 49,
+          "x": 52,
           "y": 17,
           "z": 0
         },
         {
           "x": 50,
-          "y": 18,
-          "z": 0
-        },
-        {
-          "x": 50,
-          "y": 16,
+          "y": 17,
           "z": 0
         },
         {
@@ -128,22 +118,32 @@
           "z": 0
         },
         {
-          "x": 49,
-          "y": 18,
-          "z": 0
-        },
-        {
           "x": 51,
-          "y": 16,
-          "z": 0
-        },
-        {
-          "x": 49,
           "y": 16,
           "z": 0
         },
         {
           "x": 52,
+          "y": 18,
+          "z": 0
+        },
+        {
+          "x": 50,
+          "y": 18,
+          "z": 0
+        },
+        {
+          "x": 52,
+          "y": 16,
+          "z": 0
+        },
+        {
+          "x": 50,
+          "y": 16,
+          "z": 0
+        },
+        {
+          "x": 53,
           "y": 17,
           "z": 0
         }
@@ -157,59 +157,59 @@
       "models": 10,
       "alive_models": 10,
       "hp": 10.0,
-      "x": 3,
-      "y": 14,
-      "anchor_x": 3,
-      "anchor_y": 14,
+      "x": 5,
+      "y": 18,
+      "anchor_x": 5,
+      "anchor_y": 18,
       "model_positions": [
         {
-          "x": 3,
-          "y": 14,
+          "x": 5,
+          "y": 18,
+          "z": 0
+        },
+        {
+          "x": 6,
+          "y": 18,
           "z": 0
         },
         {
           "x": 4,
-          "y": 14,
-          "z": 0
-        },
-        {
-          "x": 2,
-          "y": 14,
-          "z": 0
-        },
-        {
-          "x": 3,
-          "y": 15,
-          "z": 0
-        },
-        {
-          "x": 3,
-          "y": 13,
-          "z": 0
-        },
-        {
-          "x": 4,
-          "y": 15,
-          "z": 0
-        },
-        {
-          "x": 2,
-          "y": 15,
-          "z": 0
-        },
-        {
-          "x": 4,
-          "y": 13,
-          "z": 0
-        },
-        {
-          "x": 2,
-          "y": 13,
+          "y": 18,
           "z": 0
         },
         {
           "x": 5,
-          "y": 14,
+          "y": 19,
+          "z": 0
+        },
+        {
+          "x": 5,
+          "y": 17,
+          "z": 0
+        },
+        {
+          "x": 6,
+          "y": 19,
+          "z": 0
+        },
+        {
+          "x": 4,
+          "y": 19,
+          "z": 0
+        },
+        {
+          "x": 6,
+          "y": 17,
+          "z": 0
+        },
+        {
+          "x": 4,
+          "y": 17,
+          "z": 0
+        },
+        {
+          "x": 7,
+          "y": 18,
           "z": 0
         }
       ],
@@ -222,59 +222,59 @@
       "models": 10,
       "alive_models": 10,
       "hp": 10.0,
-      "x": 7,
-      "y": 38,
-      "anchor_x": 7,
-      "anchor_y": 38,
+      "x": 10,
+      "y": 34,
+      "anchor_x": 10,
+      "anchor_y": 34,
       "model_positions": [
         {
-          "x": 7,
-          "y": 38,
+          "x": 10,
+          "y": 34,
           "z": 0
         },
         {
-          "x": 8,
-          "y": 38,
-          "z": 0
-        },
-        {
-          "x": 6,
-          "y": 38,
-          "z": 0
-        },
-        {
-          "x": 7,
-          "y": 39,
-          "z": 0
-        },
-        {
-          "x": 7,
-          "y": 37,
-          "z": 0
-        },
-        {
-          "x": 8,
-          "y": 39,
-          "z": 0
-        },
-        {
-          "x": 6,
-          "y": 39,
-          "z": 0
-        },
-        {
-          "x": 8,
-          "y": 37,
-          "z": 0
-        },
-        {
-          "x": 6,
-          "y": 37,
+          "x": 11,
+          "y": 34,
           "z": 0
         },
         {
           "x": 9,
-          "y": 38,
+          "y": 34,
+          "z": 0
+        },
+        {
+          "x": 10,
+          "y": 35,
+          "z": 0
+        },
+        {
+          "x": 10,
+          "y": 33,
+          "z": 0
+        },
+        {
+          "x": 11,
+          "y": 35,
+          "z": 0
+        },
+        {
+          "x": 9,
+          "y": 35,
+          "z": 0
+        },
+        {
+          "x": 11,
+          "y": 33,
+          "z": 0
+        },
+        {
+          "x": 9,
+          "y": 33,
+          "z": 0
+        },
+        {
+          "x": 12,
+          "y": 34,
           "z": 0
         }
       ],
@@ -294,16 +294,21 @@
       "cells": [
         [
           30,
-          22
+          25
         ],
         [
           31,
-          22
+          25
         ],
         [
           32,
-          22
+          25
         ]
+      ],
+      "cell_rotations": [
+        0,
+        0,
+        0
       ],
       "tags": [
         "OBSTACLE",
@@ -317,16 +322,77 @@
       "cells": [
         [
           30,
-          37
+          34
         ],
         [
           31,
-          37
+          34
         ],
         [
           32,
+          34
+        ]
+      ],
+      "cell_rotations": [
+        0,
+        0,
+        0
+      ],
+      "tags": [
+        "OBSTACLE",
+        "BARRICADE"
+      ],
+      "opacity": "obscuring",
+      "sprite": "barrel.png"
+    },
+    {
+      "kind": "barricade",
+      "cells": [
+        [
+          10,
+          22
+        ],
+        [
+          11,
+          22
+        ],
+        [
+          12,
+          22
+        ]
+      ],
+      "cell_rotations": [
+        0,
+        0,
+        0
+      ],
+      "tags": [
+        "OBSTACLE",
+        "BARRICADE"
+      ],
+      "opacity": "obscuring",
+      "sprite": "barrel.png"
+    },
+    {
+      "kind": "barricade",
+      "cells": [
+        [
+          10,
+          37
+        ],
+        [
+          11,
+          37
+        ],
+        [
+          12,
           37
         ]
+      ],
+      "cell_rotations": [
+        0,
+        0,
+        0
       ],
       "tags": [
         "OBSTACLE",
@@ -344,6 +410,39 @@
     "mode": null,
     "rl_stats": null
   },
-  "payload_kind": "light",
-  "generated_at": "2026-03-02T15:30:37.325354Z"
+  "payload_kind": "full",
+  "generated_at": "2026-03-05T06:35:35.709072Z",
+  "log_tail": [
+    "[DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (20,49)",
+    "[DEPLOY][RL][SUMMARY] units=2 attempts=2 invalid=0 fallback=0 reward=+0.022 total_deploy_reward=+0.022 avg_forward=0.139 avg_spread=1.000 avg_edge=1.000 avg_cover=0.000",
+    "[DEPLOY] rl_phase stats: {'attempts': 2, 'invalid': 0, 'fallback': 0, 'reward': 0.02183681513598739, 'units': 2, 'total_deploy_reward': 0.02183681513598739, 'forward_sum': 0.27796610169491526, 'spread_sum': 2.0, 'edge_sum': 2.0, 'cover_sum': 0.0, 'avg_forward': 0.13898305084745763, 'avg_spread': 1.0, 'avg_edge': 1.0, 'avg_cover': 0.0}",
+    "[MISSION Only War] Post-deploy: currently no post-deploy units supported",
+    "[MODEL] Архитектура сети: dueling (источник: net_type)",
+    "",
+    "Инструкции:",
+    "Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).",
+    "Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).",
+    "{'model health': [10, 10], 'player health': [10, 10], 'model alive models': [10, 10], 'player alive models': [10, 10], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}",
+    "Здоровье MODEL: [10, 10], здоровье PLAYER: [10, 10]",
+    "CP MODEL: 0, CP PLAYER: 0",
+    "VP MODEL: 0, VP PLAYER: 0",
+    "[MODEL] pickle=C:\\40kAI\\models\\M_Necrons_vs_P_Necrons\\model-25-334461.pickle",
+    "[MODEL] checkpoint=C:\\40kAI\\models\\M_Necrons_vs_P_Necrons\\model-25-334461.pth",
+    "[MODEL] Viewer запущен в greedy-режиме: exploration отключен (epsilon=0).",
+    "Roll-off Attacker/Defender: enemy=1 model=2 -> attacker=model",
+    "Юниты: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]",
+    "[DEPLOY] mode=rl_phase, strategy=template_jitter, seed=none",
+    "[DEPLOY][Only War] attacker=model -> LEFT x=0..14; defender=enemy -> RIGHT x=45..59",
+    "[DEPLOY][AUTO] mode=rl_phase strategy=template_jitter seed=none",
+    "[DEPLOY] Order: model first, alternating",
+    "[DEPLOY][RL] score_config scale=0.050 w_forward=1.000 w_spread=0.600 w_edge=0.200 w_cover=0.350",
+    "[DEPLOY][RL] accepted Unit 21 — Necrons Necron Warriors (x10 моделей): flat=1085, coord=(18,5), attempt=1, reward=+0.021, score_before=0.000, score_after=0.413, reward_delta=+0.021, forward=0.088, spread=1.000, edge=1.000, cover=0.000, cover_near=0.000, congestion=0.000, final_cover=0.000",
+    "[DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (18,5)",
+    "[DEPLOY][MANUAL] accepted Unit 11 — Necrons Necron Warriors (x10 моделей) -> (30,52)",
+    "[DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (30,52)",
+    "[DEPLOY][RL] score_config scale=0.050 w_forward=1.000 w_spread=0.600 w_edge=0.200 w_cover=0.350",
+    "[DEPLOY][RL] accepted Unit 22 — Necrons Necron Warriors (x10 моделей): flat=2050, coord=(34,10), attempt=1, reward=+0.001, score_before=0.413, score_after=0.433, reward_delta=+0.001, forward=0.131, spread=1.000, edge=1.000, cover=0.000, cover_near=0.000, congestion=0.000, final_cover=0.000",
+    "[DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (34,10)"
+  ],
+  "model_events": []
 }
