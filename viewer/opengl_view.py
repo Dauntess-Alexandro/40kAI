@@ -3586,16 +3586,24 @@ class OpenGLBoardWidget(QOpenGLWidget):
         name = str(feature.get("name") or "").strip()
         title = name if name else f"Terrain: {kind}"
         keywords = ", ".join([str(v) for v in list(feature.get("keywords") or [])]) or "—"
-        cells = list(feature.get("cells") or [])
+
+        coords: List[Tuple[int, int]] = []
+        for cell in list(feature.get("cells") or []):
+            if not isinstance(cell, (list, tuple)) or len(cell) < 2:
+                continue
+            # terrain_feature.cells хранит (row, col) -> для отображения даём (x=col, y=row)
+            row = int(cell[0])
+            col = int(cell[1])
+            coords.append((col, row))
+        coords.sort(key=lambda pos: (pos[0], pos[1]))
+        coords_text = " ".join(f"({x},{y})" for x, y in coords) if coords else "—"
+
         lines = [
             f"ID: {feature.get('id') or '—'}",
             f"Type: {kind}",
             f"Keywords: {keywords}",
-            f"Cells: {len(cells)}",
+            f"Coords: {coords_text}",
         ]
-        sprite = str(feature.get("sprite") or "").strip()
-        if sprite:
-            lines.append(f"Sprite: {sprite}")
         return {"title": title, "id": feature.get("id") or "—", "lines": lines}
 
     def _unit_display_name(self, unit: dict) -> str:
