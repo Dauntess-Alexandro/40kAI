@@ -12,6 +12,12 @@ class TestStateExportRegression(unittest.TestCase):
         self.assertIn('_alive_models_from_pool("enemy", idx)', source)
         self.assertIn('_alive_models_from_pool("model", idx)', source)
 
+    def test_state_export_contains_terrain_metadata_fields(self):
+        source = Path("gym_mod/gym_mod/engine/state_export.py").read_text(encoding="utf-8")
+        self.assertIn('"id": str(feature.get("id") or "")', source)
+        self.assertIn('"name": str(feature.get("name") or feature.get("kind") or "Terrain")', source)
+        self.assertIn('"keywords": keywords', source)
+
 
 if __name__ == "__main__":
     unittest.main()

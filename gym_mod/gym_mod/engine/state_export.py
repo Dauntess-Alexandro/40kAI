@@ -169,11 +169,15 @@ def write_state_json(env, path=None):
             if not isinstance(cell, (list, tuple)) or len(cell) < 2:
                 continue
             cells.append([_safe_int(cell[0], None), _safe_int(cell[1], None)])
+        keywords = [str(v) for v in list(feature.get("keywords") or feature.get("tags") or [])]
         terrain_features.append({
+            "id": str(feature.get("id") or ""),
             "kind": str(feature.get("kind") or "barricade"),
+            "name": str(feature.get("name") or feature.get("kind") or "Terrain"),
+            "keywords": keywords,
             "cells": cells,
             "cell_rotations": [_safe_int(v, 0) for v in list(feature.get("cell_rotations") or [])],
-            "tags": list(feature.get("tags") or feature.get("keywords") or []),
+            "tags": keywords,
             "opacity": str(feature.get("opacity") or "obscuring"),
             "sprite": str(feature.get("sprite") or ""),
         })

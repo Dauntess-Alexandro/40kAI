@@ -26,6 +26,13 @@ class TestTerrainFeatures(unittest.TestCase):
         self.assertIn("return [(anchor_row + i, anchor_col) for i in range(3)]", source)
         self.assertIn("right_cells = _make_barricade_cells(row, mirror_col)", source)
 
+    def test_terrain_features_have_id_name_keywords(self):
+        source = Path("gym_mod/gym_mod/engine/mission.py").read_text(encoding="utf-8")
+        self.assertIn('"id": str(feature_id)', source)
+        self.assertIn('"name": str(name or "Barricade")', source)
+        self.assertIn('"keywords": list(keywords or ["OBSTACLE", "BARRICADE"])', source)
+        self.assertIn('normalized["id"] = str(feature.get("id") or f"T{idx}")', source)
+
     def test_mission_registry_and_aliases_exist(self):
         source = Path("gym_mod/gym_mod/engine/mission.py").read_text(encoding="utf-8")
         self.assertIn("MISSION_REGISTRY", source)

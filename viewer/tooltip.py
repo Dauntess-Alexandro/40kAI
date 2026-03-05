@@ -393,3 +393,146 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         self._move_anim.setStartValue(self.pos())
         self._move_anim.setEndValue(self.pos())
         self._anim_group.start()
+
+class TerrainTooltipWidget(QtWidgets.QFrame):
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None):
+        super().__init__(parent)
+        self._accent_color = Theme.accent
+        self._pinned = False
+        self._target_pos = QtCore.QPoint()
+        self._hiding = False
+
+        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating, True)
+        self.setObjectName("unitTooltip")
+        self.setWindowFlag(QtCore.Qt.FramelessWindowHint, True)
+        self.setWindowFlag(QtCore.Qt.ToolTip, True)
+
+        self._opacity_effect = QtWidgets.QGraphicsOpacityEffect(self)
+        self._opacity_effect.setOpacity(0.0)
+        self.setGraphicsEffect(self._opacity_effect)
+
+        self._fade_anim = QtCore.QPropertyAnimation(self._opacity_effect, b"opacity", self)
+        self._fade_anim.setDuration(120)
+        self._fade_anim.setEasingCurve(QtCore.QEasingCurve.InOutQuad)
+        self._move_anim = QtCore.QPropertyAnimation(self, b"pos", self)
+        self._move_anim.setDuration(120)
+        self._move_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+
+        self._anim_group = QtCore.QParallelAnimationGroup(self)
+        self._anim_group.addAnimation(self._fade_anim)
+        self._anim_group.addAnimation(self._move_anim)
+        self._anim_group.finished.connect(self._on_anim_finished)
+
+        self._build_layout()
+        self.setMinimumWidth(280)
+        self.hide()
+
+    def _build_layout(self) -> None:
+        self._marker = QtWidgets.QFrame(self)
+        self._marker.setFixedSize(6, 22)
+        self._marker.setObjectName("unitTooltipMarker")
+
+        self._title_label = QtWidgets.QLabel(self)
+        self._title_label.setFont(Theme.font(size=10, bold=True))
+        self._title_label.setObjectName("unitTooltipTitle")
+
+        self._meta_label = QtWidgets.QLabel(self)
+        self._meta_label.setFont(Theme.font(size=8, bold=False))
+        self._meta_label.setObjectName("unitTooltipMeta")
+
+        self._status_label = QtWidgets.QLabel(self)
+        self._status_label.setFont(Theme.font(size=8, bold=True))
+        self._status_label.setObjectName("unitTooltipStatus")
+
+        header_layout = QtWidgets.QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(6)
+        header_layout.addWidget(self._marker)
+        header_layout.addWidget(self._title_label, 1)
+        header_layout.addWidget(self._status_label, 0, QtCore.Qt.AlignRight)
+        header_layout.addWidget(self._meta_label, 0, QtCore.Qt.AlignRight)
+
+        self._divider = QtWidgets.QFrame(self)
+        self._divider.setFrameShape(QtWidgets.QFrame.HLine)
+        self._divider.setFixedHeight(1)
+        self._divider.setObjectName("unitTooltipDivider")
+
+        self._content_label = QtWidgets.QLabel(self)
+        self._content_label.setObjectName("unitTooltipValue")
+        self._content_label.setFont(Theme.font(size=9, bold=False))
+        self._content_label.setWordWrap(True)
+        self._content_label.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
+        layout.addLayout(header_layout)
+        layout.addWidget(self._divider)
+        layout.addWidget(self._content_label)
+
+    def set_pinned(self, pinned: bool) -> None:
+        self._pinned = bool(pinned)
+
+    def update_content(self, payload: Dict, accent: QtGui.QColor) -> None:
+        self._accent_color = accent
+        self._title_label.setText(str(payload.get("title") or "Terrain"))
+        terrain_id = str(payload.get("id") or "—")
+        self._meta_label.setText(f"Terrain {terrain_id}")
+        self._status_label.setText("📌 PIN" if self._pinned else "")
+        self._content_label.setText("\n".join(str(v) for v in (payload.get("lines") or [])))
+        self._apply_styles()
+
+    def _apply_styles(self) -> None:
+        accent = self._accent_color
+        accent_rgba = f"rgba({accent.red()}, {accent.green()}, {accent.blue()}, 0.7)"
+        bg_rgba = "rgba(20, 22, 20, 0.86)"
+        self.setStyleSheet(
+            """
+            QFrame#unitTooltip {{ background-color: {bg}; border: 1px solid {accent}; border-radius: 8px; }}
+            QFrame#unitTooltipMarker {{ background-color: {accent}; border-radius: 3px; }}
+            QLabel#unitTooltipTitle {{ color: {text}; }}
+            QLabel#unitTooltipMeta {{ color: {muted}; }}
+            QLabel#unitTooltipStatus {{ color: {accent}; }}
+            QFrame#unitTooltipDivider {{ background-color: {accent}; }}
+            QLabel#unitTooltipValue {{ color: {text}; }}
+            """.format(bg=bg_rgba, accent=accent_rgba, text=Theme.text.name(), muted=Theme.muted.name())
+        )
+
+    def _on_anim_finished(self) -> None:
+        if self._hiding and self._opacity_effect.opacity() <= 0.01:
+            self.hide()
+        self._hiding = False
+
+    def show_at(self, target_pos: QtCore.QPoint, animate: bool = True) -> None:
+        self._target_pos = target_pos
+        self._hiding = False
+        if not animate:
+            self.move(target_pos)
+            self._opacity_effect.setOpacity(1.0)
+            self.show()
+            return
+        start_pos = target_pos + QtCore.QPoint(0, 6)
+        self._move_anim.stop()
+        self._fade_anim.stop()
+        self._anim_group.stop()
+        self.move(start_pos)
+        self.show()
+        self._fade_anim.setStartValue(self._opacity_effect.opacity())
+        self._fade_anim.setEndValue(1.0)
+        self._move_anim.setStartValue(start_pos)
+        self._move_anim.setEndValue(target_pos)
+        self._anim_group.start()
+
+    def hide_animated(self) -> None:
+        if not self.isVisible():
+            return
+        self._fade_anim.stop()
+        self._move_anim.stop()
+        self._anim_group.stop()
+        self._hiding = True
+        self._fade_anim.setStartValue(self._opacity_effect.opacity())
+        self._fade_anim.setEndValue(0.0)
+        self._move_anim.setStartValue(self.pos())
+        self._move_anim.setEndValue(self.pos())
+        self._anim_group.start()

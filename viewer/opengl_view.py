@@ -22,7 +22,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from viewer.styles import Theme
-from viewer.tooltip import UnitTooltipWidget
+from viewer.tooltip import TerrainTooltipWidget, UnitTooltipWidget
 
 GL_BLEND = 0x0BE2
 GL_SRC_ALPHA = 0x0302
@@ -207,6 +207,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._unit_by_key: Dict[Tuple[str, int], UnitRender] = {}
         self._objectives: List[ObjectiveRender] = []
         self._unit_labels: List[Tuple[str, QtCore.QPointF]] = []
+        self._unit_hitboxes_screen: Dict[Tuple[str, int], QtCore.QRectF] = {}
+        self._last_hover_hitbox_debug_sig: Optional[Tuple[object, int, int, int, int]] = None
         self._objective_labels: List[Tuple[str, QtCore.QPointF]] = []
         self._units_state: List[dict] = []
         self._prev_unit_positions: Dict[Tuple[str, int], QtCore.QPointF] = {}
@@ -280,16 +282,16 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._hover_candidate_key: Optional[Tuple[str, int]] = None
         self._hover_candidate_pos = QtCore.QPoint()
         self._hover_candidate_mods = QtCore.Qt.KeyboardModifiers()
-        self._hover_timer = QtCore.QTimer(self)
-        self._hover_timer.setSingleShot(True)
-        self._hover_timer.setInterval(150)
-        self._hover_timer.timeout.connect(self._show_hover_tooltip)
         self._tooltip_target_pos = QtCore.QPoint()
         self._tooltip_follow_timer = QtCore.QTimer(self)
         self._tooltip_follow_timer.setInterval(25)
         self._tooltip_follow_timer.timeout.connect(self._tick_tooltip_follow)
         self._tooltip_pinned = False
         self._tooltip_widget = UnitTooltipWidget(self)
+        self._terrain_tooltip_widget = TerrainTooltipWidget(self)
+        self._viewer_debug_enabled = str(os.getenv("VIEWER_DEBUG", "0")).strip() == "1"
+        self._hover_terrain_feature: Optional[dict] = None
+        self._last_terrain_hover_debug_sig: Optional[Tuple[int, int, str]] = None
         self._unit_data = self._load_unit_data()
         self._unit_data_by_name = self._index_unit_data(self._unit_data)
         self._weapon_data = self._load_weapon_data()
@@ -313,6 +315,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._decals: List[DecalInstance] = []
         self._props: List[PropInstance] = []
         self._terrain_features_state: List[dict] = []
+        self._terrain_cell_index: Dict[Tuple[int, int], dict] = {}
         self._terrain_log_signature: Optional[tuple] = None
         self._terrain_props_signature: Optional[tuple] = None
         self._terrain_sprite_log_cache: set[str] = set()
@@ -390,6 +393,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._units = []
             self._unit_by_key = {}
             self._unit_labels = []
+            self._unit_hitboxes_screen = {}
             self._prev_unit_positions = {}
             self._curr_unit_positions = {}
             self._selected_unit_key = None
@@ -436,6 +440,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._board_rect = QtCore.QRectF(0, 0, width * self.cell_size, height * self.cell_size)
         self._ensure_grid_cache(width, height)
         self._terrain_features_state = self._parse_terrain_features(self._state.get("terrain_features", []) or [])
+        self._terrain_cell_index = self._build_terrain_cell_index(self._terrain_features_state)
         self._log_terrain_features_once()
         if self.render_terrain:
             terrain_sig = tuple(
@@ -904,8 +909,33 @@ class OpenGLBoardWidget(QOpenGLWidget):
             cell_rot = [int(v) for v in list(feature.get("cell_rotations") or [])]
             if kind.lower() == "barricade":
                 cell_rot = [0] * len(cells)
-            parsed.append({"kind": kind, "sprite": sprite, "cells": cells, "cell_rotations": cell_rot})
+            parsed.append({
+                "id": str(feature.get("id") or ""),
+                "kind": kind,
+                "name": str(feature.get("name") or kind),
+                "keywords": [str(v) for v in list(feature.get("keywords") or feature.get("tags") or [])],
+                "sprite": sprite,
+                "cells": cells,
+                "cell_rotations": cell_rot,
+            })
         return parsed
+
+    def _build_terrain_cell_index(self, features: List[dict]) -> Dict[Tuple[int, int], dict]:
+        index: Dict[Tuple[int, int], dict] = {}
+        for feature in features:
+            if not isinstance(feature, dict):
+                continue
+            for cell in (feature.get("cells") or []):
+                if not isinstance(cell, tuple) or len(cell) < 2:
+                    continue
+                index[(int(cell[0]), int(cell[1]))] = feature
+        return index
+
+    def _terrain_feature_at_world(self, world: QtCore.QPointF) -> Optional[dict]:
+        state_pos = self._world_to_state_pos(world)
+        if state_pos is None:
+            return None
+        return self._terrain_cell_index.get((int(state_pos[0]), int(state_pos[1])))
 
     def _log_terrain_features_once(self) -> None:
         sig = tuple(
@@ -1186,6 +1216,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._units = []
         self._unit_by_key = {}
         self._unit_labels = []
+        self._unit_hitboxes_screen = {}
 
         occupied: Dict[Tuple[int, int], List[dict]] = {}
         for unit in self._units_state:
@@ -1430,14 +1461,25 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._drag_distance = 0.0
         if event.button() == QtCore.Qt.RightButton:
             world = self._map_to_world(QtCore.QPointF(event.position()))
-            unit_key = self._unit_key_at_world(world)
+            self._rebuild_unit_hitboxes_screen()
+            unit_key = self._unit_key_at_screen_pos(QtCore.QPointF(event.position()))
+            terrain_feature = self._terrain_feature_at_world(world) if unit_key is None else None
             if unit_key:
                 self._tooltip_pinned = not self._tooltip_pinned
                 self._tooltip_widget.set_pinned(self._tooltip_pinned)
                 if self._tooltip_pinned:
-                    self._hover_candidate_key = unit_key
-                    self._hover_candidate_pos = event.globalPosition().toPoint()
-                    self._show_hover_tooltip()
+                    self._show_unit_tooltip_immediate(
+                        unit_key,
+                        event.globalPosition().toPoint(),
+                        event.modifiers(),
+                    )
+                else:
+                    self._clear_hover_tooltip(force=True)
+            elif terrain_feature is not None:
+                self._tooltip_pinned = not self._tooltip_pinned
+                self._terrain_tooltip_widget.set_pinned(self._tooltip_pinned)
+                if self._tooltip_pinned:
+                    self._show_terrain_tooltip(terrain_feature, event.globalPosition().toPoint())
                 else:
                     self._clear_hover_tooltip(force=True)
             else:
@@ -1462,7 +1504,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         else:
             # _world_to_state_pos returns (row, col), while viewer deployment API expects (x=col, y=row).
             self.cell_hovered.emit((int(state_pos[1]), int(state_pos[0])))
-        self._update_hover_tooltip(event, world)
+        self._update_hover_tooltip(event, world, pos)
         self.update()
         super().mouseMoveEvent(event)
 
@@ -1518,16 +1560,16 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.update()
 
     def _clear_hover_tooltip(self, force: bool = False) -> None:
-        if self._hover_timer.isActive():
-            self._hover_timer.stop()
         if self._tooltip_pinned and not force:
             return
-        if self._hover_unit_key is None and not self._hover_tooltip_text:
+        if self._hover_unit_key is None and self._hover_terrain_feature is None and not self._hover_tooltip_text:
             return
         self._hover_unit_key = None
+        self._hover_terrain_feature = None
         self._hover_tooltip_text = None
         self._hover_candidate_key = None
         self._tooltip_widget.hide_animated()
+        self._terrain_tooltip_widget.hide_animated()
         if self._tooltip_follow_timer.isActive():
             self._tooltip_follow_timer.stop()
 
@@ -1786,6 +1828,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._draw_labels_layer(painter)
 
         painter.setTransform(QtGui.QTransform())
+        if self._viewer_debug_enabled:
+            self._rebuild_unit_hitboxes_screen()
+        if self._viewer_debug_enabled and self._unit_hitboxes_screen:
+            painter.save()
+            pen = QtGui.QPen(QtGui.QColor(120, 220, 120, 180), 1.0)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            for rect in self._unit_hitboxes_screen.values():
+                painter.drawRect(rect)
+            painter.restore()
+
         if self._debug_overlay:
             debug_lines = [
                 "DEBUG: (0,0) вверху слева",
@@ -2999,46 +3053,112 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def _update_hover_cell(self, world: QtCore.QPointF) -> None:
         self._hover_cell = self._world_to_view_cell(world)
 
-    def _update_hover_tooltip(self, event: QtGui.QMouseEvent, world: QtCore.QPointF) -> None:
-        if self._board_rect.isEmpty():
-            self._clear_hover_tooltip()
-            return
-        unit_key = self._unit_key_at_world(world)
-        if unit_key is None:
-            self._clear_hover_tooltip()
-            return
-        if self._tooltip_pinned and self._hover_unit_key is not None:
-            return
-        now = monotonic()
-        needs_refresh = unit_key != self._hover_unit_key
-        if not needs_refresh and now - self._hover_tooltip_ts < self._hover_tooltip_interval_s:
-            anchor = self._tooltip_anchor_for_cursor(event.globalPosition().toPoint())
-            self._set_tooltip_target(anchor)
-            return
+    def _rebuild_unit_hitboxes_screen(self) -> None:
+        transform = self._view_transform()
+        hitboxes: Dict[Tuple[str, int], QtCore.QRectF] = {}
+        for render in self._units:
+            key = render.key
+            if key[0] is None or key[1] is None:
+                continue
+            centers = list(render.model_centers or [render.center])
+            if not centers:
+                continue
+            if render.model_centers:
+                icon_size_world = max(6.0, self.cell_size * self._model_icon_scale)
+            else:
+                icon_size_world = max(6.0, render.radius * self._unit_icon_scale)
+            half_size_screen = max(2.0, (icon_size_world * self._scale) / 2.0)
+            min_x = min_y = None
+            max_x = max_y = None
+            for center in centers:
+                screen_center = transform.map(center)
+                left = float(screen_center.x() - half_size_screen)
+                right = float(screen_center.x() + half_size_screen)
+                top = float(screen_center.y() - half_size_screen)
+                bottom = float(screen_center.y() + half_size_screen)
+                min_x = left if min_x is None else min(min_x, left)
+                max_x = right if max_x is None else max(max_x, right)
+                min_y = top if min_y is None else min(min_y, top)
+                max_y = bottom if max_y is None else max(max_y, bottom)
+            if min_x is None or min_y is None or max_x is None or max_y is None:
+                continue
+            hitboxes[key] = QtCore.QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
+        self._unit_hitboxes_screen = hitboxes
+
+    def _unit_key_at_screen_pos(self, screen_pos: QtCore.QPointF) -> Optional[Tuple[str, int]]:
+        if not self._unit_hitboxes_screen:
+            return None
+        for render in reversed(self._units):
+            key = render.key
+            rect = self._unit_hitboxes_screen.get(key)
+            if rect is not None and rect.contains(screen_pos):
+                return key
+        return None
+
+    def _show_unit_tooltip_immediate(
+        self,
+        unit_key: Tuple[str, int],
+        global_pos: QtCore.QPoint,
+        modifiers: QtCore.Qt.KeyboardModifiers,
+    ) -> None:
         unit = self._state_unit(unit_key)
         if not unit:
             self._clear_hover_tooltip()
             return
-        anchor = self._tooltip_anchor_for_cursor(event.globalPosition().toPoint())
-        self._set_tooltip_target(anchor)
-        if unit_key != self._hover_candidate_key:
-            self._hover_candidate_key = unit_key
-            self._hover_candidate_pos = event.globalPosition().toPoint()
-            self._hover_candidate_mods = event.modifiers()
-            self._hover_timer.start()
-        elif self._hover_timer.isActive():
-            self._hover_candidate_pos = event.globalPosition().toPoint()
-            self._hover_candidate_mods = event.modifiers()
-        if needs_refresh:
-            tooltip_payload = self._build_unit_tooltip_payload(unit)
-            if self._tooltip_widget.isVisible():
-                self._hover_tooltip_text = tooltip_payload
-                self._hover_unit_key = unit_key
-                self._hover_tooltip_ts = now
-                accent = self._unit_accent_color(unit)
-                self._tooltip_widget.set_pinned(self._tooltip_pinned)
-                self._tooltip_widget.set_debug_mode(self._debug_overlay)
-                self._tooltip_widget.update_content(tooltip_payload, accent)
+        if modifiers & (QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier):
+            self._tooltip_pinned = True
+        self._terrain_tooltip_widget.hide_animated()
+        self._hover_candidate_key = unit_key
+        self._hover_candidate_pos = global_pos
+        self._hover_candidate_mods = modifiers
+        self._tooltip_widget.set_pinned(self._tooltip_pinned)
+        self._tooltip_widget.set_debug_mode(self._debug_overlay)
+        tooltip_payload = self._build_unit_tooltip_payload(unit)
+        self._hover_tooltip_text = tooltip_payload
+        self._hover_unit_key = unit_key
+        self._hover_terrain_feature = None
+        self._hover_tooltip_ts = monotonic()
+        accent = self._unit_accent_color(unit)
+        self._tooltip_widget.update_content(tooltip_payload, accent)
+        anchor = self._tooltip_anchor_for_unit(unit_key, global_pos) if self._tooltip_pinned else self._tooltip_anchor_for_cursor(global_pos)
+        self._position_tooltip(anchor, animate=False)
+
+    def _update_hover_tooltip(self, event: QtGui.QMouseEvent, world: QtCore.QPointF, screen_pos: QtCore.QPointF) -> None:
+        if self._board_rect.isEmpty():
+            self._clear_hover_tooltip()
+            return
+        if self._tooltip_pinned and (self._hover_unit_key is not None or self._hover_terrain_feature is not None):
+            return
+
+        self._rebuild_unit_hitboxes_screen()
+        unit_key = self._unit_key_at_screen_pos(screen_pos)
+        if unit_key is not None:
+            if unit_key != self._hover_unit_key:
+                self._show_unit_tooltip_immediate(
+                    unit_key,
+                    event.globalPosition().toPoint(),
+                    event.modifiers(),
+                )
+                if self._viewer_debug_enabled:
+                    rect = self._unit_hitboxes_screen.get(unit_key)
+                    if rect is not None:
+                        sig = (unit_key[1], int(rect.x()), int(rect.y()), int(rect.width()), int(rect.height()))
+                        if sig != self._last_hover_hitbox_debug_sig:
+                            self._last_hover_hitbox_debug_sig = sig
+                            self._append_agent_log(
+                                f"[VIEWER][HOVER] unit={unit_key[1]} hitbox=({int(rect.x())},{int(rect.y())},{int(rect.width())},{int(rect.height())})"
+                            )
+            else:
+                anchor = self._tooltip_anchor_for_cursor(event.globalPosition().toPoint())
+                self._set_tooltip_target(anchor)
+            return
+
+        terrain_feature = self._terrain_feature_at_world(world)
+        if terrain_feature is not None:
+            self._show_terrain_tooltip(terrain_feature, event.globalPosition().toPoint())
+            return
+
+        self._clear_hover_tooltip()
 
     def _unit_key_at_world(self, world: QtCore.QPointF) -> Optional[Tuple[str, int]]:
         view_cell = self._world_to_view_cell(world)
@@ -3417,6 +3537,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 self.mapToGlobal(QtCore.QPoint(0, 0)),
             )
             self._set_tooltip_target(anchor)
+        elif self._tooltip_pinned and self._hover_terrain_feature is not None:
+            anchor = self._tooltip_anchor_for_cursor(self.mapToGlobal(self.rect().center()))
+            self._set_tooltip_target(anchor)
         current = widget.pos()
         target = self._tooltip_target_pos
         dx = target.x() - current.x()
@@ -3431,28 +3554,57 @@ class OpenGLBoardWidget(QOpenGLWidget):
         )
         widget.move(next_pos)
 
-    def _show_hover_tooltip(self) -> None:
-        if not self._hover_candidate_key:
-            return
-        unit = self._state_unit(self._hover_candidate_key)
-        if not unit:
-            self._clear_hover_tooltip()
-            return
-        if self._hover_candidate_mods & (QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier):
-            self._tooltip_pinned = True
-        self._tooltip_widget.set_pinned(self._tooltip_pinned)
-        self._tooltip_widget.set_debug_mode(self._debug_overlay)
-        tooltip_payload = self._build_unit_tooltip_payload(unit)
-        self._hover_tooltip_text = tooltip_payload
-        self._hover_unit_key = self._hover_candidate_key
+    def _show_terrain_tooltip(self, terrain_feature: dict, anchor_pos: QtCore.QPoint) -> None:
+        self._hover_candidate_key = None
+        self._hover_unit_key = None
+        self._tooltip_widget.hide_animated()
+        payload = self._build_terrain_tooltip_payload(terrain_feature)
+        self._hover_terrain_feature = terrain_feature
+        self._hover_tooltip_text = payload
         self._hover_tooltip_ts = monotonic()
-        accent = self._unit_accent_color(unit)
-        self._tooltip_widget.update_content(tooltip_payload, accent)
-        if self._tooltip_pinned:
-            anchor = self._tooltip_anchor_for_unit(self._hover_unit_key, self._hover_candidate_pos)
-        else:
-            anchor = self._tooltip_anchor_for_cursor(self._hover_candidate_pos)
-        self._position_tooltip(anchor, animate=True)
+        self._terrain_tooltip_widget.set_pinned(self._tooltip_pinned)
+        self._terrain_tooltip_widget.update_content(payload, Theme.objective)
+        self._tooltip_target_pos = self._clamp_tooltip_pos(anchor_pos, self._terrain_tooltip_widget.sizeHint())
+        self._terrain_tooltip_widget.show_at(self._tooltip_target_pos, animate=True)
+        if self._viewer_debug_enabled:
+            state_pos = None
+            cells = terrain_feature.get("cells") or []
+            if cells:
+                state_pos = cells[0]
+            if state_pos is not None:
+                sig = (int(state_pos[0]), int(state_pos[1]), str(terrain_feature.get("id") or ""))
+                if sig != self._last_terrain_hover_debug_sig:
+                    self._last_terrain_hover_debug_sig = sig
+                    self._append_agent_log(
+                        f"[VIEWER][TERRAIN] hover cell=({int(state_pos[0])},{int(state_pos[1])}) "
+                        f"id={terrain_feature.get('id') or '-'} kind={terrain_feature.get('kind') or '-'} "
+                        f"keywords={','.join(terrain_feature.get('keywords') or [])}"
+                    )
+
+    def _build_terrain_tooltip_payload(self, feature: dict) -> Dict:
+        kind = str(feature.get("kind") or "terrain")
+        name = str(feature.get("name") or "").strip()
+        title = name if name else f"Terrain: {kind}"
+        keywords = ", ".join([str(v) for v in list(feature.get("keywords") or [])]) or "—"
+
+        coords: List[Tuple[int, int]] = []
+        for cell in list(feature.get("cells") or []):
+            if not isinstance(cell, (list, tuple)) or len(cell) < 2:
+                continue
+            # terrain_feature.cells хранит (row, col) -> для отображения даём (x=col, y=row)
+            row = int(cell[0])
+            col = int(cell[1])
+            coords.append((col, row))
+        coords.sort(key=lambda pos: (pos[0], pos[1]))
+        coords_text = " ".join(f"({x},{y})" for x, y in coords) if coords else "—"
+
+        lines = [
+            f"ID: {feature.get('id') or '—'}",
+            f"Type: {kind}",
+            f"Keywords: {keywords}",
+            f"Coords: {coords_text}",
+        ]
+        return {"title": title, "id": feature.get("id") or "—", "lines": lines}
 
     def _unit_display_name(self, unit: dict) -> str:
         name = str(unit.get("name") or "").strip()
