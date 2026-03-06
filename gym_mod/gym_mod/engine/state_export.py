@@ -106,6 +106,17 @@ def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, ancho
         name = unit_data.get("Name") or name
         models = _safe_int(unit_data.get("#OfModels"), None)
 
+    keywords = []
+    if isinstance(unit_data, dict):
+        raw_keywords = unit_data.get("KEYWORDS")
+        if isinstance(raw_keywords, (list, tuple)):
+            keywords = [str(v) for v in raw_keywords]
+        elif raw_keywords is not None:
+            try:
+                keywords = [str(v) for v in list(raw_keywords)]
+            except TypeError:
+                keywords = [str(raw_keywords)]
+
     return {
         "side": side,
         "id": unit_id,
@@ -119,7 +130,7 @@ def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, ancho
         "anchor_y": _safe_int(anchor[0], None) if anchor is not None else None,
         "model_positions": model_positions or [],
         "facing": facing,
-        "keywords": list(unit_data.get("KEYWORDS") or []) if isinstance(unit_data, dict) else [],
+        "keywords": keywords,
     }
 
 
