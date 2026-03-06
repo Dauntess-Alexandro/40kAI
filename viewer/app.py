@@ -671,12 +671,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         )
 
     def _is_movement_move_request(self, request) -> bool:
-        if not self._is_move_cell_request(request):
-            return False
-        phase = None
-        if self.state_watcher and self.state_watcher.state:
-            phase = self.state_watcher.state.get("phase")
-        return self._is_movement_phase(phase)
+        # В viewer move_request используется только для ручного Movement UX.
+        # Не привязываемся к текущему state.phase (может запаздывать на один poll),
+        # иначе иногда всплывает старый command stack с вводом координат.
+        return self._is_move_cell_request(request)
 
     def _finish_active_request(self) -> None:
         self._awaiting_player_action = False
