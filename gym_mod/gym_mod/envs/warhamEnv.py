@@ -1168,6 +1168,58 @@ class Warhammer40kEnv(gym.Env):
                     cells.append((int(raw_cell[0]), int(raw_cell[1])))
         return cells
 
+    def _movement_budget_for_unit(self, side: str, idx: int) -> int:
+        data = self.unit_data if side == "model" else self.enemy_data
+        base_move = 0
+        if 0 <= int(idx) < len(data) and isinstance(data[int(idx)], dict):
+            base_move = int(data[int(idx)].get("Movement", 0) or 0)
+
+        used = self.model_used_advance if side == "model" else self.enemy_used_advance
+        rolls = self.model_advance_roll if side == "model" else self.enemy_advance_roll
+        used_advance = bool(used[int(idx)]) if 0 <= int(idx) < len(used) else False
+        roll = rolls[int(idx)] if 0 <= int(idx) < len(rolls) else None
+        bonus = int(roll) if used_advance and roll is not None else 0
+        return max(0, int(base_move) + bonus)
+
+    def get_unit_reachable_cells(self, side: str, idx: int, budget: Optional[int] = None) -> list[tuple[int, int]]:
+        coords = self.unit_coords if side == "model" else self.enemy_coords
+        hp = self.unit_health if side == "model" else self.enemy_health
+        if not (0 <= int(idx) < len(coords)):
+            return []
+        if not (0 <= int(idx) < len(hp)) or float(hp[int(idx)] or 0.0) <= 0:
+            return []
+
+        row = int(coords[int(idx)][0])
+        col = int(coords[int(idx)][1])
+        move_budget = self._movement_budget_for_unit(side, int(idx)) if budget is None else max(0, int(budget))
+
+        barricades = set(self._barricade_cells())
+        occupied: set[tuple[int, int]] = set()
+        for j, pos in enumerate(self.unit_coords):
+            if j == int(idx) and side == "model":
+                continue
+            if j < len(self.unit_health) and float(self.unit_health[j] or 0.0) > 0 and isinstance(pos, (list, tuple)) and len(pos) >= 2:
+                occupied.add((int(pos[0]), int(pos[1])))
+        for j, pos in enumerate(self.enemy_coords):
+            if j == int(idx) and side == "enemy":
+                continue
+            if j < len(self.enemy_health) and float(self.enemy_health[j] or 0.0) > 0 and isinstance(pos, (list, tuple)) and len(pos) >= 2:
+                occupied.add((int(pos[0]), int(pos[1])))
+
+        reachable: list[tuple[int, int]] = []
+        for r in range(max(0, row - move_budget), min(self.b_len - 1, row + move_budget) + 1):
+            for c in range(max(0, col - move_budget), min(self.b_hei - 1, col + move_budget) + 1):
+                dist = abs(r - row) + abs(c - col)
+                if dist == 0 or dist > move_budget:
+                    continue
+                if (r, c) in occupied:
+                    continue
+                if (r, c) in barricades:
+                    continue
+                reachable.append((c, r))  # state coords (x, y)
+
+        return reachable
+
     def _visibility_report_between_units(self, attacker_side: str, attacker_idx: int, target_side: str, target_idx: int) -> dict:
         attacker_coords = self.unit_coords if attacker_side == "model" else self.enemy_coords
         target_coords = self.unit_coords if target_side == "model" else self.enemy_coords
@@ -3022,8 +3074,6 @@ class Warhammer40kEnv(gym.Env):
             return advanced_flags
 
         if side == "enemy" and manual:
-            direction_map = {"up": "up", "down": "down", "left": "left", "right": "right", "none": "none"}
-            normalize = {"u": "up", "d": "down", "l": "left", "r": "right", "n": "none"}
             advanced_flags = [False] * len(self.enemy_health)
             self.enemy_used_advance = [False] * len(self.enemy_health)
             self.enemy_advance_roll = [None] * len(self.enemy_health)
@@ -3070,58 +3120,65 @@ class Warhammer40kEnv(gym.Env):
                     self.updateBoard()
                     self.showBoard()
 
-                    dire = self._prompt_choice(
-                        f"Ход юнита: {unit_label}. Выберите направление (up/down/left/right/none): ",
-                        direction_map,
-                        normalize,
-                    )
-                    if dire is None:
-                        self.game_over = True
-                        return None
-
                     advanced = False
                     advance_roll = None
-                    move_num = 0
-                    if dire != "none":
-                        adv = self._prompt_yes_no("Сделать Advance? (y/n): ")
-                        if adv is None:
-                            self.game_over = True
-                            return None
-                        if adv:
-                            advanced = True
-                            self._log("Бросок 1D6 на Advance...", verbose_only=True)
-                            roll = player_dice()
-                            advance_roll = int(roll)
-                            self._log(f"Бросок: {roll}", verbose_only=True)
-                            movement_cap = self.enemy_data[i]["Movement"] + roll
-                            # Пушим state сразу после броска Advance,
-                            # чтобы viewer обновил синий круг до выбора финальной клетки.
-                            self.enemy_used_advance[i] = True
-                            self.enemy_advance_roll[i] = advance_roll
-                            self.updateBoard()
-                            self.showBoard()
-                        else:
-                            movement_cap = self.enemy_data[i]["Movement"]
-                        move_num = self._prompt_int(
-                            f"На сколько дюймов двигаться (0..{movement_cap}): ",
-                            0,
-                            movement_cap,
-                        )
-                        if move_num is None:
-                            self.game_over = True
-                            return None
+                    base_move = int(self.enemy_data[i].get("Movement", 0) or 0)
+                    adv = self._prompt_yes_no("Сделать Advance? (y/n): ")
+                    if adv is None:
+                        self.game_over = True
+                        return None
+                    if adv:
+                        advanced = True
+                        self._log("Бросок 1D6 на Advance...", verbose_only=True)
+                        roll = player_dice()
+                        advance_roll = int(roll)
+                        self._log(f"Бросок: {roll}", verbose_only=True)
 
-                    advanced_flags[i] = advanced
+                    movement_cap = base_move + (int(advance_roll) if advanced and advance_roll is not None else 0)
                     self.enemy_used_advance[i] = bool(advanced)
                     self.enemy_advance_roll[i] = int(advance_roll) if advance_roll is not None else None
-                    if dire == "down":
-                        self.enemy_coords[i][0] += move_num
-                    elif dire == "up":
-                        self.enemy_coords[i][0] -= move_num
-                    elif dire == "left":
-                        self.enemy_coords[i][1] -= move_num
-                    elif dire == "right":
-                        self.enemy_coords[i][1] += move_num
+                    self.updateBoard()
+                    self.showBoard()
+
+                    reachable = self.get_unit_reachable_cells("enemy", i, budget=movement_cap)
+                    if not reachable:
+                        self._log(f"{unit_label}: нет достижимых клеток для движения (budget={movement_cap}).")
+                        advanced_flags[i] = advanced
+                        continue
+
+                    dest = None
+                    reachable_set = set((int(x), int(y)) for x, y in reachable)
+                    while dest is None:
+                        move_meta = {
+                            "move_request": True,
+                            "unit_id": int(playerName),
+                            "unit_side": "player",
+                            "movement_budget": int(movement_cap),
+                            "reachable_cells": [[int(x), int(y)] for x, y in reachable],
+                        }
+                        answer = self._ensure_io().request_deploy_coord(
+                            f"{unit_label}. Выберите клетку назначения (reachable={len(reachable)}): ",
+                            x_min=0,
+                            x_max=max(0, int(self.b_hei) - 1),
+                            y_min=0,
+                            y_max=max(0, int(self.b_len) - 1),
+                            meta=move_meta,
+                        )
+                        if answer is None:
+                            self.game_over = True
+                            return None
+                        tx = int(answer.get("x"))
+                        ty = int(answer.get("y"))
+                        if (tx, ty) not in reachable_set:
+                            self._log(
+                                f"{unit_label}: клетка ({tx},{ty}) недостижима. "
+                                "Что делать дальше: выберите подсвеченную reachable-клетку."
+                            )
+                            continue
+                        dest = (tx, ty)
+
+                    advanced_flags[i] = advanced
+                    self.enemy_coords[i] = [int(dest[1]), int(dest[0])]
 
                     self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
                     for j in range(len(self.enemy_health)):

@@ -227,6 +227,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         )
         self.map_scene.unit_selected.connect(self._select_row_for_unit)
         self.map_scene.cell_clicked.connect(self._on_cell_clicked)
+        self.map_scene.cell_right_clicked.connect(self._on_cell_right_clicked)
         self.map_scene.cell_hovered.connect(self._on_cell_hovered)
 
         self.status_round = QtWidgets.QLabel("Раунд: —")
@@ -664,7 +665,18 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _is_deploy_request(self, request) -> bool:
         if request is None:
             return False
-        return str(getattr(request, "kind", "")).strip().lower() == "deploy_coord"
+        if str(getattr(request, "kind", "")).strip().lower() != "deploy_coord":
+            return False
+        meta = getattr(request, "meta", {}) or {}
+        return not bool(meta.get("move_request"))
+
+    def _is_move_cell_request(self, request) -> bool:
+        if request is None:
+            return False
+        if str(getattr(request, "kind", "")).strip().lower() != "deploy_coord":
+            return False
+        meta = getattr(request, "meta", {}) or {}
+        return bool(meta.get("move_request"))
 
     def _maybe_reset_target_for_request(self, request) -> None:
         if self._is_deploy_request(request):
@@ -744,6 +756,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 f"Ошибка деплоя: reason={reason}, x={x}, y={y}. Где: viewer/app.py (_on_cell_clicked). "
                 "Что делать дальше: выберите клетку в зоне деплоя без коллизий."
             )
+
+    def _on_cell_right_clicked(self, x: int, y: int) -> None:
+        if not self._is_move_cell_request(self._pending_request):
+            return
+        if not self.map_scene.is_reachable_cell(x, y):
+            return
+        self.map_scene.set_target_cell((x, y))
+        self.command_input.setText(f"{x} {y}")
+        self.add_log_line(f"REQ: move cell accepted (RMB) x={x}, y={y}")
+        self._submit_answer({"x": x, "y": y})
 
     def _on_cell_hovered(self, state_pos) -> None:
         if state_pos is None:
@@ -856,7 +878,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         elif kind == "choice":
             self.command_hint.setText("Горячие клавиши: Enter — выбрать")
         elif kind == "deploy_coord":
-            self.command_hint.setText("Кликните клетку на поле или введите X Y, затем Enter")
+            if self._is_move_cell_request(self._pending_request):
+                self.command_hint.setText("RMB по подсвеченной клетке или введите X Y, затем Enter")
+            else:
+                self.command_hint.setText("Кликните клетку на поле или введите X Y, затем Enter")
         else:
             self.command_hint.setText("Горячие клавиши: Enter — отправить")
 
@@ -944,7 +969,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _submit_text(self):
         text = self.command_input.text().strip()
-        if self._is_deploy_request(self._pending_request):
+        if self._is_deploy_request(self._pending_request) or self._is_move_cell_request(self._pending_request):
             parts = [p for p in re.split(r"[\s,;:]+", text) if p]
             if len(parts) != 2:
                 self.add_log_line(
@@ -962,13 +987,21 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 )
                 return
             self.map_scene.set_target_cell((x, y))
-            ok, reason, _ghost = self._validate_deploy_cell(x, y)
-            if not ok:
-                self.add_log_line(
-                    f"Ошибка деплоя: reason={reason}, x={x}, y={y}. Где: viewer/app.py (_submit_text). "
-                    "Что делать дальше: выберите валидную клетку деплоя."
-                )
-                return
+            if self._is_move_cell_request(self._pending_request):
+                if not self.map_scene.is_reachable_cell(x, y):
+                    self.add_log_line(
+                        f"Ошибка движения: клетка недостижима x={x}, y={y}. Где: viewer/app.py (_submit_text). "
+                        "Что делать дальше: выберите подсвеченную reachable-клетку."
+                    )
+                    return
+            else:
+                ok, reason, _ghost = self._validate_deploy_cell(x, y)
+                if not ok:
+                    self.add_log_line(
+                        f"Ошибка деплоя: reason={reason}, x={x}, y={y}. Где: viewer/app.py (_submit_text). "
+                        "Что делать дальше: выберите валидную клетку деплоя."
+                    )
+                    return
             self._submit_answer({"x": x, "y": y})
             return
         if self._is_target_request(self._pending_request) and self._current_target_id is None:

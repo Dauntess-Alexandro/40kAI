@@ -179,6 +179,7 @@ class TextureManager:
 class OpenGLBoardWidget(QOpenGLWidget):
     unit_selected = QtCore.Signal(str, int)
     cell_clicked = QtCore.Signal(int, int)
+    cell_right_clicked = QtCore.Signal(int, int)
     cell_hovered = QtCore.Signal(object)
 
     def __init__(
@@ -220,6 +221,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._unit_anim_duration_ms = 180
 
         self._move_highlights: List[QtCore.QRectF] = []
+        self._reachable_highlights: List[QtCore.QRectF] = []
+        self._reachable_cells_set: set[tuple[int, int]] = set()
+        self._reachable_overlay_sig: Optional[Tuple[object, int, int]] = None
         self._target_highlights: List[Tuple[QtCore.QPointF, float]] = []
         self._show_objective_radius = True
 
@@ -828,8 +832,48 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def refresh_overlays(self) -> None:
         self._move_highlights = []
+        self._reachable_highlights = []
+        self._reachable_cells_set = set()
         self._target_highlights = []
-        return
+
+        if not self._should_show_movement():
+            return
+        active_key = (self._active_unit_side, self._active_unit_id)
+        if active_key[0] is None or active_key[1] is None:
+            return
+        unit = self._state_unit(active_key)
+        if not isinstance(unit, dict):
+            return
+        cells = self._active_unit_reachable_cells_statexy(unit)
+        if not cells:
+            return
+
+        highlights: List[QtCore.QRectF] = []
+        cell_set: set[tuple[int, int]] = set()
+        for x, y in cells:
+            view_cell = self._state_to_view_cell(x, y)
+            if view_cell is None:
+                continue
+            cell_set.add((int(x), int(y)))
+            vx, vy = view_cell
+            highlights.append(
+                QtCore.QRectF(
+                    vx * self.cell_size,
+                    vy * self.cell_size,
+                    self.cell_size,
+                    self.cell_size,
+                )
+            )
+        self._reachable_cells_set = cell_set
+        self._reachable_highlights = highlights
+
+        if self._viewer_debug_enabled:
+            sig = (active_key[1], len(cell_set), hash(tuple(sorted(cell_set))) if cell_set else 0)
+            if sig != self._reachable_overlay_sig:
+                self._reachable_overlay_sig = sig
+                self._append_agent_log(
+                    f"[VIEWER] reachable_overlay unit={active_key[1]} count={len(cell_set)}"
+                )
 
     def select_unit(self, side, unit_id) -> None:
         self.set_selected_unit(side, unit_id)
@@ -1300,6 +1344,25 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 return unit
         return None
 
+    def _active_unit_reachable_cells_statexy(self, unit: dict) -> List[Tuple[int, int]]:
+        unit_status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else {}
+        raw_cells = unit_status.get("reachable_cells")
+        if raw_cells is None:
+            raw_cells = self._state.get("active_unit_reachable_cells")
+        result: List[Tuple[int, int]] = []
+        for cell in list(raw_cells or []):
+            if not isinstance(cell, (list, tuple)) or len(cell) < 2:
+                continue
+            x = self._safe_int(cell[0])
+            y = self._safe_int(cell[1])
+            if x is None or y is None:
+                continue
+            result.append((x, y))
+        return result
+
+    def is_reachable_cell(self, x: int, y: int) -> bool:
+        return (int(x), int(y)) in self._reachable_cells_set
+
     def _should_show_movement(self) -> bool:
         phase = str(self._phase or "").lower()
         return "move" in phase or "движ" in phase or "movement" in phase or self._move_range is not None
@@ -1477,6 +1540,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._drag_distance = 0.0
         if event.button() == QtCore.Qt.RightButton:
             world = self._map_to_world(QtCore.QPointF(event.position()))
+            state_pos = self._world_to_state_pos(world)
+            if state_pos is not None:
+                state_xy = (int(state_pos[1]), int(state_pos[0]))
+                if self.is_reachable_cell(state_xy[0], state_xy[1]):
+                    self.cell_right_clicked.emit(state_xy[0], state_xy[1])
+                    return
+
             self._rebuild_unit_hitboxes_screen()
             unit_key = self._unit_key_at_screen_pos(QtCore.QPointF(event.position()))
             terrain_feature = self._terrain_feature_at_world(world) if unit_key is None else None
@@ -1882,13 +1952,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.end()
 
     def _draw_movement_layer(self, painter: QtGui.QPainter) -> None:
-        if not self._move_highlights:
+        if not self._reachable_highlights:
             return
-        highlight = QtGui.QColor(Theme.selection)
-        highlight.setAlpha(80)
-        painter.setPen(QtCore.Qt.NoPen)
-        painter.setBrush(QtGui.QBrush(highlight))
-        for rect in self._move_highlights:
+        fill = QtGui.QColor(96, 143, 220, 52)
+        border = QtGui.QPen(QtGui.QColor(96, 143, 220, 160), 1.0)
+        border.setCosmetic(True)
+        painter.setPen(border)
+        painter.setBrush(QtGui.QBrush(fill))
+        for rect in self._reachable_highlights:
             painter.drawRect(rect)
 
     def _draw_objective_layer(self, painter: QtGui.QPainter) -> None:
@@ -4035,29 +4106,6 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 continue
             rect = QtCore.QRectF(cell[0] * self.cell_size, cell[1] * self.cell_size, self.cell_size, self.cell_size)
             painter.drawRect(rect)
-
-        # move-zone: один круг вокруг якорной клетки (M или M+Advance),
-        # только для активного юнита в фазе движения.
-        anchor = self._unit_anchor_view_cell(unit)
-        unit_status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else {}
-        unit_key = (unit.get("side"), self._safe_int(unit.get("id")))
-        active_key = (self._active_unit_side, self._active_unit_id)
-        can_show_move_circle = self._should_show_movement() and unit_key == active_key
-        if can_show_move_circle:
-            base_move = self._safe_int(unit.get("move") or unit.get("move_range") or self._move_range)
-            used_advance = bool(unit_status.get("used_advance"))
-            advance_roll = self._safe_int(unit_status.get("advance_roll"))
-            move_range = base_move
-            if base_move is not None and used_advance and advance_roll is not None:
-                move_range = base_move + advance_roll
-            if anchor is not None and move_range is not None and move_range > 0:
-                center = QtCore.QPointF((anchor[0] + 0.5) * self.cell_size, (anchor[1] + 0.5) * self.cell_size)
-                radius = move_range * self.cell_size
-                move_pen = QtGui.QPen(QtGui.QColor(96, 143, 220, 160), 1.2)
-                move_pen.setCosmetic(True)
-                painter.setPen(move_pen)
-                painter.setBrush(QtCore.Qt.NoBrush)
-                painter.drawEllipse(center, radius, radius)
 
         # враги в LoS/дистанции
         threat = self._hover_tooltip_text.get("threat") if isinstance(self._hover_tooltip_text, dict) else {}

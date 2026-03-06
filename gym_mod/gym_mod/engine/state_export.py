@@ -344,6 +344,19 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
                 can_see_ids.append(int(enemy_id))
                 in_range_targets.append(int(enemy_id))
 
+    reachable_cells: list[list[int]] = []
+    if hasattr(env, "get_unit_reachable_cells"):
+        try:
+            raw_reach = env.get_unit_reachable_cells(side, idx)
+            for cell in _iter_values(raw_reach):
+                if isinstance(cell, (list, tuple)) and len(cell) >= 2:
+                    rx = _safe_int(cell[0], None)
+                    ry = _safe_int(cell[1], None)
+                    if rx is not None and ry is not None:
+                        reachable_cells.append([rx, ry])
+        except Exception:
+            reachable_cells = []
+
     return {
         "in_cover": bool(in_cover),
         "obscured": bool(obscured),
@@ -359,6 +372,7 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
         "can_see_ids": sorted(set(can_see_ids)),
         "seen_by_ids": sorted(set(seen_by_ids)),
         "in_range_ids": sorted(set(in_range_targets)),
+        "reachable_cells": reachable_cells,
     }
 
 
@@ -407,6 +421,37 @@ def write_state_json(env, path=None):
                 f"obscured_vs={status.get('obscured_vs') or []} "
                 f"exposed_to={status.get('exposed_to') or []}"
             )
+
+    if (os.getenv("TERRAIN_DEBUG", "0") == "1" or os.getenv("VIEWER_DEBUG", "0") == "1") and hasattr(env, "_append_agent_log"):
+        active_side_raw = getattr(env, "active_side", None)
+        side = "model" if active_side_raw == "model" else ("enemy" if active_side_raw == "enemy" else None)
+        active_idx = None
+        try:
+            active_idx = int(getattr(env, "current_action_index", 0) or 0)
+        except (TypeError, ValueError):
+            active_idx = None
+        if side is not None and active_idx is not None and 0 <= active_idx:
+            unit_id = env._unit_id(side, active_idx) if hasattr(env, "_unit_id") else active_idx
+            budget = None
+            if hasattr(env, "_movement_budget_for_unit"):
+                try:
+                    budget = int(env._movement_budget_for_unit(side, active_idx))
+                except Exception:
+                    budget = None
+            count = 0
+            for unit in units:
+                expected_side = "model" if side == "model" else "player"
+                if unit.get("side") == expected_side and int(unit.get("id") or -1) == int(unit_id):
+                    st = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else {}
+                    count = len(list(st.get("reachable_cells") or []))
+                    break
+            sig = (side, int(unit_id), int(budget or -1), int(count))
+            prev_sig = getattr(env, "_last_reachable_log_sig", None)
+            if sig != prev_sig:
+                env._last_reachable_log_sig = sig
+                env._append_agent_log(
+                    f"[MOVE] reachable_cells unit={unit_id} budget={budget if budget is not None else '-'} count={count}"
+                )
 
     objectives = []
     for idx, coords in enumerate(getattr(env, "coordsOfOM", [])):
