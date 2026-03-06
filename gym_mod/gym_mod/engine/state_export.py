@@ -197,6 +197,26 @@ def _target_cover_cells(env, target_cell: tuple[int, int], radius: int = 3) -> s
     }
 
 
+def _nearest_barricade_distance(env, unit_cell: tuple[int, int]) -> float | None:
+    barricade_cells: set[tuple[int, int]] = set()
+    for feature in _iter_values(getattr(env, "terrain_features", None)):
+        if not isinstance(feature, dict):
+            continue
+        kind = str(feature.get("kind") or "").strip().lower()
+        tags = " ".join(str(v).lower() for v in _iter_values(feature.get("keywords") or feature.get("tags")))
+        if kind != "barricade" and "barricade" not in tags:
+            continue
+        for cell in _iter_values(feature.get("cells")):
+            if not isinstance(cell, (list, tuple)) or len(cell) < 2:
+                continue
+            barricade_cells.add((int(cell[0]), int(cell[1])))
+    if not barricade_cells:
+        return None
+    ux, uy = int(unit_cell[0]), int(unit_cell[1])
+    min_dist = min(max(abs(ux - bx), abs(uy - by)) for bx, by in barricade_cells)
+    return float(min_dist)
+
+
 def _unit_status_payload(env, side: str, idx: int) -> dict:
     own_coords = env.unit_coords if side == "model" else env.enemy_coords
     enemy_coords = env.enemy_coords if side == "model" else env.unit_coords
@@ -256,13 +276,11 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
     fully_visible = enemies_seeing > 0 and fully_visible_seen == enemies_seeing
 
     in_cover = False
+    dist_cover = _nearest_barricade_distance(env, unit_cell)
     if hasattr(env, "_unit_has_keyword") and hasattr(env, "_barricade_cells"):
         is_infantry = env._unit_has_keyword(unit_data, "infantry")
-        if is_infantry:
-            barricades = list(target_cover_cells)
-            if barricades:
-                min_dist = min(max(abs(unit_cell[0] - c[0]), abs(unit_cell[1] - c[1])) for c in barricades)
-                in_cover = min_dist <= 3 and obscured
+        if is_infantry and dist_cover is not None:
+            in_cover = float(dist_cover) <= 3.0
 
     objective_state = _objective_state_for_unit(env, side, unit_cell)
 
@@ -317,6 +335,7 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
         "obscured": bool(obscured),
         "fully_visible": bool(fully_visible),
         "objective_state": objective_state,
+        "dist_cover": dist_cover,
         "obscured_vs": sorted(set(obscured_vs)),
         "exposed_to": sorted(set(exposed_to)),
         "engagement_with": sorted(set(engagement_with)),
@@ -367,12 +386,10 @@ def write_state_json(env, path=None):
         for unit in units:
             status = unit.get("unit_status") or {}
             env._append_agent_log(
-                f"[STATUS] unit={unit.get('id')} in_cover={bool(status.get('in_cover'))} "
-                f"obscured={bool(status.get('obscured'))} fully_visible={bool(status.get('fully_visible'))} "
-                f"objective={status.get('objective_state') or '-'} "
+                f"[STATUS] unit={unit.get('id')} in_cover={1 if bool(status.get('in_cover')) else 0} "
+                f"dist_cover={status.get('dist_cover')} "
                 f"obscured_vs={status.get('obscured_vs') or []} "
-                f"exposed_to={status.get('exposed_to') or []} "
-                f"engagement={status.get('engagement_with') or []}"
+                f"exposed_to={status.get('exposed_to') or []}"
             )
 
     objectives = []
