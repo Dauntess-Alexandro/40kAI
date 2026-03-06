@@ -284,6 +284,20 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
 
     objective_state = _objective_state_for_unit(env, side, unit_cell)
 
+    used_advance = False
+    advance_roll = None
+    used_advance_list = getattr(env, "model_used_advance" if side == "model" else "enemy_used_advance", None)
+    advance_roll_list = getattr(env, "model_advance_roll" if side == "model" else "enemy_advance_roll", None)
+    if isinstance(used_advance_list, (list, tuple)) and idx < len(used_advance_list):
+        used_advance = bool(used_advance_list[idx])
+    if isinstance(advance_roll_list, (list, tuple)) and idx < len(advance_roll_list):
+        raw_roll = advance_roll_list[idx]
+        if raw_roll is not None:
+            try:
+                advance_roll = int(raw_roll)
+            except Exception:
+                advance_roll = None
+
     engagement_with: list[int] = []
     for enemy_idx, enemy in enumerate(enemy_coords):
         if not isinstance(enemy, (list, tuple)) or len(enemy) < 2:
@@ -335,6 +349,8 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
         "obscured": bool(obscured),
         "fully_visible": bool(fully_visible),
         "objective_state": objective_state,
+        "used_advance": bool(used_advance),
+        "advance_roll": advance_roll,
         "dist_cover": dist_cover,
         "obscured_vs": sorted(set(obscured_vs)),
         "exposed_to": sorted(set(exposed_to)),

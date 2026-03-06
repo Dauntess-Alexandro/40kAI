@@ -4030,9 +4030,15 @@ class OpenGLBoardWidget(QOpenGLWidget):
             rect = QtCore.QRectF(cell[0] * self.cell_size, cell[1] * self.cell_size, self.cell_size, self.cell_size)
             painter.drawRect(rect)
 
-        # move-zone: быстрый круг по move_range вокруг якорной клетки
+        # move-zone: один круг вокруг якорной клетки (M или M+Advance)
         anchor = self._unit_anchor_view_cell(unit)
-        move_range = self._safe_int(unit.get("move_range") or unit.get("move") or self._move_range)
+        unit_status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else {}
+        base_move = self._safe_int(unit.get("move") or unit.get("move_range") or self._move_range)
+        used_advance = bool(unit_status.get("used_advance"))
+        advance_roll = self._safe_int(unit_status.get("advance_roll"))
+        move_range = base_move
+        if base_move is not None and used_advance and advance_roll is not None:
+            move_range = base_move + advance_roll
         if anchor is not None and move_range is not None and move_range > 0:
             center = QtCore.QPointF((anchor[0] + 0.5) * self.cell_size, (anchor[1] + 0.5) * self.cell_size)
             radius = move_range * self.cell_size

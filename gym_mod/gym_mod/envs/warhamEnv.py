@@ -828,6 +828,10 @@ class Warhammer40kEnv(gym.Env):
         self.enemy_anchor_coords = []
         self.unit_model_positions = []
         self.enemy_model_positions = []
+        self.model_used_advance: list[bool] = []
+        self.enemy_used_advance: list[bool] = []
+        self.model_advance_roll: list[int | None] = []
+        self.enemy_advance_roll: list[int | None] = []
 
         self.game_over = False
         self.unitInAttack = []
@@ -886,6 +890,8 @@ class Warhammer40kEnv(gym.Env):
             self.enemyInAttack.append([0, 0])
             self.enemyOC.append(enemy[i].showUnitData()["OC"])
         self.enemyFellBack = [False] * len(self.enemy_health)
+        self.enemy_used_advance = [False] * len(self.enemy_health)
+        self.enemy_advance_roll = [None] * len(self.enemy_health)
         self.enemy_hp_max_total = max(
             1,
             sum(
@@ -904,6 +910,8 @@ class Warhammer40kEnv(gym.Env):
             self.unitInAttack.append([0, 0])
             self.modelOC.append(model[i].showUnitData()["OC"])
         self.unitFellBack = [False] * len(self.unit_health)
+        self.model_used_advance = [False] * len(self.unit_health)
+        self.model_advance_roll = [None] * len(self.unit_health)
         self.model_hp_max_total = max(
             1,
             sum(
@@ -2635,6 +2643,8 @@ class Warhammer40kEnv(gym.Env):
         self.begin_phase(side, "movement")
         if side == "model":
             advanced_flags = [False] * len(self.unit_health)
+            self.model_used_advance = [False] * len(self.unit_health)
+            self.model_advance_roll = [None] * len(self.unit_health)
             reward_delta = 0
             objective_hold_delta = 0.0
             objective_proximity_delta = 0.0
@@ -2739,6 +2749,8 @@ class Warhammer40kEnv(gym.Env):
                                     )
 
                     advanced_flags[i] = advanced
+                    self.model_used_advance[i] = bool(advanced)
+                    self.model_advance_roll[i] = int(advance_roll) if advance_roll is not None else None
                     direction = {0: "down", 1: "up", 2: "left", 3: "right", 4: "none"}.get(action["move"], "none")
                     actual_movement = movement if action["move"] != 4 else 0
                     advance_text = "да" if advanced else "нет"
@@ -2883,6 +2895,8 @@ class Warhammer40kEnv(gym.Env):
 
         if side == "enemy" and action is not None and not manual:
             advanced_flags = [False] * len(self.enemy_health)
+            self.enemy_used_advance = [False] * len(self.enemy_health)
+            self.enemy_advance_roll = [None] * len(self.enemy_health)
             move_dir = action.get("move", 4) if isinstance(action, dict) else 4
             attack_choice = action.get("attack", 1) if isinstance(action, dict) else 1
             for i in range(len(self.enemy_health)):
@@ -2919,6 +2933,8 @@ class Warhammer40kEnv(gym.Env):
                                 pass
 
                     advanced_flags[i] = advanced
+                    self.enemy_used_advance[i] = bool(advanced)
+                    self.enemy_advance_roll[i] = int(advance_roll) if advance_roll is not None else None
                     direction = {0: "down", 1: "up", 2: "left", 3: "right", 4: "none"}.get(move_dir, "none")
                     actual_movement = movement if move_dir != 4 else 0
                     advance_text = "да" if advanced else "нет"
@@ -3009,6 +3025,8 @@ class Warhammer40kEnv(gym.Env):
             direction_map = {"up": "up", "down": "down", "left": "left", "right": "right", "none": "none"}
             normalize = {"u": "up", "d": "down", "l": "left", "r": "right", "n": "none"}
             advanced_flags = [False] * len(self.enemy_health)
+            self.enemy_used_advance = [False] * len(self.enemy_health)
+            self.enemy_advance_roll = [None] * len(self.enemy_health)
             for i in range(len(self.enemy_health)):
                 playerName = i + 11
                 battleSh = battle_shock[i] if battle_shock else False
@@ -3062,6 +3080,7 @@ class Warhammer40kEnv(gym.Env):
                         return None
 
                     advanced = False
+                    advance_roll = None
                     move_num = 0
                     if dire != "none":
                         adv = self._prompt_yes_no("Сделать Advance? (y/n): ")
@@ -3072,6 +3091,7 @@ class Warhammer40kEnv(gym.Env):
                             advanced = True
                             self._log("Бросок 1D6 на Advance...", verbose_only=True)
                             roll = player_dice()
+                            advance_roll = int(roll)
                             self._log(f"Бросок: {roll}", verbose_only=True)
                             movement_cap = self.enemy_data[i]["Movement"] + roll
                         else:
@@ -3086,6 +3106,8 @@ class Warhammer40kEnv(gym.Env):
                             return None
 
                     advanced_flags[i] = advanced
+                    self.enemy_used_advance[i] = bool(advanced)
+                    self.enemy_advance_roll[i] = int(advance_roll) if advance_roll is not None else None
                     if dire == "down":
                         self.enemy_coords[i][0] += move_num
                     elif dire == "up":
@@ -3119,6 +3141,8 @@ class Warhammer40kEnv(gym.Env):
 
         if side == "enemy":
             advanced_flags = [False] * len(self.enemy_health)
+            self.enemy_used_advance = [False] * len(self.enemy_health)
+            self.enemy_advance_roll = [None] * len(self.enemy_health)
             cp_on = getattr(self, "_enemy_cp_on", None)
             use_cp = getattr(self, "_enemy_use_cp", None)
             for i in range(len(self.enemy_health)):
@@ -3149,7 +3173,8 @@ class Warhammer40kEnv(gym.Env):
                     base_m = self.enemy_data[i]["Movement"]
                     dist_to_target = distance(self.unit_coords[idOfM], self.enemy_coords[i])
                     advanced = dist_to_target > (base_m + 6)
-                    movement = base_m + dice() if advanced else base_m
+                    advance_roll = int(dice()) if advanced else None
+                    movement = base_m + advance_roll if advanced and advance_roll is not None else base_m
 
                     if distance(self.unit_coords[idOfM], [self.enemy_coords[i][0], self.enemy_coords[i][1] - movement]) < distance(self.unit_coords[idOfM], self.enemy_coords[i]):
                         self.enemy_coords[i][1] -= movement
@@ -3166,6 +3191,8 @@ class Warhammer40kEnv(gym.Env):
                             self.enemy_coords[i][0] -= 1
                     self._adjust_end_move_from_terrain("enemy", i, pos_before, "movement_phase:enemy")
                     advanced_flags[i] = advanced
+                    self.enemy_used_advance[i] = bool(advanced)
+                    self.enemy_advance_roll[i] = int(advance_roll) if advance_roll is not None else None
 
                     pos_after = tuple(self.enemy_coords[i])
                     if pos_before != pos_after:
@@ -4387,6 +4414,8 @@ class Warhammer40kEnv(gym.Env):
             self.enemy_health.append(self.enemy_data[i]["W"] * self.enemy_data[i]["#OfModels"])
             self.enemyInAttack.append([0, 0])
         self.enemyFellBack = [False] * len(self.enemy_health)
+        self.enemy_used_advance = [False] * len(self.enemy_health)
+        self.enemy_advance_roll = [None] * len(self.enemy_health)
         self.enemy_hp_max_total = max(
             1,
             sum(
@@ -4401,6 +4430,8 @@ class Warhammer40kEnv(gym.Env):
             self.unit_health.append(self.unit_data[i]["W"] * self.unit_data[i]["#OfModels"])
             self.unitInAttack.append([0, 0])
         self.unitFellBack = [False] * len(self.unit_health)
+        self.model_used_advance = [False] * len(self.unit_health)
+        self.model_advance_roll = [None] * len(self.unit_health)
         self.model_hp_max_total = max(
             1,
             sum(
