@@ -441,7 +441,6 @@ class OpenGLBoardWidget(QOpenGLWidget):
             )
             return
         self.set_error_message(None)
-        self._clear_hover_tooltip(force=True)
         board = self._state.get("board", {})
         raw_units = list(self._state.get("units", []) or [])
         width, height = self._resolve_board_dims(board, raw_units)
@@ -537,6 +536,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
 
         self.refresh_overlays()
+
+        if self._hover_unit_key is not None:
+            if self._state_unit(self._hover_unit_key) is not None:
+                self._refresh_tooltip_anchor()
+            else:
+                self._clear_hover_tooltip(force=True)
+
         self.update()
 
     @staticmethod
@@ -4030,23 +4036,28 @@ class OpenGLBoardWidget(QOpenGLWidget):
             rect = QtCore.QRectF(cell[0] * self.cell_size, cell[1] * self.cell_size, self.cell_size, self.cell_size)
             painter.drawRect(rect)
 
-        # move-zone: один круг вокруг якорной клетки (M или M+Advance)
+        # move-zone: один круг вокруг якорной клетки (M или M+Advance),
+        # только для активного юнита в фазе движения.
         anchor = self._unit_anchor_view_cell(unit)
         unit_status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else {}
-        base_move = self._safe_int(unit.get("move") or unit.get("move_range") or self._move_range)
-        used_advance = bool(unit_status.get("used_advance"))
-        advance_roll = self._safe_int(unit_status.get("advance_roll"))
-        move_range = base_move
-        if base_move is not None and used_advance and advance_roll is not None:
-            move_range = base_move + advance_roll
-        if anchor is not None and move_range is not None and move_range > 0:
-            center = QtCore.QPointF((anchor[0] + 0.5) * self.cell_size, (anchor[1] + 0.5) * self.cell_size)
-            radius = move_range * self.cell_size
-            move_pen = QtGui.QPen(QtGui.QColor(96, 143, 220, 160), 1.2)
-            move_pen.setCosmetic(True)
-            painter.setPen(move_pen)
-            painter.setBrush(QtCore.Qt.NoBrush)
-            painter.drawEllipse(center, radius, radius)
+        unit_key = (unit.get("side"), self._safe_int(unit.get("id")))
+        active_key = (self._active_unit_side, self._active_unit_id)
+        can_show_move_circle = self._should_show_movement() and unit_key == active_key
+        if can_show_move_circle:
+            base_move = self._safe_int(unit.get("move") or unit.get("move_range") or self._move_range)
+            used_advance = bool(unit_status.get("used_advance"))
+            advance_roll = self._safe_int(unit_status.get("advance_roll"))
+            move_range = base_move
+            if base_move is not None and used_advance and advance_roll is not None:
+                move_range = base_move + advance_roll
+            if anchor is not None and move_range is not None and move_range > 0:
+                center = QtCore.QPointF((anchor[0] + 0.5) * self.cell_size, (anchor[1] + 0.5) * self.cell_size)
+                radius = move_range * self.cell_size
+                move_pen = QtGui.QPen(QtGui.QColor(96, 143, 220, 160), 1.2)
+                move_pen.setCosmetic(True)
+                painter.setPen(move_pen)
+                painter.setBrush(QtCore.Qt.NoBrush)
+                painter.drawEllipse(center, radius, radius)
 
         # враги в LoS/дистанции
         threat = self._hover_tooltip_text.get("threat") if isinstance(self._hover_tooltip_text, dict) else {}
