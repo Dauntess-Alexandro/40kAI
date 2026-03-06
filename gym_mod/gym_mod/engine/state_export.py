@@ -173,6 +173,30 @@ def _objective_state_for_unit(env, side: str, unit_cell: tuple[int, int]) -> str
     return None
 
 
+def _target_cover_cells(env, target_cell: tuple[int, int], radius: int = 3) -> set[tuple[int, int]]:
+    obstacle_cells = set()
+    for feature in _iter_values(getattr(env, "terrain_features", None)):
+        if not isinstance(feature, dict):
+            continue
+        kind = str(feature.get("kind") or "").strip().lower()
+        tags = " ".join(str(v).lower() for v in _iter_values(feature.get("keywords") or feature.get("tags")))
+        if kind not in {"barricade", "obstacle"} and "obstacle" not in tags and "barricade" not in tags:
+            continue
+        for cell in _iter_values(feature.get("cells")):
+            if not isinstance(cell, (list, tuple)) or len(cell) < 2:
+                continue
+            obstacle_cells.add((int(cell[0]), int(cell[1])))
+    if not obstacle_cells:
+        obstacle_cells = set((int(x), int(y)) for x, y in _iter_values(getattr(env, "terrain_opaque_cells", None)))
+
+    tx, ty = int(target_cell[0]), int(target_cell[1])
+    return {
+        (ox, oy)
+        for ox, oy in obstacle_cells
+        if max(abs(ox - tx), abs(oy - ty)) <= int(radius)
+    }
+
+
 def _unit_status_payload(env, side: str, idx: int) -> dict:
     own_coords = env.unit_coords if side == "model" else env.enemy_coords
     enemy_coords = env.enemy_coords if side == "model" else env.unit_coords
@@ -184,6 +208,7 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
 
     unit_cell = (int(own_coords[idx][0]), int(own_coords[idx][1]))
     obscuring_cells = env.get_terrain_obscuring_cells_set() if hasattr(env, "get_terrain_obscuring_cells_set") else set()
+    target_cover_cells = _target_cover_cells(env, unit_cell, radius=3)
     opaque_cells = getattr(env, "terrain_opaque_cells", set())
     visibility_mode = getattr(env, "visibility_mode", "single_ray")
 
@@ -199,6 +224,7 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
             unit_cell,
             opaque_cells_set=opaque_cells,
             obscuring_cells_set=obscuring_cells,
+            target_cover_cells_set=target_cover_cells,
             visibility_mode=visibility_mode,
         )
         if not bool(report.get("los", False)):
@@ -222,7 +248,7 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
     if hasattr(env, "_unit_has_keyword") and hasattr(env, "_barricade_cells"):
         is_infantry = env._unit_has_keyword(unit_data, "infantry")
         if is_infantry:
-            barricades = env._barricade_cells()
+            barricades = list(target_cover_cells)
             if barricades:
                 min_dist = min(max(abs(unit_cell[0] - c[0]), abs(unit_cell[1] - c[1])) for c in barricades)
                 in_cover = min_dist <= 3 and obscured

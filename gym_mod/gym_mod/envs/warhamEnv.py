@@ -1065,18 +1065,57 @@ class Warhammer40kEnv(gym.Env):
         raw = str(os.getenv("LOS_DEBUG", "1")).strip().lower()
         return raw not in {"0", "false", "off", "no"}
 
-    def _log_los_debug(self, attacker_cell: tuple[int, int], target_cell: tuple[int, int], report: dict) -> None:
+    def _log_los_debug(
+        self,
+        attacker_cell: tuple[int, int],
+        target_cell: tuple[int, int],
+        report: dict,
+        *,
+        attacker_id: int | None = None,
+        target_id: int | None = None,
+    ) -> None:
         if not self._los_debug_enabled():
             return
         crossed = report.get("crossed_cells") or []
         preview = crossed if len(crossed) <= 12 else (crossed[:6] + ["..."] + crossed[-5:])
+        obscured_example = None
+        obscured_dist = None
+        ray_reports = report.get("ray_reports") or []
+        for ray in ray_reports:
+            cells = ray.get("obscured_cells") or []
+            if not cells:
+                continue
+            obscured_example = cells[0]
+            obscured_dist = self._grid_distance_chebyshev(obscured_example, target_cell)
+            break
         self._append_agent_log(
             "LOS_DEBUG | "
+            f"attacker_id={attacker_id if attacker_id is not None else '-'} "
+            f"target_id={target_id if target_id is not None else '-'} "
             f"mode={report.get('visibility_mode')} a_cell={attacker_cell} b_cell={target_cell} "
             f"crossed_cells={preview} los={report.get('los')} "
             f"obscured={report.get('obscured')} fully_visible={report.get('fully_visible')} "
-            f"rays={report.get('rays_clear')}/{report.get('rays_total')} blocked_by={report.get('blocked_by')}"
+            f"rays={report.get('rays_clear')}/{report.get('rays_total')} rays_obscured={report.get('rays_obscured')} "
+            f"target_cover_cells={report.get('target_cover_cells_count')} "
+            f"obscured_cell={obscured_example if obscured_example is not None else '-'} "
+            f"obscured_cell_dist={obscured_dist if obscured_dist is not None else '-'} "
+            f"blocked_by={report.get('blocked_by')}"
         )
+
+    def _target_cover_cells_for_unit(self, target_side: str, target_idx: int, radius: int = 3) -> set[tuple[int, int]]:
+        coords = self.unit_coords if target_side == "model" else self.enemy_coords
+        if not (0 <= int(target_idx) < len(coords)):
+            return set()
+        target_cell = self._cell_from_coord(coords[int(target_idx)])
+        obstacle_cells = self.get_terrain_obscuring_cells_set()
+        if not obstacle_cells:
+            return set()
+        cover_cells = {
+            (int(cell[0]), int(cell[1]))
+            for cell in obstacle_cells
+            if self._grid_distance_chebyshev((int(cell[0]), int(cell[1])), target_cell) <= int(radius)
+        }
+        return cover_cells
 
     def _has_line_of_sight(self, attacker_side: str, attacker_idx: int, target_side: str, target_idx: int) -> bool:
         attacker_coords = self.unit_coords if attacker_side == "model" else self.enemy_coords
@@ -1086,14 +1125,22 @@ class Warhammer40kEnv(gym.Env):
 
         obscuring_cells = self.get_terrain_obscuring_cells_set()
         self.terrain_obscuring_cells = set(obscuring_cells)
+        target_cover_cells = self._target_cover_cells_for_unit(target_side, int(target_idx), radius=3)
         report = visibility_report(
             attacker_cell,
             target_cell,
             opaque_cells_set=self.terrain_opaque_cells,
             obscuring_cells_set=obscuring_cells,
+            target_cover_cells_set=target_cover_cells,
             visibility_mode=self.visibility_mode,
         )
-        self._log_los_debug(attacker_cell, target_cell, report)
+        self._log_los_debug(
+            attacker_cell,
+            target_cell,
+            report,
+            attacker_id=self._unit_id(attacker_side, int(attacker_idx)) if hasattr(self, "_unit_id") else None,
+            target_id=self._unit_id(target_side, int(target_idx)) if hasattr(self, "_unit_id") else None,
+        )
         return bool(report.get("los", False))
 
     def _grid_distance_chebyshev(self, a: tuple[int, int], b: tuple[int, int]) -> int:
@@ -1118,11 +1165,13 @@ class Warhammer40kEnv(gym.Env):
         target_coords = self.unit_coords if target_side == "model" else self.enemy_coords
         attacker_cell = self._cell_from_coord(attacker_coords[int(attacker_idx)])
         target_cell = self._cell_from_coord(target_coords[int(target_idx)])
+        target_cover_cells = self._target_cover_cells_for_unit(target_side, int(target_idx), radius=3)
         return visibility_report(
             attacker_cell,
             target_cell,
             opaque_cells_set=self.terrain_opaque_cells,
             obscuring_cells_set=self.get_terrain_obscuring_cells_set(),
+            target_cover_cells_set=target_cover_cells,
             visibility_mode=self.visibility_mode,
         )
 

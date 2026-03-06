@@ -164,11 +164,13 @@ def _build_ray_report(crossed: list[Cell], opaque: set[Cell], obscuring: set[Cel
     middle_cells = crossed[1:-1] if len(crossed) >= 2 else []
     blocked_by = next((cell for cell in middle_cells if cell in opaque), None)
     obscured = any(cell in obscuring for cell in middle_cells)
+    obscured_cells = [cell for cell in middle_cells if cell in obscuring]
     return {
         "crossed_cells": crossed,
         "blocked_by": blocked_by,
         "los": blocked_by is None,
         "obscured": bool(obscured),
+        "obscured_cells": obscured_cells,
     }
 
 
@@ -177,11 +179,15 @@ def visibility_report(
     b_cell: Cell,
     opaque_cells_set: Iterable[Cell] | None = None,
     obscuring_cells_set: Iterable[Cell] | None = None,
+    target_cover_cells_set: Iterable[Cell] | None = None,
     visibility_mode: str = "single_ray",
 ) -> dict:
     mode = _normalize_mode(visibility_mode)
     opaque = set((int(x), int(y)) for x, y in (opaque_cells_set or []))
-    obscuring = set((int(x), int(y)) for x, y in (obscuring_cells_set or []))
+    if target_cover_cells_set is not None:
+        obscuring = set((int(x), int(y)) for x, y in (target_cover_cells_set or []))
+    else:
+        obscuring = set((int(x), int(y)) for x, y in (obscuring_cells_set or []))
 
     a_samples = get_cell_sample_points(a_cell, mode=mode)
     b_samples = get_cell_sample_points(b_cell, mode=mode)
@@ -194,11 +200,19 @@ def visibility_report(
         rays.append(ray_report)
 
     if not rays:
-        rays = [{"ray_index": 0, "crossed_cells": [a_cell, b_cell], "blocked_by": None, "los": True, "obscured": False}]
+        rays = [{
+            "ray_index": 0,
+            "crossed_cells": [a_cell, b_cell],
+            "blocked_by": None,
+            "los": True,
+            "obscured": False,
+            "obscured_cells": [],
+        }]
 
     los_any = any(ray["los"] for ray in rays)
     unblocked_rays = [ray for ray in rays if ray["los"]]
     obscured_any = any(ray["obscured"] for ray in unblocked_rays)
+    rays_obscured = sum(1 for ray in unblocked_rays if ray["obscured"])
     fully_visible = los_any and all((not ray["obscured"]) for ray in unblocked_rays) and len(unblocked_rays) == len(rays)
     partially_visible = los_any and (not fully_visible)
 
@@ -215,5 +229,7 @@ def visibility_report(
         "visibility_mode": mode,
         "rays_total": len(rays),
         "rays_clear": len(unblocked_rays),
+        "rays_obscured": int(rays_obscured),
+        "target_cover_cells_count": len(obscuring),
         "ray_reports": rays,
     }
