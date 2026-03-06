@@ -345,7 +345,30 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
                 in_range_targets.append(int(enemy_id))
 
     reachable_cells: list[list[int]] = []
-    if hasattr(env, "get_unit_reachable_cells"):
+    move_cells: list[list[int]] = []
+    advance_cells: list[list[int]] = []
+    if hasattr(env, "get_unit_movement_overlay"):
+        try:
+            overlay = env.get_unit_movement_overlay(side, idx)
+            for cell in _iter_values(overlay.get("move_cells") if isinstance(overlay, dict) else []):
+                if isinstance(cell, (list, tuple)) and len(cell) >= 2:
+                    rx = _safe_int(cell[0], None)
+                    ry = _safe_int(cell[1], None)
+                    if rx is not None and ry is not None:
+                        move_cells.append([rx, ry])
+                        reachable_cells.append([rx, ry])
+            for cell in _iter_values(overlay.get("advance_cells") if isinstance(overlay, dict) else []):
+                if isinstance(cell, (list, tuple)) and len(cell) >= 2:
+                    rx = _safe_int(cell[0], None)
+                    ry = _safe_int(cell[1], None)
+                    if rx is not None and ry is not None:
+                        advance_cells.append([rx, ry])
+                        reachable_cells.append([rx, ry])
+        except Exception:
+            reachable_cells = []
+            move_cells = []
+            advance_cells = []
+    elif hasattr(env, "get_unit_reachable_cells"):
         try:
             raw_reach = env.get_unit_reachable_cells(side, idx)
             for cell in _iter_values(raw_reach):
@@ -354,8 +377,11 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
                     ry = _safe_int(cell[1], None)
                     if rx is not None and ry is not None:
                         reachable_cells.append([rx, ry])
+                        move_cells.append([rx, ry])
         except Exception:
             reachable_cells = []
+            move_cells = []
+            advance_cells = []
 
     return {
         "in_cover": bool(in_cover),
@@ -373,6 +399,8 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
         "seen_by_ids": sorted(set(seen_by_ids)),
         "in_range_ids": sorted(set(in_range_targets)),
         "reachable_cells": reachable_cells,
+        "move_cells": move_cells,
+        "advance_cells": advance_cells,
     }
 
 
@@ -492,6 +520,42 @@ def write_state_json(env, path=None):
     elif active_side == "model":
         active_side = "model"
 
+    movement_overlay = None
+    phase_raw = str(getattr(env, "phase", "") or "").lower()
+    if ("move" in phase_raw or "движ" in phase_raw or "movement" in phase_raw) and hasattr(env, "get_unit_movement_overlay"):
+        try:
+            active_idx = int(getattr(env, "current_action_index", 0) or 0)
+        except (TypeError, ValueError):
+            active_idx = 0
+        if active_side in {"player", "model"}:
+            overlay_side = "enemy" if active_side == "player" else "model"
+            try:
+                unit_id = int(env._unit_id(overlay_side, active_idx)) if hasattr(env, "_unit_id") else None
+            except Exception:
+                unit_id = None
+            try:
+                overlay_data = env.get_unit_movement_overlay(overlay_side, active_idx)
+            except Exception:
+                overlay_data = None
+            if isinstance(overlay_data, dict):
+                movement_overlay = {
+                    "unit_id": unit_id,
+                    "move_cells": [],
+                    "advance_cells": [],
+                }
+                for cell in _iter_values(overlay_data.get("move_cells")):
+                    if isinstance(cell, (list, tuple)) and len(cell) >= 2:
+                        cx = _safe_int(cell[0], None)
+                        cy = _safe_int(cell[1], None)
+                        if cx is not None and cy is not None:
+                            movement_overlay["move_cells"].append([cx, cy])
+                for cell in _iter_values(overlay_data.get("advance_cells")):
+                    if isinstance(cell, (list, tuple)) and len(cell) >= 2:
+                        cx = _safe_int(cell[0], None)
+                        cy = _safe_int(cell[1], None)
+                        if cx is not None and cy is not None:
+                            movement_overlay["advance_cells"].append([cx, cy])
+
     payload = {
         "board": {
             "width": _safe_int(getattr(env, "b_hei", None), None),
@@ -505,6 +569,7 @@ def write_state_json(env, path=None):
         "round": _safe_int(getattr(env, "battle_round", None), None),
         "phase": getattr(env, "phase", None),
         "active": active_side,
+        "movement_overlay": movement_overlay,
         "vp": {"player": _safe_int(getattr(env, "enemyVP", None), None),
                "model": _safe_int(getattr(env, "modelVP", None), None)},
         "cp": {"player": _safe_int(getattr(env, "enemyCP", None), None),

@@ -312,6 +312,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         )
 
         command_group = QtWidgets.QGroupBox("КОМАНДЫ")
+        self.command_group = command_group
         command_layout = QtWidgets.QVBoxLayout(command_group)
         self.command_prompt = QtWidgets.QLabel("Ожидаю команду...")
         self.command_prompt.setWordWrap(True)
@@ -565,7 +566,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             else:
                 self.command_prompt.setText("Команда не требуется.")
             self.command_stack.setEnabled(False)
+            self.command_stack.setVisible(True)
             self.command_hint.setText("Горячие клавиши: —")
+            self.map_scene.set_target_cell(None)
             self._refresh_active_context()
             return
 
@@ -585,8 +588,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
         display_prompt = self._deploy_status_text if self._deploy_status_text else request.prompt
         self.command_prompt.setText(display_prompt)
         self.command_stack.setEnabled(True)
+        self.command_stack.setVisible(True)
         kind = getattr(request, "kind", "text")
-        if kind == "direction":
+        if self._is_movement_move_request(request):
+            self.command_prompt.setText(self._move_instruction_text())
+            self.command_stack.setEnabled(False)
+            self.command_stack.setVisible(False)
+            self.command_hint.setText("Горячие клавиши: ПКМ — идти, Esc — сброс выделения")
+        elif kind == "direction":
             self.command_input.setPlaceholderText("Введите команду...")
             self.command_stack.setCurrentIndex(self._command_pages["direction"])
         elif kind == "bool":
@@ -623,6 +632,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_stack.setCurrentIndex(self._command_pages["text"])
         elif kind == "deploy_coord":
             meta = getattr(request, "meta", {}) or {}
+            if self._is_movement_move_request(request):
+                self._deploy_context = dict(meta)
+                self._refresh_deploy_preview()
+                self._refresh_active_context()
+                return
             x_min = meta.get("x_min", "?")
             x_max = meta.get("x_max", "?")
             y_min = meta.get("y_min", "?")
@@ -641,6 +655,28 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_stack.setCurrentIndex(self._command_pages["text"])
         self._update_command_hint(kind)
         self._refresh_active_context()
+
+    def _move_instruction_text(self) -> str:
+        unit_id, side = self._resolve_active_unit()
+        unit = self._units_by_key.get((side, unit_id)) if unit_id is not None else None
+        unit_name = str(unit.get("name") or unit.get("unit_name") or "—") if isinstance(unit, dict) else "—"
+        unit_label = str(unit_id) if unit_id is not None else "—"
+        return (
+            f"Ходьба: Unit {unit_label} — {unit_name}\n"
+            "ЛКМ: выделить/hover клетку\n"
+            "ПКМ: идти в клетку\n"
+            "Синий: обычный Move (до M)\n"
+            "Жёлтый: Advance (до M+6)\n"
+            "Esc: отмена/снять выделение"
+        )
+
+    def _is_movement_move_request(self, request) -> bool:
+        if not self._is_move_cell_request(request):
+            return False
+        phase = None
+        if self.state_watcher and self.state_watcher.state:
+            phase = self.state_watcher.state.get("phase")
+        return self._is_movement_phase(phase)
 
     def _finish_active_request(self) -> None:
         self._awaiting_player_action = False
@@ -743,6 +779,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.add_log_line(f"REQ: target selected Unit {target_label}, confirm enabled")
 
     def _on_cell_clicked(self, x: int, y: int) -> None:
+        if self._is_movement_move_request(self._pending_request):
+            self.map_scene.set_target_cell((x, y))
+            return
         if not self._is_deploy_request(self._pending_request):
             return
         self.map_scene.set_target_cell((x, y))
@@ -762,12 +801,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         if not self.map_scene.is_reachable_cell(x, y):
             return
+        move_mode = "normal" if self.map_scene.is_move_cell(x, y) else "advance" if self.map_scene.is_advance_cell(x, y) else None
+        if move_mode is None:
+            return
         self.map_scene.set_target_cell((x, y))
         self.command_input.setText(f"{x} {y}")
-        self.add_log_line(f"REQ: move cell accepted (RMB) x={x}, y={y}")
-        self._submit_answer({"x": x, "y": y})
+        self.add_log_line(f"REQ: move cell accepted (RMB) x={x}, y={y}, mode={move_mode}")
+        self._submit_answer({"x": x, "y": y, "mode": move_mode})
 
     def _on_cell_hovered(self, state_pos) -> None:
+        if self._is_movement_move_request(self._pending_request):
+            return
         if state_pos is None:
             self._deploy_hover_cell = None
         else:
@@ -878,7 +922,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         elif kind == "choice":
             self.command_hint.setText("Горячие клавиши: Enter — выбрать")
         elif kind == "deploy_coord":
-            if self._is_move_cell_request(self._pending_request):
+            if self._is_movement_move_request(self._pending_request):
+                self.command_hint.setText("ПКМ по подсвеченной клетке. ЛКМ/Esc — только выделение/сброс")
+            elif self._is_move_cell_request(self._pending_request):
                 self.command_hint.setText("RMB по подсвеченной клетке или введите X Y, затем Enter")
             else:
                 self.command_hint.setText("Кликните клетку на поле или введите X Y, затем Enter")
@@ -969,6 +1015,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _submit_text(self):
         text = self.command_input.text().strip()
+        if self._is_movement_move_request(self._pending_request):
+            self.add_log_line("Ходьба: ввод с клавиатуры отключён. Что делать дальше: используйте ПКМ по подсвеченной клетке.")
+            return
         if self._is_deploy_request(self._pending_request) or self._is_move_cell_request(self._pending_request):
             parts = [p for p in re.split(r"[\s,;:]+", text) if p]
             if len(parts) != 2:
@@ -1888,6 +1937,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             kind = getattr(self._pending_request, "kind", "")
             key = event.key()
             text = event.text().lower()
+            if self._is_movement_move_request(self._pending_request) and key == QtCore.Qt.Key_Escape:
+                self.map_scene.set_target_cell(None)
+                return True
             if kind == "direction":
                 if key == QtCore.Qt.Key_Up:
                     self._submit_answer("up")
