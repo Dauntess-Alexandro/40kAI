@@ -27,6 +27,17 @@ def _safe_float(value, fallback=None):
         return fallback
 
 
+def _iter_values(value):
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    try:
+        return list(value)
+    except TypeError:
+        return [value]
+
+
 def _normalize_facing(value):
     raw = str(value or "").strip().lower()
     if raw in {"left", "l", "west", "w", "-1"}:
@@ -128,7 +139,7 @@ def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, ancho
         "y": _safe_int(coords[0], None) if coords is not None else None,
         "anchor_x": _safe_int(anchor[1], None) if anchor is not None else None,
         "anchor_y": _safe_int(anchor[0], None) if anchor is not None else None,
-        "model_positions": model_positions or [],
+        "model_positions": _iter_values(model_positions),
         "facing": facing,
         "keywords": keywords,
     }
@@ -140,7 +151,7 @@ def _status_debug_enabled() -> bool:
 
 
 def _objective_state_for_unit(env, side: str, unit_cell: tuple[int, int]) -> str | None:
-    objectives = list(getattr(env, "coordsOfOM", []) or [])
+    objectives = _iter_values(getattr(env, "coordsOfOM", None))
     if not objectives:
         return None
     for idx, coords in enumerate(objectives):
@@ -279,22 +290,25 @@ def write_state_json(env, path=None):
         })
 
     terrain_features = []
-    for feature in (getattr(env, "terrain_features", []) or []):
+    for feature in _iter_values(getattr(env, "terrain_features", None)):
         if not isinstance(feature, dict):
             continue
         cells = []
-        for cell in (feature.get("cells") or []):
+        for cell in _iter_values(feature.get("cells")):
             if not isinstance(cell, (list, tuple)) or len(cell) < 2:
                 continue
             cells.append([_safe_int(cell[0], None), _safe_int(cell[1], None)])
-        keywords = [str(v) for v in list(feature.get("keywords") or feature.get("tags") or [])]
+        raw_keywords = feature.get("keywords")
+        if raw_keywords is None:
+            raw_keywords = feature.get("tags")
+        keywords = [str(v) for v in _iter_values(raw_keywords)]
         terrain_features.append({
             "id": str(feature.get("id") or ""),
             "kind": str(feature.get("kind") or "barricade"),
             "name": str(feature.get("name") or feature.get("kind") or "Terrain"),
             "keywords": keywords,
             "cells": cells,
-            "cell_rotations": [_safe_int(v, 0) for v in list(feature.get("cell_rotations") or [])],
+            "cell_rotations": [_safe_int(v, 0) for v in _iter_values(feature.get("cell_rotations"))],
             "tags": keywords,
             "opacity": str(feature.get("opacity") or "obscuring"),
             "sprite": str(feature.get("sprite") or ""),
