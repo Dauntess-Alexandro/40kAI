@@ -291,10 +291,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._tooltip_widget.weapon_hovered.connect(self._on_tooltip_weapon_hovered)
         self._tooltip_widget.weapon_hover_left.connect(self._on_tooltip_weapon_hover_left)
         self._tooltip_widget.copy_stats_requested.connect(self._on_tooltip_copy_stats_requested)
+        self._tooltip_widget.status_chip_hovered.connect(self._on_status_chip_hovered)
+        self._tooltip_widget.status_chip_left.connect(self._on_status_chip_left)
         self._terrain_tooltip_widget = TerrainTooltipWidget(self)
         self._viewer_debug_enabled = str(os.getenv("VIEWER_DEBUG", "0")).strip() == "1"
         self._hover_terrain_feature: Optional[dict] = None
         self._hover_weapon_range: Optional[int] = None
+        self._hover_status_enemy_ids: List[int] = []
         self._last_terrain_hover_debug_sig: Optional[Tuple[int, int, str]] = None
         self._unit_data = self._load_unit_data()
         self._unit_data_by_name = self._index_unit_data(self._unit_data)
@@ -1574,6 +1577,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._hover_tooltip_text = None
         self._hover_candidate_key = None
         self._hover_weapon_range = None
+        self._hover_status_enemy_ids = []
         self._tooltip_widget.hide_animated()
         self._terrain_tooltip_widget.hide_animated()
         if self._tooltip_follow_timer.isActive():
@@ -3166,6 +3170,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if clipboard is not None:
             clipboard.setText(str(text or ""))
 
+    def _on_status_chip_hovered(self, ids: object) -> None:
+        if isinstance(ids, list):
+            self._hover_status_enemy_ids = [int(v) for v in ids if isinstance(v, (int, float, str)) and str(v).strip().isdigit()]
+        else:
+            self._hover_status_enemy_ids = []
+        self.update()
+
+    def _on_status_chip_left(self) -> None:
+        if not self._hover_status_enemy_ids:
+            return
+        self._hover_status_enemy_ids = []
+        self.update()
+
     def _update_hover_tooltip(self, event: QtGui.QMouseEvent, world: QtCore.QPointF, screen_pos: QtCore.QPointF) -> None:
         if self._board_rect.isEmpty():
             self._clear_hover_tooltip()
@@ -3589,7 +3606,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def _unit_threat_summary(self, unit: dict) -> Dict[str, object]:
         enemies = [u for u in (self._state.get("units", []) or []) if u.get("side") != unit.get("side")]
         unit_cell = self._unit_anchor_view_cell(unit)
-        enemies_seeing = 0
+        unit_status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else {}
+        obscured_vs = [int(v) for v in list(unit_status.get("obscured_vs") or []) if str(v).strip().isdigit()]
+        exposed_to = [int(v) for v in list(unit_status.get("exposed_to") or []) if str(v).strip().isdigit()]
+        enemies_seeing = len(set(obscured_vs + exposed_to))
         targets_in_range = 0
         if unit_cell is not None:
             ux, uy = unit_cell
@@ -3610,12 +3630,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     dist = abs(e_cell[0] - ux) + abs(e_cell[1] - uy)
                     if dist <= own_range:
                         targets_in_range += 1
-        unit_status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else {}
         obscured = self._read_first_bool(unit_status, ("obscured",))
         fully_visible = self._read_first_bool(unit_status, ("fully_visible",))
         los_bool = enemies_seeing > 0
         if fully_visible is None:
             fully_visible = los_bool and not bool(obscured)
+        if isinstance(unit_status.get("in_range_targets"), list):
+            targets_in_range = len([v for v in unit_status.get("in_range_targets") if isinstance(v, (int, float, str)) and str(v).strip().isdigit()])
         return {
             "los": "✔" if los_bool else "✖",
             "obscured": "✔" if obscured else ("✖" if obscured is not None else "—"),
@@ -3625,6 +3646,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
             "in_cover": self._read_first_bool(unit_status, ("in_cover",)),
             "objective_status": self._unit_objective_status(unit),
             "enemies_in_los_keys": self._enemy_keys_in_range_of(unit),
+            "obscured_vs": obscured_vs,
+            "exposed_to": exposed_to,
+            "engagement_with": [int(v) for v in list(unit_status.get("engagement_with") or []) if str(v).strip().isdigit()],
         }
 
     def _primary_ranged_range(self, unit: dict) -> Optional[int]:
@@ -3686,18 +3710,44 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def _unit_status_chips(self, threat: Dict[str, object]) -> List[Dict[str, str]]:
         chips: List[Dict[str, str]] = []
         if threat.get("in_cover") is True:
-            chips.append({"label": "🛡 IN COVER", "tone": "good"})
-        if threat.get("obscured") == "✔":
-            chips.append({"label": "👁 OBSCURED", "tone": "status_obscured"})
-        elif threat.get("fully_visible") and isinstance(threat.get("enemies_seeing"), int) and int(threat.get("enemies_seeing")) > 0:
-            chips.append({"label": "⚠ EXPOSED", "tone": "status_exposed"})
+            chips.append({"label": "🛡 IN COVER", "tone": "good", "ids": []})
+        obscured_vs = [int(v) for v in list(threat.get("obscured_vs") or [])]
+        exposed_to = [int(v) for v in list(threat.get("exposed_to") or [])]
+        if obscured_vs:
+            chips.append({
+                "label": f"👁 OBSCURED vs {self._format_id_list(obscured_vs)}",
+                "tone": "status_obscured",
+                "ids": obscured_vs,
+            })
+        if exposed_to:
+            chips.append({
+                "label": f"⚠ EXPOSED to {self._format_id_list(exposed_to)}",
+                "tone": "status_exposed",
+                "ids": exposed_to,
+            })
         objective_status = threat.get("objective_status")
         if objective_status:
             if str(objective_status).upper() == "HOLDING":
-                chips.append({"label": "🏁 OBJECTIVE: HOLDING", "tone": "status_holding"})
+                chips.append({"label": "🏁 HOLDING", "tone": "status_holding", "ids": []})
             else:
-                chips.append({"label": "⚔ OBJECTIVE: CONTESTING", "tone": "status_contesting"})
+                chips.append({"label": "⚔ CONTESTING", "tone": "status_contesting", "ids": []})
+        engagement = [int(v) for v in list(threat.get("engagement_with") or [])]
+        if engagement:
+            chips.append({
+                "label": f"⚔ IN ENGAGEMENT vs {self._format_id_list(engagement)}",
+                "tone": "status_contesting",
+                "ids": engagement,
+            })
         return chips
+
+    def _format_id_list(self, ids: List[int]) -> str:
+        values = sorted({int(v) for v in ids})
+        if not values:
+            return "—"
+        if len(values) <= 3:
+            return ",".join(str(v) for v in values)
+        head = ",".join(str(v) for v in values[:2])
+        return f"{head} +{len(values) - 2}"
 
     def _enemy_keys_in_range_of(self, unit: dict, forced_range: Optional[int] = None) -> List[Tuple[str, int]]:
         unit_cell = self._unit_anchor_view_cell(unit)
@@ -3955,6 +4005,20 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 if target is None:
                     continue
                 painter.drawEllipse(target.center, target.radius + 5, target.radius + 5)
+
+        if self._hover_status_enemy_ids:
+            s_pen = QtGui.QPen(QtGui.QColor(255, 245, 120, 230), 1.6)
+            s_pen.setCosmetic(True)
+            painter.setPen(s_pen)
+            painter.setBrush(QtGui.QColor(255, 245, 120, 24))
+            for key, target in self._unit_by_key.items():
+                if target is None:
+                    continue
+                if key[0] == unit.get("side"):
+                    continue
+                if int(key[1]) not in self._hover_status_enemy_ids:
+                    continue
+                painter.drawEllipse(target.center, target.radius + 7, target.radius + 7)
         painter.restore()
 
     def _unit_display_name(self, unit: dict) -> str:

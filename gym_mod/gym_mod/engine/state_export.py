@@ -201,6 +201,7 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
     own_coords = env.unit_coords if side == "model" else env.enemy_coords
     enemy_coords = env.enemy_coords if side == "model" else env.unit_coords
     enemy_weapon = env.enemy_weapon if side == "model" else env.unit_weapon
+    own_weapon = env.unit_weapon if side == "model" else env.enemy_weapon
     unit_data = env._get_unit_data(side, idx) if hasattr(env, "_get_unit_data") else {}
 
     if idx >= len(own_coords):
@@ -215,6 +216,8 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
     enemies_seeing = 0
     obscured_seen = 0
     fully_visible_seen = 0
+    obscured_vs: list[int] = []
+    exposed_to: list[int] = []
     for enemy_idx, enemy in enumerate(enemy_coords):
         if not isinstance(enemy, (list, tuple)) or len(enemy) < 2:
             continue
@@ -235,11 +238,16 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
             range_limit = float(enemy_weapon[enemy_idx].get("Range", 0) or 0)
         if distance > range_limit:
             continue
+        enemy_id = env._unit_id("enemy" if side == "model" else "model", enemy_idx) if hasattr(env, "_unit_id") else None
         enemies_seeing += 1
         if bool(report.get("fully_visible", False)):
             fully_visible_seen += 1
         if bool(report.get("obscured", False)):
             obscured_seen += 1
+            if enemy_id is not None:
+                obscured_vs.append(int(enemy_id))
+        elif enemy_id is not None:
+            exposed_to.append(int(enemy_id))
 
     obscured = enemies_seeing > 0 and obscured_seen > 0
     fully_visible = enemies_seeing > 0 and fully_visible_seen == enemies_seeing
@@ -254,11 +262,60 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
                 in_cover = min_dist <= 3 and obscured
 
     objective_state = _objective_state_for_unit(env, side, unit_cell)
+
+    engagement_with: list[int] = []
+    for enemy_idx, enemy in enumerate(enemy_coords):
+        if not isinstance(enemy, (list, tuple)) or len(enemy) < 2:
+            continue
+        enemy_hp = env.enemy_health[enemy_idx] if side == "model" else env.unit_health[enemy_idx]
+        if float(enemy_hp or 0.0) <= 0:
+            continue
+        enemy_cell = (int(enemy[0]), int(enemy[1]))
+        if max(abs(enemy_cell[0] - unit_cell[0]), abs(enemy_cell[1] - unit_cell[1])) <= 1:
+            enemy_id = env._unit_id("enemy" if side == "model" else "model", enemy_idx) if hasattr(env, "_unit_id") else None
+            if enemy_id is not None:
+                engagement_with.append(int(enemy_id))
+
+    in_range_targets: list[int] = []
+    own_range = 0.0
+    if idx < len(own_weapon) and isinstance(own_weapon[idx], dict):
+        own_range = float(own_weapon[idx].get("Range", 0) or 0)
+    if own_range > 0:
+        for enemy_idx, enemy in enumerate(enemy_coords):
+            if not isinstance(enemy, (list, tuple)) or len(enemy) < 2:
+                continue
+            enemy_hp = env.enemy_health[enemy_idx] if side == "model" else env.unit_health[enemy_idx]
+            if float(enemy_hp or 0.0) <= 0:
+                continue
+            attacker_cell = unit_cell
+            target_cell = (int(enemy[0]), int(enemy[1]))
+            distance = max(abs(attacker_cell[0] - target_cell[0]), abs(attacker_cell[1] - target_cell[1]))
+            if distance > own_range:
+                continue
+            target_cover_cells = _target_cover_cells(env, target_cell, radius=3)
+            report = visibility_report(
+                attacker_cell,
+                target_cell,
+                opaque_cells_set=opaque_cells,
+                obscuring_cells_set=obscuring_cells,
+                target_cover_cells_set=target_cover_cells,
+                visibility_mode=visibility_mode,
+            )
+            if not bool(report.get("los", False)):
+                continue
+            enemy_id = env._unit_id("enemy" if side == "model" else "model", enemy_idx) if hasattr(env, "_unit_id") else None
+            if enemy_id is not None:
+                in_range_targets.append(int(enemy_id))
+
     return {
         "in_cover": bool(in_cover),
         "obscured": bool(obscured),
         "fully_visible": bool(fully_visible),
         "objective_state": objective_state,
+        "obscured_vs": sorted(set(obscured_vs)),
+        "exposed_to": sorted(set(exposed_to)),
+        "engagement_with": sorted(set(engagement_with)),
+        "in_range_targets": sorted(set(in_range_targets)),
     }
 
 
@@ -304,7 +361,10 @@ def write_state_json(env, path=None):
             env._append_agent_log(
                 f"[STATUS] unit={unit.get('id')} in_cover={bool(status.get('in_cover'))} "
                 f"obscured={bool(status.get('obscured'))} fully_visible={bool(status.get('fully_visible'))} "
-                f"objective={status.get('objective_state') or '-'}"
+                f"objective={status.get('objective_state') or '-'} "
+                f"obscured_vs={status.get('obscured_vs') or []} "
+                f"exposed_to={status.get('exposed_to') or []} "
+                f"engagement={status.get('engagement_with') or []}"
             )
 
     objectives = []

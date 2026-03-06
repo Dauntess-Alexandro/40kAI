@@ -62,10 +62,32 @@ class _WeaponRowWidget(QtWidgets.QFrame):
         super().enterEvent(event)
 
 
+class _StatusChipLabel(QtWidgets.QLabel):
+    hovered_ids = QtCore.Signal(object)
+    hover_left = QtCore.Signal()
+
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None):
+        super().__init__(parent)
+        self._ids: List[int] = []
+
+    def set_ids(self, ids: List[int]) -> None:
+        self._ids = [int(v) for v in list(ids or [])]
+
+    def enterEvent(self, event: QtCore.QEvent) -> None:
+        self.hovered_ids.emit(list(self._ids))
+        super().enterEvent(event)
+
+    def leaveEvent(self, event: QtCore.QEvent) -> None:
+        self.hover_left.emit()
+        super().leaveEvent(event)
+
+
 class UnitTooltipWidget(QtWidgets.QFrame):
     weapon_hovered = QtCore.Signal(object)
     weapon_hover_left = QtCore.Signal()
     copy_stats_requested = QtCore.Signal(str)
+    status_chip_hovered = QtCore.Signal(object)
+    status_chip_left = QtCore.Signal()
 
     def __init__(
         self,
@@ -183,9 +205,11 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         status_layout.setSpacing(6)
         self._status_chip_labels: List[QtWidgets.QLabel] = []
         for i in range(6):
-            chip = QtWidgets.QLabel(self._status_row)
+            chip = _StatusChipLabel(self._status_row)
             chip.setObjectName(f"unitTooltipStatusBadge{i}")
             chip.setFont(Theme.font(size=8, bold=True))
+            chip.hovered_ids.connect(self.status_chip_hovered.emit)
+            chip.hover_left.connect(self.status_chip_left.emit)
             chip.hide()
             status_layout.addWidget(chip)
             self._status_chip_labels.append(chip)
@@ -319,6 +343,7 @@ class UnitTooltipWidget(QtWidgets.QFrame):
                 continue
             chip.setText(label)
             chip.setProperty("tone", str(entry.get("tone") or "neutral"))
+            chip.set_ids(list(entry.get("ids") or []))
             chip.style().unpolish(chip)
             chip.style().polish(chip)
             chip.show()
