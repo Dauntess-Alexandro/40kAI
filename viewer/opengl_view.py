@@ -311,6 +311,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         assets_root = resolve_asset_path("")
         self._texture_manager = TextureManager(assets_root)
         self._unit_icon_by_name = self._build_unit_icon_map()
+        self._faction_icon_by_keyword = self._build_faction_icon_map()
         self._ground_textures: List[QtGui.QPixmap] = []
         self._prop_textures: Dict[str, QtGui.QPixmap] = {}
         self._shadow_textures: Dict[str, QtGui.QPixmap] = {}
@@ -2158,6 +2159,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 return pixmap
         return None
 
+    def _build_faction_icon_map(self) -> Dict[str, QtGui.QPixmap]:
+        icon_links = {
+            "NECRONS": "../gui_qt/assets/necrons.png",
+        }
+        icon_map: Dict[str, QtGui.QPixmap] = {}
+        for keyword, rel_path in icon_links.items():
+            pixmap = self._texture_manager.load_png(rel_path)
+            if pixmap is None or pixmap.isNull():
+                continue
+            icon_map[keyword.upper()] = pixmap
+        return icon_map
+
     def _fx_color_for_unit(self, unit: Optional[dict]) -> Tuple[QtGui.QColor, float]:
         if self._is_necron(unit):
             return QtGui.QColor(100, 255, 140), 1.0
@@ -3468,6 +3481,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
             "unit_id": unit_id,
             "side": unit.get("side") or "—",
             "portrait": self._unit_portrait_glyph(unit),
+            "portrait_icon": self._icon_for_unit_name(str(unit.get("name") or "")),
+            "faction_icon": self._unit_faction_icon(unit),
             "models": models,
             "wounds": wounds_label,
             "wounds_value": wounds_value,
@@ -3530,8 +3545,25 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return "☥"
         return "⚔"
 
+    def _unit_faction_icon(self, unit: dict) -> Optional[QtGui.QPixmap]:
+        for keyword in self._unit_keywords(unit):
+            icon = self._faction_icon_by_keyword.get(keyword.upper())
+            if icon is not None and not icon.isNull():
+                return icon
+        return None
+
+    def _unit_keywords(self, unit: dict) -> List[str]:
+        profile = self._unit_profile(unit) or {}
+        keywords: List[str] = []
+        raw = profile.get("KEYWORDS") or profile.get("keywords")
+        if isinstance(raw, list):
+            keywords.extend([str(v) for v in raw])
+        elif isinstance(raw, str):
+            keywords.extend([v.strip() for v in raw.split(",")])
+        return [k.strip().upper() for k in keywords if str(k).strip()]
+
     def _unit_tags(self, unit: dict) -> List[str]:
-        tags: List[str] = []
+        tags: List[str] = self._unit_keywords(unit)
         for key in ("keywords", "tags"):
             value = unit.get(key)
             if isinstance(value, list):
@@ -3636,7 +3668,12 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return None
 
     def _unit_tooltip_chips(self, unit: dict, threat: Dict[str, object]) -> List[Dict[str, str]]:
-        chips = [{"label": tag, "tone": "neutral"} for tag in self._unit_tags(unit)[:4]]
+        static_tags = self._unit_tags(unit)
+        limit = 5
+        chips = [{"label": tag, "tone": "neutral"} for tag in static_tags[:limit]]
+        rest = len(static_tags) - limit
+        if rest > 0:
+            chips.append({"label": f"+{rest}", "tone": "neutral"})
         if threat.get("in_cover") is True:
             chips.append({"label": "IN COVER", "tone": "good"})
         if threat.get("obscured") == "✔":

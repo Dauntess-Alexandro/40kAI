@@ -117,6 +117,12 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         self._portrait.setAlignment(QtCore.Qt.AlignCenter)
         self._portrait.setObjectName("unitTooltipPortrait")
 
+        self._faction_icon = QtWidgets.QLabel(self)
+        self._faction_icon.setFixedSize(16, 16)
+        self._faction_icon.setAlignment(QtCore.Qt.AlignCenter)
+        self._faction_icon.setObjectName("unitTooltipFactionIcon")
+        self._faction_icon.hide()
+
         self._title_label = QtWidgets.QLabel(self)
         self._title_label.setFont(Theme.font(size=11, bold=True))
         self._title_label.setObjectName("unitTooltipTitle")
@@ -146,6 +152,7 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         header_layout.setSpacing(6)
         header_layout.addWidget(self._marker)
         header_layout.addWidget(self._portrait, 0, QtCore.Qt.AlignVCenter)
+        header_layout.addWidget(self._faction_icon, 0, QtCore.Qt.AlignVCenter)
         header_layout.addWidget(self._title_label, 1)
         header_layout.addWidget(self._status_label)
 
@@ -231,7 +238,34 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         unit_id = payload.get("unit_id", "—")
         self._meta_label.setText(f"ID: {unit_id} • Side: {payload.get('side', '—')}")
 
-        self._portrait.setText(str(payload.get("portrait") or "⚔"))
+        portrait_icon = payload.get("portrait_icon")
+        if isinstance(portrait_icon, QtGui.QPixmap) and not portrait_icon.isNull():
+            self._portrait.setPixmap(
+                portrait_icon.scaled(
+                    18,
+                    18,
+                    QtCore.Qt.KeepAspectRatio,
+                    QtCore.Qt.SmoothTransformation,
+                )
+            )
+            self._portrait.setText("")
+        else:
+            self._portrait.setPixmap(QtGui.QPixmap())
+            self._portrait.setText(str(payload.get("portrait") or "⚔"))
+
+        faction_icon = payload.get("faction_icon")
+        if isinstance(faction_icon, QtGui.QPixmap) and not faction_icon.isNull():
+            self._faction_icon.setPixmap(
+                faction_icon.scaled(
+                    14,
+                    14,
+                    QtCore.Qt.KeepAspectRatio,
+                    QtCore.Qt.SmoothTransformation,
+                )
+            )
+            self._faction_icon.show()
+        else:
+            self._faction_icon.hide()
 
         status_bits: List[str] = []
         if self._pinned:
@@ -258,8 +292,7 @@ class UnitTooltipWidget(QtWidgets.QFrame):
 
         threat = payload.get("threat") or {}
         self._threat_label.setText(
-            f"LoS: {threat.get('los', '—')}   •   Obscured: {threat.get('obscured', '—')}   •   "
-            f"Enemies seeing me: {threat.get('enemies_seeing', '—')}   •   "
+            f"LoS: {threat.get('los', '—')}   •   Enemies seeing me: {threat.get('enemies_seeing', '—')}   •   "
             f"Targets in range: {threat.get('targets_in_range', '—')}"
         )
 
@@ -298,6 +331,7 @@ class UnitTooltipWidget(QtWidgets.QFrame):
             QFrame#unitTooltip { background-color: %(bg)s; border: 1px solid %(accent)s; border-radius: 12px; }
             QFrame#unitTooltipMarker { background-color: %(accent)s; border-radius: 3px; }
             QLabel#unitTooltipPortrait { color: #201708; background: rgba(214, 172, 92, 0.92); border-radius: 10px; }
+            QLabel#unitTooltipFactionIcon { background: rgba(15,16,18,0.35); border-radius: 8px; padding: 1px; }
             QLabel#unitTooltipTitle { color: %(text)s; }
             QLabel#unitTooltipMeta { color: %(muted)s; }
             QLabel#unitTooltipStatus { color: %(accent)s; }
