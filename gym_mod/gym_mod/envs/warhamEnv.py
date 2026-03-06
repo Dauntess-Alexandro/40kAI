@@ -3094,6 +3094,12 @@ class Warhammer40kEnv(gym.Env):
                             advance_roll = int(roll)
                             self._log(f"Бросок: {roll}", verbose_only=True)
                             movement_cap = self.enemy_data[i]["Movement"] + roll
+                            # Пушим state сразу после броска Advance,
+                            # чтобы viewer обновил синий круг до выбора финальной клетки.
+                            self.enemy_used_advance[i] = True
+                            self.enemy_advance_roll[i] = advance_roll
+                            self.updateBoard()
+                            self.showBoard()
                         else:
                             movement_cap = self.enemy_data[i]["Movement"]
                         move_num = self._prompt_int(
