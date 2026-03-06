@@ -1819,6 +1819,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._draw_platform_fx_layer(painter)
         if self.render_terrain:
             self.draw_terrain_features(painter)
+        self._draw_hovered_terrain_cells_layer(painter)
         self._draw_units_layer(painter)
         self._draw_deploy_snap_fx_layer(painter)
         self._draw_selection_layer(painter)
@@ -3585,7 +3586,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         kind = str(feature.get("kind") or "terrain")
         name = str(feature.get("name") or "").strip()
         title = name if name else f"Terrain: {kind}"
-        keywords = ", ".join([str(v) for v in list(feature.get("keywords") or [])]) or "—"
+        keywords = [str(v).strip() for v in list(feature.get("keywords") or []) if str(v).strip()]
 
         coords: List[Tuple[int, int]] = []
         for cell in list(feature.get("cells") or []):
@@ -3598,13 +3599,47 @@ class OpenGLBoardWidget(QOpenGLWidget):
         coords.sort(key=lambda pos: (pos[0], pos[1]))
         coords_text = " ".join(f"({x},{y})" for x, y in coords) if coords else "—"
 
-        lines = [
-            f"ID: {feature.get('id') or '—'}",
-            f"Type: {kind}",
-            f"Keywords: {keywords}",
-            f"Coords: {coords_text}",
+        kind_lower = kind.lower()
+        rules_lines = [
+            "Rules: No deploy • No end move on top",
+            "Cover: INFANTRY within 3\" if obscured",
         ]
-        return {"title": title, "id": feature.get("id") or "—", "lines": lines}
+        kind_badge = "B" if "barricade" in kind_lower else "T"
+        return {
+            "title": title,
+            "id": feature.get("id") or "—",
+            "terrain_type": kind,
+            "keywords": keywords,
+            "coords": coords_text,
+            "rules": rules_lines,
+            "kind_badge": kind_badge,
+        }
+
+    def _draw_hovered_terrain_cells_layer(self, painter: QtGui.QPainter) -> None:
+        feature = self._hover_terrain_feature
+        if not isinstance(feature, dict):
+            return
+        cells = list(feature.get("cells") or [])
+        if not cells:
+            return
+        painter.save()
+        pen = QtGui.QPen(QtGui.QColor(247, 186, 78, 215), 1.8)
+        pen.setCosmetic(True)
+        painter.setPen(pen)
+        painter.setBrush(QtGui.QColor(247, 186, 78, 45))
+        for cell in cells:
+            if not isinstance(cell, (list, tuple)) or len(cell) < 2:
+                continue
+            row = int(cell[0])
+            col = int(cell[1])
+            rect = QtCore.QRectF(
+                col * self.cell_size,
+                row * self.cell_size,
+                self.cell_size,
+                self.cell_size,
+            )
+            painter.drawRect(rect)
+        painter.restore()
 
     def _unit_display_name(self, unit: dict) -> str:
         name = str(unit.get("name") or "").strip()
