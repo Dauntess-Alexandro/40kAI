@@ -828,6 +828,10 @@ class Warhammer40kEnv(gym.Env):
         self.enemy_anchor_coords = []
         self.unit_model_positions = []
         self.enemy_model_positions = []
+        self.model_used_advance: list[bool] = []
+        self.enemy_used_advance: list[bool] = []
+        self.model_advance_roll: list[int | None] = []
+        self.enemy_advance_roll: list[int | None] = []
 
         self.game_over = False
         self.unitInAttack = []
@@ -886,6 +890,8 @@ class Warhammer40kEnv(gym.Env):
             self.enemyInAttack.append([0, 0])
             self.enemyOC.append(enemy[i].showUnitData()["OC"])
         self.enemyFellBack = [False] * len(self.enemy_health)
+        self.enemy_used_advance = [False] * len(self.enemy_health)
+        self.enemy_advance_roll = [None] * len(self.enemy_health)
         self.enemy_hp_max_total = max(
             1,
             sum(
@@ -904,6 +910,8 @@ class Warhammer40kEnv(gym.Env):
             self.unitInAttack.append([0, 0])
             self.modelOC.append(model[i].showUnitData()["OC"])
         self.unitFellBack = [False] * len(self.unit_health)
+        self.model_used_advance = [False] * len(self.unit_health)
+        self.model_advance_roll = [None] * len(self.unit_health)
         self.model_hp_max_total = max(
             1,
             sum(
@@ -1065,18 +1073,57 @@ class Warhammer40kEnv(gym.Env):
         raw = str(os.getenv("LOS_DEBUG", "1")).strip().lower()
         return raw not in {"0", "false", "off", "no"}
 
-    def _log_los_debug(self, attacker_cell: tuple[int, int], target_cell: tuple[int, int], report: dict) -> None:
+    def _log_los_debug(
+        self,
+        attacker_cell: tuple[int, int],
+        target_cell: tuple[int, int],
+        report: dict,
+        *,
+        attacker_id: int | None = None,
+        target_id: int | None = None,
+    ) -> None:
         if not self._los_debug_enabled():
             return
         crossed = report.get("crossed_cells") or []
         preview = crossed if len(crossed) <= 12 else (crossed[:6] + ["..."] + crossed[-5:])
+        obscured_example = None
+        obscured_dist = None
+        ray_reports = report.get("ray_reports") or []
+        for ray in ray_reports:
+            cells = ray.get("obscured_cells") or []
+            if not cells:
+                continue
+            obscured_example = cells[0]
+            obscured_dist = self._grid_distance_chebyshev(obscured_example, target_cell)
+            break
         self._append_agent_log(
             "LOS_DEBUG | "
+            f"attacker_id={attacker_id if attacker_id is not None else '-'} "
+            f"target_id={target_id if target_id is not None else '-'} "
             f"mode={report.get('visibility_mode')} a_cell={attacker_cell} b_cell={target_cell} "
             f"crossed_cells={preview} los={report.get('los')} "
             f"obscured={report.get('obscured')} fully_visible={report.get('fully_visible')} "
-            f"rays={report.get('rays_clear')}/{report.get('rays_total')} blocked_by={report.get('blocked_by')}"
+            f"rays={report.get('rays_clear')}/{report.get('rays_total')} rays_obscured={report.get('rays_obscured')} "
+            f"target_cover_cells={report.get('target_cover_cells_count')} "
+            f"obscured_cell={obscured_example if obscured_example is not None else '-'} "
+            f"obscured_cell_dist={obscured_dist if obscured_dist is not None else '-'} "
+            f"blocked_by={report.get('blocked_by')}"
         )
+
+    def _target_cover_cells_for_unit(self, target_side: str, target_idx: int, radius: int = 3) -> set[tuple[int, int]]:
+        coords = self.unit_coords if target_side == "model" else self.enemy_coords
+        if not (0 <= int(target_idx) < len(coords)):
+            return set()
+        target_cell = self._cell_from_coord(coords[int(target_idx)])
+        obstacle_cells = self.get_terrain_obscuring_cells_set()
+        if not obstacle_cells:
+            return set()
+        cover_cells = {
+            (int(cell[0]), int(cell[1]))
+            for cell in obstacle_cells
+            if self._grid_distance_chebyshev((int(cell[0]), int(cell[1])), target_cell) <= int(radius)
+        }
+        return cover_cells
 
     def _has_line_of_sight(self, attacker_side: str, attacker_idx: int, target_side: str, target_idx: int) -> bool:
         attacker_coords = self.unit_coords if attacker_side == "model" else self.enemy_coords
@@ -1086,14 +1133,22 @@ class Warhammer40kEnv(gym.Env):
 
         obscuring_cells = self.get_terrain_obscuring_cells_set()
         self.terrain_obscuring_cells = set(obscuring_cells)
+        target_cover_cells = self._target_cover_cells_for_unit(target_side, int(target_idx), radius=3)
         report = visibility_report(
             attacker_cell,
             target_cell,
             opaque_cells_set=self.terrain_opaque_cells,
             obscuring_cells_set=obscuring_cells,
+            target_cover_cells_set=target_cover_cells,
             visibility_mode=self.visibility_mode,
         )
-        self._log_los_debug(attacker_cell, target_cell, report)
+        self._log_los_debug(
+            attacker_cell,
+            target_cell,
+            report,
+            attacker_id=self._unit_id(attacker_side, int(attacker_idx)) if hasattr(self, "_unit_id") else None,
+            target_id=self._unit_id(target_side, int(target_idx)) if hasattr(self, "_unit_id") else None,
+        )
         return bool(report.get("los", False))
 
     def _grid_distance_chebyshev(self, a: tuple[int, int], b: tuple[int, int]) -> int:
@@ -1113,16 +1168,70 @@ class Warhammer40kEnv(gym.Env):
                     cells.append((int(raw_cell[0]), int(raw_cell[1])))
         return cells
 
+    def _movement_budget_for_unit(self, side: str, idx: int) -> int:
+        data = self.unit_data if side == "model" else self.enemy_data
+        base_move = 0
+        if 0 <= int(idx) < len(data) and isinstance(data[int(idx)], dict):
+            base_move = int(data[int(idx)].get("Movement", 0) or 0)
+
+        used = self.model_used_advance if side == "model" else self.enemy_used_advance
+        rolls = self.model_advance_roll if side == "model" else self.enemy_advance_roll
+        used_advance = bool(used[int(idx)]) if 0 <= int(idx) < len(used) else False
+        roll = rolls[int(idx)] if 0 <= int(idx) < len(rolls) else None
+        bonus = int(roll) if used_advance and roll is not None else 0
+        return max(0, int(base_move) + bonus)
+
+    def get_unit_reachable_cells(self, side: str, idx: int, budget: Optional[int] = None) -> list[tuple[int, int]]:
+        coords = self.unit_coords if side == "model" else self.enemy_coords
+        hp = self.unit_health if side == "model" else self.enemy_health
+        if not (0 <= int(idx) < len(coords)):
+            return []
+        if not (0 <= int(idx) < len(hp)) or float(hp[int(idx)] or 0.0) <= 0:
+            return []
+
+        row = int(coords[int(idx)][0])
+        col = int(coords[int(idx)][1])
+        move_budget = self._movement_budget_for_unit(side, int(idx)) if budget is None else max(0, int(budget))
+
+        barricades = set(self._barricade_cells())
+        occupied: set[tuple[int, int]] = set()
+        for j, pos in enumerate(self.unit_coords):
+            if j == int(idx) and side == "model":
+                continue
+            if j < len(self.unit_health) and float(self.unit_health[j] or 0.0) > 0 and isinstance(pos, (list, tuple)) and len(pos) >= 2:
+                occupied.add((int(pos[0]), int(pos[1])))
+        for j, pos in enumerate(self.enemy_coords):
+            if j == int(idx) and side == "enemy":
+                continue
+            if j < len(self.enemy_health) and float(self.enemy_health[j] or 0.0) > 0 and isinstance(pos, (list, tuple)) and len(pos) >= 2:
+                occupied.add((int(pos[0]), int(pos[1])))
+
+        reachable: list[tuple[int, int]] = []
+        for r in range(max(0, row - move_budget), min(self.b_len - 1, row + move_budget) + 1):
+            for c in range(max(0, col - move_budget), min(self.b_hei - 1, col + move_budget) + 1):
+                dist = abs(r - row) + abs(c - col)
+                if dist == 0 or dist > move_budget:
+                    continue
+                if (r, c) in occupied:
+                    continue
+                if (r, c) in barricades:
+                    continue
+                reachable.append((c, r))  # state coords (x, y)
+
+        return reachable
+
     def _visibility_report_between_units(self, attacker_side: str, attacker_idx: int, target_side: str, target_idx: int) -> dict:
         attacker_coords = self.unit_coords if attacker_side == "model" else self.enemy_coords
         target_coords = self.unit_coords if target_side == "model" else self.enemy_coords
         attacker_cell = self._cell_from_coord(attacker_coords[int(attacker_idx)])
         target_cell = self._cell_from_coord(target_coords[int(target_idx)])
+        target_cover_cells = self._target_cover_cells_for_unit(target_side, int(target_idx), radius=3)
         return visibility_report(
             attacker_cell,
             target_cell,
             opaque_cells_set=self.terrain_opaque_cells,
             obscuring_cells_set=self.get_terrain_obscuring_cells_set(),
+            target_cover_cells_set=target_cover_cells,
             visibility_mode=self.visibility_mode,
         )
 
@@ -2586,6 +2695,8 @@ class Warhammer40kEnv(gym.Env):
         self.begin_phase(side, "movement")
         if side == "model":
             advanced_flags = [False] * len(self.unit_health)
+            self.model_used_advance = [False] * len(self.unit_health)
+            self.model_advance_roll = [None] * len(self.unit_health)
             reward_delta = 0
             objective_hold_delta = 0.0
             objective_proximity_delta = 0.0
@@ -2690,6 +2801,8 @@ class Warhammer40kEnv(gym.Env):
                                     )
 
                     advanced_flags[i] = advanced
+                    self.model_used_advance[i] = bool(advanced)
+                    self.model_advance_roll[i] = int(advance_roll) if advance_roll is not None else None
                     direction = {0: "down", 1: "up", 2: "left", 3: "right", 4: "none"}.get(action["move"], "none")
                     actual_movement = movement if action["move"] != 4 else 0
                     advance_text = "да" if advanced else "нет"
@@ -2834,6 +2947,8 @@ class Warhammer40kEnv(gym.Env):
 
         if side == "enemy" and action is not None and not manual:
             advanced_flags = [False] * len(self.enemy_health)
+            self.enemy_used_advance = [False] * len(self.enemy_health)
+            self.enemy_advance_roll = [None] * len(self.enemy_health)
             move_dir = action.get("move", 4) if isinstance(action, dict) else 4
             attack_choice = action.get("attack", 1) if isinstance(action, dict) else 1
             for i in range(len(self.enemy_health)):
@@ -2870,6 +2985,8 @@ class Warhammer40kEnv(gym.Env):
                                 pass
 
                     advanced_flags[i] = advanced
+                    self.enemy_used_advance[i] = bool(advanced)
+                    self.enemy_advance_roll[i] = int(advance_roll) if advance_roll is not None else None
                     direction = {0: "down", 1: "up", 2: "left", 3: "right", 4: "none"}.get(move_dir, "none")
                     actual_movement = movement if move_dir != 4 else 0
                     advance_text = "да" if advanced else "нет"
@@ -2957,9 +3074,9 @@ class Warhammer40kEnv(gym.Env):
             return advanced_flags
 
         if side == "enemy" and manual:
-            direction_map = {"up": "up", "down": "down", "left": "left", "right": "right", "none": "none"}
-            normalize = {"u": "up", "d": "down", "l": "left", "r": "right", "n": "none"}
             advanced_flags = [False] * len(self.enemy_health)
+            self.enemy_used_advance = [False] * len(self.enemy_health)
+            self.enemy_advance_roll = [None] * len(self.enemy_health)
             for i in range(len(self.enemy_health)):
                 playerName = i + 11
                 battleSh = battle_shock[i] if battle_shock else False
@@ -3003,48 +3120,65 @@ class Warhammer40kEnv(gym.Env):
                     self.updateBoard()
                     self.showBoard()
 
-                    dire = self._prompt_choice(
-                        f"Ход юнита: {unit_label}. Выберите направление (up/down/left/right/none): ",
-                        direction_map,
-                        normalize,
-                    )
-                    if dire is None:
+                    advanced = False
+                    advance_roll = None
+                    base_move = int(self.enemy_data[i].get("Movement", 0) or 0)
+                    adv = self._prompt_yes_no("Сделать Advance? (y/n): ")
+                    if adv is None:
                         self.game_over = True
                         return None
+                    if adv:
+                        advanced = True
+                        self._log("Бросок 1D6 на Advance...", verbose_only=True)
+                        roll = player_dice()
+                        advance_roll = int(roll)
+                        self._log(f"Бросок: {roll}", verbose_only=True)
 
-                    advanced = False
-                    move_num = 0
-                    if dire != "none":
-                        adv = self._prompt_yes_no("Сделать Advance? (y/n): ")
-                        if adv is None:
-                            self.game_over = True
-                            return None
-                        if adv:
-                            advanced = True
-                            self._log("Бросок 1D6 на Advance...", verbose_only=True)
-                            roll = player_dice()
-                            self._log(f"Бросок: {roll}", verbose_only=True)
-                            movement_cap = self.enemy_data[i]["Movement"] + roll
-                        else:
-                            movement_cap = self.enemy_data[i]["Movement"]
-                        move_num = self._prompt_int(
-                            f"На сколько дюймов двигаться (0..{movement_cap}): ",
-                            0,
-                            movement_cap,
+                    movement_cap = base_move + (int(advance_roll) if advanced and advance_roll is not None else 0)
+                    self.enemy_used_advance[i] = bool(advanced)
+                    self.enemy_advance_roll[i] = int(advance_roll) if advance_roll is not None else None
+                    self.updateBoard()
+                    self.showBoard()
+
+                    reachable = self.get_unit_reachable_cells("enemy", i, budget=movement_cap)
+                    if not reachable:
+                        self._log(f"{unit_label}: нет достижимых клеток для движения (budget={movement_cap}).")
+                        advanced_flags[i] = advanced
+                        continue
+
+                    dest = None
+                    reachable_set = set((int(x), int(y)) for x, y in reachable)
+                    while dest is None:
+                        move_meta = {
+                            "move_request": True,
+                            "unit_id": int(playerName),
+                            "unit_side": "player",
+                            "movement_budget": int(movement_cap),
+                            "reachable_cells": [[int(x), int(y)] for x, y in reachable],
+                        }
+                        answer = self._ensure_io().request_deploy_coord(
+                            f"{unit_label}. Выберите клетку назначения (reachable={len(reachable)}): ",
+                            x_min=0,
+                            x_max=max(0, int(self.b_hei) - 1),
+                            y_min=0,
+                            y_max=max(0, int(self.b_len) - 1),
+                            meta=move_meta,
                         )
-                        if move_num is None:
+                        if answer is None:
                             self.game_over = True
                             return None
+                        tx = int(answer.get("x"))
+                        ty = int(answer.get("y"))
+                        if (tx, ty) not in reachable_set:
+                            self._log(
+                                f"{unit_label}: клетка ({tx},{ty}) недостижима. "
+                                "Что делать дальше: выберите подсвеченную reachable-клетку."
+                            )
+                            continue
+                        dest = (tx, ty)
 
                     advanced_flags[i] = advanced
-                    if dire == "down":
-                        self.enemy_coords[i][0] += move_num
-                    elif dire == "up":
-                        self.enemy_coords[i][0] -= move_num
-                    elif dire == "left":
-                        self.enemy_coords[i][1] -= move_num
-                    elif dire == "right":
-                        self.enemy_coords[i][1] += move_num
+                    self.enemy_coords[i] = [int(dest[1]), int(dest[0])]
 
                     self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
                     for j in range(len(self.enemy_health)):
@@ -3070,6 +3204,8 @@ class Warhammer40kEnv(gym.Env):
 
         if side == "enemy":
             advanced_flags = [False] * len(self.enemy_health)
+            self.enemy_used_advance = [False] * len(self.enemy_health)
+            self.enemy_advance_roll = [None] * len(self.enemy_health)
             cp_on = getattr(self, "_enemy_cp_on", None)
             use_cp = getattr(self, "_enemy_use_cp", None)
             for i in range(len(self.enemy_health)):
@@ -3100,7 +3236,8 @@ class Warhammer40kEnv(gym.Env):
                     base_m = self.enemy_data[i]["Movement"]
                     dist_to_target = distance(self.unit_coords[idOfM], self.enemy_coords[i])
                     advanced = dist_to_target > (base_m + 6)
-                    movement = base_m + dice() if advanced else base_m
+                    advance_roll = int(dice()) if advanced else None
+                    movement = base_m + advance_roll if advanced and advance_roll is not None else base_m
 
                     if distance(self.unit_coords[idOfM], [self.enemy_coords[i][0], self.enemy_coords[i][1] - movement]) < distance(self.unit_coords[idOfM], self.enemy_coords[i]):
                         self.enemy_coords[i][1] -= movement
@@ -3117,6 +3254,8 @@ class Warhammer40kEnv(gym.Env):
                             self.enemy_coords[i][0] -= 1
                     self._adjust_end_move_from_terrain("enemy", i, pos_before, "movement_phase:enemy")
                     advanced_flags[i] = advanced
+                    self.enemy_used_advance[i] = bool(advanced)
+                    self.enemy_advance_roll[i] = int(advance_roll) if advance_roll is not None else None
 
                     pos_after = tuple(self.enemy_coords[i])
                     if pos_before != pos_after:
@@ -4338,6 +4477,8 @@ class Warhammer40kEnv(gym.Env):
             self.enemy_health.append(self.enemy_data[i]["W"] * self.enemy_data[i]["#OfModels"])
             self.enemyInAttack.append([0, 0])
         self.enemyFellBack = [False] * len(self.enemy_health)
+        self.enemy_used_advance = [False] * len(self.enemy_health)
+        self.enemy_advance_roll = [None] * len(self.enemy_health)
         self.enemy_hp_max_total = max(
             1,
             sum(
@@ -4352,6 +4493,8 @@ class Warhammer40kEnv(gym.Env):
             self.unit_health.append(self.unit_data[i]["W"] * self.unit_data[i]["#OfModels"])
             self.unitInAttack.append([0, 0])
         self.unitFellBack = [False] * len(self.unit_health)
+        self.model_used_advance = [False] * len(self.unit_health)
+        self.model_advance_roll = [None] * len(self.unit_health)
         self.model_hp_max_total = max(
             1,
             sum(

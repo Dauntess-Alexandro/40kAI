@@ -179,6 +179,7 @@ class TextureManager:
 class OpenGLBoardWidget(QOpenGLWidget):
     unit_selected = QtCore.Signal(str, int)
     cell_clicked = QtCore.Signal(int, int)
+    cell_right_clicked = QtCore.Signal(int, int)
     cell_hovered = QtCore.Signal(object)
 
     def __init__(
@@ -220,6 +221,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._unit_anim_duration_ms = 180
 
         self._move_highlights: List[QtCore.QRectF] = []
+        self._reachable_highlights: List[QtCore.QRectF] = []
+        self._reachable_cells_set: set[tuple[int, int]] = set()
+        self._reachable_overlay_sig: Optional[Tuple[object, int, int]] = None
         self._target_highlights: List[Tuple[QtCore.QPointF, float]] = []
         self._show_objective_radius = True
 
@@ -288,9 +292,17 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._tooltip_follow_timer.timeout.connect(self._tick_tooltip_follow)
         self._tooltip_pinned = False
         self._tooltip_widget = UnitTooltipWidget(self)
+        self._tooltip_widget.weapon_hovered.connect(self._on_tooltip_weapon_hovered)
+        self._tooltip_widget.weapon_hover_left.connect(self._on_tooltip_weapon_hover_left)
+        self._tooltip_widget.copy_stats_requested.connect(self._on_tooltip_copy_stats_requested)
+        self._tooltip_widget.status_chip_hovered.connect(self._on_status_chip_hovered)
+        self._tooltip_widget.status_chip_left.connect(self._on_status_chip_left)
         self._terrain_tooltip_widget = TerrainTooltipWidget(self)
         self._viewer_debug_enabled = str(os.getenv("VIEWER_DEBUG", "0")).strip() == "1"
         self._hover_terrain_feature: Optional[dict] = None
+        self._hover_weapon_range: Optional[int] = None
+        self._hover_status_enemy_ids: List[int] = []
+        self._visibility_lists_cache: Dict[Tuple[object, object, object], Dict[str, List[int]]] = {}
         self._last_terrain_hover_debug_sig: Optional[Tuple[int, int, str]] = None
         self._unit_data = self._load_unit_data()
         self._unit_data_by_name = self._index_unit_data(self._unit_data)
@@ -307,6 +319,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         assets_root = resolve_asset_path("")
         self._texture_manager = TextureManager(assets_root)
         self._unit_icon_by_name = self._build_unit_icon_map()
+        self._faction_icon_by_keyword = self._build_faction_icon_map()
         self._ground_textures: List[QtGui.QPixmap] = []
         self._prop_textures: Dict[str, QtGui.QPixmap] = {}
         self._shadow_textures: Dict[str, QtGui.QPixmap] = {}
@@ -424,6 +437,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def update_state(self, state: Optional[Dict]) -> None:
         self._state = state or {}
+        self._visibility_lists_cache = {}
         if not state:
             self.set_error_message(
                 "Состояние игры недоступно. Где: viewer/state.json. "
@@ -431,7 +445,6 @@ class OpenGLBoardWidget(QOpenGLWidget):
             )
             return
         self.set_error_message(None)
-        self._clear_hover_tooltip(force=True)
         board = self._state.get("board", {})
         raw_units = list(self._state.get("units", []) or [])
         width, height = self._resolve_board_dims(board, raw_units)
@@ -527,6 +540,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
 
         self.refresh_overlays()
+
+        if self._hover_unit_key is not None:
+            if self._state_unit(self._hover_unit_key) is not None:
+                self._refresh_tooltip_anchor()
+            else:
+                self._clear_hover_tooltip(force=True)
+
         self.update()
 
     @staticmethod
@@ -812,8 +832,48 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def refresh_overlays(self) -> None:
         self._move_highlights = []
+        self._reachable_highlights = []
+        self._reachable_cells_set = set()
         self._target_highlights = []
-        return
+
+        if not self._should_show_movement():
+            return
+        active_key = (self._active_unit_side, self._active_unit_id)
+        if active_key[0] is None or active_key[1] is None:
+            return
+        unit = self._state_unit(active_key)
+        if not isinstance(unit, dict):
+            return
+        cells = self._active_unit_reachable_cells_statexy(unit)
+        if not cells:
+            return
+
+        highlights: List[QtCore.QRectF] = []
+        cell_set: set[tuple[int, int]] = set()
+        for x, y in cells:
+            view_cell = self._state_to_view_cell(x, y)
+            if view_cell is None:
+                continue
+            cell_set.add((int(x), int(y)))
+            vx, vy = view_cell
+            highlights.append(
+                QtCore.QRectF(
+                    vx * self.cell_size,
+                    vy * self.cell_size,
+                    self.cell_size,
+                    self.cell_size,
+                )
+            )
+        self._reachable_cells_set = cell_set
+        self._reachable_highlights = highlights
+
+        if self._viewer_debug_enabled:
+            sig = (active_key[1], len(cell_set), hash(tuple(sorted(cell_set))) if cell_set else 0)
+            if sig != self._reachable_overlay_sig:
+                self._reachable_overlay_sig = sig
+                self._append_agent_log(
+                    f"[VIEWER] reachable_overlay unit={active_key[1]} count={len(cell_set)}"
+                )
 
     def select_unit(self, side, unit_id) -> None:
         self.set_selected_unit(side, unit_id)
@@ -1284,6 +1344,25 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 return unit
         return None
 
+    def _active_unit_reachable_cells_statexy(self, unit: dict) -> List[Tuple[int, int]]:
+        unit_status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else {}
+        raw_cells = unit_status.get("reachable_cells")
+        if raw_cells is None:
+            raw_cells = self._state.get("active_unit_reachable_cells")
+        result: List[Tuple[int, int]] = []
+        for cell in list(raw_cells or []):
+            if not isinstance(cell, (list, tuple)) or len(cell) < 2:
+                continue
+            x = self._safe_int(cell[0])
+            y = self._safe_int(cell[1])
+            if x is None or y is None:
+                continue
+            result.append((x, y))
+        return result
+
+    def is_reachable_cell(self, x: int, y: int) -> bool:
+        return (int(x), int(y)) in self._reachable_cells_set
+
     def _should_show_movement(self) -> bool:
         phase = str(self._phase or "").lower()
         return "move" in phase or "движ" in phase or "movement" in phase or self._move_range is not None
@@ -1461,6 +1540,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._drag_distance = 0.0
         if event.button() == QtCore.Qt.RightButton:
             world = self._map_to_world(QtCore.QPointF(event.position()))
+            state_pos = self._world_to_state_pos(world)
+            if state_pos is not None:
+                state_xy = (int(state_pos[1]), int(state_pos[0]))
+                if self.is_reachable_cell(state_xy[0], state_xy[1]):
+                    self.cell_right_clicked.emit(state_xy[0], state_xy[1])
+                    return
+
             self._rebuild_unit_hitboxes_screen()
             unit_key = self._unit_key_at_screen_pos(QtCore.QPointF(event.position()))
             terrain_feature = self._terrain_feature_at_world(world) if unit_key is None else None
@@ -1568,6 +1654,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._hover_terrain_feature = None
         self._hover_tooltip_text = None
         self._hover_candidate_key = None
+        self._hover_weapon_range = None
+        self._hover_status_enemy_ids = []
         self._tooltip_widget.hide_animated()
         self._terrain_tooltip_widget.hide_animated()
         if self._tooltip_follow_timer.isActive():
@@ -1819,6 +1907,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._draw_platform_fx_layer(painter)
         if self.render_terrain:
             self.draw_terrain_features(painter)
+        self._draw_hovered_terrain_cells_layer(painter)
+        self._draw_unit_tooltip_overlays_layer(painter)
         self._draw_units_layer(painter)
         self._draw_deploy_snap_fx_layer(painter)
         self._draw_selection_layer(painter)
@@ -1862,13 +1952,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.end()
 
     def _draw_movement_layer(self, painter: QtGui.QPainter) -> None:
-        if not self._move_highlights:
+        if not self._reachable_highlights:
             return
-        highlight = QtGui.QColor(Theme.selection)
-        highlight.setAlpha(80)
-        painter.setPen(QtCore.Qt.NoPen)
-        painter.setBrush(QtGui.QBrush(highlight))
-        for rect in self._move_highlights:
+        fill = QtGui.QColor(96, 143, 220, 52)
+        border = QtGui.QPen(QtGui.QColor(96, 143, 220, 160), 1.0)
+        border.setCosmetic(True)
+        painter.setPen(border)
+        painter.setBrush(QtGui.QBrush(fill))
+        for rect in self._reachable_highlights:
             painter.drawRect(rect)
 
     def _draw_objective_layer(self, painter: QtGui.QPainter) -> None:
@@ -2150,6 +2241,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if known_key and (known_key in key or key in known_key):
                 return pixmap
         return None
+
+    def _build_faction_icon_map(self) -> Dict[str, QtGui.QPixmap]:
+        icon_links = {
+            "NECRONS": "../gui_qt/assets/necrons.png",
+        }
+        icon_map: Dict[str, QtGui.QPixmap] = {}
+        for keyword, rel_path in icon_links.items():
+            pixmap = self._texture_manager.load_png(rel_path)
+            if pixmap is None or pixmap.isNull():
+                continue
+            icon_map[keyword.upper()] = pixmap
+        return icon_map
 
     def _fx_color_for_unit(self, unit: Optional[dict]) -> Tuple[QtGui.QColor, float]:
         if self._is_necron(unit):
@@ -3123,6 +3226,44 @@ class OpenGLBoardWidget(QOpenGLWidget):
         anchor = self._tooltip_anchor_for_unit(unit_key, global_pos) if self._tooltip_pinned else self._tooltip_anchor_for_cursor(global_pos)
         self._position_tooltip(anchor, animate=False)
 
+    def _on_tooltip_weapon_hovered(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            self._hover_weapon_range = None
+            self.update()
+            return
+        range_num = payload.get("range_num")
+        if isinstance(range_num, (int, float)):
+            self._hover_weapon_range = int(range_num)
+        else:
+            self._hover_weapon_range = None
+        self._refresh_tooltip_anchor()
+        self.update()
+
+    def _on_tooltip_weapon_hover_left(self) -> None:
+        if self._hover_weapon_range is None:
+            return
+        self._hover_weapon_range = None
+        self._refresh_tooltip_anchor()
+        self.update()
+
+    def _on_tooltip_copy_stats_requested(self, text: str) -> None:
+        clipboard = QtWidgets.QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(str(text or ""))
+
+    def _on_status_chip_hovered(self, ids: object) -> None:
+        if isinstance(ids, list):
+            self._hover_status_enemy_ids = [int(v) for v in ids if isinstance(v, (int, float, str)) and str(v).strip().isdigit()]
+        else:
+            self._hover_status_enemy_ids = []
+        self.update()
+
+    def _on_status_chip_left(self) -> None:
+        if not self._hover_status_enemy_ids:
+            return
+        self._hover_status_enemy_ids = []
+        self.update()
+
     def _update_hover_tooltip(self, event: QtGui.QMouseEvent, world: QtCore.QPointF, screen_pos: QtCore.QPointF) -> None:
         if self._board_rect.isEmpty():
             self._clear_hover_tooltip()
@@ -3383,59 +3524,64 @@ class OpenGLBoardWidget(QOpenGLWidget):
         elif wounds_value is not None:
             wounds_label = str(int(wounds_value))
         cover = self._tooltip_cover_status(unit)
-        ranged_profile = self._get_primary_ranged_weapon(unit)
-        melee_profile = self._get_primary_melee_weapon(unit)
+        weapon_profiles = self._collect_weapon_profiles(unit)
+        ranged_profile = next((w for w in weapon_profiles if w.get("group") == "ranged"), None)
+        melee_profile = next((w for w in weapon_profiles if w.get("group") == "melee"), None)
         ranged_name = (
-            ranged_profile.get("Name")
+            ranged_profile.get("name")
             if ranged_profile
             else self._tooltip_weapon_name(unit)
         ) or "—"
-        melee_name = melee_profile.get("Name") if melee_profile else "—"
+        melee_name = melee_profile.get("name") if melee_profile else "—"
         unit_id = unit.get("id", "—")
         los = self._tooltip_los_status(unit)
         mods = self._tooltip_mods_status(unit)
         weapon_range = (
-            ranged_profile.get("Range")
-            if ranged_profile and ranged_profile.get("Range") is not None
+            ranged_profile.get("range")
+            if ranged_profile and ranged_profile.get("range") is not None
             else self._resolve_weapon_range(unit)
         )
         bs_value = (
-            ranged_profile.get("BS")
-            if ranged_profile and ranged_profile.get("BS") is not None
-            else unit.get("bs") or unit.get("BS") or unit.get("ballistic_skill")
+            unit.get("bs") or unit.get("BS") or unit.get("ballistic_skill")
         )
         ws_value = (
-            melee_profile.get("WS")
-            if melee_profile and melee_profile.get("WS") is not None
-            else unit.get("ws") or unit.get("WS") or unit.get("weapon_skill")
+            unit.get("ws") or unit.get("WS") or unit.get("weapon_skill")
         )
         ranged_attacks = self._format_stat_value(
-            ranged_profile.get("A") if ranged_profile else None
+            ranged_profile.get("attacks") if ranged_profile else None
         )
         ranged_strength = self._format_stat_value(
-            ranged_profile.get("S") if ranged_profile else None
+            ranged_profile.get("strength") if ranged_profile else None
         )
         ranged_ap = self._format_stat_value(
-            ranged_profile.get("AP") if ranged_profile else None
+            ranged_profile.get("ap") if ranged_profile else None
         )
         ranged_damage = self._format_stat_value(
-            ranged_profile.get("Damage") if ranged_profile else None
+            ranged_profile.get("damage") if ranged_profile else None
         )
         melee_attacks = self._format_stat_value(
-            melee_profile.get("A") if melee_profile else None
+            melee_profile.get("attacks") if melee_profile else None
         )
         melee_strength = self._format_stat_value(
-            melee_profile.get("S") if melee_profile else None
+            melee_profile.get("strength") if melee_profile else None
         )
         melee_ap = self._format_stat_value(
-            melee_profile.get("AP") if melee_profile else None
+            melee_profile.get("ap") if melee_profile else None
         )
         melee_damage = self._format_stat_value(
-            melee_profile.get("Damage") if melee_profile else None
+            melee_profile.get("damage") if melee_profile else None
         )
+        threat = self._unit_threat_summary(unit)
+        keyword_chips = self._unit_keyword_chips(unit)
+        status_chips = self._unit_status_chips(threat)
+        copy_stats = self._unit_copy_stats_text(unit, weapon_profiles)
         return {
             "title": title,
             "unit_id": unit_id,
+            "side": unit.get("side") or "—",
+            "portrait": self._unit_portrait_glyph(unit),
+            "portrait_icon": self._icon_for_unit_name(str(unit.get("name") or "")),
+            "faction_icon": self._unit_faction_icon(unit),
             "models": models,
             "wounds": wounds_label,
             "wounds_value": wounds_value,
@@ -3456,7 +3602,310 @@ class OpenGLBoardWidget(QOpenGLWidget):
             "cover": cover,
             "los": los,
             "mods": mods,
+            "keyword_chips": keyword_chips,
+            "status_chips": status_chips,
+            "threat": threat,
+            "weapon_profiles": weapon_profiles,
+            "copy_stats": copy_stats,
         }
+
+    def _collect_weapon_profiles(self, unit: dict) -> List[Dict]:
+        profiles: List[Dict] = []
+        for name in self._unit_weapon_names(unit):
+            for entry in self._weapon_data_by_name.get(str(name).lower(), []):
+                profiles.append(
+                    {
+                        "name": str(entry.get("Name") or name),
+                        "group": "melee" if str(entry.get("Type") or "").lower() == "melee" else "ranged",
+                        "range": self._format_stat_value(entry.get("Range")) or "—",
+                        "range_num": self._coerce_number(entry.get("Range")),
+                        "attacks": self._format_stat_value(entry.get("A")) or "—",
+                        "strength": self._format_stat_value(entry.get("S")) or "—",
+                        "ap": self._format_stat_value(entry.get("AP")) or "—",
+                        "damage": self._format_stat_value(entry.get("Damage")) or "—",
+                    }
+                )
+        if not profiles:
+            fallback = self._tooltip_weapon_name(unit)
+            profiles.append({"name": fallback, "group": "ranged", "range": "—", "range_num": None, "attacks": "—", "strength": "—", "ap": "—", "damage": "—"})
+        return profiles
+
+    def _unit_copy_stats_text(self, unit: dict, weapon_profiles: List[Dict]) -> str:
+        tags = ",".join(self._unit_tags(unit)[:5])
+        weapon_names = ", ".join([str(w.get("name") or "—") for w in weapon_profiles[:3]])
+        return (
+            f"Unit {self._unit_display_name(unit)} id={unit.get('id')} "
+            f"models={unit.get('models', '—')} hp={unit.get('wounds', unit.get('hp', '—'))} "
+            f"tags={tags or '—'} weapons={weapon_names or '—'}"
+        )
+
+    def _unit_portrait_glyph(self, unit: dict) -> str:
+        army = str(unit.get("army") or unit.get("faction") or "").lower()
+        if "necron" in army:
+            return "☥"
+        return "⚔"
+
+    def _unit_faction_icon(self, unit: dict) -> Optional[QtGui.QPixmap]:
+        for keyword in self._unit_keywords(unit):
+            icon = self._faction_icon_by_keyword.get(keyword.upper())
+            if icon is not None and not icon.isNull():
+                return icon
+        return None
+
+    def _unit_keywords(self, unit: dict) -> List[str]:
+        profile = self._unit_profile(unit) or {}
+        keywords: List[str] = []
+        raw = profile.get("KEYWORDS") or profile.get("keywords")
+        if isinstance(raw, list):
+            keywords.extend([str(v) for v in raw])
+        elif isinstance(raw, str):
+            keywords.extend([v.strip() for v in raw.split(",")])
+        return [k.strip().upper() for k in keywords if str(k).strip()]
+
+    def _unit_tags(self, unit: dict) -> List[str]:
+        tags: List[str] = self._unit_keywords(unit)
+        for key in ("keywords", "tags"):
+            value = unit.get(key)
+            if isinstance(value, list):
+                tags.extend([str(v) for v in value])
+            elif isinstance(value, str):
+                tags.extend([v.strip() for v in value.split(",")])
+        for key in ("type", "unit_type", "army", "faction"):
+            value = str(unit.get(key) or "").strip()
+            if value:
+                tags.append(value)
+        seen = set()
+        clean: List[str] = []
+        for tag in tags:
+            t = str(tag).strip().upper().replace(" ", "_")
+            if not t or t in seen:
+                continue
+            seen.add(t)
+            clean.append(t)
+        return clean
+
+    def _unit_threat_summary(self, unit: dict) -> Dict[str, object]:
+        enemies = [u for u in (self._state.get("units", []) or []) if u.get("side") != unit.get("side")]
+        unit_cell = self._unit_anchor_view_cell(unit)
+        unit_status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else {}
+        obscured_vs = [int(v) for v in list(unit_status.get("obscured_vs") or []) if str(v).strip().isdigit()]
+        exposed_to = [int(v) for v in list(unit_status.get("exposed_to") or []) if str(v).strip().isdigit()]
+        vis_lists = self._unit_visibility_lists(unit)
+        can_see_ids = vis_lists.get("can_see_ids", [])
+        seen_by_ids = vis_lists.get("seen_by_ids", [])
+        in_range_ids = vis_lists.get("in_range_ids", [])
+        enemies_seeing = len(seen_by_ids)
+        targets_in_range = len(in_range_ids)
+        obscured = self._read_first_bool(unit_status, ("obscured",))
+        fully_visible = self._read_first_bool(unit_status, ("fully_visible",))
+        los_bool = enemies_seeing > 0
+        if fully_visible is None:
+            fully_visible = los_bool and not bool(obscured)
+        return {
+            "los": "✔" if los_bool else "✖",
+            "obscured": "✔" if obscured else ("✖" if obscured is not None else "—"),
+            "enemies_seeing": enemies_seeing if unit_cell is not None else "—",
+            "targets_in_range": targets_in_range if unit_cell is not None else "—",
+            "fully_visible": bool(fully_visible),
+            "in_cover": self._read_first_bool(unit_status, ("in_cover",)),
+            "objective_status": self._unit_objective_status(unit),
+            "enemies_in_los_keys": self._enemy_keys_in_range_of(unit),
+            "obscured_vs": obscured_vs,
+            "exposed_to": exposed_to,
+            "engagement_with": [int(v) for v in list(unit_status.get("engagement_with") or []) if str(v).strip().isdigit()],
+            "can_see_ids": can_see_ids,
+            "seen_by_ids": seen_by_ids,
+            "in_range_ids": in_range_ids,
+        }
+
+    def _unit_visibility_lists(self, unit: dict) -> Dict[str, List[int]]:
+        unit_status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else {}
+        state_sig = self._state.get("generated_at") or f"{self._state.get('turn')}-{self._state.get('round')}-{self._state.get('phase')}"
+        unit_key = (unit.get("side"), unit.get("id"), state_sig, self._hover_weapon_range)
+        cached = self._visibility_lists_cache.get(unit_key)
+        if cached is not None:
+            return cached
+
+        def _ids(raw: object) -> List[int]:
+            if not isinstance(raw, list):
+                return []
+            vals = [int(v) for v in raw if isinstance(v, (int, float, str)) and str(v).strip().isdigit()]
+            return sorted(set(vals))
+
+        can_see_ids = _ids(unit_status.get("can_see_ids"))
+        seen_by_ids = _ids(unit_status.get("seen_by_ids"))
+        if self._hover_weapon_range is None:
+            in_range_ids = _ids(unit_status.get("in_range_ids") or unit_status.get("in_range_targets"))
+        else:
+            in_range_ids = []
+
+        # fallback если движок не прислал поля
+        if not can_see_ids or not seen_by_ids:
+            unit_cell = self._unit_anchor_view_cell(unit)
+            if unit_cell is not None:
+                ux, uy = unit_cell
+                if not can_see_ids:
+                    for enemy in (self._state.get("units", []) or []):
+                        if enemy.get("side") == unit.get("side"):
+                            continue
+                        e_cell = self._unit_anchor_view_cell(enemy)
+                        if e_cell is None:
+                            continue
+                        # fallback: без движка считаем как потенциально видимую цель по геометрии
+                        can_see_ids.append(int(enemy.get("id")))
+                if not seen_by_ids:
+                    for enemy in (self._state.get("units", []) or []):
+                        if enemy.get("side") == unit.get("side"):
+                            continue
+                        e_cell = self._unit_anchor_view_cell(enemy)
+                        if e_cell is None:
+                            continue
+                        dist = abs(e_cell[0] - ux) + abs(e_cell[1] - uy)
+                        e_range = self._primary_ranged_range(enemy)
+                        if e_range is not None and dist <= e_range:
+                            seen_by_ids.append(int(enemy.get("id")))
+                if not in_range_ids or self._hover_weapon_range is not None:
+                    own_range = self._hover_weapon_range if self._hover_weapon_range is not None else self._primary_ranged_range(unit)
+                    if own_range is not None:
+                        can_see_set = set(can_see_ids)
+                        for enemy in (self._state.get("units", []) or []):
+                            if enemy.get("side") == unit.get("side"):
+                                continue
+                            enemy_id = int(enemy.get("id")) if str(enemy.get("id")).strip().isdigit() else None
+                            if enemy_id is None or enemy_id not in can_see_set:
+                                continue
+                            e_cell = self._unit_anchor_view_cell(enemy)
+                            if e_cell is None:
+                                continue
+                            dist = abs(e_cell[0] - ux) + abs(e_cell[1] - uy)
+                            if dist <= own_range:
+                                in_range_ids.append(enemy_id)
+
+        result = {
+            "can_see_ids": sorted(set(can_see_ids)),
+            "seen_by_ids": sorted(set(seen_by_ids)),
+            "in_range_ids": sorted(set(in_range_ids)),
+        }
+        self._visibility_lists_cache[unit_key] = result
+        return result
+
+    def _primary_ranged_range(self, unit: dict) -> Optional[int]:
+        ranged = self._get_primary_ranged_weapon(unit)
+        if ranged is not None:
+            r = self._coerce_number(ranged.get("Range"))
+            if r is not None:
+                return int(r)
+        r = self._resolve_weapon_range(unit)
+        return int(r) if isinstance(r, (int, float)) else None
+
+    def _read_first_bool(self, data: dict, keys: Tuple[str, ...]) -> Optional[bool]:
+        for key in keys:
+            if key not in data:
+                continue
+            value = data.get(key)
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)):
+                return bool(value)
+            if isinstance(value, str):
+                val = value.strip().lower()
+                if val in {"1", "true", "yes", "y"}:
+                    return True
+                if val in {"0", "false", "no", "n"}:
+                    return False
+        return None
+
+    def _unit_objective_status(self, unit: dict) -> Optional[str]:
+        unit_status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else {}
+        direct = str(unit_status.get("objective_state") or "").strip().lower()
+        if direct in {"holding", "contesting"}:
+            return direct.upper()
+        unit_cell = self._unit_anchor_view_cell(unit)
+        if unit_cell is None:
+            return None
+        ux, uy = unit_cell
+        for objective in (self._state.get("objectives", []) or []):
+            obj_cell = self._state_to_view_cell(objective.get("x"), objective.get("y"))
+            if obj_cell is None:
+                continue
+            radius = self._safe_int(objective.get("control_radius")) or 3
+            if abs(obj_cell[0] - ux) + abs(obj_cell[1] - uy) > radius:
+                continue
+            owner = str(objective.get("owner") or "").lower()
+            side = str(unit.get("side") or "").lower()
+            return "HOLDING" if owner and owner == side else "CONTESTING"
+        return None
+
+    def _unit_keyword_chips(self, unit: dict) -> List[Dict[str, str]]:
+        static_tags = self._unit_tags(unit)
+        limit = 5
+        chips = [{"label": tag, "tone": "neutral"} for tag in static_tags[:limit]]
+        rest = len(static_tags) - limit
+        if rest > 0:
+            chips.append({"label": f"+{rest}", "tone": "neutral"})
+        return chips
+
+    def _unit_status_chips(self, threat: Dict[str, object]) -> List[Dict[str, str]]:
+        chips: List[Dict[str, str]] = []
+        if threat.get("in_cover") is True:
+            chips.append({"label": "🛡 IN COVER", "tone": "good", "ids": []})
+        obscured_vs = [int(v) for v in list(threat.get("obscured_vs") or [])]
+        exposed_to = [int(v) for v in list(threat.get("exposed_to") or [])]
+        if obscured_vs:
+            chips.append({
+                "label": f"👁 OBSCURED vs {self._format_id_list(obscured_vs)}",
+                "tone": "status_obscured",
+                "ids": obscured_vs,
+            })
+        if exposed_to:
+            chips.append({
+                "label": f"⚠ EXPOSED to {self._format_id_list(exposed_to)}",
+                "tone": "status_exposed",
+                "ids": exposed_to,
+            })
+        objective_status = threat.get("objective_status")
+        if objective_status:
+            if str(objective_status).upper() == "HOLDING":
+                chips.append({"label": "🏁 HOLDING", "tone": "status_holding", "ids": []})
+            else:
+                chips.append({"label": "⚔ CONTESTING", "tone": "status_contesting", "ids": []})
+        engagement = [int(v) for v in list(threat.get("engagement_with") or [])]
+        if engagement:
+            chips.append({
+                "label": f"⚔ IN ENGAGEMENT vs {self._format_id_list(engagement)}",
+                "tone": "status_contesting",
+                "ids": engagement,
+            })
+        return chips
+
+    def _format_id_list(self, ids: List[int]) -> str:
+        values = sorted({int(v) for v in ids})
+        if not values:
+            return "—"
+        if len(values) <= 3:
+            return ",".join(str(v) for v in values)
+        head = ",".join(str(v) for v in values[:2])
+        return f"{head} +{len(values) - 2}"
+
+    def _enemy_keys_in_range_of(self, unit: dict, forced_range: Optional[int] = None) -> List[Tuple[str, int]]:
+        unit_cell = self._unit_anchor_view_cell(unit)
+        if unit_cell is None:
+            return []
+        ux, uy = unit_cell
+        rng = forced_range if forced_range is not None else self._primary_ranged_range(unit)
+        if rng is None:
+            return []
+        keys: List[Tuple[str, int]] = []
+        for enemy in (self._state.get("units", []) or []):
+            if enemy.get("side") == unit.get("side"):
+                continue
+            e_cell = self._unit_anchor_view_cell(enemy)
+            if e_cell is None:
+                continue
+            dist = abs(e_cell[0] - ux) + abs(e_cell[1] - uy)
+            if dist <= rng:
+                keys.append((enemy.get("side"), enemy.get("id")))
+        return keys
 
     def _coerce_number(self, value: object) -> Optional[float]:
         if isinstance(value, (int, float)):
@@ -3585,7 +4034,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         kind = str(feature.get("kind") or "terrain")
         name = str(feature.get("name") or "").strip()
         title = name if name else f"Terrain: {kind}"
-        keywords = ", ".join([str(v) for v in list(feature.get("keywords") or [])]) or "—"
+        keywords = [str(v).strip() for v in list(feature.get("keywords") or []) if str(v).strip()]
 
         coords: List[Tuple[int, int]] = []
         for cell in list(feature.get("cells") or []):
@@ -3598,13 +4047,105 @@ class OpenGLBoardWidget(QOpenGLWidget):
         coords.sort(key=lambda pos: (pos[0], pos[1]))
         coords_text = " ".join(f"({x},{y})" for x, y in coords) if coords else "—"
 
-        lines = [
-            f"ID: {feature.get('id') or '—'}",
-            f"Type: {kind}",
-            f"Keywords: {keywords}",
-            f"Coords: {coords_text}",
+        kind_lower = kind.lower()
+        rules_lines = [
+            "Rules: No deploy • No end move on top",
+            "Cover: INFANTRY within 3\" if obscured",
         ]
-        return {"title": title, "id": feature.get("id") or "—", "lines": lines}
+        kind_badge = "B" if "barricade" in kind_lower else "T"
+        return {
+            "title": title,
+            "id": feature.get("id") or "—",
+            "terrain_type": kind,
+            "keywords": keywords,
+            "coords": coords_text,
+            "rules": rules_lines,
+            "kind_badge": kind_badge,
+        }
+
+    def _draw_hovered_terrain_cells_layer(self, painter: QtGui.QPainter) -> None:
+        feature = self._hover_terrain_feature
+        if not isinstance(feature, dict):
+            return
+        cells = list(feature.get("cells") or [])
+        if not cells:
+            return
+        painter.save()
+        pen = QtGui.QPen(QtGui.QColor(247, 186, 78, 215), 1.8)
+        pen.setCosmetic(True)
+        painter.setPen(pen)
+        painter.setBrush(QtGui.QColor(247, 186, 78, 45))
+        for cell in cells:
+            if not isinstance(cell, (list, tuple)) or len(cell) < 2:
+                continue
+            row = int(cell[0])
+            col = int(cell[1])
+            rect = QtCore.QRectF(
+                col * self.cell_size,
+                row * self.cell_size,
+                self.cell_size,
+                self.cell_size,
+            )
+            painter.drawRect(rect)
+        painter.restore()
+
+    def _draw_unit_tooltip_overlays_layer(self, painter: QtGui.QPainter) -> None:
+        if self._hover_unit_key is None:
+            return
+        unit = self._state_unit(self._hover_unit_key)
+        if not unit:
+            return
+        painter.save()
+        base_pen = QtGui.QPen(QtGui.QColor(112, 192, 131, 210), 1.8)
+        base_pen.setCosmetic(True)
+        painter.setPen(base_pen)
+        painter.setBrush(QtGui.QColor(112, 192, 131, 38))
+        unit_cells = self._unit_model_view_cells(unit) or ([self._unit_anchor_view_cell(unit)] if self._unit_anchor_view_cell(unit) else [])
+        for cell in unit_cells:
+            if cell is None:
+                continue
+            rect = QtCore.QRectF(cell[0] * self.cell_size, cell[1] * self.cell_size, self.cell_size, self.cell_size)
+            painter.drawRect(rect)
+
+        # враги в LoS/дистанции
+        threat = self._hover_tooltip_text.get("threat") if isinstance(self._hover_tooltip_text, dict) else {}
+        los_keys = (threat or {}).get("enemies_in_los_keys") or []
+        los_pen = QtGui.QPen(QtGui.QColor(242, 188, 76, 190), 1.5)
+        los_pen.setCosmetic(True)
+        painter.setPen(los_pen)
+        painter.setBrush(QtGui.QColor(242, 188, 76, 20))
+        for key in los_keys:
+            target = self._unit_by_key.get(key)
+            if target is None:
+                continue
+            painter.drawEllipse(target.center, target.radius + 3, target.radius + 3)
+
+        if self._hover_weapon_range is not None:
+            weapon_keys = self._enemy_keys_in_range_of(unit, forced_range=self._hover_weapon_range)
+            w_pen = QtGui.QPen(QtGui.QColor(169, 123, 245, 210), 1.8)
+            w_pen.setCosmetic(True)
+            painter.setPen(w_pen)
+            painter.setBrush(QtGui.QColor(169, 123, 245, 28))
+            for key in weapon_keys:
+                target = self._unit_by_key.get(key)
+                if target is None:
+                    continue
+                painter.drawEllipse(target.center, target.radius + 5, target.radius + 5)
+
+        if self._hover_status_enemy_ids:
+            s_pen = QtGui.QPen(QtGui.QColor(255, 245, 120, 230), 1.6)
+            s_pen.setCosmetic(True)
+            painter.setPen(s_pen)
+            painter.setBrush(QtGui.QColor(255, 245, 120, 24))
+            for key, target in self._unit_by_key.items():
+                if target is None:
+                    continue
+                if key[0] == unit.get("side"):
+                    continue
+                if int(key[1]) not in self._hover_status_enemy_ids:
+                    continue
+                painter.drawEllipse(target.center, target.radius + 7, target.radius + 7)
+        painter.restore()
 
     def _unit_display_name(self, unit: dict) -> str:
         name = str(unit.get("name") or "").strip()
@@ -3618,7 +4159,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return "Юнит"
 
     def _tooltip_cover_status(self, unit: dict) -> str:
-        return "—"
+        status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else unit
+        cover = self._read_first_bool(status, ("in_cover", "cover", "has_cover"))
+        if cover is None:
+            return "—"
+        return "Да" if cover else "Нет"
 
     def _tooltip_weapon_name(self, unit: dict) -> str:
         weapon_name = unit.get("weapon_name") or unit.get("weapon") or unit.get("weapons")
@@ -3637,7 +4182,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return None
 
     def _tooltip_los_status(self, unit: dict) -> str:
-        return "—"
+        summary = self._unit_threat_summary(unit)
+        return str(summary.get("los") or "—")
 
     def _tooltip_mods_status(self, unit: dict) -> str:
         return "—"
