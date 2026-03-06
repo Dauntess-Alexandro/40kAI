@@ -3474,7 +3474,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
             melee_profile.get("damage") if melee_profile else None
         )
         threat = self._unit_threat_summary(unit)
-        chips = self._unit_tooltip_chips(unit, threat)
+        keyword_chips = self._unit_keyword_chips(unit)
+        status_chips = self._unit_status_chips(threat)
         copy_stats = self._unit_copy_stats_text(unit, weapon_profiles)
         return {
             "title": title,
@@ -3503,7 +3504,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
             "cover": cover,
             "los": los,
             "mods": mods,
-            "chips": chips,
+            "keyword_chips": keyword_chips,
+            "status_chips": status_chips,
             "threat": threat,
             "weapon_profiles": weapon_profiles,
             "copy_stats": copy_stats,
@@ -3608,8 +3610,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     dist = abs(e_cell[0] - ux) + abs(e_cell[1] - uy)
                     if dist <= own_range:
                         targets_in_range += 1
-        obscured = self._read_first_bool(unit, ("obscured", "is_obscured", "not_fully_visible"))
-        fully_visible = self._read_first_bool(unit, ("fully_visible", "is_fully_visible"))
+        unit_status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else {}
+        obscured = self._read_first_bool(unit_status, ("obscured",))
+        fully_visible = self._read_first_bool(unit_status, ("fully_visible",))
         los_bool = enemies_seeing > 0
         if fully_visible is None:
             fully_visible = los_bool and not bool(obscured)
@@ -3619,7 +3622,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             "enemies_seeing": enemies_seeing if unit_cell is not None else "—",
             "targets_in_range": targets_in_range if unit_cell is not None else "—",
             "fully_visible": bool(fully_visible),
-            "in_cover": self._read_first_bool(unit, ("in_cover", "cover", "has_cover")),
+            "in_cover": self._read_first_bool(unit_status, ("in_cover",)),
             "objective_status": self._unit_objective_status(unit),
             "enemies_in_los_keys": self._enemy_keys_in_range_of(unit),
         }
@@ -3651,6 +3654,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return None
 
     def _unit_objective_status(self, unit: dict) -> Optional[str]:
+        unit_status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else {}
+        direct = str(unit_status.get("objective_state") or "").strip().lower()
+        if direct in {"holding", "contesting"}:
+            return direct.upper()
         unit_cell = self._unit_anchor_view_cell(unit)
         if unit_cell is None:
             return None
@@ -3667,22 +3674,29 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return "HOLDING" if owner and owner == side else "CONTESTING"
         return None
 
-    def _unit_tooltip_chips(self, unit: dict, threat: Dict[str, object]) -> List[Dict[str, str]]:
+    def _unit_keyword_chips(self, unit: dict) -> List[Dict[str, str]]:
         static_tags = self._unit_tags(unit)
         limit = 5
         chips = [{"label": tag, "tone": "neutral"} for tag in static_tags[:limit]]
         rest = len(static_tags) - limit
         if rest > 0:
             chips.append({"label": f"+{rest}", "tone": "neutral"})
+        return chips
+
+    def _unit_status_chips(self, threat: Dict[str, object]) -> List[Dict[str, str]]:
+        chips: List[Dict[str, str]] = []
         if threat.get("in_cover") is True:
-            chips.append({"label": "IN COVER", "tone": "good"})
+            chips.append({"label": "🛡 IN COVER", "tone": "good"})
         if threat.get("obscured") == "✔":
-            chips.append({"label": "OBSCURED", "tone": "good"})
-        elif threat.get("fully_visible"):
-            chips.append({"label": "FULLY VISIBLE", "tone": "warn"})
+            chips.append({"label": "👁 OBSCURED", "tone": "status_obscured"})
+        elif threat.get("fully_visible") and isinstance(threat.get("enemies_seeing"), int) and int(threat.get("enemies_seeing")) > 0:
+            chips.append({"label": "⚠ EXPOSED", "tone": "status_exposed"})
         objective_status = threat.get("objective_status")
         if objective_status:
-            chips.append({"label": f"OBJECTIVE: {objective_status}", "tone": "objective"})
+            if str(objective_status).upper() == "HOLDING":
+                chips.append({"label": "🏁 OBJECTIVE: HOLDING", "tone": "status_holding"})
+            else:
+                chips.append({"label": "⚔ OBJECTIVE: CONTESTING", "tone": "status_contesting"})
         return chips
 
     def _enemy_keys_in_range_of(self, unit: dict, forced_range: Optional[int] = None) -> List[Tuple[str, int]]:
@@ -3955,7 +3969,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return "Юнит"
 
     def _tooltip_cover_status(self, unit: dict) -> str:
-        cover = self._read_first_bool(unit, ("in_cover", "cover", "has_cover"))
+        status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else unit
+        cover = self._read_first_bool(status, ("in_cover", "cover", "has_cover"))
         if cover is None:
             return "—"
         return "Да" if cover else "Нет"

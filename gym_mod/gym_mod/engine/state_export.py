@@ -4,6 +4,8 @@ import tempfile
 import time
 from datetime import datetime
 
+from gym_mod.engine.visibility import visibility_report
+
 from gym_mod.engine.event_bus import get_event_recorder
 from gym_mod.engine.io_profiler import get_io_profiler
 
@@ -117,6 +119,98 @@ def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, ancho
         "anchor_y": _safe_int(anchor[0], None) if anchor is not None else None,
         "model_positions": model_positions or [],
         "facing": facing,
+        "keywords": list(unit_data.get("KEYWORDS") or []) if isinstance(unit_data, dict) else [],
+    }
+
+
+def _status_debug_enabled() -> bool:
+    raw = str(os.getenv("STATUS_DEBUG", os.getenv("TERRAIN_DEBUG", "0"))).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _objective_state_for_unit(env, side: str, unit_cell: tuple[int, int]) -> str | None:
+    objectives = list(getattr(env, "coordsOfOM", []) or [])
+    if not objectives:
+        return None
+    for idx, coords in enumerate(objectives):
+        if not isinstance(coords, (list, tuple)) or len(coords) < 2:
+            continue
+        oy, ox = int(coords[0]), int(coords[1])
+        if max(abs(unit_cell[0] - oy), abs(unit_cell[1] - ox)) > 3:
+            continue
+        model_oc = int(getattr(env, "model_obj_oc", [0])[idx]) if idx < len(getattr(env, "model_obj_oc", [])) else 0
+        enemy_oc = int(getattr(env, "enemy_obj_oc", [0])[idx]) if idx < len(getattr(env, "enemy_obj_oc", [])) else 0
+        if model_oc > 0 and enemy_oc > 0:
+            return "contesting"
+        if side == "model" and model_oc > enemy_oc:
+            return "holding"
+        if side == "enemy" and enemy_oc > model_oc:
+            return "holding"
+        if model_oc > 0 or enemy_oc > 0:
+            return "contesting"
+    return None
+
+
+def _unit_status_payload(env, side: str, idx: int) -> dict:
+    own_coords = env.unit_coords if side == "model" else env.enemy_coords
+    enemy_coords = env.enemy_coords if side == "model" else env.unit_coords
+    enemy_weapon = env.enemy_weapon if side == "model" else env.unit_weapon
+    unit_data = env._get_unit_data(side, idx) if hasattr(env, "_get_unit_data") else {}
+
+    if idx >= len(own_coords):
+        return {"in_cover": False, "obscured": False, "fully_visible": False, "objective_state": None}
+
+    unit_cell = (int(own_coords[idx][0]), int(own_coords[idx][1]))
+    obscuring_cells = env.get_terrain_obscuring_cells_set() if hasattr(env, "get_terrain_obscuring_cells_set") else set()
+    opaque_cells = getattr(env, "terrain_opaque_cells", set())
+    visibility_mode = getattr(env, "visibility_mode", "single_ray")
+
+    enemies_seeing = 0
+    obscured_seen = 0
+    fully_visible_seen = 0
+    for enemy_idx, enemy in enumerate(enemy_coords):
+        if not isinstance(enemy, (list, tuple)) or len(enemy) < 2:
+            continue
+        attacker_cell = (int(enemy[0]), int(enemy[1]))
+        report = visibility_report(
+            attacker_cell,
+            unit_cell,
+            opaque_cells_set=opaque_cells,
+            obscuring_cells_set=obscuring_cells,
+            visibility_mode=visibility_mode,
+        )
+        if not bool(report.get("los", False)):
+            continue
+        distance = max(abs(attacker_cell[0] - unit_cell[0]), abs(attacker_cell[1] - unit_cell[1]))
+        range_limit = 0.0
+        if enemy_idx < len(enemy_weapon) and isinstance(enemy_weapon[enemy_idx], dict):
+            range_limit = float(enemy_weapon[enemy_idx].get("Range", 0) or 0)
+        if distance > range_limit:
+            continue
+        enemies_seeing += 1
+        if bool(report.get("fully_visible", False)):
+            fully_visible_seen += 1
+        if bool(report.get("obscured", False)):
+            obscured_seen += 1
+
+    obscured = enemies_seeing > 0 and obscured_seen > 0
+    fully_visible = enemies_seeing > 0 and fully_visible_seen == enemies_seeing
+
+    in_cover = False
+    if hasattr(env, "_unit_has_keyword") and hasattr(env, "_barricade_cells"):
+        is_infantry = env._unit_has_keyword(unit_data, "infantry")
+        if is_infantry:
+            barricades = env._barricade_cells()
+            if barricades:
+                min_dist = min(max(abs(unit_cell[0] - c[0]), abs(unit_cell[1] - c[1])) for c in barricades)
+                in_cover = min_dist <= 3 and obscured
+
+    objective_state = _objective_state_for_unit(env, side, unit_cell)
+    return {
+        "in_cover": bool(in_cover),
+        "obscured": bool(obscured),
+        "fully_visible": bool(fully_visible),
+        "objective_state": objective_state,
     }
 
 
@@ -132,25 +226,38 @@ def write_state_json(env, path=None):
         unit_id = env._unit_id("enemy", idx)
         unit_data = env._get_unit_data("enemy", idx)
         hp = env.enemy_health[idx] if idx < len(env.enemy_health) else None
-        units.append(_unit_payload("player", unit_id, unit_data, coords, hp,
+        unit_payload = _unit_payload("player", unit_id, unit_data, coords, hp,
                                    alive_models=env._alive_models_from_pool("enemy", idx) if hasattr(env, "_alive_models_from_pool") else None,
                                    anchor=(env.enemy_anchor_coords[idx] if hasattr(env, "enemy_anchor_coords") and idx < len(env.enemy_anchor_coords) else None),
                                    model_positions=([{"x": _safe_int(pos[1], None), "y": _safe_int(pos[0], None), "z": _safe_int(pos[2], 0)}
                                                      for pos in env.enemy_model_positions[idx]]
                                                     if hasattr(env, "enemy_model_positions") and idx < len(env.enemy_model_positions) else []),
-                                   facing=_resolve_unit_facing(unit_data, coords, board_width)))
+                                   facing=_resolve_unit_facing(unit_data, coords, board_width))
+        unit_payload["unit_status"] = _unit_status_payload(env, "enemy", idx)
+        units.append(unit_payload)
 
     for idx, coords in enumerate(getattr(env, "unit_coords", [])):
         unit_id = env._unit_id("model", idx)
         unit_data = env._get_unit_data("model", idx)
         hp = env.unit_health[idx] if idx < len(env.unit_health) else None
-        units.append(_unit_payload("model", unit_id, unit_data, coords, hp,
+        unit_payload = _unit_payload("model", unit_id, unit_data, coords, hp,
                                    alive_models=env._alive_models_from_pool("model", idx) if hasattr(env, "_alive_models_from_pool") else None,
                                    anchor=(env.unit_anchor_coords[idx] if hasattr(env, "unit_anchor_coords") and idx < len(env.unit_anchor_coords) else None),
                                    model_positions=([{"x": _safe_int(pos[1], None), "y": _safe_int(pos[0], None), "z": _safe_int(pos[2], 0)}
                                                      for pos in env.unit_model_positions[idx]]
                                                     if hasattr(env, "unit_model_positions") and idx < len(env.unit_model_positions) else []),
-                                   facing=_resolve_unit_facing(unit_data, coords, board_width)))
+                                   facing=_resolve_unit_facing(unit_data, coords, board_width))
+        unit_payload["unit_status"] = _unit_status_payload(env, "model", idx)
+        units.append(unit_payload)
+
+    if _status_debug_enabled() and hasattr(env, "_append_agent_log"):
+        for unit in units:
+            status = unit.get("unit_status") or {}
+            env._append_agent_log(
+                f"[STATUS] unit={unit.get('id')} in_cover={bool(status.get('in_cover'))} "
+                f"obscured={bool(status.get('obscured'))} fully_visible={bool(status.get('fully_visible'))} "
+                f"objective={status.get('objective_state') or '-'}"
+            )
 
     objectives = []
     for idx, coords in enumerate(getattr(env, "coordsOfOM", [])):

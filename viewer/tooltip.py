@@ -163,19 +163,34 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         action_row.addWidget(self._details_btn)
         action_row.addWidget(self._copy_btn)
 
-        self._chips_row = QtWidgets.QWidget(self)
-        chips_layout = QtWidgets.QHBoxLayout(self._chips_row)
-        chips_layout.setContentsMargins(0, 0, 0, 0)
-        chips_layout.setSpacing(6)
-        self._chip_labels: List[QtWidgets.QLabel] = []
+        self._keywords_row = QtWidgets.QWidget(self)
+        keywords_layout = QtWidgets.QHBoxLayout(self._keywords_row)
+        keywords_layout.setContentsMargins(0, 0, 0, 0)
+        keywords_layout.setSpacing(6)
+        self._keyword_chip_labels: List[QtWidgets.QLabel] = []
         for i in range(10):
-            chip = QtWidgets.QLabel(self._chips_row)
+            chip = QtWidgets.QLabel(self._keywords_row)
             chip.setObjectName(f"unitTooltipBadge{i}")
             chip.setFont(Theme.font(size=8, bold=True))
             chip.hide()
-            chips_layout.addWidget(chip)
-            self._chip_labels.append(chip)
-        chips_layout.addStretch(1)
+            keywords_layout.addWidget(chip)
+            self._keyword_chip_labels.append(chip)
+        keywords_layout.addStretch(1)
+
+        self._status_row = QtWidgets.QWidget(self)
+        status_layout = QtWidgets.QHBoxLayout(self._status_row)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        status_layout.setSpacing(6)
+        self._status_chip_labels: List[QtWidgets.QLabel] = []
+        for i in range(6):
+            chip = QtWidgets.QLabel(self._status_row)
+            chip.setObjectName(f"unitTooltipStatusBadge{i}")
+            chip.setFont(Theme.font(size=8, bold=True))
+            chip.hide()
+            status_layout.addWidget(chip)
+            self._status_chip_labels.append(chip)
+        status_layout.addStretch(1)
+        self._status_row.hide()
 
         self._threat_label = QtWidgets.QLabel(self)
         self._threat_label.setObjectName("unitTooltipMeta")
@@ -208,7 +223,8 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         layout.setSpacing(8)
         layout.addLayout(header_layout)
         layout.addLayout(action_row)
-        layout.addWidget(self._chips_row)
+        layout.addWidget(self._keywords_row)
+        layout.addWidget(self._status_row)
         layout.addWidget(self._threat_label)
         layout.addWidget(self._divider)
         layout.addWidget(self._weapon_rows_container)
@@ -274,12 +290,29 @@ class UnitTooltipWidget(QtWidgets.QFrame):
             status_bits.append(f"{self._icon_map['debug']} DBG")
         self._status_label.setText("  ".join(status_bits))
 
-        chips = list(payload.get("chips") or [])
-        for i, chip in enumerate(self._chip_labels):
-            if i >= len(chips):
+        keyword_chips = list(payload.get("keyword_chips") or [])
+        for i, chip in enumerate(self._keyword_chip_labels):
+            if i >= len(keyword_chips):
                 chip.hide()
                 continue
-            entry = chips[i]
+            entry = keyword_chips[i]
+            label = str(entry.get("label") or "").strip()
+            if not label:
+                chip.hide()
+                continue
+            chip.setText(label)
+            chip.setProperty("tone", "neutral")
+            chip.style().unpolish(chip)
+            chip.style().polish(chip)
+            chip.show()
+
+        status_chips = list(payload.get("status_chips") or [])
+        self._status_row.setVisible(bool(status_chips))
+        for i, chip in enumerate(self._status_chip_labels):
+            if i >= len(status_chips):
+                chip.hide()
+                continue
+            entry = status_chips[i]
             label = str(entry.get("label") or "").strip()
             if not label:
                 chip.hide()
@@ -344,6 +377,10 @@ class UnitTooltipWidget(QtWidgets.QFrame):
             QLabel[tone="good"] { color: #e7f5de; background: rgba(74,112,62,0.95); border: 1px solid rgba(36,61,28,0.85); border-radius: 8px; padding: 2px 8px; }
             QLabel[tone="warn"] { color: #211808; background: rgba(242,179,76,0.95); border: 1px solid rgba(92,66,12,0.8); border-radius: 8px; padding: 2px 8px; }
             QLabel[tone="objective"] { color: #f2f4ff; background: rgba(77,94,180,0.95); border: 1px solid rgba(37,47,95,0.86); border-radius: 8px; padding: 2px 8px; }
+            QLabel[tone="status_obscured"] { color: #e7f4e3; background: rgba(84,112,90,0.95); border: 1px solid rgba(38,56,42,0.85); border-radius: 8px; padding: 2px 8px; }
+            QLabel[tone="status_holding"] { color: #edf2ff; background: rgba(69,104,190,0.95); border: 1px solid rgba(34,56,108,0.86); border-radius: 8px; padding: 2px 8px; }
+            QLabel[tone="status_contesting"] { color: #f3eaff; background: rgba(123,83,184,0.95); border: 1px solid rgba(69,44,114,0.86); border-radius: 8px; padding: 2px 8px; }
+            QLabel[tone="status_exposed"] { color: #211305; background: rgba(237,128,69,0.95); border: 1px solid rgba(104,53,19,0.86); border-radius: 8px; padding: 2px 8px; }
             QProgressBar#unitTooltipHpBar { background: rgba(10,12,10,0.6); border: 1px solid rgba(0,0,0,0.3); border-radius: 5px; }
             QProgressBar#unitTooltipHpBar::chunk { background-color: %(accent)s; border-radius: 5px; }
             """ % {"bg": bg_rgba, "accent": accent_rgba, "text": Theme.text.name(), "muted": Theme.muted.name()}
