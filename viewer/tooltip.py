@@ -349,9 +349,11 @@ class UnitTooltipWidget(QtWidgets.QFrame):
             chip.show()
 
         threat = payload.get("threat") or {}
+        can_see_ids = self._format_ids_for_panel(list(threat.get("can_see_ids") or []))
+        seen_by_ids = self._format_ids_for_panel(list(threat.get("seen_by_ids") or []))
+        in_range_ids = self._format_ids_for_panel(list(threat.get("in_range_ids") or []))
         self._threat_label.setText(
-            f"LoS: {threat.get('los', '—')}   •   Enemies seeing me: {threat.get('enemies_seeing', '—')}   •   "
-            f"Targets in range: {threat.get('targets_in_range', '—')}"
+            f"Can see: {can_see_ids} • Seen by: {seen_by_ids} • In range: {in_range_ids}"
         )
 
         profiles = list(payload.get("weapon_profiles") or [])
@@ -374,6 +376,17 @@ class UnitTooltipWidget(QtWidgets.QFrame):
 
         self.setProperty("copyStatsText", str(payload.get("copy_stats") or ""))
         self._apply_styles()
+
+    def _format_ids_for_panel(self, ids: List[object]) -> str:
+        vals = sorted({int(v) for v in ids if isinstance(v, (int, float, str)) and str(v).strip().isdigit()})
+        count = len(vals)
+        if count == 0:
+            return "0"
+        if count <= 3:
+            inside = ",".join(str(v) for v in vals)
+            return f"{count} ({inside})"
+        inside = ",".join(str(v) for v in vals[:3])
+        return f"{count} ({inside} +{count - 3})"
 
     def _on_anim_finished(self) -> None:
         if self._hiding and self._opacity_effect.opacity() <= 0.01:

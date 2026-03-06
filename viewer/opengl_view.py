@@ -298,6 +298,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._hover_terrain_feature: Optional[dict] = None
         self._hover_weapon_range: Optional[int] = None
         self._hover_status_enemy_ids: List[int] = []
+        self._visibility_lists_cache: Dict[Tuple[object, object, object], Dict[str, List[int]]] = {}
         self._last_terrain_hover_debug_sig: Optional[Tuple[int, int, str]] = None
         self._unit_data = self._load_unit_data()
         self._unit_data_by_name = self._index_unit_data(self._unit_data)
@@ -432,6 +433,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def update_state(self, state: Optional[Dict]) -> None:
         self._state = state or {}
+        self._visibility_lists_cache = {}
         if not state:
             self.set_error_message(
                 "Состояние игры недоступно. Где: viewer/state.json. "
@@ -3157,12 +3159,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._hover_weapon_range = int(range_num)
         else:
             self._hover_weapon_range = None
+        self._refresh_tooltip_anchor()
         self.update()
 
     def _on_tooltip_weapon_hover_left(self) -> None:
         if self._hover_weapon_range is None:
             return
         self._hover_weapon_range = None
+        self._refresh_tooltip_anchor()
         self.update()
 
     def _on_tooltip_copy_stats_requested(self, text: str) -> None:
@@ -3609,34 +3613,17 @@ class OpenGLBoardWidget(QOpenGLWidget):
         unit_status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else {}
         obscured_vs = [int(v) for v in list(unit_status.get("obscured_vs") or []) if str(v).strip().isdigit()]
         exposed_to = [int(v) for v in list(unit_status.get("exposed_to") or []) if str(v).strip().isdigit()]
-        enemies_seeing = len(set(obscured_vs + exposed_to))
-        targets_in_range = 0
-        if unit_cell is not None:
-            ux, uy = unit_cell
-            for enemy in enemies:
-                e_cell = self._unit_anchor_view_cell(enemy)
-                if e_cell is None:
-                    continue
-                dist = abs(e_cell[0] - ux) + abs(e_cell[1] - uy)
-                e_range = self._primary_ranged_range(enemy)
-                if e_range is not None and dist <= e_range:
-                    enemies_seeing += 1
-            own_range = self._primary_ranged_range(unit)
-            if own_range is not None:
-                for enemy in enemies:
-                    e_cell = self._unit_anchor_view_cell(enemy)
-                    if e_cell is None:
-                        continue
-                    dist = abs(e_cell[0] - ux) + abs(e_cell[1] - uy)
-                    if dist <= own_range:
-                        targets_in_range += 1
+        vis_lists = self._unit_visibility_lists(unit)
+        can_see_ids = vis_lists.get("can_see_ids", [])
+        seen_by_ids = vis_lists.get("seen_by_ids", [])
+        in_range_ids = vis_lists.get("in_range_ids", [])
+        enemies_seeing = len(seen_by_ids)
+        targets_in_range = len(in_range_ids)
         obscured = self._read_first_bool(unit_status, ("obscured",))
         fully_visible = self._read_first_bool(unit_status, ("fully_visible",))
         los_bool = enemies_seeing > 0
         if fully_visible is None:
             fully_visible = los_bool and not bool(obscured)
-        if isinstance(unit_status.get("in_range_targets"), list):
-            targets_in_range = len([v for v in unit_status.get("in_range_targets") if isinstance(v, (int, float, str)) and str(v).strip().isdigit()])
         return {
             "los": "✔" if los_bool else "✖",
             "obscured": "✔" if obscured else ("✖" if obscured is not None else "—"),
@@ -3649,7 +3636,81 @@ class OpenGLBoardWidget(QOpenGLWidget):
             "obscured_vs": obscured_vs,
             "exposed_to": exposed_to,
             "engagement_with": [int(v) for v in list(unit_status.get("engagement_with") or []) if str(v).strip().isdigit()],
+            "can_see_ids": can_see_ids,
+            "seen_by_ids": seen_by_ids,
+            "in_range_ids": in_range_ids,
         }
+
+    def _unit_visibility_lists(self, unit: dict) -> Dict[str, List[int]]:
+        unit_status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else {}
+        state_sig = self._state.get("generated_at") or f"{self._state.get('turn')}-{self._state.get('round')}-{self._state.get('phase')}"
+        unit_key = (unit.get("side"), unit.get("id"), state_sig, self._hover_weapon_range)
+        cached = self._visibility_lists_cache.get(unit_key)
+        if cached is not None:
+            return cached
+
+        def _ids(raw: object) -> List[int]:
+            if not isinstance(raw, list):
+                return []
+            vals = [int(v) for v in raw if isinstance(v, (int, float, str)) and str(v).strip().isdigit()]
+            return sorted(set(vals))
+
+        can_see_ids = _ids(unit_status.get("can_see_ids"))
+        seen_by_ids = _ids(unit_status.get("seen_by_ids"))
+        if self._hover_weapon_range is None:
+            in_range_ids = _ids(unit_status.get("in_range_ids") or unit_status.get("in_range_targets"))
+        else:
+            in_range_ids = []
+
+        # fallback если движок не прислал поля
+        if not can_see_ids or not seen_by_ids:
+            unit_cell = self._unit_anchor_view_cell(unit)
+            if unit_cell is not None:
+                ux, uy = unit_cell
+                if not can_see_ids:
+                    for enemy in (self._state.get("units", []) or []):
+                        if enemy.get("side") == unit.get("side"):
+                            continue
+                        e_cell = self._unit_anchor_view_cell(enemy)
+                        if e_cell is None:
+                            continue
+                        # fallback: без движка считаем как потенциально видимую цель по геометрии
+                        can_see_ids.append(int(enemy.get("id")))
+                if not seen_by_ids:
+                    for enemy in (self._state.get("units", []) or []):
+                        if enemy.get("side") == unit.get("side"):
+                            continue
+                        e_cell = self._unit_anchor_view_cell(enemy)
+                        if e_cell is None:
+                            continue
+                        dist = abs(e_cell[0] - ux) + abs(e_cell[1] - uy)
+                        e_range = self._primary_ranged_range(enemy)
+                        if e_range is not None and dist <= e_range:
+                            seen_by_ids.append(int(enemy.get("id")))
+                if not in_range_ids or self._hover_weapon_range is not None:
+                    own_range = self._hover_weapon_range if self._hover_weapon_range is not None else self._primary_ranged_range(unit)
+                    if own_range is not None:
+                        can_see_set = set(can_see_ids)
+                        for enemy in (self._state.get("units", []) or []):
+                            if enemy.get("side") == unit.get("side"):
+                                continue
+                            enemy_id = int(enemy.get("id")) if str(enemy.get("id")).strip().isdigit() else None
+                            if enemy_id is None or enemy_id not in can_see_set:
+                                continue
+                            e_cell = self._unit_anchor_view_cell(enemy)
+                            if e_cell is None:
+                                continue
+                            dist = abs(e_cell[0] - ux) + abs(e_cell[1] - uy)
+                            if dist <= own_range:
+                                in_range_ids.append(enemy_id)
+
+        result = {
+            "can_see_ids": sorted(set(can_see_ids)),
+            "seen_by_ids": sorted(set(seen_by_ids)),
+            "in_range_ids": sorted(set(in_range_ids)),
+        }
+        self._visibility_lists_cache[unit_key] = result
+        return result
 
     def _primary_ranged_range(self, unit: dict) -> Optional[int]:
         ranged = self._get_primary_ranged_weapon(unit)

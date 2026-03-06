@@ -218,9 +218,11 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
     fully_visible_seen = 0
     obscured_vs: list[int] = []
     exposed_to: list[int] = []
+    seen_by_ids: list[int] = []
     for enemy_idx, enemy in enumerate(enemy_coords):
         if not isinstance(enemy, (list, tuple)) or len(enemy) < 2:
             continue
+        enemy_id = env._unit_id("enemy" if side == "model" else "model", enemy_idx) if hasattr(env, "_unit_id") else None
         attacker_cell = (int(enemy[0]), int(enemy[1]))
         report = visibility_report(
             attacker_cell,
@@ -232,13 +234,14 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
         )
         if not bool(report.get("los", False)):
             continue
+        if enemy_id is not None:
+            seen_by_ids.append(int(enemy_id))
         distance = max(abs(attacker_cell[0] - unit_cell[0]), abs(attacker_cell[1] - unit_cell[1]))
         range_limit = 0.0
         if enemy_idx < len(enemy_weapon) and isinstance(enemy_weapon[enemy_idx], dict):
             range_limit = float(enemy_weapon[enemy_idx].get("Range", 0) or 0)
         if distance > range_limit:
             continue
-        enemy_id = env._unit_id("enemy" if side == "model" else "model", enemy_idx) if hasattr(env, "_unit_id") else None
         enemies_seeing += 1
         if bool(report.get("fully_visible", False)):
             fully_visible_seen += 1
@@ -277,6 +280,7 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
                 engagement_with.append(int(enemy_id))
 
     in_range_targets: list[int] = []
+    can_see_ids: list[int] = []
     own_range = 0.0
     if idx < len(own_weapon) and isinstance(own_weapon[idx], dict):
         own_range = float(own_weapon[idx].get("Range", 0) or 0)
@@ -305,6 +309,7 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
                 continue
             enemy_id = env._unit_id("enemy" if side == "model" else "model", enemy_idx) if hasattr(env, "_unit_id") else None
             if enemy_id is not None:
+                can_see_ids.append(int(enemy_id))
                 in_range_targets.append(int(enemy_id))
 
     return {
@@ -316,6 +321,9 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
         "exposed_to": sorted(set(exposed_to)),
         "engagement_with": sorted(set(engagement_with)),
         "in_range_targets": sorted(set(in_range_targets)),
+        "can_see_ids": sorted(set(can_see_ids)),
+        "seen_by_ids": sorted(set(seen_by_ids)),
+        "in_range_ids": sorted(set(in_range_targets)),
     }
 
 
