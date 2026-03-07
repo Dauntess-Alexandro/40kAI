@@ -8,6 +8,7 @@ import threading
 import queue
 import atexit
 import time
+import random
 
 from gym_mod.engine.io_profiler import get_io_profiler
 
@@ -350,6 +351,13 @@ class GuiIO(BaseIO):
             return None
         if isinstance(answer, list):
             return answer
+        if isinstance(answer, dict):
+            if bool(answer.get("auto")):
+                min_val = 1 if min_value is None else int(min_value)
+                max_val = 6 if max_value is None else int(max_value)
+                n = max(0, int(count or 0))
+                return [random.randint(min_val, max_val) for _ in range(n)]
+            return None
         if isinstance(answer, str):
             try:
                 min_val = 1 if min_value is None else min_value
