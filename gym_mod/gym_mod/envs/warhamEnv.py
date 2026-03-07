@@ -1220,6 +1220,22 @@ class Warhammer40kEnv(gym.Env):
 
         return reachable
 
+    def get_unit_movement_overlay(self, side: str, idx: int) -> dict[str, list[tuple[int, int]]]:
+        move_budget = self._movement_budget_for_unit(side, int(idx))
+        move_cells = self.get_unit_reachable_cells(side, idx, budget=move_budget)
+        advance_budget = move_budget + 6
+        advance_all = self.get_unit_reachable_cells(side, idx, budget=advance_budget)
+        move_set = set((int(x), int(y)) for x, y in move_cells)
+        advance_cells = [
+            (int(x), int(y))
+            for x, y in advance_all
+            if (int(x), int(y)) not in move_set
+        ]
+        return {
+            "move_cells": [(int(x), int(y)) for x, y in move_cells],
+            "advance_cells": advance_cells,
+        }
+
     def _visibility_report_between_units(self, attacker_side: str, attacker_idx: int, target_side: str, target_idx: int) -> dict:
         attacker_coords = self.unit_coords if attacker_side == "model" else self.enemy_coords
         target_coords = self.unit_coords if target_side == "model" else self.enemy_coords
@@ -2606,6 +2622,7 @@ class Warhammer40kEnv(gym.Env):
             self.modelCP += 1
             battle_shock = [False] * len(self.enemy_health)
             for i in range(len(self.enemy_health)):
+                self.current_action_index = i
                 playerName = i + 11
                 battleSh = False
                 unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
@@ -3078,6 +3095,7 @@ class Warhammer40kEnv(gym.Env):
             self.enemy_used_advance = [False] * len(self.enemy_health)
             self.enemy_advance_roll = [None] * len(self.enemy_health)
             for i in range(len(self.enemy_health)):
+                self.current_action_index = i
                 playerName = i + 11
                 battleSh = battle_shock[i] if battle_shock else False
                 unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
@@ -3120,41 +3138,34 @@ class Warhammer40kEnv(gym.Env):
                     self.updateBoard()
                     self.showBoard()
 
-                    advanced = False
-                    advance_roll = None
                     base_move = int(self.enemy_data[i].get("Movement", 0) or 0)
-                    adv = self._prompt_yes_no("Сделать Advance? (y/n): ")
-                    if adv is None:
-                        self.game_over = True
-                        return None
-                    if adv:
-                        advanced = True
-                        self._log("Бросок 1D6 на Advance...", verbose_only=True)
-                        roll = player_dice()
-                        advance_roll = int(roll)
-                        self._log(f"Бросок: {roll}", verbose_only=True)
+                    overlay = self.get_unit_movement_overlay("enemy", i)
+                    move_cells = overlay.get("move_cells") or []
+                    advance_cells = overlay.get("advance_cells") or []
+                    reachable = list(move_cells) + list(advance_cells)
+                    if not reachable:
+                        self._log(f"{unit_label}: нет достижимых клеток для движения (budget={base_move + 6}).")
+                        advanced_flags[i] = False
+                        continue
 
-                    movement_cap = base_move + (int(advance_roll) if advanced and advance_roll is not None else 0)
-                    self.enemy_used_advance[i] = bool(advanced)
-                    self.enemy_advance_roll[i] = int(advance_roll) if advance_roll is not None else None
+                    self.enemy_used_advance[i] = False
+                    self.enemy_advance_roll[i] = None
                     self.updateBoard()
                     self.showBoard()
 
-                    reachable = self.get_unit_reachable_cells("enemy", i, budget=movement_cap)
-                    if not reachable:
-                        self._log(f"{unit_label}: нет достижимых клеток для движения (budget={movement_cap}).")
-                        advanced_flags[i] = advanced
-                        continue
-
                     dest = None
-                    reachable_set = set((int(x), int(y)) for x, y in reachable)
+                    move_set = set((int(x), int(y)) for x, y in move_cells)
+                    advance_set = set((int(x), int(y)) for x, y in advance_cells)
                     while dest is None:
                         move_meta = {
                             "move_request": True,
                             "unit_id": int(playerName),
                             "unit_side": "player",
-                            "movement_budget": int(movement_cap),
+                            "movement_budget": int(base_move),
+                            "movement_budget_advance": int(base_move + 6),
                             "reachable_cells": [[int(x), int(y)] for x, y in reachable],
+                            "move_cells": [[int(x), int(y)] for x, y in move_cells],
+                            "advance_cells": [[int(x), int(y)] for x, y in advance_cells],
                         }
                         answer = self._ensure_io().request_deploy_coord(
                             f"{unit_label}. Выберите клетку назначения (reachable={len(reachable)}): ",
@@ -3169,15 +3180,35 @@ class Warhammer40kEnv(gym.Env):
                             return None
                         tx = int(answer.get("x"))
                         ty = int(answer.get("y"))
-                        if (tx, ty) not in reachable_set:
+                        mode = str(answer.get("mode") or "").strip().lower()
+                        cell = (tx, ty)
+                        if cell in move_set:
+                            move_mode = "normal"
+                        elif cell in advance_set:
+                            move_mode = "advance"
+                        elif mode in {"normal", "move"} and cell in move_set:
+                            move_mode = "normal"
+                        elif mode in {"advance", "adv"} and cell in advance_set:
+                            move_mode = "advance"
+                        else:
                             self._log(
                                 f"{unit_label}: клетка ({tx},{ty}) недостижима. "
                                 "Что делать дальше: выберите подсвеченную reachable-клетку."
                             )
                             continue
-                        dest = (tx, ty)
+                        dest = cell
 
-                    advanced_flags[i] = advanced
+                    distance_cells = abs(int(dest[0]) - int(pos_before[1])) + abs(int(dest[1]) - int(pos_before[0]))
+                    advanced = move_mode == "advance"
+                    advance_roll = max(1, int(distance_cells - base_move)) if advanced else 0
+                    self.enemy_used_advance[i] = bool(advanced)
+                    self.enemy_advance_roll[i] = int(advance_roll)
+                    advanced_flags[i] = bool(advanced)
+                    self._append_agent_log(
+                        f"[MOVE] unit={playerName} {move_mode} to=({int(dest[0])},{int(dest[1])}) "
+                        f"dist={int(distance_cells)} M={int(base_move)}"
+                        + (f" adv={int(max(0, distance_cells - base_move))}" if advanced else "")
+                    )
                     self.enemy_coords[i] = [int(dest[1]), int(dest[0])]
 
                     self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
@@ -3693,8 +3724,17 @@ class Warhammer40kEnv(gym.Env):
                                     self.game_over = True
                                     return None
                                 shoot_value = str(shoot).strip()
-                                if is_num(shoot_value) is True and int(shoot_value) - 21 in shootAble:
-                                    idOfE = int(shoot_value) - 21
+                                shoot_parts = [part for part in re.split(r"[|,;:]", shoot_value) if str(part).strip()]
+                                shoot_target_raw = shoot_parts[0].strip() if shoot_parts else shoot_value
+                                dice_count = None
+                                if len(shoot_parts) > 1 and str(shoot_parts[1]).strip().isdigit():
+                                    dice_count = int(str(shoot_parts[1]).strip())
+                                if is_num(shoot_target_raw) is True and int(shoot_target_raw) - 21 in shootAble:
+                                    idOfE = int(shoot_target_raw) - 21
+                                    if dice_count is not None:
+                                        self._log(
+                                            f"{unit_label}: Fire popover -> цель={self._format_unit_label('model', idOfE)}, кубы(D6)={dice_count}."
+                                        )
                                     effect = self._maybe_use_smokescreen(
                                         defender_side="model",
                                         defender_idx=idOfE,

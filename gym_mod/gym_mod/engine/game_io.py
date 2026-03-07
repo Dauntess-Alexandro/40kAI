@@ -385,7 +385,10 @@ class GuiIO(BaseIO):
             return None
         if isinstance(answer, dict):
             try:
-                return {"x": int(answer.get("x")), "y": int(answer.get("y"))}
+                payload = {"x": int(answer.get("x")), "y": int(answer.get("y"))}
+                if answer.get("mode") is not None:
+                    payload["mode"] = str(answer.get("mode"))
+                return payload
             except (TypeError, ValueError):
                 return None
         if isinstance(answer, (list, tuple)) and len(answer) >= 2:
