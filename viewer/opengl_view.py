@@ -182,6 +182,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
     cell_clicked = QtCore.Signal(int, int)
     cell_right_clicked = QtCore.Signal(int, int)
     cell_hovered = QtCore.Signal(object)
+    shoot_overlay_mode_changed = QtCore.Signal(str)
 
     def __init__(
         self,
@@ -234,6 +235,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._shoot_target_valid: List[Tuple[QtCore.QPointF, float]] = []
         self._shoot_target_no_los: List[Tuple[QtCore.QPointF, float]] = []
         self._shoot_target_obscured: List[Tuple[QtCore.QPointF, float]] = []
+        self._show_shoot_range_cells = False
         self._show_objective_radius = True
 
         self._active_unit_id = None
@@ -1435,6 +1437,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
         phase = str(self._phase or "").lower()
         return "shoot" in phase or "стрел" in phase or "shooting" in phase
 
+    def shooting_overlay_mode_label(self) -> str:
+        if self._show_shoot_range_cells:
+            return "Cells+Targets"
+        return "Targets"
+
     def _draw_movement_overlay(self, unit: dict) -> None:
         move_range = self._move_range
         if move_range is None:
@@ -1703,6 +1710,12 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if key == QtCore.Qt.Key_D:
             self._debug_overlay = not self._debug_overlay
             self._tooltip_widget.set_debug_mode(self._debug_overlay)
+            self.update()
+            return
+        if key == QtCore.Qt.Key_R and self._should_show_shooting():
+            self._show_shoot_range_cells = not self._show_shoot_range_cells
+            self.shoot_overlay_mode_changed.emit(self.shooting_overlay_mode_label())
+            self.refresh_overlays()
             self.update()
             return
         super().keyPressEvent(event)
@@ -2196,13 +2209,15 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def _draw_shooting_layer(self, painter: QtGui.QPainter) -> None:
         if not self._should_show_shooting():
             return
-        if not self._shoot_range_highlights and not (self._shoot_target_valid or self._shoot_target_no_los or self._shoot_target_obscured):
+        if not (self._shoot_target_valid or self._shoot_target_no_los or self._shoot_target_obscured or (self._show_shoot_range_cells and self._shoot_range_highlights)):
             return
 
-        if self._shoot_range_highlights:
+        if self._show_shoot_range_cells and self._shoot_range_highlights:
             painter.save()
-            fill = QtGui.QColor(110, 200, 120, 24)
-            border = QtGui.QPen(QtGui.QColor(110, 200, 120, 65), 0.9)
+            range_val = self._safe_int(self._shoot_range, 0) or 0
+            thin = range_val > 18
+            fill = QtGui.QColor(110, 200, 120, 12 if thin else 24)
+            border = QtGui.QPen(QtGui.QColor(110, 200, 120, 32 if thin else 65), 0.8 if thin else 0.9)
             border.setCosmetic(True)
             painter.setBrush(QtGui.QBrush(fill))
             painter.setPen(border)

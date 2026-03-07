@@ -235,6 +235,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.map_scene.cell_right_clicked.connect(self._on_cell_right_clicked)
         self.map_scene.cell_hovered.connect(self._on_cell_hovered)
         self.map_scene.unit_right_clicked.connect(self._on_unit_right_clicked)
+        self.map_scene.shoot_overlay_mode_changed.connect(self._on_shoot_overlay_mode_changed)
 
         self.status_round = QtWidgets.QLabel("Раунд: —")
         self.status_turn = QtWidgets.QLabel("Ход: —")
@@ -640,9 +641,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
             weapon, weapon_range = self._resolve_weapon_name_and_range(unit)
         unit_label = str(unit_id) if unit_id is not None else "—"
         weapon_suffix = f" (R{weapon_range})" if isinstance(weapon_range, int) and weapon_range > 0 else ""
+        overlay_mode = "Targets"
+        if hasattr(self, "map_scene") and hasattr(self.map_scene, "shooting_overlay_mode_label"):
+            overlay_mode = str(self.map_scene.shooting_overlay_mode_label())
         return (
-            f"Стрельба: Unit {unit_label} — {weapon}{weapon_suffix}\n"
-            "ПКМ по врагу: выбрать цель\n"
+            f"Стрельба: Unit {unit_label}\n"
+            f"Weapon: {weapon}{weapon_suffix} • Overlay: {overlay_mode}\n"
+            "ПКМ по врагу: выбрать цель • R: показать/скрыть клетки\n"
             "Enter: Continue • Esc: Cancel"
         )
 
@@ -755,7 +760,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 if isinstance(unit, dict):
                     weapon, weapon_range = self._resolve_weapon_name_and_range(unit)
         range_text = f"R{weapon_range}" if isinstance(weapon_range, int) and weapon_range > 0 else "—"
-        self.shoot_popover_meta.setText(f"Weapon: {weapon} ({range_text}) • Range OK • LoS OK")
+        overlay_mode = "Targets"
+        if hasattr(self, "map_scene") and hasattr(self.map_scene, "shooting_overlay_mode_label"):
+            overlay_mode = str(self.map_scene.shooting_overlay_mode_label())
+        self.shoot_popover_meta.setText(f"Weapon: {weapon} ({range_text}) • Overlay: {overlay_mode} • LoS OK")
         self.shoot_stepper.setText(self._shoot_stepper_text())
 
         request = self._pending_request
@@ -1160,6 +1168,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._set_confirm_enabled(True)
         target_label = self._format_unit_label(unit_id)
         self.add_log_line(f"REQ: target selected Unit {target_label}")
+
+    def _on_shoot_overlay_mode_changed(self, _mode: str) -> None:
+        req = self._pending_request
+        if self._is_shooting_target_request(req) or self._is_shooting_dice_request(req):
+            self.command_prompt.setText(self._shoot_instruction_text())
+            if getattr(self, "shoot_popover", None) and self.shoot_popover.isVisible():
+                self._update_shoot_popover_ui()
 
     def _on_unit_right_clicked(self, side: str, unit_id: int, global_pos) -> None:
         req = self._pending_request
