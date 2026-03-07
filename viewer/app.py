@@ -537,11 +537,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.shoot_popover.setStyleSheet(
             f"QFrame#shootPopover {{ background: {Theme.panel.name()}; border: 1px solid {Theme.outline.name()}; border-radius: 12px; }}"
         )
-        shadow = QtWidgets.QGraphicsDropShadowEffect(self.shoot_popover)
-        shadow.setBlurRadius(18)
-        shadow.setOffset(0, 6)
-        shadow.setColor(QtGui.QColor(0, 0, 0, 130))
-        self.shoot_popover.setGraphicsEffect(shadow)
+        if not sys.platform.startswith("win"):
+            shadow = QtWidgets.QGraphicsDropShadowEffect(self.shoot_popover)
+            shadow.setBlurRadius(18)
+            shadow.setOffset(0, 6)
+            shadow.setColor(QtGui.QColor(0, 0, 0, 130))
+            self.shoot_popover.setGraphicsEffect(shadow)
 
         layout = QtWidgets.QVBoxLayout(self.shoot_popover)
         layout.setContentsMargins(14, 12, 14, 12)
@@ -629,7 +630,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _shoot_instruction_text(self) -> str:
         unit_id, side = self._resolve_active_unit()
-        unit = self._units_by_key.get((side, unit_id)) if unit_id is not None else None
+        if unit_id is None:
+            unit_id = self._shoot_resolver_attacker_id or self._last_shooter_id
+            side = self._side_from_unit_id(int(unit_id)) if unit_id is not None else side
+        unit = self._units_by_key.get((side, unit_id)) if unit_id is not None and side is not None else None
         weapon = "—"
         if isinstance(unit, dict):
             weapon = str(unit.get("weapon_name") or unit.get("weapon") or "—")
@@ -802,9 +806,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _open_shoot_popover(self, target_id: int, global_pos: Optional[QtCore.QPoint] = None) -> None:
         if target_id not in self._shoot_targets_valid:
             return
+        req = self._pending_request
+        if not self._shoot_resolver_active:
+            self._shoot_resolver_step = 0
         self._shoot_resolver_active = True
-        self._shoot_resolver_step = 0
-        self._shoot_resolver_attacker_id = self._active_unit_id
+        if self._shoot_resolver_attacker_id is None:
+            self._shoot_resolver_attacker_id = self._active_unit_id or self._last_shooter_id
+        if getattr(req, "kind", "") == "dice" and self._shoot_popover_target_id is not None:
+            self._shoot_resolver_step = max(self._shoot_resolver_step, 1)
         self._current_target_id = int(target_id)
         self.map_scene.set_target_unit(int(target_id))
         self._shoot_popover_target_id = int(target_id)
@@ -826,6 +835,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._shoot_resolver_attacker_id = None
         if hasattr(self, "shoot_popover"):
             self.shoot_popover.hide()
+        if self._is_shooting_target_request(self._pending_request) or self._is_shooting_dice_request(self._pending_request):
+            self.command_prompt.setText(self._shoot_instruction_text())
 
     def _shoot_step_action(self) -> None:
         if not self._shoot_resolver_active:
@@ -1147,7 +1158,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.add_log_line(f"REQ: target selected Unit {target_label}")
 
     def _on_unit_right_clicked(self, side: str, unit_id: int, global_pos) -> None:
-        if not self._is_shooting_target_request(self._pending_request):
+        req = self._pending_request
+        if not (self._is_shooting_target_request(req) or self._is_shooting_dice_request(req)):
             return
         if side != "model":
             self._close_shoot_popover()
