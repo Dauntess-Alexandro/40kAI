@@ -347,7 +347,9 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
     reachable_cells: list[list[int]] = []
     move_cells: list[list[int]] = []
     advance_cells: list[list[int]] = []
-    if hasattr(env, "get_unit_movement_overlay"):
+    phase_raw = str(getattr(env, "phase", "") or "").lower()
+    movement_phase = ("move" in phase_raw) or ("движ" in phase_raw) or ("movement" in phase_raw)
+    if movement_phase and hasattr(env, "get_unit_movement_overlay"):
         try:
             overlay = env.get_unit_movement_overlay(side, idx)
             for cell in _iter_values(overlay.get("move_cells") if isinstance(overlay, dict) else []):
@@ -368,7 +370,7 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
             reachable_cells = []
             move_cells = []
             advance_cells = []
-    elif hasattr(env, "get_unit_reachable_cells"):
+    elif movement_phase and hasattr(env, "get_unit_reachable_cells"):
         try:
             raw_reach = env.get_unit_reachable_cells(side, idx)
             for cell in _iter_values(raw_reach):

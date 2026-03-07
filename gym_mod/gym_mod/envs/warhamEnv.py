@@ -3724,8 +3724,17 @@ class Warhammer40kEnv(gym.Env):
                                     self.game_over = True
                                     return None
                                 shoot_value = str(shoot).strip()
-                                if is_num(shoot_value) is True and int(shoot_value) - 21 in shootAble:
-                                    idOfE = int(shoot_value) - 21
+                                shoot_parts = [part for part in re.split(r"[|,;:]", shoot_value) if str(part).strip()]
+                                shoot_target_raw = shoot_parts[0].strip() if shoot_parts else shoot_value
+                                dice_count = None
+                                if len(shoot_parts) > 1 and str(shoot_parts[1]).strip().isdigit():
+                                    dice_count = int(str(shoot_parts[1]).strip())
+                                if is_num(shoot_target_raw) is True and int(shoot_target_raw) - 21 in shootAble:
+                                    idOfE = int(shoot_target_raw) - 21
+                                    if dice_count is not None:
+                                        self._log(
+                                            f"{unit_label}: Fire popover -> цель={self._format_unit_label('model', idOfE)}, кубы(D6)={dice_count}."
+                                        )
                                     effect = self._maybe_use_smokescreen(
                                         defender_side="model",
                                         defender_idx=idOfE,

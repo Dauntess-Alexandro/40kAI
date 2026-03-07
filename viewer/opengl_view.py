@@ -178,6 +178,7 @@ class TextureManager:
 
 class OpenGLBoardWidget(QOpenGLWidget):
     unit_selected = QtCore.Signal(str, int)
+    unit_right_clicked = QtCore.Signal(str, int, object)
     cell_clicked = QtCore.Signal(int, int)
     cell_right_clicked = QtCore.Signal(int, int)
     cell_hovered = QtCore.Signal(object)
@@ -844,67 +845,70 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._advance_cells_set = set()
         self._target_highlights = []
 
-        if not self._should_show_movement():
-            return
         active_key = (self._active_unit_side, self._active_unit_id)
         if active_key[0] is None or active_key[1] is None:
             return
         unit = self._state_unit(active_key)
         if not isinstance(unit, dict):
             return
-        move_cells, advance_cells = self._active_unit_movement_cells_statexy(unit)
-        cells = list(move_cells) + list(advance_cells)
-        if not cells:
+
+        if self._should_show_movement():
+            move_cells, advance_cells = self._active_unit_movement_cells_statexy(unit)
+            cells = list(move_cells) + list(advance_cells)
+            if cells:
+                all_highlights: List[QtCore.QRectF] = []
+                move_highlights: List[QtCore.QRectF] = []
+                advance_highlights: List[QtCore.QRectF] = []
+                cell_set: set[tuple[int, int]] = set()
+                move_set: set[tuple[int, int]] = set()
+                advance_set: set[tuple[int, int]] = set()
+
+                for x, y in move_cells:
+                    view_cell = self._state_to_view_cell(x, y)
+                    if view_cell is None:
+                        continue
+                    move_set.add((int(x), int(y)))
+                    cell_set.add((int(x), int(y)))
+                    vx, vy = view_cell
+                    rect = QtCore.QRectF(vx * self.cell_size, vy * self.cell_size, self.cell_size, self.cell_size)
+                    move_highlights.append(rect)
+                    all_highlights.append(rect)
+
+                for x, y in advance_cells:
+                    view_cell = self._state_to_view_cell(x, y)
+                    if view_cell is None:
+                        continue
+                    advance_set.add((int(x), int(y)))
+                    cell_set.add((int(x), int(y)))
+                    vx, vy = view_cell
+                    rect = QtCore.QRectF(vx * self.cell_size, vy * self.cell_size, self.cell_size, self.cell_size)
+                    advance_highlights.append(rect)
+                    all_highlights.append(rect)
+
+                self._reachable_cells_set = cell_set
+                self._reachable_highlights = all_highlights
+                self._move_cells_set = move_set
+                self._advance_cells_set = advance_set
+                self._move_reachable_highlights = move_highlights
+                self._advance_reachable_highlights = advance_highlights
+
+                if self._viewer_debug_enabled:
+                    sig = (
+                        active_key[1],
+                        len(move_set),
+                        len(advance_set),
+                        hash(tuple(sorted(cell_set))) if cell_set else 0,
+                    )
+                    if sig != self._reachable_overlay_sig:
+                        self._reachable_overlay_sig = sig
+                        self._append_agent_log(
+                            f"[VIEWER] reachable_overlay unit={active_key[1]} move={len(move_set)} advance={len(advance_set)}"
+                        )
             return
 
-        all_highlights: List[QtCore.QRectF] = []
-        move_highlights: List[QtCore.QRectF] = []
-        advance_highlights: List[QtCore.QRectF] = []
-        cell_set: set[tuple[int, int]] = set()
-        move_set: set[tuple[int, int]] = set()
-        advance_set: set[tuple[int, int]] = set()
+        if self._should_show_shooting():
+            self._draw_target_overlay(unit)
 
-        for x, y in move_cells:
-            view_cell = self._state_to_view_cell(x, y)
-            if view_cell is None:
-                continue
-            move_set.add((int(x), int(y)))
-            cell_set.add((int(x), int(y)))
-            vx, vy = view_cell
-            rect = QtCore.QRectF(vx * self.cell_size, vy * self.cell_size, self.cell_size, self.cell_size)
-            move_highlights.append(rect)
-            all_highlights.append(rect)
-
-        for x, y in advance_cells:
-            view_cell = self._state_to_view_cell(x, y)
-            if view_cell is None:
-                continue
-            advance_set.add((int(x), int(y)))
-            cell_set.add((int(x), int(y)))
-            vx, vy = view_cell
-            rect = QtCore.QRectF(vx * self.cell_size, vy * self.cell_size, self.cell_size, self.cell_size)
-            advance_highlights.append(rect)
-            all_highlights.append(rect)
-
-        self._reachable_cells_set = cell_set
-        self._reachable_highlights = all_highlights
-        self._move_cells_set = move_set
-        self._advance_cells_set = advance_set
-        self._move_reachable_highlights = move_highlights
-        self._advance_reachable_highlights = advance_highlights
-
-        if self._viewer_debug_enabled:
-            sig = (
-                active_key[1],
-                len(move_set),
-                len(advance_set),
-                hash(tuple(sorted(cell_set))) if cell_set else 0,
-            )
-            if sig != self._reachable_overlay_sig:
-                self._reachable_overlay_sig = sig
-                self._append_agent_log(
-                    f"[VIEWER] reachable_overlay unit={active_key[1]} move={len(move_set)} advance={len(advance_set)}"
-                )
     def select_unit(self, side, unit_id) -> None:
         self.set_selected_unit(side, unit_id)
 
@@ -1414,9 +1418,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def is_advance_cell(self, x: int, y: int) -> bool:
         return (int(x), int(y)) in self._advance_cells_set
+
     def _should_show_movement(self) -> bool:
         phase = str(self._phase or "").lower()
-        return "move" in phase or "движ" in phase or "movement" in phase or self._move_range is not None
+        return "move" in phase or "движ" in phase or "movement" in phase
 
     def _should_show_shooting(self) -> bool:
         phase = str(self._phase or "").lower()
@@ -1602,16 +1607,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
             unit_key = self._unit_key_at_screen_pos(QtCore.QPointF(event.position()))
             terrain_feature = self._terrain_feature_at_world(world) if unit_key is None else None
             if unit_key:
-                self._tooltip_pinned = not self._tooltip_pinned
-                self._tooltip_widget.set_pinned(self._tooltip_pinned)
-                if self._tooltip_pinned:
-                    self._show_unit_tooltip_immediate(
-                        unit_key,
-                        event.globalPosition().toPoint(),
-                        event.modifiers(),
-                    )
-                else:
-                    self._clear_hover_tooltip(force=True)
+                self.unit_right_clicked.emit(unit_key[0], int(unit_key[1]), event.globalPosition().toPoint())
+                return
             elif terrain_feature is not None:
                 self._tooltip_pinned = not self._tooltip_pinned
                 self._terrain_tooltip_widget.set_pinned(self._tooltip_pinned)

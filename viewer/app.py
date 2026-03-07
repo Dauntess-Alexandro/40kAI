@@ -198,6 +198,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._syncing_table_selection = False
         self._current_target_id = None
         self._last_shooter_id = None
+        self._shoot_targets_valid: set[int] = set()
+        self._shoot_popover_target_id: Optional[int] = None
         self._show_objective_radius = True
         self._units_by_key = {}
         self._unit_row_by_key = {}
@@ -229,6 +231,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.map_scene.cell_clicked.connect(self._on_cell_clicked)
         self.map_scene.cell_right_clicked.connect(self._on_cell_right_clicked)
         self.map_scene.cell_hovered.connect(self._on_cell_hovered)
+        self.map_scene.unit_right_clicked.connect(self._on_unit_right_clicked)
 
         self.status_round = QtWidgets.QLabel("Раунд: —")
         self.status_turn = QtWidgets.QLabel("Ход: —")
@@ -323,6 +326,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self.command_stack = QtWidgets.QStackedWidget()
         self._build_command_pages()
+        self._build_shoot_popover()
         command_layout.addWidget(self.command_stack)
 
         right_top_widget = QtWidgets.QWidget()
@@ -524,6 +528,117 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self.command_stack.setCurrentIndex(self._command_pages["text"])
 
+    def _build_shoot_popover(self) -> None:
+        self.shoot_popover = QtWidgets.QFrame(self, QtCore.Qt.Popup)
+        self.shoot_popover.setObjectName("shootPopover")
+        self.shoot_popover.setStyleSheet(
+            f"QFrame#shootPopover {{ background: {Theme.panel.name()}; border: 1px solid {Theme.outline.name()}; border-radius: 8px; }}"
+        )
+        layout = QtWidgets.QVBoxLayout(self.shoot_popover)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
+        self.shoot_popover_title = QtWidgets.QLabel("FIRE")
+        self.shoot_popover_title.setStyleSheet(f"font-weight: 600; color: {Theme.text.name()};")
+        layout.addWidget(self.shoot_popover_title)
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Кубы (D6):"))
+        self.shoot_popover_spin = QtWidgets.QSpinBox()
+        self.shoot_popover_spin.setRange(1, 40)
+        self.shoot_popover_spin.setValue(1)
+        row.addWidget(self.shoot_popover_spin)
+        layout.addLayout(row)
+        btn_row = QtWidgets.QHBoxLayout()
+        self.shoot_popover_shoot = QtWidgets.QPushButton("Shoot")
+        self.shoot_popover_cancel = QtWidgets.QPushButton("Cancel")
+        self.shoot_popover_shoot.clicked.connect(self._shoot_popover_commit)
+        self.shoot_popover_cancel.clicked.connect(self._close_shoot_popover)
+        btn_row.addWidget(self.shoot_popover_shoot)
+        btn_row.addWidget(self.shoot_popover_cancel)
+        layout.addLayout(btn_row)
+        QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Return), self.shoot_popover, activated=self._shoot_popover_commit)
+        QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Enter), self.shoot_popover, activated=self._shoot_popover_commit)
+        QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Escape), self.shoot_popover, activated=self._close_shoot_popover)
+        self.shoot_popover.hide()
+
+    def _is_shooting_target_request(self, request) -> bool:
+        if not self._is_target_request(request):
+            return False
+        prompt = str(getattr(request, "prompt", "") or "").lower()
+        return ("стрель" in prompt) or ("shoot" in prompt)
+
+    def _shoot_instruction_text(self) -> str:
+        unit_id, side = self._resolve_active_unit()
+        unit = self._units_by_key.get((side, unit_id)) if unit_id is not None else None
+        weapon = "—"
+        if isinstance(unit, dict):
+            weapon = str(unit.get("weapon_name") or unit.get("weapon") or "—")
+        unit_label = str(unit_id) if unit_id is not None else "—"
+        return (
+            f"Стрельба: Unit {unit_label} — {weapon}\n"
+            "ЛКМ: выделить цель\n"
+            "ПКМ по врагу: открыть Fire\n"
+            "Enter: Shoot • Esc: отмена"
+        )
+
+    def _valid_target_ids_from_request(self, request) -> set[int]:
+        ids: set[int] = set()
+        for opt in list(getattr(request, "options", []) or []):
+            parsed = self._extract_unit_id(str(opt))
+            if parsed is not None:
+                ids.add(int(parsed))
+        return ids
+
+    def _auto_dice_for_target(self, target_id: int) -> tuple[int, int]:
+        unit = None
+        for (_, uid), payload in self._units_by_key.items():
+            if int(uid) == int(target_id):
+                unit = payload
+                break
+        alive_models = None
+        if isinstance(unit, dict):
+            for key in ("alive_models", "models_alive", "models"):
+                val = unit.get(key)
+                if isinstance(val, (int, float)):
+                    alive_models = int(val)
+                    break
+        default = max(1, int(alive_models or 1))
+        return default, max(default, 40)
+
+    def _open_shoot_popover(self, target_id: int, global_pos: Optional[QtCore.QPoint] = None) -> None:
+        if target_id not in self._shoot_targets_valid:
+            return
+        self._current_target_id = int(target_id)
+        self.map_scene.set_target_unit(int(target_id))
+        self._shoot_popover_target_id = int(target_id)
+        default, max_v = self._auto_dice_for_target(int(target_id))
+        self.shoot_popover_spin.setRange(1, max_v)
+        self.shoot_popover_spin.setValue(default)
+        self.shoot_popover_title.setText(f"FIRE → Unit {int(target_id)}")
+        anchor = global_pos or QtGui.QCursor.pos()
+        self.shoot_popover.adjustSize()
+        pos = QtCore.QPoint(anchor.x() + 18, anchor.y() - self.shoot_popover.height() - 12)
+        self.shoot_popover.move(pos)
+        self.shoot_popover.show()
+        self.shoot_popover.raise_()
+        self.shoot_popover.activateWindow()
+        self.shoot_popover_spin.setFocus()
+
+    def _close_shoot_popover(self) -> None:
+        self._shoot_popover_target_id = None
+        if hasattr(self, "shoot_popover"):
+            self.shoot_popover.hide()
+
+    def _shoot_popover_commit(self) -> None:
+        if not self._is_shooting_target_request(self._pending_request):
+            self._close_shoot_popover()
+            return
+        target_id = self._shoot_popover_target_id
+        if target_id is None:
+            return
+        dice_count = int(self.shoot_popover_spin.value())
+        self._close_shoot_popover()
+        self._submit_answer(f"{int(target_id)}|{dice_count}")
+
     def _set_request(self, request):
         if request is None and self._pending_requests:
             next_request = self._pending_requests.popleft()
@@ -569,6 +684,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_stack.setVisible(True)
             self.command_hint.setText("Горячие клавиши: —")
             self.map_scene.set_target_cell(None)
+            self._shoot_targets_valid = set()
+            self._close_shoot_popover()
             self._refresh_active_context()
             return
 
@@ -584,6 +701,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.map_scene.clear_temporary_deploy_units()
 
         self._maybe_reset_target_for_request(request)
+        self._shoot_targets_valid = self._valid_target_ids_from_request(request) if self._is_shooting_target_request(request) else set()
         self._update_deploy_status_from_request(request)
         display_prompt = self._deploy_status_text if self._deploy_status_text else request.prompt
         self.command_prompt.setText(display_prompt)
@@ -595,6 +713,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_stack.setEnabled(False)
             self.command_stack.setVisible(False)
             self.command_hint.setText("Горячие клавиши: ПКМ — идти, Esc — сброс выделения")
+        elif self._is_shooting_target_request(request):
+            self.command_prompt.setText(self._shoot_instruction_text())
+            self.command_stack.setEnabled(False)
+            self.command_stack.setVisible(False)
+            self.command_hint.setText("Горячие клавиши: ПКМ — Fire, Enter — Shoot, Esc — отмена")
         elif kind == "direction":
             self.command_input.setPlaceholderText("Введите команду...")
             self.command_stack.setCurrentIndex(self._command_pages["direction"])
@@ -770,13 +893,28 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         if unit_id is None:
             return
+        if self._is_shooting_target_request(self._pending_request) and int(unit_id) not in self._shoot_targets_valid:
+            return
         self._current_target_id = unit_id
         self.map_scene.set_target_unit(unit_id)
         self._set_confirm_enabled(True)
         target_label = self._format_unit_label(unit_id)
-        self.add_log_line(f"REQ: target selected Unit {target_label}, confirm enabled")
+        self.add_log_line(f"REQ: target selected Unit {target_label}")
+
+    def _on_unit_right_clicked(self, side: str, unit_id: int, global_pos) -> None:
+        if not self._is_shooting_target_request(self._pending_request):
+            return
+        if side != "model":
+            self._close_shoot_popover()
+            return
+        if int(unit_id) not in self._shoot_targets_valid:
+            self._close_shoot_popover()
+            return
+        self._open_shoot_popover(int(unit_id), global_pos)
 
     def _on_cell_clicked(self, x: int, y: int) -> None:
+        if self._is_shooting_target_request(self._pending_request):
+            self._close_shoot_popover()
         if self._is_movement_move_request(self._pending_request):
             self.map_scene.set_target_cell((x, y))
             return
@@ -918,7 +1056,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         elif kind == "int":
             self.command_hint.setText("Горячие клавиши: Enter — отправить")
         elif kind == "choice":
-            self.command_hint.setText("Горячие клавиши: Enter — выбрать")
+            if self._is_shooting_target_request(self._pending_request):
+                self.command_hint.setText("ПКМ по валидной цели откроет Fire popover")
+            else:
+                self.command_hint.setText("Горячие клавиши: Enter — выбрать")
         elif kind == "deploy_coord":
             if self._is_movement_move_request(self._pending_request):
                 self.command_hint.setText("ПКМ по подсвеченной клетке. ЛКМ/Esc — только выделение/сброс")
@@ -1007,6 +1148,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._fx_parser.reset(preserve_seen=False)
         self._current_target_id = None
         self._last_shooter_id = None
+        self._shoot_targets_valid: set[int] = set()
+        self._shoot_popover_target_id: Optional[int] = None
         self._deploy_context = None
         self._deploy_hover_cell = None
         self._deploy_status_text = ""
@@ -1015,6 +1158,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         text = self.command_input.text().strip()
         if self._is_movement_move_request(self._pending_request):
             self.add_log_line("Ходьба: ввод с клавиатуры отключён. Что делать дальше: используйте ПКМ по подсвеченной клетке.")
+            return
+        if self._is_shooting_target_request(self._pending_request):
+            self.add_log_line("Стрельба: выбор цели делается ПКМ по врагу (Fire popover).")
             return
         if self._is_deploy_request(self._pending_request) or self._is_move_cell_request(self._pending_request):
             parts = [p for p in re.split(r"[\s,;:]+", text) if p]
@@ -1078,6 +1224,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _submit_choice(self):
         value = self.choice_combo.currentText()
+        if self._is_shooting_target_request(self._pending_request):
+            target_id = self._extract_unit_id(value)
+            if target_id is None:
+                return
+            self._open_shoot_popover(int(target_id))
+            return
         if self._is_target_request(self._pending_request) and self._current_target_id is None:
             self._sync_target_from_choice(value)
             if self._current_target_id is None:
@@ -1087,6 +1239,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _submit_answer(self, value):
         if self._pending_request is None:
             return
+        self._close_shoot_popover()
         finished_request = self._pending_request
         finished_meta = getattr(finished_request, "meta", {}) or {}
         if self._is_deploy_request(finished_request):
@@ -1202,6 +1355,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._update_model_events(state.get("model_events", []))
         self._drain_event_queue()
         self._refresh_active_context()
+        if not self._is_shooting_target_request(self._pending_request):
+            self._close_shoot_popover()
+        elif self._shoot_popover_target_id is not None and int(self._shoot_popover_target_id) not in self._shoot_targets_valid:
+            self._close_shoot_popover()
 
     def _populate_units_table(self, units):
         self.units_table.setRowCount(len(units))
@@ -1938,6 +2095,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if self._is_movement_move_request(self._pending_request) and key == QtCore.Qt.Key_Escape:
                 self.map_scene.set_target_cell(None)
                 return True
+            if self._is_shooting_target_request(self._pending_request):
+                if key == QtCore.Qt.Key_Escape:
+                    self._close_shoot_popover()
+                    self.map_scene.clear_target_selection()
+                    self._current_target_id = None
+                    return True
+                if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter) and getattr(self, "shoot_popover", None) and self.shoot_popover.isVisible():
+                    self._shoot_popover_commit()
+                    return True
             if kind == "direction":
                 if key == QtCore.Qt.Key_Up:
                     self._submit_answer("up")
