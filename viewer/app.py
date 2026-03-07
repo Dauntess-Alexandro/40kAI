@@ -535,41 +535,76 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.shoot_popover = QtWidgets.QFrame(self, QtCore.Qt.Popup)
         self.shoot_popover.setObjectName("shootPopover")
         self.shoot_popover.setStyleSheet(
-            f"QFrame#shootPopover {{ background: {Theme.panel.name()}; border: 1px solid {Theme.outline.name()}; border-radius: 8px; }}"
+            f"QFrame#shootPopover {{ background: {Theme.panel.name()}; border: 1px solid {Theme.outline.name()}; border-radius: 12px; }}"
         )
+        shadow = QtWidgets.QGraphicsDropShadowEffect(self.shoot_popover)
+        shadow.setBlurRadius(18)
+        shadow.setOffset(0, 6)
+        shadow.setColor(QtGui.QColor(0, 0, 0, 130))
+        self.shoot_popover.setGraphicsEffect(shadow)
+
         layout = QtWidgets.QVBoxLayout(self.shoot_popover)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(6)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
 
         self.shoot_popover_title = QtWidgets.QLabel("FIRE")
-        self.shoot_popover_title.setStyleSheet(f"font-weight: 600; color: {Theme.text.name()};")
+        self.shoot_popover_title.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {Theme.text.name()};")
+        self.shoot_popover_units = QtWidgets.QLabel("Unit — → Unit —")
+        self.shoot_popover_units.setStyleSheet(f"font-size: 14px; font-weight: 600; color: {Theme.text.name()};")
         self.shoot_popover_meta = QtWidgets.QLabel("Weapon: — • Range — • LoS —")
-        self.shoot_popover_meta.setStyleSheet(f"color: {Theme.muted.name()};")
-        self.shoot_popover_meta.setWordWrap(True)
+        self.shoot_popover_meta.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
+        self.shoot_popover_meta.setWordWrap(False)
         layout.addWidget(self.shoot_popover_title)
+        layout.addWidget(self.shoot_popover_units)
         layout.addWidget(self.shoot_popover_meta)
 
         self.shoot_stepper = QtWidgets.QLabel("Hit • Wound • Allocate • Save • Damage")
-        self.shoot_stepper.setWordWrap(True)
-        self.shoot_stepper.setStyleSheet(f"color: {Theme.text.name()};")
+        self.shoot_stepper.setWordWrap(False)
+        self.shoot_stepper.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
         layout.addWidget(self.shoot_stepper)
 
-        self.shoot_popover_body = QtWidgets.QLabel("")
-        self.shoot_popover_body.setWordWrap(True)
-        layout.addWidget(self.shoot_popover_body)
+        self.shoot_popover_step_title = QtWidgets.QLabel("STEP 1/5: Hit Roll")
+        self.shoot_popover_step_title.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {Theme.text.name()};")
+        self.shoot_popover_step_summary = QtWidgets.QLabel("Need: — dice")
+        self.shoot_popover_step_summary.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
+        layout.addWidget(self.shoot_popover_step_title)
+        layout.addWidget(self.shoot_popover_step_summary)
 
+        self.shoot_popover_input_label = QtWidgets.QLabel("Кубы (D6):")
+        self.shoot_popover_input_label.setStyleSheet(f"font-size: 12px; color: {Theme.text.name()};")
+        layout.addWidget(self.shoot_popover_input_label)
+
+        input_row = QtWidgets.QHBoxLayout()
+        input_row.setSpacing(8)
         self.shoot_popover_dice_input = QtWidgets.QLineEdit()
-        self.shoot_popover_dice_input.setPlaceholderText("Например: 6 5 4 3")
-        layout.addWidget(self.shoot_popover_dice_input)
+        self.shoot_popover_dice_input.setPlaceholderText("например: 4 1 6 2 3 5 2 6")
+        self.shoot_popover_dice_input.textChanged.connect(self._on_shoot_dice_input_changed)
+        self.shoot_popover_dice_counter = QtWidgets.QLabel("0/0")
+        self.shoot_popover_dice_counter.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()}; min-width: 42px;")
+        input_row.addWidget(self.shoot_popover_dice_input, 1)
+        input_row.addWidget(self.shoot_popover_dice_counter, 0, QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        layout.addLayout(input_row)
 
-        self.shoot_popover_error = QtWidgets.QLabel("")
-        self.shoot_popover_error.setStyleSheet("color: #e06c75;")
-        self.shoot_popover_error.setWordWrap(True)
-        layout.addWidget(self.shoot_popover_error)
+        self.shoot_popover_info = QtWidgets.QLabel("ℹ Нажмите Roll Hit, чтобы начать")
+        self.shoot_popover_info.setWordWrap(True)
+        self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
+        layout.addWidget(self.shoot_popover_info)
 
         btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(8)
         self.shoot_popover_action = QtWidgets.QPushButton("Roll Hit")
         self.shoot_popover_cancel = QtWidgets.QPushButton("Cancel")
+        self.shoot_popover_action.setStyleSheet(
+            "QPushButton { background: #2b7cff; color: #ffffff; border: 1px solid #3d8cff; border-radius: 8px; padding: 7px 12px; font-weight: 600; }"
+            "QPushButton:hover { background: #3d8cff; }"
+            "QPushButton:disabled { background: #334b77; color: #9bb3d8; border-color: #415980; }"
+        )
+        self.shoot_popover_cancel.setStyleSheet(
+            f"QPushButton {{ background: {Theme.panel_alt.name() if hasattr(Theme, 'panel_alt') else Theme.panel.name()}; color: {Theme.text.name()}; border: 1px solid {Theme.outline.name()}; border-radius: 8px; padding: 7px 12px; }}"
+            f"QPushButton:hover {{ border-color: {Theme.accent.name() if hasattr(Theme, 'accent') else Theme.text.name()}; }}"
+        )
+        self.shoot_popover_action.setMinimumHeight(34)
+        self.shoot_popover_cancel.setMinimumHeight(34)
         self.shoot_popover_action.clicked.connect(self._shoot_step_action)
         self.shoot_popover_cancel.clicked.connect(self._close_shoot_popover)
         btn_row.addWidget(self.shoot_popover_action)
@@ -620,10 +655,65 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if idx < self._shoot_resolver_step:
                 parts.append(f"✓ {name}")
             elif idx == self._shoot_resolver_step:
-                parts.append(f"▶ {name}")
+                parts.append(f"[{name}]")
             else:
-                parts.append(f"· {name}")
-        return "   ".join(parts)
+                parts.append(name)
+        return " • ".join(parts)
+
+    def _count_dice_tokens(self, raw: str) -> tuple[int, bool, bool]:
+        cleaned = str(raw or "").strip()
+        if not cleaned:
+            return 0, False, False
+        if re.search(r"[^0-9,\s]", cleaned):
+            return 0, True, False
+        normalized = re.sub(r"[\s,]+", " ", cleaned).strip()
+        if not normalized:
+            return 0, False, False
+        tokens = [tok for tok in normalized.split(" ") if tok]
+        invalid_value = any((not tok.isdigit()) or int(tok) < 1 or int(tok) > 6 for tok in tokens)
+        return len(tokens), invalid_value, True
+
+    def _on_shoot_dice_input_changed(self, _text: str) -> None:
+        self._update_shoot_input_feedback()
+
+    def _update_shoot_input_feedback(self) -> None:
+        if not hasattr(self, "shoot_popover") or not self._shoot_resolver_active:
+            return
+        req = self._pending_request
+        expects_dice = bool(getattr(req, "kind", "") == "dice" and self._shoot_resolver_step in (0, 1, 3))
+        if not expects_dice:
+            self.shoot_popover_dice_counter.setText("0/0")
+            self.shoot_popover_info.setText("ℹ На этом шаге ввод кубов не требуется")
+            self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
+            return
+
+        count = int(getattr(req, "count", 0) or 0)
+        entered, has_error, has_tokens = self._count_dice_tokens(self.shoot_popover_dice_input.text())
+        self.shoot_popover_dice_counter.setText(f"{entered}/{count}")
+        if has_error:
+            self.shoot_popover_info.setText("⚠ Допустимы только значения 1..6 через пробел или запятую")
+            self.shoot_popover_info.setStyleSheet("font-size: 12px; color: #e06c75;")
+            return
+
+        if count <= 0:
+            self.shoot_popover_info.setText("ℹ Движок не запросил количество кубов")
+            self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
+            return
+
+        if entered < count:
+            rest = count - entered
+            if has_tokens:
+                self.shoot_popover_info.setText(f"ℹ Нужно: {count} значений d6 • Осталось: {rest}")
+            else:
+                self.shoot_popover_info.setText(f"ℹ Нужно: {count} значений d6. Пример: 4 1 6 2 3 5 2 6")
+            self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
+        elif entered > count:
+            extra = entered - count
+            self.shoot_popover_info.setText(f"⚠ Лишних: {extra}. Нужно ровно {count} значений d6")
+            self.shoot_popover_info.setStyleSheet("font-size: 12px; color: #d8b26e;")
+        else:
+            self.shoot_popover_info.setText("ℹ Готово к броску")
+            self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
 
     def _parse_popover_dice_values(self, request) -> Optional[list[int]]:
         count = int(getattr(request, "count", 0) or 0)
@@ -631,16 +721,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
         max_value = int(getattr(request, "max_value", 6) or 6)
         raw = self.shoot_popover_dice_input.text().strip()
         if not raw:
-            self.shoot_popover_error.setText(
-                f"Нужно ввести {count} значений d6. Где: viewer/app.py (_parse_popover_dice_values). Что делать дальше: введите значения через пробел/запятую."
-            )
+            self.shoot_popover_info.setText(f"ℹ Нужно: {count} значений d6")
+            self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
             return None
         try:
             return parse_dice_values(raw, count=count, min_value=min_value, max_value=max_value)
         except ValueError as exc:
-            self.shoot_popover_error.setText(
-                f"Ошибка кубов: {exc}. Где: viewer/app.py (_parse_popover_dice_values). Что делать дальше: исправьте ввод."
-            )
+            self.shoot_popover_info.setText(f"⚠ Ошибка ввода: {exc}")
+            self.shoot_popover_info.setStyleSheet("font-size: 12px; color: #e06c75;")
+            if os.getenv("VIEWER_DEBUG", "0") == "1":
+                self.add_log_line(f"[VIEWER_DEBUG] FIRE input parse error: {exc}")
             return None
 
     def _update_shoot_popover_ui(self) -> None:
@@ -648,7 +738,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         attacker = self._shoot_resolver_attacker_id
         target = int(self._shoot_popover_target_id)
-        self.shoot_popover_title.setText(f"FIRE — Unit {attacker} → Unit {target}")
+        self.shoot_popover_title.setText("FIRE")
+        self.shoot_popover_units.setText(f"Unit {attacker} → Unit {target}")
         weapon = "—"
         if attacker is not None:
             shooter_side = self._side_from_unit_id(int(attacker))
@@ -658,41 +749,55 @@ class ViewerWindow(QtWidgets.QMainWindow):
                     weapon = str(unit.get("weapon_name") or unit.get("weapon") or "—")
         self.shoot_popover_meta.setText(f"Weapon: {weapon} • Range OK • LoS OK")
         self.shoot_stepper.setText(self._shoot_stepper_text())
-        self.shoot_popover_error.setText("")
 
         request = self._pending_request
         step = self._shoot_resolver_step
         dice_mode = getattr(request, "kind", "") == "dice"
         count = int(getattr(request, "count", 0) or 0)
 
-        self.shoot_popover_dice_input.setVisible(dice_mode and step in (0, 1, 3))
-        if dice_mode and count > 0:
-            self.shoot_popover_dice_input.setPlaceholderText(f"Введите {count} значений d6")
+        needs_input = dice_mode and step in (0, 1, 3)
+        self.shoot_popover_input_label.setVisible(needs_input)
+        self.shoot_popover_dice_input.setVisible(needs_input)
+        self.shoot_popover_dice_counter.setVisible(needs_input)
+        if needs_input and count > 0:
+            self.shoot_popover_dice_input.setPlaceholderText("например: 4 1 6 2 3 5 2 6")
 
         if step == 0:
-            self.shoot_popover_body.setText(
-                "STEP 1/5: Hit Roll\n"
-                + (f"Введите {count} значений d6 и нажмите Roll Hit." if dice_mode else "Нажмите Roll Hit, чтобы выбрать цель и перейти к вводу Hit кубов.")
-            )
+            self.shoot_popover_step_title.setText("STEP 1/5: Hit Roll")
+            self.shoot_popover_step_summary.setText(f"Need: {count if dice_mode else '—'} dice")
             self.shoot_popover_action.setText("Roll Hit")
+            if not dice_mode:
+                self.shoot_popover_info.setText("ℹ Нажмите Roll Hit, чтобы выбрать цель и перейти к броску")
+                self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
         elif step == 1:
-            self.shoot_popover_body.setText(
-                "STEP 2/5: Wound Roll\n"
-                + (f"Введите {count} значений d6 и нажмите Roll Wound." if dice_mode else "Ожидаю запрос кубов Wound от движка...")
-            )
+            self.shoot_popover_step_title.setText("STEP 2/5: Wound Roll")
+            self.shoot_popover_step_summary.setText(f"Need: {count if dice_mode else '—'} dice")
             self.shoot_popover_action.setText("Roll Wound")
+            if not dice_mode:
+                self.shoot_popover_info.setText("ℹ Ожидаю запрос кубов Wound от движка")
+                self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
         elif step == 2:
-            self.shoot_popover_body.setText("STEP 3/5: Allocate Attack — skipped for now")
+            self.shoot_popover_step_title.setText("STEP 3/5: Allocate Attack")
+            self.shoot_popover_step_summary.setText("Need: — dice")
             self.shoot_popover_action.setText("Continue")
+            self.shoot_popover_info.setText("ℹ Allocate Attack — skipped for now")
+            self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
         elif step == 3:
-            self.shoot_popover_body.setText(
-                "STEP 4/5: Saving Throw\n"
-                + (f"Введите {count} значений d6 и нажмите Roll Save." if dice_mode else "Ожидаю запрос кубов Save от движка...")
-            )
+            self.shoot_popover_step_title.setText("STEP 4/5: Saving Throw")
+            self.shoot_popover_step_summary.setText(f"Need: {count if dice_mode else '—'} dice")
             self.shoot_popover_action.setText("Roll Save")
+            if not dice_mode:
+                self.shoot_popover_info.setText("ℹ Ожидаю запрос кубов Save от движка")
+                self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
         else:
-            self.shoot_popover_body.setText("STEP 5/5: Inflict Damage — skipped for now")
+            self.shoot_popover_step_title.setText("STEP 5/5: Inflict Damage")
+            self.shoot_popover_step_summary.setText("Need: — dice")
             self.shoot_popover_action.setText("Finish")
+            self.shoot_popover_info.setText("ℹ Inflict Damage — skipped for now")
+            self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
+
+        if needs_input:
+            self._update_shoot_input_feedback()
 
     def _open_shoot_popover(self, target_id: int, global_pos: Optional[QtCore.QPoint] = None) -> None:
         if target_id not in self._shoot_targets_valid:
