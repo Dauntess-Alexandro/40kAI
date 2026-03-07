@@ -2232,32 +2232,51 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _refresh_active_context(self):
         unit_id, side = self._resolve_active_unit()
+        if unit_id is None:
+            unit_id = self._shoot_resolver_attacker_id or self._last_shooter_id or self._selected_unit_id
+            if unit_id is not None:
+                side = self._side_from_unit_id(int(unit_id)) or self._selected_unit_side
+
         self._active_unit_id = unit_id
         self._active_unit_side = side
         if self._selected_unit_id is None and unit_id is not None:
             self._set_selected_unit(side, unit_id, source="auto", select_row=True)
-        active_unit = self._units_by_key.get((side, unit_id))
+
+        active_unit = self._units_by_key.get((side, unit_id)) if unit_id is not None and side is not None else None
         phase = None
         if self.state_watcher and self.state_watcher.state:
             phase = self.state_watcher.state.get("phase")
+
+        req = self._pending_request
+        phase_for_overlay = phase
+        if self._is_movement_move_request(req):
+            phase_for_overlay = "movement"
+        elif self._is_shooting_target_request(req) or self._is_shooting_dice_request(req):
+            phase_for_overlay = "shooting"
+
         move_range = None
         shoot_range = None
-        if self._is_movement_phase(phase):
+        if self._is_movement_phase(phase_for_overlay):
             move_range = self._resolve_move_range(active_unit)
-        if self._is_shooting_phase(phase):
+        if self._is_shooting_phase(phase_for_overlay):
             shoot_range = self._resolve_weapon_range(active_unit)
+
+        targets_ctx = None
+        if self.state_watcher and self.state_watcher.state:
+            targets_ctx = self.state_watcher.state.get("available_targets")
+        if (self._is_shooting_target_request(req) or self._is_shooting_dice_request(req)) and self._shoot_targets_valid:
+            targets_ctx = sorted(self._shoot_targets_valid)
+
         self.map_scene.set_active_context(
             active_unit_id=unit_id,
             active_unit_side=side,
             selected_unit_id=self._selected_unit_id,
             selected_unit_side=self._selected_unit_side,
-            phase=phase,
+            phase=phase_for_overlay,
             move_range=move_range,
             shoot_range=shoot_range,
             show_objective_radius=self._show_objective_radius,
-            targets=self.state_watcher.state.get("available_targets")
-            if self.state_watcher and self.state_watcher.state
-            else None,
+            targets=targets_ctx,
         )
 
     def _enqueue_fx_event(self, event: FxShotEvent) -> None:
