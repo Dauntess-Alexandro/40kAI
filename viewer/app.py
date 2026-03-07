@@ -558,13 +558,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.shoot_popover_body.setWordWrap(True)
         layout.addWidget(self.shoot_popover_body)
 
-        row = QtWidgets.QHBoxLayout()
-        row.addWidget(QtWidgets.QLabel("Кубы (D6):"))
-        self.shoot_popover_spin = QtWidgets.QSpinBox()
-        self.shoot_popover_spin.setRange(1, 40)
-        self.shoot_popover_spin.setValue(1)
-        row.addWidget(self.shoot_popover_spin)
-        layout.addLayout(row)
+        self.shoot_popover_dice_input = QtWidgets.QLineEdit()
+        self.shoot_popover_dice_input.setPlaceholderText("Например: 6 5 4 3")
+        layout.addWidget(self.shoot_popover_dice_input)
+
+        self.shoot_popover_error = QtWidgets.QLabel("")
+        self.shoot_popover_error.setStyleSheet("color: #e06c75;")
+        self.shoot_popover_error.setWordWrap(True)
+        layout.addWidget(self.shoot_popover_error)
 
         btn_row = QtWidgets.QHBoxLayout()
         self.shoot_popover_action = QtWidgets.QPushButton("Roll Hit")
@@ -601,7 +602,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return (
             f"Стрельба: Unit {unit_label} — {weapon}\n"
             "ПКМ по врагу: выбрать цель\n"
-            "Enter: Shoot • Esc: отмена"
+            "Enter: Continue • Esc: Cancel"
         )
 
     def _valid_target_ids_from_request(self, request) -> set[int]:
@@ -611,22 +612,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if parsed is not None:
                 ids.add(int(parsed))
         return ids
-
-    def _auto_dice_for_target(self, target_id: int) -> tuple[int, int]:
-        unit = None
-        for (_, uid), payload in self._units_by_key.items():
-            if int(uid) == int(target_id):
-                unit = payload
-                break
-        alive_models = None
-        if isinstance(unit, dict):
-            for key in ("alive_models", "models_alive", "models"):
-                val = unit.get(key)
-                if isinstance(val, (int, float)):
-                    alive_models = int(val)
-                    break
-        default = max(1, int(alive_models or 1))
-        return default, max(default, 40)
 
     def _shoot_stepper_text(self) -> str:
         names = ["Hit", "Wound", "Allocate", "Save", "Damage"]
@@ -639,6 +624,24 @@ class ViewerWindow(QtWidgets.QMainWindow):
             else:
                 parts.append(f"· {name}")
         return "   ".join(parts)
+
+    def _parse_popover_dice_values(self, request) -> Optional[list[int]]:
+        count = int(getattr(request, "count", 0) or 0)
+        min_value = int(getattr(request, "min_value", 1) or 1)
+        max_value = int(getattr(request, "max_value", 6) or 6)
+        raw = self.shoot_popover_dice_input.text().strip()
+        if not raw:
+            self.shoot_popover_error.setText(
+                f"Нужно ввести {count} значений d6. Где: viewer/app.py (_parse_popover_dice_values). Что делать дальше: введите значения через пробел/запятую."
+            )
+            return None
+        try:
+            return parse_dice_values(raw, count=count, min_value=min_value, max_value=max_value)
+        except ValueError as exc:
+            self.shoot_popover_error.setText(
+                f"Ошибка кубов: {exc}. Где: viewer/app.py (_parse_popover_dice_values). Что делать дальше: исправьте ввод."
+            )
+            return None
 
     def _update_shoot_popover_ui(self) -> None:
         if not self._shoot_resolver_active or self._shoot_popover_target_id is None:
@@ -655,20 +658,37 @@ class ViewerWindow(QtWidgets.QMainWindow):
                     weapon = str(unit.get("weapon_name") or unit.get("weapon") or "—")
         self.shoot_popover_meta.setText(f"Weapon: {weapon} • Range OK • LoS OK")
         self.shoot_stepper.setText(self._shoot_stepper_text())
+        self.shoot_popover_error.setText("")
 
+        request = self._pending_request
         step = self._shoot_resolver_step
-        self.shoot_popover_spin.setVisible(step == 0)
+        dice_mode = getattr(request, "kind", "") == "dice"
+        count = int(getattr(request, "count", 0) or 0)
+
+        self.shoot_popover_dice_input.setVisible(dice_mode and step in (0, 1, 3))
+        if dice_mode and count > 0:
+            self.shoot_popover_dice_input.setPlaceholderText(f"Введите {count} значений d6")
+
         if step == 0:
-            self.shoot_popover_body.setText("STEP 1/5: Hit Roll")
+            self.shoot_popover_body.setText(
+                "STEP 1/5: Hit Roll\n"
+                + (f"Введите {count} значений d6 и нажмите Roll Hit." if dice_mode else "Нажмите Roll Hit, чтобы выбрать цель и перейти к вводу Hit кубов.")
+            )
             self.shoot_popover_action.setText("Roll Hit")
         elif step == 1:
-            self.shoot_popover_body.setText("STEP 2/5: Wound Roll")
+            self.shoot_popover_body.setText(
+                "STEP 2/5: Wound Roll\n"
+                + (f"Введите {count} значений d6 и нажмите Roll Wound." if dice_mode else "Ожидаю запрос кубов Wound от движка...")
+            )
             self.shoot_popover_action.setText("Roll Wound")
         elif step == 2:
             self.shoot_popover_body.setText("STEP 3/5: Allocate Attack — skipped for now")
             self.shoot_popover_action.setText("Continue")
         elif step == 3:
-            self.shoot_popover_body.setText("STEP 4/5: Saving Throw")
+            self.shoot_popover_body.setText(
+                "STEP 4/5: Saving Throw\n"
+                + (f"Введите {count} значений d6 и нажмите Roll Save." if dice_mode else "Ожидаю запрос кубов Save от движка...")
+            )
             self.shoot_popover_action.setText("Roll Save")
         else:
             self.shoot_popover_body.setText("STEP 5/5: Inflict Damage — skipped for now")
@@ -683,9 +703,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._current_target_id = int(target_id)
         self.map_scene.set_target_unit(int(target_id))
         self._shoot_popover_target_id = int(target_id)
-        default, max_v = self._auto_dice_for_target(int(target_id))
-        self.shoot_popover_spin.setRange(1, max_v)
-        self.shoot_popover_spin.setValue(default)
+        self.shoot_popover_dice_input.clear()
         self._update_shoot_popover_ui()
         anchor = global_pos or QtGui.QCursor.pos()
         self.shoot_popover.adjustSize()
@@ -719,24 +737,36 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 self._submit_answer(str(int(target_id)))
                 req = self._pending_request
             if getattr(req, "kind", "") != "dice":
-                self.add_log_line("FIRE: шаг Hit не готов. Где: viewer/app.py (_shoot_step_action). Что делать дальше: повторите Roll Hit.")
+                self._update_shoot_popover_ui()
                 return
-            self._submit_answer({"auto": True})
+            values = self._parse_popover_dice_values(req)
+            if values is None:
+                return
+            self._submit_answer(values)
             self._shoot_resolver_step = 1
+            self.shoot_popover_dice_input.clear()
         elif step == 1:
             if getattr(req, "kind", "") != "dice":
-                self.add_log_line("FIRE: шаг Wound не готов. Где: viewer/app.py (_shoot_step_action). Что делать дальше: дождитесь запроса кубов.")
+                self._update_shoot_popover_ui()
                 return
-            self._submit_answer({"auto": True})
+            values = self._parse_popover_dice_values(req)
+            if values is None:
+                return
+            self._submit_answer(values)
             self._shoot_resolver_step = 2
+            self.shoot_popover_dice_input.clear()
         elif step == 2:
             self._shoot_resolver_step = 3
         elif step == 3:
             if getattr(req, "kind", "") != "dice":
-                self.add_log_line("FIRE: шаг Save не готов. Где: viewer/app.py (_shoot_step_action). Что делать дальше: дождитесь запроса кубов.")
+                self._update_shoot_popover_ui()
                 return
-            self._submit_answer({"auto": True})
+            values = self._parse_popover_dice_values(req)
+            if values is None:
+                return
+            self._submit_answer(values)
             self._shoot_resolver_step = 4
+            self.shoot_popover_dice_input.clear()
         else:
             self._close_shoot_popover()
             return
@@ -886,6 +916,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_stack.setCurrentIndex(self._command_pages["text"])
         self._update_command_hint(kind)
         self._refresh_active_context()
+        if self._shoot_resolver_active and (self._is_shooting_target_request(request) or self._is_shooting_dice_request(request)):
+            self._update_shoot_popover_ui()
 
     def _move_instruction_text(self) -> str:
         unit_id, side = self._resolve_active_unit()
