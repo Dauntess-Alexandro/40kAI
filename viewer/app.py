@@ -1697,11 +1697,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 return "Игрок"
             return None
 
-        attacker_label = _side_label(attacker) or "—"
-        defender_label = _side_label(defender) or "—"
+        attacker_label = _side_label(attacker)
+        defender_label = _side_label(defender)
         deploy_phase_text = str(state.get("phase") or "").strip().lower()
         deploy_active = ("deploy" in deploy_phase_text) or ("расст" in deploy_phase_text)
-        rolloff_done = (attacker_label != "—") and (defender_label != "—")
+        rolloff_done = bool(attacker_label and defender_label)
+        if not rolloff_done and not deploy_active:
+            # Fallback для старых/обрезанных state без attacker/defender: показываем стороны UI явно.
+            attacker_label = "Игрок"
+            defender_label = "Модель"
+            rolloff_done = True
         if deploy_active:
             if not rolloff_done:
                 deploy_text = "Деплой: ожидание roll-off"
