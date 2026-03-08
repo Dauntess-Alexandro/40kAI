@@ -1,4 +1,5 @@
 import numpy as np
+import math
 
 
 def is_num(maybeNum):
@@ -12,6 +13,11 @@ def isBelowHalfStr(data, health):
 
 def distance(p1, p2):
     return np.sqrt((p2[0] - p1[0]) ** 2 + (p2[1] - p1[1]) ** 2)
+
+
+def distance_cells_euclid(a, b):
+    """Евклидова дистанция между центрами клеток (1 клетка = 1")."""
+    return math.hypot(float(b[0]) - float(a[0]), float(b[1]) - float(a[1]))
 
 
 def dice(min=1, max=6, num=1):

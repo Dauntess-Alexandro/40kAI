@@ -1154,6 +1154,9 @@ class Warhammer40kEnv(gym.Env):
     def _grid_distance_chebyshev(self, a: tuple[int, int], b: tuple[int, int]) -> int:
         return max(abs(int(a[0]) - int(b[0])), abs(int(a[1]) - int(b[1])))
 
+    def _grid_distance_euclid(self, a: tuple[int, int], b: tuple[int, int]) -> float:
+        return float(distance_cells_euclid((int(a[0]), int(a[1])), (int(b[0]), int(b[1]))))
+
     def _barricade_cells(self) -> list[tuple[int, int]]:
         cells: list[tuple[int, int]] = []
         for feature in (self.terrain_features or []):
@@ -1209,14 +1212,28 @@ class Warhammer40kEnv(gym.Env):
         reachable: list[tuple[int, int]] = []
         for r in range(max(0, row - move_budget), min(self.b_len - 1, row + move_budget) + 1):
             for c in range(max(0, col - move_budget), min(self.b_hei - 1, col + move_budget) + 1):
-                dist = abs(r - row) + abs(c - col)
-                if dist == 0 or dist > move_budget:
+                dist = self._grid_distance_euclid((row, col), (r, c))
+                if dist == 0.0 or dist > float(move_budget):
                     continue
                 if (r, c) in occupied:
                     continue
                 if (r, c) in barricades:
                     continue
                 reachable.append((c, r))  # state coords (x, y)
+
+        if (os.getenv("TERRAIN_DEBUG", "0") == "1" or os.getenv("VIEWER_DEBUG", "0") == "1") and hasattr(self, "_append_agent_log"):
+            if reachable:
+                xs = [int(x) for x, _y in reachable]
+                ys = [int(y) for _x, y in reachable]
+                self._append_agent_log(
+                    f"[MOVE][REACHABLE] side={side} unit={self._unit_id(side, int(idx)) if hasattr(self, '_unit_id') else int(idx)} "
+                    f"budget={int(move_budget)} count={len(reachable)} min_x={min(xs)} max_x={max(xs)} min_y={min(ys)} max_y={max(ys)}"
+                )
+            else:
+                self._append_agent_log(
+                    f"[MOVE][REACHABLE] side={side} unit={self._unit_id(side, int(idx)) if hasattr(self, '_unit_id') else int(idx)} "
+                    f"budget={int(move_budget)} count=0"
+                )
 
         return reachable
 
@@ -3198,16 +3215,19 @@ class Warhammer40kEnv(gym.Env):
                             continue
                         dest = cell
 
-                    distance_cells = abs(int(dest[0]) - int(pos_before[1])) + abs(int(dest[1]) - int(pos_before[0]))
+                    distance_cells = self._grid_distance_euclid(
+                        (int(pos_before[0]), int(pos_before[1])),
+                        (int(dest[1]), int(dest[0])),
+                    )
                     advanced = move_mode == "advance"
-                    advance_roll = max(1, int(distance_cells - base_move)) if advanced else 0
+                    advance_roll = max(1, int(np.ceil(float(distance_cells) - float(base_move)))) if advanced else 0
                     self.enemy_used_advance[i] = bool(advanced)
                     self.enemy_advance_roll[i] = int(advance_roll)
                     advanced_flags[i] = bool(advanced)
                     self._append_agent_log(
                         f"[MOVE] unit={playerName} {move_mode} to=({int(dest[0])},{int(dest[1])}) "
-                        f"dist={int(distance_cells)} M={int(base_move)}"
-                        + (f" adv={int(max(0, distance_cells - base_move))}" if advanced else "")
+                        f"dist={float(distance_cells):.3f} M={int(base_move)}"
+                        + (f" adv={int(max(0, np.ceil(float(distance_cells) - float(base_move))))}" if advanced else "")
                     )
                     self.enemy_coords[i] = [int(dest[1]), int(dest[0])]
 
