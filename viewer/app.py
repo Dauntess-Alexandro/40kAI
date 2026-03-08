@@ -1248,13 +1248,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
             y = int(unit.get("y"))
         except (TypeError, ValueError):
             return False
-        submitted = self._submit_movement_target_cell(x, y, source="Backspace")
-        if not submitted:
-            self.add_log_line(
-                "Пропуск ходьбы не выполнен: текущая клетка не помечена как reachable. "
-                "Что делать дальше: выберите подсвеченную клетку ПКМ."
-            )
-        return submitted
+        self.map_scene.set_target_cell((x, y))
+        self.command_input.setText(f"{x} {y}")
+        self.add_log_line(f"REQ: move skip requested (Backspace) x={x}, y={y}, mode=normal")
+        self._submit_answer({"x": x, "y": y, "mode": "normal"})
+        return True
 
     def _on_cell_hovered(self, state_pos) -> None:
         if self._is_movement_move_request(self._pending_request):
