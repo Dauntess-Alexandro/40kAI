@@ -1472,44 +1472,41 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 self._move_highlights.append(rect)
 
     def _build_shooting_overlay(self, unit: dict) -> None:
-        shoot_range = self._shoot_range
-        if shoot_range is None:
-            return
-        try:
-            shoot_range = int(shoot_range)
-        except (TypeError, ValueError):
-            return
-        if shoot_range <= 0:
-            return
+        shoot_range = self._safe_int(self._shoot_range, None)
         source = self._unit_anchor_view_cell(unit)
-        if source is None:
-            return
-        sx, sy = source
-        max_x = max(0, int(self._board_width) - 1)
-        max_y = max(0, int(self._board_height) - 1)
+        sx, sy = source if source is not None else (None, None)
 
-        for y in range(0, max_y + 1):
-            for x in range(0, max_x + 1):
-                distance = max(abs(x - sx), abs(y - sy))
-                if distance > shoot_range:
-                    continue
-                self._shoot_range_highlights.append(
-                    QtCore.QRectF(x * self.cell_size, y * self.cell_size, self.cell_size, self.cell_size)
-                )
+        if shoot_range is not None and shoot_range > 0 and source is not None:
+            max_x = max(0, int(self._board_width) - 1)
+            max_y = max(0, int(self._board_height) - 1)
+            for y in range(0, max_y + 1):
+                for x in range(0, max_x + 1):
+                    distance = max(abs(x - sx), abs(y - sy))
+                    if distance > shoot_range:
+                        continue
+                    self._shoot_range_highlights.append(
+                        QtCore.QRectF(x * self.cell_size, y * self.cell_size, self.cell_size, self.cell_size)
+                    )
 
+        target_filter = set(self._resolve_targets(unit, shoot_range or 0))
         shooter_id = self._safe_int(unit.get("id"))
         for target in self._state.get("units", []) or []:
             if not isinstance(target, dict):
                 continue
             if target.get("side") == unit.get("side"):
                 continue
+            target_id = self._safe_int(target.get("id"), None)
+            target_key = (target.get("side"), int(target_id)) if target_id is not None else None
+            if target_filter and target_key not in target_filter:
+                continue
             tx_ty = self._unit_anchor_view_cell(target)
             if tx_ty is None:
                 continue
             tx, ty = tx_ty
-            distance = max(abs(tx - sx), abs(ty - sy))
-            if distance > shoot_range:
-                continue
+            if shoot_range is not None and shoot_range > 0 and source is not None:
+                distance = max(abs(tx - sx), abs(ty - sy))
+                if distance > shoot_range:
+                    continue
 
             target_id = self._safe_int(target.get("id"))
             status = target.get("unit_status") if isinstance(target.get("unit_status"), dict) else {}
@@ -1530,17 +1527,46 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 self._shoot_target_no_los.append((render.center, radius))
 
     def _resolve_targets(self, unit: dict, shoot_range: int) -> Iterable[Tuple[str, int]]:
-        # legacy helper kept for compatibility with older call sites.
         targets = set()
         if isinstance(self._targets, list):
             for entry in self._targets:
                 if isinstance(entry, dict):
                     side = entry.get("side")
-                    target_id = entry.get("id")
+                    target_id = self._safe_int(entry.get("id"), None)
                     if side and target_id is not None:
-                        targets.add((side, target_id))
+                        targets.add((side, int(target_id)))
                 elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
-                    targets.add((entry[0], entry[1]))
+                    side = entry[0]
+                    target_id = self._safe_int(entry[1], None)
+                    if side and target_id is not None:
+                        targets.add((side, int(target_id)))
+                elif isinstance(entry, int):
+                    for candidate in self._state.get("units", []) or []:
+                        if self._safe_int(candidate.get("id"), None) == int(entry):
+                            c_side = candidate.get("side")
+                            if c_side:
+                                targets.add((c_side, int(entry)))
+            if targets:
+                return targets
+
+        source = self._unit_anchor_view_cell(unit)
+        if source is None or shoot_range is None or int(shoot_range) <= 0:
+            return targets
+        sx, sy = source
+        for target in self._state.get("units", []) or []:
+            if not isinstance(target, dict):
+                continue
+            if target.get("side") == unit.get("side"):
+                continue
+            tx_ty = self._unit_anchor_view_cell(target)
+            if tx_ty is None:
+                continue
+            tx, ty = tx_ty
+            distance = max(abs(tx - sx), abs(ty - sy))
+            if distance <= int(shoot_range):
+                target_id = self._safe_int(target.get("id"), None)
+                if target_id is not None:
+                    targets.add((target.get("side"), int(target_id)))
         return targets
 
     def _view_transform(self) -> QtGui.QTransform:
