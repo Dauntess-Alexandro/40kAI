@@ -985,7 +985,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_prompt.setText(self._move_instruction_text())
             self.command_stack.setEnabled(False)
             self.command_stack.setVisible(False)
-            self.command_hint.setText("Горячие клавиши: ПКМ — идти, Esc — сброс выделения")
+            self.command_hint.setText("Горячие клавиши: ПКМ — идти, Backspace — не ходить")
         elif self._is_shooting_target_request(request) or self._is_shooting_dice_request(request):
             self.command_prompt.setText(self._shoot_instruction_text())
             self.command_stack.setEnabled(False)
@@ -1063,9 +1063,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             f"Ходьба: Unit {unit_label} — {unit_name}\n"
             "ЛКМ: выделить/hover клетку\n"
             "ПКМ: идти в клетку\n"
+            "Backspace: не ходить (пропустить ходьбу юнита)\n"
             "Синий: обычный Move (до M)\n"
-            "Жёлтый: Advance (до M+6)\n"
-            "Esc: отмена/снять выделение"
+            "Жёлтый: Advance (до M+6)"
         )
 
     def _is_movement_move_request(self, request) -> bool:
@@ -1218,15 +1218,43 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _on_cell_right_clicked(self, x: int, y: int) -> None:
         if not self._is_move_cell_request(self._pending_request):
             return
+        self._submit_movement_target_cell(x, y, source="RMB")
+
+    def _submit_movement_target_cell(self, x: int, y: int, *, source: str) -> bool:
+        if not self._is_move_cell_request(self._pending_request):
+            return False
         if not self.map_scene.is_reachable_cell(x, y):
-            return
+            return False
         move_mode = "normal" if self.map_scene.is_move_cell(x, y) else "advance" if self.map_scene.is_advance_cell(x, y) else None
         if move_mode is None:
-            return
+            return False
         self.map_scene.set_target_cell((x, y))
         self.command_input.setText(f"{x} {y}")
-        self.add_log_line(f"REQ: move cell accepted (RMB) x={x}, y={y}, mode={move_mode}")
+        self.add_log_line(f"REQ: move cell accepted ({source}) x={x}, y={y}, mode={move_mode}")
         self._submit_answer({"x": x, "y": y, "mode": move_mode})
+        return True
+
+    def _submit_skip_movement_for_active_unit(self) -> bool:
+        if not self._is_move_cell_request(self._pending_request):
+            return False
+        unit_id, side = self._resolve_active_unit()
+        if unit_id is None or side is None:
+            return False
+        unit = self._units_by_key.get((side, unit_id))
+        if not isinstance(unit, dict):
+            return False
+        try:
+            x = int(unit.get("x"))
+            y = int(unit.get("y"))
+        except (TypeError, ValueError):
+            return False
+        submitted = self._submit_movement_target_cell(x, y, source="Backspace")
+        if not submitted:
+            self.add_log_line(
+                "Пропуск ходьбы не выполнен: текущая клетка не помечена как reachable. "
+                "Что делать дальше: выберите подсвеченную клетку ПКМ."
+            )
+        return submitted
 
     def _on_cell_hovered(self, state_pos) -> None:
         if self._is_movement_move_request(self._pending_request):
@@ -1345,7 +1373,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 self.command_hint.setText("Горячие клавиши: Enter — выбрать")
         elif kind == "deploy_coord":
             if self._is_movement_move_request(self._pending_request):
-                self.command_hint.setText("ПКМ по подсвеченной клетке. ЛКМ/Esc — только выделение/сброс")
+                self.command_hint.setText("ПКМ по подсвеченной клетке. ЛКМ — hover/выбор, Backspace — не ходить")
             elif self._is_move_cell_request(self._pending_request):
                 self.command_hint.setText("RMB по подсвеченной клетке или введите X Y, затем Enter")
             else:
@@ -2431,6 +2459,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if self._is_movement_move_request(self._pending_request) and key == QtCore.Qt.Key_Escape:
                 self.map_scene.set_target_cell(None)
                 return True
+            if self._is_movement_move_request(self._pending_request) and key == QtCore.Qt.Key_Backspace:
+                if self._submit_skip_movement_for_active_unit():
+                    return True
             if self._is_shooting_target_request(self._pending_request) or self._is_shooting_dice_request(self._pending_request):
                 if key == QtCore.Qt.Key_Escape:
                     self._close_shoot_popover()
