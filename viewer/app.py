@@ -1243,14 +1243,21 @@ class ViewerWindow(QtWidgets.QMainWindow):
         unit = self._units_by_key.get((side, unit_id))
         if not isinstance(unit, dict):
             return False
+        anchor_x = unit.get("anchor_x")
+        anchor_y = unit.get("anchor_y")
+        unit_x = unit.get("x")
+        unit_y = unit.get("y")
         try:
-            x = int(unit.get("x"))
-            y = int(unit.get("y"))
+            x = int(anchor_x if anchor_x is not None else unit_x)
+            y = int(anchor_y if anchor_y is not None else unit_y)
         except (TypeError, ValueError):
             return False
         self.map_scene.set_target_cell((x, y))
         self.command_input.setText(f"{x} {y}")
-        self.add_log_line(f"REQ: move skip requested (Backspace) x={x}, y={y}, mode=normal")
+        self.add_log_line(
+            f"REQ: move skip requested (Backspace) x={x}, y={y}, mode=normal"
+            + (" [anchor]" if anchor_x is not None and anchor_y is not None else "")
+        )
         self._submit_answer({"x": x, "y": y, "mode": "normal"})
         return True
 
