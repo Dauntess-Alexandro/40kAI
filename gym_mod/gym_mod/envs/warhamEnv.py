@@ -1212,8 +1212,8 @@ class Warhammer40kEnv(gym.Env):
         reachable: list[tuple[int, int]] = []
         for r in range(max(0, row - move_budget), min(self.b_len - 1, row + move_budget) + 1):
             for c in range(max(0, col - move_budget), min(self.b_hei - 1, col + move_budget) + 1):
-                dist = self._grid_distance_euclid((row, col), (r, c))
-                if dist == 0.0 or dist > float(move_budget):
+                dist = self._grid_distance_chebyshev((row, col), (r, c))
+                if dist == 0 or dist > int(move_budget):
                     continue
                 if (r, c) in occupied:
                     continue
@@ -1248,6 +1248,11 @@ class Warhammer40kEnv(gym.Env):
             for x, y in advance_all
             if (int(x), int(y)) not in move_set
         ]
+        if (os.getenv("TERRAIN_DEBUG", "0") == "1" or os.getenv("VIEWER_DEBUG", "0") == "1") and hasattr(self, "_append_agent_log"):
+            self._append_agent_log(
+                f"[MOVE] unit={self._unit_id(side, int(idx)) if hasattr(self, '_unit_id') else int(idx)} "
+                f"M={int(move_budget)} budget={int(advance_budget)} reachable_move={len(move_cells)} reachable_adv={len(advance_cells)}"
+            )
         return {
             "move_cells": [(int(x), int(y)) for x, y in move_cells],
             "advance_cells": advance_cells,
@@ -1262,7 +1267,7 @@ class Warhammer40kEnv(gym.Env):
         want: int,
         base_m: int,
         unit_label: str,
-    ) -> tuple[tuple[int, int] | None, str | None, float]:
+    ) -> tuple[tuple[int, int] | None, str | None, int]:
         overlay = self.get_unit_movement_overlay(side, idx)
         move_cells = overlay.get("move_cells") or []
         advance_cells = overlay.get("advance_cells") or []
@@ -1272,12 +1277,12 @@ class Warhammer40kEnv(gym.Env):
         candidates.extend((int(x), int(y), "advance") for x, y in advance_cells)
         if not candidates:
             self._log(f"{unit_label}: нет достижимых клеток для движения (budget={int(base_m) + 6}).")
-            return None, None, 0.0
+            return None, None, 0
 
         coords = self.unit_coords if side == "model" else self.enemy_coords
         row = int(coords[int(idx)][0])
         col = int(coords[int(idx)][1])
-        desired = max(0.0, min(float(int(want)), float(int(base_m) + 6)))
+        desired = max(0, min(int(want), int(base_m) + 6))
 
         dir_vec = {
             0: (1.0, 0.0),   # down
@@ -1301,7 +1306,7 @@ class Warhammer40kEnv(gym.Env):
 
         def _score(item):
             x, y, mode = item
-            dist = self._grid_distance_euclid((row, col), (int(y), int(x)))
+            dist = self._grid_distance_chebyshev((row, col), (int(y), int(x)))
             dr = float(int(y) - row)
             dc = float(int(x) - col)
             if dir_vec is None:
@@ -1310,11 +1315,11 @@ class Warhammer40kEnv(gym.Env):
                 norm = max(1e-6, float(np.hypot(dr, dc)))
                 align = -(((dr * dir_vec[0]) + (dc * dir_vec[1])) / norm)
             mode_penalty = 0.0 if mode == "normal" else 0.1
-            return (align, abs(float(dist) - desired), mode_penalty, dist)
+            return (align, abs(int(dist) - int(desired)), mode_penalty, int(dist))
 
         best = min(filtered, key=_score)
         bx, by, best_mode = int(best[0]), int(best[1]), str(best[2])
-        dist = float(self._grid_distance_euclid((row, col), (by, bx)))
+        dist = int(self._grid_distance_chebyshev((row, col), (by, bx)))
         if (bx, by) in move_set:
             best_mode = "normal"
         elif (bx, by) in advance_set:
@@ -2835,9 +2840,10 @@ class Warhammer40kEnv(gym.Env):
                             self.model_used_advance[i] = False
                             self.model_advance_roll[i] = None
                             continue
-                        advanced = str(move_mode) == "advance" or float(movement) > float(base_m)
+                        advanced = str(move_mode) == "advance" or int(movement) > int(base_m)
                         if advanced:
-                            advance_roll = max(1, int(np.ceil(float(movement) - float(base_m))))
+                            adv_used = max(0, int(movement) - int(base_m))
+                            advance_roll = max(1, min(6, int(adv_used)))
                         self.unit_coords[i] = [int(dest[1]), int(dest[0])]
                     else:
                         advanced = False
@@ -2914,7 +2920,7 @@ class Warhammer40kEnv(gym.Env):
                     self.model_used_advance[i] = bool(advanced)
                     self.model_advance_roll[i] = int(advance_roll) if advance_roll is not None else None
                     direction = {0: "down", 1: "up", 2: "left", 3: "right", 4: "none"}.get(move_dir, "none")
-                    actual_movement = float(movement) if move_dir != 4 else 0
+                    actual_movement = int(movement) if move_dir != 4 else 0
                     advance_text = "да" if advanced else "нет"
                     if advance_roll is not None:
                         max_move = int(base_m + advance_roll)
@@ -3292,19 +3298,20 @@ class Warhammer40kEnv(gym.Env):
                             continue
                         dest = cell
 
-                    distance_cells = self._grid_distance_euclid(
+                    distance_cells = self._grid_distance_chebyshev(
                         (int(pos_before[0]), int(pos_before[1])),
                         (int(dest[1]), int(dest[0])),
                     )
                     advanced = move_mode == "advance"
-                    advance_roll = max(1, int(np.ceil(float(distance_cells) - float(base_move)))) if advanced else 0
+                    adv_used = max(0, int(distance_cells) - int(base_move))
+                    advance_roll = max(1, min(6, int(adv_used))) if advanced else 0
                     self.enemy_used_advance[i] = bool(advanced)
                     self.enemy_advance_roll[i] = int(advance_roll)
                     advanced_flags[i] = bool(advanced)
                     self._append_agent_log(
                         f"[MOVE] unit={playerName} {move_mode} to=({int(dest[0])},{int(dest[1])}) "
-                        f"dist={float(distance_cells):.3f} M={int(base_move)}"
-                        + (f" adv={int(max(0, np.ceil(float(distance_cells) - float(base_move))))}" if advanced else "")
+                        f"dist={int(distance_cells)} M={int(base_move)}"
+                        + (f" adv={int(max(0, min(6, int(distance_cells) - int(base_move))))}" if advanced else "")
                     )
                     self.enemy_coords[i] = [int(dest[1]), int(dest[0])]
 
@@ -3379,14 +3386,15 @@ class Warhammer40kEnv(gym.Env):
                     def _heur_score(item):
                         x, y, mode = item
                         dist_to_target = float(self._grid_distance_euclid((int(y), int(x)), (target_row, target_col)))
-                        dist_from_start = float(self._grid_distance_euclid((int(self.enemy_coords[i][0]), int(self.enemy_coords[i][1])), (int(y), int(x))))
+                        dist_from_start = float(self._grid_distance_chebyshev((int(self.enemy_coords[i][0]), int(self.enemy_coords[i][1])), (int(y), int(x))))
                         mode_penalty = 0.0 if mode == "normal" else 0.1
                         return (dist_to_target, mode_penalty, -dist_from_start)
 
                     best_x, best_y, best_mode = min(candidates, key=_heur_score)
-                    movement = float(self._grid_distance_euclid((int(self.enemy_coords[i][0]), int(self.enemy_coords[i][1])), (int(best_y), int(best_x))))
-                    advanced = str(best_mode) == "advance" or float(movement) > float(base_m)
-                    advance_roll = max(1, int(np.ceil(float(movement) - float(base_m)))) if advanced else None
+                    movement = int(self._grid_distance_chebyshev((int(self.enemy_coords[i][0]), int(self.enemy_coords[i][1])), (int(best_y), int(best_x))))
+                    advanced = str(best_mode) == "advance" or int(movement) > int(base_m)
+                    adv_used = max(0, int(movement) - int(base_m))
+                    advance_roll = max(1, min(6, int(adv_used))) if advanced else None
                     self.enemy_coords[i] = [int(best_y), int(best_x)]
 
                     self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
