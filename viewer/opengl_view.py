@@ -1472,7 +1472,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 self._move_highlights.append(rect)
 
     def _build_shooting_overlay(self, unit: dict) -> None:
-        shoot_range = self._safe_int(self._shoot_range, None)
+        shoot_range = self._safe_int(self._shoot_range)
         source = self._unit_anchor_view_cell(unit)
         sx, sy = source if source is not None else (None, None)
 
@@ -1495,7 +1495,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 continue
             if target.get("side") == unit.get("side"):
                 continue
-            target_id = self._safe_int(target.get("id"), None)
+            target_id = self._safe_int(target.get("id"))
             target_key = (target.get("side"), int(target_id)) if target_id is not None else None
             if target_filter and target_key not in target_filter:
                 continue
@@ -1532,17 +1532,17 @@ class OpenGLBoardWidget(QOpenGLWidget):
             for entry in self._targets:
                 if isinstance(entry, dict):
                     side = entry.get("side")
-                    target_id = self._safe_int(entry.get("id"), None)
+                    target_id = self._safe_int(entry.get("id"))
                     if side and target_id is not None:
                         targets.add((side, int(target_id)))
                 elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
                     side = entry[0]
-                    target_id = self._safe_int(entry[1], None)
+                    target_id = self._safe_int(entry[1])
                     if side and target_id is not None:
                         targets.add((side, int(target_id)))
                 elif isinstance(entry, int):
                     for candidate in self._state.get("units", []) or []:
-                        if self._safe_int(candidate.get("id"), None) == int(entry):
+                        if self._safe_int(candidate.get("id")) == int(entry):
                             c_side = candidate.get("side")
                             if c_side:
                                 targets.add((c_side, int(entry)))
@@ -1564,7 +1564,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             tx, ty = tx_ty
             distance = max(abs(tx - sx), abs(ty - sy))
             if distance <= int(shoot_range):
-                target_id = self._safe_int(target.get("id"), None)
+                target_id = self._safe_int(target.get("id"))
                 if target_id is not None:
                     targets.add((target.get("side"), int(target_id)))
         return targets
