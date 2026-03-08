@@ -4230,19 +4230,21 @@ class OpenGLBoardWidget(QOpenGLWidget):
             "Cover: INFANTRY within 3\" if obscured",
         ]
         covering_ids = [int(v) for v in list(feature.get("covering_unit_ids") or []) if str(v).strip().isdigit()]
+        covering_chip = None
         if covering_ids:
             covering_ids = sorted(set(covering_ids))
             if len(covering_ids) <= 2:
                 cover_text = ", ".join(str(v) for v in covering_ids)
             else:
                 cover_text = f"{covering_ids[0]}, {covering_ids[1]} +{len(covering_ids) - 2}"
-            rules_lines.append(f"СКРЫВАЕТ UNIT {cover_text}")
+            covering_chip = f"СКРЫВАЕТ {cover_text}"
         kind_badge = "B" if "barricade" in kind_lower else "T"
         return {
             "title": title,
             "id": feature.get("id") or "—",
             "terrain_type": kind,
             "keywords": keywords,
+            "covering_chip": covering_chip,
             "coords": coords_text,
             "rules": rules_lines,
             "kind_badge": kind_badge,

@@ -1697,17 +1697,26 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 return "Игрок"
             return None
 
-        attacker_label = _side_label(attacker)
-        defender_label = _side_label(defender)
+        attacker_label = _side_label(attacker) or "—"
+        defender_label = _side_label(defender) or "—"
         deploy_phase_text = str(state.get("phase") or "").strip().lower()
-        deploy_finished = ("deploy" not in deploy_phase_text) and ("расст" not in deploy_phase_text)
-        if attacker_label and defender_label:
-            prefix = "Деплой завершён" if deploy_finished else "Деплой"
-            self.status_deployment.setText(f"{prefix}: Attacker = {attacker_label} • Defender = {defender_label}")
+        deploy_active = ("deploy" in deploy_phase_text) or ("расст" in deploy_phase_text)
+        rolloff_done = (attacker_label != "—") and (defender_label != "—")
+        if deploy_active:
+            if not rolloff_done:
+                deploy_text = "Деплой: ожидание roll-off"
+            else:
+                deploy_text = f"Деплой: расстановка (Attacker={attacker_label} • Defender={defender_label})"
         else:
-            self.status_deployment.setText("Деплой: ожидание roll-off")
+            deploy_text = f"Деплой завершён: Attacker = {attacker_label} • Defender = {defender_label}"
+        self.status_deployment.setText(deploy_text)
         if self._deploy_status_text:
             self.status_deployment.setText(f"{self.status_deployment.text()} • {self._deploy_status_text}")
+        if os.getenv("VIEWER_DEBUG", "0") == "1":
+            self.add_log_line(
+                f"[STATUS] phase={state.get('phase')} deploy_state={'active' if deploy_active else 'completed'} "
+                f"attacker={attacker} defender={defender} text=\"{self.status_deployment.text()}\""
+            )
 
         self._auto_switch_log_tab(active)
 
