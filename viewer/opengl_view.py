@@ -1476,19 +1476,39 @@ class OpenGLBoardWidget(QOpenGLWidget):
         source = self._unit_anchor_view_cell(unit)
         sx, sy = source if source is not None else (None, None)
 
-        if shoot_range is not None and shoot_range > 0 and source is not None:
+        target_filter = set(self._resolve_targets(unit, shoot_range or 0))
+
+        inferred_range = shoot_range
+        if (inferred_range is None or inferred_range <= 0) and source is not None and target_filter:
+            max_dist = 0
+            for side, target_id in target_filter:
+                target = None
+                for candidate in self._state.get("units", []) or []:
+                    if candidate.get("side") == side and self._safe_int(candidate.get("id")) == int(target_id):
+                        target = candidate
+                        break
+                if target is None:
+                    continue
+                tx_ty = self._unit_anchor_view_cell(target)
+                if tx_ty is None:
+                    continue
+                tx, ty = tx_ty
+                max_dist = max(max_dist, max(abs(tx - sx), abs(ty - sy)))
+            if max_dist > 0:
+                inferred_range = int(max_dist)
+
+        if inferred_range is not None and inferred_range > 0 and source is not None:
             max_x = max(0, int(self._board_width) - 1)
             max_y = max(0, int(self._board_height) - 1)
             for y in range(0, max_y + 1):
                 for x in range(0, max_x + 1):
                     distance = max(abs(x - sx), abs(y - sy))
-                    if distance > shoot_range:
+                    if distance > inferred_range:
                         continue
                     self._shoot_range_highlights.append(
                         QtCore.QRectF(x * self.cell_size, y * self.cell_size, self.cell_size, self.cell_size)
                     )
 
-        target_filter = set(self._resolve_targets(unit, shoot_range or 0))
         shooter_id = self._safe_int(unit.get("id"))
         for target in self._state.get("units", []) or []:
             if not isinstance(target, dict):
@@ -1503,9 +1523,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if tx_ty is None:
                 continue
             tx, ty = tx_ty
-            if shoot_range is not None and shoot_range > 0 and source is not None:
+            if inferred_range is not None and inferred_range > 0 and source is not None:
                 distance = max(abs(tx - sx), abs(ty - sy))
-                if distance > shoot_range:
+                if distance > inferred_range:
                     continue
 
             target_id = self._safe_int(target.get("id"))
