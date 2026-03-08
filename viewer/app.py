@@ -217,6 +217,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._deploy_hover_cell = None
         self._deploy_visual_reset_done = False
         self._movement_skip_sent = False
+        self._rolloff_attacker_side: Optional[str] = None
+        self._rolloff_defender_side: Optional[str] = None
 
         self._viewer_config = load_viewer_config()
         cell_size = int(self._viewer_config.get("cell_size", 24))
@@ -1512,6 +1514,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._deploy_context = None
         self._deploy_hover_cell = None
         self._deploy_status_text = ""
+        self._rolloff_attacker_side = None
+        self._rolloff_defender_side = None
 
     def _submit_text(self):
         text = self.command_input.text().strip()
@@ -1703,10 +1707,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         deploy_active = ("deploy" in deploy_phase_text) or ("расст" in deploy_phase_text)
         rolloff_done = bool(attacker_label and defender_label)
         if not rolloff_done and not deploy_active:
-            # Fallback для старых/обрезанных state без attacker/defender: показываем стороны UI явно.
-            attacker_label = "Игрок"
-            defender_label = "Модель"
-            rolloff_done = True
+            # Fallback: используем последнее корректное значение roll-off из логов Viewer.
+            attacker_fallback = _side_label(self._rolloff_attacker_side)
+            defender_fallback = _side_label(self._rolloff_defender_side)
+            if attacker_fallback and defender_fallback:
+                attacker_label = attacker_fallback
+                defender_label = defender_fallback
+                rolloff_done = True
         if deploy_active:
             if not rolloff_done:
                 deploy_text = "Деплой: ожидание roll-off"
@@ -1783,6 +1790,20 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._reset_log_lines(text_lines, write_to_file=False)
             self._log_tail_snapshot = text_lines
 
+    def _capture_rolloff_sides_from_log(self, raw_text: str) -> None:
+        text = str(raw_text or "")
+        if "roll-off attacker/defender" not in text.lower():
+            return
+        match = re.search(r"attacker\s*=\s*(model|enemy|player)", text, re.IGNORECASE)
+        if not match:
+            return
+        attacker = str(match.group(1) or "").strip().lower()
+        if attacker not in {"model", "enemy", "player"}:
+            return
+        defender = "model" if attacker in {"enemy", "player"} else "enemy"
+        self._rolloff_attacker_side = attacker
+        self._rolloff_defender_side = defender
+
     def _update_model_events(self, events):
         if not isinstance(events, list):
             return
@@ -1851,6 +1872,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def add_log_line(self, line: str):
         raw_text = str(line)
+        self._capture_rolloff_sides_from_log(raw_text)
         new_turn = self._update_turn_context(raw_text)
         categories = self._classify_line(raw_text)
         if self._should_assign_shooting_side(raw_text, categories):
