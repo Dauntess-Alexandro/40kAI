@@ -2260,7 +2260,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
         if self._show_shoot_range_cells and self._shoot_range_highlights:
             painter.save()
-            range_val = self._safe_int(self._shoot_range, 0) or 0
+            range_val = self._safe_int(self._shoot_range) or 0
             thin = range_val > 18
             fill = QtGui.QColor(110, 200, 120, 12 if thin else 24)
             border = QtGui.QPen(QtGui.QColor(110, 200, 120, 32 if thin else 65), 0.8 if thin else 0.9)
