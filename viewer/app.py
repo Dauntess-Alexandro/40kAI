@@ -834,10 +834,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._update_shoot_popover_ui()
         anchor = global_pos or QtGui.QCursor.pos()
         self.shoot_popover.adjustSize()
-        hint = self.shoot_popover.sizeHint()
-        if sys.platform.startswith("win"):
-            hint.setHeight(hint.height() + 14)
-        self.shoot_popover.resize(hint)
+        self.shoot_popover.resize(self.shoot_popover.sizeHint())
         pos = QtCore.QPoint(anchor.x() + 18, anchor.y() - self.shoot_popover.height() - 12)
         self.shoot_popover.move(pos)
         self.shoot_popover.show()
