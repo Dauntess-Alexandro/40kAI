@@ -1237,7 +1237,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _submit_skip_movement_for_active_unit(self) -> bool:
         if not self._is_move_cell_request(self._pending_request):
             return False
-        unit_id, side = self._resolve_active_unit()
+        req_meta = getattr(self._pending_request, "meta", {}) or {}
+        raw_unit_id = req_meta.get("unit_id")
+        try:
+            unit_id = int(raw_unit_id)
+        except (TypeError, ValueError):
+            unit_id = None
+        side = str(req_meta.get("unit_side") or "").strip().lower() or None
+        if side not in ("player", "model"):
+            side = None
+        if unit_id is None or side is None:
+            unit_id, side = self._resolve_active_unit()
         if unit_id is None or side is None:
             return False
         unit = self._units_by_key.get((side, unit_id))
