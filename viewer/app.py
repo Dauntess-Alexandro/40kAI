@@ -199,6 +199,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._current_target_id = None
         self._last_shooter_id = None
         self._shoot_targets_valid: set[int] = set()
+        self._shoot_request_flow_active = False
         self._shoot_popover_target_id: Optional[int] = None
         self._shoot_resolver_active = False
         self._shoot_resolver_step = 0
@@ -627,7 +628,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _is_shooting_dice_request(self, request) -> bool:
         if request is None:
             return False
-        return bool(getattr(request, "kind", "") == "dice" and self._shoot_resolver_active)
+        return bool(getattr(request, "kind", "") == "dice" and self._shoot_request_flow_active)
 
     def _shoot_instruction_text(self) -> str:
         unit_id, side = self._resolve_active_unit()
@@ -833,6 +834,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._update_shoot_popover_ui()
         anchor = global_pos or QtGui.QCursor.pos()
         self.shoot_popover.adjustSize()
+        hint = self.shoot_popover.sizeHint()
+        if sys.platform.startswith("win"):
+            hint.setHeight(hint.height() + 14)
+        self.shoot_popover.resize(hint)
         pos = QtCore.QPoint(anchor.x() + 18, anchor.y() - self.shoot_popover.height() - 12)
         self.shoot_popover.move(pos)
         self.shoot_popover.show()
@@ -948,6 +953,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_hint.setText("Горячие клавиши: —")
             self.map_scene.set_target_cell(None)
             self._shoot_targets_valid = set()
+            self._shoot_request_flow_active = False
             self._close_shoot_popover()
             self._refresh_active_context()
             return
@@ -965,8 +971,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._maybe_reset_target_for_request(request)
         if self._is_shooting_target_request(request):
+            self._shoot_request_flow_active = True
             self._shoot_targets_valid = self._valid_target_ids_from_request(request)
-        elif not self._is_shooting_dice_request(request):
+        elif self._is_shooting_dice_request(request):
+            pass
+        else:
+            self._shoot_request_flow_active = False
             self._shoot_targets_valid = set()
         self._update_deploy_status_from_request(request)
         display_prompt = self._deploy_status_text if self._deploy_status_text else request.prompt
@@ -1425,6 +1435,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._current_target_id = None
         self._last_shooter_id = None
         self._shoot_targets_valid: set[int] = set()
+        self._shoot_request_flow_active = False
         self._shoot_popover_target_id: Optional[int] = None
         self._shoot_resolver_active = False
         self._shoot_resolver_step = 0
