@@ -1021,6 +1021,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 "sprite": sprite,
                 "cells": cells,
                 "cell_rotations": cell_rot,
+                "covering_unit_ids": [int(v) for v in list(feature.get("covering_unit_ids") or []) if str(v).strip().isdigit()],
             })
         return parsed
 
@@ -2260,10 +2261,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
         if self._show_shoot_range_cells and self._shoot_range_highlights:
             painter.save()
-            range_val = self._safe_int(self._shoot_range) or 0
-            thin = range_val > 18
-            fill = QtGui.QColor(110, 200, 120, 12 if thin else 24)
-            border = QtGui.QPen(QtGui.QColor(110, 200, 120, 32 if thin else 65), 0.8 if thin else 0.9)
+            fill = QtGui.QColor(110, 200, 120, 24)
+            border = QtGui.QPen(QtGui.QColor(110, 200, 120, 65), 0.9)
             border.setCosmetic(True)
             painter.setBrush(QtGui.QBrush(fill))
             painter.setPen(border)
@@ -4230,6 +4229,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
             "Rules: No deploy • No end move on top",
             "Cover: INFANTRY within 3\" if obscured",
         ]
+        covering_ids = [int(v) for v in list(feature.get("covering_unit_ids") or []) if str(v).strip().isdigit()]
+        if covering_ids:
+            covering_ids = sorted(set(covering_ids))
+            if len(covering_ids) <= 2:
+                cover_text = ", ".join(str(v) for v in covering_ids)
+            else:
+                cover_text = f"{covering_ids[0]}, {covering_ids[1]} +{len(covering_ids) - 2}"
+            rules_lines.append(f"СКРЫВАЕТ UNIT {cover_text}")
         kind_badge = "B" if "barricade" in kind_lower else "T"
         return {
             "title": title,

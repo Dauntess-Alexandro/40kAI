@@ -17,6 +17,8 @@ class TestStateExportRegression(unittest.TestCase):
         self.assertIn('"id": str(feature.get("id") or "")', source)
         self.assertIn('"name": str(feature.get("name") or feature.get("kind") or "Terrain")', source)
         self.assertIn('"keywords": keywords', source)
+        self.assertIn('"covering_unit_ids": sorted(terrain_cover_map.get(str(feature.get("id") or ""), set()))', source)
+        self.assertIn('"cover_source_terrain_id": cover_source_terrain_id', source)
 
 
 if __name__ == "__main__":
