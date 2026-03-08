@@ -10,6 +10,11 @@ class TestShootingOverlayTargetsVisualRegression(unittest.TestCase):
         self.assertIn('"NO_LOS"', source)
         self.assertIn('"OBSCURED"', source)
 
+    def test_target_hitbox_fallback_exists(self):
+        source = Path("viewer/opengl_view.py").read_text(encoding="utf-8")
+        self.assertIn("def _target_hitbox_for_info(self, info: Dict[str, object]) -> Optional[QtCore.QRectF]:", source)
+        self.assertIn('unit_id = self._safe_int(info.get("unit_id"))', source)
+
     def test_hover_marker_and_hover_hit_test_present(self):
         source = Path("viewer/opengl_view.py").read_text(encoding="utf-8")
         self.assertIn("def _update_shooting_hover_target(self, screen_pos: QtCore.QPointF) -> None:", source)

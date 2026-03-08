@@ -1517,6 +1517,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 continue
 
             target_id = self._safe_int(target.get("id"))
+            target_key = (target.get("side"), int(target_id)) if target_id is not None else None
+            if target_filter and target_key not in target_filter:
+                continue
             if target_id is None:
                 continue
 
@@ -2258,6 +2261,22 @@ class OpenGLBoardWidget(QOpenGLWidget):
         # Кольца выбора отключены: отдельный слой selection не используется.
         return
 
+    def _target_hitbox_for_info(self, info: Dict[str, object]) -> Optional[QtCore.QRectF]:
+        key = info.get("unit_key")
+        if isinstance(key, tuple) and len(key) >= 2:
+            rect = self._unit_hitboxes_screen.get((str(key[0]), int(key[1])))
+            if rect is not None and not rect.isEmpty():
+                return rect
+        unit_id = self._safe_int(info.get("unit_id"))
+        if unit_id is None:
+            return None
+        for (side, uid), rect in self._unit_hitboxes_screen.items():
+            if int(uid) != int(unit_id):
+                continue
+            if rect is not None and not rect.isEmpty():
+                return rect
+        return None
+
     def _draw_shooting_targets_overlay(
         self,
         painter: QtGui.QPainter,
@@ -2296,15 +2315,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
         for info in target_infos:
             key = info.get("unit_key")
-            if not isinstance(key, tuple) or len(key) < 2:
-                continue
-            rect = self._unit_hitboxes_screen.get((str(key[0]), int(key[1])))
-            if rect is None or rect.isEmpty():
+            rect = self._target_hitbox_for_info(info)
+            if rect is None:
                 continue
 
             classification = str(info.get("classification") or "NO_LOS")
             style = style_map.get(classification, style_map["NO_LOS"])
-            hovered = hovered_target_key is not None and (str(key[0]), int(key[1])) == hovered_target_key
+            hovered = hovered_target_key is not None and isinstance(key, tuple) and len(key) >= 2 and (str(key[0]), int(key[1])) == hovered_target_key
 
             expand = float(style["expand"]) + (2.0 if hovered else 0.0)
             glow_rect = rect.adjusted(-expand, -expand, expand, expand)
@@ -3466,7 +3483,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if not isinstance(key, tuple) or len(key) < 2:
                 continue
             norm_key = (str(key[0]), int(key[1]))
-            rect = self._unit_hitboxes_screen.get(norm_key)
+            rect = self._target_hitbox_for_info(info)
             if rect is None or not rect.contains(screen_pos):
                 continue
             hovered = norm_key
