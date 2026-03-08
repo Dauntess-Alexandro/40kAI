@@ -204,6 +204,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._shoot_resolver_active = False
         self._shoot_resolver_step = 0
         self._shoot_resolver_attacker_id: Optional[int] = None
+        self._active_weapon_name: Optional[str] = None
+        self._active_weapon_range: Optional[int] = None
+        self._active_weapon_unit_id: Optional[int] = None
         self._show_objective_radius = True
         self._units_by_key = {}
         self._unit_row_by_key = {}
@@ -213,6 +216,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._deploy_context = None
         self._deploy_hover_cell = None
         self._deploy_visual_reset_done = False
+        self._movement_skip_sent = False
+        self._rolloff_attacker_side: Optional[str] = None
+        self._rolloff_defender_side: Optional[str] = None
 
         self._viewer_config = load_viewer_config()
         cell_size = int(self._viewer_config.get("cell_size", 24))
@@ -639,7 +645,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         weapon = "—"
         weapon_range = None
         if isinstance(unit, dict):
-            weapon, weapon_range = self._resolve_weapon_name_and_range(unit)
+            weapon, weapon_range = self._resolve_active_weapon(unit)
         unit_label = str(unit_id) if unit_id is not None else "—"
         weapon_suffix = f" (R{weapon_range})" if isinstance(weapon_range, int) and weapon_range > 0 else ""
         overlay_mode = "Targets"
@@ -759,7 +765,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if shooter_side is not None:
                 unit = self._units_by_key.get((shooter_side, int(attacker)))
                 if isinstance(unit, dict):
-                    weapon, weapon_range = self._resolve_weapon_name_and_range(unit)
+                    weapon, weapon_range = self._resolve_active_weapon(unit)
+                    self._remember_active_weapon(attacker, weapon, weapon_range)
         range_text = f"R{weapon_range}" if isinstance(weapon_range, int) and weapon_range > 0 else "—"
         overlay_mode = "Targets"
         if hasattr(self, "map_scene") and hasattr(self.map_scene, "shooting_overlay_mode_label"):
@@ -934,6 +941,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._pending_request = request
         self._awaiting_player_action = request is not None
+        self._movement_skip_sent = False
         if request is None:
             self._deploy_visual_reset_done = False
             self._deploy_context = None
@@ -985,7 +993,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_prompt.setText(self._move_instruction_text())
             self.command_stack.setEnabled(False)
             self.command_stack.setVisible(False)
-            self.command_hint.setText("Горячие клавиши: ПКМ — идти, Esc — сброс выделения")
+            self.command_hint.setText("Горячие клавиши: ПКМ — идти, Backspace — не ходить")
         elif self._is_shooting_target_request(request) or self._is_shooting_dice_request(request):
             self.command_prompt.setText(self._shoot_instruction_text())
             self.command_stack.setEnabled(False)
@@ -1063,9 +1071,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             f"Ходьба: Unit {unit_label} — {unit_name}\n"
             "ЛКМ: выделить/hover клетку\n"
             "ПКМ: идти в клетку\n"
+            "Backspace: не ходить (пропустить ходьбу юнита)\n"
             "Синий: обычный Move (до M)\n"
-            "Жёлтый: Advance (до M+6)\n"
-            "Esc: отмена/снять выделение"
+            "Жёлтый: Advance (до M+6)"
         )
 
     def _is_movement_move_request(self, request) -> bool:
@@ -1218,15 +1226,78 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _on_cell_right_clicked(self, x: int, y: int) -> None:
         if not self._is_move_cell_request(self._pending_request):
             return
+        self._submit_movement_target_cell(x, y, source="RMB")
+
+    def _submit_movement_target_cell(self, x: int, y: int, *, source: str) -> bool:
+        if not self._is_move_cell_request(self._pending_request):
+            return False
         if not self.map_scene.is_reachable_cell(x, y):
-            return
+            return False
         move_mode = "normal" if self.map_scene.is_move_cell(x, y) else "advance" if self.map_scene.is_advance_cell(x, y) else None
         if move_mode is None:
-            return
+            return False
         self.map_scene.set_target_cell((x, y))
         self.command_input.setText(f"{x} {y}")
-        self.add_log_line(f"REQ: move cell accepted (RMB) x={x}, y={y}, mode={move_mode}")
+        self.add_log_line(f"REQ: move cell accepted ({source}) x={x}, y={y}, mode={move_mode}")
         self._submit_answer({"x": x, "y": y, "mode": move_mode})
+        return True
+
+    def _submit_skip_movement_for_active_unit(self) -> bool:
+        if not self._is_move_cell_request(self._pending_request):
+            return False
+        if self._movement_skip_sent:
+            return True
+        req_meta = getattr(self._pending_request, "meta", {}) or {}
+        move_cells = [
+            (int(cell[0]), int(cell[1]))
+            for cell in (req_meta.get("move_cells") or [])
+            if isinstance(cell, (list, tuple)) and len(cell) >= 2
+        ]
+        reachable_cells = move_cells or [
+            (int(cell[0]), int(cell[1]))
+            for cell in (req_meta.get("reachable_cells") or [])
+            if isinstance(cell, (list, tuple)) and len(cell) >= 2
+        ]
+        if not reachable_cells:
+            self.add_log_line(
+                "Пропуск ходьбы не выполнен: нет reachable-клеток в move_request. "
+                "Где: viewer/app.py (_submit_skip_movement_for_active_unit). "
+                "Что делать дальше: выполните движение ПКМ или проверьте состояние overlay."
+            )
+            return False
+
+        req_unit_id = req_meta.get("unit_id")
+        current_cell = None
+        for candidate_side in ("player", "model"):
+            try:
+                key = (candidate_side, int(req_unit_id))
+            except (TypeError, ValueError):
+                continue
+            unit = self._units_by_key.get(key)
+            if not isinstance(unit, dict):
+                continue
+            try:
+                current_cell = (int(unit.get("x")), int(unit.get("y")))
+            except (TypeError, ValueError):
+                current_cell = None
+            if current_cell is not None:
+                break
+
+        if current_cell is None:
+            x, y = reachable_cells[0]
+        else:
+            x, y = min(
+                reachable_cells,
+                key=lambda cell: max(abs(int(cell[0]) - int(current_cell[0])), abs(int(cell[1]) - int(current_cell[1]))),
+            )
+
+        move_mode = "normal" if (x, y) in set(move_cells) else "advance"
+        self._movement_skip_sent = True
+        self.add_log_line(f"Unit {int(req_unit_id) if str(req_unit_id).isdigit() else '—'}: movement skipped")
+        self._submit_answer({"x": int(x), "y": int(y), "mode": move_mode})
+        self.map_scene.set_target_cell(None)
+        self.map_scene.clear_target_selection()
+        return True
 
     def _on_cell_hovered(self, state_pos) -> None:
         if self._is_movement_move_request(self._pending_request):
@@ -1345,7 +1416,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 self.command_hint.setText("Горячие клавиши: Enter — выбрать")
         elif kind == "deploy_coord":
             if self._is_movement_move_request(self._pending_request):
-                self.command_hint.setText("ПКМ по подсвеченной клетке. ЛКМ/Esc — только выделение/сброс")
+                self.command_hint.setText("ПКМ по подсвеченной клетке. ЛКМ — hover/выбор, Backspace — не ходить")
             elif self._is_move_cell_request(self._pending_request):
                 self.command_hint.setText("RMB по подсвеченной клетке или введите X Y, затем Enter")
             else:
@@ -1437,9 +1508,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._shoot_resolver_active = False
         self._shoot_resolver_step = 0
         self._shoot_resolver_attacker_id: Optional[int] = None
+        self._active_weapon_name = None
+        self._active_weapon_range = None
+        self._active_weapon_unit_id = None
         self._deploy_context = None
         self._deploy_hover_cell = None
         self._deploy_status_text = ""
+        self._rolloff_attacker_side = None
+        self._rolloff_defender_side = None
 
     def _submit_text(self):
         text = self.command_input.text().strip()
@@ -1616,16 +1692,46 @@ class ViewerWindow(QtWidgets.QMainWindow):
         deployment = state.get("deployment", {}) if isinstance(state.get("deployment", {}), dict) else {}
         attacker = deployment.get("attacker") or state.get("attacker_side")
         defender = deployment.get("defender") or state.get("defender_side")
-        attacker_label = "Модель" if attacker == "model" else "Игрок" if attacker == "enemy" else None
-        defender_label = "Модель" if defender == "model" else "Игрок" if defender == "enemy" else None
-        if attacker_label and defender_label:
-            self.status_deployment.setText(
-                f"Деплой: атакующий слева — {attacker_label}, защитник справа — {defender_label}"
-            )
+
+        def _side_label(raw):
+            side = str(raw or "").strip().lower()
+            if side == "model":
+                return "Модель"
+            if side in {"enemy", "player"}:
+                return "Игрок"
+            return None
+
+        attacker_label = _side_label(attacker)
+        defender_label = _side_label(defender)
+        deploy_phase_text = str(state.get("phase") or "").strip().lower()
+        deploy_active = ("deploy" in deploy_phase_text) or ("расст" in deploy_phase_text)
+        rolloff_done = bool(attacker_label and defender_label)
+        if not rolloff_done and not deploy_active:
+            # Fallback: используем последнее корректное значение roll-off из логов Viewer.
+            attacker_fallback = _side_label(self._rolloff_attacker_side)
+            defender_fallback = _side_label(self._rolloff_defender_side)
+            if attacker_fallback and defender_fallback:
+                attacker_label = attacker_fallback
+                defender_label = defender_fallback
+                rolloff_done = True
+        if deploy_active:
+            if not rolloff_done:
+                deploy_text = "Деплой: ожидание roll-off"
+            else:
+                deploy_text = f"Деплой: расстановка (Attacker={attacker_label} • Defender={defender_label})"
         else:
-            self.status_deployment.setText("Деплой: ожидание ролл-оффа")
+            if not rolloff_done:
+                deploy_text = "Деплой: ожидание roll-off"
+            else:
+                deploy_text = f"Деплой завершён: Attacker = {attacker_label} • Defender = {defender_label}"
+        self.status_deployment.setText(deploy_text)
         if self._deploy_status_text:
-            self.status_deployment.setText(f"Деплой (manual): {self._deploy_status_text}")
+            self.status_deployment.setText(f"{self.status_deployment.text()} • {self._deploy_status_text}")
+        if os.getenv("VIEWER_DEBUG", "0") == "1":
+            self.add_log_line(
+                f"[STATUS] phase={state.get('phase')} deploy_state={'active' if deploy_active else 'completed'} "
+                f"attacker={attacker} defender={defender} text=\"{self.status_deployment.text()}\""
+            )
 
         self._auto_switch_log_tab(active)
 
@@ -1686,6 +1792,20 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 return
             self._reset_log_lines(text_lines, write_to_file=False)
             self._log_tail_snapshot = text_lines
+
+    def _capture_rolloff_sides_from_log(self, raw_text: str) -> None:
+        text = str(raw_text or "")
+        if "roll-off attacker/defender" not in text.lower():
+            return
+        match = re.search(r"attacker\s*=\s*(model|enemy|player)", text, re.IGNORECASE)
+        if not match:
+            return
+        attacker = str(match.group(1) or "").strip().lower()
+        if attacker not in {"model", "enemy", "player"}:
+            return
+        defender = "model" if attacker in {"enemy", "player"} else "enemy"
+        self._rolloff_attacker_side = attacker
+        self._rolloff_defender_side = defender
 
     def _update_model_events(self, events):
         if not isinstance(events, list):
@@ -1755,6 +1875,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def add_log_line(self, line: str):
         raw_text = str(line)
+        self._capture_rolloff_sides_from_log(raw_text)
         new_turn = self._update_turn_context(raw_text)
         categories = self._classify_line(raw_text)
         if self._should_assign_shooting_side(raw_text, categories):
@@ -2056,6 +2177,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 self.add_log_line(line)
             else:
                 raw_text = str(line)
+                self._capture_rolloff_sides_from_log(raw_text)
                 self._update_turn_context(raw_text)
                 categories = self._classify_line(raw_text)
                 if self._should_assign_shooting_side(raw_text, categories):
@@ -2218,6 +2340,25 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         return name, None
 
+    def _remember_active_weapon(self, unit_id: Optional[int], weapon_name: Optional[str], weapon_range: Optional[int]) -> None:
+        self._active_weapon_unit_id = int(unit_id) if isinstance(unit_id, (int, float)) else None
+        self._active_weapon_name = str(weapon_name).strip() if weapon_name else None
+        self._active_weapon_range = int(weapon_range) if isinstance(weapon_range, (int, float)) else None
+
+    def _resolve_active_weapon(self, unit) -> tuple[str, Optional[int]]:
+        weapon, weapon_range = self._resolve_weapon_name_and_range(unit)
+        unit_id = int(unit.get("id")) if isinstance(unit, dict) and str(unit.get("id")).isdigit() else None
+        if (
+            unit_id is not None
+            and isinstance(self._active_weapon_unit_id, int)
+            and int(self._active_weapon_unit_id) == int(unit_id)
+            and isinstance(self._active_weapon_range, int)
+            and self._active_weapon_range > 0
+        ):
+            remembered_name = self._active_weapon_name or weapon
+            return remembered_name, int(self._active_weapon_range)
+        return weapon, weapon_range
+
     def _resolve_weapon_range(self, unit):
         _name, rng = self._resolve_weapon_name_and_range(unit)
         return rng
@@ -2282,7 +2423,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if self._is_movement_phase(phase_for_overlay):
             move_range = self._resolve_move_range(active_unit)
         if self._is_shooting_phase(phase_for_overlay):
-            shoot_range = self._resolve_weapon_range(active_unit)
+            weapon_name, shoot_range = self._resolve_active_weapon(active_unit)
+            self._remember_active_weapon(unit_id, weapon_name, shoot_range)
 
         targets_ctx = None
         if self.state_watcher and self.state_watcher.state:
@@ -2425,11 +2567,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def eventFilter(self, obj, event):
         if event.type() == QtCore.QEvent.KeyPress and self._pending_request:
+            if event.isAutoRepeat():
+                return True
             kind = getattr(self._pending_request, "kind", "")
             key = event.key()
             text = event.text().lower()
             if self._is_movement_move_request(self._pending_request) and key == QtCore.Qt.Key_Escape:
                 self.map_scene.set_target_cell(None)
+                return True
+            if self._is_movement_move_request(self._pending_request) and key == QtCore.Qt.Key_Backspace:
+                if self._submit_skip_movement_for_active_unit():
+                    return True
                 return True
             if self._is_shooting_target_request(self._pending_request) or self._is_shooting_dice_request(self._pending_request):
                 if key == QtCore.Qt.Key_Escape:

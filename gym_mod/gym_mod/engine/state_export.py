@@ -110,7 +110,18 @@ def _read_event_tail(default_max_events=500):
     return recorder.snapshot(limit=limit)
 
 
-def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, anchor=None, model_positions=None, facing=None):
+def _unit_payload(
+    side,
+    unit_id,
+    unit_data,
+    coords,
+    hp,
+    alive_models=None,
+    anchor=None,
+    model_positions=None,
+    facing=None,
+    weapon_profile=None,
+):
     name = "—"
     models = None
     if isinstance(unit_data, dict):
@@ -128,6 +139,12 @@ def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, ancho
             except TypeError:
                 keywords = [str(raw_keywords)]
 
+    weapon_name = None
+    weapon_range = None
+    if isinstance(weapon_profile, dict):
+        weapon_name = weapon_profile.get("Name")
+        weapon_range = _safe_int(weapon_profile.get("Range"), None)
+
     return {
         "side": side,
         "id": unit_id,
@@ -142,7 +159,37 @@ def _unit_payload(side, unit_id, unit_data, coords, hp, alive_models=None, ancho
         "model_positions": _iter_values(model_positions),
         "facing": facing,
         "keywords": keywords,
+        "weapon_name": str(weapon_name) if weapon_name else None,
+        "weapon_range": weapon_range,
     }
+
+
+def _nearest_covering_barricade_id(env, unit_cell: tuple[int, int]) -> str | None:
+    nearest_feature_id: str | None = None
+    nearest_dist: float | None = None
+    ux, uy = int(unit_cell[0]), int(unit_cell[1])
+    for feature in _iter_values(getattr(env, "terrain_features", None)):
+        if not isinstance(feature, dict):
+            continue
+        kind = str(feature.get("kind") or "").strip().lower()
+        tags = " ".join(str(v).lower() for v in _iter_values(feature.get("keywords") or feature.get("tags")))
+        if kind != "barricade" and "barricade" not in tags:
+            continue
+        feature_id = str(feature.get("id") or "").strip()
+        if not feature_id:
+            continue
+        feature_min = None
+        for cell in _iter_values(feature.get("cells")):
+            if not isinstance(cell, (list, tuple)) or len(cell) < 2:
+                continue
+            dist = max(abs(ux - int(cell[0])), abs(uy - int(cell[1])))
+            feature_min = dist if feature_min is None else min(feature_min, dist)
+        if feature_min is None:
+            continue
+        if nearest_dist is None or feature_min < nearest_dist:
+            nearest_dist = float(feature_min)
+            nearest_feature_id = feature_id
+    return nearest_feature_id
 
 
 def _status_debug_enabled() -> bool:
@@ -277,10 +324,13 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
 
     in_cover = False
     dist_cover = _nearest_barricade_distance(env, unit_cell)
+    cover_source_terrain_id = _nearest_covering_barricade_id(env, unit_cell)
     if hasattr(env, "_unit_has_keyword") and hasattr(env, "_barricade_cells"):
         is_infantry = env._unit_has_keyword(unit_data, "infantry")
         if is_infantry and dist_cover is not None:
             in_cover = float(dist_cover) <= 3.0
+    if not in_cover:
+        cover_source_terrain_id = None
 
     objective_state = _objective_state_for_unit(env, side, unit_cell)
 
@@ -393,6 +443,7 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
         "used_advance": bool(used_advance),
         "advance_roll": advance_roll,
         "dist_cover": dist_cover,
+        "cover_source_terrain_id": cover_source_terrain_id,
         "obscured_vs": sorted(set(obscured_vs)),
         "exposed_to": sorted(set(exposed_to)),
         "engagement_with": sorted(set(engagement_with)),
@@ -418,13 +469,15 @@ def write_state_json(env, path=None):
         unit_id = env._unit_id("enemy", idx)
         unit_data = env._get_unit_data("enemy", idx)
         hp = env.enemy_health[idx] if idx < len(env.enemy_health) else None
+        weapon_profile = env.enemy_weapon[idx] if idx < len(getattr(env, "enemy_weapon", [])) else None
         unit_payload = _unit_payload("player", unit_id, unit_data, coords, hp,
                                    alive_models=env._alive_models_from_pool("enemy", idx) if hasattr(env, "_alive_models_from_pool") else None,
                                    anchor=(env.enemy_anchor_coords[idx] if hasattr(env, "enemy_anchor_coords") and idx < len(env.enemy_anchor_coords) else None),
                                    model_positions=([{"x": _safe_int(pos[1], None), "y": _safe_int(pos[0], None), "z": _safe_int(pos[2], 0)}
                                                      for pos in env.enemy_model_positions[idx]]
                                                     if hasattr(env, "enemy_model_positions") and idx < len(env.enemy_model_positions) else []),
-                                   facing=_resolve_unit_facing(unit_data, coords, board_width))
+                                   facing=_resolve_unit_facing(unit_data, coords, board_width),
+                                   weapon_profile=weapon_profile)
         unit_payload["unit_status"] = _unit_status_payload(env, "enemy", idx)
         units.append(unit_payload)
 
@@ -432,13 +485,15 @@ def write_state_json(env, path=None):
         unit_id = env._unit_id("model", idx)
         unit_data = env._get_unit_data("model", idx)
         hp = env.unit_health[idx] if idx < len(env.unit_health) else None
+        weapon_profile = env.unit_weapon[idx] if idx < len(getattr(env, "unit_weapon", [])) else None
         unit_payload = _unit_payload("model", unit_id, unit_data, coords, hp,
                                    alive_models=env._alive_models_from_pool("model", idx) if hasattr(env, "_alive_models_from_pool") else None,
                                    anchor=(env.unit_anchor_coords[idx] if hasattr(env, "unit_anchor_coords") and idx < len(env.unit_anchor_coords) else None),
                                    model_positions=([{"x": _safe_int(pos[1], None), "y": _safe_int(pos[0], None), "z": _safe_int(pos[2], 0)}
                                                      for pos in env.unit_model_positions[idx]]
                                                     if hasattr(env, "unit_model_positions") and idx < len(env.unit_model_positions) else []),
-                                   facing=_resolve_unit_facing(unit_data, coords, board_width))
+                                   facing=_resolve_unit_facing(unit_data, coords, board_width),
+                                   weapon_profile=weapon_profile)
         unit_payload["unit_status"] = _unit_status_payload(env, "model", idx)
         units.append(unit_payload)
 
@@ -491,6 +546,17 @@ def write_state_json(env, path=None):
             "y": _safe_int(coords[0], None),
         })
 
+    terrain_cover_map: dict[str, set[int]] = {}
+    for unit in units:
+        if not isinstance(unit, dict):
+            continue
+        unit_id = _safe_int(unit.get("id"), None)
+        status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else {}
+        source_id = str(status.get("cover_source_terrain_id") or "").strip()
+        if unit_id is None or not source_id or not bool(status.get("in_cover")):
+            continue
+        terrain_cover_map.setdefault(source_id, set()).add(int(unit_id))
+
     terrain_features = []
     for feature in _iter_values(getattr(env, "terrain_features", None)):
         if not isinstance(feature, dict):
@@ -514,6 +580,7 @@ def write_state_json(env, path=None):
             "tags": keywords,
             "opacity": str(feature.get("opacity") or "obscuring"),
             "sprite": str(feature.get("sprite") or ""),
+            "covering_unit_ids": sorted(terrain_cover_map.get(str(feature.get("id") or ""), set())),
         })
 
     active_side = getattr(env, "active_side", None)

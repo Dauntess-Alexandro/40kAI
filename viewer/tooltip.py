@@ -520,7 +520,7 @@ class TerrainTooltipWidget(QtWidgets.QFrame):
         keywords_layout.setContentsMargins(0, 0, 0, 0)
         keywords_layout.setSpacing(6)
         self._keyword_labels: List[QtWidgets.QLabel] = []
-        for index in range(4):
+        for index in range(6):
             chip = QtWidgets.QLabel(self._keywords_row)
             chip.setFont(Theme.font(size=8, bold=True))
             chip.setObjectName(f"terrainKeywordChip{index}")
@@ -580,14 +580,18 @@ class TerrainTooltipWidget(QtWidgets.QFrame):
         kind_badge = str(payload.get("kind_badge") or "T")
         self._kind_badge.setText(kind_badge[:1].upper())
 
-        keywords = [str(v).upper() for v in list(payload.get("keywords") or []) if str(v).strip()]
+        keywords = [(str(v).upper(), "default") for v in list(payload.get("keywords") or []) if str(v).strip()]
+        cover_chip = str(payload.get("covering_chip") or "").strip()
+        if cover_chip:
+            keywords.append((cover_chip, "covering"))
         for idx, chip in enumerate(self._keyword_labels):
             if idx >= len(keywords):
                 chip.hide()
                 continue
-            keyword = keywords[idx]
+            keyword, role = keywords[idx]
             chip.setText(keyword)
             chip.setProperty("keyword", keyword)
+            chip.setProperty("keyword_role", role)
             chip.style().unpolish(chip)
             chip.style().polish(chip)
             chip.show()
@@ -632,7 +636,14 @@ class TerrainTooltipWidget(QtWidgets.QFrame):
                 border-radius: 8px;
                 padding: 2px 8px;
             }}
-            QLabel#terrainKeywordChip0, QLabel#terrainKeywordChip1, QLabel#terrainKeywordChip2, QLabel#terrainKeywordChip3 {{
+            QLabel[keyword_role="covering"] {{
+                color: #1d260f;
+                background-color: rgba(166, 196, 94, 0.95);
+                border: 1px solid rgba(70, 88, 31, 0.88);
+                border-radius: 8px;
+                padding: 2px 8px;
+            }}
+            QLabel#terrainKeywordChip0, QLabel#terrainKeywordChip1, QLabel#terrainKeywordChip2, QLabel#terrainKeywordChip3, QLabel#terrainKeywordChip4, QLabel#terrainKeywordChip5 {{
                 border-radius: 8px;
                 padding: 2px 8px;
             }}
