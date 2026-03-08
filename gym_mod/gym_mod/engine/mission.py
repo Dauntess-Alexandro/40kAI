@@ -69,7 +69,10 @@ def _make_barricade_cells(anchor_row: int, anchor_col: int) -> list[tuple[int, i
 def _make_terrain_feature(
     cells: list[tuple[int, int]],
     sprite_name: str,
+    feature_id: str,
     *,
+    name: str | None = None,
+    keywords: list[str] | None = None,
     cell_rotations: list[int] | None = None,
 ) -> TerrainFeature:
     final_sprite = "barrel.png" if sprite_name != "barrel.png" else sprite_name
@@ -77,8 +80,11 @@ def _make_terrain_feature(
     if len(normalized_rot) != len(cells):
         normalized_rot = [0] * len(cells)
     return {
+        "id": str(feature_id),
         "kind": "barricade",
+        "name": str(name or "Barricade"),
         "cells": [[int(r), int(c)] for r, c in cells],
+        "keywords": list(keywords or ["OBSTACLE", "BARRICADE"]),
         "tags": ["OBSTACLE", "BARRICADE"],
         "opacity": "obscuring",
         "sprite": str(final_sprite),
@@ -132,8 +138,28 @@ def _generate_only_war_terrain_features(b_len: int, b_hei: int, *, rng: random.R
             # ориентация задаётся расположением клеток (вертикальная 1x3).
             left_rot = [0, 0, 0]
             right_rot = [0, 0, 0]
-            features.append(_make_terrain_feature(left_cells, "barrel.png", cell_rotations=left_rot))
-            features.append(_make_terrain_feature(right_cells, "barrel.png", cell_rotations=right_rot))
+            left_idx = len(features) + 1
+            features.append(
+                _make_terrain_feature(
+                    left_cells,
+                    "barrel.png",
+                    f"T{left_idx}",
+                    name="Barricade",
+                    keywords=["OBSTACLE", "BARRICADE"],
+                    cell_rotations=left_rot,
+                )
+            )
+            right_idx = len(features) + 1
+            features.append(
+                _make_terrain_feature(
+                    right_cells,
+                    "barrel.png",
+                    f"T{right_idx}",
+                    name="Barricade",
+                    keywords=["OBSTACLE", "BARRICADE"],
+                    cell_rotations=right_rot,
+                )
+            )
             used_cells.update(pair_cells)
             attempt_ok = True
             break
@@ -228,9 +254,18 @@ def objective_coords_for_mission(value: str | None, b_len: int, b_hei: int) -> n
 def terrain_features_for_mission(value: str | None, b_len: int, b_hei: int) -> list[TerrainFeature]:
     mission_def = _mission_def(value)
     terrain_fn = mission_def.get("terrain_generator")
-    if callable(terrain_fn):
-        return list(terrain_fn(int(b_len), int(b_hei)) or [])
-    return list(only_war_terrain_features(int(b_len), int(b_hei)) or [])
+    raw_features = list(terrain_fn(int(b_len), int(b_hei)) or []) if callable(terrain_fn) else list(only_war_terrain_features(int(b_len), int(b_hei)) or [])
+    features: list[TerrainFeature] = []
+    for idx, feature in enumerate(raw_features, start=1):
+        if not isinstance(feature, dict):
+            continue
+        normalized = dict(feature)
+        normalized["id"] = str(feature.get("id") or f"T{idx}")
+        normalized["name"] = str(feature.get("name") or normalized.get("kind") or "Terrain")
+        normalized_keywords = list(feature.get("keywords") or feature.get("tags") or [])
+        normalized["keywords"] = [str(v) for v in normalized_keywords]
+        features.append(normalized)
+    return features
 
 
 def apply_mission_layout(env, mission_name: str | None = None) -> None:
