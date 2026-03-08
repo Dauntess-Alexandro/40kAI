@@ -2290,22 +2290,22 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
         style_map = {
             "VALID": {
-                "outline": QtGui.QColor(96, 214, 118, 235),
-                "glow": QtGui.QColor(96, 214, 118, 78),
-                "width": 1.8,
-                "expand": 7.0,
+                "accent": QtGui.QColor(102, 208, 132, 215),
+                "under": QtGui.QColor(102, 208, 132, 54),
+                "marker_bg": QtGui.QColor(20, 38, 24, 142),
+                "under_min_alpha": 40,
             },
             "OBSCURED": {
-                "outline": QtGui.QColor(232, 190, 85, 220),
-                "glow": QtGui.QColor(232, 190, 85, 62),
-                "width": 1.7,
-                "expand": 6.0,
+                "accent": QtGui.QColor(214, 186, 102, 210),
+                "under": QtGui.QColor(214, 186, 102, 46),
+                "marker_bg": QtGui.QColor(42, 34, 20, 140),
+                "under_min_alpha": 34,
             },
             "NO_LOS": {
-                "outline": QtGui.QColor(145, 150, 160, 185),
-                "glow": QtGui.QColor(145, 150, 160, 0),
-                "width": 1.3,
-                "expand": 4.0,
+                "accent": QtGui.QColor(148, 154, 162, 188),
+                "under": QtGui.QColor(148, 154, 162, 20),
+                "marker_bg": QtGui.QColor(28, 30, 34, 122),
+                "under_min_alpha": 14,
             },
         }
 
@@ -2321,43 +2321,59 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
             classification = str(info.get("classification") or "NO_LOS")
             style = style_map.get(classification, style_map["NO_LOS"])
-            hovered = hovered_target_key is not None and isinstance(key, tuple) and len(key) >= 2 and (str(key[0]), int(key[1])) == hovered_target_key
+            hovered = (
+                hovered_target_key is not None
+                and isinstance(key, tuple)
+                and len(key) >= 2
+                and (str(key[0]), int(key[1])) == hovered_target_key
+            )
 
-            expand = float(style["expand"]) + (2.0 if hovered else 0.0)
-            glow_rect = rect.adjusted(-expand, -expand, expand, expand)
-            outline_rect = rect.adjusted(-0.5, -0.5, 0.5, 0.5)
+            # XCOM-like: мягкая подложка под юнитом, без жирной рамки по hitbox.
+            width = max(12.0, float(rect.width()) * 0.82)
+            height = max(7.0, float(rect.height()) * (0.34 if classification != "NO_LOS" else 0.28))
+            cx = float(rect.center().x())
+            cy = float(rect.bottom()) - max(2.0, float(rect.height()) * 0.13)
+            under_rect = QtCore.QRectF(cx - width / 2.0, cy - height / 2.0, width, height)
 
-            glow = QtGui.QColor(style["glow"])
+            under = QtGui.QColor(style["under"])
             if hovered:
-                glow.setAlpha(min(255, int(glow.alpha() * 1.35) + 18))
-            if glow.alpha() > 0:
-                painter.setPen(QtCore.Qt.NoPen)
-                painter.setBrush(glow)
-                painter.drawRoundedRect(glow_rect, 6.0, 6.0)
+                under.setAlpha(min(255, int(under.alpha() * 1.45) + 12))
+            if classification == "NO_LOS" and not hovered:
+                under.setAlpha(max(8, int(under.alpha() * 0.85)))
+            under.setAlpha(max(int(style["under_min_alpha"]), under.alpha()))
 
-            pen = QtGui.QPen(QtGui.QColor(style["outline"]), float(style["width"]) + (0.7 if hovered else 0.0))
-            pen.setCosmetic(True)
-            painter.setPen(pen)
-            painter.setBrush(QtCore.Qt.NoBrush)
-            painter.drawRoundedRect(outline_rect, 4.0, 4.0)
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.setBrush(under)
+            painter.drawEllipse(under_rect)
+
+            # Небольшой target marker для всех целей; на hover — ярче/чуть крупнее.
+            marker_size = 14.0 + (2.0 if hovered else 0.0)
+            marker_pos = QtCore.QPointF(rect.right() + 6.0, rect.top() - 3.0)
+            marker_bg = QtCore.QRectF(marker_pos.x() - 1.0, marker_pos.y() - 1.0, marker_size, marker_size)
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.setBrush(QtGui.QColor(style["marker_bg"]))
+            painter.drawRoundedRect(marker_bg, 5.0, 5.0)
+            marker_pen = QtGui.QPen(QtGui.QColor(style["accent"]), 1.0 + (0.35 if hovered else 0.0))
+            marker_pen.setCosmetic(True)
+            painter.setPen(marker_pen)
+            font = QtGui.QFont(Theme.font(size=8 + (1 if hovered else 0), bold=True))
+            painter.setFont(font)
+            painter.drawText(marker_bg, QtCore.Qt.AlignCenter, "◉")
+
+            # Тонкий outline только для hovered цели.
+            if hovered:
+                thin_pen = QtGui.QPen(QtGui.QColor(style["accent"]), 0.9)
+                thin_pen.setCosmetic(True)
+                painter.setPen(thin_pen)
+                painter.setBrush(QtCore.Qt.NoBrush)
+                painter.drawRoundedRect(rect.adjusted(-0.4, -0.4, 0.4, 0.4), 3.0, 3.0)
 
             if self._viewer_debug_enabled:
-                dbg_pen = QtGui.QPen(QtGui.QColor(120, 220, 120, 135), 0.9)
+                dbg_pen = QtGui.QPen(QtGui.QColor(120, 220, 120, 125), 0.8)
                 dbg_pen.setCosmetic(True)
                 painter.setPen(dbg_pen)
                 painter.setBrush(QtCore.Qt.NoBrush)
                 painter.drawRect(rect)
-
-            if hovered:
-                marker_pos = QtCore.QPointF(rect.right() + 6.0, rect.top() - 4.0)
-                marker_bg = QtCore.QRectF(marker_pos.x() - 2.0, marker_pos.y() - 1.0, 18.0, 18.0)
-                painter.setPen(QtCore.Qt.NoPen)
-                painter.setBrush(QtGui.QColor(24, 24, 24, 155))
-                painter.drawRoundedRect(marker_bg, 6.0, 6.0)
-                painter.setPen(QtGui.QPen(QtGui.QColor(255, 245, 190, 245), 1.0))
-                font = QtGui.QFont(Theme.font(size=9, bold=True))
-                painter.setFont(font)
-                painter.drawText(marker_bg, QtCore.Qt.AlignCenter, "🎯")
 
         painter.restore()
 
