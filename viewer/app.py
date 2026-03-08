@@ -213,6 +213,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._deploy_context = None
         self._deploy_hover_cell = None
         self._deploy_visual_reset_done = False
+        self._movement_skip_sent = False
 
         self._viewer_config = load_viewer_config()
         cell_size = int(self._viewer_config.get("cell_size", 24))
@@ -934,6 +935,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._pending_request = request
         self._awaiting_player_action = request is not None
+        self._movement_skip_sent = False
         if request is None:
             self._deploy_visual_reset_done = False
             self._deploy_context = None
@@ -1237,38 +1239,58 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _submit_skip_movement_for_active_unit(self) -> bool:
         if not self._is_move_cell_request(self._pending_request):
             return False
+        if self._movement_skip_sent:
+            return True
         req_meta = getattr(self._pending_request, "meta", {}) or {}
-        raw_unit_id = req_meta.get("unit_id")
-        try:
-            unit_id = int(raw_unit_id)
-        except (TypeError, ValueError):
-            unit_id = None
-        side = str(req_meta.get("unit_side") or "").strip().lower() or None
-        if side not in ("player", "model"):
-            side = None
-        if unit_id is None or side is None:
-            unit_id, side = self._resolve_active_unit()
-        if unit_id is None or side is None:
+        move_cells = [
+            (int(cell[0]), int(cell[1]))
+            for cell in (req_meta.get("move_cells") or [])
+            if isinstance(cell, (list, tuple)) and len(cell) >= 2
+        ]
+        reachable_cells = move_cells or [
+            (int(cell[0]), int(cell[1]))
+            for cell in (req_meta.get("reachable_cells") or [])
+            if isinstance(cell, (list, tuple)) and len(cell) >= 2
+        ]
+        if not reachable_cells:
+            self.add_log_line(
+                "Пропуск ходьбы не выполнен: нет reachable-клеток в move_request. "
+                "Где: viewer/app.py (_submit_skip_movement_for_active_unit). "
+                "Что делать дальше: выполните движение ПКМ или проверьте состояние overlay."
+            )
             return False
-        unit = self._units_by_key.get((side, unit_id))
-        if not isinstance(unit, dict):
-            return False
-        anchor_x = unit.get("anchor_x")
-        anchor_y = unit.get("anchor_y")
-        unit_x = unit.get("x")
-        unit_y = unit.get("y")
-        try:
-            x = int(anchor_x if anchor_x is not None else unit_x)
-            y = int(anchor_y if anchor_y is not None else unit_y)
-        except (TypeError, ValueError):
-            return False
-        self.map_scene.set_target_cell((x, y))
-        self.command_input.setText(f"{x} {y}")
-        self.add_log_line(
-            f"REQ: move skip requested (Backspace) x={x}, y={y}, mode=normal"
-            + (" [anchor]" if anchor_x is not None and anchor_y is not None else "")
-        )
-        self._submit_answer({"x": x, "y": y, "mode": "normal"})
+
+        req_unit_id = req_meta.get("unit_id")
+        current_cell = None
+        for candidate_side in ("player", "model"):
+            try:
+                key = (candidate_side, int(req_unit_id))
+            except (TypeError, ValueError):
+                continue
+            unit = self._units_by_key.get(key)
+            if not isinstance(unit, dict):
+                continue
+            try:
+                current_cell = (int(unit.get("x")), int(unit.get("y")))
+            except (TypeError, ValueError):
+                current_cell = None
+            if current_cell is not None:
+                break
+
+        if current_cell is None:
+            x, y = reachable_cells[0]
+        else:
+            x, y = min(
+                reachable_cells,
+                key=lambda cell: max(abs(int(cell[0]) - int(current_cell[0])), abs(int(cell[1]) - int(current_cell[1]))),
+            )
+
+        move_mode = "normal" if (x, y) in set(move_cells) else "advance"
+        self._movement_skip_sent = True
+        self.add_log_line(f"Unit {int(req_unit_id) if str(req_unit_id).isdigit() else '—'}: movement skipped")
+        self._submit_answer({"x": int(x), "y": int(y), "mode": move_mode})
+        self.map_scene.set_target_cell(None)
+        self.map_scene.clear_target_selection()
         return True
 
     def _on_cell_hovered(self, state_pos) -> None:
@@ -2468,6 +2490,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def eventFilter(self, obj, event):
         if event.type() == QtCore.QEvent.KeyPress and self._pending_request:
+            if event.isAutoRepeat():
+                return True
             kind = getattr(self._pending_request, "kind", "")
             key = event.key()
             text = event.text().lower()
@@ -2477,6 +2501,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if self._is_movement_move_request(self._pending_request) and key == QtCore.Qt.Key_Backspace:
                 if self._submit_skip_movement_for_active_unit():
                     return True
+                return True
             if self._is_shooting_target_request(self._pending_request) or self._is_shooting_dice_request(self._pending_request):
                 if key == QtCore.Qt.Key_Escape:
                     self._close_shoot_popover()
