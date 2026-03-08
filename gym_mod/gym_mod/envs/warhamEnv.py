@@ -999,7 +999,7 @@ class Warhammer40kEnv(gym.Env):
                 np.asarray([row[0] for row in self.enemyInAttack], dtype=np.int8),
                 float(range_limit),
             )
-            targets = [int(idx) for idx in target_ids if self._has_line_of_sight("model", unit_idx, "enemy", int(idx))]
+            targets = [int(idx) for idx in target_ids if self._unit_has_los("model", unit_idx, "enemy", int(idx))]
         else:
             if not (0 <= unit_idx < len(self.enemy_health)):
                 return []
@@ -1015,7 +1015,7 @@ class Warhammer40kEnv(gym.Env):
                 np.asarray([row[0] for row in self.unitInAttack], dtype=np.int8),
                 float(range_limit),
             )
-            targets = [int(idx) for idx in target_ids if self._has_line_of_sight("enemy", unit_idx, "model", int(idx))]
+            targets = [int(idx) for idx in target_ids if self._unit_has_los("enemy", unit_idx, "model", int(idx))]
 
         self._shoot_target_cache[cache_key] = list(targets)
         return targets
@@ -1150,6 +1150,52 @@ class Warhammer40kEnv(gym.Env):
             target_id=self._unit_id(target_side, int(target_idx)) if hasattr(self, "_unit_id") else None,
         )
         return bool(report.get("los", False))
+
+    def _unit_cells_for_los(self, side: str, idx: int) -> list[tuple[int, int]]:
+        cells: list[tuple[int, int]] = []
+        seen: set[tuple[int, int]] = set()
+        for point in self._unit_model_points(side, int(idx)):
+            if not isinstance(point, (list, tuple)) or len(point) < 2:
+                continue
+            cell = self._cell_from_coord((point[0], point[1]))
+            if cell in seen:
+                continue
+            seen.add(cell)
+            cells.append(cell)
+        return cells
+
+    def _unit_has_los(self, attacker_side: str, attacker_idx: int, target_side: str, target_idx: int) -> bool:
+        attacker_cells = self._unit_cells_for_los(attacker_side, int(attacker_idx))
+        target_cells = self._unit_cells_for_los(target_side, int(target_idx))
+        if not attacker_cells or not target_cells:
+            return False
+
+        obscuring_cells = self.get_terrain_obscuring_cells_set()
+        self.terrain_obscuring_cells = set(obscuring_cells)
+        target_cover_cells = self._target_cover_cells_for_unit(target_side, int(target_idx), radius=3)
+        attacker_id = self._unit_id(attacker_side, int(attacker_idx)) if hasattr(self, "_unit_id") else None
+        target_id = self._unit_id(target_side, int(target_idx)) if hasattr(self, "_unit_id") else None
+
+        for attacker_cell in attacker_cells:
+            for target_cell in target_cells:
+                report = visibility_report(
+                    attacker_cell,
+                    target_cell,
+                    opaque_cells_set=self.terrain_opaque_cells,
+                    obscuring_cells_set=obscuring_cells,
+                    target_cover_cells_set=target_cover_cells,
+                    visibility_mode=self.visibility_mode,
+                )
+                self._log_los_debug(
+                    attacker_cell,
+                    target_cell,
+                    report,
+                    attacker_id=attacker_id,
+                    target_id=target_id,
+                )
+                if bool(report.get("los", False)):
+                    return True
+        return False
 
     def _grid_distance_chebyshev(self, a: tuple[int, int], b: tuple[int, int]) -> int:
         return max(abs(int(a[0]) - int(b[0])), abs(int(a[1]) - int(b[1])))
