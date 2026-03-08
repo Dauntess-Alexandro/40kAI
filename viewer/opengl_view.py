@@ -232,9 +232,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._reachable_overlay_sig: Optional[Tuple[object, int, int]] = None
         self._target_highlights: List[Tuple[QtCore.QPointF, float]] = []
         self._shoot_range_highlights: List[QtCore.QRectF] = []
-        self._shoot_target_valid: List[Tuple[QtCore.QPointF, float]] = []
-        self._shoot_target_no_los: List[Tuple[QtCore.QPointF, float]] = []
-        self._shoot_target_obscured: List[Tuple[QtCore.QPointF, float]] = []
+        self._shoot_target_infos: List[Dict[str, object]] = []
+        self._shoot_hovered_target_key: Optional[Tuple[str, int]] = None
+        self._last_shoot_hover_debug_sig: Optional[Tuple[int, str]] = None
         self._show_shoot_range_cells = False
         self._show_objective_radius = True
 
@@ -851,9 +851,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._advance_cells_set = set()
         self._target_highlights = []
         self._shoot_range_highlights = []
-        self._shoot_target_valid = []
-        self._shoot_target_no_los = []
-        self._shoot_target_obscured = []
+        self._shoot_target_infos = []
+        self._shoot_hovered_target_key = None
 
         active_key = (self._active_unit_side, self._active_unit_id)
         if active_key[0] is None or active_key[1] is None:
@@ -1516,10 +1515,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 continue
             if target.get("side") == unit.get("side"):
                 continue
+
             target_id = self._safe_int(target.get("id"))
-            target_key = (target.get("side"), int(target_id)) if target_id is not None else None
-            if target_filter and target_key not in target_filter:
+            if target_id is None:
                 continue
+
             tx_ty = self._unit_anchor_view_cell(target)
             if tx_ty is None:
                 continue
@@ -1529,23 +1529,26 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 if distance > inferred_range:
                     continue
 
-            target_id = self._safe_int(target.get("id"))
             status = target.get("unit_status") if isinstance(target.get("unit_status"), dict) else {}
             seen_by = {self._safe_int(v) for v in list(status.get("seen_by_ids") or [])}
             obscured_vs = {self._safe_int(v) for v in list(status.get("obscured_vs") or [])}
             has_los = shooter_id is not None and shooter_id in seen_by
             obscured = has_los and shooter_id is not None and shooter_id in obscured_vs
 
-            render = self._unit_by_key.get((target.get("side"), target_id)) if target_id is not None else None
-            if render is None:
-                continue
-            radius = render.radius + self.cell_size * 0.14
+            classification = "NO_LOS"
             if has_los and obscured:
-                self._shoot_target_obscured.append((render.center, radius))
+                classification = "OBSCURED"
             elif has_los:
-                self._shoot_target_valid.append((render.center, radius))
-            else:
-                self._shoot_target_no_los.append((render.center, radius))
+                classification = "VALID"
+
+            key = (str(target.get("side")), int(target_id))
+            self._shoot_target_infos.append(
+                {
+                    "unit_id": int(target_id),
+                    "unit_key": key,
+                    "classification": classification,
+                }
+            )
 
     def _resolve_targets(self, unit: dict, shoot_range: int) -> Iterable[Tuple[str, int]]:
         targets = set()
@@ -1726,6 +1729,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             # _world_to_state_pos returns (row, col), while viewer deployment API expects (x=col, y=row).
             self.cell_hovered.emit((int(state_pos[1]), int(state_pos[0])))
         self._update_hover_tooltip(event, world, pos)
+        self._update_shooting_hover_target(pos)
         self.update()
         super().mouseMoveEvent(event)
 
@@ -1746,6 +1750,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._hover_cell = None
         self.cell_hovered.emit(None)
         self._clear_hover_tooltip()
+        self._shoot_hovered_target_key = None
         self.update()
         super().leaveEvent(event)
 
@@ -2253,10 +2258,96 @@ class OpenGLBoardWidget(QOpenGLWidget):
         # Кольца выбора отключены: отдельный слой selection не используется.
         return
 
+    def _draw_shooting_targets_overlay(
+        self,
+        painter: QtGui.QPainter,
+        target_infos: List[Dict[str, object]],
+        hovered_target_key: Optional[Tuple[str, int]],
+    ) -> None:
+        if not target_infos:
+            return
+
+        self._rebuild_unit_hitboxes_screen()
+
+        style_map = {
+            "VALID": {
+                "outline": QtGui.QColor(96, 214, 118, 235),
+                "glow": QtGui.QColor(96, 214, 118, 78),
+                "width": 1.8,
+                "expand": 7.0,
+            },
+            "OBSCURED": {
+                "outline": QtGui.QColor(232, 190, 85, 220),
+                "glow": QtGui.QColor(232, 190, 85, 62),
+                "width": 1.7,
+                "expand": 6.0,
+            },
+            "NO_LOS": {
+                "outline": QtGui.QColor(145, 150, 160, 185),
+                "glow": QtGui.QColor(145, 150, 160, 0),
+                "width": 1.3,
+                "expand": 4.0,
+            },
+        }
+
+        painter.save()
+        painter.setTransform(QtGui.QTransform())
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+        for info in target_infos:
+            key = info.get("unit_key")
+            if not isinstance(key, tuple) or len(key) < 2:
+                continue
+            rect = self._unit_hitboxes_screen.get((str(key[0]), int(key[1])))
+            if rect is None or rect.isEmpty():
+                continue
+
+            classification = str(info.get("classification") or "NO_LOS")
+            style = style_map.get(classification, style_map["NO_LOS"])
+            hovered = hovered_target_key is not None and (str(key[0]), int(key[1])) == hovered_target_key
+
+            expand = float(style["expand"]) + (2.0 if hovered else 0.0)
+            glow_rect = rect.adjusted(-expand, -expand, expand, expand)
+            outline_rect = rect.adjusted(-0.5, -0.5, 0.5, 0.5)
+
+            glow = QtGui.QColor(style["glow"])
+            if hovered:
+                glow.setAlpha(min(255, int(glow.alpha() * 1.35) + 18))
+            if glow.alpha() > 0:
+                painter.setPen(QtCore.Qt.NoPen)
+                painter.setBrush(glow)
+                painter.drawRoundedRect(glow_rect, 6.0, 6.0)
+
+            pen = QtGui.QPen(QtGui.QColor(style["outline"]), float(style["width"]) + (0.7 if hovered else 0.0))
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawRoundedRect(outline_rect, 4.0, 4.0)
+
+            if self._viewer_debug_enabled:
+                dbg_pen = QtGui.QPen(QtGui.QColor(120, 220, 120, 135), 0.9)
+                dbg_pen.setCosmetic(True)
+                painter.setPen(dbg_pen)
+                painter.setBrush(QtCore.Qt.NoBrush)
+                painter.drawRect(rect)
+
+            if hovered:
+                marker_pos = QtCore.QPointF(rect.right() + 6.0, rect.top() - 4.0)
+                marker_bg = QtCore.QRectF(marker_pos.x() - 2.0, marker_pos.y() - 1.0, 18.0, 18.0)
+                painter.setPen(QtCore.Qt.NoPen)
+                painter.setBrush(QtGui.QColor(24, 24, 24, 155))
+                painter.drawRoundedRect(marker_bg, 6.0, 6.0)
+                painter.setPen(QtGui.QPen(QtGui.QColor(255, 245, 190, 245), 1.0))
+                font = QtGui.QFont(Theme.font(size=9, bold=True))
+                painter.setFont(font)
+                painter.drawText(marker_bg, QtCore.Qt.AlignCenter, "🎯")
+
+        painter.restore()
+
     def _draw_shooting_layer(self, painter: QtGui.QPainter) -> None:
         if not self._should_show_shooting():
             return
-        if not (self._shoot_target_valid or self._shoot_target_no_los or self._shoot_target_obscured or (self._show_shoot_range_cells and self._shoot_range_highlights)):
+        if not (self._shoot_target_infos or (self._show_shoot_range_cells and self._shoot_range_highlights)):
             return
 
         if self._show_shoot_range_cells and self._shoot_range_highlights:
@@ -2270,23 +2361,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 painter.drawRect(rect)
             painter.restore()
 
-        def _draw_targets(items, color: QtGui.QColor, width: float) -> None:
-            if not items:
-                return
-            painter.save()
-            pen = QtGui.QPen(color, width)
-            pen.setCosmetic(True)
-            painter.setPen(pen)
-            aura = QtGui.QColor(color)
-            aura.setAlpha(32)
-            painter.setBrush(aura)
-            for center, radius in items:
-                painter.drawEllipse(center, radius, radius)
-            painter.restore()
-
-        _draw_targets(self._shoot_target_no_los, QtGui.QColor(150, 156, 168, 170), 1.4)
-        _draw_targets(self._shoot_target_obscured, QtGui.QColor(232, 190, 85, 215), 1.8)
-        _draw_targets(self._shoot_target_valid, QtGui.QColor(96, 214, 118, 230), 2.0)
+        self._draw_shooting_targets_overlay(
+            painter,
+            self._shoot_target_infos,
+            self._shoot_hovered_target_key,
+        )
 
     def _draw_labels_layer(self, painter: QtGui.QPainter) -> None:
         text_font = Theme.font(size=8, bold=True)
@@ -3374,6 +3453,33 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if rect is not None and rect.contains(screen_pos):
                 return key
         return None
+
+    def _update_shooting_hover_target(self, screen_pos: QtCore.QPointF) -> None:
+        if not self._should_show_shooting() or not self._shoot_target_infos:
+            self._shoot_hovered_target_key = None
+            return
+        self._rebuild_unit_hitboxes_screen()
+        hovered: Optional[Tuple[str, int]] = None
+        hovered_classification = ""
+        for info in reversed(self._shoot_target_infos):
+            key = info.get("unit_key")
+            if not isinstance(key, tuple) or len(key) < 2:
+                continue
+            norm_key = (str(key[0]), int(key[1]))
+            rect = self._unit_hitboxes_screen.get(norm_key)
+            if rect is None or not rect.contains(screen_pos):
+                continue
+            hovered = norm_key
+            hovered_classification = str(info.get("classification") or "")
+            break
+        self._shoot_hovered_target_key = hovered
+        if self._viewer_debug_enabled and hovered is not None:
+            sig = (int(hovered[1]), hovered_classification)
+            if sig != self._last_shoot_hover_debug_sig:
+                self._last_shoot_hover_debug_sig = sig
+                self._append_agent_log(
+                    f"[VIEWER][SHOOT_HOVER] target_id={hovered[1]} classification={hovered_classification}"
+                )
 
     def _show_unit_tooltip_immediate(
         self,
