@@ -1720,7 +1720,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
             else:
                 deploy_text = f"Деплой: расстановка (Attacker={attacker_label} • Defender={defender_label})"
         else:
-            deploy_text = f"Деплой завершён: Attacker = {attacker_label} • Defender = {defender_label}"
+            if not rolloff_done:
+                deploy_text = "Деплой: ожидание roll-off"
+            else:
+                deploy_text = f"Деплой завершён: Attacker = {attacker_label} • Defender = {defender_label}"
         self.status_deployment.setText(deploy_text)
         if self._deploy_status_text:
             self.status_deployment.setText(f"{self.status_deployment.text()} • {self._deploy_status_text}")
@@ -2174,6 +2177,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 self.add_log_line(line)
             else:
                 raw_text = str(line)
+                self._capture_rolloff_sides_from_log(raw_text)
                 self._update_turn_context(raw_text)
                 categories = self._classify_line(raw_text)
                 if self._should_assign_shooting_side(raw_text, categories):
