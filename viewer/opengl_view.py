@@ -234,6 +234,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._shoot_range_highlights: List[QtCore.QRectF] = []
         self._shoot_target_infos: List[Dict[str, object]] = []
         self._shoot_hovered_target_key: Optional[Tuple[str, int]] = None
+        self._selected_target_id: Optional[int] = None
         self._last_shoot_hover_debug_sig: Optional[Tuple[int, str]] = None
         self._show_shoot_range_cells = False
         self._show_objective_radius = True
@@ -688,6 +689,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         shoot_range=None,
         show_objective_radius=True,
         targets=None,
+        selected_target_id=None,
     ) -> None:
         self._active_unit_id = active_unit_id
         self._active_unit_side = active_unit_side
@@ -698,6 +700,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._shoot_range = shoot_range
         self._show_objective_radius = bool(show_objective_radius)
         self._targets = targets
+        self._selected_target_id = self._safe_int(selected_target_id)
         self.refresh_overlays()
         self.update()
 
@@ -2306,6 +2309,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
             "OBSCURED": "target_reticle_obscured",
         }
         fx_assets = self._target_overlay_assets()
+        debug_rows: List[str] = []
+        draw_calls = 0
 
         def _sprite(key: str) -> Optional[QtGui.QPixmap]:
             pix = fx_assets.get(key)
@@ -2320,6 +2325,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         for info in target_infos:
             rect = self._target_hitbox_for_info(info)
             if rect is None:
+                if self._viewer_debug_enabled:
+                    debug_rows.append(
+                        f"target_id={self._safe_int(info.get('unit_id'))} skip=no_hitbox"
+                    )
                 continue
 
             classification = str(info.get("classification") or "")
@@ -2329,35 +2338,97 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
             reticle = _sprite(sprite_key)
             if reticle is None:
+                if self._viewer_debug_enabled:
+                    debug_rows.append(
+                        f"target_id={self._safe_int(info.get('unit_id'))} skip=no_texture sprite={sprite_key}"
+                    )
                 continue
 
-            # Hover не влияет на визуал: всегда только один прицел по типу цели.
-            # Рисуем маркер в правом верхнем углу хитбокса цели и делаем его чуть меньше.
-            marker_side = max(14.0, min(rect.width(), rect.height()) * 0.52)
+            # Рисуем ретикл по центру цели, чтобы он гарантированно попадал на юнита.
+            marker_side = max(14.0, min(rect.width(), rect.height()) * 0.72)
             marker_target_rect = QtCore.QRectF(
-                rect.right() - marker_side * 0.86,
-                rect.top() - marker_side * 0.14,
+                rect.center().x() - marker_side * 0.5,
+                rect.center().y() - marker_side * 0.5,
                 marker_side,
                 marker_side,
             )
             draw_rect = self._fit_pixmap_in_rect(reticle, marker_target_rect, inset_ratio=1.0)
+            draw_alpha = 0.92
             painter.save()
-            painter.setOpacity(0.92)
+            painter.setOpacity(draw_alpha)
             painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
             painter.drawPixmap(draw_rect, reticle, QtCore.QRectF(reticle.rect()))
             painter.restore()
+            draw_calls += 1
+
+            if self._viewer_debug_enabled:
+                unit_id = self._safe_int(info.get("unit_id"))
+                target_unit = self._find_unit_by_id(unit_id)
+                world_cell = self._unit_anchor_view_cell(target_unit) if target_unit is not None else None
+                world_center = (
+                    self._cell_center(world_cell[0], world_cell[1]) if world_cell is not None else None
+                )
+                transform = self._view_transform()
+                screen_center = transform.map(world_center) if world_center is not None else None
+                debug_rows.append(
+                    "target_id={tid} class={cls} world_cell={wcell} "
+                    "world_xy={wxy} screen_xy={sxy} rect=({rx:.1f},{ry:.1f},{rw:.1f},{rh:.1f}) "
+                    "alpha={alpha:.2f} z=targets_over draw=1".format(
+                        tid=unit_id,
+                        cls=classification,
+                        wcell=world_cell,
+                        wxy=(round(world_center.x(), 2), round(world_center.y(), 2)) if world_center is not None else None,
+                        sxy=(round(screen_center.x(), 2), round(screen_center.y(), 2)) if screen_center is not None else None,
+                        rx=draw_rect.x(),
+                        ry=draw_rect.y(),
+                        rw=draw_rect.width(),
+                        rh=draw_rect.height(),
+                        alpha=draw_alpha,
+                    )
+                )
 
         painter.restore()
+
+        if self._viewer_debug_enabled:
+            selected_target = self._safe_int(self._selected_target_id)
+            target_list = [self._safe_int(v.get("unit_id")) for v in target_infos]
+            valid_ids = [self._safe_int(v.get("unit_id")) for v in target_infos if str(v.get("classification") or "") == "VALID"]
+            obscured_ids = [self._safe_int(v.get("unit_id")) for v in target_infos if str(v.get("classification") or "") == "OBSCURED"]
+            self._append_agent_log(
+                "[VIEWER][TARGET_OVERLAY] "
+                f"shooter_id={self._safe_int(self._active_unit_id)} "
+                f"selected_target_id={selected_target} "
+                f"targets={target_list} valid_ids={valid_ids} obscured_ids={obscured_ids} "
+                f"draw_calls={draw_calls}"
+            )
+            for row in debug_rows:
+                self._append_agent_log(f"[VIEWER][TARGET_OVERLAY] {row}")
 
     def _target_overlay_assets(self) -> Dict[str, Optional[QtGui.QPixmap]]:
         if self._target_overlay_pixmaps:
             return self._target_overlay_pixmaps
         assets = {
-            "target_reticle_valid": "fx/red_target_reticle.png",
-            "target_reticle_obscured": "fx/yellow_target_reticle.png",
+            "target_reticle_valid": ["fx/red_target_valid.png", "fx/red_target_reticle.png"],
+            "target_reticle_obscured": ["fx/yellow_target_obscured.png", "fx/yellow_target_reticle.png"],
         }
-        for key, rel_path in assets.items():
-            self._target_overlay_pixmaps[key] = self._texture_manager.load_png(rel_path)
+        for key, rel_paths in assets.items():
+            loaded = None
+            loaded_path = None
+            for rel_path in rel_paths:
+                loaded = self._texture_manager.load_png(rel_path)
+                if loaded is not None and not loaded.isNull():
+                    loaded_path = rel_path
+                    break
+            self._target_overlay_pixmaps[key] = loaded
+            if self._viewer_debug_enabled:
+                if loaded is None or loaded.isNull():
+                    self._append_agent_log(
+                        f"[VIEWER][TARGET_TEX] key={key} loaded=0 tried={rel_paths}"
+                    )
+                else:
+                    self._append_agent_log(
+                        f"[VIEWER][TARGET_TEX] key={key} path={loaded_path} loaded=1 size={loaded.width()}x{loaded.height()}"
+                    )
         return self._target_overlay_pixmaps
 
     def _draw_shooting_layer(self, painter: QtGui.QPainter, *, target_pass: str = "over") -> None:

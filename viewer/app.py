@@ -2442,6 +2442,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             shoot_range=shoot_range,
             show_objective_radius=self._show_objective_radius,
             targets=targets_ctx,
+            selected_target_id=self._shoot_popover_target_id,
         )
 
     def _enqueue_fx_event(self, event: FxShotEvent) -> None:
