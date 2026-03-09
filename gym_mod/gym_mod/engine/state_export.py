@@ -363,36 +363,48 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
 
     in_range_targets: list[int] = []
     can_see_ids: list[int] = []
-    own_range = 0.0
-    if idx < len(own_weapon) and isinstance(own_weapon[idx], dict):
-        own_range = float(own_weapon[idx].get("Range", 0) or 0)
-    if own_range > 0:
-        for enemy_idx, enemy in enumerate(enemy_coords):
-            if not isinstance(enemy, (list, tuple)) or len(enemy) < 2:
-                continue
-            enemy_hp = env.enemy_health[enemy_idx] if side == "model" else env.unit_health[enemy_idx]
-            if float(enemy_hp or 0.0) <= 0:
-                continue
-            attacker_cell = unit_cell
-            target_cell = (int(enemy[0]), int(enemy[1]))
-            distance = max(abs(attacker_cell[0] - target_cell[0]), abs(attacker_cell[1] - target_cell[1]))
-            if distance > own_range:
-                continue
-            target_cover_cells = _target_cover_cells(env, target_cell, radius=3)
-            report = visibility_report(
-                attacker_cell,
-                target_cell,
-                opaque_cells_set=opaque_cells,
-                obscuring_cells_set=obscuring_cells,
-                target_cover_cells_set=target_cover_cells,
-                visibility_mode=visibility_mode,
-            )
-            if not bool(report.get("los", False)):
-                continue
-            enemy_id = env._unit_id("enemy" if side == "model" else "model", enemy_idx) if hasattr(env, "_unit_id") else None
+    if hasattr(env, "get_shoot_targets_for_unit"):
+        try:
+            target_indices = env.get_shoot_targets_for_unit(side, idx)
+        except Exception:
+            target_indices = []
+        target_side = "enemy" if side == "model" else "model"
+        for enemy_idx in _iter_values(target_indices):
+            enemy_id = env._unit_id(target_side, enemy_idx) if hasattr(env, "_unit_id") else None
             if enemy_id is not None:
                 can_see_ids.append(int(enemy_id))
                 in_range_targets.append(int(enemy_id))
+    else:
+        own_range = 0.0
+        if idx < len(own_weapon) and isinstance(own_weapon[idx], dict):
+            own_range = float(own_weapon[idx].get("Range", 0) or 0)
+        if own_range > 0:
+            for enemy_idx, enemy in enumerate(enemy_coords):
+                if not isinstance(enemy, (list, tuple)) or len(enemy) < 2:
+                    continue
+                enemy_hp = env.enemy_health[enemy_idx] if side == "model" else env.unit_health[enemy_idx]
+                if float(enemy_hp or 0.0) <= 0:
+                    continue
+                attacker_cell = unit_cell
+                target_cell = (int(enemy[0]), int(enemy[1]))
+                distance = max(abs(attacker_cell[0] - target_cell[0]), abs(attacker_cell[1] - target_cell[1]))
+                if distance > own_range:
+                    continue
+                target_cover_cells = _target_cover_cells(env, target_cell, radius=3)
+                report = visibility_report(
+                    attacker_cell,
+                    target_cell,
+                    opaque_cells_set=opaque_cells,
+                    obscuring_cells_set=obscuring_cells,
+                    target_cover_cells_set=target_cover_cells,
+                    visibility_mode=visibility_mode,
+                )
+                if not bool(report.get("los", False)):
+                    continue
+                enemy_id = env._unit_id("enemy" if side == "model" else "model", enemy_idx) if hasattr(env, "_unit_id") else None
+                if enemy_id is not None:
+                    can_see_ids.append(int(enemy_id))
+                    in_range_targets.append(int(enemy_id))
 
     reachable_cells: list[list[int]] = []
     move_cells: list[list[int]] = []

@@ -15,6 +15,7 @@ class TestPr4Pr5Pr6Regression(unittest.TestCase):
         self.assertIn('"model_positions"', source)
         self.assertIn('env.unit_model_positions', source)
         self.assertIn('env.enemy_model_positions', source)
+        self.assertIn('env.get_shoot_targets_for_unit(side, idx)', source)
 
     def test_distance_between_units_used_in_ranged_paths(self):
         source = Path("gym_mod/gym_mod/envs/warhamEnv.py").read_text(encoding="utf-8")
