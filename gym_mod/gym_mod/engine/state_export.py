@@ -281,6 +281,11 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
     visibility_mode = getattr(env, "visibility_mode", "single_ray")
 
     def _distance_between_units_local(attacker_side: str, attacker_idx: int, target_side: str, target_idx: int) -> float:
+        if hasattr(env, "_shooting_distance_between_units"):
+            try:
+                return float(env._shooting_distance_between_units(attacker_side, int(attacker_idx), target_side, int(target_idx)))
+            except Exception:
+                pass
         if hasattr(env, "_distance_between_units"):
             try:
                 return float(env._distance_between_units(attacker_side, int(attacker_idx), target_side, int(target_idx)))

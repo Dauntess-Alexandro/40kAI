@@ -1009,7 +1009,7 @@ class Warhammer40kEnv(gym.Env):
                 if self.enemyInAttack[enemy_idx][0] == 1:
                     _log_target_filter("model", unit_idx, "enemy", enemy_idx, "цель в engagement")
                     continue
-                dist = float(self._distance_between_units("model", unit_idx, "enemy", enemy_idx))
+                dist = float(self._shooting_distance_between_units("model", unit_idx, "enemy", enemy_idx))
                 if dist > float(range_limit):
                     _log_target_filter(
                         "model",
@@ -1039,7 +1039,7 @@ class Warhammer40kEnv(gym.Env):
                 if self.unitInAttack[model_idx][0] == 1:
                     _log_target_filter("enemy", unit_idx, "model", model_idx, "цель в engagement")
                     continue
-                dist = float(self._distance_between_units("enemy", unit_idx, "model", model_idx))
+                dist = float(self._shooting_distance_between_units("enemy", unit_idx, "model", model_idx))
                 if dist > float(range_limit):
                     _log_target_filter(
                         "enemy",
@@ -1456,7 +1456,7 @@ class Warhammer40kEnv(gym.Env):
             report = self._visibility_report_between_units("enemy", enemy_idx, "model", model_idx)
             if not bool(report.get("los", False)):
                 continue
-            distance_to_unit = self._distance_between_units("enemy", enemy_idx, "model", model_idx)
+            distance_to_unit = self._shooting_distance_between_units("enemy", enemy_idx, "model", model_idx)
             range_limit = float(self.enemy_weapon[enemy_idx].get("Range", 0) or 0)
             if distance_to_unit > range_limit:
                 continue
@@ -1900,6 +1900,22 @@ class Warhammer40kEnv(gym.Env):
         for pa in pts_a:
             for pb in pts_b:
                 d = distance(pa[:2], pb[:2])
+                if d < best:
+                    best = d
+        return best
+
+    def _shooting_distance_between_units(self, side_a: str, idx_a: int, side_b: str, idx_b: int) -> float:
+        """Дистанция для стрельбы: минимум по парам моделей в метрике Чебышёва."""
+        pts_a = self._unit_model_points(side_a, idx_a)
+        pts_b = self._unit_model_points(side_b, idx_b)
+        if not pts_a or not pts_b:
+            return float("inf")
+        best = float("inf")
+        for pa in pts_a:
+            a_cell = self._cell_from_coord((pa[0], pa[1]))
+            for pb in pts_b:
+                b_cell = self._cell_from_coord((pb[0], pb[1]))
+                d = float(self._grid_distance_chebyshev(a_cell, b_cell))
                 if d < best:
                     best = d
         return best
@@ -3542,7 +3558,7 @@ class Warhammer40kEnv(gym.Env):
                         idOfE = valid_target_ids[raw]
                         target_hp_prev = self.enemy_health[idOfE]
                         target_max_hp = self.enemy_data[idOfE]["W"] * self.enemy_data[idOfE]["#OfModels"]
-                        distances = {j: self._distance_between_units("model", i, "enemy", j) for j in valid_target_ids}
+                        distances = {j: self._shooting_distance_between_units("model", i, "enemy", j) for j in valid_target_ids}
                         closest = min(distances, key=distances.get)
                         min_hp = min(valid_target_ids, key=lambda idx: self.enemy_health[idx])
                         if idOfE == closest:
@@ -3576,7 +3592,7 @@ class Warhammer40kEnv(gym.Env):
                                 self.enemy_health[idOfE],
                                 self.enemy_data[idOfE],
                                 effects=effect,
-                                distance_to_target=self._distance_between_units("model", i, "enemy", idOfE),
+                                distance_to_target=self._shooting_distance_between_units("model", i, "enemy", idOfE),
                                 roller=_logger.roll,
                             )
                         else:
@@ -3587,7 +3603,7 @@ class Warhammer40kEnv(gym.Env):
                                 self.enemy_health[idOfE],
                                 self.enemy_data[idOfE],
                                 effects=effect,
-                                distance_to_target=self._distance_between_units("model", i, "enemy", idOfE),
+                                distance_to_target=self._shooting_distance_between_units("model", i, "enemy", idOfE),
                             )
                         self._apply_health_update("enemy", idOfE, modHealth, reason="shooting")
                         damage_dealt = max(0.0, float(target_hp_prev - modHealth))
@@ -3849,7 +3865,7 @@ class Warhammer40kEnv(gym.Env):
                                 self.unit_health[idOfM],
                                 self.unit_data[idOfM],
                                 effects=effect,
-                                distance_to_target=self._distance_between_units("enemy", i, "model", idOfM),
+                                distance_to_target=self._shooting_distance_between_units("enemy", i, "model", idOfM),
                                 roller=_logger.roll,
                             )
                         else:
@@ -3860,7 +3876,7 @@ class Warhammer40kEnv(gym.Env):
                                 self.unit_health[idOfM],
                                 self.unit_data[idOfM],
                                 effects=effect,
-                                distance_to_target=self._distance_between_units("enemy", i, "model", idOfM),
+                                distance_to_target=self._shooting_distance_between_units("enemy", i, "model", idOfM),
                             )
                         self._apply_health_update("model", idOfM, modHealth, reason="shooting")
                         self._log_unit(
@@ -3919,7 +3935,7 @@ class Warhammer40kEnv(gym.Env):
                     else:
                         shootAble = np.array([])
                         for j in range(len(self.unit_health)):
-                            if self._distance_between_units("enemy", i, "model", j) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
+                            if self._shooting_distance_between_units("enemy", i, "model", j) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
                                 shootAble = np.append(shootAble, j)
                         if len(shootAble) > 0:
                             response = False
@@ -3995,7 +4011,7 @@ class Warhammer40kEnv(gym.Env):
                     else:
                         shootAbleUnits = []
                         for j in range(len(self.unit_health)):
-                            if self._distance_between_units("enemy", i, "model", j) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
+                            if self._shooting_distance_between_units("enemy", i, "model", j) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
                                 shootAbleUnits.append(j)
                         if len(shootAbleUnits) > 0:
                             idOfM = np.random.choice(shootAbleUnits)
@@ -4012,7 +4028,7 @@ class Warhammer40kEnv(gym.Env):
                                 self.unit_health[idOfM],
                                 self.unit_data[idOfM],
                                 effects=effect,
-                                distance_to_target=self._distance_between_units("enemy", i, "model", idOfM),
+                                distance_to_target=self._shooting_distance_between_units("enemy", i, "model", idOfM),
                             )
                             self._apply_health_update("model", idOfM, modHealth, reason="shooting")
                             if self.trunc is False:

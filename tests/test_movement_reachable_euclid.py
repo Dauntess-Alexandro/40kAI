@@ -20,9 +20,10 @@ class TestMovementReachableChebyshev(unittest.TestCase):
         self.assertLessEqual(max(abs(5), abs(5)), 5)
         self.assertGreater(max(abs(6), abs(5)), 5)
 
-    def test_shooting_distance_path_not_switched_to_chebyshev(self):
+    def test_shooting_distance_uses_chebyshev(self):
         source = Path("gym_mod/gym_mod/envs/warhamEnv.py").read_text(encoding="utf-8")
-        self.assertIn("d = distance(pa[:2], pb[:2])", source)
+        self.assertIn("def _shooting_distance_between_units", source)
+        self.assertIn("d = float(self._grid_distance_chebyshev(a_cell, b_cell))", source)
 
 
 if __name__ == "__main__":
