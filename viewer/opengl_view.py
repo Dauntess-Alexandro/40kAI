@@ -2059,10 +2059,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self.draw_terrain_features(painter)
         self._draw_hovered_terrain_cells_layer(painter)
         self._draw_unit_tooltip_overlays_layer(painter)
+        self._draw_shooting_layer(painter, target_pass="under")
         self._draw_units_layer(painter)
         self._draw_deploy_snap_fx_layer(painter)
         self._draw_selection_layer(painter)
-        self._draw_shooting_layer(painter)
+        self._draw_shooting_layer(painter, target_pass="over")
         if self.render_fx:
             self._draw_fx_layer(painter)
         self._draw_labels_layer(painter)
@@ -2283,6 +2284,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter: QtGui.QPainter,
         target_infos: List[Dict[str, object]],
         hovered_target_key: Optional[Tuple[str, int]],
+        *,
+        render_under_units: bool,
     ) -> None:
         if not target_infos:
             return
@@ -2342,36 +2345,40 @@ class OpenGLBoardWidget(QOpenGLWidget):
             use_sprite_overlay = base_pixmap is not None and marker_pixmap is not None
 
             if use_sprite_overlay:
-                base_rect = rect.adjusted(-rect.width() * 0.12, -rect.height() * 0.12, rect.width() * 0.12, rect.height() * 0.12)
-                base_draw_rect = self._fit_pixmap_in_rect(base_pixmap, base_rect, inset_ratio=1.0)
-                painter.save()
-                painter.setOpacity(0.48)
-                painter.setCompositionMode(QtGui.QPainter.CompositionMode_DestinationOver)
-                painter.drawPixmap(base_draw_rect, base_pixmap, QtCore.QRectF(base_pixmap.rect()))
-                painter.restore()
-
-                if hovered and hover_ring is not None:
-                    ring_rect = rect.adjusted(-rect.width() * 0.20, -rect.height() * 0.20, rect.width() * 0.20, rect.height() * 0.20)
-                    ring_draw_rect = self._fit_pixmap_in_rect(hover_ring, ring_rect, inset_ratio=1.0)
+                if render_under_units:
+                    base_rect = rect.adjusted(-rect.width() * 0.12, -rect.height() * 0.12, rect.width() * 0.12, rect.height() * 0.12)
+                    base_draw_rect = self._fit_pixmap_in_rect(base_pixmap, base_rect, inset_ratio=1.0)
                     painter.save()
-                    painter.setOpacity(0.42)
-                    painter.setCompositionMode(QtGui.QPainter.CompositionMode_DestinationOver)
-                    painter.drawPixmap(ring_draw_rect, hover_ring, QtCore.QRectF(hover_ring.rect()))
+                    painter.setOpacity(0.48)
+                    painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+                    painter.drawPixmap(base_draw_rect, base_pixmap, QtCore.QRectF(base_pixmap.rect()))
                     painter.restore()
 
-                marker_side = max(16.0, min(rect.width(), rect.height()) * 0.62)
-                marker_target_rect = QtCore.QRectF(
-                    rect.right() + 5.0,
-                    rect.top() - marker_side * 0.40,
-                    marker_side,
-                    marker_side,
-                )
-                marker_draw_rect = self._fit_pixmap_in_rect(marker_pixmap, marker_target_rect, inset_ratio=1.0)
-                painter.save()
-                painter.setOpacity(0.86)
-                painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
-                painter.drawPixmap(marker_draw_rect, marker_pixmap, QtCore.QRectF(marker_pixmap.rect()))
-                painter.restore()
+                    if hovered and hover_ring is not None:
+                        ring_rect = rect.adjusted(-rect.width() * 0.20, -rect.height() * 0.20, rect.width() * 0.20, rect.height() * 0.20)
+                        ring_draw_rect = self._fit_pixmap_in_rect(hover_ring, ring_rect, inset_ratio=1.0)
+                        painter.save()
+                        painter.setOpacity(0.42)
+                        painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+                        painter.drawPixmap(ring_draw_rect, hover_ring, QtCore.QRectF(hover_ring.rect()))
+                        painter.restore()
+                else:
+                    marker_side = max(16.0, min(rect.width(), rect.height()) * 0.62)
+                    marker_target_rect = QtCore.QRectF(
+                        rect.right() + 5.0,
+                        rect.top() - marker_side * 0.40,
+                        marker_side,
+                        marker_side,
+                    )
+                    marker_draw_rect = self._fit_pixmap_in_rect(marker_pixmap, marker_target_rect, inset_ratio=1.0)
+                    painter.save()
+                    painter.setOpacity(0.86)
+                    painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+                    painter.drawPixmap(marker_draw_rect, marker_pixmap, QtCore.QRectF(marker_pixmap.rect()))
+                    painter.restore()
+                continue
+
+            if render_under_units:
                 continue
 
             expand = float(style["expand"]) + (2.0 if hovered else 0.0)
@@ -2428,13 +2435,15 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._target_overlay_pixmaps[key] = self._texture_manager.load_png(rel_path)
         return self._target_overlay_pixmaps
 
-    def _draw_shooting_layer(self, painter: QtGui.QPainter) -> None:
+    def _draw_shooting_layer(self, painter: QtGui.QPainter, *, target_pass: str = "over") -> None:
         if not self._should_show_shooting():
             return
         if not (self._shoot_target_infos or (self._show_shoot_range_cells and self._shoot_range_highlights)):
             return
 
-        if self._show_shoot_range_cells and self._shoot_range_highlights:
+        draw_under_units = str(target_pass).lower() == "under"
+
+        if (not draw_under_units) and self._show_shoot_range_cells and self._shoot_range_highlights:
             painter.save()
             fill = QtGui.QColor(110, 200, 120, 24)
             border = QtGui.QPen(QtGui.QColor(110, 200, 120, 65), 0.9)
@@ -2449,6 +2458,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter,
             self._shoot_target_infos,
             self._shoot_hovered_target_key,
+            render_under_units=draw_under_units,
         )
 
     def _draw_labels_layer(self, painter: QtGui.QPainter) -> None:
