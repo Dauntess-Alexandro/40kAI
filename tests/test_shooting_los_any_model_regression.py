@@ -5,8 +5,8 @@ from pathlib import Path
 class TestShootingLosAnyModelRegression(unittest.TestCase):
     def test_shoot_targets_use_unit_has_los(self):
         source = Path("gym_mod/gym_mod/envs/warhamEnv.py").read_text(encoding="utf-8")
-        self.assertIn('targets = [int(idx) for idx in target_ids if self._unit_has_los("model", unit_idx, "enemy", int(idx))]', source)
-        self.assertIn('targets = [int(idx) for idx in target_ids if self._unit_has_los("enemy", unit_idx, "model", int(idx))]', source)
+        self.assertIn('if not self._unit_has_los("model", unit_idx, "enemy", int(enemy_idx)):', source)
+        self.assertIn('if not self._unit_has_los("enemy", unit_idx, "model", int(model_idx)):', source)
 
     def test_unit_has_los_checks_any_model_pair(self):
         source = Path("gym_mod/gym_mod/envs/warhamEnv.py").read_text(encoding="utf-8")

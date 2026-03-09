@@ -984,25 +984,15 @@ class Warhammer40kEnv(gym.Env):
 
         targets = []
 
-        def _targets_by_unit_distance(
-            src_side: str,
-            src_idx: int,
-            dst_side: str,
-            dst_count: int,
-            dst_health: list,
-            dst_in_attack: list,
-            range_limit: float,
-        ) -> list[int]:
-            in_range: list[int] = []
-            for dst_idx in range(dst_count):
-                if dst_health[dst_idx] <= 0:
-                    continue
-                if dst_in_attack[dst_idx][0] == 1:
-                    continue
-                dist = self._distance_between_units(src_side, src_idx, dst_side, dst_idx)
-                if dist <= float(range_limit):
-                    in_range.append(int(dst_idx))
-            return in_range
+        def _log_target_filter(unit_side: str, src_idx: int, dst_side: str, dst_idx: int, reason: str) -> None:
+            if not _verbose_logs_enabled():
+                return
+            src_label = self._format_unit_label(unit_side, int(src_idx))
+            dst_label = self._format_unit_label(dst_side, int(dst_idx))
+            self._log(
+                f"[TARGET][SHOOT] {src_label} -> {dst_label}: {reason}. "
+                "Где: warhamEnv.get_shoot_targets_for_unit. Что делать дальше: проверить range/LOS/engagement и обновить выбор цели."
+            )
 
         if side == "model":
             if not (0 <= unit_idx < len(self.unit_health)):
@@ -1012,16 +1002,28 @@ class Warhammer40kEnv(gym.Env):
             if self.unit_weapon[unit_idx] == "None":
                 return []
             range_limit = self.unit_weapon[unit_idx]["Range"]
-            target_ids = _targets_by_unit_distance(
-                "model",
-                unit_idx,
-                "enemy",
-                len(self.enemy_health),
-                self.enemy_health,
-                self.enemyInAttack,
-                float(range_limit),
-            )
-            targets = [int(idx) for idx in target_ids if self._unit_has_los("model", unit_idx, "enemy", int(idx))]
+            for enemy_idx in range(len(self.enemy_health)):
+                if self.enemy_health[enemy_idx] <= 0:
+                    _log_target_filter("model", unit_idx, "enemy", enemy_idx, "цель мертва")
+                    continue
+                if self.enemyInAttack[enemy_idx][0] == 1:
+                    _log_target_filter("model", unit_idx, "enemy", enemy_idx, "цель в engagement")
+                    continue
+                dist = float(self._distance_between_units("model", unit_idx, "enemy", enemy_idx))
+                if dist > float(range_limit):
+                    _log_target_filter(
+                        "model",
+                        unit_idx,
+                        "enemy",
+                        enemy_idx,
+                        f"цель вне дальности (distance={dist:.2f}, range={float(range_limit):.2f})",
+                    )
+                    continue
+                # Критичное правило: если есть LOS хотя бы до одной модели цели, цель валидна для стрельбы.
+                if not self._unit_has_los("model", unit_idx, "enemy", int(enemy_idx)):
+                    _log_target_filter("model", unit_idx, "enemy", enemy_idx, "нет LOS ни к одной модели цели")
+                    continue
+                targets.append(int(enemy_idx))
         else:
             if not (0 <= unit_idx < len(self.enemy_health)):
                 return []
@@ -1030,16 +1032,28 @@ class Warhammer40kEnv(gym.Env):
             if self.enemy_weapon[unit_idx] == "None":
                 return []
             range_limit = self.enemy_weapon[unit_idx]["Range"]
-            target_ids = _targets_by_unit_distance(
-                "enemy",
-                unit_idx,
-                "model",
-                len(self.unit_health),
-                self.unit_health,
-                self.unitInAttack,
-                float(range_limit),
-            )
-            targets = [int(idx) for idx in target_ids if self._unit_has_los("enemy", unit_idx, "model", int(idx))]
+            for model_idx in range(len(self.unit_health)):
+                if self.unit_health[model_idx] <= 0:
+                    _log_target_filter("enemy", unit_idx, "model", model_idx, "цель мертва")
+                    continue
+                if self.unitInAttack[model_idx][0] == 1:
+                    _log_target_filter("enemy", unit_idx, "model", model_idx, "цель в engagement")
+                    continue
+                dist = float(self._distance_between_units("enemy", unit_idx, "model", model_idx))
+                if dist > float(range_limit):
+                    _log_target_filter(
+                        "enemy",
+                        unit_idx,
+                        "model",
+                        model_idx,
+                        f"цель вне дальности (distance={dist:.2f}, range={float(range_limit):.2f})",
+                    )
+                    continue
+                # Критичное правило: если есть LOS хотя бы до одной модели цели, цель валидна для стрельбы.
+                if not self._unit_has_los("enemy", unit_idx, "model", int(model_idx)):
+                    _log_target_filter("enemy", unit_idx, "model", model_idx, "нет LOS ни к одной модели цели")
+                    continue
+                targets.append(int(model_idx))
 
         self._shoot_target_cache[cache_key] = list(targets)
         return targets

@@ -403,22 +403,22 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
     own_range = 0.0
     if idx < len(own_weapon) and isinstance(own_weapon[idx], dict):
         own_range = float(own_weapon[idx].get("Range", 0) or 0)
-    if own_range > 0:
-        for enemy_idx, enemy in enumerate(enemy_coords):
-            if not isinstance(enemy, (list, tuple)) or len(enemy) < 2:
-                continue
-            enemy_hp = env.enemy_health[enemy_idx] if side == "model" else env.unit_health[enemy_idx]
-            if float(enemy_hp or 0.0) <= 0:
-                continue
-            enemy_side = "enemy" if side == "model" else "model"
+    enemy_side = "enemy" if side == "model" else "model"
+    for enemy_idx, enemy in enumerate(enemy_coords):
+        if not isinstance(enemy, (list, tuple)) or len(enemy) < 2:
+            continue
+        enemy_hp = env.enemy_health[enemy_idx] if side == "model" else env.unit_health[enemy_idx]
+        if float(enemy_hp or 0.0) <= 0:
+            continue
+        if not _has_los_between_units_local(side, idx, enemy_side, enemy_idx):
+            continue
+        enemy_id = env._unit_id("enemy" if side == "model" else "model", enemy_idx) if hasattr(env, "_unit_id") else None
+        if enemy_id is None:
+            continue
+        can_see_ids.append(int(enemy_id))
+        if own_range > 0:
             distance = _distance_between_units_local(side, idx, enemy_side, enemy_idx)
-            if distance > own_range:
-                continue
-            if not _has_los_between_units_local(side, idx, enemy_side, enemy_idx):
-                continue
-            enemy_id = env._unit_id("enemy" if side == "model" else "model", enemy_idx) if hasattr(env, "_unit_id") else None
-            if enemy_id is not None:
-                can_see_ids.append(int(enemy_id))
+            if distance <= own_range:
                 in_range_targets.append(int(enemy_id))
 
     reachable_cells: list[list[int]] = []

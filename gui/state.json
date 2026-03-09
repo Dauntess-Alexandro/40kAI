@@ -7,18 +7,18 @@
     "cols": 60,
     "rows": 40
   },
-  "turn": 5,
-  "round": 5,
+  "turn": 9,
+  "round": 9,
   "phase": "command",
   "active": "player",
   "movement_overlay": null,
   "vp": {
-    "player": 2,
+    "player": 5,
     "model": 0
   },
   "cp": {
-    "player": 8,
-    "model": 4
+    "player": 15,
+    "model": 11
   },
   "units": [
     {
@@ -26,51 +26,36 @@
       "id": 11,
       "name": "Necron Warriors",
       "models": 10,
-      "alive_models": 8,
-      "hp": 8.0,
-      "x": 27,
-      "y": 31,
-      "anchor_x": 27,
-      "anchor_y": 31,
+      "alive_models": 5,
+      "hp": 5.0,
+      "x": 29,
+      "y": 28,
+      "anchor_x": 29,
+      "anchor_y": 28,
       "model_positions": [
         {
-          "x": 27,
-          "y": 31,
+          "x": 29,
+          "y": 28,
+          "z": 0
+        },
+        {
+          "x": 30,
+          "y": 28,
           "z": 0
         },
         {
           "x": 28,
-          "y": 31,
+          "y": 28,
           "z": 0
         },
         {
-          "x": 26,
-          "y": 31,
+          "x": 29,
+          "y": 29,
           "z": 0
         },
         {
-          "x": 27,
-          "y": 32,
-          "z": 0
-        },
-        {
-          "x": 27,
-          "y": 30,
-          "z": 0
-        },
-        {
-          "x": 28,
-          "y": 32,
-          "z": 0
-        },
-        {
-          "x": 26,
-          "y": 32,
-          "z": 0
-        },
-        {
-          "x": 28,
-          "y": 30,
+          "x": 29,
+          "y": 27,
           "z": 0
         }
       ],
@@ -82,32 +67,27 @@
       "weapon_name": "Gauss flayer",
       "weapon_range": 24,
       "unit_status": {
-        "in_cover": true,
-        "obscured": true,
+        "in_cover": false,
+        "obscured": false,
         "fully_visible": false,
         "objective_state": null,
         "used_advance": false,
         "advance_roll": 0,
-        "dist_cover": 2.0,
-        "cover_source_terrain_id": "T1",
-        "obscured_vs": [
-          22
-        ],
+        "dist_cover": 4.0,
+        "cover_source_terrain_id": null,
+        "obscured_vs": [],
         "exposed_to": [],
         "engagement_with": [],
-        "in_range_targets": [
-          22
-        ],
+        "in_range_targets": [],
         "can_see_ids": [
+          21,
           22
         ],
         "seen_by_ids": [
           21,
           22
         ],
-        "in_range_ids": [
-          22
-        ],
+        "in_range_ids": [],
         "reachable_cells": [],
         "move_cells": [],
         "advance_cells": []
@@ -118,50 +98,30 @@
       "id": 12,
       "name": "Necron Warriors",
       "models": 10,
-      "alive_models": 8,
-      "hp": 8.0,
-      "x": 30,
-      "y": 21,
-      "anchor_x": 30,
-      "anchor_y": 21,
+      "alive_models": 4,
+      "hp": 4.0,
+      "x": 28,
+      "y": 19,
+      "anchor_x": 28,
+      "anchor_y": 19,
       "model_positions": [
         {
-          "x": 30,
-          "y": 21,
-          "z": 0
-        },
-        {
-          "x": 31,
-          "y": 21,
+          "x": 28,
+          "y": 19,
           "z": 0
         },
         {
           "x": 29,
-          "y": 21,
+          "y": 19,
           "z": 0
         },
         {
-          "x": 30,
-          "y": 22,
+          "x": 27,
+          "y": 19,
           "z": 0
         },
         {
-          "x": 30,
-          "y": 20,
-          "z": 0
-        },
-        {
-          "x": 31,
-          "y": 22,
-          "z": 0
-        },
-        {
-          "x": 29,
-          "y": 22,
-          "z": 0
-        },
-        {
-          "x": 31,
+          "x": 28,
           "y": 20,
           "z": 0
         }
@@ -180,13 +140,16 @@
         "objective_state": null,
         "used_advance": false,
         "advance_roll": 0,
-        "dist_cover": 9.0,
+        "dist_cover": 7.0,
         "cover_source_terrain_id": null,
         "obscured_vs": [],
         "exposed_to": [],
         "engagement_with": [],
         "in_range_targets": [],
-        "can_see_ids": [],
+        "can_see_ids": [
+          21,
+          22
+        ],
         "seen_by_ids": [
           21,
           22
@@ -205,58 +168,58 @@
       "alive_models": 10,
       "hp": 10.0,
       "x": 3,
-      "y": 14,
+      "y": 37,
       "anchor_x": 3,
-      "anchor_y": 14,
+      "anchor_y": 37,
       "model_positions": [
         {
           "x": 3,
-          "y": 14,
+          "y": 37,
           "z": 0
         },
         {
           "x": 4,
-          "y": 14,
+          "y": 37,
           "z": 0
         },
         {
           "x": 2,
-          "y": 14,
+          "y": 37,
           "z": 0
         },
         {
           "x": 3,
-          "y": 15,
+          "y": 38,
           "z": 0
         },
         {
           "x": 3,
-          "y": 13,
+          "y": 36,
           "z": 0
         },
         {
           "x": 4,
-          "y": 15,
+          "y": 38,
           "z": 0
         },
         {
           "x": 2,
-          "y": 15,
+          "y": 38,
           "z": 0
         },
         {
           "x": 4,
-          "y": 13,
+          "y": 36,
           "z": 0
         },
         {
           "x": 2,
-          "y": 13,
+          "y": 36,
           "z": 0
         },
         {
           "x": 5,
-          "y": 14,
+          "y": 37,
           "z": 0
         }
       ],
@@ -274,13 +237,16 @@
         "objective_state": null,
         "used_advance": false,
         "advance_roll": null,
-        "dist_cover": 19.0,
+        "dist_cover": 22.0,
         "cover_source_terrain_id": null,
         "obscured_vs": [],
         "exposed_to": [],
         "engagement_with": [],
         "in_range_targets": [],
-        "can_see_ids": [],
+        "can_see_ids": [
+          11,
+          12
+        ],
         "seen_by_ids": [
           11,
           12
@@ -364,30 +330,25 @@
       "unit_status": {
         "in_cover": false,
         "obscured": false,
-        "fully_visible": true,
+        "fully_visible": false,
         "objective_state": null,
         "used_advance": false,
         "advance_roll": null,
         "dist_cover": 21.0,
         "cover_source_terrain_id": null,
         "obscured_vs": [],
-        "exposed_to": [
-          11
-        ],
+        "exposed_to": [],
         "engagement_with": [],
-        "in_range_targets": [
-          11
-        ],
+        "in_range_targets": [],
         "can_see_ids": [
-          11
+          11,
+          12
         ],
         "seen_by_ids": [
           11,
           12
         ],
-        "in_range_ids": [
-          11
-        ],
+        "in_range_ids": [],
         "reachable_cells": [],
         "move_cells": [],
         "advance_cells": []
@@ -435,9 +396,7 @@
       ],
       "opacity": "obscuring",
       "sprite": "barrel.png",
-      "covering_unit_ids": [
-        11
-      ]
+      "covering_unit_ids": []
     },
     {
       "id": "T2",
@@ -554,5 +513,5 @@
     "rl_stats": null
   },
   "payload_kind": "light",
-  "generated_at": "2026-03-09T09:05:38.933070Z"
+  "generated_at": "2026-03-09T13:05:45.816120Z"
 }
