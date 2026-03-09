@@ -2328,8 +2328,15 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 continue
 
             # Hover не влияет на визуал: всегда только один прицел по типу цели.
-            reticle_rect = rect.adjusted(-rect.width() * 0.16, -rect.height() * 0.16, rect.width() * 0.16, rect.height() * 0.16)
-            draw_rect = self._fit_pixmap_in_rect(reticle, reticle_rect, inset_ratio=1.0)
+            # Рисуем маркер в правом верхнем углу хитбокса цели и делаем его чуть меньше.
+            marker_side = max(14.0, min(rect.width(), rect.height()) * 0.52)
+            marker_target_rect = QtCore.QRectF(
+                rect.right() - marker_side * 0.86,
+                rect.top() - marker_side * 0.14,
+                marker_side,
+                marker_side,
+            )
+            draw_rect = self._fit_pixmap_in_rect(reticle, marker_target_rect, inset_ratio=1.0)
             painter.save()
             painter.setOpacity(0.92)
             painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
