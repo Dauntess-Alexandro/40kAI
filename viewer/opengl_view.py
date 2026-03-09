@@ -1481,6 +1481,12 @@ class OpenGLBoardWidget(QOpenGLWidget):
         sx, sy = source if source is not None else (None, None)
 
         target_filter = set(self._resolve_targets(unit, shoot_range or 0))
+        if self._viewer_debug_enabled:
+            self._append_agent_log(
+                "[VIEWER][TARGET_OVERLAY] "
+                f"build shooter_id={self._safe_int(unit.get('id'))} "
+                f"shoot_range={shoot_range} source_cell={source} targets_in_context={sorted(target_filter)}"
+            )
 
         inferred_range = shoot_range
         if (inferred_range is None or inferred_range <= 0) and source is not None and target_filter:
@@ -1531,9 +1537,16 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if tx_ty is None:
                 continue
             tx, ty = tx_ty
-            if inferred_range is not None and inferred_range > 0 and source is not None:
+            is_explicit_target = target_key is not None and target_key in target_filter
+            if (not is_explicit_target) and inferred_range is not None and inferred_range > 0 and source is not None:
                 distance = max(abs(tx - sx), abs(ty - sy))
                 if distance > inferred_range:
+                    if self._viewer_debug_enabled:
+                        self._append_agent_log(
+                            "[VIEWER][TARGET_OVERLAY] "
+                            f"target_id={target_id} skip=range_cull distance={distance} inferred_range={inferred_range} "
+                            f"explicit_target={is_explicit_target}"
+                        )
                     continue
 
             status = target.get("unit_status") if isinstance(target.get("unit_status"), dict) else {}
@@ -1542,7 +1555,6 @@ class OpenGLBoardWidget(QOpenGLWidget):
             # Если цель пришла в request.targets, но unit_status ещё не успел
             # синхронизироваться (seen_by_ids пуст), всё равно считаем её валидной
             # для отображения прицела в фазе выбора цели.
-            is_explicit_target = target_key is not None and target_key in target_filter
             has_los = (shooter_id is not None and shooter_id in seen_by) or is_explicit_target
             obscured = has_los and shooter_id is not None and shooter_id in obscured_vs
 
@@ -1559,6 +1571,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     "unit_key": key,
                     "classification": classification,
                 }
+            )
+
+        if self._viewer_debug_enabled and not self._shoot_target_infos:
+            self._append_agent_log(
+                "[VIEWER][TARGET_OVERLAY] "
+                f"build_result=empty shooter_id={self._safe_int(unit.get('id'))} "
+                f"targets_in_context={sorted(target_filter)}"
             )
 
     def _resolve_targets(self, unit: dict, shoot_range: int) -> Iterable[Tuple[str, int]]:

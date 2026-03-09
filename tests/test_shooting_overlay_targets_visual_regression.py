@@ -28,6 +28,11 @@ class TestShootingOverlayTargetsVisualRegression(unittest.TestCase):
         self.assertIn("draw_calls=", source)
         self.assertIn('"[VIEWER][TARGET_TEX] key=', source)
 
+    def test_explicit_targets_are_not_range_culled(self):
+        source = Path("viewer/opengl_view.py").read_text(encoding="utf-8")
+        self.assertIn("if (not is_explicit_target) and inferred_range is not None", source)
+        self.assertIn("skip=range_cull", source)
+
 
 if __name__ == "__main__":
     unittest.main()
