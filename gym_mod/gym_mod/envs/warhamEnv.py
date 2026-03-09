@@ -15,7 +15,6 @@ from typing import Optional
 import reward_config as reward_cfg
 
 from ..engine.utils import *
-from ..engine.hotloops import scan_targets_in_range
 from ..engine.visibility import visibility_report
 from ..engine import utils as engine_utils
 from gym_mod.engine.mission import (
@@ -984,6 +983,27 @@ class Warhammer40kEnv(gym.Env):
             return list(cached)
 
         targets = []
+
+        def _targets_by_unit_distance(
+            src_side: str,
+            src_idx: int,
+            dst_side: str,
+            dst_count: int,
+            dst_health: list,
+            dst_in_attack: list,
+            range_limit: float,
+        ) -> list[int]:
+            in_range: list[int] = []
+            for dst_idx in range(dst_count):
+                if dst_health[dst_idx] <= 0:
+                    continue
+                if dst_in_attack[dst_idx][0] == 1:
+                    continue
+                dist = self._distance_between_units(src_side, src_idx, dst_side, dst_idx)
+                if dist <= float(range_limit):
+                    in_range.append(int(dst_idx))
+            return in_range
+
         if side == "model":
             if not (0 <= unit_idx < len(self.unit_health)):
                 return []
@@ -992,11 +1012,13 @@ class Warhammer40kEnv(gym.Env):
             if self.unit_weapon[unit_idx] == "None":
                 return []
             range_limit = self.unit_weapon[unit_idx]["Range"]
-            target_ids, _used_numba = scan_targets_in_range(
-                np.asarray(self.unit_coords[unit_idx], dtype=np.float64),
-                np.asarray(self.enemy_coords, dtype=np.float64),
-                np.asarray(self.enemy_health, dtype=np.float64),
-                np.asarray([row[0] for row in self.enemyInAttack], dtype=np.int8),
+            target_ids = _targets_by_unit_distance(
+                "model",
+                unit_idx,
+                "enemy",
+                len(self.enemy_health),
+                self.enemy_health,
+                self.enemyInAttack,
                 float(range_limit),
             )
             targets = [int(idx) for idx in target_ids if self._unit_has_los("model", unit_idx, "enemy", int(idx))]
@@ -1008,11 +1030,13 @@ class Warhammer40kEnv(gym.Env):
             if self.enemy_weapon[unit_idx] == "None":
                 return []
             range_limit = self.enemy_weapon[unit_idx]["Range"]
-            target_ids, _used_numba = scan_targets_in_range(
-                np.asarray(self.enemy_coords[unit_idx], dtype=np.float64),
-                np.asarray(self.unit_coords, dtype=np.float64),
-                np.asarray(self.unit_health, dtype=np.float64),
-                np.asarray([row[0] for row in self.unitInAttack], dtype=np.int8),
+            target_ids = _targets_by_unit_distance(
+                "enemy",
+                unit_idx,
+                "model",
+                len(self.unit_health),
+                self.unit_health,
+                self.unitInAttack,
                 float(range_limit),
             )
             targets = [int(idx) for idx in target_ids if self._unit_has_los("enemy", unit_idx, "model", int(idx))]
