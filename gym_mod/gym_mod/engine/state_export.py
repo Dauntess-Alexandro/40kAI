@@ -280,6 +280,43 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
     opaque_cells = getattr(env, "terrain_opaque_cells", set())
     visibility_mode = getattr(env, "visibility_mode", "single_ray")
 
+    def _distance_between_units_local(attacker_side: str, attacker_idx: int, target_side: str, target_idx: int) -> float:
+        if hasattr(env, "_distance_between_units"):
+            try:
+                return float(env._distance_between_units(attacker_side, int(attacker_idx), target_side, int(target_idx)))
+            except Exception:
+                pass
+        attacker_pool = env.unit_coords if attacker_side == "model" else env.enemy_coords
+        target_pool = env.unit_coords if target_side == "model" else env.enemy_coords
+        if not (0 <= int(attacker_idx) < len(attacker_pool) and 0 <= int(target_idx) < len(target_pool)):
+            return float("inf")
+        attacker_cell = (int(attacker_pool[int(attacker_idx)][0]), int(attacker_pool[int(attacker_idx)][1]))
+        target_cell = (int(target_pool[int(target_idx)][0]), int(target_pool[int(target_idx)][1]))
+        return float(max(abs(attacker_cell[0] - target_cell[0]), abs(attacker_cell[1] - target_cell[1])))
+
+    def _has_los_between_units_local(attacker_side: str, attacker_idx: int, target_side: str, target_idx: int) -> bool:
+        if hasattr(env, "_unit_has_los"):
+            try:
+                return bool(env._unit_has_los(attacker_side, int(attacker_idx), target_side, int(target_idx)))
+            except Exception:
+                pass
+        attacker_pool = env.unit_coords if attacker_side == "model" else env.enemy_coords
+        target_pool = env.unit_coords if target_side == "model" else env.enemy_coords
+        if not (0 <= int(attacker_idx) < len(attacker_pool) and 0 <= int(target_idx) < len(target_pool)):
+            return False
+        attacker_cell = (int(attacker_pool[int(attacker_idx)][0]), int(attacker_pool[int(attacker_idx)][1]))
+        target_cell = (int(target_pool[int(target_idx)][0]), int(target_pool[int(target_idx)][1]))
+        target_cover_local = _target_cover_cells(env, target_cell, radius=3)
+        report_local = visibility_report(
+            attacker_cell,
+            target_cell,
+            opaque_cells_set=opaque_cells,
+            obscuring_cells_set=obscuring_cells,
+            target_cover_cells_set=target_cover_local,
+            visibility_mode=visibility_mode,
+        )
+        return bool(report_local.get("los", False))
+
     enemies_seeing = 0
     obscured_seen = 0
     fully_visible_seen = 0
@@ -290,26 +327,26 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
         if not isinstance(enemy, (list, tuple)) or len(enemy) < 2:
             continue
         enemy_id = env._unit_id("enemy" if side == "model" else "model", enemy_idx) if hasattr(env, "_unit_id") else None
-        attacker_cell = (int(enemy[0]), int(enemy[1]))
-        report = visibility_report(
-            attacker_cell,
-            unit_cell,
-            opaque_cells_set=opaque_cells,
-            obscuring_cells_set=obscuring_cells,
-            target_cover_cells_set=target_cover_cells,
-            visibility_mode=visibility_mode,
-        )
-        if not bool(report.get("los", False)):
+        enemy_side = "enemy" if side == "model" else "model"
+        if not _has_los_between_units_local(enemy_side, enemy_idx, side, idx):
             continue
         if enemy_id is not None:
             seen_by_ids.append(int(enemy_id))
-        distance = max(abs(attacker_cell[0] - unit_cell[0]), abs(attacker_cell[1] - unit_cell[1]))
+        distance = _distance_between_units_local(enemy_side, enemy_idx, side, idx)
         range_limit = 0.0
         if enemy_idx < len(enemy_weapon) and isinstance(enemy_weapon[enemy_idx], dict):
             range_limit = float(enemy_weapon[enemy_idx].get("Range", 0) or 0)
         if distance > range_limit:
             continue
         enemies_seeing += 1
+        report = visibility_report(
+            (int(enemy[0]), int(enemy[1])),
+            unit_cell,
+            opaque_cells_set=opaque_cells,
+            obscuring_cells_set=obscuring_cells,
+            target_cover_cells_set=target_cover_cells,
+            visibility_mode=visibility_mode,
+        )
         if bool(report.get("fully_visible", False)):
             fully_visible_seen += 1
         if bool(report.get("obscured", False)):
@@ -373,21 +410,11 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
             enemy_hp = env.enemy_health[enemy_idx] if side == "model" else env.unit_health[enemy_idx]
             if float(enemy_hp or 0.0) <= 0:
                 continue
-            attacker_cell = unit_cell
-            target_cell = (int(enemy[0]), int(enemy[1]))
-            distance = max(abs(attacker_cell[0] - target_cell[0]), abs(attacker_cell[1] - target_cell[1]))
+            enemy_side = "enemy" if side == "model" else "model"
+            distance = _distance_between_units_local(side, idx, enemy_side, enemy_idx)
             if distance > own_range:
                 continue
-            target_cover_cells = _target_cover_cells(env, target_cell, radius=3)
-            report = visibility_report(
-                attacker_cell,
-                target_cell,
-                opaque_cells_set=opaque_cells,
-                obscuring_cells_set=obscuring_cells,
-                target_cover_cells_set=target_cover_cells,
-                visibility_mode=visibility_mode,
-            )
-            if not bool(report.get("los", False)):
+            if not _has_los_between_units_local(side, idx, enemy_side, enemy_idx):
                 continue
             enemy_id = env._unit_id("enemy" if side == "model" else "model", enemy_idx) if hasattr(env, "_unit_id") else None
             if enemy_id is not None:
