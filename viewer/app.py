@@ -555,6 +555,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout(self.shoot_popover)
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(8)
+        # На Windows popup может пересчитать minimum size после show() (DPI/font metrics),
+        # поэтому не форсим resize вручную и просим layout держать фиксированный sizeHint.
+        layout.setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
 
         self.shoot_popover_title = QtWidgets.QLabel("FIRE")
         self.shoot_popover_title.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {Theme.text.name()};")
@@ -841,10 +844,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._update_shoot_popover_ui()
         anchor = global_pos or QtGui.QCursor.pos()
         self.shoot_popover.adjustSize()
-        self.shoot_popover.resize(self.shoot_popover.sizeHint())
-        pos = QtCore.QPoint(anchor.x() + 18, anchor.y() - self.shoot_popover.height() - 12)
-        self.shoot_popover.move(pos)
         self.shoot_popover.show()
+        popup_h = self.shoot_popover.frameGeometry().height()
+        pos = QtCore.QPoint(anchor.x() + 18, anchor.y() - popup_h - 12)
+        self.shoot_popover.move(pos)
         self.shoot_popover.raise_()
         self.shoot_popover.activateWindow()
         self.shoot_popover_action.setFocus()
