@@ -1536,7 +1536,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
             status = target.get("unit_status") if isinstance(target.get("unit_status"), dict) else {}
             seen_by = {self._safe_int(v) for v in list(status.get("seen_by_ids") or [])}
             obscured_vs = {self._safe_int(v) for v in list(status.get("obscured_vs") or [])}
-            has_los = shooter_id is not None and shooter_id in seen_by
+            # Если цель пришла в request.targets, но unit_status ещё не успел
+            # синхронизироваться (seen_by_ids пуст), всё равно считаем её валидной
+            # для отображения прицела в фазе выбора цели.
+            is_explicit_target = target_key is not None and target_key in target_filter
+            has_los = (shooter_id is not None and shooter_id in seen_by) or is_explicit_target
             obscured = has_los and shooter_id is not None and shooter_id in obscured_vs
 
             classification = "NO_LOS"
