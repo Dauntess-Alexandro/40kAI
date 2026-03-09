@@ -336,6 +336,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._shadow_textures: Dict[str, QtGui.QPixmap] = {}
         self._decal_textures: Dict[str, QtGui.QPixmap] = {}
         self._fx_particle_textures: Dict[str, QtGui.QPixmap] = {}
+        self._target_overlay_pixmaps: Dict[str, Optional[QtGui.QPixmap]] = {}
         self._decals: List[DecalInstance] = []
         self._props: List[PropInstance] = []
         self._terrain_features_state: List[dict] = []
@@ -2294,20 +2295,34 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 "glow": QtGui.QColor(96, 214, 118, 78),
                 "width": 1.8,
                 "expand": 7.0,
+                "base": "target_valid_base",
+                "marker": "target_marker_valid",
             },
             "OBSCURED": {
                 "outline": QtGui.QColor(232, 190, 85, 220),
                 "glow": QtGui.QColor(232, 190, 85, 62),
                 "width": 1.7,
                 "expand": 6.0,
+                "base": "target_obscured_base",
+                "marker": "target_marker_obscured",
             },
             "NO_LOS": {
                 "outline": QtGui.QColor(145, 150, 160, 185),
                 "glow": QtGui.QColor(145, 150, 160, 0),
                 "width": 1.3,
                 "expand": 4.0,
+                "base": "target_nolos_base",
+                "marker": "target_marker_nolos",
             },
         }
+        fx_assets = self._target_overlay_assets()
+        hover_ring = fx_assets.get("target_hover_ring")
+
+        def _sprite(key: str) -> Optional[QtGui.QPixmap]:
+            pix = fx_assets.get(key)
+            if pix is None or pix.isNull():
+                return None
+            return pix
 
         painter.save()
         painter.setTransform(QtGui.QTransform())
@@ -2322,6 +2337,42 @@ class OpenGLBoardWidget(QOpenGLWidget):
             classification = str(info.get("classification") or "NO_LOS")
             style = style_map.get(classification, style_map["NO_LOS"])
             hovered = hovered_target_key is not None and isinstance(key, tuple) and len(key) >= 2 and (str(key[0]), int(key[1])) == hovered_target_key
+            base_pixmap = _sprite(str(style.get("base") or ""))
+            marker_pixmap = _sprite(str(style.get("marker") or ""))
+            use_sprite_overlay = base_pixmap is not None and marker_pixmap is not None
+
+            if use_sprite_overlay:
+                base_rect = rect.adjusted(-rect.width() * 0.12, -rect.height() * 0.12, rect.width() * 0.12, rect.height() * 0.12)
+                base_draw_rect = self._fit_pixmap_in_rect(base_pixmap, base_rect, inset_ratio=1.0)
+                painter.save()
+                painter.setOpacity(0.48)
+                painter.setCompositionMode(QtGui.QPainter.CompositionMode_DestinationOver)
+                painter.drawPixmap(base_draw_rect, base_pixmap, QtCore.QRectF(base_pixmap.rect()))
+                painter.restore()
+
+                if hovered and hover_ring is not None:
+                    ring_rect = rect.adjusted(-rect.width() * 0.20, -rect.height() * 0.20, rect.width() * 0.20, rect.height() * 0.20)
+                    ring_draw_rect = self._fit_pixmap_in_rect(hover_ring, ring_rect, inset_ratio=1.0)
+                    painter.save()
+                    painter.setOpacity(0.42)
+                    painter.setCompositionMode(QtGui.QPainter.CompositionMode_DestinationOver)
+                    painter.drawPixmap(ring_draw_rect, hover_ring, QtCore.QRectF(hover_ring.rect()))
+                    painter.restore()
+
+                marker_side = max(16.0, min(rect.width(), rect.height()) * 0.62)
+                marker_target_rect = QtCore.QRectF(
+                    rect.right() + 5.0,
+                    rect.top() - marker_side * 0.40,
+                    marker_side,
+                    marker_side,
+                )
+                marker_draw_rect = self._fit_pixmap_in_rect(marker_pixmap, marker_target_rect, inset_ratio=1.0)
+                painter.save()
+                painter.setOpacity(0.86)
+                painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+                painter.drawPixmap(marker_draw_rect, marker_pixmap, QtCore.QRectF(marker_pixmap.rect()))
+                painter.restore()
+                continue
 
             expand = float(style["expand"]) + (2.0 if hovered else 0.0)
             glow_rect = rect.adjusted(-expand, -expand, expand, expand)
@@ -2360,6 +2411,22 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 painter.drawText(marker_bg, QtCore.Qt.AlignCenter, "🎯")
 
         painter.restore()
+
+    def _target_overlay_assets(self) -> Dict[str, Optional[QtGui.QPixmap]]:
+        if self._target_overlay_pixmaps:
+            return self._target_overlay_pixmaps
+        assets = {
+            "target_valid_base": "fx/target_valid_base.png",
+            "target_obscured_base": "fx/target_obscured_base.png",
+            "target_nolos_base": "fx/target_nolos_base.png",
+            "target_marker_valid": "fx/target_marker_valid.png",
+            "target_marker_obscured": "fx/target_marker_obscured.png",
+            "target_marker_nolos": "fx/target_marker_nolos.png",
+            "target_hover_ring": "fx/target_hover_ring.png",
+        }
+        for key, rel_path in assets.items():
+            self._target_overlay_pixmaps[key] = self._texture_manager.load_png(rel_path)
+        return self._target_overlay_pixmaps
 
     def _draw_shooting_layer(self, painter: QtGui.QPainter) -> None:
         if not self._should_show_shooting():
