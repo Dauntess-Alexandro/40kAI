@@ -1480,7 +1480,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         target_filter = set(self._resolve_targets(unit, shoot_range or 0))
 
         inferred_range = shoot_range
-        if (inferred_range is None or inferred_range <= 0) and source is not None and target_filter:
+        if source is not None and target_filter:
             max_dist = 0
             for side, target_id in target_filter:
                 target = None
@@ -1577,24 +1577,41 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if targets:
                 return targets
 
-        source = self._unit_anchor_view_cell(unit)
-        if source is None or shoot_range is None or int(shoot_range) <= 0:
-            return targets
-        sx, sy = source
-        for target in self._state.get("units", []) or []:
-            if not isinstance(target, dict):
-                continue
-            if target.get("side") == unit.get("side"):
-                continue
-            tx_ty = self._unit_anchor_view_cell(target)
-            if tx_ty is None:
-                continue
-            tx, ty = tx_ty
-            distance = max(abs(tx - sx), abs(ty - sy))
-            if distance <= int(shoot_range):
+        # Fallback: только данные движка из state export (in_range_ids / in_range_targets).
+        # Не используем чистую геометрию по anchor-клетке, чтобы не рисовать "ложно валидные" цели.
+        unit_status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else {}
+        in_range_ids = unit_status.get("in_range_ids") or unit_status.get("in_range_targets") or []
+        visible_ids = unit_status.get("can_see_ids") or []
+        try:
+            in_range_set = {
+                int(v) for v in in_range_ids if isinstance(v, (int, float, str)) and str(v).strip().isdigit()
+            }
+            visible_set = {
+                int(v) for v in visible_ids if isinstance(v, (int, float, str)) and str(v).strip().isdigit()
+            }
+        except (TypeError, ValueError):
+            in_range_set = set()
+            visible_set = set()
+
+        if in_range_set:
+            for target in self._state.get("units", []) or []:
+                if not isinstance(target, dict):
+                    continue
+                if target.get("side") == unit.get("side"):
+                    continue
                 target_id = self._safe_int(target.get("id"))
-                if target_id is not None:
-                    targets.add((target.get("side"), int(target_id)))
+                if target_id is None:
+                    continue
+                if int(target_id) not in in_range_set:
+                    continue
+                if visible_set and int(target_id) not in visible_set:
+                    continue
+                target_side = target.get("side")
+                if target_side:
+                    targets.add((str(target_side), int(target_id)))
+            if targets:
+                return targets
+
         return targets
 
     def _view_transform(self) -> QtGui.QTransform:

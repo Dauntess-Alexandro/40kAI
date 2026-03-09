@@ -981,6 +981,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if self._is_shooting_target_request(request):
             self._shoot_request_flow_active = True
             self._shoot_targets_valid = self._valid_target_ids_from_request(request)
+            shooter_id = self._extract_unit_id(getattr(request, "prompt", ""))
+            shooter_label = self._format_unit_label(shooter_id)
+            targets_label = ", ".join(str(v) for v in sorted(self._shoot_targets_valid)) if self._shoot_targets_valid else "—"
+            self.add_log_line(
+                f"REQ: валидные цели стрельбы для Unit {shooter_label}: [{targets_label}]"
+            )
         elif self._is_shooting_dice_request(request):
             pass
         else:
@@ -1180,6 +1186,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if unit_id is None:
             return
         if self._is_shooting_target_request(self._pending_request) and int(unit_id) not in self._shoot_targets_valid:
+            allowed = ", ".join(str(v) for v in sorted(self._shoot_targets_valid)) if self._shoot_targets_valid else "—"
+            self.add_log_line(
+                f"REQ: цель Unit {int(unit_id)} отклонена. Где: viewer/app.py (_on_target_selected). Что дальше: выберите цель из [{allowed}]"
+            )
             return
         self._current_target_id = unit_id
         self.map_scene.set_target_unit(unit_id)
@@ -1202,6 +1212,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._close_shoot_popover()
             return
         if int(unit_id) not in self._shoot_targets_valid:
+            allowed = ", ".join(str(v) for v in sorted(self._shoot_targets_valid)) if self._shoot_targets_valid else "—"
+            self.add_log_line(
+                f"REQ: ПКМ по Unit {int(unit_id)} отклонён. Где: viewer/app.py (_on_unit_right_clicked). Что дальше: выберите цель из [{allowed}]"
+            )
             self._close_shoot_popover()
             return
         self._open_shoot_popover(int(unit_id), global_pos)
