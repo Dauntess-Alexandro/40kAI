@@ -3348,6 +3348,14 @@ class Warhammer40kEnv(gym.Env):
                         if answer is None:
                             self.game_over = True
                             return None
+                        if bool(answer.get("skip_movement")):
+                            dest = (int(pos_before[1]), int(pos_before[0]))
+                            move_mode = "normal"
+                            self._log(
+                                f"{unit_label}: движение пропущено по skip-флагу. "
+                                f"Позиция сохранена: ({int(dest[0])},{int(dest[1])})."
+                            )
+                            break
                         tx = int(answer.get("x"))
                         ty = int(answer.get("y"))
                         mode = str(answer.get("mode") or "").strip().lower()

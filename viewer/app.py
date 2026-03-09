@@ -1251,24 +1251,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if self._movement_skip_sent:
             return True
         req_meta = getattr(self._pending_request, "meta", {}) or {}
-        move_cells = [
-            (int(cell[0]), int(cell[1]))
-            for cell in (req_meta.get("move_cells") or [])
-            if isinstance(cell, (list, tuple)) and len(cell) >= 2
-        ]
-        reachable_cells = move_cells or [
-            (int(cell[0]), int(cell[1]))
-            for cell in (req_meta.get("reachable_cells") or [])
-            if isinstance(cell, (list, tuple)) and len(cell) >= 2
-        ]
-        if not reachable_cells:
-            self.add_log_line(
-                "Пропуск ходьбы не выполнен: нет reachable-клеток в move_request. "
-                "Где: viewer/app.py (_submit_skip_movement_for_active_unit). "
-                "Что делать дальше: выполните движение ПКМ или проверьте состояние overlay."
-            )
-            return False
-
         req_unit_id = req_meta.get("unit_id")
         current_cell = None
         for candidate_side in ("player", "model"):
@@ -1286,18 +1268,18 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if current_cell is not None:
                 break
 
-        if current_cell is None:
-            x, y = reachable_cells[0]
-        else:
-            x, y = min(
-                reachable_cells,
-                key=lambda cell: max(abs(int(cell[0]) - int(current_cell[0])), abs(int(cell[1]) - int(current_cell[1]))),
-            )
-
-        move_mode = "normal" if (x, y) in set(move_cells) else "advance"
         self._movement_skip_sent = True
-        self.add_log_line(f"Unit {int(req_unit_id) if str(req_unit_id).isdigit() else '—'}: movement skipped")
-        self._submit_answer({"x": int(x), "y": int(y), "mode": move_mode})
+        unit_label = int(req_unit_id) if str(req_unit_id).isdigit() else "—"
+        if current_cell is None:
+            self.add_log_line(
+                f"Unit {unit_label}: movement skipped (без координат юнита в UI, передан только skip-флаг)."
+            )
+            self._submit_answer({"skip_movement": True})
+        else:
+            self.add_log_line(
+                f"Unit {unit_label}: movement skipped (позиция сохранена x={int(current_cell[0])}, y={int(current_cell[1])})."
+            )
+            self._submit_answer({"skip_movement": True, "x": int(current_cell[0]), "y": int(current_cell[1]), "mode": "normal"})
         self.map_scene.set_target_cell(None)
         self.map_scene.clear_target_selection()
         return True
