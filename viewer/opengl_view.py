@@ -3477,6 +3477,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         hovered: Optional[Tuple[str, int]] = None
         hovered_classification = ""
         for info in reversed(self._shoot_target_infos):
+            key = info.get("unit_key")
             if not isinstance(key, tuple) or len(key) < 2:
                 continue
             norm_key = (str(key[0]), int(key[1]))
