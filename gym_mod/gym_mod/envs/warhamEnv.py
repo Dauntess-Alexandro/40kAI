@@ -651,6 +651,10 @@ class RollLogger:
                 except Exception:
                     pass
             self._log(f"Save цели: {sv}+ (invul: {inv_txt})")
+            if effect == "benefit of cover":
+                self._log("Benefit of Cover: активен (+1 к сейву цели против ranged).")
+            else:
+                self._log("Benefit of Cover: не активен.")
 
         if ap_val != 0:
             self._log(f"AP: {ap_val}")
@@ -1482,6 +1486,35 @@ class Warhammer40kEnv(gym.Env):
             target_cover_cells_set=target_cover_cells,
             visibility_mode=self.visibility_mode,
         )
+
+    def _resolve_cover_effect_for_shot(
+        self,
+        attacker_side: str,
+        attacker_idx: int,
+        defender_side: str,
+        defender_idx: int,
+        base_effect=None,
+        phase: str = "shooting",
+    ):
+        """Возвращает итоговый effect для ranged-атаки c учётом LOS/obscured.
+
+        При obscured=True автоматически даём benefit of cover (если он ещё не активен).
+        """
+        effect_norm = str(base_effect).strip().lower() if base_effect is not None else ""
+        if effect_norm == "benefit of cover":
+            return "benefit of cover"
+
+        report = self._visibility_report_between_units(attacker_side, int(attacker_idx), defender_side, int(defender_idx))
+        has_los = bool(report.get("los", False))
+        obscured = bool(report.get("obscured", False))
+        if has_los and obscured:
+            self._log(
+                f"[COVER][{phase.upper()}] {self._format_unit_label(attacker_side, int(attacker_idx))} -> "
+                f"{self._format_unit_label(defender_side, int(defender_idx))}: "
+                "применён Benefit of Cover (причина: obscured=True по LOS_DEBUG)."
+            )
+            return "benefit of cover"
+        return base_effect
 
     def _unit_can_shoot_now(self, side: str, unit_idx: int) -> bool:
         if side == "enemy":
@@ -2546,6 +2579,15 @@ class Warhammer40kEnv(gym.Env):
             moving_unit_side,
             moving_idx,
         )
+        shooter_side = "model" if defender_side == "model" else "enemy"
+        effect = self._resolve_cover_effect_for_shot(
+            shooter_side,
+            chosen,
+            moving_unit_side,
+            moving_idx,
+            base_effect=None,
+            phase=phase,
+        )
         _logger = None
         if _verbose_logs_enabled():
             _logger = RollLogger(auto_dice)
@@ -2556,6 +2598,7 @@ class Warhammer40kEnv(gym.Env):
                 attacker_data[chosen],
                 target_health[moving_idx],
                 target_data[moving_idx],
+                effects=effect,
                 distance_to_target=distance_to_target,
                 hit_on_6=True,
                 roller=_logger.roll,
@@ -2567,6 +2610,7 @@ class Warhammer40kEnv(gym.Env):
                 attacker_data[chosen],
                 target_health[moving_idx],
                 target_data[moving_idx],
+                effects=effect,
                 distance_to_target=distance_to_target,
                 hit_on_6=True,
             )
@@ -2585,7 +2629,7 @@ class Warhammer40kEnv(gym.Env):
                 attacker_data=attacker_data[chosen],
                 defender_data=target_data[moving_idx],
                 dmg_list=dmg,
-                effect=None,
+                effect=effect,
                 report_title="ОТЧЁТ ПО OVERWATCH",
                 attacker_label=self._format_unit_label(defender_side, chosen),
                 defender_label=target_label,
@@ -3647,6 +3691,7 @@ class Warhammer40kEnv(gym.Env):
                             phase="shooting",
                             manual=os.getenv("MANUAL_DICE", "0") == "1",
                         )
+                        effect = self._resolve_cover_effect_for_shot("model", i, "enemy", idOfE, base_effect=effect, phase="shooting")
                         threat_count_before_shot, _, _ = self._count_real_threats_to_model_unit(i)
                         _logger = None
                         if _verbose_logs_enabled():
@@ -3921,6 +3966,7 @@ class Warhammer40kEnv(gym.Env):
                             phase="shooting",
                             manual=os.getenv("MANUAL_DICE", "0") == "1",
                         )
+                        effect = self._resolve_cover_effect_for_shot("enemy", i, "model", idOfM, base_effect=effect, phase="shooting")
                         _logger = None
                         if _verbose_logs_enabled():
                             _logger = RollLogger(auto_dice)
@@ -4061,6 +4107,7 @@ class Warhammer40kEnv(gym.Env):
                                         phase="shooting",
                                         manual=False,
                                     )
+                                    effect = self._resolve_cover_effect_for_shot("enemy", i, "model", idOfE, base_effect=effect, phase="shooting")
                                     logger = RollLogger(player_dice)
                                     logger.configure_for_weapon(self.enemy_weapon[i])
                                     dmg, modHealth = attack(
@@ -4112,6 +4159,7 @@ class Warhammer40kEnv(gym.Env):
                                 phase="shooting",
                                 manual=False,
                             )
+                            effect = self._resolve_cover_effect_for_shot("enemy", i, "model", idOfM, base_effect=effect, phase="shooting")
                             dmg, modHealth = attack(
                                 self.enemy_health[i],
                                 self.enemy_weapon[i],
