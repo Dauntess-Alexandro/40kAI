@@ -406,6 +406,12 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
     in_range_targets: list[int] = []
     can_see_ids: list[int] = []
     own_range = 0.0
+    range_eps = 0.0
+    if hasattr(env, "_shoot_range_epsilon"):
+        try:
+            range_eps = float(env._shoot_range_epsilon())
+        except Exception:
+            range_eps = 0.0
     if idx < len(own_weapon) and isinstance(own_weapon[idx], dict):
         own_range = float(own_weapon[idx].get("Range", 0) or 0)
     enemy_side = "enemy" if side == "model" else "model"
@@ -423,7 +429,7 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
         can_see_ids.append(int(enemy_id))
         if own_range > 0:
             distance = _distance_between_units_local(side, idx, enemy_side, enemy_idx)
-            if distance <= own_range:
+            if distance <= (own_range + range_eps):
                 in_range_targets.append(int(enemy_id))
 
     reachable_cells: list[list[int]] = []

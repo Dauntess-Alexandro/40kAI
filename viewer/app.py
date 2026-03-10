@@ -984,8 +984,23 @@ class ViewerWindow(QtWidgets.QMainWindow):
             shooter_id = self._extract_unit_id(getattr(request, "prompt", ""))
             shooter_label = self._format_unit_label(shooter_id)
             targets_label = ", ".join(str(v) for v in sorted(self._shoot_targets_valid)) if self._shoot_targets_valid else "—"
+            meta = getattr(request, "meta", {}) or {}
+            filtered = list(meta.get("shoot_filtered") or []) if isinstance(meta, dict) else []
+            filtered_chunks: list[str] = []
+            for item in filtered:
+                if not isinstance(item, dict):
+                    continue
+                target_id = item.get("target_id")
+                reason = str(item.get("reason") or "").strip()
+                if target_id is None or not reason:
+                    continue
+                try:
+                    filtered_chunks.append(f"{int(target_id)}: {reason}")
+                except (TypeError, ValueError):
+                    continue
+            filtered_label = "; ".join(filtered_chunks) if filtered_chunks else "—"
             self.add_log_line(
-                f"REQ: валидные цели стрельбы для Unit {shooter_label}: [{targets_label}]"
+                f"REQ: валидные цели стрельбы для Unit {shooter_label}: [{targets_label}] | отфильтрованы: [{filtered_label}]"
             )
         elif self._is_shooting_dice_request(request):
             pass

@@ -91,7 +91,7 @@ class BaseIO:
     def request_int(self, prompt: str, min_value: Optional[int] = None, max_value: Optional[int] = None):
         raise NotImplementedError
 
-    def request_choice(self, prompt: str, options: list[str]):
+    def request_choice(self, prompt: str, options: list[str], meta: Optional[dict] = None):
         raise NotImplementedError
 
     def request_direction(self, prompt: str, options: list[str]):
@@ -195,7 +195,7 @@ class ConsoleIO(BaseIO):
                 continue
             return value
 
-    def request_choice(self, prompt: str, options: list[str]):
+    def request_choice(self, prompt: str, options: list[str], meta: Optional[dict] = None):
         response = input(prompt).strip()
         if response.lower() in ("q", "quit"):
             return None
@@ -314,8 +314,8 @@ class GuiIO(BaseIO):
                 return None
         return None
 
-    def request_choice(self, prompt: str, options: list[str]):
-        request = Request(kind="choice", prompt=prompt, options=list(options))
+    def request_choice(self, prompt: str, options: list[str], meta: Optional[dict] = None):
+        request = Request(kind="choice", prompt=prompt, options=list(options), meta=dict(meta or {}))
         self.request_queue.put(request)
         answer = self._wait_for_answer()
         if answer is None:

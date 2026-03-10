@@ -4289,6 +4289,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         rng = forced_range if forced_range is not None else self._primary_ranged_range(unit)
         if rng is None:
             return []
+        range_eps = 0.1
         keys: List[Tuple[str, int]] = []
         for enemy in (self._state.get("units", []) or []):
             if enemy.get("side") == unit.get("side"):
@@ -4296,8 +4297,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
             e_cell = self._unit_anchor_view_cell(enemy)
             if e_cell is None:
                 continue
-            dist = abs(e_cell[0] - ux) + abs(e_cell[1] - uy)
-            if dist <= rng:
+            dist = max(abs(e_cell[0] - ux), abs(e_cell[1] - uy))
+            if float(dist) <= float(rng) + float(range_eps):
                 keys.append((enemy.get("side"), enemy.get("id")))
         return keys
 

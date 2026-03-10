@@ -874,6 +874,7 @@ class Warhammer40kEnv(gym.Env):
         self._target_cache_epoch = 0
         self._distance_cache = {}
         self._shoot_target_cache = {}
+        self._shoot_target_reject_cache = {}
         self.terrain_features = list(getattr(self, "terrain_features", []) or [])
         self.terrain_opaque_cells: set[tuple[int, int]] = set()
         self.terrain_obscuring_cells: set[tuple[int, int]] = self.get_terrain_obscuring_cells_set()
@@ -966,6 +967,15 @@ class Warhammer40kEnv(gym.Env):
         self._target_cache_epoch += 1
         self._distance_cache.clear()
         self._shoot_target_cache.clear()
+        self._shoot_target_reject_cache.clear()
+
+    def _shoot_range_epsilon(self) -> float:
+        raw = os.getenv("SHOOT_RANGE_EPSILON", "0.10")
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            value = 0.10
+        return max(0.0, value)
 
     def _cached_distance_model_enemy(self, model_idx: int, enemy_idx: int) -> float:
         key = ("m2e", self._target_cache_epoch, int(model_idx), int(enemy_idx))
@@ -985,13 +995,34 @@ class Warhammer40kEnv(gym.Env):
         self._distance_cache[key] = value
         return value
 
-    def get_shoot_targets_for_unit(self, side: str, unit_idx: int) -> list[int]:
+    def get_shoot_targets_for_unit(self, side: str, unit_idx: int, *, include_rejected: bool = False):
         cache_key = (self._target_cache_epoch, side, int(unit_idx))
         cached = self._shoot_target_cache.get(cache_key)
-        if cached is not None:
+        cached_rejected = self._shoot_target_reject_cache.get(cache_key)
+        if cached is not None and cached_rejected is not None:
+            if include_rejected:
+                return list(cached), list(cached_rejected)
             return list(cached)
 
         targets = []
+        rejected: list[dict] = []
+        range_eps = self._shoot_range_epsilon()
+
+        def _add_reject(dst_side: str, dst_idx: int, reason: str, dist: Optional[float] = None, range_limit: Optional[float] = None) -> None:
+            dst_label = self._format_unit_label(dst_side, int(dst_idx))
+            entry = {
+                "target_id": self._unit_id(dst_side, int(dst_idx)),
+                "target_label": dst_label,
+                "reason": reason,
+            }
+            if dist is not None:
+                entry["distance"] = float(dist)
+            if range_limit is not None:
+                entry["range"] = float(range_limit)
+                overflow = float(dist) - float(range_limit) if dist is not None else None
+                if overflow is not None:
+                    entry["out_of_range_by"] = float(overflow)
+            rejected.append(entry)
 
         def _log_target_filter(unit_side: str, src_idx: int, dst_side: str, dst_idx: int, reason: str) -> None:
             if not _verbose_logs_enabled():
@@ -1013,23 +1044,30 @@ class Warhammer40kEnv(gym.Env):
             range_limit = self.unit_weapon[unit_idx]["Range"]
             for enemy_idx in range(len(self.enemy_health)):
                 if self.enemy_health[enemy_idx] <= 0:
+                    _add_reject("enemy", enemy_idx, "цель мертва")
                     _log_target_filter("model", unit_idx, "enemy", enemy_idx, "цель мертва")
                     continue
                 if self.enemyInAttack[enemy_idx][0] == 1:
+                    _add_reject("enemy", enemy_idx, "цель в engagement")
                     _log_target_filter("model", unit_idx, "enemy", enemy_idx, "цель в engagement")
                     continue
                 dist = float(self._shooting_distance_between_units("model", unit_idx, "enemy", enemy_idx))
-                if dist > float(range_limit):
+                range_limit_f = float(range_limit)
+                if dist > (range_limit_f + range_eps):
+                    overflow = dist - range_limit_f
+                    reason = f"цель вне дальности: range {dist:.2f} > {range_limit_f:.2f} (out_of_range by +{overflow:.2f})"
+                    _add_reject("enemy", enemy_idx, reason, dist=dist, range_limit=range_limit_f)
                     _log_target_filter(
                         "model",
                         unit_idx,
                         "enemy",
                         enemy_idx,
-                        f"цель вне дальности (distance={dist:.2f}, range={float(range_limit):.2f})",
+                        f"цель вне дальности (distance={dist:.2f}, range={range_limit_f:.2f}, delta=+{overflow:.2f}, eps={range_eps:.2f})",
                     )
                     continue
                 # Критичное правило: если есть LOS хотя бы до одной модели цели, цель валидна для стрельбы.
                 if not self._unit_has_los("model", unit_idx, "enemy", int(enemy_idx)):
+                    _add_reject("enemy", enemy_idx, "нет LOS ни к одной модели цели")
                     _log_target_filter("model", unit_idx, "enemy", enemy_idx, "нет LOS ни к одной модели цели")
                     continue
                 targets.append(int(enemy_idx))
@@ -1043,28 +1081,38 @@ class Warhammer40kEnv(gym.Env):
             range_limit = self.enemy_weapon[unit_idx]["Range"]
             for model_idx in range(len(self.unit_health)):
                 if self.unit_health[model_idx] <= 0:
+                    _add_reject("model", model_idx, "цель мертва")
                     _log_target_filter("enemy", unit_idx, "model", model_idx, "цель мертва")
                     continue
                 if self.unitInAttack[model_idx][0] == 1:
+                    _add_reject("model", model_idx, "цель в engagement")
                     _log_target_filter("enemy", unit_idx, "model", model_idx, "цель в engagement")
                     continue
                 dist = float(self._shooting_distance_between_units("enemy", unit_idx, "model", model_idx))
-                if dist > float(range_limit):
+                range_limit_f = float(range_limit)
+                if dist > (range_limit_f + range_eps):
+                    overflow = dist - range_limit_f
+                    reason = f"цель вне дальности: range {dist:.2f} > {range_limit_f:.2f} (out_of_range by +{overflow:.2f})"
+                    _add_reject("model", model_idx, reason, dist=dist, range_limit=range_limit_f)
                     _log_target_filter(
                         "enemy",
                         unit_idx,
                         "model",
                         model_idx,
-                        f"цель вне дальности (distance={dist:.2f}, range={float(range_limit):.2f})",
+                        f"цель вне дальности (distance={dist:.2f}, range={range_limit_f:.2f}, delta=+{overflow:.2f}, eps={range_eps:.2f})",
                     )
                     continue
                 # Критичное правило: если есть LOS хотя бы до одной модели цели, цель валидна для стрельбы.
                 if not self._unit_has_los("enemy", unit_idx, "model", int(model_idx)):
+                    _add_reject("model", model_idx, "нет LOS ни к одной модели цели")
                     _log_target_filter("enemy", unit_idx, "model", model_idx, "нет LOS ни к одной модели цели")
                     continue
                 targets.append(int(model_idx))
 
         self._shoot_target_cache[cache_key] = list(targets)
+        self._shoot_target_reject_cache[cache_key] = list(rejected)
+        if include_rejected:
+            return list(targets), list(rejected)
         return targets
 
     def _cell_from_coord(self, coord) -> tuple[int, int]:
@@ -2285,8 +2333,8 @@ class Warhammer40kEnv(gym.Env):
     def _get_input(self, prompt: str) -> str:
         return str(self._ensure_io().request_choice(prompt, []))
 
-    def _request_choice(self, prompt: str, options: list[str]):
-        return self._ensure_io().request_choice(prompt, options)
+    def _request_choice(self, prompt: str, options: list[str], meta: Optional[dict] = None):
+        return self._ensure_io().request_choice(prompt, options, meta=meta)
 
     def _request_bool(self, prompt: str):
         return self._ensure_io().request_bool(prompt)
@@ -2483,7 +2531,6 @@ class Warhammer40kEnv(gym.Env):
             attacker_data = self.unit_data
             target_health = self.enemy_health if moving_unit_side == "enemy" else self.unit_health
             target_data = self.enemy_data if moving_unit_side == "enemy" else self.unit_data
-            target_coords = self.enemy_coords if moving_unit_side == "enemy" else self.unit_coords
         else:
             self.enemyCP -= 1
             attacker_health = self.enemy_health
@@ -2491,11 +2538,12 @@ class Warhammer40kEnv(gym.Env):
             attacker_data = self.enemy_data
             target_health = self.unit_health if moving_unit_side == "model" else self.enemy_health
             target_data = self.unit_data if moving_unit_side == "model" else self.enemy_data
-            target_coords = self.unit_coords if moving_unit_side == "model" else self.enemy_coords
 
-        distance_to_target = distance(
-            self.unit_coords[chosen] if defender_side == "model" else self.enemy_coords[chosen],
-            target_coords[moving_idx],
+        distance_to_target = self._shooting_distance_between_units(
+            "model" if defender_side == "model" else "enemy",
+            chosen,
+            moving_unit_side,
+            moving_idx,
         )
         _logger = None
         if _verbose_logs_enabled():
@@ -3942,18 +3990,30 @@ class Warhammer40kEnv(gym.Env):
                     if advanced and not weapon_is_assault(self.enemy_weapon[i]):
                         self._log(f"{unit_label}: был Advance без Assault — стрельба пропущена.")
                     else:
-                        shootAble = np.array([])
-                        for j in range(len(self.unit_health)):
-                            if self._shooting_distance_between_units("enemy", i, "model", j) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
-                                shootAble = np.append(shootAble, j)
+                        shootAble = self.get_shoot_targets_for_unit("enemy", i)
+                        _, rejected_targets = self.get_shoot_targets_for_unit("enemy", i, include_rejected=True)
                         if len(shootAble) > 0:
                             response = False
                             while response is False:
-                                targets_label = self._format_unit_choices("model", shootAble.astype(int).tolist())
-                                options = [str(21 + int(idx)) for idx in shootAble.astype(int).tolist()]
+                                target_ids = [int(idx) for idx in shootAble]
+                                targets_label = self._format_unit_choices("model", target_ids)
+                                options = [str(21 + int(idx)) for idx in target_ids]
+                                reject_meta = []
+                                for item in list(rejected_targets or []):
+                                    if not isinstance(item, dict):
+                                        continue
+                                    target_id = item.get("target_id")
+                                    reason = str(item.get("reason") or "").strip()
+                                    if target_id is None or not reason:
+                                        continue
+                                    reject_meta.append({"target_id": int(target_id), "reason": reason})
                                 shoot = self._request_choice(
                                     f"Выберите цель для стрельбы. Стреляет: {unit_label}. Доступные цели: {targets_label}. Введите ID цели: ",
                                     options,
+                                    meta={
+                                        "shoot_filtered": reject_meta,
+                                        "shooter_id": int(11 + i),
+                                    },
                                 )
                                 if shoot is None:
                                     self.game_over = True
@@ -3964,7 +4024,7 @@ class Warhammer40kEnv(gym.Env):
                                 dice_count = None
                                 if len(shoot_parts) > 1 and str(shoot_parts[1]).strip().isdigit():
                                     dice_count = int(str(shoot_parts[1]).strip())
-                                if is_num(shoot_target_raw) is True and int(shoot_target_raw) - 21 in shootAble:
+                                if is_num(shoot_target_raw) is True and int(shoot_target_raw) - 21 in target_ids:
                                     idOfE = int(shoot_target_raw) - 21
                                     if dice_count is not None:
                                         self._log(
@@ -3985,7 +4045,7 @@ class Warhammer40kEnv(gym.Env):
                                         self.unit_health[idOfE],
                                         self.unit_data[idOfE],
                                         effects=effect,
-                                        distance_to_target=distance(self.enemy_coords[i], self.unit_coords[idOfE]),
+                                        distance_to_target=self._shooting_distance_between_units("enemy", i, "model", idOfE),
                                         roller=logger.roll,
                                     )
                                     self._apply_health_update("model", idOfE, modHealth, reason="overwatch")
@@ -4018,10 +4078,7 @@ class Warhammer40kEnv(gym.Env):
                         if self.trunc is False:
                             self._log(f"{self._format_unit_label('enemy', i)}: Advance без Assault — стрельба пропущена.")
                     else:
-                        shootAbleUnits = []
-                        for j in range(len(self.unit_health)):
-                            if self._shooting_distance_between_units("enemy", i, "model", j) <= self.enemy_weapon[i]["Range"] and self.unit_health[j] > 0 and self.unitInAttack[j][0] == 0:
-                                shootAbleUnits.append(j)
+                        shootAbleUnits = self.get_shoot_targets_for_unit("enemy", i)
                         if len(shootAbleUnits) > 0:
                             idOfM = np.random.choice(shootAbleUnits)
                             effect = self._maybe_use_smokescreen(
