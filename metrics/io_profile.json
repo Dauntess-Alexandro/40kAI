@@ -1,17 +1,17 @@
 {
-  "generated_at": "2026-03-10T11:54:02Z",
+  "generated_at": "2026-03-10T13:06:23Z",
   "categories": {
     "checkpoint save": {
       "count": 8,
-      "total_ms": 37127.064,
-      "avg_ms": 4640.883,
-      "max_ms": 8257.865
+      "total_ms": 31303.329,
+      "avg_ms": 3912.916,
+      "max_ms": 6278.773
     },
     "metrics save": {
       "count": 2,
-      "total_ms": 10.913,
-      "avg_ms": 5.457,
-      "max_ms": 10.686
+      "total_ms": 12.084,
+      "avg_ms": 6.042,
+      "max_ms": 11.813
     }
   }
 }

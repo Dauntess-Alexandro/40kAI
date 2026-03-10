@@ -1,1 +1,1 @@
-время=2026-03-10 14:54:01 длительность_с=538.93 модель=M_Necrons_vs_P_Necrons/model-23-822656 run_id=3357217 эпизоды=3500 winrate_mean=0.4077 vp_diff_mean=-0.4683 reward_mean=0.361976 ep_len_mean=8.92 turn_mean=9.92
+время=2026-03-10 16:06:22 длительность_с=802.46 модель=M_Necrons_vs_P_Necrons/model-23-167082 run_id=9229900 эпизоды=3500 winrate_mean=0.4060 vp_diff_mean=-0.3789 reward_mean=0.368720 ep_len_mean=8.98 turn_mean=9.98
