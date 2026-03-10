@@ -4,6 +4,7 @@ import os
 import pickle
 import queue
 import threading
+import traceback
 from typing import Optional
 
 import torch
@@ -268,8 +269,21 @@ class GameController:
 
             self._finished = True
         except Exception as exc:
+            trace = traceback.format_exc()
+            last_trace_line = "не удалось определить"
+            try:
+                lines = [line.strip() for line in trace.splitlines() if line.strip()]
+                for line in reversed(lines):
+                    if line.startswith("File "):
+                        last_trace_line = line
+                        break
+            except Exception:
+                pass
             self._io.log(
-                f"Ошибка игры: {exc}. Место: запуск GameController. "
-                "Проверьте путь к модели и наличие файлов .pickle/.pth."
+                f"Ошибка игры: {exc}. Место: game_controller._run_game_loop ({last_trace_line}). "
+                "Что делать дальше: проверьте traceback ниже и исправьте источник ошибки в указанном файле/строке."
             )
+            self._io.log("Traceback (последние вызовы):")
+            for line in trace.rstrip().splitlines():
+                self._io.log(line)
             self._finished = True

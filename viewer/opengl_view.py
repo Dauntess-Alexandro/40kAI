@@ -459,6 +459,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.set_error_message(None)
         board = self._state.get("board", {})
         raw_units = list(self._state.get("units", []) or [])
+
+        filtered_units = []
+        for unit in raw_units:
+            if not isinstance(unit, dict):
+                continue
+            hp_value = self._safe_int(unit.get("hp"))
+            alive_models_value = self._safe_int(unit.get("alive_models"))
+            if hp_value is not None and hp_value <= 0:
+                continue
+            if alive_models_value is not None and alive_models_value <= 0:
+                continue
+            filtered_units.append(unit)
+
         width, height = self._resolve_board_dims(board, raw_units)
         self._board_width = width
         self._board_height = height
@@ -485,7 +498,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 self._props_initialized = False
             self._ensure_props()
 
-        self._units_state = raw_units
+        self._units_state = filtered_units
         live_keys = {
             (u.get("side"), u.get("id"))
             for u in self._units_state

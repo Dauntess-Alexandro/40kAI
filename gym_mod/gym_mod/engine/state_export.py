@@ -507,9 +507,12 @@ def write_state_json(env, path=None):
         unit_id = env._unit_id("enemy", idx)
         unit_data = env._get_unit_data("enemy", idx)
         hp = env.enemy_health[idx] if idx < len(env.enemy_health) else None
+        alive_models = env._alive_models_from_pool("enemy", idx) if hasattr(env, "_alive_models_from_pool") else None
+        if float(hp or 0.0) <= 0 or (alive_models is not None and int(alive_models) <= 0):
+            continue
         weapon_profile = env.enemy_weapon[idx] if idx < len(getattr(env, "enemy_weapon", [])) else None
         unit_payload = _unit_payload("player", unit_id, unit_data, coords, hp,
-                                   alive_models=env._alive_models_from_pool("enemy", idx) if hasattr(env, "_alive_models_from_pool") else None,
+                                   alive_models=alive_models,
                                    anchor=(env.enemy_anchor_coords[idx] if hasattr(env, "enemy_anchor_coords") and idx < len(env.enemy_anchor_coords) else None),
                                    model_positions=([{"x": _safe_int(pos[1], None), "y": _safe_int(pos[0], None), "z": _safe_int(pos[2], 0)}
                                                      for pos in env.enemy_model_positions[idx]]
@@ -523,9 +526,12 @@ def write_state_json(env, path=None):
         unit_id = env._unit_id("model", idx)
         unit_data = env._get_unit_data("model", idx)
         hp = env.unit_health[idx] if idx < len(env.unit_health) else None
+        alive_models = env._alive_models_from_pool("model", idx) if hasattr(env, "_alive_models_from_pool") else None
+        if float(hp or 0.0) <= 0 or (alive_models is not None and int(alive_models) <= 0):
+            continue
         weapon_profile = env.unit_weapon[idx] if idx < len(getattr(env, "unit_weapon", [])) else None
         unit_payload = _unit_payload("model", unit_id, unit_data, coords, hp,
-                                   alive_models=env._alive_models_from_pool("model", idx) if hasattr(env, "_alive_models_from_pool") else None,
+                                   alive_models=alive_models,
                                    anchor=(env.unit_anchor_coords[idx] if hasattr(env, "unit_anchor_coords") and idx < len(env.unit_anchor_coords) else None),
                                    model_positions=([{"x": _safe_int(pos[1], None), "y": _safe_int(pos[0], None), "z": _safe_int(pos[2], 0)}
                                                      for pos in env.unit_model_positions[idx]]

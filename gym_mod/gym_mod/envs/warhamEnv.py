@@ -996,13 +996,16 @@ class Warhammer40kEnv(gym.Env):
         return value
 
     def get_shoot_targets_for_unit(self, side: str, unit_idx: int, *, include_rejected: bool = False):
+        def _ret(targets_list, rejected_list):
+            if include_rejected:
+                return list(targets_list), list(rejected_list)
+            return list(targets_list)
+
         cache_key = (self._target_cache_epoch, side, int(unit_idx))
         cached = self._shoot_target_cache.get(cache_key)
         cached_rejected = self._shoot_target_reject_cache.get(cache_key)
         if cached is not None and cached_rejected is not None:
-            if include_rejected:
-                return list(cached), list(cached_rejected)
-            return list(cached)
+            return _ret(cached, cached_rejected)
 
         targets = []
         rejected: list[dict] = []
@@ -1036,11 +1039,11 @@ class Warhammer40kEnv(gym.Env):
 
         if side == "model":
             if not (0 <= unit_idx < len(self.unit_health)):
-                return []
+                return _ret([], [])
             if self.unit_health[unit_idx] <= 0 or self.unitFellBack[unit_idx] or self.unitInAttack[unit_idx][0] == 1:
-                return []
+                return _ret([], [])
             if self.unit_weapon[unit_idx] == "None":
-                return []
+                return _ret([], [])
             range_limit = self.unit_weapon[unit_idx]["Range"]
             for enemy_idx in range(len(self.enemy_health)):
                 if self.enemy_health[enemy_idx] <= 0:
@@ -1073,11 +1076,11 @@ class Warhammer40kEnv(gym.Env):
                 targets.append(int(enemy_idx))
         else:
             if not (0 <= unit_idx < len(self.enemy_health)):
-                return []
+                return _ret([], [])
             if self.enemy_health[unit_idx] <= 0 or self.enemyFellBack[unit_idx] or self.enemyInAttack[unit_idx][0] == 1:
-                return []
+                return _ret([], [])
             if self.enemy_weapon[unit_idx] == "None":
-                return []
+                return _ret([], [])
             range_limit = self.enemy_weapon[unit_idx]["Range"]
             for model_idx in range(len(self.unit_health)):
                 if self.unit_health[model_idx] <= 0:
@@ -1111,9 +1114,7 @@ class Warhammer40kEnv(gym.Env):
 
         self._shoot_target_cache[cache_key] = list(targets)
         self._shoot_target_reject_cache[cache_key] = list(rejected)
-        if include_rejected:
-            return list(targets), list(rejected)
-        return targets
+        return _ret(targets, rejected)
 
     def _cell_from_coord(self, coord) -> tuple[int, int]:
         return int(round(float(coord[0]))), int(round(float(coord[1])))
@@ -3992,6 +3993,9 @@ class Warhammer40kEnv(gym.Env):
                 playerName = i + 11
                 unit_label = self._format_unit_label("enemy", i, unit_id=playerName)
                 advanced = advanced_flags[i] if advanced_flags else False
+                if self.enemy_health[i] <= 0:
+                    self._log(f"{unit_label}: юнит мертв — стрельба пропущена.")
+                    continue
                 if self.enemyFellBack[i]:
                     self._log(f"{unit_label}: отступил в этом ходу — стрельба пропущена.")
                     continue
@@ -4000,7 +4004,19 @@ class Warhammer40kEnv(gym.Env):
                         self._log(f"{unit_label}: был Advance без Assault — стрельба пропущена.")
                     else:
                         shootAble = self.get_shoot_targets_for_unit("enemy", i)
-                        _, rejected_targets = self.get_shoot_targets_for_unit("enemy", i, include_rejected=True)
+                        targets_with_rejected = self.get_shoot_targets_for_unit("enemy", i, include_rejected=True)
+                        if (
+                            isinstance(targets_with_rejected, tuple)
+                            and len(targets_with_rejected) == 2
+                        ):
+                            _, rejected_targets = targets_with_rejected
+                        else:
+                            rejected_targets = []
+                            self._log(
+                                f"[WARN][SHOOT] {unit_label}: get_shoot_targets_for_unit вернул некорректный формат "
+                                f"({type(targets_with_rejected).__name__}). Где: warhamEnv.shooting_phase(enemy, manual). "
+                                "Что делать дальше: проверить контракт include_rejected=True и вернуть (targets, rejected)."
+                            )
                         if len(shootAble) > 0:
                             response = False
                             while response is False:
@@ -5577,11 +5593,13 @@ class Warhammer40kEnv(gym.Env):
 
         for i in range(len(self.unit_health)):
             self.unit_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
-            self.board[self.unit_coords[i][0]][self.unit_coords[i][1]] = 20 + i + 1
+            if float(self.unit_health[i] or 0.0) > 0:
+                self.board[self.unit_coords[i][0]][self.unit_coords[i][1]] = 20 + i + 1
 
         for i in range(len(self.enemy_health)):
             self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
-            self.board[self.enemy_coords[i][0]][self.enemy_coords[i][1]] = 10 + i + 1
+            if float(self.enemy_health[i] or 0.0) > 0:
+                self.board[self.enemy_coords[i][0]][self.enemy_coords[i][1]] = 10 + i + 1
 
         for i in range(len(self.coordsOfOM)):
             self.board[int(self.coordsOfOM[i][0])][int(self.coordsOfOM[i][1])] = 3
