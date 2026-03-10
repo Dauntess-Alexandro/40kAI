@@ -125,19 +125,28 @@ def player_dice(num=1, max=6):
 
     io = get_active_io()
 
-    def ask_one(idx: Optional[int] = None):
-        suffix = f" {idx}/{num}" if idx is not None else ""
-        while True:
-            v = io.request_int(f"Введи результат броска{suffix} (1..{max}): ", min_value=1, max_value=max)
-            if v is None:
-                io.log("Нужно число в допустимом диапазоне.")
-                continue
-            if 1 <= v <= max:
-                return v
-            io.log(f"Должно быть от 1 до {max}.")
-
     if num == 1:
-        return ask_one()
+        while True:
+            rolls = io.request_dice(
+                f"Введи 1 результат (1..{max}) через пробел или запятую: ",
+                count=1,
+                min_value=1,
+                max_value=max,
+            )
+            if not rolls:
+                io.log(
+                    f"Ошибка ввода кубов: нужно ввести 1 значение от 1 до {max}. "
+                    "Где: ввод кубов. Что делать дальше: повторите ввод."
+                )
+                continue
+            try:
+                return int(rolls[0])
+            except (TypeError, ValueError, IndexError):
+                io.log(
+                    f"Ошибка ввода кубов: некорректное значение {rolls}. "
+                    "Где: ввод кубов. Что делать дальше: повторите ввод."
+                )
+                continue
 
     while True:
         rolls = io.request_dice(
