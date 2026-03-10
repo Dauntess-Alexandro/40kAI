@@ -384,13 +384,20 @@ class GuiIO(BaseIO):
         if answer is None:
             return None
         if isinstance(answer, dict):
+            payload = {}
+            if answer.get("mode") is not None:
+                payload["mode"] = str(answer.get("mode"))
+            if answer.get("skip_movement") is not None:
+                payload["skip_movement"] = bool(answer.get("skip_movement"))
             try:
-                payload = {"x": int(answer.get("x")), "y": int(answer.get("y"))}
-                if answer.get("mode") is not None:
-                    payload["mode"] = str(answer.get("mode"))
-                return payload
+                if answer.get("x") is not None and answer.get("y") is not None:
+                    payload["x"] = int(answer.get("x"))
+                    payload["y"] = int(answer.get("y"))
             except (TypeError, ValueError):
                 return None
+            if payload:
+                return payload
+            return None
         if isinstance(answer, (list, tuple)) and len(answer) >= 2:
             try:
                 return {"x": int(answer[0]), "y": int(answer[1])}

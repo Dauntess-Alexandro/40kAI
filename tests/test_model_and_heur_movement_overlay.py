@@ -12,8 +12,9 @@ class TestModelAndHeurMovementOverlay(unittest.TestCase):
     def test_enemy_heuristic_uses_overlay_candidates(self):
         source = Path("gym_mod/gym_mod/envs/warhamEnv.py").read_text(encoding="utf-8")
         self.assertIn('overlay = self.get_unit_movement_overlay("enemy", i)', source)
-        self.assertIn('candidates = move_cells + adv_cells', source)
+        self.assertIn('candidates = move_cells + adv_cells + [stay_cell]', source)
         self.assertIn('best_x, best_y, best_mode = min(candidates, key=_heur_score)', source)
+        self.assertIn('if str(best_mode) == "stay":', source)
 
 
 if __name__ == "__main__":

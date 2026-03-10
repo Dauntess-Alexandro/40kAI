@@ -3003,6 +3003,7 @@ class Warhammer40kEnv(gym.Env):
                             advance_roll = max(1, min(6, int(adv_used)))
                         self.unit_coords[i] = [int(dest[1]), int(dest[0])]
                     else:
+                        move_mode = "stay"
                         advanced = False
 
                     if move_dir == 4:
@@ -3076,7 +3077,7 @@ class Warhammer40kEnv(gym.Env):
                     advanced_flags[i] = advanced
                     self.model_used_advance[i] = bool(advanced)
                     self.model_advance_roll[i] = int(advance_roll) if advance_roll is not None else None
-                    direction = {0: "down", 1: "up", 2: "left", 3: "right", 4: "none"}.get(move_dir, "none")
+                    direction = {0: "down", 1: "up", 2: "left", 3: "right", 4: "stay"}.get(move_dir, "stay")
                     actual_movement = int(movement) if move_dir != 4 else 0
                     advance_text = "да" if advanced else "нет"
                     if advance_roll is not None:
@@ -3261,7 +3262,7 @@ class Warhammer40kEnv(gym.Env):
                     advanced_flags[i] = advanced
                     self.enemy_used_advance[i] = bool(advanced)
                     self.enemy_advance_roll[i] = int(advance_roll) if advance_roll is not None else None
-                    direction = {0: "down", 1: "up", 2: "left", 3: "right", 4: "none"}.get(move_dir, "none")
+                    direction = {0: "down", 1: "up", 2: "left", 3: "right", 4: "stay"}.get(move_dir, "stay")
                     actual_movement = movement if move_dir != 4 else 0
                     advance_text = "да" if advanced else "нет"
                     if advance_roll is not None:
@@ -3423,6 +3424,7 @@ class Warhammer40kEnv(gym.Env):
                             "reachable_cells": [[int(x), int(y)] for x, y in reachable],
                             "move_cells": [[int(x), int(y)] for x, y in move_cells],
                             "advance_cells": [[int(x), int(y)] for x, y in advance_cells],
+                            "supports_stay": True,
                         }
                         answer = self._ensure_io().request_deploy_coord(
                             f"{unit_label}. Выберите клетку назначения (reachable={len(reachable)}): ",
@@ -3435,17 +3437,25 @@ class Warhammer40kEnv(gym.Env):
                         if answer is None:
                             self.game_over = True
                             return None
-                        if bool(answer.get("skip_movement")):
+                        mode = str(answer.get("mode") or "").strip().lower()
+                        skip_requested = bool(answer.get("skip_movement"))
+                        if mode == "stay" or skip_requested:
                             dest = (int(pos_before[1]), int(pos_before[0]))
-                            move_mode = "normal"
+                            move_mode = "stay"
+                            source = "mode=stay" if mode == "stay" else "legacy skip-флаг"
                             self._log(
-                                f"{unit_label}: движение пропущено по skip-флагу. "
+                                f"{unit_label}: движение stay ({source}). "
                                 f"Позиция сохранена: ({int(dest[0])},{int(dest[1])})."
                             )
                             break
+                        if answer.get("x") is None or answer.get("y") is None:
+                            self._log(
+                                f"{unit_label}: движение отклонено (нет координат). Где: warhamEnv.movement_phase. "
+                                "Что делать дальше: выберите подсвеченную reachable-клетку или используйте mode=stay."
+                            )
+                            continue
                         tx = int(answer.get("x"))
                         ty = int(answer.get("y"))
-                        mode = str(answer.get("mode") or "").strip().lower()
                         cell = (tx, ty)
                         if cell in move_set:
                             move_mode = "normal"
@@ -3457,8 +3467,8 @@ class Warhammer40kEnv(gym.Env):
                             move_mode = "advance"
                         else:
                             self._log(
-                                f"{unit_label}: клетка ({tx},{ty}) недостижима. "
-                                "Что делать дальше: выберите подсвеченную reachable-клетку."
+                                f"{unit_label}: клетка ({tx},{ty}) недостижима. Где: warhamEnv.movement_phase. "
+                                "Что делать дальше: выберите подсвеченную reachable-клетку или используйте mode=stay."
                             )
                             continue
                         dest = cell
@@ -3537,13 +3547,10 @@ class Warhammer40kEnv(gym.Env):
                     overlay = self.get_unit_movement_overlay("enemy", i)
                     move_cells = [(int(x), int(y), "normal") for x, y in (overlay.get("move_cells") or [])]
                     adv_cells = [(int(x), int(y), "advance") for x, y in (overlay.get("advance_cells") or [])]
-                    candidates = move_cells + adv_cells
-                    if not candidates:
-                        self._log(f"[ENEMY][HEUR] Unit {i + 11}: пропуск движения, причина: нет reachable-клеток.")
-                        advanced_flags[i] = False
-                        self.enemy_used_advance[i] = False
-                        self.enemy_advance_roll[i] = None
-                        continue
+                    stay_cell = (int(pos_before[1]), int(pos_before[0]), "stay")
+                    candidates = move_cells + adv_cells + [stay_cell]
+                    if not (move_cells or adv_cells):
+                        self._log(f"[ENEMY][HEUR] Unit {i + 11}: движение stay, причина: нет reachable-клеток.")
 
                     target_row = int(self.unit_coords[idOfM][0])
                     target_col = int(self.unit_coords[idOfM][1])
@@ -3552,12 +3559,14 @@ class Warhammer40kEnv(gym.Env):
                         x, y, mode = item
                         dist_to_target = float(self._grid_distance_euclid((int(y), int(x)), (target_row, target_col)))
                         dist_from_start = float(self._grid_distance_chebyshev((int(self.enemy_coords[i][0]), int(self.enemy_coords[i][1])), (int(y), int(x))))
-                        mode_penalty = 0.0 if mode == "normal" else 0.1
+                        mode_penalty = 0.0 if mode == "normal" else 0.1 if mode == "advance" else 0.25
                         return (dist_to_target, mode_penalty, -dist_from_start)
 
                     best_x, best_y, best_mode = min(candidates, key=_heur_score)
                     movement = int(self._grid_distance_chebyshev((int(self.enemy_coords[i][0]), int(self.enemy_coords[i][1])), (int(best_y), int(best_x))))
                     advanced = str(best_mode) == "advance" or int(movement) > int(base_m)
+                    if str(best_mode) == "stay":
+                        self._log(f"[ENEMY][HEUR] Unit {i + 11}: выбран режим stay (distance=0).")
                     adv_used = max(0, int(movement) - int(base_m))
                     advance_roll = max(1, min(6, int(adv_used))) if advanced else None
                     self.enemy_coords[i] = [int(best_y), int(best_x)]

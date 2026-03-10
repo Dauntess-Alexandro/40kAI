@@ -1017,7 +1017,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_prompt.setText(self._move_instruction_text())
             self.command_stack.setEnabled(False)
             self.command_stack.setVisible(False)
-            self.command_hint.setText("Горячие клавиши: ПКМ — идти, Backspace — не ходить")
+            self.command_hint.setText("Горячие клавиши: ПКМ — идти, Backspace — stay")
         elif self._is_shooting_target_request(request) or self._is_shooting_dice_request(request):
             self.command_prompt.setText(self._shoot_instruction_text())
             self.command_stack.setEnabled(False)
@@ -1095,7 +1095,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             f"Ходьба: Unit {unit_label} — {unit_name}\n"
             "ЛКМ: выделить/hover клетку\n"
             "ПКМ: идти в клетку\n"
-            "Backspace: не ходить (пропустить ходьбу юнита)\n"
+            "Backspace: stay (остаться на месте)\n"
             "Синий: обычный Move (до M)\n"
             "Жёлтый: Advance (до M+6)"
         )
@@ -1301,14 +1301,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
         unit_label = int(req_unit_id) if str(req_unit_id).isdigit() else "—"
         if current_cell is None:
             self.add_log_line(
-                f"Unit {unit_label}: movement skipped (без координат юнита в UI, передан только skip-флаг)."
+                f"Unit {unit_label}: movement stay (координаты юнита в UI не найдены, передан mode=stay)."
             )
-            self._submit_answer({"skip_movement": True})
+            self._submit_answer({"mode": "stay", "skip_movement": True})
         else:
             self.add_log_line(
-                f"Unit {unit_label}: movement skipped (позиция сохранена x={int(current_cell[0])}, y={int(current_cell[1])})."
+                f"Unit {unit_label}: movement stay (позиция сохранена x={int(current_cell[0])}, y={int(current_cell[1])})."
             )
-            self._submit_answer({"skip_movement": True, "x": int(current_cell[0]), "y": int(current_cell[1]), "mode": "normal"})
+            self._submit_answer({"mode": "stay", "skip_movement": True, "x": int(current_cell[0]), "y": int(current_cell[1])})
         self.map_scene.set_target_cell(None)
         self.map_scene.clear_target_selection()
         return True
@@ -1430,7 +1430,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 self.command_hint.setText("Горячие клавиши: Enter — выбрать")
         elif kind == "deploy_coord":
             if self._is_movement_move_request(self._pending_request):
-                self.command_hint.setText("ПКМ по подсвеченной клетке. ЛКМ — hover/выбор, Backspace — не ходить")
+                self.command_hint.setText("ПКМ по подсвеченной клетке. ЛКМ — hover/выбор, Backspace — stay")
             elif self._is_move_cell_request(self._pending_request):
                 self.command_hint.setText("RMB по подсвеченной клетке или введите X Y, затем Enter")
             else:
