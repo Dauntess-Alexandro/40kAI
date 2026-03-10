@@ -779,6 +779,20 @@ class RollLogger:
             else:
                 self._log(f"Save rolls:   {save_rolls}")
 
+        # TRAIN/EVAL: обычные _log-сообщения не всегда попадают в AGENT_LOG_FILE,
+        # поэтому сохраняем компактный контекст расчёта сейва отдельной строкой.
+        effect_norm = str(effect).strip().lower() if effect is not None else ""
+        cover_active = effect_norm == "benefit of cover"
+        self._append_agent_log(
+            "SHOT_DEBUG | "
+            f"attacker={attacker_label or '-'} target={defender_label or '-'} "
+            f"effect={effect_norm or '-'} cover_active={1 if cover_active else 0} "
+            f"save_base={sv if sv is not None else '-'} ap={ap_val} "
+            f"inv={inv if inv is not None else '-'} "
+            f"save_target={save_target if save_target is not None else '-'} "
+            f"save_rolls={save_rolls if save_rolls else []}"
+        )
+
         self._log(f"\n✅ Итог по движку: прошло урона = {total_damage}")
         self._log("📌 -------------------------\n")
 
@@ -1508,11 +1522,13 @@ class Warhammer40kEnv(gym.Env):
         has_los = bool(report.get("los", False))
         obscured = bool(report.get("obscured", False))
         if has_los and obscured:
-            self._log(
+            cover_msg = (
                 f"[COVER][{phase.upper()}] {self._format_unit_label(attacker_side, int(attacker_idx))} -> "
                 f"{self._format_unit_label(defender_side, int(defender_idx))}: "
                 "применён Benefit of Cover (причина: obscured=True по LOS_DEBUG)."
             )
+            self._log(cover_msg)
+            self._append_agent_log(cover_msg)
             return "benefit of cover"
         return base_effect
 
