@@ -232,6 +232,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._reachable_overlay_sig: Optional[Tuple[object, int, int]] = None
         self._target_highlights: List[Tuple[QtCore.QPointF, float]] = []
         self._shoot_range_highlights: List[QtCore.QRectF] = []
+        self._shoot_rapid_range_highlights: List[QtCore.QRectF] = []
         self._shoot_target_infos: List[Dict[str, object]] = []
         self._shoot_hovered_target_key: Optional[Tuple[str, int]] = None
         self._last_shoot_hover_debug_sig: Optional[Tuple[int, str]] = None
@@ -865,6 +866,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._advance_cells_set = set()
         self._target_highlights = []
         self._shoot_range_highlights = []
+        self._shoot_rapid_range_highlights = []
         self._shoot_target_infos = []
         self._shoot_hovered_target_key = None
 
@@ -1511,6 +1513,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if max_dist > 0:
                 inferred_range = int(max_dist)
 
+        rapid_range = self._resolve_rapid_fire_cells_range(unit, inferred_range)
+
         if inferred_range is not None and inferred_range > 0 and source is not None:
             max_x = max(0, int(self._board_width) - 1)
             max_y = max(0, int(self._board_height) - 1)
@@ -1522,6 +1526,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     self._shoot_range_highlights.append(
                         QtCore.QRectF(x * self.cell_size, y * self.cell_size, self.cell_size, self.cell_size)
                     )
+                    if rapid_range is not None and distance <= rapid_range:
+                        self._shoot_rapid_range_highlights.append(
+                            QtCore.QRectF(x * self.cell_size, y * self.cell_size, self.cell_size, self.cell_size)
+                        )
 
         shooter_id = self._safe_int(unit.get("id"))
         for target in self._state.get("units", []) or []:
@@ -2475,13 +2483,23 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
         if (not draw_under_units) and self._show_shoot_range_cells and self._shoot_range_highlights:
             painter.save()
-            fill = QtGui.QColor(110, 200, 120, 24)
-            border = QtGui.QPen(QtGui.QColor(110, 200, 120, 65), 0.9)
+            fill = QtGui.QColor(110, 200, 120, 18)
+            border = QtGui.QPen(QtGui.QColor(110, 200, 120, 52), 0.9)
             border.setCosmetic(True)
             painter.setBrush(QtGui.QBrush(fill))
             painter.setPen(border)
             for rect in self._shoot_range_highlights:
                 painter.drawRect(rect)
+
+            if self._shoot_rapid_range_highlights:
+                rapid_fill = QtGui.QColor(229, 196, 92, 58)
+                rapid_pen = QtGui.QPen(QtGui.QColor(240, 214, 130, 120), 0.8)
+                rapid_pen.setCosmetic(True)
+                rapid_brush = QtGui.QBrush(rapid_fill, QtCore.Qt.Dense4Pattern)
+                painter.setPen(rapid_pen)
+                painter.setBrush(rapid_brush)
+                for rect in self._shoot_rapid_range_highlights:
+                    painter.drawRect(rect)
             painter.restore()
 
         self._draw_shooting_targets_overlay(
@@ -4598,6 +4616,29 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if value is not None:
                 return value
         return None
+
+    def _resolve_rapid_fire_cells_range(self, unit: dict, full_range: Optional[int]) -> Optional[int]:
+        if full_range is None:
+            return None
+        full = self._safe_int(full_range)
+        if full is None or full <= 1:
+            return None
+        weapon = self._get_primary_ranged_weapon(unit)
+        if not isinstance(weapon, dict):
+            return None
+        if not self._weapon_is_rapid_fire(weapon):
+            return None
+        return max(1, full // 2)
+
+    def _weapon_is_rapid_fire(self, weapon: dict) -> bool:
+        for key in ("Type", "type", "Abilities", "abilities", "Special", "special", "Notes", "notes"):
+            value = weapon.get(key)
+            if value is None:
+                continue
+            text = str(value).strip().lower().replace("_", " ")
+            if "rapid fire" in text:
+                return True
+        return False
 
     def _tooltip_los_status(self, unit: dict) -> str:
         summary = self._unit_threat_summary(unit)
