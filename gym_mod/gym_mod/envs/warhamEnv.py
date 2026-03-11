@@ -335,15 +335,25 @@ class RollLogger:
     Этот класс пытается это учесть.
     """
 
-    def __init__(self, base_roller):
+    def __init__(self, base_roller, agent_log_fn=None):
         self.base = base_roller
         self.calls = []
         self.labels = []
         self.has_attack_count_roll = False
         self._io = get_active_io()
+        self._agent_log_fn = agent_log_fn
 
     def _log(self, message: str):
         self._io.log(message)
+
+    def _append_agent_log(self, msg: str):
+        if msg is None:
+            return
+        if callable(self._agent_log_fn):
+            try:
+                self._agent_log_fn(msg)
+            except Exception:
+                return
 
     def configure_for_weapon(self, weapon: dict):
         # Пытаемся понять, есть ли рандом по количеству выстрелов (Attacks = D6/D3 и т.п.)
@@ -2606,7 +2616,7 @@ class Warhammer40kEnv(gym.Env):
         )
         _logger = None
         if _verbose_logs_enabled():
-            _logger = RollLogger(auto_dice)
+            _logger = RollLogger(auto_dice, agent_log_fn=self._append_agent_log)
             _logger.configure_for_weapon(attacker_weapon[chosen])
             dmg, modHealth = attack(
                 attacker_health[chosen],
@@ -3711,7 +3721,7 @@ class Warhammer40kEnv(gym.Env):
                         threat_count_before_shot, _, _ = self._count_real_threats_to_model_unit(i)
                         _logger = None
                         if _verbose_logs_enabled():
-                            _logger = RollLogger(auto_dice)
+                            _logger = RollLogger(auto_dice, agent_log_fn=self._append_agent_log)
                             _logger.configure_for_weapon(self.unit_weapon[i])
                             dmg, modHealth = attack(
                                 self.unit_health[i],
@@ -3985,7 +3995,7 @@ class Warhammer40kEnv(gym.Env):
                         effect = self._resolve_cover_effect_for_shot("enemy", i, "model", idOfM, base_effect=effect, phase="shooting")
                         _logger = None
                         if _verbose_logs_enabled():
-                            _logger = RollLogger(auto_dice)
+                            _logger = RollLogger(auto_dice, agent_log_fn=self._append_agent_log)
                             _logger.configure_for_weapon(self.enemy_weapon[i])
                             dmg, modHealth = attack(
                                 self.enemy_health[i],
@@ -4124,7 +4134,7 @@ class Warhammer40kEnv(gym.Env):
                                         manual=False,
                                     )
                                     effect = self._resolve_cover_effect_for_shot("enemy", i, "model", idOfE, base_effect=effect, phase="shooting")
-                                    logger = RollLogger(player_dice)
+                                    logger = RollLogger(player_dice, agent_log_fn=self._append_agent_log)
                                     logger.configure_for_weapon(self.enemy_weapon[i])
                                     dmg, modHealth = attack(
                                         self.enemy_health[i],
@@ -5030,7 +5040,7 @@ class Warhammer40kEnv(gym.Env):
 
                 _logger = None
                 if quiet is False and use_roll_logger:
-                    _logger = RollLogger(auto_dice)
+                    _logger = RollLogger(auto_dice, agent_log_fn=self._append_agent_log)
                     _logger.configure_for_weapon(weapon)
                     dmg, modHealth = attack(
                         self.unit_health[att_idx],
@@ -5114,7 +5124,7 @@ class Warhammer40kEnv(gym.Env):
                 _logger = None
                 manual_dice = os.getenv("MANUAL_DICE", "0") == "1"
                 if quiet is False and use_roll_logger:
-                    _logger = RollLogger(dice_fn)
+                    _logger = RollLogger(dice_fn, agent_log_fn=self._append_agent_log)
                     _logger.configure_for_weapon(weapon)
                     dmg, modHealth = attack(
                         self.enemy_health[att_idx],
