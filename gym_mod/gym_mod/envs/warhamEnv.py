@@ -685,9 +685,10 @@ class RollLogger:
         off = 1 if self.has_attack_count_roll else 0
 
         atk_rolls = self.calls[0]["vals"] if self.has_attack_count_roll and len(self.calls) > 0 else []
-        hit_rolls = self.calls[0 + off]["vals"] if len(self.calls) > (0 + off) else []
-        wound_rolls = self.calls[1 + off]["vals"] if len(self.calls) > (1 + off) else []
-        save_rolls = self.calls[2 + off]["vals"] if len(self.calls) > (2 + off) else []
+        seq_calls = self.calls[off:]
+        hit_rolls = seq_calls[0]["vals"] if len(seq_calls) > 0 else []
+        wound_rolls = []
+        save_rolls = []
 
         # --- hits ---
         hits = None
@@ -712,6 +713,20 @@ class RollLogger:
         auto_wounds = 0
         total_wounds = None
 
+        # Важно: при Lethal Hits все попадания могут оказаться критами.
+        # Тогда движок пропускает wound roll, и второй пул бросков = уже save.
+        wound_roll_expected = False
+        if hits is not None:
+            wound_roll_expected = (hits - crit_hits) > 0 if lethal else hits > 0
+        if wound_roll_expected:
+            if len(seq_calls) > 1:
+                wound_rolls = seq_calls[1]["vals"]
+            if len(seq_calls) > 2:
+                save_rolls = seq_calls[2]["vals"]
+        else:
+            if len(seq_calls) > 1:
+                save_rolls = seq_calls[1]["vals"]
+
         if s is not None and t is not None and wound_rolls:
             wt = _wound_target(s, t)
             rolled_wounds = sum(1 for r in wound_rolls if int(r) != 1 and int(r) >= wt)
@@ -721,6 +736,10 @@ class RollLogger:
 
         if rolled_wounds is not None:
             total_wounds = rolled_wounds + (auto_wounds if lethal else 0)
+        elif lethal and crit_hits is not None:
+            # all-crits кейс: движок мог не кидать wound-roll вообще,
+            # но авто-раны от Lethal Hits всё равно формируют пул сейвов.
+            total_wounds = auto_wounds
 
         # --- saves ---
         failed_saves = None
