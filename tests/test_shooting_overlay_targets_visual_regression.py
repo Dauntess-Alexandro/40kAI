@@ -27,6 +27,10 @@ class TestShootingOverlayTargetsVisualRegression(unittest.TestCase):
         self.assertIn("def _resolve_rapid_fire_cells_range(", source)
         self.assertIn("QtCore.Qt.Dense4Pattern", source)
 
+    def test_rapid_fire_detection_handles_compact_token(self):
+        source = Path("viewer/opengl_view.py").read_text(encoding="utf-8")
+        self.assertIn('"rapidfire"', source)
+
 
 if __name__ == "__main__":
     unittest.main()

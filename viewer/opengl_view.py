@@ -4635,8 +4635,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
             value = weapon.get(key)
             if value is None:
                 continue
-            text = str(value).strip().lower().replace("_", " ")
-            if "rapid fire" in text:
+            text = str(value).strip().lower().replace("_", " ").replace("-", "")
+            compact = " ".join(text.split())
+            if "rapid fire" in compact or "rapidfire" in compact:
                 return True
         return False
 
