@@ -205,6 +205,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._shoot_resolver_step = 0
         self._shoot_resolver_attacker_id: Optional[int] = None
         self._shoot_locked_target_id: Optional[int] = None
+        self._shoot_request_target_id: Optional[int] = None
         self._active_weapon_name: Optional[str] = None
         self._active_weapon_range: Optional[int] = None
         self._active_weapon_unit_id: Optional[int] = None
@@ -619,14 +620,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.shoot_popover_action.setMinimumHeight(34)
         self.shoot_popover_cancel.setMinimumHeight(34)
         self.shoot_popover_action.clicked.connect(self._shoot_step_action)
-        self.shoot_popover_cancel.clicked.connect(self._close_shoot_popover)
+        self.shoot_popover_cancel.clicked.connect(self._cancel_shoot_sequence)
         btn_row.addWidget(self.shoot_popover_action)
         btn_row.addWidget(self.shoot_popover_cancel)
         layout.addLayout(btn_row)
 
         QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Return), self.shoot_popover, activated=self._shoot_step_action)
         QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Enter), self.shoot_popover, activated=self._shoot_step_action)
-        QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Escape), self.shoot_popover, activated=self._close_shoot_popover)
+        QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Escape), self.shoot_popover, activated=self._cancel_shoot_sequence)
         self.shoot_popover.hide()
 
     def _is_shooting_target_request(self, request) -> bool:
@@ -769,6 +770,20 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._shoot_popover_target_id = int(locked_target)
         else:
             target = int(self._shoot_popover_target_id)
+
+        if self._is_shooting_dice_request(request):
+            req_target = self._shoot_request_target_id
+            if req_target is not None and int(target) != int(req_target):
+                self.add_log_line(
+                    "REQ: конфликт цели в Fire popover. Где: viewer/app.py (_update_shoot_popover_ui). "
+                    f"Что случилось: dice-request привязан к Unit {int(req_target)}, а UI пытается показать Unit {int(target)}. "
+                    "Что делать дальше: последовательность сброшена, выберите цель заново."
+                )
+                self._close_shoot_popover(reset_lock=True, keep_request_target=False)
+                self.map_scene.clear_target_selection()
+                self._current_target_id = None
+                self._shoot_request_flow_active = False
+                return
         self.shoot_popover_title.setText("FIRE")
         self.shoot_popover_units.setText(f"Unit {attacker} → Unit {target}")
         weapon = "—"
@@ -835,7 +850,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if needs_input:
             if self._is_shooting_dice_request(request) and self._shoot_locked_target_id is not None:
                 self.shoot_popover_info.setText(
-                    "ℹ Цель зафиксирована для текущего выстрела. Чтобы сменить цель: Cancel и выберите заново."
+                    "ℹ Цель зафиксирована для текущего выстрела. Смена цели будет доступна после завершения текущего броска."
                 )
                 self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
             self._update_shoot_input_feedback()
@@ -875,16 +890,40 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.shoot_popover.activateWindow()
         self.shoot_popover_action.setFocus()
 
-    def _close_shoot_popover(self) -> None:
+    def _close_shoot_popover(self, *, reset_lock: bool = True, keep_request_target: bool = True) -> None:
         self._shoot_popover_target_id = None
-        self._shoot_locked_target_id = None
+        if reset_lock:
+            self._shoot_locked_target_id = None
         self._shoot_resolver_active = False
         self._shoot_resolver_step = 0
         self._shoot_resolver_attacker_id = None
+        if not keep_request_target:
+            self._shoot_request_target_id = None
         if hasattr(self, "shoot_popover"):
             self.shoot_popover.hide()
         if self._is_shooting_target_request(self._pending_request) or self._is_shooting_dice_request(self._pending_request):
             self.command_prompt.setText(self._shoot_instruction_text())
+
+    def _cancel_shoot_sequence(self) -> None:
+        req = self._pending_request
+        if not (self._is_shooting_target_request(req) or self._is_shooting_dice_request(req)):
+            self._close_shoot_popover(reset_lock=True, keep_request_target=False)
+            return
+
+        if self._is_shooting_dice_request(req) and self._shoot_request_target_id is not None:
+            self.add_log_line(
+                "REQ: Cancel во время бросков. Где: viewer/app.py (_cancel_shoot_sequence). "
+                f"Что случилось: движок ожидает кубы для Unit {int(self._shoot_request_target_id)}. "
+                "Что делать дальше: завершите текущий бросок; смена цели станет доступна в новом запросе выбора цели."
+            )
+            self._close_shoot_popover(reset_lock=False, keep_request_target=True)
+            self._current_target_id = int(self._shoot_request_target_id)
+            self.map_scene.set_target_unit(int(self._shoot_request_target_id))
+            return
+
+        self._close_shoot_popover(reset_lock=True, keep_request_target=False)
+        self.map_scene.clear_target_selection()
+        self._current_target_id = None
 
     def _shoot_step_action(self) -> None:
         if not self._shoot_resolver_active:
@@ -987,7 +1026,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.map_scene.set_target_cell(None)
             self._shoot_targets_valid = set()
             self._shoot_request_flow_active = False
-            self._close_shoot_popover()
+            self._close_shoot_popover(reset_lock=True, keep_request_target=False)
             self._refresh_active_context()
             return
 
@@ -1006,6 +1045,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if self._is_shooting_target_request(request):
             self._shoot_request_flow_active = True
             self._shoot_locked_target_id = None
+            self._shoot_request_target_id = None
             self._shoot_targets_valid = self._valid_target_ids_from_request(request)
             shooter_id = self._extract_unit_id(getattr(request, "prompt", ""))
             shooter_label = self._format_unit_label(shooter_id)
@@ -1029,10 +1069,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 f"REQ: валидные цели стрельбы для Unit {shooter_label}: [{targets_label}] | отфильтрованы: [{filtered_label}]"
             )
         elif self._is_shooting_dice_request(request):
-            pass
+            if self._shoot_locked_target_id is not None:
+                self._shoot_request_target_id = int(self._shoot_locked_target_id)
+            self.add_log_line(
+                "REQ: движок запросил кубы стрельбы"
+                f" (target={self._shoot_request_target_id if self._shoot_request_target_id is not None else '—'}, "
+                f"count={int(getattr(request, 'count', 0) or 0)})."
+            )
         else:
             self._shoot_request_flow_active = False
             self._shoot_locked_target_id = None
+            self._shoot_request_target_id = None
             self._shoot_targets_valid = set()
         self._update_deploy_status_from_request(request)
         display_prompt = self._deploy_status_text if self._deploy_status_text else request.prompt
@@ -1550,6 +1597,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._shoot_resolver_step = 0
         self._shoot_resolver_attacker_id: Optional[int] = None
         self._shoot_locked_target_id: Optional[int] = None
+        self._shoot_request_target_id: Optional[int] = None
         self._active_weapon_name = None
         self._active_weapon_range = None
         self._active_weapon_unit_id = None
@@ -2623,9 +2671,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 return True
             if self._is_shooting_target_request(self._pending_request) or self._is_shooting_dice_request(self._pending_request):
                 if key == QtCore.Qt.Key_Escape:
-                    self._close_shoot_popover()
-                    self.map_scene.clear_target_selection()
-                    self._current_target_id = None
+                    self._cancel_shoot_sequence()
                     return True
                 if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter) and getattr(self, "shoot_popover", None) and self.shoot_popover.isVisible():
                     self._shoot_step_action()
