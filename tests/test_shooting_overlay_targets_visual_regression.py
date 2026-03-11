@@ -31,6 +31,29 @@ class TestShootingOverlayTargetsVisualRegression(unittest.TestCase):
         source = Path("viewer/opengl_view.py").read_text(encoding="utf-8")
         self.assertIn('"rapidfire"', source)
 
+    def test_cells_fx_imports_and_zone_styles_are_used(self):
+        source = Path("viewer/opengl_view.py").read_text(encoding="utf-8")
+        self.assertIn("from viewer.cells_fx import (", source)
+        self.assertIn("SHOOTING_FULL_ZONE_STYLE", source)
+        self.assertIn("SHOOTING_RAPID_ZONE_STYLE", source)
+        self.assertIn("zone_fill_color(SHOOTING_FULL_ZONE_STYLE)", source)
+        self.assertIn("zone_border_pen(SHOOTING_FULL_ZONE_STYLE)", source)
+        self.assertIn("zone_border_pen(SHOOTING_RAPID_ZONE_STYLE)", source)
+
+    def test_rapid_hatch_helper_reads_cells_fx_params(self):
+        source = Path("viewer/opengl_view.py").read_text(encoding="utf-8")
+        self.assertIn("SHOOTING_RAPID_HATCH_STYLE.tile_size", source)
+        self.assertIn("rapid_hatch_pen(SHOOTING_RAPID_HATCH_STYLE)", source)
+        self.assertIn("for x1, y1, x2, y2 in SHOOTING_RAPID_HATCH_STYLE.lines", source)
+
+    def test_cells_fx_module_contains_editable_overlay_settings(self):
+        source = Path("viewer/cells_fx.py").read_text(encoding="utf-8")
+        self.assertIn("class CellsZoneStyle", source)
+        self.assertIn("class RapidHatchStyle", source)
+        self.assertIn("SHOOTING_FULL_ZONE_STYLE", source)
+        self.assertIn("SHOOTING_RAPID_ZONE_STYLE", source)
+        self.assertIn("SHOOTING_RAPID_HATCH_STYLE", source)
+
 
 if __name__ == "__main__":
     unittest.main()

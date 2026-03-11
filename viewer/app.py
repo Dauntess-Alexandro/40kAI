@@ -204,6 +204,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._shoot_resolver_active = False
         self._shoot_resolver_step = 0
         self._shoot_resolver_attacker_id: Optional[int] = None
+        self._shoot_locked_target_id: Optional[int] = None
         self._active_weapon_name: Optional[str] = None
         self._active_weapon_range: Optional[int] = None
         self._active_weapon_unit_id: Optional[int] = None
@@ -709,6 +710,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
 
         count = int(getattr(req, "count", 0) or 0)
+        lock_suffix = ""
+        if self._is_shooting_dice_request(req) and self._shoot_locked_target_id is not None:
+            lock_suffix = f" • Цель Unit {int(self._shoot_locked_target_id)} зафиксирована"
         entered, has_error, has_tokens = self._count_dice_tokens(self.shoot_popover_dice_input.text())
         self.shoot_popover_dice_counter.setText(f"{entered}/{count}")
         if has_error:
@@ -717,23 +721,23 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
 
         if count <= 0:
-            self.shoot_popover_info.setText("ℹ Движок не запросил количество кубов")
+            self.shoot_popover_info.setText(f"ℹ Движок не запросил количество кубов{lock_suffix}")
             self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
             return
 
         if entered < count:
             rest = count - entered
             if has_tokens:
-                self.shoot_popover_info.setText(f"ℹ Нужно: {count} значений d6 • Осталось: {rest}")
+                self.shoot_popover_info.setText(f"ℹ Нужно: {count} значений d6 • Осталось: {rest}{lock_suffix}")
             else:
-                self.shoot_popover_info.setText(f"ℹ Нужно: {count} значений d6. Пример: 4 1 6 2 3 5 2 6")
+                self.shoot_popover_info.setText(f"ℹ Нужно: {count} значений d6. Пример: 4 1 6 2 3 5 2 6{lock_suffix}")
             self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
         elif entered > count:
             extra = entered - count
-            self.shoot_popover_info.setText(f"⚠ Лишних: {extra}. Нужно ровно {count} значений d6")
+            self.shoot_popover_info.setText(f"⚠ Лишних: {extra}. Нужно ровно {count} значений d6{lock_suffix}")
             self.shoot_popover_info.setStyleSheet("font-size: 12px; color: #d8b26e;")
         else:
-            self.shoot_popover_info.setText("ℹ Готово к броску")
+            self.shoot_popover_info.setText(f"ℹ Готово к броску{lock_suffix}")
             self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
 
     def _parse_popover_dice_values(self, request) -> Optional[list[int]]:
@@ -758,7 +762,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if not self._shoot_resolver_active or self._shoot_popover_target_id is None:
             return
         attacker = self._shoot_resolver_attacker_id
-        target = int(self._shoot_popover_target_id)
+        request = self._pending_request
+        locked_target = self._shoot_locked_target_id
+        if self._is_shooting_dice_request(request) and locked_target is not None:
+            target = int(locked_target)
+            self._shoot_popover_target_id = int(locked_target)
+        else:
+            target = int(self._shoot_popover_target_id)
         self.shoot_popover_title.setText("FIRE")
         self.shoot_popover_units.setText(f"Unit {attacker} → Unit {target}")
         weapon = "—"
@@ -777,7 +787,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.shoot_popover_meta.setText(f"Weapon: {weapon} ({range_text}) • Overlay: {overlay_mode} • LoS OK")
         self.shoot_stepper.setText(self._shoot_stepper_text())
 
-        request = self._pending_request
         step = self._shoot_resolver_step
         dice_mode = getattr(request, "kind", "") == "dice"
         count = int(getattr(request, "count", 0) or 0)
@@ -824,12 +833,26 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
 
         if needs_input:
+            if self._is_shooting_dice_request(request) and self._shoot_locked_target_id is not None:
+                self.shoot_popover_info.setText(
+                    "ℹ Цель зафиксирована для текущего выстрела. Чтобы сменить цель: Cancel и выберите заново."
+                )
+                self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
             self._update_shoot_input_feedback()
 
     def _open_shoot_popover(self, target_id: int, global_pos: Optional[QtCore.QPoint] = None) -> None:
         if target_id not in self._shoot_targets_valid:
             return
         req = self._pending_request
+        if self._is_shooting_dice_request(req) and self._shoot_locked_target_id is not None:
+            locked = int(self._shoot_locked_target_id)
+            if int(target_id) != locked:
+                self.add_log_line(
+                    f"REQ: цель Unit {int(target_id)} отклонена. Где: viewer/app.py (_open_shoot_popover). "
+                    f"Что случилось: на шаге кубов цель уже зафиксирована как Unit {locked}. "
+                    "Что делать дальше: завершите текущий выстрел или нажмите Cancel и выберите цель заново."
+                )
+                return
         if not self._shoot_resolver_active:
             self._shoot_resolver_step = 0
         self._shoot_resolver_active = True
@@ -854,6 +877,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _close_shoot_popover(self) -> None:
         self._shoot_popover_target_id = None
+        self._shoot_locked_target_id = None
         self._shoot_resolver_active = False
         self._shoot_resolver_step = 0
         self._shoot_resolver_attacker_id = None
@@ -874,6 +898,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         if step == 0:
             if self._is_shooting_target_request(req):
+                self._shoot_locked_target_id = int(target_id)
                 self._submit_answer(str(int(target_id)))
                 req = self._pending_request
             if getattr(req, "kind", "") != "dice":
@@ -980,6 +1005,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._maybe_reset_target_for_request(request)
         if self._is_shooting_target_request(request):
             self._shoot_request_flow_active = True
+            self._shoot_locked_target_id = None
             self._shoot_targets_valid = self._valid_target_ids_from_request(request)
             shooter_id = self._extract_unit_id(getattr(request, "prompt", ""))
             shooter_label = self._format_unit_label(shooter_id)
@@ -1006,6 +1032,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             pass
         else:
             self._shoot_request_flow_active = False
+            self._shoot_locked_target_id = None
             self._shoot_targets_valid = set()
         self._update_deploy_status_from_request(request)
         display_prompt = self._deploy_status_text if self._deploy_status_text else request.prompt
@@ -1522,6 +1549,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._shoot_resolver_active = False
         self._shoot_resolver_step = 0
         self._shoot_resolver_attacker_id: Optional[int] = None
+        self._shoot_locked_target_id: Optional[int] = None
         self._active_weapon_name = None
         self._active_weapon_range = None
         self._active_weapon_unit_id = None

@@ -22,6 +22,14 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from viewer.styles import Theme
+from viewer.cells_fx import (
+    SHOOTING_FULL_ZONE_STYLE,
+    SHOOTING_RAPID_HATCH_STYLE,
+    SHOOTING_RAPID_ZONE_STYLE,
+    rapid_hatch_pen,
+    zone_border_pen,
+    zone_fill_color,
+)
 from viewer.tooltip import TerrainTooltipWidget, UnitTooltipWidget
 
 GL_BLEND = 0x0BE2
@@ -2484,20 +2492,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
         if (not draw_under_units) and self._show_shoot_range_cells and self._shoot_range_highlights:
             painter.save()
-            amber = QtGui.QColor(230, 174, 82)
-            fill = QtGui.QColor(amber)
-            fill.setAlpha(16)
-            border = QtGui.QPen(QtGui.QColor(amber.red(), amber.green(), amber.blue(), 64), 0.65)
-            border.setCosmetic(True)
-            painter.setBrush(QtGui.QBrush(fill))
-            painter.setPen(border)
+            painter.setBrush(QtGui.QBrush(zone_fill_color(SHOOTING_FULL_ZONE_STYLE)))
+            painter.setPen(zone_border_pen(SHOOTING_FULL_ZONE_STYLE))
             for rect in self._shoot_range_highlights:
                 painter.drawRect(rect)
 
             if self._shoot_rapid_range_highlights:
-                rapid_pen = QtGui.QPen(QtGui.QColor(amber.red(), amber.green(), amber.blue(), 165), 1.35)
-                rapid_pen.setCosmetic(True)
-                painter.setPen(rapid_pen)
+                painter.setPen(zone_border_pen(SHOOTING_RAPID_ZONE_STYLE))
                 painter.setBrush(self._rapid_fire_hatch_brush())
                 for rect in self._shoot_rapid_range_highlights:
                     painter.drawRect(rect)
@@ -4634,16 +4635,12 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def _rapid_fire_hatch_brush(self) -> QtGui.QBrush:
         if self._rapid_hatch_brush_cache is not None:
             return QtGui.QBrush(self._rapid_hatch_brush_cache)
-        tile = QtGui.QPixmap(14, 14)
+        tile = QtGui.QPixmap(SHOOTING_RAPID_HATCH_STYLE.tile_size, SHOOTING_RAPID_HATCH_STYLE.tile_size)
         tile.fill(QtCore.Qt.transparent)
         painter = QtGui.QPainter(tile)
-        pen = QtGui.QPen(QtGui.QColor(230, 174, 82, 82), 1.8)
-        pen.setCapStyle(QtCore.Qt.RoundCap)
-        painter.setPen(pen)
-        # Крупные редкие диагональные линии, чтобы rapid-зона читалась отдельно от full-зоны.
-        painter.drawLine(-2, 13, 4, 7)
-        painter.drawLine(3, 13, 13, 3)
-        painter.drawLine(10, 13, 16, 7)
+        painter.setPen(rapid_hatch_pen(SHOOTING_RAPID_HATCH_STYLE))
+        for x1, y1, x2, y2 in SHOOTING_RAPID_HATCH_STYLE.lines:
+            painter.drawLine(x1, y1, x2, y2)
         painter.end()
         self._rapid_hatch_brush_cache = QtGui.QBrush(tile)
         return QtGui.QBrush(self._rapid_hatch_brush_cache)
