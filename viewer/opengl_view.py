@@ -338,6 +338,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._decal_textures: Dict[str, QtGui.QPixmap] = {}
         self._fx_particle_textures: Dict[str, QtGui.QPixmap] = {}
         self._target_overlay_pixmaps: Dict[str, Optional[QtGui.QPixmap]] = {}
+        self._rapid_hatch_brush_cache: Optional[QtGui.QBrush] = None
         self._decals: List[DecalInstance] = []
         self._props: List[PropInstance] = []
         self._terrain_features_state: List[dict] = []
@@ -2483,8 +2484,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
         if (not draw_under_units) and self._show_shoot_range_cells and self._shoot_range_highlights:
             painter.save()
-            fill = QtGui.QColor(110, 200, 120, 18)
-            border = QtGui.QPen(QtGui.QColor(110, 200, 120, 52), 0.9)
+            amber = QtGui.QColor(230, 174, 82)
+            fill = QtGui.QColor(amber)
+            fill.setAlpha(12)
+            border = QtGui.QPen(QtGui.QColor(amber.red(), amber.green(), amber.blue(), 42), 0.65)
             border.setCosmetic(True)
             painter.setBrush(QtGui.QBrush(fill))
             painter.setPen(border)
@@ -2492,12 +2495,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 painter.drawRect(rect)
 
             if self._shoot_rapid_range_highlights:
-                rapid_fill = QtGui.QColor(229, 196, 92, 58)
-                rapid_pen = QtGui.QPen(QtGui.QColor(240, 214, 130, 120), 0.8)
+                rapid_pen = QtGui.QPen(QtGui.QColor(amber.red(), amber.green(), amber.blue(), 165), 1.35)
                 rapid_pen.setCosmetic(True)
-                rapid_brush = QtGui.QBrush(rapid_fill, QtCore.Qt.Dense4Pattern)
                 painter.setPen(rapid_pen)
-                painter.setBrush(rapid_brush)
+                painter.setBrush(self._rapid_fire_hatch_brush())
                 for rect in self._shoot_rapid_range_highlights:
                     painter.drawRect(rect)
             painter.restore()
@@ -4629,6 +4630,23 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if not self._weapon_is_rapid_fire(weapon):
             return None
         return max(1, full // 2)
+
+    def _rapid_fire_hatch_brush(self) -> QtGui.QBrush:
+        if self._rapid_hatch_brush_cache is not None:
+            return QtGui.QBrush(self._rapid_hatch_brush_cache)
+        tile = QtGui.QPixmap(14, 14)
+        tile.fill(QtCore.Qt.transparent)
+        painter = QtGui.QPainter(tile)
+        pen = QtGui.QPen(QtGui.QColor(230, 174, 82, 82), 1.8)
+        pen.setCapStyle(QtCore.Qt.RoundCap)
+        painter.setPen(pen)
+        # Крупные редкие диагональные линии, чтобы rapid-зона читалась отдельно от full-зоны.
+        painter.drawLine(-2, 13, 4, 7)
+        painter.drawLine(3, 13, 13, 3)
+        painter.drawLine(10, 13, 16, 7)
+        painter.end()
+        self._rapid_hatch_brush_cache = QtGui.QBrush(tile)
+        return QtGui.QBrush(self._rapid_hatch_brush_cache)
 
     def _weapon_is_rapid_fire(self, weapon: dict) -> bool:
         for key in ("Type", "type", "Abilities", "abilities", "Special", "special", "Notes", "notes"):
