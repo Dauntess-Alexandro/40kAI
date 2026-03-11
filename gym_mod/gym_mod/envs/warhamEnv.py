@@ -2629,12 +2629,18 @@ class Warhammer40kEnv(gym.Env):
             moving_idx,
         )
         shooter_side = "model" if defender_side == "model" else "enemy"
+        effect = self._maybe_use_smokescreen(
+            defender_side=moving_unit_side,
+            defender_idx=moving_idx,
+            phase=phase,
+            manual=manual,
+        )
         effect = self._resolve_cover_effect_for_shot(
             shooter_side,
             chosen,
             moving_unit_side,
             moving_idx,
-            base_effect=None,
+            base_effect=effect,
             phase=phase,
         )
         _logger = None
