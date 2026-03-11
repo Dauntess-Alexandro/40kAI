@@ -600,6 +600,7 @@ class RollLogger:
         attacker_label: Optional[str] = None,
         defender_label: Optional[str] = None,
         extra_rules: Optional[list[str]] = None,
+        hit_on_6: bool = False,
     ):
         title = report_title or "ОТЧЁТ ПО СТРЕЛЬБЕ"
         self._log(f"\n📌 --- {title} ---")
@@ -648,6 +649,8 @@ class RollLogger:
         self._log(f"Оружие: {wname}")
         if bs is not None:
             self._log(f"BS оружия: {bs}+")
+            if hit_on_6:
+                self._log("Overwatch: для попадания используется только натуральная 6+ (игнор BS оружия).")
         if s is not None and t is not None:
             self._log(f"S vs T: {s} vs {t}  -> базово ранение на {_wound_target(s, t)}+")
         if sv is not None:
@@ -689,7 +692,8 @@ class RollLogger:
         # --- hits ---
         hits = None
         crit_hits = None
-        if bs is not None and hit_rolls:
+        hit_target = 6 if hit_on_6 else bs
+        if hit_target is not None and hit_rolls:
             crit_hits = sum(1 for r in hit_rolls if int(r) == 6)
             hits = 0
             for r in hit_rolls:
@@ -699,7 +703,7 @@ class RollLogger:
                 if r == 6:
                     hits += 1
                     continue
-                if r >= bs:
+                if r >= hit_target:
                     hits += 1
 
         # --- wounds ---
@@ -2660,6 +2664,7 @@ class Warhammer40kEnv(gym.Env):
                 attacker_label=self._format_unit_label(defender_side, chosen),
                 defender_label=target_label,
                 extra_rules=["Overwatch: попадания только на 6+"],
+                hit_on_6=True,
             )
 
     def _resolve_heroic_intervention(self, defender_side: str, charging_side: str, charging_idx: int, phase: str, manual: bool = False):
