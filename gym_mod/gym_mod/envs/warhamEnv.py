@@ -29,7 +29,7 @@ from gym_mod.engine.mission import (
 from gym_mod.engine.skills import apply_end_of_command_phase
 from gym_mod.engine.logging_utils import format_unit
 from gym_mod.engine.state_export import write_state_json
-from gym_mod.engine.game_io import get_active_io
+from gym_mod.engine.game_io import DICE_CANCEL_TOKEN, get_active_io
 from gym_mod.engine.event_bus import get_event_bus, get_event_recorder
 
 # ============================================================
@@ -133,6 +133,13 @@ def player_dice(num=1, max=6):
                 min_value=1,
                 max_value=max,
             )
+            if rolls == DICE_CANCEL_TOKEN:
+                io.log(
+                    "REQ: бросок отменён пользователем. Где: warhamEnv.player_dice(single). "
+                    "Что случилось: текущий выстрел прерван до ввода кубов. "
+                    "Что делать дальше: выберите цель заново в следующем запросе стрельбы."
+                )
+                return DICE_CANCEL_TOKEN
             if not rolls:
                 io.log(
                     f"Ошибка ввода кубов: нужно ввести 1 значение от 1 до {max}. "
@@ -155,6 +162,13 @@ def player_dice(num=1, max=6):
             min_value=1,
             max_value=max,
         )
+        if rolls == DICE_CANCEL_TOKEN:
+            io.log(
+                "REQ: бросок отменён пользователем. Где: warhamEnv.player_dice(multi). "
+                f"Что случилось: текущий бросок {num}D{max} отменён до ввода кубов. "
+                "Что делать дальше: выберите цель заново в следующем запросе стрельбы."
+            )
+            return DICE_CANCEL_TOKEN
         if rolls is None:
             io.log(
                 f"Ошибка ввода кубов: нужно ввести {num} значений от 1 до {max}. "
@@ -388,9 +402,17 @@ class RollLogger:
         label = self.labels[idx] if idx < len(self.labels) else f"бросок #{idx+1}"
         self._log(f"\n🎲 Бросок {label}: {num}D{max}")
         res = self.base(num=num, max=max)
+        if res == DICE_CANCEL_TOKEN:
+            raise ShootDiceCancelledError(
+                "REQ: бросок отменён пользователем. Где: warhamEnv.RollLogger.roll. "
+                f"Что случилось: отмена на этапе '{label}'. "
+                "Что делать дальше: выберите цель заново и повторите выстрел."
+            )
         vals = [res] if isinstance(res, int) else list(res)
         self.calls.append({"label": label, "num": num, "max": max, "vals": vals})
         return res
+
+
     def print_melee_report(
         self,
         weapon: dict,
@@ -828,6 +850,10 @@ class RollLogger:
 
         self._log(f"\n✅ Итог по движку: прошло урона = {total_damage}")
         self._log("📌 -------------------------\n")
+
+
+class ShootDiceCancelledError(Exception):
+    """Сигнал отмены бросков стрельбы из UI (Cancel/Esc)."""
 
 class Warhammer40kEnv(gym.Env):
     def __init__(self, enemy, model, b_len, b_hei):
@@ -4166,16 +4192,21 @@ class Warhammer40kEnv(gym.Env):
                                     effect = self._resolve_cover_effect_for_shot("enemy", i, "model", idOfE, base_effect=effect, phase="shooting")
                                     logger = RollLogger(player_dice, agent_log_fn=self._append_agent_log)
                                     logger.configure_for_weapon(self.enemy_weapon[i])
-                                    dmg, modHealth = attack(
-                                        self.enemy_health[i],
-                                        self.enemy_weapon[i],
-                                        self.enemy_data[i],
-                                        self.unit_health[idOfE],
-                                        self.unit_data[idOfE],
-                                        effects=effect,
-                                        distance_to_target=self._shooting_distance_between_units("enemy", i, "model", idOfE),
-                                        roller=logger.roll,
-                                    )
+                                    try:
+                                        dmg, modHealth = attack(
+                                            self.enemy_health[i],
+                                            self.enemy_weapon[i],
+                                            self.enemy_data[i],
+                                            self.unit_health[idOfE],
+                                            self.unit_data[idOfE],
+                                            effects=effect,
+                                            distance_to_target=self._shooting_distance_between_units("enemy", i, "model", idOfE),
+                                            roller=logger.roll,
+                                        )
+                                    except ShootDiceCancelledError as exc:
+                                        self._log(str(exc))
+                                        response = False
+                                        continue
                                     self._apply_health_update("model", idOfE, modHealth, reason="overwatch")
                                     self._log(
                                         f"{unit_label} нанёс {sum(dmg)} урона по {self._format_unit_label('model', idOfE)}"

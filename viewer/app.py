@@ -43,7 +43,7 @@ from viewer.styles import Theme
 from viewer.model_log_tree import render_model_log_flat
 
 from gym_mod.engine.game_controller import GameController
-from gym_mod.engine.game_io import parse_dice_values
+from gym_mod.engine.game_io import DICE_CANCEL_TOKEN, parse_dice_values
 from gym_mod.engine.event_bus import get_event_bus
 from gym_mod.engine.mission import validate_deploy_coord
 
@@ -912,13 +912,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         if self._is_shooting_dice_request(req) and self._shoot_request_target_id is not None:
             self.add_log_line(
-                "REQ: Cancel во время бросков. Где: viewer/app.py (_cancel_shoot_sequence). "
-                f"Что случилось: движок ожидает кубы для Unit {int(self._shoot_request_target_id)}. "
-                "Что делать дальше: завершите текущий бросок; смена цели станет доступна в новом запросе выбора цели."
+                "REQ: Cancel во время бросков принят. Где: viewer/app.py (_cancel_shoot_sequence). "
+                f"Что случилось: отменяем текущий dice-request для Unit {int(self._shoot_request_target_id)} и сбрасываем выбор цели. "
+                "Что делать дальше: выберите новую цель в следующем запросе стрельбы."
             )
-            self._close_shoot_popover(reset_lock=False, keep_request_target=True)
-            self._current_target_id = int(self._shoot_request_target_id)
-            self.map_scene.set_target_unit(int(self._shoot_request_target_id))
+            self._close_shoot_popover(reset_lock=True, keep_request_target=False)
+            self.map_scene.clear_target_selection()
+            self._current_target_id = None
+            self._shoot_request_flow_active = False
+            self._submit_answer(DICE_CANCEL_TOKEN)
             return
 
         self._close_shoot_popover(reset_lock=True, keep_request_target=False)

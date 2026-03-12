@@ -13,6 +13,7 @@ from gym_mod.engine.io_profiler import get_io_profiler
 
 
 LOG_DEFAULT_PATH = os.path.join(os.getcwd(), "gui", "response.txt")
+DICE_CANCEL_TOKEN = "__cancel_shoot__"
 
 
 class _AsyncLogWriter:
@@ -348,6 +349,8 @@ class GuiIO(BaseIO):
         answer = self._wait_for_answer()
         if answer is None:
             return None
+        if isinstance(answer, str) and answer.strip() == DICE_CANCEL_TOKEN:
+            return DICE_CANCEL_TOKEN
         if isinstance(answer, list):
             return answer
         if isinstance(answer, str):
