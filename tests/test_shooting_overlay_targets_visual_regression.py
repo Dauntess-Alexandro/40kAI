@@ -46,6 +46,30 @@ class TestShootingOverlayTargetsVisualRegression(unittest.TestCase):
         self.assertIn("rapid_hatch_pen(SHOOTING_RAPID_HATCH_STYLE)", source)
         self.assertIn("for x1, y1, x2, y2 in SHOOTING_RAPID_HATCH_STYLE.lines", source)
 
+
+    def test_range_overlay_not_shrunk_by_target_filter(self):
+        source = Path("viewer/opengl_view.py").read_text(encoding="utf-8")
+        self.assertIn("if max_dist > 0 and (inferred_range is None or inferred_range <= 0):", source)
+        self.assertIn("не сужаем range до набора текущих валидных целей", source)
+
+    def test_shoot_range_debug_logs_present(self):
+        source = Path("viewer/opengl_view.py").read_text(encoding="utf-8")
+        self.assertIn("[VIEWER][SHOOT_RANGE]", source)
+        self.assertIn("[VIEWER][SHOOT_RANGE][CELLS]", source)
+        self.assertIn("Что случилось:", source)
+        self.assertIn("Что делать дальше:", source)
+
+    def test_fire_popover_stage_resolved_from_request(self):
+        source = Path("viewer/app.py").read_text(encoding="utf-8")
+        self.assertIn("def _resolve_shoot_stage(self, request) -> str:", source)
+        self.assertIn("self._shoot_ui_stage = self._resolve_shoot_stage(request)", source)
+        self.assertIn("stage in {\"hit\", \"wound\", \"save\"}", source)
+
+    def test_fire_step_action_uses_stage_not_hardcoded_step_index(self):
+        source = Path("viewer/app.py").read_text(encoding="utf-8")
+        self.assertIn("stage = self._resolve_shoot_stage(req)", source)
+        self.assertIn("if stage == \"target\":", source)
+        self.assertIn("if stage in {\"hit\", \"wound\", \"save\"}:", source)
     def test_cells_fx_module_contains_editable_overlay_settings(self):
         source = Path("viewer/cells_fx.py").read_text(encoding="utf-8")
         self.assertIn("class CellsZoneStyle", source)

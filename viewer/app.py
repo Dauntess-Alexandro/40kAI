@@ -206,6 +206,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._shoot_resolver_attacker_id: Optional[int] = None
         self._shoot_locked_target_id: Optional[int] = None
         self._shoot_request_target_id: Optional[int] = None
+        self._shoot_ui_stage: str = "target"
+        self._last_shoot_stage_debug_sig: Optional[tuple] = None
         self._active_weapon_name: Optional[str] = None
         self._active_weapon_range: Optional[int] = None
         self._active_weapon_unit_id: Optional[int] = None
@@ -683,6 +685,65 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 parts.append(name)
         return " • ".join(parts)
 
+    def _shoot_stage_to_step(self, stage: str) -> int:
+        stage_norm = str(stage or "").strip().lower()
+        if stage_norm in {"target", "hit"}:
+            return 0
+        if stage_norm == "wound":
+            return 1
+        if stage_norm == "allocate":
+            return 2
+        if stage_norm == "save":
+            return 3
+        if stage_norm in {"damage", "resolve"}:
+            return 4
+        return max(0, int(self._shoot_resolver_step or 0))
+
+    def _resolve_shoot_stage(self, request) -> str:
+        if self._is_shooting_target_request(request):
+            return "target"
+        if not self._is_shooting_dice_request(request):
+            return "resolve"
+
+        meta = getattr(request, "meta", {}) or {}
+        for key in ("shoot_stage", "dice_stage", "roll_stage", "stage"):
+            raw = meta.get(key) if isinstance(meta, dict) else None
+            if not raw:
+                continue
+            token = str(raw).strip().lower()
+            if token in {"hit", "to_hit", "hit_roll"}:
+                return "hit"
+            if token in {"wound", "to_wound", "wound_roll"}:
+                return "wound"
+            if token in {"save", "saving_throw", "save_roll"}:
+                return "save"
+
+        prompt = str(getattr(request, "prompt", "") or "").strip().lower()
+        if any(tok in prompt for tok in ("to hit", "на попад", "попадан")):
+            return "hit"
+        if any(tok in prompt for tok in ("to wound", "на ранен", "ранени")):
+            return "wound"
+        if any(tok in prompt for tok in ("saving throw", "save", "сейв", "бросок сейв")):
+            return "save"
+
+        # Fallback: если движок не прислал явный stage, сохраняем совместимость,
+        # но пишем диагностику о рискованном распознавании.
+        fallback = "hit" if self._shoot_resolver_step <= 0 else "wound" if self._shoot_resolver_step <= 1 else "save"
+        sig = (
+            str(getattr(request, "kind", "")),
+            int(getattr(request, "count", 0) or 0),
+            prompt,
+            fallback,
+        )
+        if sig != self._last_shoot_stage_debug_sig:
+            self._last_shoot_stage_debug_sig = sig
+            self.add_log_line(
+                "REQ: stage popover определён по fallback. Где: viewer/app.py (_resolve_shoot_stage). "
+                f"Что случилось: не удалось явно распознать этап dice-request (prompt='{prompt or '—'}'), выбран fallback={fallback}. "
+                "Что делать дальше: добавить в meta запроса явный stage (hit/wound/save), чтобы исключить рассинхрон UI."
+            )
+        return fallback
+
     def _count_dice_tokens(self, raw: str) -> tuple[int, bool, bool]:
         cleaned = str(raw or "").strip()
         if not cleaned:
@@ -703,7 +764,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if not hasattr(self, "shoot_popover") or not self._shoot_resolver_active:
             return
         req = self._pending_request
-        expects_dice = bool(getattr(req, "kind", "") == "dice" and self._shoot_resolver_step in (0, 1, 3))
+        stage = self._resolve_shoot_stage(req)
+        expects_dice = bool(getattr(req, "kind", "") == "dice" and stage in {"hit", "wound", "save"})
         if not expects_dice:
             self.shoot_popover_dice_counter.setText("0/0")
             self.shoot_popover_info.setText("ℹ На этом шаге ввод кубов не требуется")
@@ -800,40 +862,43 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if hasattr(self, "map_scene") and hasattr(self.map_scene, "shooting_overlay_mode_label"):
             overlay_mode = str(self.map_scene.shooting_overlay_mode_label())
         self.shoot_popover_meta.setText(f"Weapon: {weapon} ({range_text}) • Overlay: {overlay_mode} • LoS OK")
+
+        stage = self._resolve_shoot_stage(request)
+        self._shoot_ui_stage = stage
+        self._shoot_resolver_step = self._shoot_stage_to_step(stage)
         self.shoot_stepper.setText(self._shoot_stepper_text())
 
-        step = self._shoot_resolver_step
         dice_mode = getattr(request, "kind", "") == "dice"
         count = int(getattr(request, "count", 0) or 0)
 
-        needs_input = dice_mode and step in (0, 1, 3)
+        needs_input = dice_mode and stage in {"hit", "wound", "save"}
         self.shoot_popover_input_label.setVisible(needs_input)
         self.shoot_popover_dice_input.setVisible(needs_input)
         self.shoot_popover_dice_counter.setVisible(needs_input)
         if needs_input and count > 0:
             self.shoot_popover_dice_input.setPlaceholderText("например: 4 1 6 2 3 5 2 6")
 
-        if step == 0:
+        if stage == "target":
+            self.shoot_popover_step_title.setText("STEP 1/5: Hit Roll")
+            self.shoot_popover_step_summary.setText("Need: — dice")
+            self.shoot_popover_action.setText("Roll Hit")
+            self.shoot_popover_info.setText("ℹ Нажмите Roll Hit, чтобы выбрать цель и перейти к броску")
+            self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
+        elif stage == "hit":
             self.shoot_popover_step_title.setText("STEP 1/5: Hit Roll")
             self.shoot_popover_step_summary.setText(f"Need: {count if dice_mode else '—'} dice")
             self.shoot_popover_action.setText("Roll Hit")
             if not dice_mode:
-                self.shoot_popover_info.setText("ℹ Нажмите Roll Hit, чтобы выбрать цель и перейти к броску")
+                self.shoot_popover_info.setText("ℹ Ожидаю запрос кубов Hit от движка")
                 self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
-        elif step == 1:
+        elif stage == "wound":
             self.shoot_popover_step_title.setText("STEP 2/5: Wound Roll")
             self.shoot_popover_step_summary.setText(f"Need: {count if dice_mode else '—'} dice")
             self.shoot_popover_action.setText("Roll Wound")
             if not dice_mode:
                 self.shoot_popover_info.setText("ℹ Ожидаю запрос кубов Wound от движка")
                 self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
-        elif step == 2:
-            self.shoot_popover_step_title.setText("STEP 3/5: Allocate Attack")
-            self.shoot_popover_step_summary.setText("Need: — dice")
-            self.shoot_popover_action.setText("Continue")
-            self.shoot_popover_info.setText("ℹ Allocate Attack — skipped for now")
-            self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
-        elif step == 3:
+        elif stage == "save":
             self.shoot_popover_step_title.setText("STEP 4/5: Saving Throw")
             self.shoot_popover_step_summary.setText(f"Need: {count if dice_mode else '—'} dice")
             self.shoot_popover_action.setText("Roll Save")
@@ -843,8 +908,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         else:
             self.shoot_popover_step_title.setText("STEP 5/5: Inflict Damage")
             self.shoot_popover_step_summary.setText("Need: — dice")
-            self.shoot_popover_action.setText("Finish")
-            self.shoot_popover_info.setText("ℹ Inflict Damage — skipped for now")
+            self.shoot_popover_action.setText("Continue")
+            self.shoot_popover_info.setText("ℹ Ожидаю следующий шаг от движка")
             self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
 
         if needs_input:
@@ -897,6 +962,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._shoot_resolver_active = False
         self._shoot_resolver_step = 0
         self._shoot_resolver_attacker_id = None
+        self._shoot_ui_stage = "target"
         if not keep_request_target:
             self._shoot_request_target_id = None
         if hasattr(self, "shoot_popover"):
@@ -931,17 +997,23 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if not self._shoot_resolver_active:
             return
         req = self._pending_request
-        step = self._shoot_resolver_step
+        stage = self._resolve_shoot_stage(req)
         target_id = self._shoot_popover_target_id
         if target_id is None:
             self._close_shoot_popover()
             return
 
-        if step == 0:
+        if stage == "target":
             if self._is_shooting_target_request(req):
                 self._shoot_locked_target_id = int(target_id)
                 self._submit_answer(str(int(target_id)))
                 req = self._pending_request
+                stage = self._resolve_shoot_stage(req)
+            if stage not in {"hit", "wound", "save"} or getattr(req, "kind", "") != "dice":
+                self._update_shoot_popover_ui()
+                return
+
+        if stage in {"hit", "wound", "save"}:
             if getattr(req, "kind", "") != "dice":
                 self._update_shoot_popover_ui()
                 return
@@ -949,32 +1021,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if values is None:
                 return
             self._submit_answer(values)
-            self._shoot_resolver_step = 1
-            self.shoot_popover_dice_input.clear()
-        elif step == 1:
-            if getattr(req, "kind", "") != "dice":
-                self._update_shoot_popover_ui()
-                return
-            values = self._parse_popover_dice_values(req)
-            if values is None:
-                return
-            self._submit_answer(values)
-            self._shoot_resolver_step = 2
-            self.shoot_popover_dice_input.clear()
-        elif step == 2:
-            self._shoot_resolver_step = 3
-        elif step == 3:
-            if getattr(req, "kind", "") != "dice":
-                self._update_shoot_popover_ui()
-                return
-            values = self._parse_popover_dice_values(req)
-            if values is None:
-                return
-            self._submit_answer(values)
-            self._shoot_resolver_step = 4
             self.shoot_popover_dice_input.clear()
         else:
-            self._close_shoot_popover()
+            self._update_shoot_popover_ui()
             return
 
         if self._shoot_resolver_active:
@@ -1046,6 +1095,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._maybe_reset_target_for_request(request)
         if self._is_shooting_target_request(request):
             self._shoot_request_flow_active = True
+            self._shoot_ui_stage = "target"
+            self._shoot_resolver_step = 0
             self._shoot_locked_target_id = None
             self._shoot_request_target_id = None
             self._shoot_targets_valid = self._valid_target_ids_from_request(request)
@@ -1073,10 +1124,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         elif self._is_shooting_dice_request(request):
             if self._shoot_locked_target_id is not None:
                 self._shoot_request_target_id = int(self._shoot_locked_target_id)
+            self._shoot_ui_stage = self._resolve_shoot_stage(request)
+            self._shoot_resolver_step = self._shoot_stage_to_step(self._shoot_ui_stage)
             self.add_log_line(
                 "REQ: движок запросил кубы стрельбы"
                 f" (target={self._shoot_request_target_id if self._shoot_request_target_id is not None else '—'}, "
-                f"count={int(getattr(request, 'count', 0) or 0)})."
+                f"count={int(getattr(request, 'count', 0) or 0)}, stage={self._shoot_ui_stage})."
             )
         else:
             self._shoot_request_flow_active = False
@@ -1600,6 +1653,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._shoot_resolver_attacker_id: Optional[int] = None
         self._shoot_locked_target_id: Optional[int] = None
         self._shoot_request_target_id: Optional[int] = None
+        self._shoot_ui_stage: str = "target"
+        self._last_shoot_stage_debug_sig: Optional[tuple] = None
         self._active_weapon_name = None
         self._active_weapon_range = None
         self._active_weapon_unit_id = None
