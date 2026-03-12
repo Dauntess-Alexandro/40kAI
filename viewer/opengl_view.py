@@ -244,6 +244,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._shoot_target_infos: List[Dict[str, object]] = []
         self._shoot_hovered_target_key: Optional[Tuple[str, int]] = None
         self._last_shoot_hover_debug_sig: Optional[Tuple[int, str]] = None
+        self._last_shoot_overlay_debug_sig: Optional[Tuple[object, ...]] = None
+        self._last_shoot_overlay_cells_debug_sig: Optional[Tuple[object, ...]] = None
         self._show_shoot_range_cells = False
         self._show_objective_radius = True
 
@@ -1504,6 +1506,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         target_filter = set(self._resolve_targets(unit, shoot_range or 0))
 
         inferred_range = shoot_range
+        inferred_from_targets = False
+        max_dist = 0
         if source is not None and target_filter:
             max_dist = 0
             for side, target_id in target_filter:
@@ -1519,26 +1523,59 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     continue
                 tx, ty = tx_ty
                 max_dist = max(max_dist, max(abs(tx - sx), abs(ty - sy)))
-            if max_dist > 0:
+            # ВАЖНО: не сужаем range до набора текущих валидных целей.
+            # target_filter зависит от фазы/запроса и может содержать только ближайшие цели.
+            # Сужение ломает геометрию Cells-overlay (радиус визуально меньше реального оружейного range).
+            if max_dist > 0 and (inferred_range is None or inferred_range <= 0):
                 inferred_range = int(max_dist)
+                inferred_from_targets = True
 
         rapid_range = self._resolve_rapid_fire_cells_range(unit, inferred_range)
+
+        self._log_shoot_overlay_range_debug(
+            unit=unit,
+            full_range_raw=shoot_range,
+            full_range_cells=inferred_range,
+            rapid_range_cells=rapid_range,
+            source=source,
+            target_filter=target_filter,
+            inferred_from_targets=inferred_from_targets,
+            max_target_dist=max_dist,
+        )
 
         if inferred_range is not None and inferred_range > 0 and source is not None:
             max_x = max(0, int(self._board_width) - 1)
             max_y = max(0, int(self._board_height) - 1)
+            total_cells = 0
+            inside_cells = 0
+            outside_cells = 0
+            rapid_cells = 0
             for y in range(0, max_y + 1):
                 for x in range(0, max_x + 1):
+                    total_cells += 1
                     distance = max(abs(x - sx), abs(y - sy))
                     if distance > inferred_range:
+                        outside_cells += 1
                         continue
+                    inside_cells += 1
                     self._shoot_range_highlights.append(
                         QtCore.QRectF(x * self.cell_size, y * self.cell_size, self.cell_size, self.cell_size)
                     )
                     if rapid_range is not None and distance <= rapid_range:
+                        rapid_cells += 1
                         self._shoot_rapid_range_highlights.append(
                             QtCore.QRectF(x * self.cell_size, y * self.cell_size, self.cell_size, self.cell_size)
                         )
+            self._log_shoot_overlay_cells_debug(
+                unit=unit,
+                source=source,
+                full_range_cells=inferred_range,
+                rapid_range_cells=rapid_range,
+                total_cells=total_cells,
+                inside_cells=inside_cells,
+                rapid_cells=rapid_cells,
+                outside_cells=outside_cells,
+            )
 
         shooter_id = self._safe_int(unit.get("id"))
         for target in self._state.get("units", []) or []:
@@ -4631,6 +4668,79 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if not self._weapon_is_rapid_fire(weapon):
             return None
         return max(1, full // 2)
+
+    def _log_shoot_overlay_range_debug(
+        self,
+        *,
+        unit: dict,
+        full_range_raw: Optional[int],
+        full_range_cells: Optional[int],
+        rapid_range_cells: Optional[int],
+        source: Optional[Tuple[int, int]],
+        target_filter: set[Tuple[str, int]],
+        inferred_from_targets: bool,
+        max_target_dist: int,
+    ) -> None:
+        shooter_id = self._safe_int(unit.get("id"))
+        shooter_name = self._unit_display_name(unit)
+        weapon = self._get_primary_ranged_weapon(unit) if isinstance(unit, dict) else None
+        weapon_name = str((weapon or {}).get("Name") or unit.get("weapon_name") or "—")
+        weapon_range_src = self._safe_int((weapon or {}).get("Range")) if isinstance(weapon, dict) else None
+        rapid_enabled = self._weapon_is_rapid_fire(weapon) if isinstance(weapon, dict) else False
+        sig = (
+            shooter_id,
+            source,
+            weapon_name,
+            weapon_range_src,
+            full_range_raw,
+            full_range_cells,
+            rapid_range_cells,
+            rapid_enabled,
+            tuple(sorted(target_filter)),
+            inferred_from_targets,
+            max_target_dist,
+        )
+        if sig == self._last_shoot_overlay_debug_sig:
+            return
+        self._last_shoot_overlay_debug_sig = sig
+        self._append_agent_log(
+            "[VIEWER][SHOOT_RANGE] "
+            f"Что случилось: рассчитан shooting-overlay для Unit {shooter_id} ({shooter_name}); "
+            f"weapon={weapon_name}, source_range={weapon_range_src}, request_range={full_range_raw}, "
+            f"cells_full={full_range_cells}, cells_rapid={rapid_range_cells}, rapid_fire={1 if rapid_enabled else 0}, "
+            f"source_cell={source}, target_filter_size={len(target_filter)}, max_target_dist={max_target_dist}, "
+            f"inferred_from_targets={1 if inferred_from_targets else 0}. "
+            "Где: viewer/opengl_view.py (_build_shooting_overlay). "
+            "Что делать дальше: сравнить source_range/request_range/cells_full; если cells_full меньше source_range — "
+            "проверить UI state -> active weapon и экспорт weapon_range из engine."
+        )
+
+    def _log_shoot_overlay_cells_debug(
+        self,
+        *,
+        unit: dict,
+        source: Optional[Tuple[int, int]],
+        full_range_cells: Optional[int],
+        rapid_range_cells: Optional[int],
+        total_cells: int,
+        inside_cells: int,
+        rapid_cells: int,
+        outside_cells: int,
+    ) -> None:
+        shooter_id = self._safe_int(unit.get("id"))
+        sig = (shooter_id, source, full_range_cells, rapid_range_cells, total_cells, inside_cells, rapid_cells, outside_cells)
+        if sig == self._last_shoot_overlay_cells_debug_sig:
+            return
+        self._last_shoot_overlay_cells_debug_sig = sig
+        self._append_agent_log(
+            "[VIEWER][SHOOT_RANGE][CELLS] "
+            f"Что случилось: по клеткам рассчитан overlay для Unit {shooter_id}; "
+            f"source={source}, full_cells={full_range_cells}, rapid_cells={rapid_range_cells}, "
+            f"вошло={inside_cells}, rapid={rapid_cells}, не вошло={outside_cells}, всего={total_cells}. "
+            "Где: viewer/opengl_view.py (_build_shooting_overlay, cell-loop). "
+            "Что делать дальше: если вошло заметно меньше ожидаемой геометрии (square Chebyshev), "
+            "проверить метрику distance=max(|dx|,|dy|) и корректность full_cells."
+        )
 
     def _rapid_fire_hatch_brush(self) -> QtGui.QBrush:
         if self._rapid_hatch_brush_cache is not None:
