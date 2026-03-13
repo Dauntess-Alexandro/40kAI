@@ -284,17 +284,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_log_source = None
         self._model_events_stream = []
         self._model_events_current = []
-        self._log_tabs = {}
-        self._log_tab_indices = {}
-        self._log_tab_programmatic_switch = False
-        self._last_manual_log_tab_index = None
+        self._log_view = None
         self._fx_shot_queue: Deque[FxShotEvent] = deque()
         self._fx_parser = FxLogParser(self._enqueue_fx_event, self._fx_debug, seen_max=400)
-        self._log_tab_defs = [
-            ("player", "Все ходы игрока"),
-            ("model", "Все ходы модели"),
-            ("key", "Ключевые события"),
-        ]
         self._max_log_lines = 5000
         self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS_PLAY.md")
         self._log_file_max_bytes = 5 * 1024 * 1024
@@ -324,7 +316,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         log_group = QtWidgets.QGroupBox("ЖУРНАЛ")
         log_layout = QtWidgets.QVBoxLayout(log_group)
         log_layout.addLayout(self._log_controls_layout)
-        log_layout.addWidget(self.log_tabs)
+        log_layout.addWidget(self.log_view)
         log_group.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
@@ -1571,31 +1563,22 @@ class ViewerWindow(QtWidgets.QMainWindow):
         fixed_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
         fixed_font.setPointSize(10)
 
-        self.log_tabs = QtWidgets.QTabWidget()
-        for index, (key, label) in enumerate(self._log_tab_defs):
-            view = QtWidgets.QPlainTextEdit()
-            view.setReadOnly(True)
-            view.setFont(fixed_font)
-            view.setMaximumBlockCount(self._max_log_lines)
-            self._log_tabs[key] = view
-            self._log_tab_indices[key] = index
-            self.log_tabs.addTab(view, label)
-        self.log_tabs.currentChanged.connect(self._on_log_tab_changed)
+        self.log_view = QtWidgets.QPlainTextEdit()
+        self.log_view.setReadOnly(True)
+        self.log_view.setFont(fixed_font)
+        self.log_view.setMaximumBlockCount(self._max_log_lines)
 
-        self.log_only_current_turn = QtWidgets.QCheckBox("Показать только текущий ход")
-        self.log_only_current_turn.toggled.connect(self._refresh_log_views)
+        self.log_verbose_details = QtWidgets.QCheckBox("Подробные логи")
+        self.log_verbose_details.setChecked(True)
+        self.log_verbose_details.toggled.connect(self._refresh_log_views)
 
-        self.log_model_verbose = QtWidgets.QCheckBox("Подробно (verbose)")
-        self.log_model_verbose.toggled.connect(self._refresh_model_log_view)
-
-        self.log_copy_turn = QtWidgets.QPushButton("Копировать ход")
+        self.log_copy_turn = QtWidgets.QPushButton("Копировать")
         self.log_copy_turn.clicked.connect(self._copy_current_turn)
         self.log_clear = QtWidgets.QPushButton("Очистить")
         self.log_clear.clicked.connect(self._clear_log_viewer)
 
         self._log_controls_layout = QtWidgets.QHBoxLayout()
-        self._log_controls_layout.addWidget(self.log_only_current_turn)
-        self._log_controls_layout.addWidget(self.log_model_verbose)
+        self._log_controls_layout.addWidget(self.log_verbose_details)
         self._log_controls_layout.addStretch()
         self._log_controls_layout.addWidget(self.log_copy_turn)
         self._log_controls_layout.addWidget(self.log_clear)
@@ -1625,7 +1608,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_log_source = "stream"
             self._model_events_stream.extend(self._filter_model_events(drained))
             self._model_events_current = list(self._model_events_stream)
-            self._refresh_model_log_view()
+            self._refresh_log_views()
 
     def _start_controller(self):
         self._reset_viewer_session_visuals(reason="new_game_start")
@@ -1880,7 +1863,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 f"attacker={attacker} defender={defender} text=\"{self.status_deployment.text()}\""
             )
 
-        self._auto_switch_log_tab(active)
 
         vp = state.get("vp", {})
         cp = state.get("cp", {})
@@ -1964,7 +1946,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_events_snapshot = list(events)
             self._model_log_source = "state"
             self._model_events_current = list(filtered)
-            self._refresh_model_log_view()
+            self._refresh_log_views()
         elif self._model_log_source is None:
             self._drain_event_queue()
 
@@ -2023,7 +2005,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def add_log_line(self, line: str):
         raw_text = str(line)
         self._capture_rolloff_sides_from_log(raw_text)
-        new_turn = self._update_turn_context(raw_text)
+        self._update_turn_context(raw_text)
         categories = self._classify_line(raw_text)
         if self._should_assign_shooting_side(raw_text, categories):
             categories.add(self._current_turn_side)
@@ -2040,16 +2022,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._drain_fx_queue()
         if len(self._log_entries) > self._max_log_lines:
             self._log_entries = self._log_entries[-self._max_log_lines :]
-            self._refresh_log_views()
-            return
-        if new_turn is not None and self.log_only_current_turn.isChecked():
-            self._refresh_log_views()
-            return
-        for key, _ in self._log_tab_defs:
-            if self._should_show_entry(entry, key):
-                if key == "model":
-                    continue
-                self._append_to_view(self._log_tabs[key], display_text)
+        self._refresh_log_views()
 
     def _append_to_view(self, view: QtWidgets.QPlainTextEdit, text: str):
         scrollbar = view.verticalScrollBar()
@@ -2112,10 +2085,36 @@ class ViewerWindow(QtWidgets.QMainWindow):
             ],
         ):
             categories.add("shooting")
+            categories.add("combat_basic")
             categories.add("key")
         if "shooting" not in categories and self._is_shooting_report_line(line):
             categories.add("shooting")
+            categories.add("combat_basic")
             categories.add("key")
+        if self._matches_any(
+            lowered,
+            [
+                "движение",
+                "movement",
+                "move:",
+                "позиция до",
+                "позиция после",
+                "no move",
+                "ходьб",
+            ],
+        ):
+            categories.add("movement")
+            categories.add("combat_basic")
+        if self._matches_any(
+            lowered,
+            [
+                "чардж",
+                "charge",
+            ],
+        ):
+            categories.add("charge")
+            categories.add("combat_basic")
+
         if self._matches_any(
             lowered,
             [
@@ -2127,6 +2126,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             ],
         ):
             categories.add("fight")
+            categories.add("combat_basic")
             categories.add("key")
         if self._matches_any(
             lowered,
@@ -2269,50 +2269,37 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._current_turn_side = new_side
         return new_turn
 
-    def _should_show_entry(self, entry, tab_key):
-        if tab_key == "key":
-            if "key" not in entry["categories"]:
-                return False
-        elif tab_key in ("player", "model"):
-            if tab_key not in entry["categories"]:
-                if "player" in entry["categories"] or "model" in entry["categories"]:
-                    return False
-        if not self.log_only_current_turn.isChecked():
+    def _is_combat_event(self, event: dict) -> bool:
+        phase = str((event or {}).get("phase") or "").lower()
+        return phase in {"movement", "shooting", "charge", "fight"}
+
+    def _should_show_entry(self, entry):
+        if self.log_verbose_details.isChecked():
             return True
-        if self._current_turn_number is None:
-            return True
-        return entry["turn"] == self._current_turn_number
+        categories = entry.get("categories", set())
+        return "combat_basic" in categories
 
     def _refresh_log_views(self):
-        for view in self._log_tabs.values():
-            view.clear()
-        grouped_lines = {key: [] for key, _ in self._log_tab_defs}
+        lines = []
         for entry in self._log_entries:
-            for key, _ in self._log_tab_defs:
-                if self._should_show_entry(entry, key):
-                    grouped_lines[key].append(entry["display"])
-        for key, lines in grouped_lines.items():
-            if lines:
-                if key == "model":
-                    continue
-                self._log_tabs[key].setPlainText("\n".join(lines))
-                scrollbar = self._log_tabs[key].verticalScrollBar()
-                scrollbar.setValue(scrollbar.maximum())
-        self._refresh_model_log_view()
+            if self._should_show_entry(entry):
+                lines.append(entry["display"])
 
-    def _refresh_model_log_view(self):
-        view = self._log_tabs.get("model")
-        if view is None:
-            return
-        include_verbose = self.log_model_verbose.isChecked()
-        only_round = self._current_turn_number if self.log_only_current_turn.isChecked() else None
-        text = render_model_log_flat(
-            self._model_events_current,
-            include_verbose=include_verbose,
-            only_round=only_round,
+        model_events = self._model_events_current
+        if not self.log_verbose_details.isChecked():
+            model_events = [event for event in self._model_events_current if self._is_combat_event(event)]
+        model_text = render_model_log_flat(
+            model_events,
+            include_verbose=self.log_verbose_details.isChecked(),
+            only_round=None,
         )
-        view.setPlainText(text if text else "Пока нет событий модели.")
-        scrollbar = view.verticalScrollBar()
+        if model_text:
+            lines.extend(["", "=== СВОДКА МОДЕЛИ ===", model_text])
+
+        if not lines:
+            lines = ["Пока нет логов."]
+        self.log_view.setPlainText("\n".join(lines))
+        scrollbar = self.log_view.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
     def _reset_log_lines(self, lines, write_to_file: bool):
@@ -2358,17 +2345,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_events_current = []
         self._fx_shot_queue.clear()
         self._fx_parser.reset(preserve_seen=False)
-        for view in self._log_tabs.values():
-            view.clear()
+        self.log_view.clear()
 
     def _collect_current_turn_logs(self):
-        if self._current_turn_number is None:
-            return "\n".join(entry["display"] for entry in self._log_entries)
-        return "\n".join(
-            entry["display"]
-            for entry in self._log_entries
-            if entry["turn"] == self._current_turn_number
-        )
+        return self.log_view.toPlainText()
 
     def _copy_current_turn(self):
         QtWidgets.QApplication.clipboard().setText(self._collect_current_turn_logs())
@@ -2683,26 +2663,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if not message:
             return
         self._append_log_to_file(message)
-
-    def _auto_switch_log_tab(self, active_side):
-        if active_side not in ("player", "model"):
-            return
-        if active_side == self._last_active_side:
-            return
-        self._last_active_side = active_side
-        target_index = self._log_tab_indices.get(active_side)
-        if target_index is None:
-            return
-        self._log_tab_programmatic_switch = True
-        try:
-            self.log_tabs.setCurrentIndex(target_index)
-        finally:
-            self._log_tab_programmatic_switch = False
-
-    def _on_log_tab_changed(self, index):
-        if self._log_tab_programmatic_switch:
-            return
-        self._last_manual_log_tab_index = index
 
     def _is_movement_phase(self, phase):
         phase_text = str(phase or "").lower()
