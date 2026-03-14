@@ -13,6 +13,7 @@ from gym_mod.engine.io_profiler import get_io_profiler
 
 
 LOG_DEFAULT_PATH = os.path.join(os.getcwd(), "gui", "response.txt")
+DICE_CANCEL_TOKEN = "__cancel_shoot__"
 
 
 class _AsyncLogWriter:
@@ -91,7 +92,7 @@ class BaseIO:
     def request_int(self, prompt: str, min_value: Optional[int] = None, max_value: Optional[int] = None):
         raise NotImplementedError
 
-    def request_choice(self, prompt: str, options: list[str]):
+    def request_choice(self, prompt: str, options: list[str], meta: Optional[dict] = None):
         raise NotImplementedError
 
     def request_direction(self, prompt: str, options: list[str]):
@@ -195,7 +196,7 @@ class ConsoleIO(BaseIO):
                 continue
             return value
 
-    def request_choice(self, prompt: str, options: list[str]):
+    def request_choice(self, prompt: str, options: list[str], meta: Optional[dict] = None):
         response = input(prompt).strip()
         if response.lower() in ("q", "quit"):
             return None
@@ -314,8 +315,8 @@ class GuiIO(BaseIO):
                 return None
         return None
 
-    def request_choice(self, prompt: str, options: list[str]):
-        request = Request(kind="choice", prompt=prompt, options=list(options))
+    def request_choice(self, prompt: str, options: list[str], meta: Optional[dict] = None):
+        request = Request(kind="choice", prompt=prompt, options=list(options), meta=dict(meta or {}))
         self.request_queue.put(request)
         answer = self._wait_for_answer()
         if answer is None:
@@ -348,6 +349,8 @@ class GuiIO(BaseIO):
         answer = self._wait_for_answer()
         if answer is None:
             return None
+        if isinstance(answer, str) and answer.strip() == DICE_CANCEL_TOKEN:
+            return DICE_CANCEL_TOKEN
         if isinstance(answer, list):
             return answer
         if isinstance(answer, str):
@@ -384,13 +387,20 @@ class GuiIO(BaseIO):
         if answer is None:
             return None
         if isinstance(answer, dict):
+            payload = {}
+            if answer.get("mode") is not None:
+                payload["mode"] = str(answer.get("mode"))
+            if answer.get("skip_movement") is not None:
+                payload["skip_movement"] = bool(answer.get("skip_movement"))
             try:
-                payload = {"x": int(answer.get("x")), "y": int(answer.get("y"))}
-                if answer.get("mode") is not None:
-                    payload["mode"] = str(answer.get("mode"))
-                return payload
+                if answer.get("x") is not None and answer.get("y") is not None:
+                    payload["x"] = int(answer.get("x"))
+                    payload["y"] = int(answer.get("y"))
             except (TypeError, ValueError):
                 return None
+            if payload:
+                return payload
+            return None
         if isinstance(answer, (list, tuple)) and len(answer) >= 2:
             try:
                 return {"x": int(answer[0]), "y": int(answer[1])}

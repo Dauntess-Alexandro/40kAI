@@ -22,6 +22,14 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from viewer.styles import Theme
+from viewer.cells_fx import (
+    SHOOTING_FULL_ZONE_STYLE,
+    SHOOTING_RAPID_HATCH_STYLE,
+    SHOOTING_RAPID_ZONE_STYLE,
+    rapid_hatch_pen,
+    zone_border_pen,
+    zone_fill_color,
+)
 from viewer.tooltip import TerrainTooltipWidget, UnitTooltipWidget
 
 GL_BLEND = 0x0BE2
@@ -232,9 +240,12 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._reachable_overlay_sig: Optional[Tuple[object, int, int]] = None
         self._target_highlights: List[Tuple[QtCore.QPointF, float]] = []
         self._shoot_range_highlights: List[QtCore.QRectF] = []
-        self._shoot_target_valid: List[Tuple[QtCore.QPointF, float]] = []
-        self._shoot_target_no_los: List[Tuple[QtCore.QPointF, float]] = []
-        self._shoot_target_obscured: List[Tuple[QtCore.QPointF, float]] = []
+        self._shoot_rapid_range_highlights: List[QtCore.QRectF] = []
+        self._shoot_target_infos: List[Dict[str, object]] = []
+        self._shoot_hovered_target_key: Optional[Tuple[str, int]] = None
+        self._last_shoot_hover_debug_sig: Optional[Tuple[int, str]] = None
+        self._last_shoot_overlay_debug_sig: Optional[Tuple[object, ...]] = None
+        self._last_shoot_overlay_cells_debug_sig: Optional[Tuple[object, ...]] = None
         self._show_shoot_range_cells = False
         self._show_objective_radius = True
 
@@ -336,6 +347,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._shadow_textures: Dict[str, QtGui.QPixmap] = {}
         self._decal_textures: Dict[str, QtGui.QPixmap] = {}
         self._fx_particle_textures: Dict[str, QtGui.QPixmap] = {}
+        self._target_overlay_pixmaps: Dict[str, Optional[QtGui.QPixmap]] = {}
+        self._rapid_hatch_brush_cache: Optional[QtGui.QBrush] = None
         self._decals: List[DecalInstance] = []
         self._props: List[PropInstance] = []
         self._terrain_features_state: List[dict] = []
@@ -458,6 +471,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self.set_error_message(None)
         board = self._state.get("board", {})
         raw_units = list(self._state.get("units", []) or [])
+
+        filtered_units = []
+        for unit in raw_units:
+            if not isinstance(unit, dict):
+                continue
+            hp_value = self._safe_int(unit.get("hp"))
+            alive_models_value = self._safe_int(unit.get("alive_models"))
+            if hp_value is not None and hp_value <= 0:
+                continue
+            if alive_models_value is not None and alive_models_value <= 0:
+                continue
+            filtered_units.append(unit)
+
         width, height = self._resolve_board_dims(board, raw_units)
         self._board_width = width
         self._board_height = height
@@ -484,7 +510,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 self._props_initialized = False
             self._ensure_props()
 
-        self._units_state = raw_units
+        self._units_state = filtered_units
         live_keys = {
             (u.get("side"), u.get("id"))
             for u in self._units_state
@@ -851,9 +877,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._advance_cells_set = set()
         self._target_highlights = []
         self._shoot_range_highlights = []
-        self._shoot_target_valid = []
-        self._shoot_target_no_los = []
-        self._shoot_target_obscured = []
+        self._shoot_rapid_range_highlights = []
+        self._shoot_target_infos = []
+        self._shoot_hovered_target_key = None
 
         active_key = (self._active_unit_side, self._active_unit_id)
         if active_key[0] is None or active_key[1] is None:
@@ -1480,7 +1506,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         target_filter = set(self._resolve_targets(unit, shoot_range or 0))
 
         inferred_range = shoot_range
-        if (inferred_range is None or inferred_range <= 0) and source is not None and target_filter:
+        inferred_from_targets = False
+        max_dist = 0
+        if source is not None and target_filter:
             max_dist = 0
             for side, target_id in target_filter:
                 target = None
@@ -1495,20 +1523,59 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     continue
                 tx, ty = tx_ty
                 max_dist = max(max_dist, max(abs(tx - sx), abs(ty - sy)))
-            if max_dist > 0:
+            # ВАЖНО: не сужаем range до набора текущих валидных целей.
+            # target_filter зависит от фазы/запроса и может содержать только ближайшие цели.
+            # Сужение ломает геометрию Cells-overlay (радиус визуально меньше реального оружейного range).
+            if max_dist > 0 and (inferred_range is None or inferred_range <= 0):
                 inferred_range = int(max_dist)
+                inferred_from_targets = True
+
+        rapid_range = self._resolve_rapid_fire_cells_range(unit, inferred_range)
+
+        self._log_shoot_overlay_range_debug(
+            unit=unit,
+            full_range_raw=shoot_range,
+            full_range_cells=inferred_range,
+            rapid_range_cells=rapid_range,
+            source=source,
+            target_filter=target_filter,
+            inferred_from_targets=inferred_from_targets,
+            max_target_dist=max_dist,
+        )
 
         if inferred_range is not None and inferred_range > 0 and source is not None:
             max_x = max(0, int(self._board_width) - 1)
             max_y = max(0, int(self._board_height) - 1)
+            total_cells = 0
+            inside_cells = 0
+            outside_cells = 0
+            rapid_cells = 0
             for y in range(0, max_y + 1):
                 for x in range(0, max_x + 1):
+                    total_cells += 1
                     distance = max(abs(x - sx), abs(y - sy))
                     if distance > inferred_range:
+                        outside_cells += 1
                         continue
+                    inside_cells += 1
                     self._shoot_range_highlights.append(
                         QtCore.QRectF(x * self.cell_size, y * self.cell_size, self.cell_size, self.cell_size)
                     )
+                    if rapid_range is not None and distance <= rapid_range:
+                        rapid_cells += 1
+                        self._shoot_rapid_range_highlights.append(
+                            QtCore.QRectF(x * self.cell_size, y * self.cell_size, self.cell_size, self.cell_size)
+                        )
+            self._log_shoot_overlay_cells_debug(
+                unit=unit,
+                source=source,
+                full_range_cells=inferred_range,
+                rapid_range_cells=rapid_range,
+                total_cells=total_cells,
+                inside_cells=inside_cells,
+                rapid_cells=rapid_cells,
+                outside_cells=outside_cells,
+            )
 
         shooter_id = self._safe_int(unit.get("id"))
         for target in self._state.get("units", []) or []:
@@ -1516,10 +1583,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 continue
             if target.get("side") == unit.get("side"):
                 continue
+
             target_id = self._safe_int(target.get("id"))
             target_key = (target.get("side"), int(target_id)) if target_id is not None else None
             if target_filter and target_key not in target_filter:
                 continue
+            if target_id is None:
+                continue
+
             tx_ty = self._unit_anchor_view_cell(target)
             if tx_ty is None:
                 continue
@@ -1529,23 +1600,26 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 if distance > inferred_range:
                     continue
 
-            target_id = self._safe_int(target.get("id"))
             status = target.get("unit_status") if isinstance(target.get("unit_status"), dict) else {}
             seen_by = {self._safe_int(v) for v in list(status.get("seen_by_ids") or [])}
             obscured_vs = {self._safe_int(v) for v in list(status.get("obscured_vs") or [])}
             has_los = shooter_id is not None and shooter_id in seen_by
             obscured = has_los and shooter_id is not None and shooter_id in obscured_vs
 
-            render = self._unit_by_key.get((target.get("side"), target_id)) if target_id is not None else None
-            if render is None:
-                continue
-            radius = render.radius + self.cell_size * 0.14
+            classification = "NO_LOS"
             if has_los and obscured:
-                self._shoot_target_obscured.append((render.center, radius))
+                classification = "OBSCURED"
             elif has_los:
-                self._shoot_target_valid.append((render.center, radius))
-            else:
-                self._shoot_target_no_los.append((render.center, radius))
+                classification = "VALID"
+
+            key = (str(target.get("side")), int(target_id))
+            self._shoot_target_infos.append(
+                {
+                    "unit_id": int(target_id),
+                    "unit_key": key,
+                    "classification": classification,
+                }
+            )
 
     def _resolve_targets(self, unit: dict, shoot_range: int) -> Iterable[Tuple[str, int]]:
         targets = set()
@@ -1570,24 +1644,41 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if targets:
                 return targets
 
-        source = self._unit_anchor_view_cell(unit)
-        if source is None or shoot_range is None or int(shoot_range) <= 0:
-            return targets
-        sx, sy = source
-        for target in self._state.get("units", []) or []:
-            if not isinstance(target, dict):
-                continue
-            if target.get("side") == unit.get("side"):
-                continue
-            tx_ty = self._unit_anchor_view_cell(target)
-            if tx_ty is None:
-                continue
-            tx, ty = tx_ty
-            distance = max(abs(tx - sx), abs(ty - sy))
-            if distance <= int(shoot_range):
+        # Fallback: только данные движка из state export (in_range_ids / in_range_targets).
+        # Не используем чистую геометрию по anchor-клетке, чтобы не рисовать "ложно валидные" цели.
+        unit_status = unit.get("unit_status") if isinstance(unit.get("unit_status"), dict) else {}
+        in_range_ids = unit_status.get("in_range_ids") or unit_status.get("in_range_targets") or []
+        visible_ids = unit_status.get("can_see_ids") or []
+        try:
+            in_range_set = {
+                int(v) for v in in_range_ids if isinstance(v, (int, float, str)) and str(v).strip().isdigit()
+            }
+            visible_set = {
+                int(v) for v in visible_ids if isinstance(v, (int, float, str)) and str(v).strip().isdigit()
+            }
+        except (TypeError, ValueError):
+            in_range_set = set()
+            visible_set = set()
+
+        if in_range_set:
+            for target in self._state.get("units", []) or []:
+                if not isinstance(target, dict):
+                    continue
+                if target.get("side") == unit.get("side"):
+                    continue
                 target_id = self._safe_int(target.get("id"))
-                if target_id is not None:
-                    targets.add((target.get("side"), int(target_id)))
+                if target_id is None:
+                    continue
+                if int(target_id) not in in_range_set:
+                    continue
+                if visible_set and int(target_id) not in visible_set:
+                    continue
+                target_side = target.get("side")
+                if target_side:
+                    targets.add((str(target_side), int(target_id)))
+            if targets:
+                return targets
+
         return targets
 
     def _view_transform(self) -> QtGui.QTransform:
@@ -1726,6 +1817,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             # _world_to_state_pos returns (row, col), while viewer deployment API expects (x=col, y=row).
             self.cell_hovered.emit((int(state_pos[1]), int(state_pos[0])))
         self._update_hover_tooltip(event, world, pos)
+        self._update_shooting_hover_target(pos)
         self.update()
         super().mouseMoveEvent(event)
 
@@ -1746,6 +1838,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._hover_cell = None
         self.cell_hovered.emit(None)
         self._clear_hover_tooltip()
+        self._shoot_hovered_target_key = None
         self.update()
         super().leaveEvent(event)
 
@@ -2050,10 +2143,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self.draw_terrain_features(painter)
         self._draw_hovered_terrain_cells_layer(painter)
         self._draw_unit_tooltip_overlays_layer(painter)
+        self._draw_shooting_layer(painter, target_pass="under")
         self._draw_units_layer(painter)
         self._draw_deploy_snap_fx_layer(painter)
         self._draw_selection_layer(painter)
-        self._draw_shooting_layer(painter)
+        self._draw_shooting_layer(painter, target_pass="over")
         if self.render_fx:
             self._draw_fx_layer(painter)
         self._draw_labels_layer(painter)
@@ -2253,40 +2347,206 @@ class OpenGLBoardWidget(QOpenGLWidget):
         # Кольца выбора отключены: отдельный слой selection не используется.
         return
 
-    def _draw_shooting_layer(self, painter: QtGui.QPainter) -> None:
-        if not self._should_show_shooting():
-            return
-        if not (self._shoot_target_valid or self._shoot_target_no_los or self._shoot_target_obscured or (self._show_shoot_range_cells and self._shoot_range_highlights)):
+    def _target_hitbox_for_info(self, info: Dict[str, object]) -> Optional[QtCore.QRectF]:
+        key = info.get("unit_key")
+        if isinstance(key, tuple) and len(key) >= 2:
+            rect = self._unit_hitboxes_screen.get((str(key[0]), int(key[1])))
+            if rect is not None and not rect.isEmpty():
+                return rect
+        unit_id = self._safe_int(info.get("unit_id"))
+        if unit_id is None:
+            return None
+        for (side, uid), rect in self._unit_hitboxes_screen.items():
+            if int(uid) != int(unit_id):
+                continue
+            if rect is not None and not rect.isEmpty():
+                return rect
+        return None
+
+    def _draw_shooting_targets_overlay(
+        self,
+        painter: QtGui.QPainter,
+        target_infos: List[Dict[str, object]],
+        hovered_target_key: Optional[Tuple[str, int]],
+        *,
+        render_under_units: bool,
+    ) -> None:
+        if not target_infos:
             return
 
-        if self._show_shoot_range_cells and self._shoot_range_highlights:
-            painter.save()
-            fill = QtGui.QColor(110, 200, 120, 24)
-            border = QtGui.QPen(QtGui.QColor(110, 200, 120, 65), 0.9)
-            border.setCosmetic(True)
-            painter.setBrush(QtGui.QBrush(fill))
-            painter.setPen(border)
-            for rect in self._shoot_range_highlights:
-                painter.drawRect(rect)
-            painter.restore()
+        self._rebuild_unit_hitboxes_screen()
 
-        def _draw_targets(items, color: QtGui.QColor, width: float) -> None:
-            if not items:
-                return
-            painter.save()
-            pen = QtGui.QPen(color, width)
+        style_map = {
+            "VALID": {
+                "outline": QtGui.QColor(96, 214, 118, 235),
+                "glow": QtGui.QColor(96, 214, 118, 78),
+                "width": 1.8,
+                "expand": 7.0,
+                "base": "target_valid_base",
+                "marker": "target_marker_valid",
+            },
+            "OBSCURED": {
+                "outline": QtGui.QColor(232, 190, 85, 220),
+                "glow": QtGui.QColor(232, 190, 85, 62),
+                "width": 1.7,
+                "expand": 6.0,
+                "base": "target_obscured_base",
+                "marker": "target_marker_obscured",
+            },
+            "NO_LOS": {
+                "outline": QtGui.QColor(145, 150, 160, 185),
+                "glow": QtGui.QColor(145, 150, 160, 0),
+                "width": 1.3,
+                "expand": 4.0,
+                "base": "target_nolos_base",
+                "marker": "target_marker_nolos",
+            },
+        }
+        fx_assets = self._target_overlay_assets()
+        hover_ring = fx_assets.get("target_hover_ring")
+
+        def _sprite(key: str) -> Optional[QtGui.QPixmap]:
+            pix = fx_assets.get(key)
+            if pix is None or pix.isNull():
+                return None
+            return pix
+
+        painter.save()
+        painter.setTransform(QtGui.QTransform())
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+        for info in target_infos:
+            key = info.get("unit_key")
+            rect = self._target_hitbox_for_info(info)
+            if rect is None:
+                continue
+
+            classification = str(info.get("classification") or "NO_LOS")
+            style = style_map.get(classification, style_map["NO_LOS"])
+            hovered = hovered_target_key is not None and isinstance(key, tuple) and len(key) >= 2 and (str(key[0]), int(key[1])) == hovered_target_key
+            base_pixmap = _sprite(str(style.get("base") or ""))
+            marker_pixmap = _sprite(str(style.get("marker") or ""))
+            use_sprite_overlay = base_pixmap is not None and marker_pixmap is not None
+
+            if use_sprite_overlay:
+                if render_under_units:
+                    base_rect = rect.adjusted(-rect.width() * 0.12, -rect.height() * 0.12, rect.width() * 0.12, rect.height() * 0.12)
+                    base_draw_rect = self._fit_pixmap_in_rect(base_pixmap, base_rect, inset_ratio=1.0)
+                    painter.save()
+                    painter.setOpacity(0.48)
+                    painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+                    painter.drawPixmap(base_draw_rect, base_pixmap, QtCore.QRectF(base_pixmap.rect()))
+                    painter.restore()
+
+                    if hovered and hover_ring is not None:
+                        ring_rect = rect.adjusted(-rect.width() * 0.20, -rect.height() * 0.20, rect.width() * 0.20, rect.height() * 0.20)
+                        ring_draw_rect = self._fit_pixmap_in_rect(hover_ring, ring_rect, inset_ratio=1.0)
+                        painter.save()
+                        painter.setOpacity(0.42)
+                        painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+                        painter.drawPixmap(ring_draw_rect, hover_ring, QtCore.QRectF(hover_ring.rect()))
+                        painter.restore()
+                else:
+                    marker_side = max(16.0, min(rect.width(), rect.height()) * 0.62)
+                    marker_target_rect = QtCore.QRectF(
+                        rect.right() + 5.0,
+                        rect.top() - marker_side * 0.40,
+                        marker_side,
+                        marker_side,
+                    )
+                    marker_draw_rect = self._fit_pixmap_in_rect(marker_pixmap, marker_target_rect, inset_ratio=1.0)
+                    painter.save()
+                    painter.setOpacity(0.86)
+                    painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+                    painter.drawPixmap(marker_draw_rect, marker_pixmap, QtCore.QRectF(marker_pixmap.rect()))
+                    painter.restore()
+                continue
+
+            if render_under_units:
+                continue
+
+            expand = float(style["expand"]) + (2.0 if hovered else 0.0)
+            glow_rect = rect.adjusted(-expand, -expand, expand, expand)
+            outline_rect = rect.adjusted(-0.5, -0.5, 0.5, 0.5)
+
+            glow = QtGui.QColor(style["glow"])
+            if hovered:
+                glow.setAlpha(min(255, int(glow.alpha() * 1.35) + 18))
+            if glow.alpha() > 0:
+                painter.setPen(QtCore.Qt.NoPen)
+                painter.setBrush(glow)
+                painter.drawRoundedRect(glow_rect, 6.0, 6.0)
+
+            pen = QtGui.QPen(QtGui.QColor(style["outline"]), float(style["width"]) + (0.7 if hovered else 0.0))
             pen.setCosmetic(True)
             painter.setPen(pen)
-            aura = QtGui.QColor(color)
-            aura.setAlpha(32)
-            painter.setBrush(aura)
-            for center, radius in items:
-                painter.drawEllipse(center, radius, radius)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawRoundedRect(outline_rect, 4.0, 4.0)
+
+            if self._viewer_debug_enabled:
+                dbg_pen = QtGui.QPen(QtGui.QColor(120, 220, 120, 135), 0.9)
+                dbg_pen.setCosmetic(True)
+                painter.setPen(dbg_pen)
+                painter.setBrush(QtCore.Qt.NoBrush)
+                painter.drawRect(rect)
+
+            if hovered:
+                marker_pos = QtCore.QPointF(rect.right() + 6.0, rect.top() - 4.0)
+                marker_bg = QtCore.QRectF(marker_pos.x() - 2.0, marker_pos.y() - 1.0, 18.0, 18.0)
+                painter.setPen(QtCore.Qt.NoPen)
+                painter.setBrush(QtGui.QColor(24, 24, 24, 155))
+                painter.drawRoundedRect(marker_bg, 6.0, 6.0)
+                painter.setPen(QtGui.QPen(QtGui.QColor(255, 245, 190, 245), 1.0))
+                font = QtGui.QFont(Theme.font(size=9, bold=True))
+                painter.setFont(font)
+                painter.drawText(marker_bg, QtCore.Qt.AlignCenter, "🎯")
+
+        painter.restore()
+
+    def _target_overlay_assets(self) -> Dict[str, Optional[QtGui.QPixmap]]:
+        if self._target_overlay_pixmaps:
+            return self._target_overlay_pixmaps
+        assets = {
+            "target_valid_base": "fx/target_valid_base.png",
+            "target_obscured_base": "fx/target_obscured_base.png",
+            "target_nolos_base": "fx/target_nolos_base.png",
+            "target_marker_valid": "fx/target_marker_valid.png",
+            "target_marker_obscured": "fx/target_marker_obscured.png",
+            "target_marker_nolos": "fx/target_marker_nolos.png",
+            "target_hover_ring": "fx/target_hover_ring.png",
+        }
+        for key, rel_path in assets.items():
+            self._target_overlay_pixmaps[key] = self._texture_manager.load_png(rel_path)
+        return self._target_overlay_pixmaps
+
+    def _draw_shooting_layer(self, painter: QtGui.QPainter, *, target_pass: str = "over") -> None:
+        if not self._should_show_shooting():
+            return
+        if not (self._shoot_target_infos or (self._show_shoot_range_cells and self._shoot_range_highlights)):
+            return
+
+        draw_under_units = str(target_pass).lower() == "under"
+
+        if (not draw_under_units) and self._show_shoot_range_cells and self._shoot_range_highlights:
+            painter.save()
+            painter.setBrush(QtGui.QBrush(zone_fill_color(SHOOTING_FULL_ZONE_STYLE)))
+            painter.setPen(zone_border_pen(SHOOTING_FULL_ZONE_STYLE))
+            for rect in self._shoot_range_highlights:
+                painter.drawRect(rect)
+
+            if self._shoot_rapid_range_highlights:
+                painter.setPen(zone_border_pen(SHOOTING_RAPID_ZONE_STYLE))
+                painter.setBrush(self._rapid_fire_hatch_brush())
+                for rect in self._shoot_rapid_range_highlights:
+                    painter.drawRect(rect)
             painter.restore()
 
-        _draw_targets(self._shoot_target_no_los, QtGui.QColor(150, 156, 168, 170), 1.4)
-        _draw_targets(self._shoot_target_obscured, QtGui.QColor(232, 190, 85, 215), 1.8)
-        _draw_targets(self._shoot_target_valid, QtGui.QColor(96, 214, 118, 230), 2.0)
+        self._draw_shooting_targets_overlay(
+            painter,
+            self._shoot_target_infos,
+            self._shoot_hovered_target_key,
+            render_under_units=draw_under_units,
+        )
 
     def _draw_labels_layer(self, painter: QtGui.QPainter) -> None:
         text_font = Theme.font(size=8, bold=True)
@@ -3375,6 +3635,33 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 return key
         return None
 
+    def _update_shooting_hover_target(self, screen_pos: QtCore.QPointF) -> None:
+        if not self._should_show_shooting() or not self._shoot_target_infos:
+            self._shoot_hovered_target_key = None
+            return
+        self._rebuild_unit_hitboxes_screen()
+        hovered: Optional[Tuple[str, int]] = None
+        hovered_classification = ""
+        for info in reversed(self._shoot_target_infos):
+            key = info.get("unit_key")
+            if not isinstance(key, tuple) or len(key) < 2:
+                continue
+            norm_key = (str(key[0]), int(key[1]))
+            rect = self._target_hitbox_for_info(info)
+            if rect is None or not rect.contains(screen_pos):
+                continue
+            hovered = norm_key
+            hovered_classification = str(info.get("classification") or "")
+            break
+        self._shoot_hovered_target_key = hovered
+        if self._viewer_debug_enabled and hovered is not None:
+            sig = (int(hovered[1]), hovered_classification)
+            if sig != self._last_shoot_hover_debug_sig:
+                self._last_shoot_hover_debug_sig = sig
+                self._append_agent_log(
+                    f"[VIEWER][SHOOT_HOVER] target_id={hovered[1]} classification={hovered_classification}"
+                )
+
     def _show_unit_tooltip_immediate(
         self,
         unit_key: Tuple[str, int],
@@ -4072,6 +4359,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         rng = forced_range if forced_range is not None else self._primary_ranged_range(unit)
         if rng is None:
             return []
+        range_eps = 0.1
         keys: List[Tuple[str, int]] = []
         for enemy in (self._state.get("units", []) or []):
             if enemy.get("side") == unit.get("side"):
@@ -4079,8 +4367,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
             e_cell = self._unit_anchor_view_cell(enemy)
             if e_cell is None:
                 continue
-            dist = abs(e_cell[0] - ux) + abs(e_cell[1] - uy)
-            if dist <= rng:
+            dist = max(abs(e_cell[0] - ux), abs(e_cell[1] - uy))
+            if float(dist) <= float(rng) + float(range_eps):
                 keys.append((enemy.get("side"), enemy.get("id")))
         return keys
 
@@ -4367,6 +4655,116 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if value is not None:
                 return value
         return None
+
+    def _resolve_rapid_fire_cells_range(self, unit: dict, full_range: Optional[int]) -> Optional[int]:
+        if full_range is None:
+            return None
+        full = self._safe_int(full_range)
+        if full is None or full <= 1:
+            return None
+        weapon = self._get_primary_ranged_weapon(unit)
+        if not isinstance(weapon, dict):
+            return None
+        if not self._weapon_is_rapid_fire(weapon):
+            return None
+        return max(1, full // 2)
+
+    def _log_shoot_overlay_range_debug(
+        self,
+        *,
+        unit: dict,
+        full_range_raw: Optional[int],
+        full_range_cells: Optional[int],
+        rapid_range_cells: Optional[int],
+        source: Optional[Tuple[int, int]],
+        target_filter: set[Tuple[str, int]],
+        inferred_from_targets: bool,
+        max_target_dist: int,
+    ) -> None:
+        shooter_id = self._safe_int(unit.get("id"))
+        shooter_name = self._unit_display_name(unit)
+        weapon = self._get_primary_ranged_weapon(unit) if isinstance(unit, dict) else None
+        weapon_name = str((weapon or {}).get("Name") or unit.get("weapon_name") or "—")
+        weapon_range_src = self._safe_int((weapon or {}).get("Range")) if isinstance(weapon, dict) else None
+        rapid_enabled = self._weapon_is_rapid_fire(weapon) if isinstance(weapon, dict) else False
+        sig = (
+            shooter_id,
+            source,
+            weapon_name,
+            weapon_range_src,
+            full_range_raw,
+            full_range_cells,
+            rapid_range_cells,
+            rapid_enabled,
+            tuple(sorted(target_filter)),
+            inferred_from_targets,
+            max_target_dist,
+        )
+        if sig == self._last_shoot_overlay_debug_sig:
+            return
+        self._last_shoot_overlay_debug_sig = sig
+        self._append_agent_log(
+            "[VIEWER][SHOOT_RANGE] "
+            f"Что случилось: рассчитан shooting-overlay для Unit {shooter_id} ({shooter_name}); "
+            f"weapon={weapon_name}, source_range={weapon_range_src}, request_range={full_range_raw}, "
+            f"cells_full={full_range_cells}, cells_rapid={rapid_range_cells}, rapid_fire={1 if rapid_enabled else 0}, "
+            f"source_cell={source}, target_filter_size={len(target_filter)}, max_target_dist={max_target_dist}, "
+            f"inferred_from_targets={1 if inferred_from_targets else 0}. "
+            "Где: viewer/opengl_view.py (_build_shooting_overlay). "
+            "Что делать дальше: сравнить source_range/request_range/cells_full; если cells_full меньше source_range — "
+            "проверить UI state -> active weapon и экспорт weapon_range из engine."
+        )
+
+    def _log_shoot_overlay_cells_debug(
+        self,
+        *,
+        unit: dict,
+        source: Optional[Tuple[int, int]],
+        full_range_cells: Optional[int],
+        rapid_range_cells: Optional[int],
+        total_cells: int,
+        inside_cells: int,
+        rapid_cells: int,
+        outside_cells: int,
+    ) -> None:
+        shooter_id = self._safe_int(unit.get("id"))
+        sig = (shooter_id, source, full_range_cells, rapid_range_cells, total_cells, inside_cells, rapid_cells, outside_cells)
+        if sig == self._last_shoot_overlay_cells_debug_sig:
+            return
+        self._last_shoot_overlay_cells_debug_sig = sig
+        self._append_agent_log(
+            "[VIEWER][SHOOT_RANGE][CELLS] "
+            f"Что случилось: по клеткам рассчитан overlay для Unit {shooter_id}; "
+            f"source={source}, full_cells={full_range_cells}, rapid_cells={rapid_range_cells}, "
+            f"вошло={inside_cells}, rapid={rapid_cells}, не вошло={outside_cells}, всего={total_cells}. "
+            "Где: viewer/opengl_view.py (_build_shooting_overlay, cell-loop). "
+            "Что делать дальше: если вошло заметно меньше ожидаемой геометрии (square Chebyshev), "
+            "проверить метрику distance=max(|dx|,|dy|) и корректность full_cells."
+        )
+
+    def _rapid_fire_hatch_brush(self) -> QtGui.QBrush:
+        if self._rapid_hatch_brush_cache is not None:
+            return QtGui.QBrush(self._rapid_hatch_brush_cache)
+        tile = QtGui.QPixmap(SHOOTING_RAPID_HATCH_STYLE.tile_size, SHOOTING_RAPID_HATCH_STYLE.tile_size)
+        tile.fill(QtCore.Qt.transparent)
+        painter = QtGui.QPainter(tile)
+        painter.setPen(rapid_hatch_pen(SHOOTING_RAPID_HATCH_STYLE))
+        for x1, y1, x2, y2 in SHOOTING_RAPID_HATCH_STYLE.lines:
+            painter.drawLine(x1, y1, x2, y2)
+        painter.end()
+        self._rapid_hatch_brush_cache = QtGui.QBrush(tile)
+        return QtGui.QBrush(self._rapid_hatch_brush_cache)
+
+    def _weapon_is_rapid_fire(self, weapon: dict) -> bool:
+        for key in ("Type", "type", "Abilities", "abilities", "Special", "special", "Notes", "notes"):
+            value = weapon.get(key)
+            if value is None:
+                continue
+            text = str(value).strip().lower().replace("_", " ").replace("-", "")
+            compact = " ".join(text.split())
+            if "rapid fire" in compact or "rapidfire" in compact:
+                return True
+        return False
 
     def _tooltip_los_status(self, unit: dict) -> str:
         summary = self._unit_threat_summary(unit)

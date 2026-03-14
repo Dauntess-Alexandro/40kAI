@@ -280,6 +280,48 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
     opaque_cells = getattr(env, "terrain_opaque_cells", set())
     visibility_mode = getattr(env, "visibility_mode", "single_ray")
 
+    def _distance_between_units_local(attacker_side: str, attacker_idx: int, target_side: str, target_idx: int) -> float:
+        if hasattr(env, "_shooting_distance_between_units"):
+            try:
+                return float(env._shooting_distance_between_units(attacker_side, int(attacker_idx), target_side, int(target_idx)))
+            except Exception:
+                pass
+        if hasattr(env, "_distance_between_units"):
+            try:
+                return float(env._distance_between_units(attacker_side, int(attacker_idx), target_side, int(target_idx)))
+            except Exception:
+                pass
+        attacker_pool = env.unit_coords if attacker_side == "model" else env.enemy_coords
+        target_pool = env.unit_coords if target_side == "model" else env.enemy_coords
+        if not (0 <= int(attacker_idx) < len(attacker_pool) and 0 <= int(target_idx) < len(target_pool)):
+            return float("inf")
+        attacker_cell = (int(attacker_pool[int(attacker_idx)][0]), int(attacker_pool[int(attacker_idx)][1]))
+        target_cell = (int(target_pool[int(target_idx)][0]), int(target_pool[int(target_idx)][1]))
+        return float(max(abs(attacker_cell[0] - target_cell[0]), abs(attacker_cell[1] - target_cell[1])))
+
+    def _has_los_between_units_local(attacker_side: str, attacker_idx: int, target_side: str, target_idx: int) -> bool:
+        if hasattr(env, "_unit_has_los"):
+            try:
+                return bool(env._unit_has_los(attacker_side, int(attacker_idx), target_side, int(target_idx)))
+            except Exception:
+                pass
+        attacker_pool = env.unit_coords if attacker_side == "model" else env.enemy_coords
+        target_pool = env.unit_coords if target_side == "model" else env.enemy_coords
+        if not (0 <= int(attacker_idx) < len(attacker_pool) and 0 <= int(target_idx) < len(target_pool)):
+            return False
+        attacker_cell = (int(attacker_pool[int(attacker_idx)][0]), int(attacker_pool[int(attacker_idx)][1]))
+        target_cell = (int(target_pool[int(target_idx)][0]), int(target_pool[int(target_idx)][1]))
+        target_cover_local = _target_cover_cells(env, target_cell, radius=3)
+        report_local = visibility_report(
+            attacker_cell,
+            target_cell,
+            opaque_cells_set=opaque_cells,
+            obscuring_cells_set=obscuring_cells,
+            target_cover_cells_set=target_cover_local,
+            visibility_mode=visibility_mode,
+        )
+        return bool(report_local.get("los", False))
+
     enemies_seeing = 0
     obscured_seen = 0
     fully_visible_seen = 0
@@ -290,26 +332,26 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
         if not isinstance(enemy, (list, tuple)) or len(enemy) < 2:
             continue
         enemy_id = env._unit_id("enemy" if side == "model" else "model", enemy_idx) if hasattr(env, "_unit_id") else None
-        attacker_cell = (int(enemy[0]), int(enemy[1]))
-        report = visibility_report(
-            attacker_cell,
-            unit_cell,
-            opaque_cells_set=opaque_cells,
-            obscuring_cells_set=obscuring_cells,
-            target_cover_cells_set=target_cover_cells,
-            visibility_mode=visibility_mode,
-        )
-        if not bool(report.get("los", False)):
+        enemy_side = "enemy" if side == "model" else "model"
+        if not _has_los_between_units_local(enemy_side, enemy_idx, side, idx):
             continue
         if enemy_id is not None:
             seen_by_ids.append(int(enemy_id))
-        distance = max(abs(attacker_cell[0] - unit_cell[0]), abs(attacker_cell[1] - unit_cell[1]))
+        distance = _distance_between_units_local(enemy_side, enemy_idx, side, idx)
         range_limit = 0.0
         if enemy_idx < len(enemy_weapon) and isinstance(enemy_weapon[enemy_idx], dict):
             range_limit = float(enemy_weapon[enemy_idx].get("Range", 0) or 0)
         if distance > range_limit:
             continue
         enemies_seeing += 1
+        report = visibility_report(
+            (int(enemy[0]), int(enemy[1])),
+            unit_cell,
+            opaque_cells_set=opaque_cells,
+            obscuring_cells_set=obscuring_cells,
+            target_cover_cells_set=target_cover_cells,
+            visibility_mode=visibility_mode,
+        )
         if bool(report.get("fully_visible", False)):
             fully_visible_seen += 1
         if bool(report.get("obscured", False)):
@@ -364,34 +406,30 @@ def _unit_status_payload(env, side: str, idx: int) -> dict:
     in_range_targets: list[int] = []
     can_see_ids: list[int] = []
     own_range = 0.0
+    range_eps = 0.0
+    if hasattr(env, "_shoot_range_epsilon"):
+        try:
+            range_eps = float(env._shoot_range_epsilon())
+        except Exception:
+            range_eps = 0.0
     if idx < len(own_weapon) and isinstance(own_weapon[idx], dict):
         own_range = float(own_weapon[idx].get("Range", 0) or 0)
-    if own_range > 0:
-        for enemy_idx, enemy in enumerate(enemy_coords):
-            if not isinstance(enemy, (list, tuple)) or len(enemy) < 2:
-                continue
-            enemy_hp = env.enemy_health[enemy_idx] if side == "model" else env.unit_health[enemy_idx]
-            if float(enemy_hp or 0.0) <= 0:
-                continue
-            attacker_cell = unit_cell
-            target_cell = (int(enemy[0]), int(enemy[1]))
-            distance = max(abs(attacker_cell[0] - target_cell[0]), abs(attacker_cell[1] - target_cell[1]))
-            if distance > own_range:
-                continue
-            target_cover_cells = _target_cover_cells(env, target_cell, radius=3)
-            report = visibility_report(
-                attacker_cell,
-                target_cell,
-                opaque_cells_set=opaque_cells,
-                obscuring_cells_set=obscuring_cells,
-                target_cover_cells_set=target_cover_cells,
-                visibility_mode=visibility_mode,
-            )
-            if not bool(report.get("los", False)):
-                continue
-            enemy_id = env._unit_id("enemy" if side == "model" else "model", enemy_idx) if hasattr(env, "_unit_id") else None
-            if enemy_id is not None:
-                can_see_ids.append(int(enemy_id))
+    enemy_side = "enemy" if side == "model" else "model"
+    for enemy_idx, enemy in enumerate(enemy_coords):
+        if not isinstance(enemy, (list, tuple)) or len(enemy) < 2:
+            continue
+        enemy_hp = env.enemy_health[enemy_idx] if side == "model" else env.unit_health[enemy_idx]
+        if float(enemy_hp or 0.0) <= 0:
+            continue
+        if not _has_los_between_units_local(side, idx, enemy_side, enemy_idx):
+            continue
+        enemy_id = env._unit_id("enemy" if side == "model" else "model", enemy_idx) if hasattr(env, "_unit_id") else None
+        if enemy_id is None:
+            continue
+        can_see_ids.append(int(enemy_id))
+        if own_range > 0:
+            distance = _distance_between_units_local(side, idx, enemy_side, enemy_idx)
+            if distance <= (own_range + range_eps):
                 in_range_targets.append(int(enemy_id))
 
     reachable_cells: list[list[int]] = []
@@ -469,9 +507,12 @@ def write_state_json(env, path=None):
         unit_id = env._unit_id("enemy", idx)
         unit_data = env._get_unit_data("enemy", idx)
         hp = env.enemy_health[idx] if idx < len(env.enemy_health) else None
+        alive_models = env._alive_models_from_pool("enemy", idx) if hasattr(env, "_alive_models_from_pool") else None
+        if float(hp or 0.0) <= 0 or (alive_models is not None and int(alive_models) <= 0):
+            continue
         weapon_profile = env.enemy_weapon[idx] if idx < len(getattr(env, "enemy_weapon", [])) else None
         unit_payload = _unit_payload("player", unit_id, unit_data, coords, hp,
-                                   alive_models=env._alive_models_from_pool("enemy", idx) if hasattr(env, "_alive_models_from_pool") else None,
+                                   alive_models=alive_models,
                                    anchor=(env.enemy_anchor_coords[idx] if hasattr(env, "enemy_anchor_coords") and idx < len(env.enemy_anchor_coords) else None),
                                    model_positions=([{"x": _safe_int(pos[1], None), "y": _safe_int(pos[0], None), "z": _safe_int(pos[2], 0)}
                                                      for pos in env.enemy_model_positions[idx]]
@@ -485,9 +526,12 @@ def write_state_json(env, path=None):
         unit_id = env._unit_id("model", idx)
         unit_data = env._get_unit_data("model", idx)
         hp = env.unit_health[idx] if idx < len(env.unit_health) else None
+        alive_models = env._alive_models_from_pool("model", idx) if hasattr(env, "_alive_models_from_pool") else None
+        if float(hp or 0.0) <= 0 or (alive_models is not None and int(alive_models) <= 0):
+            continue
         weapon_profile = env.unit_weapon[idx] if idx < len(getattr(env, "unit_weapon", [])) else None
         unit_payload = _unit_payload("model", unit_id, unit_data, coords, hp,
-                                   alive_models=env._alive_models_from_pool("model", idx) if hasattr(env, "_alive_models_from_pool") else None,
+                                   alive_models=alive_models,
                                    anchor=(env.unit_anchor_coords[idx] if hasattr(env, "unit_anchor_coords") and idx < len(env.unit_anchor_coords) else None),
                                    model_positions=([{"x": _safe_int(pos[1], None), "y": _safe_int(pos[0], None), "z": _safe_int(pos[2], 0)}
                                                      for pos in env.unit_model_positions[idx]]

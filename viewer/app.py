@@ -1,5 +1,6 @@
 import torch
 import json
+import html
 import os
 import queue
 import re
@@ -40,10 +41,9 @@ from viewer.opengl_view import OpenGLBoardWidget
 from viewer.gun_fx import get_gun_fx_config
 from viewer.state import StateWatcher
 from viewer.styles import Theme
-from viewer.model_log_tree import render_model_log_flat
 
 from gym_mod.engine.game_controller import GameController
-from gym_mod.engine.game_io import parse_dice_values
+from gym_mod.engine.game_io import DICE_CANCEL_TOKEN, parse_dice_values
 from gym_mod.engine.event_bus import get_event_bus
 from gym_mod.engine.mission import validate_deploy_coord
 
@@ -204,6 +204,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._shoot_resolver_active = False
         self._shoot_resolver_step = 0
         self._shoot_resolver_attacker_id: Optional[int] = None
+        self._shoot_locked_target_id: Optional[int] = None
+        self._shoot_request_target_id: Optional[int] = None
+        self._shoot_ui_stage: str = "target"
+        self._last_shoot_stage_debug_sig: Optional[tuple] = None
         self._active_weapon_name: Optional[str] = None
         self._active_weapon_range: Optional[int] = None
         self._active_weapon_unit_id: Optional[int] = None
@@ -280,17 +284,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_log_source = None
         self._model_events_stream = []
         self._model_events_current = []
-        self._log_tabs = {}
-        self._log_tab_indices = {}
-        self._log_tab_programmatic_switch = False
-        self._last_manual_log_tab_index = None
+        self._log_view = None
+        self._log_filter_buttons = {}
+        self._log_status_label = None
         self._fx_shot_queue: Deque[FxShotEvent] = deque()
         self._fx_parser = FxLogParser(self._enqueue_fx_event, self._fx_debug, seen_max=400)
-        self._log_tab_defs = [
-            ("player", "Все ходы игрока"),
-            ("model", "Все ходы модели"),
-            ("key", "Ключевые события"),
-        ]
         self._max_log_lines = 5000
         self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS_PLAY.md")
         self._log_file_max_bytes = 5 * 1024 * 1024
@@ -320,7 +318,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         log_group = QtWidgets.QGroupBox("ЖУРНАЛ")
         log_layout = QtWidgets.QVBoxLayout(log_group)
         log_layout.addLayout(self._log_controls_layout)
-        log_layout.addWidget(self.log_tabs)
+        log_layout.addWidget(self.log_view)
         log_group.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
@@ -555,6 +553,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout(self.shoot_popover)
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(8)
+        # На Windows popup может пересчитать minimum size после show() (DPI/font metrics),
+        # поэтому не форсим resize вручную и просим layout держать фиксированный sizeHint.
+        layout.setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
 
         self.shoot_popover_title = QtWidgets.QLabel("FIRE")
         self.shoot_popover_title.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {Theme.text.name()};")
@@ -615,14 +616,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.shoot_popover_action.setMinimumHeight(34)
         self.shoot_popover_cancel.setMinimumHeight(34)
         self.shoot_popover_action.clicked.connect(self._shoot_step_action)
-        self.shoot_popover_cancel.clicked.connect(self._close_shoot_popover)
+        self.shoot_popover_cancel.clicked.connect(self._cancel_shoot_sequence)
         btn_row.addWidget(self.shoot_popover_action)
         btn_row.addWidget(self.shoot_popover_cancel)
         layout.addLayout(btn_row)
 
         QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Return), self.shoot_popover, activated=self._shoot_step_action)
         QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Enter), self.shoot_popover, activated=self._shoot_step_action)
-        QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Escape), self.shoot_popover, activated=self._close_shoot_popover)
+        QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Escape), self.shoot_popover, activated=self._cancel_shoot_sequence)
         self.shoot_popover.hide()
 
     def _is_shooting_target_request(self, request) -> bool:
@@ -678,6 +679,65 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 parts.append(name)
         return " • ".join(parts)
 
+    def _shoot_stage_to_step(self, stage: str) -> int:
+        stage_norm = str(stage or "").strip().lower()
+        if stage_norm in {"target", "hit"}:
+            return 0
+        if stage_norm == "wound":
+            return 1
+        if stage_norm == "allocate":
+            return 2
+        if stage_norm == "save":
+            return 3
+        if stage_norm in {"damage", "resolve"}:
+            return 4
+        return max(0, int(self._shoot_resolver_step or 0))
+
+    def _resolve_shoot_stage(self, request) -> str:
+        if self._is_shooting_target_request(request):
+            return "target"
+        if not self._is_shooting_dice_request(request):
+            return "resolve"
+
+        meta = getattr(request, "meta", {}) or {}
+        for key in ("shoot_stage", "dice_stage", "roll_stage", "stage"):
+            raw = meta.get(key) if isinstance(meta, dict) else None
+            if not raw:
+                continue
+            token = str(raw).strip().lower()
+            if token in {"hit", "to_hit", "hit_roll"}:
+                return "hit"
+            if token in {"wound", "to_wound", "wound_roll"}:
+                return "wound"
+            if token in {"save", "saving_throw", "save_roll"}:
+                return "save"
+
+        prompt = str(getattr(request, "prompt", "") or "").strip().lower()
+        if any(tok in prompt for tok in ("to hit", "на попад", "попадан")):
+            return "hit"
+        if any(tok in prompt for tok in ("to wound", "на ранен", "ранени")):
+            return "wound"
+        if any(tok in prompt for tok in ("saving throw", "save", "сейв", "бросок сейв")):
+            return "save"
+
+        # Fallback: если движок не прислал явный stage, сохраняем совместимость,
+        # но пишем диагностику о рискованном распознавании.
+        fallback = "hit" if self._shoot_resolver_step <= 0 else "wound" if self._shoot_resolver_step <= 1 else "save"
+        sig = (
+            str(getattr(request, "kind", "")),
+            int(getattr(request, "count", 0) or 0),
+            prompt,
+            fallback,
+        )
+        if sig != self._last_shoot_stage_debug_sig:
+            self._last_shoot_stage_debug_sig = sig
+            self.add_log_line(
+                "REQ: stage popover определён по fallback. Где: viewer/app.py (_resolve_shoot_stage). "
+                f"Что случилось: не удалось явно распознать этап dice-request (prompt='{prompt or '—'}'), выбран fallback={fallback}. "
+                "Что делать дальше: добавить в meta запроса явный stage (hit/wound/save), чтобы исключить рассинхрон UI."
+            )
+        return fallback
+
     def _count_dice_tokens(self, raw: str) -> tuple[int, bool, bool]:
         cleaned = str(raw or "").strip()
         if not cleaned:
@@ -698,7 +758,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if not hasattr(self, "shoot_popover") or not self._shoot_resolver_active:
             return
         req = self._pending_request
-        expects_dice = bool(getattr(req, "kind", "") == "dice" and self._shoot_resolver_step in (0, 1, 3))
+        stage = self._resolve_shoot_stage(req)
+        expects_dice = bool(getattr(req, "kind", "") == "dice" and stage in {"hit", "wound", "save"})
         if not expects_dice:
             self.shoot_popover_dice_counter.setText("0/0")
             self.shoot_popover_info.setText("ℹ На этом шаге ввод кубов не требуется")
@@ -706,6 +767,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
 
         count = int(getattr(req, "count", 0) or 0)
+        lock_suffix = ""
+        if self._is_shooting_dice_request(req) and self._shoot_locked_target_id is not None:
+            lock_suffix = f" • Цель Unit {int(self._shoot_locked_target_id)} зафиксирована"
         entered, has_error, has_tokens = self._count_dice_tokens(self.shoot_popover_dice_input.text())
         self.shoot_popover_dice_counter.setText(f"{entered}/{count}")
         if has_error:
@@ -714,23 +778,23 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
 
         if count <= 0:
-            self.shoot_popover_info.setText("ℹ Движок не запросил количество кубов")
+            self.shoot_popover_info.setText(f"ℹ Движок не запросил количество кубов{lock_suffix}")
             self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
             return
 
         if entered < count:
             rest = count - entered
             if has_tokens:
-                self.shoot_popover_info.setText(f"ℹ Нужно: {count} значений d6 • Осталось: {rest}")
+                self.shoot_popover_info.setText(f"ℹ Нужно: {count} значений d6 • Осталось: {rest}{lock_suffix}")
             else:
-                self.shoot_popover_info.setText(f"ℹ Нужно: {count} значений d6. Пример: 4 1 6 2 3 5 2 6")
+                self.shoot_popover_info.setText(f"ℹ Нужно: {count} значений d6. Пример: 4 1 6 2 3 5 2 6{lock_suffix}")
             self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
         elif entered > count:
             extra = entered - count
-            self.shoot_popover_info.setText(f"⚠ Лишних: {extra}. Нужно ровно {count} значений d6")
+            self.shoot_popover_info.setText(f"⚠ Лишних: {extra}. Нужно ровно {count} значений d6{lock_suffix}")
             self.shoot_popover_info.setStyleSheet("font-size: 12px; color: #d8b26e;")
         else:
-            self.shoot_popover_info.setText("ℹ Готово к броску")
+            self.shoot_popover_info.setText(f"ℹ Готово к броску{lock_suffix}")
             self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
 
     def _parse_popover_dice_values(self, request) -> Optional[list[int]]:
@@ -755,7 +819,27 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if not self._shoot_resolver_active or self._shoot_popover_target_id is None:
             return
         attacker = self._shoot_resolver_attacker_id
-        target = int(self._shoot_popover_target_id)
+        request = self._pending_request
+        locked_target = self._shoot_locked_target_id
+        if self._is_shooting_dice_request(request) and locked_target is not None:
+            target = int(locked_target)
+            self._shoot_popover_target_id = int(locked_target)
+        else:
+            target = int(self._shoot_popover_target_id)
+
+        if self._is_shooting_dice_request(request):
+            req_target = self._shoot_request_target_id
+            if req_target is not None and int(target) != int(req_target):
+                self.add_log_line(
+                    "REQ: конфликт цели в Fire popover. Где: viewer/app.py (_update_shoot_popover_ui). "
+                    f"Что случилось: dice-request привязан к Unit {int(req_target)}, а UI пытается показать Unit {int(target)}. "
+                    "Что делать дальше: последовательность сброшена, выберите цель заново."
+                )
+                self._close_shoot_popover(reset_lock=True, keep_request_target=False)
+                self.map_scene.clear_target_selection()
+                self._current_target_id = None
+                self._shoot_request_flow_active = False
+                return
         self.shoot_popover_title.setText("FIRE")
         self.shoot_popover_units.setText(f"Unit {attacker} → Unit {target}")
         weapon = "—"
@@ -772,41 +856,43 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if hasattr(self, "map_scene") and hasattr(self.map_scene, "shooting_overlay_mode_label"):
             overlay_mode = str(self.map_scene.shooting_overlay_mode_label())
         self.shoot_popover_meta.setText(f"Weapon: {weapon} ({range_text}) • Overlay: {overlay_mode} • LoS OK")
+
+        stage = self._resolve_shoot_stage(request)
+        self._shoot_ui_stage = stage
+        self._shoot_resolver_step = self._shoot_stage_to_step(stage)
         self.shoot_stepper.setText(self._shoot_stepper_text())
 
-        request = self._pending_request
-        step = self._shoot_resolver_step
         dice_mode = getattr(request, "kind", "") == "dice"
         count = int(getattr(request, "count", 0) or 0)
 
-        needs_input = dice_mode and step in (0, 1, 3)
+        needs_input = dice_mode and stage in {"hit", "wound", "save"}
         self.shoot_popover_input_label.setVisible(needs_input)
         self.shoot_popover_dice_input.setVisible(needs_input)
         self.shoot_popover_dice_counter.setVisible(needs_input)
         if needs_input and count > 0:
             self.shoot_popover_dice_input.setPlaceholderText("например: 4 1 6 2 3 5 2 6")
 
-        if step == 0:
+        if stage == "target":
+            self.shoot_popover_step_title.setText("STEP 1/5: Hit Roll")
+            self.shoot_popover_step_summary.setText("Need: — dice")
+            self.shoot_popover_action.setText("Roll Hit")
+            self.shoot_popover_info.setText("ℹ Нажмите Roll Hit, чтобы выбрать цель и перейти к броску")
+            self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
+        elif stage == "hit":
             self.shoot_popover_step_title.setText("STEP 1/5: Hit Roll")
             self.shoot_popover_step_summary.setText(f"Need: {count if dice_mode else '—'} dice")
             self.shoot_popover_action.setText("Roll Hit")
             if not dice_mode:
-                self.shoot_popover_info.setText("ℹ Нажмите Roll Hit, чтобы выбрать цель и перейти к броску")
+                self.shoot_popover_info.setText("ℹ Ожидаю запрос кубов Hit от движка")
                 self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
-        elif step == 1:
+        elif stage == "wound":
             self.shoot_popover_step_title.setText("STEP 2/5: Wound Roll")
             self.shoot_popover_step_summary.setText(f"Need: {count if dice_mode else '—'} dice")
             self.shoot_popover_action.setText("Roll Wound")
             if not dice_mode:
                 self.shoot_popover_info.setText("ℹ Ожидаю запрос кубов Wound от движка")
                 self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
-        elif step == 2:
-            self.shoot_popover_step_title.setText("STEP 3/5: Allocate Attack")
-            self.shoot_popover_step_summary.setText("Need: — dice")
-            self.shoot_popover_action.setText("Continue")
-            self.shoot_popover_info.setText("ℹ Allocate Attack — skipped for now")
-            self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
-        elif step == 3:
+        elif stage == "save":
             self.shoot_popover_step_title.setText("STEP 4/5: Saving Throw")
             self.shoot_popover_step_summary.setText(f"Need: {count if dice_mode else '—'} dice")
             self.shoot_popover_action.setText("Roll Save")
@@ -816,17 +902,31 @@ class ViewerWindow(QtWidgets.QMainWindow):
         else:
             self.shoot_popover_step_title.setText("STEP 5/5: Inflict Damage")
             self.shoot_popover_step_summary.setText("Need: — dice")
-            self.shoot_popover_action.setText("Finish")
-            self.shoot_popover_info.setText("ℹ Inflict Damage — skipped for now")
+            self.shoot_popover_action.setText("Continue")
+            self.shoot_popover_info.setText("ℹ Ожидаю следующий шаг от движка")
             self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
 
         if needs_input:
+            if self._is_shooting_dice_request(request) and self._shoot_locked_target_id is not None:
+                self.shoot_popover_info.setText(
+                    "ℹ Цель зафиксирована для текущего выстрела. Смена цели будет доступна после завершения текущего броска."
+                )
+                self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
             self._update_shoot_input_feedback()
 
     def _open_shoot_popover(self, target_id: int, global_pos: Optional[QtCore.QPoint] = None) -> None:
         if target_id not in self._shoot_targets_valid:
             return
         req = self._pending_request
+        if self._is_shooting_dice_request(req) and self._shoot_locked_target_id is not None:
+            locked = int(self._shoot_locked_target_id)
+            if int(target_id) != locked:
+                self.add_log_line(
+                    f"REQ: цель Unit {int(target_id)} отклонена. Где: viewer/app.py (_open_shoot_popover). "
+                    f"Что случилось: на шаге кубов цель уже зафиксирована как Unit {locked}. "
+                    "Что делать дальше: завершите текущий выстрел или нажмите Cancel и выберите цель заново."
+                )
+                return
         if not self._shoot_resolver_active:
             self._shoot_resolver_step = 0
         self._shoot_resolver_active = True
@@ -841,38 +941,73 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._update_shoot_popover_ui()
         anchor = global_pos or QtGui.QCursor.pos()
         self.shoot_popover.adjustSize()
-        self.shoot_popover.resize(self.shoot_popover.sizeHint())
-        pos = QtCore.QPoint(anchor.x() + 18, anchor.y() - self.shoot_popover.height() - 12)
-        self.shoot_popover.move(pos)
         self.shoot_popover.show()
+        popup_h = self.shoot_popover.frameGeometry().height()
+        pos = QtCore.QPoint(anchor.x() + 18, anchor.y() - popup_h - 12)
+        self.shoot_popover.move(pos)
         self.shoot_popover.raise_()
         self.shoot_popover.activateWindow()
         self.shoot_popover_action.setFocus()
 
-    def _close_shoot_popover(self) -> None:
+    def _close_shoot_popover(self, *, reset_lock: bool = True, keep_request_target: bool = True) -> None:
         self._shoot_popover_target_id = None
+        if reset_lock:
+            self._shoot_locked_target_id = None
         self._shoot_resolver_active = False
         self._shoot_resolver_step = 0
         self._shoot_resolver_attacker_id = None
+        self._shoot_ui_stage = "target"
+        if not keep_request_target:
+            self._shoot_request_target_id = None
         if hasattr(self, "shoot_popover"):
             self.shoot_popover.hide()
         if self._is_shooting_target_request(self._pending_request) or self._is_shooting_dice_request(self._pending_request):
             self.command_prompt.setText(self._shoot_instruction_text())
 
+    def _cancel_shoot_sequence(self) -> None:
+        req = self._pending_request
+        if not (self._is_shooting_target_request(req) or self._is_shooting_dice_request(req)):
+            self._close_shoot_popover(reset_lock=True, keep_request_target=False)
+            return
+
+        if self._is_shooting_dice_request(req) and self._shoot_request_target_id is not None:
+            self.add_log_line(
+                "REQ: Cancel во время бросков принят. Где: viewer/app.py (_cancel_shoot_sequence). "
+                f"Что случилось: отменяем текущий dice-request для Unit {int(self._shoot_request_target_id)} и сбрасываем выбор цели. "
+                "Что делать дальше: выберите новую цель в следующем запросе стрельбы."
+            )
+            self._close_shoot_popover(reset_lock=True, keep_request_target=False)
+            self.map_scene.clear_target_selection()
+            self._current_target_id = None
+            self._shoot_request_flow_active = False
+            self._submit_answer(DICE_CANCEL_TOKEN)
+            return
+
+        self._close_shoot_popover(reset_lock=True, keep_request_target=False)
+        self.map_scene.clear_target_selection()
+        self._current_target_id = None
+
     def _shoot_step_action(self) -> None:
         if not self._shoot_resolver_active:
             return
         req = self._pending_request
-        step = self._shoot_resolver_step
+        stage = self._resolve_shoot_stage(req)
         target_id = self._shoot_popover_target_id
         if target_id is None:
             self._close_shoot_popover()
             return
 
-        if step == 0:
+        if stage == "target":
             if self._is_shooting_target_request(req):
+                self._shoot_locked_target_id = int(target_id)
                 self._submit_answer(str(int(target_id)))
                 req = self._pending_request
+                stage = self._resolve_shoot_stage(req)
+            if stage not in {"hit", "wound", "save"} or getattr(req, "kind", "") != "dice":
+                self._update_shoot_popover_ui()
+                return
+
+        if stage in {"hit", "wound", "save"}:
             if getattr(req, "kind", "") != "dice":
                 self._update_shoot_popover_ui()
                 return
@@ -880,32 +1015,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if values is None:
                 return
             self._submit_answer(values)
-            self._shoot_resolver_step = 1
-            self.shoot_popover_dice_input.clear()
-        elif step == 1:
-            if getattr(req, "kind", "") != "dice":
-                self._update_shoot_popover_ui()
-                return
-            values = self._parse_popover_dice_values(req)
-            if values is None:
-                return
-            self._submit_answer(values)
-            self._shoot_resolver_step = 2
-            self.shoot_popover_dice_input.clear()
-        elif step == 2:
-            self._shoot_resolver_step = 3
-        elif step == 3:
-            if getattr(req, "kind", "") != "dice":
-                self._update_shoot_popover_ui()
-                return
-            values = self._parse_popover_dice_values(req)
-            if values is None:
-                return
-            self._submit_answer(values)
-            self._shoot_resolver_step = 4
             self.shoot_popover_dice_input.clear()
         else:
-            self._close_shoot_popover()
+            self._update_shoot_popover_ui()
             return
 
         if self._shoot_resolver_active:
@@ -959,7 +1071,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.map_scene.set_target_cell(None)
             self._shoot_targets_valid = set()
             self._shoot_request_flow_active = False
-            self._close_shoot_popover()
+            self._close_shoot_popover(reset_lock=True, keep_request_target=False)
             self._refresh_active_context()
             return
 
@@ -977,11 +1089,46 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._maybe_reset_target_for_request(request)
         if self._is_shooting_target_request(request):
             self._shoot_request_flow_active = True
+            self._shoot_ui_stage = "target"
+            self._shoot_resolver_step = 0
+            self._shoot_locked_target_id = None
+            self._shoot_request_target_id = None
             self._shoot_targets_valid = self._valid_target_ids_from_request(request)
+            shooter_id = self._extract_unit_id(getattr(request, "prompt", ""))
+            shooter_label = self._format_unit_label(shooter_id)
+            targets_label = ", ".join(str(v) for v in sorted(self._shoot_targets_valid)) if self._shoot_targets_valid else "—"
+            meta = getattr(request, "meta", {}) or {}
+            filtered = list(meta.get("shoot_filtered") or []) if isinstance(meta, dict) else []
+            filtered_chunks: list[str] = []
+            for item in filtered:
+                if not isinstance(item, dict):
+                    continue
+                target_id = item.get("target_id")
+                reason = str(item.get("reason") or "").strip()
+                if target_id is None or not reason:
+                    continue
+                try:
+                    filtered_chunks.append(f"{int(target_id)}: {reason}")
+                except (TypeError, ValueError):
+                    continue
+            filtered_label = "; ".join(filtered_chunks) if filtered_chunks else "—"
+            self.add_log_line(
+                f"REQ: валидные цели стрельбы для Unit {shooter_label}: [{targets_label}] | отфильтрованы: [{filtered_label}]"
+            )
         elif self._is_shooting_dice_request(request):
-            pass
+            if self._shoot_locked_target_id is not None:
+                self._shoot_request_target_id = int(self._shoot_locked_target_id)
+            self._shoot_ui_stage = self._resolve_shoot_stage(request)
+            self._shoot_resolver_step = self._shoot_stage_to_step(self._shoot_ui_stage)
+            self.add_log_line(
+                "REQ: движок запросил кубы стрельбы"
+                f" (target={self._shoot_request_target_id if self._shoot_request_target_id is not None else '—'}, "
+                f"count={int(getattr(request, 'count', 0) or 0)}, stage={self._shoot_ui_stage})."
+            )
         else:
             self._shoot_request_flow_active = False
+            self._shoot_locked_target_id = None
+            self._shoot_request_target_id = None
             self._shoot_targets_valid = set()
         self._update_deploy_status_from_request(request)
         display_prompt = self._deploy_status_text if self._deploy_status_text else request.prompt
@@ -993,7 +1140,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_prompt.setText(self._move_instruction_text())
             self.command_stack.setEnabled(False)
             self.command_stack.setVisible(False)
-            self.command_hint.setText("Горячие клавиши: ПКМ — идти, Backspace — не ходить")
+            self.command_hint.setText("Горячие клавиши: ПКМ — идти, Backspace — stay")
         elif self._is_shooting_target_request(request) or self._is_shooting_dice_request(request):
             self.command_prompt.setText(self._shoot_instruction_text())
             self.command_stack.setEnabled(False)
@@ -1071,7 +1218,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             f"Ходьба: Unit {unit_label} — {unit_name}\n"
             "ЛКМ: выделить/hover клетку\n"
             "ПКМ: идти в клетку\n"
-            "Backspace: не ходить (пропустить ходьбу юнита)\n"
+            "Backspace: stay (остаться на месте)\n"
             "Синий: обычный Move (до M)\n"
             "Жёлтый: Advance (до M+6)"
         )
@@ -1177,6 +1324,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if unit_id is None:
             return
         if self._is_shooting_target_request(self._pending_request) and int(unit_id) not in self._shoot_targets_valid:
+            allowed = ", ".join(str(v) for v in sorted(self._shoot_targets_valid)) if self._shoot_targets_valid else "—"
+            self.add_log_line(
+                f"REQ: цель Unit {int(unit_id)} отклонена. Где: viewer/app.py (_on_target_selected). Что дальше: выберите цель из [{allowed}]"
+            )
             return
         self._current_target_id = unit_id
         self.map_scene.set_target_unit(unit_id)
@@ -1199,6 +1350,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._close_shoot_popover()
             return
         if int(unit_id) not in self._shoot_targets_valid:
+            allowed = ", ".join(str(v) for v in sorted(self._shoot_targets_valid)) if self._shoot_targets_valid else "—"
+            self.add_log_line(
+                f"REQ: ПКМ по Unit {int(unit_id)} отклонён. Где: viewer/app.py (_on_unit_right_clicked). Что дальше: выберите цель из [{allowed}]"
+            )
             self._close_shoot_popover()
             return
         self._open_shoot_popover(int(unit_id), global_pos)
@@ -1248,24 +1403,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if self._movement_skip_sent:
             return True
         req_meta = getattr(self._pending_request, "meta", {}) or {}
-        move_cells = [
-            (int(cell[0]), int(cell[1]))
-            for cell in (req_meta.get("move_cells") or [])
-            if isinstance(cell, (list, tuple)) and len(cell) >= 2
-        ]
-        reachable_cells = move_cells or [
-            (int(cell[0]), int(cell[1]))
-            for cell in (req_meta.get("reachable_cells") or [])
-            if isinstance(cell, (list, tuple)) and len(cell) >= 2
-        ]
-        if not reachable_cells:
-            self.add_log_line(
-                "Пропуск ходьбы не выполнен: нет reachable-клеток в move_request. "
-                "Где: viewer/app.py (_submit_skip_movement_for_active_unit). "
-                "Что делать дальше: выполните движение ПКМ или проверьте состояние overlay."
-            )
-            return False
-
         req_unit_id = req_meta.get("unit_id")
         current_cell = None
         for candidate_side in ("player", "model"):
@@ -1283,18 +1420,18 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if current_cell is not None:
                 break
 
-        if current_cell is None:
-            x, y = reachable_cells[0]
-        else:
-            x, y = min(
-                reachable_cells,
-                key=lambda cell: max(abs(int(cell[0]) - int(current_cell[0])), abs(int(cell[1]) - int(current_cell[1]))),
-            )
-
-        move_mode = "normal" if (x, y) in set(move_cells) else "advance"
         self._movement_skip_sent = True
-        self.add_log_line(f"Unit {int(req_unit_id) if str(req_unit_id).isdigit() else '—'}: movement skipped")
-        self._submit_answer({"x": int(x), "y": int(y), "mode": move_mode})
+        unit_label = int(req_unit_id) if str(req_unit_id).isdigit() else "—"
+        if current_cell is None:
+            self.add_log_line(
+                f"Unit {unit_label}: movement stay (координаты юнита в UI не найдены, передан mode=stay)."
+            )
+            self._submit_answer({"mode": "stay", "skip_movement": True})
+        else:
+            self.add_log_line(
+                f"Unit {unit_label}: movement stay (позиция сохранена x={int(current_cell[0])}, y={int(current_cell[1])})."
+            )
+            self._submit_answer({"mode": "stay", "skip_movement": True, "x": int(current_cell[0]), "y": int(current_cell[1])})
         self.map_scene.set_target_cell(None)
         self.map_scene.clear_target_selection()
         return True
@@ -1416,7 +1553,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 self.command_hint.setText("Горячие клавиши: Enter — выбрать")
         elif kind == "deploy_coord":
             if self._is_movement_move_request(self._pending_request):
-                self.command_hint.setText("ПКМ по подсвеченной клетке. ЛКМ — hover/выбор, Backspace — не ходить")
+                self.command_hint.setText("ПКМ по подсвеченной клетке. ЛКМ — hover/выбор, Backspace — stay")
             elif self._is_move_cell_request(self._pending_request):
                 self.command_hint.setText("RMB по подсвеченной клетке или введите X Y, затем Enter")
             else:
@@ -1428,34 +1565,42 @@ class ViewerWindow(QtWidgets.QMainWindow):
         fixed_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
         fixed_font.setPointSize(10)
 
-        self.log_tabs = QtWidgets.QTabWidget()
-        for index, (key, label) in enumerate(self._log_tab_defs):
-            view = QtWidgets.QPlainTextEdit()
-            view.setReadOnly(True)
-            view.setFont(fixed_font)
-            view.setMaximumBlockCount(self._max_log_lines)
-            self._log_tabs[key] = view
-            self._log_tab_indices[key] = index
-            self.log_tabs.addTab(view, label)
-        self.log_tabs.currentChanged.connect(self._on_log_tab_changed)
+        self.log_view = QtWidgets.QTextEdit()
+        self.log_view.setReadOnly(True)
+        self.log_view.setFont(fixed_font)
+        self.log_view.document().setMaximumBlockCount(self._max_log_lines)
 
-        self.log_only_current_turn = QtWidgets.QCheckBox("Показать только текущий ход")
-        self.log_only_current_turn.toggled.connect(self._refresh_log_views)
+        self._log_status_label = QtWidgets.QLabel("Режим: Игровой")
+        self._log_status_label.setStyleSheet(f"color: {Theme.muted.name()};")
 
-        self.log_model_verbose = QtWidgets.QCheckBox("Подробно (verbose)")
-        self.log_model_verbose.toggled.connect(self._refresh_model_log_view)
+        filter_defs = [
+            ("movement", "👣"),
+            ("shooting", "🎯"),
+            ("charge", "⚡"),
+            ("fight", "⚔️"),
+            ("result", "🏁"),
+            ("errors", "⚠️"),
+            ("debug", "🧪"),
+        ]
+        for key, label in filter_defs:
+            btn = QtWidgets.QToolButton()
+            btn.setText(label)
+            btn.setCheckable(True)
+            btn.setChecked(key in {"movement", "shooting", "charge", "fight"})
+            btn.toggled.connect(self._refresh_log_views)
+            self._log_filter_buttons[key] = btn
 
-        self.log_copy_turn = QtWidgets.QPushButton("Копировать ход")
-        self.log_copy_turn.clicked.connect(self._copy_current_turn)
-        self.log_clear = QtWidgets.QPushButton("Очистить")
-        self.log_clear.clicked.connect(self._clear_log_viewer)
+        self.log_clear_all_button = QtWidgets.QToolButton()
+        self.log_clear_all_button.setText("🧹")
+        self.log_clear_all_button.setToolTip("Очистить всё")
+        self.log_clear_all_button.clicked.connect(self._clear_log_viewer)
 
         self._log_controls_layout = QtWidgets.QHBoxLayout()
-        self._log_controls_layout.addWidget(self.log_only_current_turn)
-        self._log_controls_layout.addWidget(self.log_model_verbose)
+        self._log_controls_layout.addWidget(self._log_status_label)
+        for key in ("movement", "shooting", "charge", "fight", "result", "errors", "debug"):
+            self._log_controls_layout.addWidget(self._log_filter_buttons[key])
+        self._log_controls_layout.addWidget(self.log_clear_all_button)
         self._log_controls_layout.addStretch()
-        self._log_controls_layout.addWidget(self.log_copy_turn)
-        self._log_controls_layout.addWidget(self.log_clear)
 
     def _append_log(self, messages):
         if not messages:
@@ -1482,7 +1627,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_log_source = "stream"
             self._model_events_stream.extend(self._filter_model_events(drained))
             self._model_events_current = list(self._model_events_stream)
-            self._refresh_model_log_view()
+            self._refresh_log_views()
 
     def _start_controller(self):
         self._reset_viewer_session_visuals(reason="new_game_start")
@@ -1508,6 +1653,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._shoot_resolver_active = False
         self._shoot_resolver_step = 0
         self._shoot_resolver_attacker_id: Optional[int] = None
+        self._shoot_locked_target_id: Optional[int] = None
+        self._shoot_request_target_id: Optional[int] = None
+        self._shoot_ui_stage: str = "target"
+        self._last_shoot_stage_debug_sig: Optional[tuple] = None
         self._active_weapon_name = None
         self._active_weapon_range = None
         self._active_weapon_unit_id = None
@@ -1733,7 +1882,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 f"attacker={attacker} defender={defender} text=\"{self.status_deployment.text()}\""
             )
 
-        self._auto_switch_log_tab(active)
 
         vp = state.get("vp", {})
         cp = state.get("cp", {})
@@ -1817,7 +1965,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_events_snapshot = list(events)
             self._model_log_source = "state"
             self._model_events_current = list(filtered)
-            self._refresh_model_log_view()
+            self._refresh_log_views()
         elif self._model_log_source is None:
             self._drain_event_queue()
 
@@ -1876,16 +2024,19 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def add_log_line(self, line: str):
         raw_text = str(line)
         self._capture_rolloff_sides_from_log(raw_text)
-        new_turn = self._update_turn_context(raw_text)
+        self._update_turn_context(raw_text)
         categories = self._classify_line(raw_text)
         if self._should_assign_shooting_side(raw_text, categories):
             categories.add(self._current_turn_side)
+        channel = self._detect_log_channel(raw_text, categories)
         display_text = self._decorate_log_line(raw_text, categories)
         entry = {
             "raw": raw_text,
             "display": display_text,
+            "compact": self._compact_gameplay_line(raw_text, categories),
             "turn": self._current_turn_number,
             "categories": categories,
+            "channel": channel,
         }
         self._log_entries.append(entry)
         self._append_log_to_file(raw_text)
@@ -1893,16 +2044,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._drain_fx_queue()
         if len(self._log_entries) > self._max_log_lines:
             self._log_entries = self._log_entries[-self._max_log_lines :]
-            self._refresh_log_views()
-            return
-        if new_turn is not None and self.log_only_current_turn.isChecked():
-            self._refresh_log_views()
-            return
-        for key, _ in self._log_tab_defs:
-            if self._should_show_entry(entry, key):
-                if key == "model":
-                    continue
-                self._append_to_view(self._log_tabs[key], display_text)
+        self._refresh_log_views()
 
     def _append_to_view(self, view: QtWidgets.QPlainTextEdit, text: str):
         scrollbar = view.verticalScrollBar()
@@ -1965,10 +2107,36 @@ class ViewerWindow(QtWidgets.QMainWindow):
             ],
         ):
             categories.add("shooting")
+            categories.add("combat_basic")
             categories.add("key")
         if "shooting" not in categories and self._is_shooting_report_line(line):
             categories.add("shooting")
+            categories.add("combat_basic")
             categories.add("key")
+        if self._matches_any(
+            lowered,
+            [
+                "движение",
+                "movement",
+                "move:",
+                "позиция до",
+                "позиция после",
+                "no move",
+                "ходьб",
+            ],
+        ):
+            categories.add("movement")
+            categories.add("combat_basic")
+        if self._matches_any(
+            lowered,
+            [
+                "чардж",
+                "charge",
+            ],
+        ):
+            categories.add("charge")
+            categories.add("combat_basic")
+
         if self._matches_any(
             lowered,
             [
@@ -1980,6 +2148,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             ],
         ):
             categories.add("fight")
+            categories.add("combat_basic")
             categories.add("key")
         if self._matches_any(
             lowered,
@@ -1998,6 +2167,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if self._matches_any(
             lowered,
             [
+                "reward (",
+                "fx:",
+                "los_debug",
+                "req:",
+            ],
+        ):
+            categories.add("debug")
+        if self._matches_any(
+            lowered,
+            [
                 "error",
                 "traceback",
                 "exception",
@@ -2009,6 +2188,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         ):
             categories.add("errors")
             categories.add("key")
+            categories.add("result")
         if self._matches_any(
             lowered,
             [
@@ -2027,6 +2207,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
             ],
         ):
             categories.add("key")
+        if self._matches_any(
+            lowered,
+            [
+                "побед",
+                "winner",
+                "конец боевого раунда",
+                "game over",
+                "итерация",
+            ],
+        ):
+            categories.add("result")
         return categories
 
     def _matches_any(self, lowered: str, tokens):
@@ -2122,50 +2313,234 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._current_turn_side = new_side
         return new_turn
 
-    def _should_show_entry(self, entry, tab_key):
-        if tab_key == "key":
-            if "key" not in entry["categories"]:
-                return False
-        elif tab_key in ("player", "model"):
-            if tab_key not in entry["categories"]:
-                if "player" in entry["categories"] or "model" in entry["categories"]:
-                    return False
-        if not self.log_only_current_turn.isChecked():
+    def _is_combat_event(self, event: dict) -> bool:
+        phase = str((event or {}).get("phase") or "").lower()
+        return phase in {"movement", "shooting", "charge", "fight"}
+
+    def _detect_log_channel(self, text: str, categories: set) -> str:
+        lowered = str(text or "").lower()
+        if "los_debug" in lowered:
+            return "los"
+        if "fx:" in lowered:
+            return "fx"
+        if "reward (" in lowered:
+            return "reward"
+        if "req:" in lowered:
+            return "req"
+        if "errors" in categories:
+            return "error"
+        if "result" in categories:
+            return "result"
+        if "turn" in categories or "key" in categories:
+            return "phase"
+        if "combat_basic" in categories:
+            return "combat"
+        return "system"
+
+    def _compact_gameplay_line(self, text: str, categories: set) -> str:
+        raw = str(text or "").strip()
+        if not raw:
+            return ""
+        reason_tag = self._reason_tag(raw)
+        if "movement" in categories:
+            if "позиция до" in raw.lower() or "позиция после" in raw.lower():
+                return f"👣 {raw}{reason_tag}"
+        if "shooting" in categories:
+            return f"🎯 {raw}{reason_tag}"
+        if "charge" in categories:
+            return f"⚡ {raw}{reason_tag}"
+        if "fight" in categories:
+            return f"⚔️ {raw}{reason_tag}"
+        if "result" in categories:
+            return f"🏁 {raw}{reason_tag}"
+        if "errors" in categories:
+            return f"⚠️ {raw}{reason_tag}"
+        if "turn" in categories or "key" in categories:
+            return f"⭐ {raw}{reason_tag}"
+        return f"{raw}{reason_tag}"
+
+    def _reason_tag(self, raw: str) -> str:
+        lowered = str(raw or "").lower()
+        if "цель вне дальности" in lowered:
+            return " [reason:out_of_range]"
+        if "нет доступных целей" in lowered:
+            return " [reason:no_targets]"
+        if "advance без assault" in lowered:
+            return " [reason:advance_no_assault]"
+        if "advance — чардж невозможен" in lowered or "чардж невозможен" in lowered:
+            return " [reason:advance_no_charge]"
+        if "overwatch невозможен" in lowered and "нет доступных стреляющих юнитов" in lowered:
+            return " [reason:no_overwatch_units]"
+        return ""
+
+    def _entry_matches_filter(self, entry: dict) -> bool:
+        categories = entry.get("categories", set())
+        channel = entry.get("channel")
+        if channel in {"fx", "los", "reward", "req"}:
+            return False
+        if "combat_basic" in categories or "turn" in categories or "result" in categories or "errors" in categories:
             return True
-        if self._current_turn_number is None:
-            return True
-        return entry["turn"] == self._current_turn_number
+        return False
+
+    def _is_filter_enabled_for_entry(self, entry: dict) -> bool:
+        categories = entry.get("categories", set())
+        channel = entry.get("channel")
+        mapping = {
+            "movement": "movement" in categories,
+            "shooting": "shooting" in categories,
+            "charge": "charge" in categories,
+            "fight": "fight" in categories,
+            "result": "result" in categories or channel in {"phase", "result"},
+            "errors": "errors" in categories or channel == "error",
+            "debug": channel in {"fx", "los", "reward", "req", "system"} or "debug" in categories,
+        }
+        for key, enabled in mapping.items():
+            btn = self._log_filter_buttons.get(key)
+            if btn is not None and btn.isChecked() and enabled:
+                return True
+        return False
+
+    def _should_show_entry(self, entry):
+        if not self._entry_matches_filter(entry):
+            return False
+        return self._is_filter_enabled_for_entry(entry)
+
+    def _phase_summaries(self, events) -> list[str]:
+        phase_stats = OrderedDict()
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            phase = str(event.get("phase") or "").lower().strip()
+            if phase not in {"movement", "shooting", "charge", "fight"}:
+                continue
+            stats = phase_stats.setdefault(phase, {"events": 0, "skip": 0})
+            stats["events"] += 1
+            msg = str(event.get("msg") or "").lower()
+            if any(token in msg for token in ("пропущ", "нет целей", "невозмож", "no move", "skip")):
+                stats["skip"] += 1
+        lines = []
+        labels = {
+            "movement": "👣 Движение",
+            "shooting": "🎯 Стрельба",
+            "charge": "⚡ Чардж",
+            "fight": "⚔️ Бой",
+        }
+        for phase, stats in phase_stats.items():
+            lines.append(f"{labels.get(phase, phase)}: событий={stats['events']}, пропусков={stats['skip']}")
+        return lines
+
+    def _collect_alert_lines(self) -> list[str]:
+        out_of_range_count = 0
+        overwatch_block_count = 0
+        for entry in self._log_entries[-300:]:
+            text = str(entry.get("raw") or "").lower()
+            if "цель вне дальности" in text:
+                out_of_range_count += 1
+            if "overwatch невозможен" in text and "нет доступных стреляющих юнитов" in text:
+                overwatch_block_count += 1
+        alerts = []
+        if out_of_range_count >= 3:
+            alerts.append(f"⚠️ Алерт: много out_of_range за окно журнала ({out_of_range_count}).")
+        if overwatch_block_count >= 3:
+            alerts.append(f"⚠️ Алерт: часто блокируется Overwatch ({overwatch_block_count}).")
+        return alerts
+
+    def _build_round_summary_card(self) -> list[str]:
+        result_lines = [str(e.get("raw") or "") for e in self._log_entries[-200:] if "result" in (e.get("categories") or set())]
+        if not result_lines:
+            return []
+        last_round = next((line for line in reversed(result_lines) if "конец боевого раунда" in line.lower()), None)
+        last_iter = next((line for line in reversed(result_lines) if "итерация" in line.lower() and "здоровье" in line.lower()), None)
+        hp_line = next((line for line in reversed(result_lines) if "здоровье model" in line.lower()), None)
+        if not any((last_round, last_iter, hp_line)):
+            return []
+        card = ["🏁 === КАРТОЧКА РАУНДА ==="]
+        if last_round:
+            card.append(last_round)
+        if last_iter:
+            card.append(last_iter)
+        if hp_line:
+            card.append(hp_line)
+        return card
+
+    def _timeline_label_text(self) -> str:
+        return f"{self.status_round.text()} • {self.status_active.text()} • {self.status_phase.text()}"
+
+    def _collect_visible_entries(self):
+        visible = []
+        for entry in self._log_entries:
+            if not self._should_show_entry(entry):
+                continue
+            text = entry["display"] if entry.get("channel") in {"fx", "los", "reward", "req", "system"} else (entry.get("compact") or entry["display"])
+            color = self._line_color(entry)
+            if visible and visible[-1][0] == text:
+                visible[-1][2] += 1
+            else:
+                visible.append([text, color, 1])
+        return visible
+
+    def _line_color(self, entry: dict) -> str:
+        categories = entry.get("categories", set())
+        channel = entry.get("channel")
+        if "errors" in categories or channel == "error":
+            return "#ff6b6b"
+        if "shooting" in categories:
+            return "#ffd166"
+        if "fight" in categories:
+            return "#f4978e"
+        if "charge" in categories:
+            return "#b388eb"
+        if "movement" in categories:
+            return "#7bd389"
+        if "result" in categories:
+            return "#7aa2f7"
+        if channel in {"fx", "los", "reward", "req", "system"}:
+            return Theme.muted.name()
+        return Theme.text.name()
 
     def _refresh_log_views(self):
-        for view in self._log_tabs.values():
-            view.clear()
-        grouped_lines = {key: [] for key, _ in self._log_tab_defs}
-        for entry in self._log_entries:
-            for key, _ in self._log_tab_defs:
-                if self._should_show_entry(entry, key):
-                    grouped_lines[key].append(entry["display"])
-        for key, lines in grouped_lines.items():
-            if lines:
-                if key == "model":
-                    continue
-                self._log_tabs[key].setPlainText("\n".join(lines))
-                scrollbar = self._log_tabs[key].verticalScrollBar()
-                scrollbar.setValue(scrollbar.maximum())
-        self._refresh_model_log_view()
+        visible_entries = self._collect_visible_entries()
+        lines = [f"{text} ×{count}" if count > 1 else text for text, _color, count in visible_entries]
 
-    def _refresh_model_log_view(self):
-        view = self._log_tabs.get("model")
-        if view is None:
-            return
-        include_verbose = self.log_model_verbose.isChecked()
-        only_round = self._current_turn_number if self.log_only_current_turn.isChecked() else None
-        text = render_model_log_flat(
-            self._model_events_current,
-            include_verbose=include_verbose,
-            only_round=only_round,
-        )
-        view.setPlainText(text if text else "Пока нет событий модели.")
-        scrollbar = view.verticalScrollBar()
+        model_events = self._model_events_current
+        model_events = [event for event in self._model_events_current if self._is_combat_event(event)]
+        summary_lines = self._phase_summaries(model_events)
+        alert_lines = self._collect_alert_lines()
+        round_card = self._build_round_summary_card()
+        if summary_lines:
+            lines.extend(["", "=== СВОДКА ФАЗ ===", *summary_lines])
+        if alert_lines:
+            lines.extend(["", "=== АЛЕРТЫ ===", *alert_lines])
+        if round_card:
+            lines.extend(["", *round_card])
+
+        if not lines:
+            lines = ["Пока нет логов."]
+        debug_btn = self._log_filter_buttons.get("debug")
+        mode_core = "Режим: Игровой + Debug" if (debug_btn is not None and debug_btn.isChecked()) else "Режим: Игровой"
+        mode_text = f"{mode_core} | {self._timeline_label_text()}"
+        self._log_status_label.setText(mode_text)
+
+        html_lines = []
+        for text, color, count in visible_entries:
+            shown = f"{text} ×{count}" if count > 1 else text
+            html_lines.append(f"<span style='color:{color}'>{html.escape(shown)}</span>")
+        if summary_lines:
+            html_lines.append("<br><span style='color:#7aa2f7'>=== СВОДКА ФАЗ ===</span>")
+            for summary in summary_lines:
+                html_lines.append(f"<span style='color:#7aa2f7'>{html.escape(summary)}</span>")
+        if alert_lines:
+            html_lines.append("<br><span style='color:#ff9f43'>=== АЛЕРТЫ ===</span>")
+            for alert in alert_lines:
+                html_lines.append(f"<span style='color:#ff9f43'>{html.escape(alert)}</span>")
+        if round_card:
+            html_lines.append("<br><span style='color:#7aa2f7'>🏁 === КАРТОЧКА РАУНДА ===</span>")
+            for line in round_card[1:]:
+                html_lines.append(f"<span style='color:#7aa2f7'>{html.escape(line)}</span>")
+        if not html_lines:
+            html_lines = ["<span>Пока нет логов.</span>"]
+        self.log_view.setHtml("<br>".join(html_lines))
+        scrollbar = self.log_view.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
     def _reset_log_lines(self, lines, write_to_file: bool):
@@ -2182,12 +2557,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 categories = self._classify_line(raw_text)
                 if self._should_assign_shooting_side(raw_text, categories):
                     categories.add(self._current_turn_side)
+                channel = self._detect_log_channel(raw_text, categories)
                 self._log_entries.append(
                     {
                         "raw": raw_text,
                         "display": self._decorate_log_line(raw_text, categories),
+                        "compact": self._compact_gameplay_line(raw_text, categories),
                         "turn": self._current_turn_number,
                         "categories": categories,
+                        "channel": channel,
                     }
                 )
         self._refresh_log_views()
@@ -2211,17 +2589,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_events_current = []
         self._fx_shot_queue.clear()
         self._fx_parser.reset(preserve_seen=False)
-        for view in self._log_tabs.values():
-            view.clear()
+        self.log_view.clear()
 
     def _collect_current_turn_logs(self):
-        if self._current_turn_number is None:
-            return "\n".join(entry["display"] for entry in self._log_entries)
-        return "\n".join(
-            entry["display"]
-            for entry in self._log_entries
-            if entry["turn"] == self._current_turn_number
-        )
+        return self.log_view.toPlainText()
 
     def _copy_current_turn(self):
         QtWidgets.QApplication.clipboard().setText(self._collect_current_turn_logs())
@@ -2537,26 +2908,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         self._append_log_to_file(message)
 
-    def _auto_switch_log_tab(self, active_side):
-        if active_side not in ("player", "model"):
-            return
-        if active_side == self._last_active_side:
-            return
-        self._last_active_side = active_side
-        target_index = self._log_tab_indices.get(active_side)
-        if target_index is None:
-            return
-        self._log_tab_programmatic_switch = True
-        try:
-            self.log_tabs.setCurrentIndex(target_index)
-        finally:
-            self._log_tab_programmatic_switch = False
-
-    def _on_log_tab_changed(self, index):
-        if self._log_tab_programmatic_switch:
-            return
-        self._last_manual_log_tab_index = index
-
     def _is_movement_phase(self, phase):
         phase_text = str(phase or "").lower()
         return "move" in phase_text or "движ" in phase_text or "movement" in phase_text
@@ -2581,9 +2932,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 return True
             if self._is_shooting_target_request(self._pending_request) or self._is_shooting_dice_request(self._pending_request):
                 if key == QtCore.Qt.Key_Escape:
-                    self._close_shoot_popover()
-                    self.map_scene.clear_target_selection()
-                    self._current_target_id = None
+                    self._cancel_shoot_sequence()
                     return True
                 if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter) and getattr(self, "shoot_popover", None) and self.shoot_popover.isVisible():
                     self._shoot_step_action()
