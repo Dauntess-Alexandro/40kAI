@@ -411,18 +411,33 @@ class RollLogger:
                 "урон (damage)",
             ]
 
-    def roll(self, num=1, max=6):
+    def roll(self, num=1, max=6, stage: Optional[str] = None):
         idx = len(self.calls)
         label = self.labels[idx] if idx < len(self.labels) else f"бросок #{idx+1}"
-        self._log(f"\n🎲 Бросок {label}: {num}D{max}")
-        stage = None
-        label_norm = label.lower()
-        if "to hit" in label_norm or "попадан" in label_norm:
+        stage_token = str(stage or "").strip().lower()
+        if stage_token in {"hit", "to_hit", "hit_roll"}:
+            label = "на попадание (to hit)"
             stage = "hit"
-        elif "to wound" in label_norm or "ранен" in label_norm:
+        elif stage_token in {"wound", "to_wound", "wound_roll"}:
+            label = "на ранение (to wound)"
             stage = "wound"
-        elif "save" in label_norm or "сейв" in label_norm:
+        elif stage_token in {"save", "saving_throw", "save_roll"}:
+            label = "сейвы (save)"
             stage = "save"
+        elif stage_token in {"damage", "inflict_damage", "resolve_damage"}:
+            label = "урон (damage)"
+            stage = "damage"
+        else:
+            stage = None
+            label_norm = label.lower()
+            if "to hit" in label_norm or "попадан" in label_norm:
+                stage = "hit"
+            elif "to wound" in label_norm or "ранен" in label_norm:
+                stage = "wound"
+            elif "save" in label_norm or "сейв" in label_norm:
+                stage = "save"
+
+        self._log(f"\n🎲 Бросок {label}: {num}D{max}")
 
         if self._base_accepts_stage:
             res = self.base(num=num, max=max, stage=stage)

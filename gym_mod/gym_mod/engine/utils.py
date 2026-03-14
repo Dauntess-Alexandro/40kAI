@@ -1,5 +1,6 @@
 import numpy as np
 import math
+import inspect
 
 
 def is_num(maybeNum):
@@ -212,20 +213,35 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
 
     roller:
       - None => используем RNG dice()
-      - иначе => функция броска, сигнатура: roller(num=1, max=6) -> int или list[int]
+      - иначе => функция броска, сигнатура: roller(num=1, max=6, stage=None) -> int или list[int]
                  (min в проекте везде = 1)
 
     distance_to_target:
       - float/int (дюймы) — дистанция между атакующим и целью (для Rapid Fire)
     """
 
+    roller_accepts_stage = False
+    if callable(roller):
+        try:
+            roller_accepts_stage = "stage" in inspect.signature(roller).parameters
+        except (TypeError, ValueError):
+            roller_accepts_stage = False
+
     def _roll(min=1, max=6, num=1):
+        if roller is None:
+            return dice(min=min, max=max, num=num)
+
+        return _roll_with_stage(min=min, max=max, num=num)
+
+    def _roll_with_stage(min=1, max=6, num=1, stage=None):
         if roller is None:
             return dice(min=min, max=max, num=num)
 
         # player_dice поддерживает (num, max) и подразумевает min=1
         if min != 1:
             raise ValueError("roller поддерживает только min=1")
+        if roller_accepts_stage:
+            return roller(num=num, max=max, stage=stage)
         return roller(num=num, max=max)
 
     # --- Targets / profile parsing ---
@@ -292,7 +308,7 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
         attacks = 1
 
     # --- HIT ROLLS ---
-    rolls = _roll(num=attacks)
+    rolls = _roll_with_stage(num=attacks, stage="hit")
     if isinstance(rolls, int):
         rolls = np.array([rolls], dtype=int)
     else:
@@ -328,7 +344,7 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
         wound_roll_count = hits - crit_hits if lethal else hits
 
         if wound_roll_count > 0:
-            wound_rolls = _roll(num=wound_roll_count)
+            wound_rolls = _roll_with_stage(num=wound_roll_count, stage="wound")
             if isinstance(wound_rolls, int):
                 wound_rolls = np.array([wound_rolls], dtype=int)
             else:
@@ -343,7 +359,7 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
 
     # --- SAVES ---
     if dmg_instances:
-        save_rolls = _roll(num=len(dmg_instances))
+        save_rolls = _roll_with_stage(num=len(dmg_instances), stage="save")
         if isinstance(save_rolls, int):
             save_rolls = np.array([save_rolls], dtype=int)
         else:
