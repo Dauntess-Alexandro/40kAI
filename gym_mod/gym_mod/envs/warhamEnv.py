@@ -5,6 +5,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import datetime
+import inspect
 import os
 import random
 import re
@@ -110,7 +111,7 @@ def attack(attackerHealth, attackerWeapon, attacker_data, defenderHealth, defend
 
 
 
-def player_dice(num=1, max=6):
+def player_dice(num=1, max=6, stage: Optional[str] = None):
     """
     Кубы игрока:
     - если MANUAL_DICE=1, просим ввод в терминале
@@ -125,10 +126,19 @@ def player_dice(num=1, max=6):
 
     io = get_active_io()
 
+    stage_prompt = ""
+    stage_token = str(stage or "").strip().lower()
+    if stage_token in {"hit", "to_hit", "hit_roll"}:
+        stage_prompt = "Этап: на попадание (to hit). "
+    elif stage_token in {"wound", "to_wound", "wound_roll"}:
+        stage_prompt = "Этап: на ранение (to wound). "
+    elif stage_token in {"save", "saving_throw", "save_roll"}:
+        stage_prompt = "Этап: сейвы (save). "
+
     if num == 1:
         while True:
             rolls = io.request_dice(
-                f"Введи 1 результат (1..{max}) через пробел или запятую: ",
+                f"{stage_prompt}Введи 1 результат (1..{max}) через пробел или запятую: ",
                 count=1,
                 min_value=1,
                 max_value=max,
@@ -157,7 +167,7 @@ def player_dice(num=1, max=6):
 
     while True:
         rolls = io.request_dice(
-            f"Введи {num} результатов (1..{max}) через пробел или запятую: ",
+            f"{stage_prompt}Введи {num} результатов (1..{max}) через пробел или запятую: ",
             count=num,
             min_value=1,
             max_value=max,
@@ -351,6 +361,10 @@ class RollLogger:
 
     def __init__(self, base_roller, agent_log_fn=None):
         self.base = base_roller
+        try:
+            self._base_accepts_stage = "stage" in inspect.signature(base_roller).parameters
+        except (TypeError, ValueError):
+            self._base_accepts_stage = False
         self.calls = []
         self.labels = []
         self.has_attack_count_roll = False
@@ -401,7 +415,19 @@ class RollLogger:
         idx = len(self.calls)
         label = self.labels[idx] if idx < len(self.labels) else f"бросок #{idx+1}"
         self._log(f"\n🎲 Бросок {label}: {num}D{max}")
-        res = self.base(num=num, max=max)
+        stage = None
+        label_norm = label.lower()
+        if "to hit" in label_norm or "попадан" in label_norm:
+            stage = "hit"
+        elif "to wound" in label_norm or "ранен" in label_norm:
+            stage = "wound"
+        elif "save" in label_norm or "сейв" in label_norm:
+            stage = "save"
+
+        if self._base_accepts_stage:
+            res = self.base(num=num, max=max, stage=stage)
+        else:
+            res = self.base(num=num, max=max)
         if res == DICE_CANCEL_TOKEN:
             raise ShootDiceCancelledError(
                 "REQ: бросок отменён пользователем. Где: warhamEnv.RollLogger.roll. "
