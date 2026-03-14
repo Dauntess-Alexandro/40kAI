@@ -2266,7 +2266,9 @@ class Warhammer40kEnv(gym.Env):
             "charge": "ФАЗА ЧАРДЖА",
             "fight": "ФАЗА БОЯ",
         }.get(phase, f"ФАЗА {phase.upper()}")
-        self._log(f"--- {phase_title} ---")
+        active_label = side if side in ("MODEL", "PLAYER") else self._side_label(side)
+        reaction_label = "PLAYER" if active_label == "MODEL" else "MODEL" if active_label == "PLAYER" else "UNKNOWN"
+        self._log(f"--- {phase_title} | АКТИВНЫЙ: {active_label} | РЕАКЦИЯ: {reaction_label} ---")
         if not self._phase_event_emitted:
             event_side = self._normalize_event_side(side)
             if event_side == "enemy":
@@ -2288,7 +2290,8 @@ class Warhammer40kEnv(gym.Env):
             return
         side_label = self._side_label(side)
         unit_label = self._format_unit_label(side, unit_idx, unit_id=unit_id)
-        self._log(f"[{side_label}] {unit_label}: {msg}")
+        prefix = self._sticky_prefix(side_label)
+        self._log(f"{prefix} [{side_label}] {unit_label}: {msg}")
         self._emit_unit_event(side_label, side, unit_id, unit_idx, msg, None, verbose_only=False)
 
     def _display_side(self, side: str) -> str:
@@ -2298,6 +2301,36 @@ class Warhammer40kEnv(gym.Env):
             return "MODEL"
         return side.upper()
 
+    def _side_emoji(self, side_label: str) -> str:
+        if side_label == "MODEL":
+            return "🔵"
+        if side_label == "PLAYER":
+            return "🟢"
+        return "⚪"
+
+    def _phase_code(self, phase: str | None) -> str:
+        if phase is None:
+            return "NONE"
+        return {
+            "command": "COMMAND",
+            "movement": "MOVE",
+            "shooting": "SHOOT",
+            "charge": "CHARGE",
+            "fight": "FIGHT",
+        }.get(str(phase).lower(), str(phase).upper())
+
+    def _sticky_prefix(self, actor_label: str, phase: str | None = None) -> str:
+        active_label = self._side_label(self.active_side)
+        phase_label = self._phase_code(phase or self.phase)
+        msg_type = "ACTION" if actor_label == active_label else "REACTION"
+        return (
+            f"{self._side_emoji(actor_label)} "
+            f"[TURN:{active_label}]"
+            f"[PHASE:{phase_label}]"
+            f"[ACTOR:{actor_label}]"
+            f"[TYPE:{msg_type}]"
+        )
+
     def _side_label(self, side: str, manual: bool = False) -> str:
         _ = manual
         return self._display_side(side)
@@ -2305,7 +2338,8 @@ class Warhammer40kEnv(gym.Env):
     def _log_phase_msg(self, side_label: str, phase: str, msg: str):
         if not self._should_log():
             return
-        self._log(f"[{side_label}][{phase.upper()}] {msg}")
+        prefix = self._sticky_prefix(side_label, phase)
+        self._log(f"{prefix} [{side_label}][{phase.upper()}] {msg}")
         self._emit_unit_event(side_label, None, None, None, msg, phase, verbose_only=False)
 
     def _log_unit_phase(self, side_label: str, phase: str, unit_id: int, unit_idx: int, msg: str):
@@ -2316,14 +2350,16 @@ class Warhammer40kEnv(gym.Env):
             unit_idx,
             unit_id=unit_id,
         )
-        self._log(f"[{side_label}][{phase.upper()}] {unit_label}: {msg}")
+        prefix = self._sticky_prefix(side_label, phase)
+        self._log(f"{prefix} [{side_label}][{phase.upper()}] {unit_label}: {msg}")
         self._emit_unit_event(side_label, None, unit_id, unit_idx, msg, phase, verbose_only=False)
 
     def _log_action(self, side: str, unit_idx: int, msg: str, phase: str = None, verbose_only: bool = False):
         side_label = self._side_label(side)
         unit_label = self._format_unit_label(side, unit_idx)
         phase_prefix = f"[{phase.upper()}] " if phase else ""
-        self._log(f"[{side_label}] {phase_prefix}{unit_label}: {msg}", verbose_only=verbose_only)
+        prefix = self._sticky_prefix(side_label, phase)
+        self._log(f"{prefix} [{side_label}] {phase_prefix}{unit_label}: {msg}", verbose_only=verbose_only)
         self._emit_unit_event(side_label, side, None, unit_idx, msg, phase, verbose_only=verbose_only)
 
     def _emit_unit_event(
