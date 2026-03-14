@@ -145,6 +145,11 @@ def _unit_payload(
         weapon_name = weapon_profile.get("Name")
         weapon_range = _safe_int(weapon_profile.get("Range"), None)
 
+    wounds_per_model = _safe_int(unit_data.get("W"), None) if isinstance(unit_data, dict) else None
+    max_hp = None
+    if wounds_per_model is not None and models is not None:
+        max_hp = max(0, int(wounds_per_model) * int(models))
+
     return {
         "side": side,
         "id": unit_id,
@@ -152,6 +157,9 @@ def _unit_payload(
         "models": models,
         "alive_models": _safe_int(alive_models, None),
         "hp": _safe_float(hp, None),
+        "max_hp": _safe_float(max_hp, None),
+        "max_wounds": _safe_float(max_hp, None),
+        "wounds_max": _safe_float(max_hp, None),
         "x": _safe_int(coords[1], None) if coords is not None else None,
         "y": _safe_int(coords[0], None) if coords is not None else None,
         "anchor_x": _safe_int(anchor[1], None) if anchor is not None else None,
