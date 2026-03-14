@@ -253,6 +253,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._status_anim_duration_s: float = 0.28
         self._status_hp_fast_duration_s: float = 0.14
         self._status_hp_lag_duration_s: float = 0.26
+        self._status_hp_loss_min_px: float = 2.0
+        self._status_hp_coalesce_window_s: float = 0.11
+        self._status_hp_hit_flash_s: float = 0.09
         self._status_pip_step_s: float = 0.055
         self._status_offset_y_cells: float = 0.34
 
@@ -271,6 +274,12 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._status_pip_alive_color = QtGui.QColor(154, 177, 139, 222)
         self._status_pip_lost_color = QtGui.QColor(93, 106, 123, 176)
         self._status_pip_flash_color = QtGui.QColor(220, 205, 166, 235)
+
+        self._status_hp_lag_from_ratio: Dict[Tuple[str, int], float] = {}
+        self._status_hp_lag_to_ratio: Dict[Tuple[str, int], float] = {}
+        self._status_hp_lag_t0: Dict[Tuple[str, int], float] = {}
+        self._status_hp_last_drop_t: Dict[Tuple[str, int], float] = {}
+        self._status_hp_hit_mag: Dict[Tuple[str, int], float] = {}
 
         self._move_highlights: List[QtCore.QRectF] = []
         self._reachable_highlights: List[QtCore.QRectF] = []
@@ -577,7 +586,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
             for key, value in self._status_prev.items()
             if key in self._status_curr
         }
-        self._status_anim_t0 = monotonic()
+        now = monotonic()
+        self._refresh_hp_loss_anim(now)
+        self._status_anim_t0 = now
 
         live_keys = {
             (u.get("side"), u.get("id"))
@@ -2698,15 +2709,27 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter.drawRoundedRect(over_rect, 2.0, 2.0)
 
         lag_ratio = self._hp_lag_ratio(key)
-        if lag_ratio > ratio + 0.008:
+        loss_w = rect.width() * max(0.0, lag_ratio - ratio)
+        if loss_w >= self._status_hp_loss_min_px:
             lag_rect = QtCore.QRectF(
                 rect.x() + rect.width() * ratio,
                 rect.y(),
-                rect.width() * (lag_ratio - ratio),
+                loss_w,
                 rect.height(),
             )
-            painter.setBrush(self._status_hp_lag_color)
+            loss_strength = max(0.0, min(1.0, (lag_ratio - ratio) * 2.2))
+            lag_color = self._mix_colors(self._status_hp_lag_color, QtGui.QColor(230, 206, 158, 170), loss_strength)
+            painter.setBrush(lag_color)
             painter.drawRoundedRect(lag_rect, 2.0, 2.0)
+
+        hit_flash = self._hp_hit_flash_alpha(key)
+        if hit_flash > 0.02:
+            edge_x = rect.x() + rect.width() * ratio
+            flash_color = QtGui.QColor(240, 220, 170, int(170 * hit_flash))
+            flash_pen = QtGui.QPen(flash_color, 1.0 + 1.2 * hit_flash)
+            flash_pen.setCosmetic(True)
+            painter.setPen(flash_pen)
+            painter.drawLine(QtCore.QPointF(edge_x, rect.y() - 0.6), QtCore.QPointF(edge_x, rect.bottom() + 0.6))
 
         pulse = self._status_crit_pulse(ratio)
         border_w = 1.0 + (0.5 * pulse)
@@ -2879,7 +2902,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return start
         if start is None:
             return end
-        eased = 1.0 - (1.0 - t) * (1.0 - t)
+        eased = self._ease_out_cubic(t)
         return start + (end - start) * eased
 
     def _step_models(self, start: Optional[int], end: Optional[int], t: float) -> Optional[int]:
@@ -2904,6 +2927,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return QtGui.QColor(98, 146, 94, 236)
 
     def _hp_lag_ratio(self, key: Tuple[str, int]) -> float:
+        lag_from = self._status_hp_lag_from_ratio.get(key)
+        lag_to = self._status_hp_lag_to_ratio.get(key)
+        lag_t0 = self._status_hp_lag_t0.get(key)
+        if lag_from is not None and lag_to is not None and lag_t0 is not None:
+            t = max(0.0, min(1.0, (monotonic() - lag_t0) / max(0.001, self._status_hp_lag_duration_s)))
+            eased = self._ease_in_out_cubic(t)
+            value = lag_from + (lag_to - lag_from) * eased
+            if t >= 1.0:
+                self._status_hp_lag_from_ratio.pop(key, None)
+                self._status_hp_lag_to_ratio.pop(key, None)
+                self._status_hp_lag_t0.pop(key, None)
+            return max(0.0, min(1.4, value))
+
         current = self._status_curr.get(key)
         prev = self._status_prev.get(key)
         if current is None or prev is None:
@@ -2913,7 +2949,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         cur_ratio = max(0.0, min(1.4, float(current.hp) / float(current.hp_max)))
         prev_ratio = max(0.0, min(1.4, float(prev.hp) / float(current.hp_max)))
         lag_t = self._status_anim_progress(duration_s=self._status_hp_lag_duration_s)
-        return prev_ratio - (prev_ratio - cur_ratio) * lag_t
+        return prev_ratio - (prev_ratio - cur_ratio) * self._ease_in_out_cubic(lag_t)
 
     def _status_crit_pulse(self, ratio: float) -> float:
         if ratio >= self._status_hp_crit_threshold:
@@ -2922,6 +2958,81 @@ class OpenGLBoardWidget(QOpenGLWidget):
         wave = 0.5 + 0.5 * math.sin(phase)
         severity = 1.0 - max(0.0, min(1.0, ratio / max(0.001, self._status_hp_crit_threshold)))
         return wave * (0.35 + 0.65 * severity)
+
+    def _refresh_hp_loss_anim(self, now_ts: float) -> None:
+        active_keys = set(self._status_curr.keys())
+        for key in list(self._status_hp_lag_from_ratio.keys()):
+            if key not in active_keys:
+                self._status_hp_lag_from_ratio.pop(key, None)
+                self._status_hp_lag_to_ratio.pop(key, None)
+                self._status_hp_lag_t0.pop(key, None)
+                self._status_hp_last_drop_t.pop(key, None)
+                self._status_hp_hit_mag.pop(key, None)
+
+        for key, current in self._status_curr.items():
+            previous = self._status_prev.get(key)
+            cur_ratio = self._hp_ratio_from_snapshot(current)
+            prev_ratio = self._hp_ratio_from_snapshot(previous)
+            if cur_ratio is None or prev_ratio is None:
+                continue
+            if prev_ratio <= cur_ratio + 1e-4:
+                continue
+
+            last_drop = self._status_hp_last_drop_t.get(key)
+            existing_from = self._status_hp_lag_from_ratio.get(key)
+            existing_to = self._status_hp_lag_to_ratio.get(key)
+            existing_t0 = self._status_hp_lag_t0.get(key)
+            coalesce = (
+                last_drop is not None
+                and existing_from is not None
+                and existing_to is not None
+                and existing_t0 is not None
+                and (now_ts - last_drop) <= self._status_hp_coalesce_window_s
+            )
+
+            if coalesce:
+                self._status_hp_lag_to_ratio[key] = min(existing_to, cur_ratio)
+                self._status_hp_hit_mag[key] = max(
+                    self._status_hp_hit_mag.get(key, 0.0),
+                    max(0.0, existing_from - self._status_hp_lag_to_ratio[key]),
+                )
+            else:
+                lag_start = max(prev_ratio, self._hp_lag_ratio(key))
+                self._status_hp_lag_from_ratio[key] = lag_start
+                self._status_hp_lag_to_ratio[key] = cur_ratio
+                self._status_hp_lag_t0[key] = now_ts
+                self._status_hp_hit_mag[key] = max(0.0, lag_start - cur_ratio)
+            self._status_hp_last_drop_t[key] = now_ts
+
+    @staticmethod
+    def _hp_ratio_from_snapshot(snapshot: Optional[SquadStatusSnapshot]) -> Optional[float]:
+        if snapshot is None or snapshot.hp is None or snapshot.hp_max is None or snapshot.hp_max <= 0:
+            return None
+        return max(0.0, min(1.4, float(snapshot.hp) / float(snapshot.hp_max)))
+
+    def _hp_hit_flash_alpha(self, key: Tuple[str, int]) -> float:
+        t0 = self._status_hp_last_drop_t.get(key)
+        mag = self._status_hp_hit_mag.get(key, 0.0)
+        if t0 is None or mag <= 0.0:
+            return 0.0
+        dt = monotonic() - t0
+        if dt <= 0.0 or dt >= self._status_hp_hit_flash_s:
+            return 0.0
+        local = dt / max(0.001, self._status_hp_hit_flash_s)
+        tri = 1.0 - abs(2.0 * local - 1.0)
+        return max(0.0, min(1.0, tri * min(1.0, mag * 4.0)))
+
+    @staticmethod
+    def _ease_out_cubic(t: float) -> float:
+        t = max(0.0, min(1.0, float(t)))
+        return 1.0 - pow(1.0 - t, 3)
+
+    @staticmethod
+    def _ease_in_out_cubic(t: float) -> float:
+        t = max(0.0, min(1.0, float(t)))
+        if t < 0.5:
+            return 4.0 * t * t * t
+        return 1.0 - pow(-2.0 * t + 2.0, 3) / 2.0
 
     def _status_pip_loss_flash(self, progress: float, step: int) -> float:
         step_delay = self._status_pip_step_s / max(0.001, self._status_anim_duration_s)
