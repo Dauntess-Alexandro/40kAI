@@ -81,11 +81,24 @@ class Theme:
             border: 1px solid {Theme.accent_dark.name()};
             padding: 4px 6px;
         }}
-        QPlainTextEdit {{
+        QPlainTextEdit, QTextEdit {{
             background-color: {Theme.panel.name()};
             border: 1px solid {Theme.accent_dark.name()};
             border-radius: 4px;
             color: {Theme.text.name()};
+        }}
+        QToolButton {{
+            background-color: {Theme.panel_alt.name()};
+            border: 1px solid {Theme.accent_dark.name()};
+            color: {Theme.text.name()};
+            padding: 2px 6px;
+        }}
+        QToolButton:checked {{
+            background-color: {Theme.accent_dark.name()};
+            color: {Theme.accent.name()};
+        }}
+        QToolButton:hover {{
+            background-color: {Theme.accent_dark.name()};
         }}
         QPushButton {{
             background-color: {Theme.panel_alt.name()};

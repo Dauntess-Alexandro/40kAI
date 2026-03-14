@@ -1,5 +1,6 @@
 import torch
 import json
+import html
 import os
 import queue
 import re
@@ -40,7 +41,6 @@ from viewer.opengl_view import OpenGLBoardWidget
 from viewer.gun_fx import get_gun_fx_config
 from viewer.state import StateWatcher
 from viewer.styles import Theme
-from viewer.model_log_tree import render_model_log_flat
 
 from gym_mod.engine.game_controller import GameController
 from gym_mod.engine.game_io import DICE_CANCEL_TOKEN, parse_dice_values
@@ -284,17 +284,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_log_source = None
         self._model_events_stream = []
         self._model_events_current = []
-        self._log_tabs = {}
-        self._log_tab_indices = {}
-        self._log_tab_programmatic_switch = False
-        self._last_manual_log_tab_index = None
+        self._log_view = None
+        self._log_filter_buttons = {}
+        self._log_status_label = None
         self._fx_shot_queue: Deque[FxShotEvent] = deque()
         self._fx_parser = FxLogParser(self._enqueue_fx_event, self._fx_debug, seen_max=400)
-        self._log_tab_defs = [
-            ("player", "Все ходы игрока"),
-            ("model", "Все ходы модели"),
-            ("key", "Ключевые события"),
-        ]
         self._max_log_lines = 5000
         self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS_PLAY.md")
         self._log_file_max_bytes = 5 * 1024 * 1024
@@ -324,7 +318,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         log_group = QtWidgets.QGroupBox("ЖУРНАЛ")
         log_layout = QtWidgets.QVBoxLayout(log_group)
         log_layout.addLayout(self._log_controls_layout)
-        log_layout.addWidget(self.log_tabs)
+        log_layout.addWidget(self.log_view)
         log_group.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
@@ -1571,34 +1565,42 @@ class ViewerWindow(QtWidgets.QMainWindow):
         fixed_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
         fixed_font.setPointSize(10)
 
-        self.log_tabs = QtWidgets.QTabWidget()
-        for index, (key, label) in enumerate(self._log_tab_defs):
-            view = QtWidgets.QPlainTextEdit()
-            view.setReadOnly(True)
-            view.setFont(fixed_font)
-            view.setMaximumBlockCount(self._max_log_lines)
-            self._log_tabs[key] = view
-            self._log_tab_indices[key] = index
-            self.log_tabs.addTab(view, label)
-        self.log_tabs.currentChanged.connect(self._on_log_tab_changed)
+        self.log_view = QtWidgets.QTextEdit()
+        self.log_view.setReadOnly(True)
+        self.log_view.setFont(fixed_font)
+        self.log_view.document().setMaximumBlockCount(self._max_log_lines)
 
-        self.log_only_current_turn = QtWidgets.QCheckBox("Показать только текущий ход")
-        self.log_only_current_turn.toggled.connect(self._refresh_log_views)
+        self._log_status_label = QtWidgets.QLabel("Режим: Игровой")
+        self._log_status_label.setStyleSheet(f"color: {Theme.muted.name()};")
 
-        self.log_model_verbose = QtWidgets.QCheckBox("Подробно (verbose)")
-        self.log_model_verbose.toggled.connect(self._refresh_model_log_view)
+        filter_defs = [
+            ("movement", "👣"),
+            ("shooting", "🎯"),
+            ("charge", "⚡"),
+            ("fight", "⚔️"),
+            ("result", "🏁"),
+            ("errors", "⚠️"),
+            ("debug", "🧪"),
+        ]
+        for key, label in filter_defs:
+            btn = QtWidgets.QToolButton()
+            btn.setText(label)
+            btn.setCheckable(True)
+            btn.setChecked(key in {"movement", "shooting", "charge", "fight"})
+            btn.toggled.connect(self._refresh_log_views)
+            self._log_filter_buttons[key] = btn
 
-        self.log_copy_turn = QtWidgets.QPushButton("Копировать ход")
-        self.log_copy_turn.clicked.connect(self._copy_current_turn)
-        self.log_clear = QtWidgets.QPushButton("Очистить")
-        self.log_clear.clicked.connect(self._clear_log_viewer)
+        self.log_clear_all_button = QtWidgets.QToolButton()
+        self.log_clear_all_button.setText("🧹")
+        self.log_clear_all_button.setToolTip("Очистить всё")
+        self.log_clear_all_button.clicked.connect(self._clear_log_viewer)
 
         self._log_controls_layout = QtWidgets.QHBoxLayout()
-        self._log_controls_layout.addWidget(self.log_only_current_turn)
-        self._log_controls_layout.addWidget(self.log_model_verbose)
+        self._log_controls_layout.addWidget(self._log_status_label)
+        for key in ("movement", "shooting", "charge", "fight", "result", "errors", "debug"):
+            self._log_controls_layout.addWidget(self._log_filter_buttons[key])
+        self._log_controls_layout.addWidget(self.log_clear_all_button)
         self._log_controls_layout.addStretch()
-        self._log_controls_layout.addWidget(self.log_copy_turn)
-        self._log_controls_layout.addWidget(self.log_clear)
 
     def _append_log(self, messages):
         if not messages:
@@ -1625,7 +1627,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_log_source = "stream"
             self._model_events_stream.extend(self._filter_model_events(drained))
             self._model_events_current = list(self._model_events_stream)
-            self._refresh_model_log_view()
+            self._refresh_log_views()
 
     def _start_controller(self):
         self._reset_viewer_session_visuals(reason="new_game_start")
@@ -1880,7 +1882,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 f"attacker={attacker} defender={defender} text=\"{self.status_deployment.text()}\""
             )
 
-        self._auto_switch_log_tab(active)
 
         vp = state.get("vp", {})
         cp = state.get("cp", {})
@@ -1964,7 +1965,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_events_snapshot = list(events)
             self._model_log_source = "state"
             self._model_events_current = list(filtered)
-            self._refresh_model_log_view()
+            self._refresh_log_views()
         elif self._model_log_source is None:
             self._drain_event_queue()
 
@@ -2023,16 +2024,19 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def add_log_line(self, line: str):
         raw_text = str(line)
         self._capture_rolloff_sides_from_log(raw_text)
-        new_turn = self._update_turn_context(raw_text)
+        self._update_turn_context(raw_text)
         categories = self._classify_line(raw_text)
         if self._should_assign_shooting_side(raw_text, categories):
             categories.add(self._current_turn_side)
+        channel = self._detect_log_channel(raw_text, categories)
         display_text = self._decorate_log_line(raw_text, categories)
         entry = {
             "raw": raw_text,
             "display": display_text,
+            "compact": self._compact_gameplay_line(raw_text, categories),
             "turn": self._current_turn_number,
             "categories": categories,
+            "channel": channel,
         }
         self._log_entries.append(entry)
         self._append_log_to_file(raw_text)
@@ -2040,16 +2044,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._drain_fx_queue()
         if len(self._log_entries) > self._max_log_lines:
             self._log_entries = self._log_entries[-self._max_log_lines :]
-            self._refresh_log_views()
-            return
-        if new_turn is not None and self.log_only_current_turn.isChecked():
-            self._refresh_log_views()
-            return
-        for key, _ in self._log_tab_defs:
-            if self._should_show_entry(entry, key):
-                if key == "model":
-                    continue
-                self._append_to_view(self._log_tabs[key], display_text)
+        self._refresh_log_views()
 
     def _append_to_view(self, view: QtWidgets.QPlainTextEdit, text: str):
         scrollbar = view.verticalScrollBar()
@@ -2112,10 +2107,36 @@ class ViewerWindow(QtWidgets.QMainWindow):
             ],
         ):
             categories.add("shooting")
+            categories.add("combat_basic")
             categories.add("key")
         if "shooting" not in categories and self._is_shooting_report_line(line):
             categories.add("shooting")
+            categories.add("combat_basic")
             categories.add("key")
+        if self._matches_any(
+            lowered,
+            [
+                "движение",
+                "movement",
+                "move:",
+                "позиция до",
+                "позиция после",
+                "no move",
+                "ходьб",
+            ],
+        ):
+            categories.add("movement")
+            categories.add("combat_basic")
+        if self._matches_any(
+            lowered,
+            [
+                "чардж",
+                "charge",
+            ],
+        ):
+            categories.add("charge")
+            categories.add("combat_basic")
+
         if self._matches_any(
             lowered,
             [
@@ -2127,6 +2148,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             ],
         ):
             categories.add("fight")
+            categories.add("combat_basic")
             categories.add("key")
         if self._matches_any(
             lowered,
@@ -2145,6 +2167,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if self._matches_any(
             lowered,
             [
+                "reward (",
+                "fx:",
+                "los_debug",
+                "req:",
+            ],
+        ):
+            categories.add("debug")
+        if self._matches_any(
+            lowered,
+            [
                 "error",
                 "traceback",
                 "exception",
@@ -2156,6 +2188,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         ):
             categories.add("errors")
             categories.add("key")
+            categories.add("result")
         if self._matches_any(
             lowered,
             [
@@ -2174,6 +2207,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
             ],
         ):
             categories.add("key")
+        if self._matches_any(
+            lowered,
+            [
+                "побед",
+                "winner",
+                "конец боевого раунда",
+                "game over",
+                "итерация",
+            ],
+        ):
+            categories.add("result")
         return categories
 
     def _matches_any(self, lowered: str, tokens):
@@ -2269,50 +2313,234 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._current_turn_side = new_side
         return new_turn
 
-    def _should_show_entry(self, entry, tab_key):
-        if tab_key == "key":
-            if "key" not in entry["categories"]:
-                return False
-        elif tab_key in ("player", "model"):
-            if tab_key not in entry["categories"]:
-                if "player" in entry["categories"] or "model" in entry["categories"]:
-                    return False
-        if not self.log_only_current_turn.isChecked():
+    def _is_combat_event(self, event: dict) -> bool:
+        phase = str((event or {}).get("phase") or "").lower()
+        return phase in {"movement", "shooting", "charge", "fight"}
+
+    def _detect_log_channel(self, text: str, categories: set) -> str:
+        lowered = str(text or "").lower()
+        if "los_debug" in lowered:
+            return "los"
+        if "fx:" in lowered:
+            return "fx"
+        if "reward (" in lowered:
+            return "reward"
+        if "req:" in lowered:
+            return "req"
+        if "errors" in categories:
+            return "error"
+        if "result" in categories:
+            return "result"
+        if "turn" in categories or "key" in categories:
+            return "phase"
+        if "combat_basic" in categories:
+            return "combat"
+        return "system"
+
+    def _compact_gameplay_line(self, text: str, categories: set) -> str:
+        raw = str(text or "").strip()
+        if not raw:
+            return ""
+        reason_tag = self._reason_tag(raw)
+        if "movement" in categories:
+            if "позиция до" in raw.lower() or "позиция после" in raw.lower():
+                return f"👣 {raw}{reason_tag}"
+        if "shooting" in categories:
+            return f"🎯 {raw}{reason_tag}"
+        if "charge" in categories:
+            return f"⚡ {raw}{reason_tag}"
+        if "fight" in categories:
+            return f"⚔️ {raw}{reason_tag}"
+        if "result" in categories:
+            return f"🏁 {raw}{reason_tag}"
+        if "errors" in categories:
+            return f"⚠️ {raw}{reason_tag}"
+        if "turn" in categories or "key" in categories:
+            return f"⭐ {raw}{reason_tag}"
+        return f"{raw}{reason_tag}"
+
+    def _reason_tag(self, raw: str) -> str:
+        lowered = str(raw or "").lower()
+        if "цель вне дальности" in lowered:
+            return " [reason:out_of_range]"
+        if "нет доступных целей" in lowered:
+            return " [reason:no_targets]"
+        if "advance без assault" in lowered:
+            return " [reason:advance_no_assault]"
+        if "advance — чардж невозможен" in lowered or "чардж невозможен" in lowered:
+            return " [reason:advance_no_charge]"
+        if "overwatch невозможен" in lowered and "нет доступных стреляющих юнитов" in lowered:
+            return " [reason:no_overwatch_units]"
+        return ""
+
+    def _entry_matches_filter(self, entry: dict) -> bool:
+        categories = entry.get("categories", set())
+        channel = entry.get("channel")
+        if channel in {"fx", "los", "reward", "req"}:
+            return False
+        if "combat_basic" in categories or "turn" in categories or "result" in categories or "errors" in categories:
             return True
-        if self._current_turn_number is None:
-            return True
-        return entry["turn"] == self._current_turn_number
+        return False
+
+    def _is_filter_enabled_for_entry(self, entry: dict) -> bool:
+        categories = entry.get("categories", set())
+        channel = entry.get("channel")
+        mapping = {
+            "movement": "movement" in categories,
+            "shooting": "shooting" in categories,
+            "charge": "charge" in categories,
+            "fight": "fight" in categories,
+            "result": "result" in categories or channel in {"phase", "result"},
+            "errors": "errors" in categories or channel == "error",
+            "debug": channel in {"fx", "los", "reward", "req", "system"} or "debug" in categories,
+        }
+        for key, enabled in mapping.items():
+            btn = self._log_filter_buttons.get(key)
+            if btn is not None and btn.isChecked() and enabled:
+                return True
+        return False
+
+    def _should_show_entry(self, entry):
+        if not self._entry_matches_filter(entry):
+            return False
+        return self._is_filter_enabled_for_entry(entry)
+
+    def _phase_summaries(self, events) -> list[str]:
+        phase_stats = OrderedDict()
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            phase = str(event.get("phase") or "").lower().strip()
+            if phase not in {"movement", "shooting", "charge", "fight"}:
+                continue
+            stats = phase_stats.setdefault(phase, {"events": 0, "skip": 0})
+            stats["events"] += 1
+            msg = str(event.get("msg") or "").lower()
+            if any(token in msg for token in ("пропущ", "нет целей", "невозмож", "no move", "skip")):
+                stats["skip"] += 1
+        lines = []
+        labels = {
+            "movement": "👣 Движение",
+            "shooting": "🎯 Стрельба",
+            "charge": "⚡ Чардж",
+            "fight": "⚔️ Бой",
+        }
+        for phase, stats in phase_stats.items():
+            lines.append(f"{labels.get(phase, phase)}: событий={stats['events']}, пропусков={stats['skip']}")
+        return lines
+
+    def _collect_alert_lines(self) -> list[str]:
+        out_of_range_count = 0
+        overwatch_block_count = 0
+        for entry in self._log_entries[-300:]:
+            text = str(entry.get("raw") or "").lower()
+            if "цель вне дальности" in text:
+                out_of_range_count += 1
+            if "overwatch невозможен" in text and "нет доступных стреляющих юнитов" in text:
+                overwatch_block_count += 1
+        alerts = []
+        if out_of_range_count >= 3:
+            alerts.append(f"⚠️ Алерт: много out_of_range за окно журнала ({out_of_range_count}).")
+        if overwatch_block_count >= 3:
+            alerts.append(f"⚠️ Алерт: часто блокируется Overwatch ({overwatch_block_count}).")
+        return alerts
+
+    def _build_round_summary_card(self) -> list[str]:
+        result_lines = [str(e.get("raw") or "") for e in self._log_entries[-200:] if "result" in (e.get("categories") or set())]
+        if not result_lines:
+            return []
+        last_round = next((line for line in reversed(result_lines) if "конец боевого раунда" in line.lower()), None)
+        last_iter = next((line for line in reversed(result_lines) if "итерация" in line.lower() and "здоровье" in line.lower()), None)
+        hp_line = next((line for line in reversed(result_lines) if "здоровье model" in line.lower()), None)
+        if not any((last_round, last_iter, hp_line)):
+            return []
+        card = ["🏁 === КАРТОЧКА РАУНДА ==="]
+        if last_round:
+            card.append(last_round)
+        if last_iter:
+            card.append(last_iter)
+        if hp_line:
+            card.append(hp_line)
+        return card
+
+    def _timeline_label_text(self) -> str:
+        return f"{self.status_round.text()} • {self.status_active.text()} • {self.status_phase.text()}"
+
+    def _collect_visible_entries(self):
+        visible = []
+        for entry in self._log_entries:
+            if not self._should_show_entry(entry):
+                continue
+            text = entry["display"] if entry.get("channel") in {"fx", "los", "reward", "req", "system"} else (entry.get("compact") or entry["display"])
+            color = self._line_color(entry)
+            if visible and visible[-1][0] == text:
+                visible[-1][2] += 1
+            else:
+                visible.append([text, color, 1])
+        return visible
+
+    def _line_color(self, entry: dict) -> str:
+        categories = entry.get("categories", set())
+        channel = entry.get("channel")
+        if "errors" in categories or channel == "error":
+            return "#ff6b6b"
+        if "shooting" in categories:
+            return "#ffd166"
+        if "fight" in categories:
+            return "#f4978e"
+        if "charge" in categories:
+            return "#b388eb"
+        if "movement" in categories:
+            return "#7bd389"
+        if "result" in categories:
+            return "#7aa2f7"
+        if channel in {"fx", "los", "reward", "req", "system"}:
+            return Theme.muted.name()
+        return Theme.text.name()
 
     def _refresh_log_views(self):
-        for view in self._log_tabs.values():
-            view.clear()
-        grouped_lines = {key: [] for key, _ in self._log_tab_defs}
-        for entry in self._log_entries:
-            for key, _ in self._log_tab_defs:
-                if self._should_show_entry(entry, key):
-                    grouped_lines[key].append(entry["display"])
-        for key, lines in grouped_lines.items():
-            if lines:
-                if key == "model":
-                    continue
-                self._log_tabs[key].setPlainText("\n".join(lines))
-                scrollbar = self._log_tabs[key].verticalScrollBar()
-                scrollbar.setValue(scrollbar.maximum())
-        self._refresh_model_log_view()
+        visible_entries = self._collect_visible_entries()
+        lines = [f"{text} ×{count}" if count > 1 else text for text, _color, count in visible_entries]
 
-    def _refresh_model_log_view(self):
-        view = self._log_tabs.get("model")
-        if view is None:
-            return
-        include_verbose = self.log_model_verbose.isChecked()
-        only_round = self._current_turn_number if self.log_only_current_turn.isChecked() else None
-        text = render_model_log_flat(
-            self._model_events_current,
-            include_verbose=include_verbose,
-            only_round=only_round,
-        )
-        view.setPlainText(text if text else "Пока нет событий модели.")
-        scrollbar = view.verticalScrollBar()
+        model_events = self._model_events_current
+        model_events = [event for event in self._model_events_current if self._is_combat_event(event)]
+        summary_lines = self._phase_summaries(model_events)
+        alert_lines = self._collect_alert_lines()
+        round_card = self._build_round_summary_card()
+        if summary_lines:
+            lines.extend(["", "=== СВОДКА ФАЗ ===", *summary_lines])
+        if alert_lines:
+            lines.extend(["", "=== АЛЕРТЫ ===", *alert_lines])
+        if round_card:
+            lines.extend(["", *round_card])
+
+        if not lines:
+            lines = ["Пока нет логов."]
+        debug_btn = self._log_filter_buttons.get("debug")
+        mode_core = "Режим: Игровой + Debug" if (debug_btn is not None and debug_btn.isChecked()) else "Режим: Игровой"
+        mode_text = f"{mode_core} | {self._timeline_label_text()}"
+        self._log_status_label.setText(mode_text)
+
+        html_lines = []
+        for text, color, count in visible_entries:
+            shown = f"{text} ×{count}" if count > 1 else text
+            html_lines.append(f"<span style='color:{color}'>{html.escape(shown)}</span>")
+        if summary_lines:
+            html_lines.append("<br><span style='color:#7aa2f7'>=== СВОДКА ФАЗ ===</span>")
+            for summary in summary_lines:
+                html_lines.append(f"<span style='color:#7aa2f7'>{html.escape(summary)}</span>")
+        if alert_lines:
+            html_lines.append("<br><span style='color:#ff9f43'>=== АЛЕРТЫ ===</span>")
+            for alert in alert_lines:
+                html_lines.append(f"<span style='color:#ff9f43'>{html.escape(alert)}</span>")
+        if round_card:
+            html_lines.append("<br><span style='color:#7aa2f7'>🏁 === КАРТОЧКА РАУНДА ===</span>")
+            for line in round_card[1:]:
+                html_lines.append(f"<span style='color:#7aa2f7'>{html.escape(line)}</span>")
+        if not html_lines:
+            html_lines = ["<span>Пока нет логов.</span>"]
+        self.log_view.setHtml("<br>".join(html_lines))
+        scrollbar = self.log_view.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
     def _reset_log_lines(self, lines, write_to_file: bool):
@@ -2329,12 +2557,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 categories = self._classify_line(raw_text)
                 if self._should_assign_shooting_side(raw_text, categories):
                     categories.add(self._current_turn_side)
+                channel = self._detect_log_channel(raw_text, categories)
                 self._log_entries.append(
                     {
                         "raw": raw_text,
                         "display": self._decorate_log_line(raw_text, categories),
+                        "compact": self._compact_gameplay_line(raw_text, categories),
                         "turn": self._current_turn_number,
                         "categories": categories,
+                        "channel": channel,
                     }
                 )
         self._refresh_log_views()
@@ -2358,17 +2589,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_events_current = []
         self._fx_shot_queue.clear()
         self._fx_parser.reset(preserve_seen=False)
-        for view in self._log_tabs.values():
-            view.clear()
+        self.log_view.clear()
 
     def _collect_current_turn_logs(self):
-        if self._current_turn_number is None:
-            return "\n".join(entry["display"] for entry in self._log_entries)
-        return "\n".join(
-            entry["display"]
-            for entry in self._log_entries
-            if entry["turn"] == self._current_turn_number
-        )
+        return self.log_view.toPlainText()
 
     def _copy_current_turn(self):
         QtWidgets.QApplication.clipboard().setText(self._collect_current_turn_logs())
@@ -2683,26 +2907,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if not message:
             return
         self._append_log_to_file(message)
-
-    def _auto_switch_log_tab(self, active_side):
-        if active_side not in ("player", "model"):
-            return
-        if active_side == self._last_active_side:
-            return
-        self._last_active_side = active_side
-        target_index = self._log_tab_indices.get(active_side)
-        if target_index is None:
-            return
-        self._log_tab_programmatic_switch = True
-        try:
-            self.log_tabs.setCurrentIndex(target_index)
-        finally:
-            self._log_tab_programmatic_switch = False
-
-    def _on_log_tab_changed(self, index):
-        if self._log_tab_programmatic_switch:
-            return
-        self._last_manual_log_tab_index = index
 
     def _is_movement_phase(self, phase):
         phase_text = str(phase or "").lower()
