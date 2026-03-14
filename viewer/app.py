@@ -1,5 +1,6 @@
 import torch
 import json
+import html
 import os
 import queue
 import re
@@ -285,6 +286,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_events_stream = []
         self._model_events_current = []
         self._log_view = None
+        self._log_filter_buttons = {}
+        self._log_status_label = None
         self._fx_shot_queue: Deque[FxShotEvent] = deque()
         self._fx_parser = FxLogParser(self._enqueue_fx_event, self._fx_debug, seen_max=400)
         self._max_log_lines = 5000
@@ -1563,14 +1566,34 @@ class ViewerWindow(QtWidgets.QMainWindow):
         fixed_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
         fixed_font.setPointSize(10)
 
-        self.log_view = QtWidgets.QPlainTextEdit()
+        self.log_view = QtWidgets.QTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setFont(fixed_font)
-        self.log_view.setMaximumBlockCount(self._max_log_lines)
+        self.log_view.document().setMaximumBlockCount(self._max_log_lines)
 
         self.log_verbose_details = QtWidgets.QCheckBox("Подробные логи")
-        self.log_verbose_details.setChecked(True)
+        self.log_verbose_details.setChecked(False)
         self.log_verbose_details.toggled.connect(self._refresh_log_views)
+
+        self._log_status_label = QtWidgets.QLabel("Режим: Игровой")
+        self._log_status_label.setStyleSheet(f"color: {Theme.muted.name()};")
+
+        filter_defs = [
+            ("movement", "👣"),
+            ("shooting", "🎯"),
+            ("charge", "⚡"),
+            ("fight", "⚔️"),
+            ("result", "🏁"),
+            ("errors", "⚠️"),
+            ("debug", "🧪"),
+        ]
+        for key, label in filter_defs:
+            btn = QtWidgets.QToolButton()
+            btn.setText(label)
+            btn.setCheckable(True)
+            btn.setChecked(key in {"movement", "shooting", "charge", "fight", "result", "errors"})
+            btn.toggled.connect(self._refresh_log_views)
+            self._log_filter_buttons[key] = btn
 
         self.log_copy_turn = QtWidgets.QPushButton("Копировать")
         self.log_copy_turn.clicked.connect(self._copy_current_turn)
@@ -1579,6 +1602,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._log_controls_layout = QtWidgets.QHBoxLayout()
         self._log_controls_layout.addWidget(self.log_verbose_details)
+        self._log_controls_layout.addWidget(self._log_status_label)
+        for key in ("movement", "shooting", "charge", "fight", "result", "errors", "debug"):
+            self._log_controls_layout.addWidget(self._log_filter_buttons[key])
         self._log_controls_layout.addStretch()
         self._log_controls_layout.addWidget(self.log_copy_turn)
         self._log_controls_layout.addWidget(self.log_clear)
@@ -2009,12 +2035,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         categories = self._classify_line(raw_text)
         if self._should_assign_shooting_side(raw_text, categories):
             categories.add(self._current_turn_side)
+        channel = self._detect_log_channel(raw_text, categories)
         display_text = self._decorate_log_line(raw_text, categories)
         entry = {
             "raw": raw_text,
             "display": display_text,
+            "compact": self._compact_gameplay_line(raw_text, categories),
             "turn": self._current_turn_number,
             "categories": categories,
+            "channel": channel,
         }
         self._log_entries.append(entry)
         self._append_log_to_file(raw_text)
@@ -2145,6 +2174,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if self._matches_any(
             lowered,
             [
+                "reward (",
+                "fx:",
+                "los_debug",
+            ],
+        ):
+            categories.add("debug")
+        if self._matches_any(
+            lowered,
+            [
                 "error",
                 "traceback",
                 "exception",
@@ -2156,6 +2194,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         ):
             categories.add("errors")
             categories.add("key")
+            categories.add("result")
         if self._matches_any(
             lowered,
             [
@@ -2174,6 +2213,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
             ],
         ):
             categories.add("key")
+        if self._matches_any(
+            lowered,
+            [
+                "побед",
+                "winner",
+                "конец боевого раунда",
+                "game over",
+                "итерация",
+            ],
+        ):
+            categories.add("result")
         return categories
 
     def _matches_any(self, lowered: str, tokens):
@@ -2273,32 +2323,172 @@ class ViewerWindow(QtWidgets.QMainWindow):
         phase = str((event or {}).get("phase") or "").lower()
         return phase in {"movement", "shooting", "charge", "fight"}
 
-    def _should_show_entry(self, entry):
+    def _detect_log_channel(self, text: str, categories: set) -> str:
+        lowered = str(text or "").lower()
+        if "los_debug" in lowered:
+            return "los"
+        if "fx:" in lowered:
+            return "fx"
+        if "reward (" in lowered:
+            return "reward"
+        if "errors" in categories:
+            return "error"
+        if "result" in categories:
+            return "result"
+        if "turn" in categories or "key" in categories:
+            return "phase"
+        if "combat_basic" in categories:
+            return "combat"
+        return "system"
+
+    def _compact_gameplay_line(self, text: str, categories: set) -> str:
+        raw = str(text or "").strip()
+        if not raw:
+            return ""
+        if "movement" in categories:
+            if "позиция до" in raw.lower() or "позиция после" in raw.lower():
+                return f"👣 {raw}"
+        if "shooting" in categories:
+            return f"🎯 {raw}"
+        if "charge" in categories:
+            return f"⚡ {raw}"
+        if "fight" in categories:
+            return f"⚔️ {raw}"
+        if "result" in categories:
+            return f"🏁 {raw}"
+        if "errors" in categories:
+            return f"⚠️ {raw}"
+        if "turn" in categories or "key" in categories:
+            return f"⭐ {raw}"
+        return raw
+
+    def _entry_matches_filter(self, entry: dict) -> bool:
         if self.log_verbose_details.isChecked():
             return True
         categories = entry.get("categories", set())
-        return "combat_basic" in categories
+        channel = entry.get("channel")
+        if channel in {"fx", "los", "reward"}:
+            return False
+        if "combat_basic" in categories or "turn" in categories or "result" in categories or "errors" in categories:
+            return True
+        return False
+
+    def _is_filter_enabled_for_entry(self, entry: dict) -> bool:
+        categories = entry.get("categories", set())
+        channel = entry.get("channel")
+        mapping = {
+            "movement": "movement" in categories,
+            "shooting": "shooting" in categories,
+            "charge": "charge" in categories,
+            "fight": "fight" in categories,
+            "result": "result" in categories or channel in {"phase", "result"},
+            "errors": "errors" in categories or channel == "error",
+            "debug": channel in {"fx", "los", "reward", "system"} or "debug" in categories,
+        }
+        for key, enabled in mapping.items():
+            btn = self._log_filter_buttons.get(key)
+            if btn is not None and btn.isChecked() and enabled:
+                return True
+        return False
+
+    def _should_show_entry(self, entry):
+        if not self._entry_matches_filter(entry):
+            return False
+        return self._is_filter_enabled_for_entry(entry)
+
+    def _phase_summaries(self, events) -> list[str]:
+        phase_stats = OrderedDict()
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            phase = str(event.get("phase") or "").lower().strip()
+            if phase not in {"movement", "shooting", "charge", "fight"}:
+                continue
+            stats = phase_stats.setdefault(phase, {"events": 0, "skip": 0})
+            stats["events"] += 1
+            msg = str(event.get("msg") or "").lower()
+            if any(token in msg for token in ("пропущ", "нет целей", "невозмож", "no move", "skip")):
+                stats["skip"] += 1
+        lines = []
+        labels = {
+            "movement": "👣 Движение",
+            "shooting": "🎯 Стрельба",
+            "charge": "⚡ Чардж",
+            "fight": "⚔️ Бой",
+        }
+        for phase, stats in phase_stats.items():
+            lines.append(f"{labels.get(phase, phase)}: событий={stats['events']}, пропусков={stats['skip']}")
+        return lines
+
+    def _line_color(self, entry: dict) -> str:
+        categories = entry.get("categories", set())
+        channel = entry.get("channel")
+        if "errors" in categories or channel == "error":
+            return "#ff6b6b"
+        if "shooting" in categories:
+            return "#ffd166"
+        if "fight" in categories:
+            return "#f4978e"
+        if "charge" in categories:
+            return "#b388eb"
+        if "movement" in categories:
+            return "#7bd389"
+        if "result" in categories:
+            return "#7aa2f7"
+        if channel in {"fx", "los", "reward", "system"}:
+            return Theme.muted.name()
+        return Theme.text.name()
 
     def _refresh_log_views(self):
         lines = []
         for entry in self._log_entries:
             if self._should_show_entry(entry):
-                lines.append(entry["display"])
+                text = entry["display"] if self.log_verbose_details.isChecked() else entry.get("compact") or entry["display"]
+                if lines and lines[-1] == text and not self.log_verbose_details.isChecked():
+                    continue
+                lines.append(text)
 
         model_events = self._model_events_current
         if not self.log_verbose_details.isChecked():
             model_events = [event for event in self._model_events_current if self._is_combat_event(event)]
-        model_text = render_model_log_flat(
-            model_events,
-            include_verbose=self.log_verbose_details.isChecked(),
-            only_round=None,
-        )
-        if model_text:
-            lines.extend(["", "=== СВОДКА МОДЕЛИ ===", model_text])
+        summary_lines = self._phase_summaries(model_events)
+        if summary_lines:
+            lines.extend(["", "=== СВОДКА ФАЗ ===", *summary_lines])
+        if self.log_verbose_details.isChecked():
+            model_text = render_model_log_flat(
+                model_events,
+                include_verbose=True,
+                only_round=None,
+            )
+            if model_text:
+                lines.extend(["", "=== СВОДКА МОДЕЛИ ===", model_text])
 
         if not lines:
             lines = ["Пока нет логов."]
-        self.log_view.setPlainText("\n".join(lines))
+        mode_text = "Режим: Подробный" if self.log_verbose_details.isChecked() else "Режим: Игровой"
+        self._log_status_label.setText(mode_text)
+
+        html_lines = []
+        for entry in self._log_entries:
+            if not self._should_show_entry(entry):
+                continue
+            text = entry["display"] if self.log_verbose_details.isChecked() else entry.get("compact") or entry["display"]
+            if html_lines and html_lines[-1].endswith(html.escape(text)) and not self.log_verbose_details.isChecked():
+                continue
+            color = self._line_color(entry)
+            html_lines.append(f"<span style='color:{color}'>{html.escape(text)}</span>")
+        if summary_lines:
+            html_lines.append("<br><span style='color:#7aa2f7'>=== СВОДКА ФАЗ ===</span>")
+            for summary in summary_lines:
+                html_lines.append(f"<span style='color:#7aa2f7'>{html.escape(summary)}</span>")
+        if self.log_verbose_details.isChecked() and len(lines) > 0:
+            if "=== СВОДКА МОДЕЛИ ===" in lines:
+                idx = lines.index("=== СВОДКА МОДЕЛИ ===")
+                model_plain = "\n".join(lines[idx:])
+                html_lines.append(f"<pre style='color:{Theme.muted.name()}'>{html.escape(model_plain)}</pre>")
+        if not html_lines:
+            html_lines = ["<span>Пока нет логов.</span>"]
+        self.log_view.setHtml("<br>".join(html_lines))
         scrollbar = self.log_view.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
@@ -2316,12 +2506,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 categories = self._classify_line(raw_text)
                 if self._should_assign_shooting_side(raw_text, categories):
                     categories.add(self._current_turn_side)
+                channel = self._detect_log_channel(raw_text, categories)
                 self._log_entries.append(
                     {
                         "raw": raw_text,
                         "display": self._decorate_log_line(raw_text, categories),
+                        "compact": self._compact_gameplay_line(raw_text, categories),
                         "turn": self._current_turn_number,
                         "categories": categories,
+                        "channel": channel,
                     }
                 )
         self._refresh_log_views()
