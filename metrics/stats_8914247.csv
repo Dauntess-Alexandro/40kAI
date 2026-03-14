@@ -1,0 +1,101 @@
+episode,ep_reward,ep_len,turn,model_vp,player_vp,vp_diff,result,end_reason,end_code
+1,0.7401522546067456,6,7,0,0,0,win,wipeout_enemy,4
+2,0.7074454285385161,6,7,0,0,0,win,wipeout_enemy,4
+3,-0.25999865718109655,7,8,0,0,0,loss,wipeout_model,4
+4,0.4334666384499983,8,9,0,0,0,win,wipeout_enemy,4
+5,-0.39011756236398093,8,9,0,1,-1,loss,wipeout_model,4
+6,0.6521341745865766,8,9,0,0,0,win,wipeout_enemy,4
+7,0.6155031164896847,9,10,0,1,-1,win,wipeout_enemy,4
+8,-0.13524981282755358,10,11,0,0,0,draw,turn_limit_Only War,4
+9,-0.06814232537703017,10,11,0,1,-1,loss,turn_limit_Only War,4
+10,-0.15781254631969371,10,11,0,0,0,draw,turn_limit_Only War,4
+11,0.030062277812770218,10,11,0,0,0,draw,turn_limit_Only War,4
+12,0.5607656575862506,10,11,0,1,-1,win,wipeout_enemy,4
+13,-0.14377993984076604,10,11,0,1,-1,loss,turn_limit_Only War,4
+14,0.13746545064929752,10,11,0,0,0,draw,turn_limit_Only War,4
+15,0.5092568128690693,7,8,0,1,-1,win,wipeout_enemy,4
+16,0.7945495343814268,7,8,0,0,0,win,wipeout_enemy,4
+17,0.014600245619041807,10,11,0,1,-1,loss,turn_limit_Only War,4
+18,0.012888182635418122,10,11,0,1,-1,loss,turn_limit_Only War,4
+19,0.002757538977267102,10,11,0,0,0,draw,turn_limit_Only War,4
+20,0.05841107291396156,10,11,0,0,0,draw,turn_limit_Only War,4
+21,0.6037047680251825,8,9,0,0,0,win,wipeout_enemy,4
+22,-0.13220572735293296,10,11,0,0,0,draw,turn_limit_Only War,4
+23,-0.10840690434678113,10,11,0,1,-1,loss,turn_limit_Only War,4
+24,0.5294025293615299,10,11,0,1,-1,win,wipeout_enemy,4
+25,0.6232220937705969,7,8,0,1,-1,win,wipeout_enemy,4
+26,0.5595191148603762,9,10,0,0,0,win,wipeout_enemy,4
+27,-0.22029856958927496,10,11,0,1,-1,loss,turn_limit_Only War,4
+28,-0.01657688190772428,10,11,0,0,0,draw,turn_limit_Only War,4
+29,-0.10758138901152323,10,11,0,1,-1,loss,turn_limit_Only War,4
+30,0.022008652902553022,10,11,0,0,0,draw,turn_limit_Only War,4
+31,-0.12185948471439471,10,11,0,0,0,draw,turn_limit_Only War,4
+32,0.08150532575628058,10,11,0,0,0,draw,turn_limit_Only War,4
+33,0.1510608239248981,10,11,0,3,-3,loss,turn_limit_Only War,4
+34,0.2171814036083942,10,11,0,1,-1,loss,turn_limit_Only War,4
+35,8.333333333333803e-05,10,11,0,1,-1,loss,turn_limit_Only War,4
+36,0.08150914808108227,10,11,0,1,-1,loss,turn_limit_Only War,4
+37,0.4429177808762637,7,8,0,1,-1,win,wipeout_enemy,4
+38,0.7385246195824379,6,7,0,0,0,win,wipeout_enemy,4
+39,0.49777815049647955,8,9,0,0,0,win,wipeout_enemy,4
+40,0.22148603081407892,10,11,0,0,0,win,wipeout_enemy,4
+41,0.4543091198621149,8,9,0,1,-1,win,wipeout_enemy,4
+42,0.02738588903484967,10,11,0,0,0,draw,turn_limit_Only War,4
+43,0.4168337953768984,10,11,2,0,2,win,turn_limit_Only War,4
+44,0.06008221738674503,10,11,0,0,0,draw,turn_limit_Only War,4
+45,0.06915535299463754,10,11,0,1,-1,loss,turn_limit_Only War,4
+46,-0.017063788876040435,10,11,0,0,0,draw,turn_limit_Only War,4
+47,0.4761649028470847,9,10,0,1,-1,win,wipeout_enemy,4
+48,0.3904510095571774,10,11,0,1,-1,win,wipeout_enemy,4
+49,0.4708360024647359,10,11,0,1,-1,win,wipeout_enemy,4
+50,-0.10752472079443069,10,11,0,0,0,draw,turn_limit_Only War,4
+51,0.33507407010763285,8,9,0,1,-1,win,wipeout_enemy,4
+52,-0.18130983858183597,10,11,0,0,0,draw,turn_limit_Only War,4
+53,0.4679674988572144,7,8,0,1,-1,win,wipeout_enemy,4
+54,0.0013239434564369234,10,11,0,1,-1,loss,turn_limit_Only War,4
+55,-0.16963885882792057,10,11,0,1,-1,loss,turn_limit_Only War,4
+56,0.3950574538637557,8,9,0,0,0,win,wipeout_enemy,4
+57,-0.059611530315642404,10,11,0,0,0,draw,turn_limit_Only War,4
+58,-0.07339798062302044,10,11,0,0,0,draw,turn_limit_Only War,4
+59,0.45093562938343,9,10,0,1,-1,win,wipeout_enemy,4
+60,-0.02721222344466448,10,11,0,1,-1,loss,turn_limit_Only War,4
+61,0.8099691376539429,5,6,0,0,0,win,wipeout_enemy,4
+62,0.8766779992039325,5,6,0,0,0,win,wipeout_enemy,4
+63,0.7503297548753207,6,7,0,0,0,win,wipeout_enemy,4
+64,-0.054515398585682585,10,11,0,0,0,draw,turn_limit_Only War,4
+65,-0.18245377354187992,10,11,0,1,-1,loss,turn_limit_Only War,4
+66,0.34891092150575387,7,8,0,1,-1,win,wipeout_enemy,4
+67,-0.05088377102965029,10,11,0,1,-1,loss,turn_limit_Only War,4
+68,0.14005195350642669,10,11,0,1,-1,loss,turn_limit_Only War,4
+69,-0.25075240758068296,10,11,0,0,0,draw,turn_limit_Only War,4
+70,0.03854497014567324,10,11,0,0,0,draw,turn_limit_Only War,4
+71,0.0457498051055976,10,11,0,1,-1,loss,turn_limit_Only War,4
+72,0.6598333333333333,7,8,0,0,0,win,wipeout_enemy,4
+73,0.4628732795985317,8,9,0,1,-1,win,wipeout_enemy,4
+74,0.1302751200307108,10,11,0,1,-1,loss,turn_limit_Only War,4
+75,0.034154258986742125,10,11,0,0,0,draw,turn_limit_Only War,4
+76,0.5657998619076875,8,9,0,1,-1,win,wipeout_enemy,4
+77,0.030690603125692967,10,11,0,1,-1,loss,turn_limit_Only War,4
+78,0.49890142531069137,8,9,0,0,0,win,wipeout_enemy,4
+79,0.4935538826610329,9,10,0,1,-1,win,wipeout_enemy,4
+80,0.12341328106431312,10,11,0,0,0,draw,turn_limit_Only War,4
+81,0.7052620824460177,7,8,0,1,-1,win,wipeout_enemy,4
+82,0.10022761279729589,10,11,0,0,0,draw,turn_limit_Only War,4
+83,0.1322558906339754,10,11,0,0,0,draw,turn_limit_Only War,4
+84,0.6006823941926874,7,8,0,1,-1,win,wipeout_enemy,4
+85,-0.2724292097401443,8,9,0,1,-1,loss,wipeout_model,4
+86,-0.004558204190526369,10,11,0,1,-1,loss,turn_limit_Only War,4
+87,-0.057712095438178866,10,11,0,0,0,draw,turn_limit_Only War,4
+88,0.8770954805046858,5,6,0,0,0,win,wipeout_enemy,4
+89,0.5148650870670578,8,9,0,1,-1,win,wipeout_enemy,4
+90,0.07404382606821731,10,11,0,1,-1,loss,turn_limit_Only War,4
+91,0.12477097141797222,10,11,0,0,0,draw,turn_limit_Only War,4
+92,-0.041392005296418746,10,11,0,1,-1,loss,turn_limit_Only War,4
+93,-0.07761277001277614,10,11,0,0,0,draw,turn_limit_Only War,4
+94,-0.048488866496821034,10,11,0,0,0,draw,turn_limit_Only War,4
+95,0.5331961952644311,9,10,0,1,-1,win,wipeout_enemy,4
+96,-0.3508518616697959,10,11,0,0,0,draw,turn_limit_Only War,4
+97,0.3003635489658848,8,9,0,0,0,win,wipeout_enemy,4
+98,-0.3324791865335599,10,11,0,0,0,loss,wipeout_model,4
+99,0.49568977239563183,7,8,0,0,0,win,wipeout_enemy,4
+100,-0.08949973403480914,10,11,0,0,0,draw,turn_limit_Only War,4
