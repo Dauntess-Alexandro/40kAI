@@ -1,6 +1,7 @@
 import torch
 import json
 import html
+import copy
 import os
 import queue
 import re
@@ -299,6 +300,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_step_current_phase = None
         self._model_step_state_queue: Deque[dict] = deque()
         self._model_step_buffering_active = False
+        self._model_step_visual_state: Optional[dict] = None
         self._init_log_viewer()
         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
@@ -1704,6 +1706,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._rolloff_defender_side = None
         self._model_step_state_queue.clear()
         self._model_step_buffering_active = False
+        self._model_step_visual_state = None
 
     def _submit_text(self):
         text = self.command_input.text().strip()
@@ -1865,6 +1868,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 return
             self._model_step_buffering_active = False
             self._model_step_state_queue.clear()
+            self._model_step_visual_state = None
             self._apply_state(state)
 
     def _is_model_side(self, side: Optional[str]) -> bool:
@@ -1884,6 +1888,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if not self._model_step_buffering_active:
             self._model_step_buffering_active = True
             self._model_step_state_queue.clear()
+            self._model_step_visual_state = copy.deepcopy(state)
         self._model_step_state_queue.append(dict(state))
         if len(self._model_step_state_queue) > 400:
             self._model_step_state_queue.popleft()
@@ -2671,6 +2676,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 {
                     "phase": phase,
                     "text": str(entry.get("compact") or raw),
+                    "raw": raw,
                 }
             )
 
@@ -2730,15 +2736,87 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_step_current_phase = item.get("phase")
             self.add_log_line(f"[STEP][MODEL] Автопереход к фазе: {phase_text}.")
         self.add_log_line(f"[STEP][MODEL] {item.get('text')}")
-        if self._model_step_state_queue:
-            step_state = self._model_step_state_queue.popleft()
-            self._apply_state(step_state)
-        elif self._model_step_buffering_active:
-            self.add_log_line(
-                "Шаг MODEL: состояние карты ещё не готово. Где: viewer/app.py (_advance_model_step). "
-                "Что делать дальше: нажмите «Шаг» ещё раз через мгновение."
-            )
+        self._apply_model_step_visual_update(item)
         self._update_model_step_labels()
+
+    def _apply_model_step_visual_update(self, item: dict) -> None:
+        if not isinstance(self._model_step_visual_state, dict):
+            if self._model_step_state_queue:
+                self._model_step_visual_state = copy.deepcopy(self._model_step_state_queue[0])
+            else:
+                return
+        raw = str(item.get("raw") or "")
+        if self._apply_movement_step_from_raw(raw):
+            self._render_model_step_visual_state()
+            return
+        if self._apply_hp_step_from_raw(raw):
+            self._render_model_step_visual_state()
+
+    def _unit_side_from_id(self, unit_id: int) -> str:
+        return "model" if int(unit_id) >= 20 else "player"
+
+    def _find_visual_unit(self, unit_id: int) -> Optional[dict]:
+        if not isinstance(self._model_step_visual_state, dict):
+            return None
+        units = self._model_step_visual_state.get("units", [])
+        if not isinstance(units, list):
+            return None
+        side = self._unit_side_from_id(unit_id)
+        for unit in units:
+            if not isinstance(unit, dict):
+                continue
+            if int(unit.get("id") or -1) == int(unit_id) and str(unit.get("side") or "").lower() == side:
+                return unit
+        for unit in units:
+            if isinstance(unit, dict) and int(unit.get("id") or -1) == int(unit_id):
+                return unit
+        return None
+
+    def _apply_movement_step_from_raw(self, raw: str) -> bool:
+        match = re.search(r"Unit\s+(\d+).*Позиция после:\s*\((\d+)\s*,\s*(\d+)\)", raw, re.IGNORECASE)
+        if not match:
+            return False
+        unit_id = int(match.group(1))
+        pos_y = int(match.group(2))
+        pos_x = int(match.group(3))
+        unit = self._find_visual_unit(unit_id)
+        if not unit:
+            return False
+        unit["x"] = pos_x
+        unit["y"] = pos_y
+        unit["anchor_x"] = pos_x
+        unit["anchor_y"] = pos_y
+        return True
+
+    def _apply_hp_step_from_raw(self, raw: str) -> bool:
+        match = re.search(
+            r"Unit\s+(\d+).*Осталось:\s*(\d+).*HP:\s*([-+]?\d+(?:\.\d+)?)\s*->\s*([-+]?\d+(?:\.\d+)?)",
+            raw,
+            re.IGNORECASE,
+        )
+        if not match:
+            return False
+        unit_id = int(match.group(1))
+        alive_models = int(match.group(2))
+        hp_after = float(match.group(4))
+        unit = self._find_visual_unit(unit_id)
+        if not unit:
+            return False
+        unit["alive_models"] = alive_models
+        unit["hp"] = hp_after
+        return True
+
+    def _render_model_step_visual_state(self) -> None:
+        if not isinstance(self._model_step_visual_state, dict):
+            return
+        self.map_scene.update_state(self._model_step_visual_state)
+        self._units_by_key = {}
+        units = self._model_step_visual_state.get("units", [])
+        for unit in units if isinstance(units, list) else []:
+            if isinstance(unit, dict):
+                self._units_by_key[(unit.get("side"), unit.get("id"))] = unit
+        self._populate_units_table(units if isinstance(units, list) else [])
+        self._refresh_active_context()
 
     def _reset_log_lines(self, lines, write_to_file: bool):
         self._log_entries = []
@@ -2790,6 +2868,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_step_current_phase = None
         self._model_step_state_queue.clear()
         self._model_step_buffering_active = False
+        self._model_step_visual_state = None
         self._fx_shot_queue.clear()
         self._fx_parser.reset(preserve_seen=False)
         self.log_view.clear()
