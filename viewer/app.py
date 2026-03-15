@@ -297,6 +297,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_step_cursor = -1
         self._model_step_turn_start_idx = None
         self._model_step_current_phase = None
+        self._model_step_state_queue: Deque[dict] = deque()
+        self._model_step_buffering_active = False
         self._init_log_viewer()
         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
@@ -1700,6 +1702,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._deploy_status_text = ""
         self._rolloff_attacker_side = None
         self._rolloff_defender_side = None
+        self._model_step_state_queue.clear()
+        self._model_step_buffering_active = False
 
     def _submit_text(self):
         text = self.command_input.text().strip()
@@ -1854,7 +1858,42 @@ class ViewerWindow(QtWidgets.QMainWindow):
             )
             return
         if self.state_watcher.load_if_changed():
-            self._apply_state(self.state_watcher.state)
+            state = self.state_watcher.state
+            if self._should_buffer_model_state(state):
+                self._queue_model_step_state(state)
+                self._ingest_state_logs_only(state)
+                return
+            self._model_step_buffering_active = False
+            self._model_step_state_queue.clear()
+            self._apply_state(state)
+
+    def _is_model_side(self, side: Optional[str]) -> bool:
+        return str(side or "").strip().lower() in {"model", "enemy"}
+
+    def _is_core_battle_phase(self, phase: Optional[str]) -> bool:
+        return str(phase or "").strip().lower() in {"command", "movement", "shooting", "charge", "fight"}
+
+    def _should_buffer_model_state(self, state: dict) -> bool:
+        if not isinstance(state, dict):
+            return False
+        active = state.get("active") or state.get("active_side")
+        phase = state.get("phase")
+        return self._is_model_side(active) and self._is_core_battle_phase(phase)
+
+    def _queue_model_step_state(self, state: dict) -> None:
+        if not self._model_step_buffering_active:
+            self._model_step_buffering_active = True
+            self._model_step_state_queue.clear()
+        self._model_step_state_queue.append(dict(state))
+        if len(self._model_step_state_queue) > 400:
+            self._model_step_state_queue.popleft()
+
+    def _ingest_state_logs_only(self, state: dict) -> None:
+        if not isinstance(state, dict):
+            return
+        self._update_log(state.get("log_tail", []))
+        self._update_model_events(state.get("model_events", []))
+        self._drain_event_queue()
 
     def _apply_state(self, state):
         self.map_scene.update_state(state)
@@ -2691,6 +2730,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_step_current_phase = item.get("phase")
             self.add_log_line(f"[STEP][MODEL] Автопереход к фазе: {phase_text}.")
         self.add_log_line(f"[STEP][MODEL] {item.get('text')}")
+        if self._model_step_state_queue:
+            step_state = self._model_step_state_queue.popleft()
+            self._apply_state(step_state)
+        elif self._model_step_buffering_active:
+            self.add_log_line(
+                "Шаг MODEL: состояние карты ещё не готово. Где: viewer/app.py (_advance_model_step). "
+                "Что делать дальше: нажмите «Шаг» ещё раз через мгновение."
+            )
         self._update_model_step_labels()
 
     def _reset_log_lines(self, lines, write_to_file: bool):
@@ -2741,6 +2788,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_step_cursor = -1
         self._model_step_turn_start_idx = None
         self._model_step_current_phase = None
+        self._model_step_state_queue.clear()
+        self._model_step_buffering_active = False
         self._fx_shot_queue.clear()
         self._fx_parser.reset(preserve_seen=False)
         self.log_view.clear()
