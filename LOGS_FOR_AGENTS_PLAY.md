@@ -337,3 +337,102 @@ Unit 22 — Necrons Necron Warriors (x10 моделей) стреляет по U
 2026-03-14 18:09:15 | FX: эффект добавлен в рендер (attacker=22, target=11).
 2026-03-14 18:09:15 | 📌 -------------------------
 
+2026-03-15 10:45:11 | [VIEWER] Рендер: OpenGL (QOpenGLWidget).
+2026-03-15 10:45:11 | [VIEWER] Фоллбэк-рендер не активирован.
+2026-03-15 10:45:11 | [VIEWER][TERRAIN] features=4 first=<barricade,barrel.png,3>
+2026-03-15 10:45:11 | [VIEWER][TERRAIN] load sprite=barrel.png path=C:\40kAI\viewer\assets\props\terrain\barrel.png exists=True
+2026-03-15 10:45:12 | [VIEWER][RESET] reason=new_game_start. Где: viewer/app.py. Что делаем: очищаем visual state прошлой сессии.
+2026-03-15 10:45:13 | [MODEL] pickle=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-8-683909.pickle
+2026-03-15 10:45:13 | [MODEL] checkpoint=C:\40kAI\models\M_Necrons_vs_P_Necrons\model-8-683909.pth
+2026-03-15 10:45:13 | [MODEL] Viewer запущен в greedy-режиме: exploration отключен (epsilon=0).
+2026-03-15 10:45:17 | Roll-off Attacker/Defender: enemy=1 model=6 -> attacker=model
+2026-03-15 10:45:17 | Юниты: [('Necron Warriors', '1', 10), ('Necron Warriors', 'unit-1', 10)]
+2026-03-15 10:45:17 | [DEPLOY] mode=rl_phase, strategy=template_jitter, seed=none
+2026-03-15 10:45:17 | [DEPLOY][Only War] attacker=model -> LEFT x=0..14; defender=enemy -> RIGHT x=45..59
+2026-03-15 10:45:17 | [DEPLOY][AUTO] mode=rl_phase strategy=template_jitter seed=none
+2026-03-15 10:45:17 | [DEPLOY] Order: model first, alternating
+2026-03-15 10:45:17 | [DEPLOY][RL] score_config scale=0.050 w_forward=1.000 w_spread=0.600 w_edge=0.200 w_cover=0.350
+2026-03-15 10:45:17 | [DEPLOY][RL] accepted Unit 21 — Necrons Necron Warriors (x10 моделей): flat=303, coord=(5,3), attempt=1, reward=+0.020, score_before=0.000, score_after=0.397, reward_delta=+0.020, forward=0.054, spread=1.000, edge=1.000, cover=0.000, cover_near=0.000, congestion=0.000, final_cover=0.000
+2026-03-15 10:45:17 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (5,3)
+2026-03-15 10:45:17 | [VIEWER][RESET] reason=manual_deploy_start. Где: viewer/app.py. Что делаем: очищаем visual state прошлой сессии.
+2026-03-15 10:45:18 | REQ: deploy cell accepted x=50, y=32
+2026-03-15 10:45:18 | [DEPLOY][MANUAL] accepted Unit 11 — Necrons Necron Warriors (x10 моделей) -> (32,50)
+2026-03-15 10:45:18 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (32,50)
+2026-03-15 10:45:18 | [DEPLOY][RL] score_config scale=0.050 w_forward=1.000 w_spread=0.600 w_edge=0.200 w_cover=0.350
+2026-03-15 10:45:18 | [DEPLOY][RL] accepted Unit 22 — Necrons Necron Warriors (x10 моделей): flat=1268, coord=(21,8), attempt=1, reward=+0.001, score_before=0.397, score_after=0.417, reward_delta=+0.001, forward=0.097, spread=1.000, edge=1.000, cover=0.000, cover_near=0.000, congestion=0.000, final_cover=0.000
+2026-03-15 10:45:18 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (21,8)
+2026-03-15 10:45:19 | REQ: deploy cell accepted x=47, y=23
+2026-03-15 10:45:21 | [DEPLOY][MANUAL] accepted Unit 12 — Necrons Necron Warriors (x10 моделей) -> (23,47)
+2026-03-15 10:45:21 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (23,47)
+2026-03-15 10:45:21 | [DEPLOY][RL][SUMMARY] units=2 attempts=2 invalid=0 fallback=0 reward=+0.021 total_deploy_reward=+0.021 avg_forward=0.075 avg_spread=1.000 avg_edge=1.000 avg_cover=0.000
+2026-03-15 10:45:21 | [DEPLOY] rl_phase stats: {'attempts': 2, 'invalid': 0, 'fallback': 0, 'reward': 0.020851399290500592, 'units': 2, 'total_deploy_reward': 0.020851399290500592, 'forward_sum': 0.15084745762711865, 'spread_sum': 2.0, 'edge_sum': 2.0, 'cover_sum': 0.0, 'avg_forward': 0.07542372881355933, 'avg_spread': 1.0, 'avg_edge': 1.0, 'avg_cover': 0.0}
+2026-03-15 10:45:21 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
+2026-03-15 10:45:21 | [MODEL] Архитектура сети: dueling (источник: net_type)
+2026-03-15 10:45:21 | 
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+
+2026-03-15 10:45:21 | {'model health': [10, 10], 'player health': [10, 10], 'model alive models': [10, 10], 'player alive models': [10, 10], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+2026-03-15 10:45:21 | Здоровье MODEL: [10, 10], здоровье PLAYER: [10, 10]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+
+2026-03-15 10:45:21 | FX: перепроигрываю 30 строк(и) лога.
+2026-03-15 10:45:22 | === БОЕВОЙ РАУНД 1 ===
+2026-03-15 10:45:22 | --- ХОД PLAYER ---
+2026-03-15 10:45:22 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-03-15 10:45:22 | [ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0; objectives=[1], center=(30,20), controlled_by=none
+2026-03-15 10:45:22 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-03-15 10:45:24 | REQ: move cell accepted (RMB) x=39, y=31, mode=advance
+2026-03-15 10:45:24 | [MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+2026-03-15 10:45:31 | REQ: move cell accepted (RMB) x=36, y=23, mode=advance
+2026-03-15 10:45:32 | [MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+2026-03-15 10:45:32 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-03-15 10:45:32 | Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+2026-03-15 10:45:32 | Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+2026-03-15 10:45:32 | --- ФАЗА ЧАРДЖА ---
+2026-03-15 10:45:32 | Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+2026-03-15 10:45:32 | Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+2026-03-15 10:45:32 | Нет доступных целей для чарджа.
+2026-03-15 10:45:32 | --- ФАЗА БОЯ ---
+2026-03-15 10:45:32 | [TARGET][SHOOT] Unit 21 — Necrons Necron Warriors (x10 моделей) -> Unit 11 — Necrons Necron Warriors (x10 моделей): цель вне дальности (distance=33.00, range=24.00, delta=+9.00, eps=0.10). Где: warhamEnv.get_shoot_targets_for_unit. Что делать дальше: проверить range/LOS/engagement и обновить выбор цели.
+2026-03-15 10:45:32 | [TARGET][SHOOT] Unit 21 — Necrons Necron Warriors (x10 моделей) -> Unit 12 — Necrons Necron Warriors (x10 моделей): цель вне дальности (distance=30.00, range=24.00, delta=+6.00, eps=0.10). Где: warhamEnv.get_shoot_targets_for_unit. Что делать дальше: проверить range/LOS/engagement и обновить выбор цели.
+2026-03-15 10:45:32 | [TARGET][SHOOT] Unit 22 — Necrons Necron Warriors (x10 моделей) -> Unit 11 — Necrons Necron Warriors (x10 моделей): цель вне дальности (distance=28.00, range=24.00, delta=+4.00, eps=0.10). Где: warhamEnv.get_shoot_targets_for_unit. Что делать дальше: проверить range/LOS/engagement и обновить выбор цели.
+2026-03-15 10:45:32 | [TARGET][SHOOT] Unit 22 — Necrons Necron Warriors (x10 моделей) -> Unit 12 — Necrons Necron Warriors (x10 моделей): цель вне дальности (distance=25.00, range=24.00, delta=+1.00, eps=0.10). Где: warhamEnv.get_shoot_targets_for_unit. Что делать дальше: проверить range/LOS/engagement и обновить выбор цели.
+2026-03-15 10:45:32 | --- ХОД MODEL ---
+2026-03-15 10:45:32 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-03-15 10:45:32 | [MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0; objectives=[1], center=(30,20), controlled_by=none
+2026-03-15 10:45:32 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-03-15 10:45:32 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.060 (obj=0, d_before=30.887, d_after=30.887, d_best=19.887, max_reach=11.000, could_reach_objective=0, severity=1.000, round_scale=0.50, reason=no_move_missed_progress)
+2026-03-15 10:45:32 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (5, 3). Выбор: stay, advance=нет, distance=0
+2026-03-15 10:45:32 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Движение пропущено (no move). Позиция после: (5, 3)
+2026-03-15 10:45:32 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Reward (VP/объекты): hold_penalty=-0.060 (obj=0, d_before=22.023, d_after=22.023, d_best=11.023, max_reach=11.000, could_reach_objective=0, severity=1.000, round_scale=0.50, reason=no_move_missed_progress)
+2026-03-15 10:45:32 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (21, 8). Выбор: stay, advance=нет, distance=0
+2026-03-15 10:45:32 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Движение пропущено (no move). Позиция после: (21, 8)
+2026-03-15 10:45:32 | Reward (VP/объекты, движение): hold=-0.120, proximity=0.000, total=-0.120
+2026-03-15 10:45:32 | Reward (шаг): движение delta=-0.120
+2026-03-15 10:45:32 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-03-15 10:45:32 | [TARGET][SHOOT] Unit 21 — Necrons Necron Warriors (x10 моделей) -> Unit 11 — Necrons Necron Warriors (x10 моделей): цель вне дальности (distance=33.00, range=24.00, delta=+9.00, eps=0.10). Где: warhamEnv.get_shoot_targets_for_unit. Что делать дальше: проверить range/LOS/engagement и обновить выбор цели.
+2026-03-15 10:45:32 | [TARGET][SHOOT] Unit 21 — Necrons Necron Warriors (x10 моделей) -> Unit 12 — Necrons Necron Warriors (x10 моделей): цель вне дальности (distance=30.00, range=24.00, delta=+6.00, eps=0.10). Где: warhamEnv.get_shoot_targets_for_unit. Что делать дальше: проверить range/LOS/engagement и обновить выбор цели.
+2026-03-15 10:45:32 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.
+2026-03-15 10:45:32 | [TARGET][SHOOT] Unit 22 — Necrons Necron Warriors (x10 моделей) -> Unit 11 — Necrons Necron Warriors (x10 моделей): цель вне дальности (distance=28.00, range=24.00, delta=+4.00, eps=0.10). Где: warhamEnv.get_shoot_targets_for_unit. Что делать дальше: проверить range/LOS/engagement и обновить выбор цели.
+2026-03-15 10:45:32 | [TARGET][SHOOT] Unit 22 — Necrons Necron Warriors (x10 моделей) -> Unit 12 — Necrons Necron Warriors (x10 моделей): цель вне дальности (distance=25.00, range=24.00, delta=+1.00, eps=0.10). Где: warhamEnv.get_shoot_targets_for_unit. Что делать дальше: проверить range/LOS/engagement и обновить выбор цели.
+2026-03-15 10:45:32 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.
+2026-03-15 10:45:32 | --- ФАЗА ЧАРДЖА ---
+2026-03-15 10:45:32 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+2026-03-15 10:45:32 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+2026-03-15 10:45:32 | [MODEL] Чардж: нет доступных целей
+2026-03-15 10:45:32 | --- ФАЗА БОЯ ---
+2026-03-15 10:45:32 | [MODEL] Ближний бой: нет доступных атак
+2026-03-15 10:45:32 | Reward (idle вне цели): skip, reason=hold_penalty_already_applied, near_obj=0, vp_changed=0, control_changed=0, damage=0.00, kills=0, moved_closer=0, min_dist=22.02271554554524->22.02271554554524, hold_penalty_events=2
+2026-03-15 10:45:32 | Reward (terrain/potential): gamma=0.990, phi_before=+0.000, phi_after=+0.000, delta=+0.000; cover=0.000->0.000, threat=-0.000->-0.000, guard=0.000->0.000
+2026-03-15 10:45:32 | Reward (terrain/exposure): skip, reason=нет реальных угроз (threat_count=0).
+2026-03-15 10:45:32 | Reward (terrain/clamp): raw=+0.000, cap=±0.120, clamp не сработал
+2026-03-15 10:45:32 | === КОНЕЦ БОЕВОГО РАУНДА 1 ===
+2026-03-15 10:45:32 | Итерация 0 завершена с наградой tensor([-0.1200], device='cuda:0'), здоровье игрока [10.0, 10.0], здоровье модели [10.0, 10.0]
+2026-03-15 10:45:32 | {'model health': [10.0, 10.0], 'player health': [10.0, 10.0], 'model alive models': [10, 10], 'player alive models': [10, 10], 'modelCP': 2, 'playerCP': 2, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None}
+2026-03-15 10:45:32 | Здоровье MODEL: [10.0, 10.0], здоровье PLAYER: [10.0, 10.0]
+CP MODEL: 2, CP PLAYER: 2
+VP MODEL: 0, VP PLAYER: 0
+
