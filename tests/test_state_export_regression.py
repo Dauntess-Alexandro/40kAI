@@ -9,6 +9,9 @@ class TestStateExportRegression(unittest.TestCase):
         self.assertIn('"alive_models"', source)
         self.assertIn('"anchor_x"', source)
         self.assertIn('"anchor_y"', source)
+        self.assertIn('"max_hp"', source)
+        self.assertIn('"max_wounds"', source)
+        self.assertIn('"wounds_max"', source)
         self.assertIn('_alive_models_from_pool("enemy", idx)', source)
         self.assertIn('_alive_models_from_pool("model", idx)', source)
 

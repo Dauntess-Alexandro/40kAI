@@ -174,6 +174,15 @@ class SquadStatusSnapshot:
     total_models: Optional[int]
 
 
+@dataclass
+class _StatusLayout:
+    center_x: float
+    top_y: float
+    bar_w: float
+    bar_h: float
+    pips_y: float
+
+
 class TextureManager:
     def __init__(self, base_dir: Path) -> None:
         self._base_dir = base_dir
@@ -241,9 +250,36 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._status_prev: Dict[Tuple[str, int], SquadStatusSnapshot] = {}
         self._status_curr: Dict[Tuple[str, int], SquadStatusSnapshot] = {}
         self._status_anim_t0: float = monotonic()
-        self._status_anim_duration_s: float = 0.18
-        self._status_pip_step_s: float = 0.06
+        self._status_anim_duration_s: float = 0.28
+        self._status_hp_fast_duration_s: float = 0.14
+        self._status_hp_lag_duration_s: float = 0.26
+        self._status_hp_loss_min_px: float = 2.0
+        self._status_hp_coalesce_window_s: float = 0.11
+        self._status_hp_hit_flash_s: float = 0.09
+        self._status_pip_step_s: float = 0.055
         self._status_offset_y_cells: float = 0.34
+
+        self._status_hp_crit_threshold: float = 0.30
+        self._status_crit_pulse_period_s: float = 0.95
+
+        self._status_hp_bg_color = QtGui.QColor(24, 28, 24, 214)
+        self._status_hp_backplate_color = QtGui.QColor(10, 12, 13, 180)
+        self._status_hp_lag_color = QtGui.QColor(226, 214, 186, 124)
+        self._status_hp_overheal_color = QtGui.QColor(114, 154, 186, 208)
+        self._status_hp_border_color = QtGui.QColor(18, 22, 22, 235)
+        self._status_hp_border_crit_color = QtGui.QColor(177, 90, 82, 220)
+        self._status_hp_text_bg = QtGui.QColor(8, 10, 12, 166)
+        self._status_hp_text_color = QtGui.QColor(220, 226, 220, 242)
+
+        self._status_pip_alive_color = QtGui.QColor(154, 177, 139, 222)
+        self._status_pip_lost_color = QtGui.QColor(93, 106, 123, 176)
+        self._status_pip_flash_color = QtGui.QColor(220, 205, 166, 235)
+
+        self._status_hp_lag_from_ratio: Dict[Tuple[str, int], float] = {}
+        self._status_hp_lag_to_ratio: Dict[Tuple[str, int], float] = {}
+        self._status_hp_lag_t0: Dict[Tuple[str, int], float] = {}
+        self._status_hp_last_drop_t: Dict[Tuple[str, int], float] = {}
+        self._status_hp_hit_mag: Dict[Tuple[str, int], float] = {}
 
         self._move_highlights: List[QtCore.QRectF] = []
         self._reachable_highlights: List[QtCore.QRectF] = []
@@ -550,7 +586,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
             for key, value in self._status_prev.items()
             if key in self._status_curr
         }
-        self._status_anim_t0 = monotonic()
+        now = monotonic()
+        self._refresh_hp_loss_anim(now)
+        self._status_anim_t0 = now
 
         live_keys = {
             (u.get("side"), u.get("id"))
@@ -2610,18 +2648,34 @@ class OpenGLBoardWidget(QOpenGLWidget):
             status = self._interpolate_status(render.key)
             if status is None:
                 continue
-            center_x, top_y = self._status_anchor(render)
-            self._draw_squad_hp_bar(painter, render.key, center_x, top_y, status, compact_mode)
+            layout = self._build_status_layout(render, status, compact_mode)
+            self._draw_squad_hp_bar(painter, render.key, layout, status, compact_mode)
             if not compact_mode:
-                self._draw_squad_model_pips(painter, render.key, center_x, top_y + 8.0, status)
-                self._draw_squad_hp_text(painter, center_x, top_y - 2.0, status, hp_text_font)
+                self._draw_squad_model_pips(painter, render.key, layout, status)
+                self._draw_squad_hp_text(painter, layout.center_x, layout.top_y - 2.0, status, hp_text_font)
+
+    def _build_status_layout(self, render: UnitRender, status: SquadStatusSnapshot, compact_mode: bool) -> "_StatusLayout":
+        bar_w = max(24.0, self.cell_size * (1.55 if compact_mode else 1.9))
+        bar_h = 5.0 if compact_mode else 6.0
+        pips_h = 0.0 if compact_mode else 3.0
+        text_h = 0.0 if compact_mode else 11.0
+        spacing_hp_to_pips = 2.0 if compact_mode else 2.4
+        spacing_text_to_hp = 2.0 if compact_mode else 2.4
+        card_h = text_h + spacing_text_to_hp + bar_h + spacing_hp_to_pips + pips_h
+        center_x, top_y = self._status_anchor(render, card_h)
+        return _StatusLayout(
+            center_x=center_x,
+            top_y=top_y,
+            bar_w=bar_w,
+            bar_h=bar_h,
+            pips_y=top_y + bar_h + spacing_hp_to_pips,
+        )
 
     def _draw_squad_hp_bar(
         self,
         painter: QtGui.QPainter,
         key: Tuple[str, int],
-        center_x: float,
-        top_y: float,
+        layout: "_StatusLayout",
         status: SquadStatusSnapshot,
         compact_mode: bool,
     ) -> None:
@@ -2629,68 +2683,97 @@ class OpenGLBoardWidget(QOpenGLWidget):
         hp_max = status.hp_max
         if hp is None or hp_max is None or hp_max <= 0:
             return
-        bar_w = max(24.0, self.cell_size * (1.55 if compact_mode else 1.9))
-        bar_h = 5.0 if compact_mode else 6.0
-        rect = QtCore.QRectF(center_x - bar_w / 2.0, top_y, bar_w, bar_h)
 
-        bg_rect = rect.adjusted(-1.0, -1.0, 1.0, 1.0)
-        painter.setPen(QtCore.Qt.NoPen)
-        painter.setBrush(QtGui.QColor(0, 0, 0, 155))
-        painter.drawRoundedRect(bg_rect, 3.0, 3.0)
-
-        painter.setBrush(QtGui.QColor(36, 34, 32, 220))
-        painter.drawRoundedRect(rect, 2.5, 2.5)
-
+        rect = QtCore.QRectF(layout.center_x - layout.bar_w / 2.0, layout.top_y, layout.bar_w, layout.bar_h)
         ratio = max(0.0, min(1.0, float(hp) / float(hp_max)))
+
+        bg_rect = rect.adjusted(-1.1, -1.1, 1.1, 1.1)
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.setBrush(self._status_hp_backplate_color)
+        painter.drawRoundedRect(bg_rect, 3.2, 3.2)
+
+        painter.setBrush(self._status_hp_bg_color)
+        painter.drawRoundedRect(rect, 2.6, 2.6)
+
         fill_w = rect.width() * ratio
-        if fill_w > 0.8:
+        if fill_w > 0.7:
             fill_rect = QtCore.QRectF(rect.x(), rect.y(), fill_w, rect.height())
             painter.setBrush(self._hp_color(ratio))
-            painter.drawRoundedRect(fill_rect, 2.2, 2.2)
+            painter.drawRoundedRect(fill_rect, 2.4, 2.4)
 
         over_ratio = max(0.0, float(hp) / float(hp_max) - 1.0)
         if over_ratio > 0.0:
             over_w = rect.width() * min(0.3, over_ratio)
             over_rect = QtCore.QRectF(rect.right() - over_w, rect.y(), over_w, rect.height())
-            painter.setBrush(QtGui.QColor(99, 180, 255, 210))
-            painter.drawRoundedRect(over_rect, 2.2, 2.2)
+            painter.setBrush(self._status_hp_overheal_color)
+            painter.drawRoundedRect(over_rect, 2.0, 2.0)
 
         lag_ratio = self._hp_lag_ratio(key)
-        if lag_ratio > ratio + 0.01:
+        loss_w = rect.width() * max(0.0, lag_ratio - ratio)
+        if loss_w >= self._status_hp_loss_min_px:
             lag_rect = QtCore.QRectF(
                 rect.x() + rect.width() * ratio,
                 rect.y(),
-                rect.width() * (lag_ratio - ratio),
+                loss_w,
                 rect.height(),
             )
-            painter.setBrush(QtGui.QColor(245, 245, 235, 125))
+            loss_strength = max(0.0, min(1.0, (lag_ratio - ratio) * 2.2))
+            lag_color = self._mix_colors(self._status_hp_lag_color, QtGui.QColor(230, 206, 158, 170), loss_strength)
+            painter.setBrush(lag_color)
             painter.drawRoundedRect(lag_rect, 2.0, 2.0)
 
-        border_pen = QtGui.QPen(QtGui.QColor(18, 18, 18, 230), 1.0)
+        hit_flash = self._hp_hit_flash_alpha(key)
+        if hit_flash > 0.02:
+            edge_x = rect.x() + rect.width() * ratio
+            flash_color = QtGui.QColor(240, 220, 170, int(170 * hit_flash))
+            flash_pen = QtGui.QPen(flash_color, 1.0 + 1.2 * hit_flash)
+            flash_pen.setCosmetic(True)
+            painter.setPen(flash_pen)
+            painter.drawLine(QtCore.QPointF(edge_x, rect.y() - 0.6), QtCore.QPointF(edge_x, rect.bottom() + 0.6))
+
+        pulse = self._status_crit_pulse(ratio)
+        border_w = 1.0 + (0.5 * pulse)
+        border_color = self._status_hp_border_color if pulse <= 0.0 else self._mix_colors(
+            self._status_hp_border_color,
+            self._status_hp_border_crit_color,
+            pulse,
+        )
+        border_pen = QtGui.QPen(border_color, border_w)
         border_pen.setCosmetic(True)
         painter.setPen(border_pen)
         painter.setBrush(QtCore.Qt.NoBrush)
-        painter.drawRoundedRect(rect, 2.5, 2.5)
+        painter.drawRoundedRect(rect, 2.6, 2.6)
+
+        if pulse > 0.01 and not compact_mode:
+            glow = QtCore.QRectF(rect.adjusted(-1.7, -1.2, 1.7, 1.2))
+            glow_color = QtGui.QColor(self._status_hp_border_crit_color)
+            glow_color.setAlpha(int(56 + 66 * pulse))
+            glow_pen = QtGui.QPen(glow_color, 1.2 + 0.8 * pulse)
+            glow_pen.setCosmetic(True)
+            painter.setPen(glow_pen)
+            painter.drawRoundedRect(glow, 3.0, 3.0)
 
     def _draw_squad_model_pips(
         self,
         painter: QtGui.QPainter,
         key: Tuple[str, int],
-        center_x: float,
-        y: float,
+        layout: "_StatusLayout",
         status: SquadStatusSnapshot,
     ) -> None:
         total = status.total_models
         alive = status.alive_models
         if total is None or total <= 0:
             return
+
         alive = max(0, min(total, int(alive if alive is not None else total)))
         max_visible = 14
         draw_total = min(total, max_visible)
-        pip_w = 4.2
-        gap = 1.8
-        line_w = draw_total * pip_w + (draw_total - 1) * gap
-        x0 = center_x - line_w / 2.0
+        seg_w = 4.8
+        seg_h = 2.6
+        gap = 1.9
+        line_w = draw_total * seg_w + (draw_total - 1) * gap
+        x0 = layout.center_x - line_w / 2.0
+
         progress = self._status_anim_progress()
         prev = self._status_prev.get(key)
         prev_alive = alive if prev is None or prev.alive_models is None else int(prev.alive_models)
@@ -2699,17 +2782,22 @@ class OpenGLBoardWidget(QOpenGLWidget):
         for idx in range(draw_total):
             is_alive_now = idx < alive
             was_alive = idx < prev_alive
-            alpha = 220 if is_alive_now else 72
+            color = QtGui.QColor(self._status_pip_alive_color if is_alive_now else self._status_pip_lost_color)
+            alpha = color.alpha()
+            flash_mix = 0.0
             if was_alive and not is_alive_now:
                 step = idx - alive
-                fade_gate = progress - (step * self._status_pip_step_s / max(0.001, self._status_anim_duration_s))
-                fade = max(0.0, min(1.0, fade_gate))
-                alpha = int(220 - (220 - 72) * fade)
-            color = QtGui.QColor(220, 234, 198, alpha) if is_alive_now else QtGui.QColor(108, 108, 108, alpha)
-            rect = QtCore.QRectF(x0 + idx * (pip_w + gap), y, pip_w, 3.6)
+                flash_mix = self._status_pip_loss_flash(progress, step)
+                alpha = int(216 - (216 - 142) * min(1.0, max(0.0, progress)))
+            color.setAlpha(alpha)
+            if flash_mix > 0.0:
+                color = self._mix_colors(color, self._status_pip_flash_color, flash_mix)
+                color.setAlpha(min(255, int(alpha + 38 * flash_mix)))
+
+            rect = QtCore.QRectF(x0 + idx * (seg_w + gap), layout.pips_y, seg_w, seg_h)
             painter.setPen(QtCore.Qt.NoPen)
             painter.setBrush(color)
-            painter.drawRoundedRect(rect, 1.2, 1.2)
+            painter.drawRoundedRect(rect, 0.95, 0.95)
 
     def _draw_squad_hp_text(
         self,
@@ -2734,20 +2822,42 @@ class OpenGLBoardWidget(QOpenGLWidget):
         text_h = metrics.height() + 2
         rect = QtCore.QRectF(center_x - text_w / 2.0, y - text_h, text_w, text_h)
         painter.setPen(QtCore.Qt.NoPen)
-        painter.setBrush(QtGui.QColor(12, 12, 12, 165))
+        painter.setBrush(self._status_hp_text_bg)
         painter.drawRoundedRect(rect, 3.0, 3.0)
-        painter.setPen(QtGui.QColor(235, 235, 228, 245))
+        painter.setPen(self._status_hp_text_color)
         painter.drawText(rect, QtCore.Qt.AlignCenter, label)
         painter.restore()
 
-    def _status_anchor(self, render: UnitRender) -> Tuple[float, float]:
+    def _status_anchor(self, render: UnitRender, card_height_px: float) -> Tuple[float, float]:
         centers = render.model_centers or [render.center]
         min_x = min(point.x() for point in centers)
         max_x = max(point.x() for point in centers)
         min_y = min(point.y() for point in centers)
+        max_y = max(point.y() for point in centers)
+        span_x = max(1.0, max_x - min_x)
+        span_y = max(1.0, max_y - min_y)
         center_x = (min_x + max_x) * 0.5
-        offset = self.cell_size * self._status_offset_y_cells
-        return center_x, min_y - offset
+
+        density = span_x / max(1.0, float(self.cell_size))
+        x_shift = 0.0
+        if density < 1.0 and len(centers) >= 5:
+            x_shift = min(self.cell_size * 0.16, (1.0 - density) * self.cell_size * 0.24)
+            x_shift *= -1.0 if int(render.key[1]) % 2 else 1.0
+
+        zoom_safe_offset = self.cell_size * max(0.28, 0.44 / max(0.65, self._scale))
+        formation_headroom = span_y * 0.5
+        card_pad = card_height_px + (self.cell_size * 0.12)
+        top_y = min_y - (zoom_safe_offset + formation_headroom + card_pad)
+        center_x += x_shift
+
+        margin = self.cell_size * 0.25
+        board_left = self._board_rect.left() + margin
+        board_right = self._board_rect.right() - margin
+        board_top = self._board_rect.top() + margin
+        board_bottom = self._board_rect.bottom() - margin
+        center_x = max(board_left, min(board_right, center_x))
+        top_y = max(board_top, min(board_bottom - card_height_px, top_y))
+        return center_x, top_y
 
     def _extract_squad_status(self, unit: dict) -> SquadStatusSnapshot:
         hp = self._coerce_number(unit.get("wounds", unit.get("hp")))
@@ -2769,10 +2879,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if current is None:
             return None
         previous = self._status_prev.get(key, current)
-        t = self._status_anim_progress()
-        hp = self._lerp_optional(previous.hp, current.hp, t)
-        hp_max = self._lerp_optional(previous.hp_max, current.hp_max, t)
-        alive_models = self._step_models(previous.alive_models, current.alive_models, t)
+        hp_t = self._status_anim_progress(duration_s=self._status_hp_fast_duration_s)
+        hp = self._lerp_optional(previous.hp, current.hp, hp_t)
+        hp_max = self._lerp_optional(previous.hp_max, current.hp_max, hp_t)
+        alive_models = self._step_models(previous.alive_models, current.alive_models, self._status_anim_progress())
         return SquadStatusSnapshot(
             hp=hp,
             hp_max=hp_max,
@@ -2780,18 +2890,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
             total_models=current.total_models,
         )
 
-    def _status_anim_progress(self) -> float:
+    def _status_anim_progress(self, *, duration_s: Optional[float] = None) -> float:
         elapsed = max(0.0, monotonic() - self._status_anim_t0)
-        if self._status_anim_duration_s <= 0.0:
+        duration = self._status_anim_duration_s if duration_s is None else float(duration_s)
+        if duration <= 0.0:
             return 1.0
-        return max(0.0, min(1.0, elapsed / self._status_anim_duration_s))
+        return max(0.0, min(1.0, elapsed / duration))
 
     def _lerp_optional(self, start: Optional[float], end: Optional[float], t: float) -> Optional[float]:
         if end is None:
             return start
         if start is None:
             return end
-        eased = 1.0 - (1.0 - t) * (1.0 - t)
+        eased = self._ease_out_cubic(t)
         return start + (end - start) * eased
 
     def _step_models(self, start: Optional[int], end: Optional[int], t: float) -> Optional[int]:
@@ -2809,13 +2920,26 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return max(end, value)
 
     def _hp_color(self, ratio: float) -> QtGui.QColor:
-        if ratio < 0.3:
-            return QtGui.QColor(208, 72, 62, 235)
+        if ratio < self._status_hp_crit_threshold:
+            return QtGui.QColor(166, 74, 66, 236)
         if ratio < 0.6:
-            return QtGui.QColor(216, 188, 78, 235)
-        return QtGui.QColor(106, 186, 98, 235)
+            return QtGui.QColor(184, 162, 88, 236)
+        return QtGui.QColor(98, 146, 94, 236)
 
     def _hp_lag_ratio(self, key: Tuple[str, int]) -> float:
+        lag_from = self._status_hp_lag_from_ratio.get(key)
+        lag_to = self._status_hp_lag_to_ratio.get(key)
+        lag_t0 = self._status_hp_lag_t0.get(key)
+        if lag_from is not None and lag_to is not None and lag_t0 is not None:
+            t = max(0.0, min(1.0, (monotonic() - lag_t0) / max(0.001, self._status_hp_lag_duration_s)))
+            eased = self._ease_in_out_cubic(t)
+            value = lag_from + (lag_to - lag_from) * eased
+            if t >= 1.0:
+                self._status_hp_lag_from_ratio.pop(key, None)
+                self._status_hp_lag_to_ratio.pop(key, None)
+                self._status_hp_lag_t0.pop(key, None)
+            return max(0.0, min(1.4, value))
+
         current = self._status_curr.get(key)
         prev = self._status_prev.get(key)
         if current is None or prev is None:
@@ -2824,7 +2948,113 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return 0.0
         cur_ratio = max(0.0, min(1.4, float(current.hp) / float(current.hp_max)))
         prev_ratio = max(0.0, min(1.4, float(prev.hp) / float(current.hp_max)))
-        return prev_ratio - (prev_ratio - cur_ratio) * self._status_anim_progress()
+        lag_t = self._status_anim_progress(duration_s=self._status_hp_lag_duration_s)
+        return prev_ratio - (prev_ratio - cur_ratio) * self._ease_in_out_cubic(lag_t)
+
+    def _status_crit_pulse(self, ratio: float) -> float:
+        if ratio >= self._status_hp_crit_threshold:
+            return 0.0
+        phase = (max(0.0, monotonic() - self._status_anim_t0) / max(0.2, self._status_crit_pulse_period_s)) * math.tau
+        wave = 0.5 + 0.5 * math.sin(phase)
+        severity = 1.0 - max(0.0, min(1.0, ratio / max(0.001, self._status_hp_crit_threshold)))
+        return wave * (0.35 + 0.65 * severity)
+
+    def _refresh_hp_loss_anim(self, now_ts: float) -> None:
+        active_keys = set(self._status_curr.keys())
+        for key in list(self._status_hp_lag_from_ratio.keys()):
+            if key not in active_keys:
+                self._status_hp_lag_from_ratio.pop(key, None)
+                self._status_hp_lag_to_ratio.pop(key, None)
+                self._status_hp_lag_t0.pop(key, None)
+                self._status_hp_last_drop_t.pop(key, None)
+                self._status_hp_hit_mag.pop(key, None)
+
+        for key, current in self._status_curr.items():
+            previous = self._status_prev.get(key)
+            cur_ratio = self._hp_ratio_from_snapshot(current)
+            prev_ratio = self._hp_ratio_from_snapshot(previous)
+            if cur_ratio is None or prev_ratio is None:
+                continue
+            if prev_ratio <= cur_ratio + 1e-4:
+                continue
+
+            last_drop = self._status_hp_last_drop_t.get(key)
+            existing_from = self._status_hp_lag_from_ratio.get(key)
+            existing_to = self._status_hp_lag_to_ratio.get(key)
+            existing_t0 = self._status_hp_lag_t0.get(key)
+            coalesce = (
+                last_drop is not None
+                and existing_from is not None
+                and existing_to is not None
+                and existing_t0 is not None
+                and (now_ts - last_drop) <= self._status_hp_coalesce_window_s
+            )
+
+            if coalesce:
+                self._status_hp_lag_to_ratio[key] = min(existing_to, cur_ratio)
+                self._status_hp_hit_mag[key] = max(
+                    self._status_hp_hit_mag.get(key, 0.0),
+                    max(0.0, existing_from - self._status_hp_lag_to_ratio[key]),
+                )
+            else:
+                lag_start = max(prev_ratio, self._hp_lag_ratio(key))
+                self._status_hp_lag_from_ratio[key] = lag_start
+                self._status_hp_lag_to_ratio[key] = cur_ratio
+                self._status_hp_lag_t0[key] = now_ts
+                self._status_hp_hit_mag[key] = max(0.0, lag_start - cur_ratio)
+            self._status_hp_last_drop_t[key] = now_ts
+
+    @staticmethod
+    def _hp_ratio_from_snapshot(snapshot: Optional[SquadStatusSnapshot]) -> Optional[float]:
+        if snapshot is None or snapshot.hp is None or snapshot.hp_max is None or snapshot.hp_max <= 0:
+            return None
+        return max(0.0, min(1.4, float(snapshot.hp) / float(snapshot.hp_max)))
+
+    def _hp_hit_flash_alpha(self, key: Tuple[str, int]) -> float:
+        t0 = self._status_hp_last_drop_t.get(key)
+        mag = self._status_hp_hit_mag.get(key, 0.0)
+        if t0 is None or mag <= 0.0:
+            return 0.0
+        dt = monotonic() - t0
+        if dt <= 0.0 or dt >= self._status_hp_hit_flash_s:
+            return 0.0
+        local = dt / max(0.001, self._status_hp_hit_flash_s)
+        tri = 1.0 - abs(2.0 * local - 1.0)
+        return max(0.0, min(1.0, tri * min(1.0, mag * 4.0)))
+
+    @staticmethod
+    def _ease_out_cubic(t: float) -> float:
+        t = max(0.0, min(1.0, float(t)))
+        return 1.0 - pow(1.0 - t, 3)
+
+    @staticmethod
+    def _ease_in_out_cubic(t: float) -> float:
+        t = max(0.0, min(1.0, float(t)))
+        if t < 0.5:
+            return 4.0 * t * t * t
+        return 1.0 - pow(-2.0 * t + 2.0, 3) / 2.0
+
+    def _status_pip_loss_flash(self, progress: float, step: int) -> float:
+        step_delay = self._status_pip_step_s / max(0.001, self._status_anim_duration_s)
+        local_t = progress - step * step_delay
+        if local_t <= 0.0:
+            return 0.0
+        if local_t < 0.32:
+            return min(1.0, local_t / 0.32)
+        if local_t < 0.9:
+            return max(0.0, 1.0 - (local_t - 0.32) / 0.58)
+        return 0.0
+
+    @staticmethod
+    def _mix_colors(a: QtGui.QColor, b: QtGui.QColor, t: float) -> QtGui.QColor:
+        t = max(0.0, min(1.0, float(t)))
+        return QtGui.QColor(
+            int(a.red() + (b.red() - a.red()) * t),
+            int(a.green() + (b.green() - a.green()) * t),
+            int(a.blue() + (b.blue() - a.blue()) * t),
+            int(a.alpha() + (b.alpha() - a.alpha()) * t),
+        )
+
 
     def _tick_fx(self) -> None:
         now = monotonic()

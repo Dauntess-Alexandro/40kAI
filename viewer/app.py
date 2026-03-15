@@ -2055,6 +2055,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _classify_line(self, line: str):
         lowered = line.lower()
+        is_target_shoot_trace = self._is_target_shoot_trace(line)
         categories = set()
         if self._matches_any(
             lowered,
@@ -2089,7 +2090,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         ):
             categories.add("turn")
             categories.add("key")
-        if self._matches_any(
+        if (not is_target_shoot_trace) and self._matches_any(
             lowered,
             [
                 "[shoot]",
@@ -2113,6 +2114,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             categories.add("shooting")
             categories.add("combat_basic")
             categories.add("key")
+        if is_target_shoot_trace:
+            categories.add("debug")
         if self._matches_any(
             lowered,
             [
@@ -2250,6 +2253,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return True
         return re.search(r"\bunit\s+\d+.*нан[её]с.*по\s+unit\s+\d+", lowered) is not None
 
+    def _is_target_shoot_trace(self, text: str) -> bool:
+        lowered = str(text or "").lower()
+        return "[target][shoot]" in lowered
+
     def _should_assign_shooting_side(self, text: str, categories: set) -> bool:
         if self._current_turn_side is None:
             return False
@@ -2319,6 +2326,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _detect_log_channel(self, text: str, categories: set) -> str:
         lowered = str(text or "").lower()
+        if self._is_target_shoot_trace(text):
+            return "fx"
         if "los_debug" in lowered:
             return "los"
         if "fx:" in lowered:
@@ -2376,8 +2385,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _entry_matches_filter(self, entry: dict) -> bool:
         categories = entry.get("categories", set())
         channel = entry.get("channel")
-        if channel in {"fx", "los", "reward", "req"}:
-            return False
+        if channel in {"fx", "los", "reward", "req", "system"}:
+            debug_btn = self._log_filter_buttons.get("debug")
+            return bool(debug_btn is not None and debug_btn.isChecked())
         if "combat_basic" in categories or "turn" in categories or "result" in categories or "errors" in categories:
             return True
         return False
@@ -2404,30 +2414,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if not self._entry_matches_filter(entry):
             return False
         return self._is_filter_enabled_for_entry(entry)
-
-    def _phase_summaries(self, events) -> list[str]:
-        phase_stats = OrderedDict()
-        for event in events:
-            if not isinstance(event, dict):
-                continue
-            phase = str(event.get("phase") or "").lower().strip()
-            if phase not in {"movement", "shooting", "charge", "fight"}:
-                continue
-            stats = phase_stats.setdefault(phase, {"events": 0, "skip": 0})
-            stats["events"] += 1
-            msg = str(event.get("msg") or "").lower()
-            if any(token in msg for token in ("пропущ", "нет целей", "невозмож", "no move", "skip")):
-                stats["skip"] += 1
-        lines = []
-        labels = {
-            "movement": "👣 Движение",
-            "shooting": "🎯 Стрельба",
-            "charge": "⚡ Чардж",
-            "fight": "⚔️ Бой",
-        }
-        for phase, stats in phase_stats.items():
-            lines.append(f"{labels.get(phase, phase)}: событий={stats['events']}, пропусков={stats['skip']}")
-        return lines
 
     def _collect_alert_lines(self) -> list[str]:
         out_of_range_count = 0
@@ -2502,14 +2488,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         visible_entries = self._collect_visible_entries()
         lines = [f"{text} ×{count}" if count > 1 else text for text, _color, count in visible_entries]
 
-        model_events = self._model_events_current
-        model_events = [event for event in self._model_events_current if self._is_combat_event(event)]
-        summary_lines = self._phase_summaries(model_events)
         alert_lines = self._collect_alert_lines()
-        round_card = self._build_round_summary_card()
-        if summary_lines:
-            lines.extend(["", "=== СВОДКА ФАЗ ===", *summary_lines])
-        if alert_lines:
+        result_btn = self._log_filter_buttons.get("result")
+        round_card = self._build_round_summary_card() if (result_btn is not None and result_btn.isChecked()) else []
+        errors_btn = self._log_filter_buttons.get("errors")
+        show_alerts = bool(alert_lines and errors_btn is not None and errors_btn.isChecked())
+        if show_alerts:
             lines.extend(["", "=== АЛЕРТЫ ===", *alert_lines])
         if round_card:
             lines.extend(["", *round_card])
@@ -2525,11 +2509,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         for text, color, count in visible_entries:
             shown = f"{text} ×{count}" if count > 1 else text
             html_lines.append(f"<span style='color:{color}'>{html.escape(shown)}</span>")
-        if summary_lines:
-            html_lines.append("<br><span style='color:#7aa2f7'>=== СВОДКА ФАЗ ===</span>")
-            for summary in summary_lines:
-                html_lines.append(f"<span style='color:#7aa2f7'>{html.escape(summary)}</span>")
-        if alert_lines:
+        if show_alerts:
             html_lines.append("<br><span style='color:#ff9f43'>=== АЛЕРТЫ ===</span>")
             for alert in alert_lines:
                 html_lines.append(f"<span style='color:#ff9f43'>{html.escape(alert)}</span>")
