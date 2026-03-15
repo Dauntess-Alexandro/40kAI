@@ -293,6 +293,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS_PLAY.md")
         self._log_file_max_bytes = 5 * 1024 * 1024
         self._last_active_side = None
+        self._model_step_timeline = []
+        self._model_step_cursor = -1
+        self._model_step_turn_start_idx = None
+        self._model_step_current_phase = None
         self._init_log_viewer()
         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
@@ -429,6 +433,37 @@ class ViewerWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.status_phase)
         layout.addWidget(self.status_active)
         layout.addWidget(self.status_deployment)
+
+        step_panel = QtWidgets.QWidget()
+        step_layout = QtWidgets.QVBoxLayout(step_panel)
+        step_layout.setContentsMargins(0, 4, 0, 0)
+        step_layout.setSpacing(2)
+
+        step_top_row = QtWidgets.QHBoxLayout()
+        step_top_row.setContentsMargins(0, 0, 0, 0)
+        step_top_row.setSpacing(6)
+        self.model_step_button = QtWidgets.QToolButton()
+        self.model_step_button.setText("⏩ Шаг")
+        self.model_step_button.setToolTip("Следующее событие MODEL; фаза переключается автоматически")
+        self.model_step_button.setEnabled(False)
+        self.model_step_button.clicked.connect(self._advance_model_step)
+        step_top_row.addWidget(self.model_step_button)
+
+        self.model_step_phase_label = QtWidgets.QLabel("MODEL: фаза —")
+        self.model_step_phase_label.setStyleSheet(f"font-size: 11px; color: {Theme.muted.name()};")
+        step_top_row.addWidget(self.model_step_phase_label)
+        step_top_row.addStretch()
+
+        self.model_step_progress_label = QtWidgets.QLabel("Шаг: 0/0")
+        self.model_step_progress_label.setStyleSheet(f"font-size: 11px; color: {Theme.muted.name()};")
+        step_top_row.addWidget(self.model_step_progress_label)
+        step_layout.addLayout(step_top_row)
+
+        self.model_step_now_label = QtWidgets.QLabel("Сейчас: нажмите «Шаг», чтобы проигрывать ход MODEL по событиям")
+        self.model_step_now_label.setWordWrap(True)
+        self.model_step_now_label.setStyleSheet(f"font-size: 12px; color: {Theme.text.name()};")
+        step_layout.addWidget(self.model_step_now_label)
+        layout.addWidget(step_panel)
         return box
 
     def _group_points(self):
@@ -2485,6 +2520,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return Theme.text.name()
 
     def _refresh_log_views(self):
+        self._rebuild_model_step_timeline()
         visible_entries = self._collect_visible_entries()
         lines = [f"{text} ×{count}" if count > 1 else text for text, _color, count in visible_entries]
 
@@ -2522,6 +2558,140 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.log_view.setHtml("<br>".join(html_lines))
         scrollbar = self.log_view.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
+
+    def _phase_label_ru(self, phase: Optional[str]) -> str:
+        mapping = {
+            "command": "Командование",
+            "movement": "Движение",
+            "shooting": "Стрельба",
+            "charge": "Чардж",
+            "fight": "Бой",
+        }
+        key = str(phase or "").strip().lower()
+        return mapping.get(key, "—")
+
+    def _extract_phase_from_line(self, line: str) -> Optional[str]:
+        lowered = str(line or "").lower()
+        if "фаза команд" in lowered or "phase command" in lowered:
+            return "command"
+        if "фаза движ" in lowered or "phase movement" in lowered:
+            return "movement"
+        if "фаза стрель" in lowered or "phase shooting" in lowered:
+            return "shooting"
+        if "фаза чардж" in lowered or "phase charge" in lowered:
+            return "charge"
+        if "фаза боя" in lowered or "phase fight" in lowered:
+            return "fight"
+        return None
+
+    def _is_model_step_candidate(self, entry: dict) -> bool:
+        categories = entry.get("categories") or set()
+        if "combat_basic" not in categories:
+            return False
+        if "turn" in categories or "debug" in categories:
+            return False
+        channel = entry.get("channel")
+        if channel in {"reward", "result", "error"}:
+            return False
+        return True
+
+    def _rebuild_model_step_timeline(self) -> None:
+        start_idx = None
+        for idx in range(len(self._log_entries) - 1, -1, -1):
+            raw = str(self._log_entries[idx].get("raw") or "")
+            if "--- ХОД MODEL ---" in raw.upper():
+                start_idx = idx
+                break
+
+        if start_idx is None:
+            self._model_step_timeline = []
+            self._model_step_cursor = -1
+            self._model_step_turn_start_idx = None
+            self._model_step_current_phase = None
+            self._update_model_step_labels()
+            return
+
+        if self._model_step_turn_start_idx != start_idx:
+            self._model_step_turn_start_idx = start_idx
+            self._model_step_cursor = -1
+            self._model_step_current_phase = None
+
+        timeline = []
+        phase = None
+        for entry in self._log_entries[start_idx + 1 :]:
+            raw = str(entry.get("raw") or "")
+            detected_phase = self._extract_phase_from_line(raw)
+            if detected_phase is not None:
+                phase = detected_phase
+                continue
+            if phase is None:
+                continue
+            if not self._is_model_step_candidate(entry):
+                continue
+            timeline.append(
+                {
+                    "phase": phase,
+                    "text": str(entry.get("compact") or raw),
+                }
+            )
+
+        self._model_step_timeline = timeline
+        if self._model_step_cursor >= len(self._model_step_timeline):
+            self._model_step_cursor = len(self._model_step_timeline) - 1
+        self._update_model_step_labels()
+
+    def _update_model_step_labels(self) -> None:
+        if not hasattr(self, "model_step_phase_label"):
+            return
+        total = len(self._model_step_timeline)
+        if total <= 0:
+            self.model_step_phase_label.setText("MODEL: фаза —")
+            self.model_step_progress_label.setText("Шаг: 0/0")
+            self.model_step_now_label.setText("Сейчас: шаги MODEL ещё не готовы")
+            self.model_step_button.setEnabled(False)
+            return
+
+        self.model_step_button.setEnabled(True)
+        if self._model_step_cursor < 0:
+            next_item = self._model_step_timeline[0]
+            self.model_step_phase_label.setText(f"MODEL: фаза {self._phase_label_ru(next_item.get('phase'))}")
+            self.model_step_progress_label.setText(f"Шаг: 0/{total}")
+            self.model_step_now_label.setText(f"Сейчас: готово к шагу 1/{total}")
+            return
+
+        idx = min(self._model_step_cursor, total - 1)
+        item = self._model_step_timeline[idx]
+        self.model_step_phase_label.setText(f"MODEL: фаза {self._phase_label_ru(item.get('phase'))}")
+        self.model_step_progress_label.setText(f"Шаг: {idx + 1}/{total}")
+        self.model_step_now_label.setText(f"Сейчас: {item.get('text')}")
+
+    def _advance_model_step(self) -> None:
+        total = len(self._model_step_timeline)
+        if total <= 0:
+            self.add_log_line(
+                "Шаг MODEL: события ещё не готовы. Где: viewer/app.py (_advance_model_step). "
+                "Что делать дальше: дождитесь строк хода MODEL в журнале."
+            )
+            self._update_model_step_labels()
+            return
+
+        next_cursor = self._model_step_cursor + 1
+        if next_cursor >= total:
+            self.add_log_line(
+                "Шаг MODEL: ход уже дошёл до конца. Где: viewer/app.py (_advance_model_step). "
+                "Что делать дальше: дождитесь следующего хода MODEL."
+            )
+            self._update_model_step_labels()
+            return
+
+        self._model_step_cursor = next_cursor
+        item = self._model_step_timeline[self._model_step_cursor]
+        phase_text = self._phase_label_ru(item.get("phase"))
+        if item.get("phase") != self._model_step_current_phase:
+            self._model_step_current_phase = item.get("phase")
+            self.add_log_line(f"[STEP][MODEL] Автопереход к фазе: {phase_text}.")
+        self.add_log_line(f"[STEP][MODEL] {item.get('text')}")
+        self._update_model_step_labels()
 
     def _reset_log_lines(self, lines, write_to_file: bool):
         self._log_entries = []
@@ -2567,9 +2737,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_events_snapshot = None
         self._model_events_stream = []
         self._model_events_current = []
+        self._model_step_timeline = []
+        self._model_step_cursor = -1
+        self._model_step_turn_start_idx = None
+        self._model_step_current_phase = None
         self._fx_shot_queue.clear()
         self._fx_parser.reset(preserve_seen=False)
         self.log_view.clear()
+        self._update_model_step_labels()
 
     def _collect_current_turn_logs(self):
         return self.log_view.toPlainText()
