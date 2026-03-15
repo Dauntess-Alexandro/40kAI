@@ -2405,30 +2405,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return False
         return self._is_filter_enabled_for_entry(entry)
 
-    def _phase_summaries(self, events) -> list[str]:
-        phase_stats = OrderedDict()
-        for event in events:
-            if not isinstance(event, dict):
-                continue
-            phase = str(event.get("phase") or "").lower().strip()
-            if phase not in {"movement", "shooting", "charge", "fight"}:
-                continue
-            stats = phase_stats.setdefault(phase, {"events": 0, "skip": 0})
-            stats["events"] += 1
-            msg = str(event.get("msg") or "").lower()
-            if any(token in msg for token in ("пропущ", "нет целей", "невозмож", "no move", "skip")):
-                stats["skip"] += 1
-        lines = []
-        labels = {
-            "movement": "👣 Движение",
-            "shooting": "🎯 Стрельба",
-            "charge": "⚡ Чардж",
-            "fight": "⚔️ Бой",
-        }
-        for phase, stats in phase_stats.items():
-            lines.append(f"{labels.get(phase, phase)}: событий={stats['events']}, пропусков={stats['skip']}")
-        return lines
-
     def _collect_alert_lines(self) -> list[str]:
         out_of_range_count = 0
         overwatch_block_count = 0
@@ -2502,13 +2478,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         visible_entries = self._collect_visible_entries()
         lines = [f"{text} ×{count}" if count > 1 else text for text, _color, count in visible_entries]
 
-        model_events = self._model_events_current
-        model_events = [event for event in self._model_events_current if self._is_combat_event(event)]
-        summary_lines = self._phase_summaries(model_events)
         alert_lines = self._collect_alert_lines()
-        round_card = self._build_round_summary_card()
-        if summary_lines:
-            lines.extend(["", "=== СВОДКА ФАЗ ===", *summary_lines])
+        result_btn = self._log_filter_buttons.get("result")
+        round_card = self._build_round_summary_card() if (result_btn is not None and result_btn.isChecked()) else []
         if alert_lines:
             lines.extend(["", "=== АЛЕРТЫ ===", *alert_lines])
         if round_card:
@@ -2525,10 +2497,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         for text, color, count in visible_entries:
             shown = f"{text} ×{count}" if count > 1 else text
             html_lines.append(f"<span style='color:{color}'>{html.escape(shown)}</span>")
-        if summary_lines:
-            html_lines.append("<br><span style='color:#7aa2f7'>=== СВОДКА ФАЗ ===</span>")
-            for summary in summary_lines:
-                html_lines.append(f"<span style='color:#7aa2f7'>{html.escape(summary)}</span>")
         if alert_lines:
             html_lines.append("<br><span style='color:#ff9f43'>=== АЛЕРТЫ ===</span>")
             for alert in alert_lines:
