@@ -454,6 +454,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             base = units_index.get(uid, {"id": uid, "side": side})
             base["x"] = int(unit_frame.get("x", base.get("x", 0)))
             base["y"] = int(unit_frame.get("y", base.get("y", 0)))
+            base["anchor_x"] = int(unit_frame.get("x", base.get("anchor_x", base.get("x", 0))))
+            base["anchor_y"] = int(unit_frame.get("y", base.get("anchor_y", base.get("y", 0))))
             hp = float(unit_frame.get("hp", base.get("hp", 0.0)) or 0.0)
             base["hp"] = hp
             if hp <= 0:
@@ -469,6 +471,20 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if str(frame.get("event_type") or "") == "shoot":
             self._spawn_step_shoot_fx(frame)
 
+    def _target_id_from_step_frame(self, frame: dict) -> Optional[int]:
+        msg = str(frame.get("msg") or "")
+        attacker = int(frame.get("unit_id")) if frame.get("unit_id") is not None else None
+        preferred = re.search(r"выбрана:\s*Unit\s*(\d+)", msg, re.IGNORECASE)
+        if preferred:
+            return int(preferred.group(1))
+        for m in re.finditer(r"Unit\s*(\d+)", msg, re.IGNORECASE):
+            candidate = int(m.group(1))
+            if attacker is not None and candidate == attacker:
+                continue
+            if str(candidate).startswith("1"):
+                return candidate
+        return None
+
     def _spawn_step_shoot_fx(self, frame: dict) -> None:
         shooter_id = frame.get("unit_id")
         if shooter_id is None:
@@ -478,19 +494,24 @@ class ViewerWindow(QtWidgets.QMainWindow):
         shooter_pos = last_known.get(str(shooter_id))
         if not isinstance(shooter_pos, (list, tuple)) or len(shooter_pos) < 2:
             return
-        target_id = None
+        target_id = self._target_id_from_step_frame(frame)
         target_pos = None
         for candidate in list(frame.get("units", []) or []):
             if not isinstance(candidate, dict):
                 continue
             if str(candidate.get("side")) != "player":
                 continue
-            target_id = int(candidate.get("id"))
+            cand_id = int(candidate.get("id"))
+            if target_id is not None and cand_id != int(target_id):
+                continue
+            target_id = cand_id
             target_pos = [int(candidate.get("x", 0)), int(candidate.get("y", 0))]
             if float(candidate.get("hp", 0.0) or 0.0) > 0:
                 break
         if target_pos is None:
             for key, pos in last_known.items():
+                if target_id is not None and int(key) != int(target_id):
+                    continue
                 if str(key).startswith("1") and isinstance(pos, (list, tuple)) and len(pos) >= 2:
                     target_id = int(key)
                     target_pos = [int(pos[0]), int(pos[1])]
@@ -2935,7 +2956,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         )
 
     def _enqueue_fx_event(self, event: FxShotEvent) -> None:
-        if self._suppress_live_fx_until_step_end:
+        active_side = None
+        if isinstance(self._latest_state_snapshot, dict):
+            active_side = str(self._latest_state_snapshot.get("active") or self._latest_state_snapshot.get("active_side") or "").strip().lower()
+        if self._suppress_live_fx_until_step_end and active_side == "model":
             self._fx_debug(
                 "FX: live-событие пропущено, активен step playback MODEL. "
                 f"attacker={event.attacker_id}, target={event.target_id}."
