@@ -294,6 +294,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_step_frames = []
         self._model_step_index = -1
         self._model_step_sig = None
+        self._suppress_live_fx_until_step_end = False
         self._max_log_lines = 5000
         self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS_PLAY.md")
         self._log_file_max_bytes = 5 * 1024 * 1024
@@ -407,12 +408,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _on_next_step_clicked(self) -> None:
         if not self._model_step_mode or not self._model_step_frames:
-            self.add_log_line("[STEP] Нет активного пошагового хода MODEL.")
+            self.status_model_step.setText("MODEL step: ожидание хода MODEL")
             return
         if self._model_step_index >= len(self._model_step_frames) - 1:
             self._model_step_mode = False
             self._model_step_frames = []
             self._model_step_index = -1
+            self._suppress_live_fx_until_step_end = False
             self._refresh_model_step_status()
             if isinstance(self._latest_state_snapshot, dict):
                 self.map_scene.update_state(self._latest_state_snapshot)
@@ -1951,6 +1953,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if new_sig and new_sig != self._model_step_sig:
             self._model_step_sig = new_sig
             self._model_step_mode = True
+            self._suppress_live_fx_until_step_end = True
             self._model_step_frames = list(frames)
             self._model_step_index = 0
             first_frame = self._model_step_frames[0] if self._model_step_frames else None
@@ -2932,6 +2935,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         )
 
     def _enqueue_fx_event(self, event: FxShotEvent) -> None:
+        if self._suppress_live_fx_until_step_end:
+            self._fx_debug(
+                "FX: live-событие пропущено, активен step playback MODEL. "
+                f"attacker={event.attacker_id}, target={event.target_id}."
+            )
+            return
         self._fx_shot_queue.append(event)
 
     def _drain_fx_queue(self) -> None:

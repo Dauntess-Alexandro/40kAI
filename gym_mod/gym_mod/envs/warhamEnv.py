@@ -5552,6 +5552,7 @@ class Warhammer40kEnv(gym.Env):
         self._model_playback_frames = []
         self._model_playback_seq = 0
         self._model_playback_last_sig = None
+        self.active_side = "model"
         self._capture_model_playback_frame(
             phase="command",
             unit_id=None,
@@ -5581,7 +5582,6 @@ class Warhammer40kEnv(gym.Env):
         prev_vp_diff = self._prev_vp_diff
         self.unitCharged = [0] * len(self.unit_health)
         self.enemyCharged = [0] * len(self.enemy_health)
-        self.active_side = "model"
         battle_shock, delta = self.command_phase("model", action=action)
         reward += delta
         if delta != 0:
