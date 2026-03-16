@@ -24,6 +24,8 @@ def test_model_steps_rebuild_from_state_and_snapshot_render():
     assert "def _rebuild_model_steps_from_state" in source
     assert "steps_raw = (state or {}).get(\"model_steps\")" in source
     assert "def _render_state_from_step_snapshot" in source
+    assert "def _play_model_step_fx" in source
+    assert "if not self._model_step_replay_active:" in source
     assert "self._model_step_replay_active = True" in source
 
 
@@ -39,3 +41,8 @@ def test_env_collects_model_steps_with_snapshots():
     assert '"snapshot": self._capture_viewer_units_snapshot()' in source
     assert "kind=\"phase_header\"" in source
     assert 'self._flush_state_snapshot(reason="viewer_model_step", force=True)' in source
+
+
+def test_opengl_has_step_move_fx_hook():
+    source = Path("viewer/opengl_view.py").read_text(encoding="utf-8")
+    assert "def trigger_step_move_fx" in source

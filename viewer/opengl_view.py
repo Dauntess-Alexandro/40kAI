@@ -841,6 +841,23 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._fx_active.append(effect)
         self.update()
 
+    def trigger_step_move_fx(self, from_state_xy: Tuple[int, int], to_state_xy: Tuple[int, int]) -> None:
+        from_view = self._state_xy_to_view_xy(from_state_xy[0], from_state_xy[1])
+        to_view = self._state_xy_to_view_xy(to_state_xy[0], to_state_xy[1])
+        if from_view is None or to_view is None:
+            return
+        start = QtCore.QPointF(
+            from_view[0] * self.cell_size + self.cell_size / 2,
+            from_view[1] * self.cell_size + self.cell_size / 2,
+        )
+        end = QtCore.QPointF(
+            to_view[0] * self.cell_size + self.cell_size / 2,
+            to_view[1] * self.cell_size + self.cell_size / 2,
+        )
+        self._spawn_particles(start, "smoke", 10)
+        self._spawn_particles(end, "spark", 12)
+        self.update()
+
     def set_active_unit(self, unit_id: Optional[int]) -> None:
         self._active_unit_id = unit_id
         self._active_unit_side = None

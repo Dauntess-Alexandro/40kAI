@@ -307,6 +307,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_step_base_state: Optional[dict] = None
         self._model_step_live_state: Optional[dict] = None
         self._last_non_model_state: Optional[dict] = None
+        self._model_step_prev_snapshot: Optional[list[dict]] = None
         self._model_step_playing = False
         self._model_step_autoplay_ms = int(os.getenv("MODEL_STEP_AUTOPLAY_MS", "700") or "700")
         self._model_step_timer = QtCore.QTimer(self)
@@ -1710,6 +1711,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_step_base_state = None
         self._model_step_live_state = None
         self._last_non_model_state = None
+        self._model_step_prev_snapshot = None
         self._stop_model_step_playback()
 
     def _submit_text(self):
@@ -1955,9 +1957,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 self._model_step_replay_active = True
                 self._model_step_base_state = json.loads(json.dumps(self._last_non_model_state or state))
                 self.map_scene.update_state(self._model_step_base_state)
+                self._model_step_prev_snapshot = list((self._model_step_base_state or {}).get("units") or [])
                 self._rebuild_model_steps_from_state(self._model_step_live_state or self.state_watcher.state)
             else:
                 self._model_step_replay_active = False
+                self._model_step_prev_snapshot = None
                 self._stop_model_step_playback()
         elif turn_token[1] == "model" and not self._model_steps:
             self._rebuild_model_steps_from_state(self._model_step_live_state or self.state_watcher.state)
@@ -2052,7 +2056,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
         steps_raw = (state or {}).get("model_steps") if isinstance(state, dict) else None
         turn_token_raw = (state or {}).get("model_step_turn_token") if isinstance(state, dict) else None
         if not isinstance(steps_raw, list) or not steps_raw:
-            self._model_steps = []
+            fallback = []
+            for event in self._model_events_current:
+                if not isinstance(event, dict):
+                    continue
+                phase = str(event.get("phase") or "")
+                unit_raw = event.get("unit_id")
+                unit_id = int(unit_raw) if isinstance(unit_raw, (int, float)) else None
+                kind = str(event.get("type") or "info")
+                fallback.append(ModelStep(phase=phase, unit_id=unit_id, kind=kind, data={"msg": str(event.get("msg") or "")}))
+            self._model_steps = fallback
             self._refresh_model_step_ui()
             return
         turn_round = None
@@ -2179,8 +2192,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         snapshot = step.data.get("snapshot") if isinstance(step.data, dict) else None
         if isinstance(snapshot, list):
             self._render_state_from_step_snapshot(snapshot)
-        if phase == "shooting":
-            self._drain_fx_queue()
+            self._play_model_step_fx(step, snapshot)
+            self._model_step_prev_snapshot = list(snapshot)
         if os.getenv("VIEWER_DEBUG", "0") == "1":
             self.add_log_line(
                 f"[VIEWER_DEBUG][MODEL_STEPS] apply idx={self._model_step_cursor + 1}/{len(self._model_steps)} phase={step.phase} unit={step.unit_id} kind={step.kind}"
@@ -2226,6 +2239,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_step_playing = False
         self._model_step_timer.stop()
         self._model_step_cursor = -1
+        self._model_step_prev_snapshot = list((self._model_step_base_state or {}).get("units") or []) if self._model_step_replay_active else None
         self.map_scene.set_active_unit(None)
         self.map_scene.set_target_unit(None)
         self._refresh_model_step_ui()
@@ -2292,7 +2306,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_entries.append(entry)
         self._append_log_to_file(raw_text)
         self._fx_parser.consume_line(raw_text)
-        self._drain_fx_queue()
+        if not self._model_step_replay_active:
+            self._drain_fx_queue()
         if len(self._log_entries) > self._max_log_lines:
             self._log_entries = self._log_entries[-self._max_log_lines :]
         self._refresh_log_views()
@@ -2825,6 +2840,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_step_base_state = None
         self._model_step_live_state = None
         self._last_non_model_state = None
+        self._model_step_prev_snapshot = None
         self._fx_shot_queue.clear()
         self._stop_model_step_playback()
         self._fx_parser.reset(preserve_seen=False)
@@ -3060,10 +3076,73 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _enqueue_fx_event(self, event: FxShotEvent) -> None:
         self._fx_shot_queue.append(event)
 
-    def _drain_fx_queue(self) -> None:
+    def _drain_fx_queue(self, max_events: Optional[int] = None) -> int:
+        drained = 0
         while self._fx_shot_queue:
+            if max_events is not None and drained >= int(max_events):
+                break
             event = self._fx_shot_queue.popleft()
             self._spawn_fx_for_event(event)
+            drained += 1
+        return drained
+
+    def _unit_from_snapshot(self, snapshot: list[dict] | None, unit_id: Optional[int]) -> Optional[dict]:
+        if not isinstance(snapshot, list) or unit_id is None:
+            return None
+        for item in snapshot:
+            if not isinstance(item, dict):
+                continue
+            raw_id = item.get("id")
+            if isinstance(raw_id, (int, float)) and int(raw_id) == int(unit_id):
+                return item
+        return None
+
+    def _target_unit_id_from_step_msg(self, msg: str, attacker_id: Optional[int]) -> Optional[int]:
+        if not msg:
+            return None
+        ids = [int(m.group(1)) for m in re.finditer(r"Unit\s+(\d+)", str(msg), re.IGNORECASE)]
+        for cand in ids:
+            if attacker_id is None or int(cand) != int(attacker_id):
+                return int(cand)
+        return None
+
+    def _play_model_step_fx(self, step: ModelStep, snapshot: list[dict]) -> None:
+        prev_snapshot = self._model_step_prev_snapshot
+        unit_id = step.unit_id if isinstance(step.unit_id, int) else None
+        kind = str(step.kind or "").lower()
+        msg = str((step.data or {}).get("msg") or "") if isinstance(step.data, dict) else ""
+
+        if kind == "move" and unit_id is not None:
+            prev_unit = self._unit_from_snapshot(prev_snapshot, unit_id)
+            curr_unit = self._unit_from_snapshot(snapshot, unit_id)
+            if prev_unit and curr_unit:
+                try:
+                    from_xy = (int(prev_unit.get("x")), int(prev_unit.get("y")))
+                    to_xy = (int(curr_unit.get("x")), int(curr_unit.get("y")))
+                    if from_xy != to_xy:
+                        self.map_scene.trigger_step_move_fx(from_xy, to_xy)
+                except (TypeError, ValueError):
+                    pass
+
+        if kind == "shoot" and unit_id is not None:
+            target_id = self._target_unit_id_from_step_msg(msg, unit_id)
+            if target_id is not None:
+                self._drain_fx_queue(max_events=1)
+                if not self._fx_shot_queue:
+                    attacker_side = self._side_from_unit_id(unit_id)
+                    target_side = self._side_from_unit_id(target_id)
+                    start = self._unit_world_center_by_key(attacker_side, unit_id)
+                    end = self._unit_world_center_by_key(target_side, target_id)
+                    if start is not None and end is not None:
+                        synthetic = FxShotEvent(
+                            ts="step",
+                            report_type="shooting",
+                            attacker_id=unit_id,
+                            target_id=target_id,
+                            weapon_name="Gauss flayer",
+                            damage=0.0,
+                        )
+                        self._spawn_gauss_effect(start, end, synthetic)
 
     def _spawn_fx_for_event(self, event: FxShotEvent) -> None:
         if "gauss flayer" not in event.weapon_name.lower():
