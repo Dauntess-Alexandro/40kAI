@@ -1,5 +1,6 @@
 import torch
 import json
+import copy
 import html
 import os
 import queue
@@ -301,6 +302,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_replay_path = os.path.join(ROOT_DIR, "gui", "model_replay.jsonl")
         self._model_replay_read_offset = 0
         self._last_replay_state_sig = None
+        self._last_applied_state = None
+        self._last_applied_state = None
         self._init_log_viewer()
         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
@@ -1865,12 +1868,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
         step_label = self._build_model_step_label(state, new_events)
 
         if step_label is not None:
-            self._append_model_replay_record(state=state, label=step_label, reason="event")
+            generated = self._append_reconstructed_event_frames(state, new_events)
+            if generated == 0:
+                self._append_model_replay_record(state=state, label=step_label, reason="event")
         else:
             replay_reason = self._replay_state_change_reason(state)
             if replay_reason is not None:
-                synth_label = self._build_synthetic_step_label(state, replay_reason)
-                self._append_model_replay_record(state=state, label=synth_label, reason=replay_reason)
+                generated = self._append_unit_diff_frames(state, replay_reason)
+                if generated == 0:
+                    synth_label = self._build_synthetic_step_label(state, replay_reason)
+                    self._append_model_replay_record(state=state, label=synth_label, reason=replay_reason)
 
         self._load_replay_records_into_queue()
 
@@ -1882,6 +1889,105 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._update_model_step_status("realtime")
         self._apply_state(state)
+
+    def _append_reconstructed_event_frames(self, state: dict, new_events: list) -> int:
+        if not new_events:
+            return 0
+        base_state = copy.deepcopy(self._last_applied_state if isinstance(self._last_applied_state, dict) else state)
+        if not isinstance(base_state, dict):
+            base_state = copy.deepcopy(state)
+        working_state = base_state
+        appended = 0
+        for event in new_events:
+            if not isinstance(event, dict):
+                continue
+            event_type = str(event.get("type") or "").lower()
+            phase = str(event.get("phase") or state.get("phase") or "")
+            unit_id = event.get("unit_id")
+            msg = str(event.get("msg") or "")
+            if event_type == "phase_start" and phase.lower() == "command":
+                continue
+
+            before = self._extract_position_pair(msg, marker="Позиция до")
+            after = self._extract_position_pair(msg, marker="Позиция после")
+            if unit_id is not None and before is not None:
+                self._set_unit_coords_in_state(working_state, int(unit_id), before)
+                self._append_model_replay_record(
+                    state=working_state,
+                    label=f"Ход {event.get('turn', state.get('turn', '—'))} • Фаза {phase} • Юнит {unit_id} • before_move",
+                    reason="event_before_move",
+                )
+                appended += 1
+            if unit_id is not None and after is not None:
+                self._set_unit_coords_in_state(working_state, int(unit_id), after)
+
+            label = self._format_event_step_label(state, event)
+            self._append_model_replay_record(state=working_state, label=label, reason=f"event_{event_type or 'step'}")
+            appended += 1
+        return appended
+
+    def _append_unit_diff_frames(self, state: dict, reason: str) -> int:
+        if not isinstance(self._last_applied_state, dict):
+            return 0
+        prev_units = {}
+        for unit in list((self._last_applied_state or {}).get("units") or []):
+            if isinstance(unit, dict):
+                prev_units[int(unit.get("id") or -1)] = unit
+        curr_units = {}
+        for unit in list((state or {}).get("units") or []):
+            if isinstance(unit, dict):
+                curr_units[int(unit.get("id") or -1)] = unit
+        changed = []
+        for unit_id, curr in curr_units.items():
+            prev = prev_units.get(unit_id)
+            if not isinstance(prev, dict):
+                continue
+            prev_xy = (int(prev.get("x") or -1), int(prev.get("y") or -1))
+            curr_xy = (int(curr.get("x") or -1), int(curr.get("y") or -1))
+            if prev_xy != curr_xy:
+                changed.append((unit_id, curr_xy))
+        if not changed:
+            return 0
+        working = copy.deepcopy(self._last_applied_state)
+        appended = 0
+        for unit_id, xy in changed:
+            self._set_unit_coords_in_state(working, int(unit_id), xy)
+            label = f"Ход {state.get('turn', '—')} • Фаза {state.get('phase', '—')} • Юнит {unit_id} • diff_step ({reason})"
+            self._append_model_replay_record(state=working, label=label, reason=reason)
+            appended += 1
+        return appended
+
+    def _format_event_step_label(self, state: dict, event: dict) -> str:
+        turn = event.get("turn", state.get("turn", "—"))
+        phase = event.get("phase", state.get("phase", "—"))
+        unit_id = event.get("unit_id")
+        event_type = str(event.get("type") or "step")
+        unit_part = f"Юнит {unit_id}" if unit_id is not None else "без юнита"
+        return f"Ход {turn} • Фаза {phase} • {unit_part} • {event_type}"
+
+    def _extract_position_pair(self, msg: str, marker: str) -> Optional[tuple[int, int]]:
+        if not msg or marker not in msg:
+            return None
+        pattern = rf"{marker}:\s*\(([-+]?\d+)\s*,\s*([-+]?\d+)\)"
+        m = re.search(pattern, msg)
+        if not m:
+            return None
+        return int(m.group(1)), int(m.group(2))
+
+    def _set_unit_coords_in_state(self, state: dict, unit_id: int, xy: tuple[int, int]) -> None:
+        if not isinstance(state, dict):
+            return
+        x, y = int(xy[0]), int(xy[1])
+        for unit in list(state.get("units") or []):
+            if not isinstance(unit, dict):
+                continue
+            if int(unit.get("id") or -1) != int(unit_id):
+                continue
+            unit["x"] = x
+            unit["y"] = y
+            unit["anchor_x"] = x
+            unit["anchor_y"] = y
+            break
 
     def _replay_state_signature(self, state: dict) -> tuple:
         units_sig = []
@@ -2038,6 +2144,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _apply_state(self, state):
         self.map_scene.update_state(state)
+        self._last_applied_state = copy.deepcopy(state) if isinstance(state, dict) else None
         if not self._did_initial_fit:
             self._did_initial_fit = True
             QtCore.QTimer.singleShot(0, self._fit_view)
