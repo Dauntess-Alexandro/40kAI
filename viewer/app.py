@@ -1950,6 +1950,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._update_log(state.get("log_tail", []))
         self._update_model_events(state.get("model_events", []))
         self._drain_event_queue()
+        self._sync_model_steps_cache_from_state(state)
         turn_token = self._resolve_model_turn_token(state)
         if turn_token != self._model_turn_token:
             self._model_turn_token = turn_token
@@ -2065,8 +2066,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 unit_id = int(unit_raw) if isinstance(unit_raw, (int, float)) else None
                 kind = str(event.get("type") or "info")
                 fallback.append(ModelStep(phase=phase, unit_id=unit_id, kind=kind, data={"msg": str(event.get("msg") or "")}))
-            self._model_steps = fallback
-            self._refresh_model_step_ui()
+            if fallback:
+                self._model_steps = fallback
+                self._refresh_model_step_ui()
             return
         turn_round = None
         turn_turn = None
@@ -2105,6 +2107,24 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 self.add_log_line(
                     f"[VIEWER_DEBUG][MODEL_STEPS] i={idx}/{len(steps)} phase={step.phase} unit={step.unit_id} kind={step.kind}"
                 )
+
+    def _extract_model_step_turn_token(self, state: dict | None) -> tuple[int | None, int | None]:
+        token = (state or {}).get("model_step_turn_token") if isinstance(state, dict) else None
+        if not isinstance(token, dict):
+            return (None, None)
+        round_raw = token.get("round")
+        turn_raw = token.get("turn")
+        round_val = int(round_raw) if isinstance(round_raw, (int, float)) else None
+        turn_val = int(turn_raw) if isinstance(turn_raw, (int, float)) else None
+        return (round_val, turn_val)
+
+    def _sync_model_steps_cache_from_state(self, state: dict | None) -> None:
+        token = self._extract_model_step_turn_token(state)
+        steps = (state or {}).get("model_steps") if isinstance(state, dict) else None
+        if token == (None, None) or not isinstance(steps, list) or not steps:
+            return
+        if token != self._model_step_turn_token_from_state:
+            self._rebuild_model_steps_from_state(state)
 
     def _resolve_model_turn_token(self, state: dict) -> tuple[int | None, str | None]:
         turn = state.get("turn") if isinstance(state, dict) else None

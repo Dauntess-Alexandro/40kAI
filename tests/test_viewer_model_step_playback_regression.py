@@ -25,6 +25,7 @@ def test_model_steps_rebuild_from_state_and_snapshot_render():
     assert "steps_raw = (state or {}).get(\"model_steps\")" in source
     assert "def _render_state_from_step_snapshot" in source
     assert "def _play_model_step_fx" in source
+    assert "def _sync_model_steps_cache_from_state" in source
     assert "if not self._model_step_replay_active:" in source
     assert "self._model_step_replay_active = True" in source
 
