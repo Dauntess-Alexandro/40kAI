@@ -399,6 +399,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._decal_textures: Dict[str, QtGui.QPixmap] = {}
         self._fx_particle_textures: Dict[str, QtGui.QPixmap] = {}
         self._target_overlay_pixmaps: Dict[str, Optional[QtGui.QPixmap]] = {}
+        self._log_move_overlay_persistent: Optional[Dict[str, object]] = None
+        self._log_move_overlay_hover: Optional[Dict[str, object]] = None
         self._rapid_hatch_brush_cache: Optional[QtGui.QBrush] = None
         self._decals: List[DecalInstance] = []
         self._props: List[PropInstance] = []
@@ -1081,6 +1083,32 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def center_view(self) -> None:
         self._center_board()
         self._set_target_view(self._scale, self._pan, immediate=True)
+        self.update()
+
+    def center_on_state_cell(self, state_x: int, state_y: int) -> bool:
+        """Center camera on state-space coordinates (x, y)."""
+        view_cell = self._state_xy_to_view_xy(int(state_x), int(state_y))
+        if view_cell is None:
+            return False
+        center = self._cell_center(view_cell[0], view_cell[1])
+        viewport_center = QtCore.QPointF(self.width() / 2.0, self.height() / 2.0)
+        self._pan = viewport_center - center * self._scale
+        self._set_target_view(self._scale, self._pan, immediate=False)
+        self.update()
+        return True
+
+    def set_log_movement_overlay(self, payload: Optional[Dict[str, object]], *, persistent: bool) -> None:
+        """Set overlay from log interaction: persistent=click, transient=hover."""
+        if persistent:
+            self._log_move_overlay_persistent = dict(payload) if payload else None
+        else:
+            self._log_move_overlay_hover = dict(payload) if payload else None
+        self.update()
+
+    def clear_log_movement_hover_overlay(self) -> None:
+        if self._log_move_overlay_hover is None:
+            return
+        self._log_move_overlay_hover = None
         self.update()
 
     def _center_board(self) -> None:
@@ -2215,6 +2243,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._draw_grid(painter)
         painter.setTransform(self._view_transform())
         self._draw_movement_layer(painter)
+        self._draw_log_movement_overlay_layer(painter)
         self._draw_objective_layer(painter)
         self._draw_deploy_ghost_layer(painter)
         self._draw_platform_fx_layer(painter)
@@ -2427,6 +2456,99 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def _draw_selection_layer(self, painter: QtGui.QPainter) -> None:
         # Кольца выбора отключены: отдельный слой selection не используется.
         return
+
+    def _draw_log_movement_overlay_layer(self, painter: QtGui.QPainter) -> None:
+        payload = self._log_move_overlay_hover or self._log_move_overlay_persistent
+        if not isinstance(payload, dict):
+            return
+
+        from_pos = payload.get("from")
+        to_pos = payload.get("to")
+        if not isinstance(from_pos, (tuple, list)) or len(from_pos) < 2:
+            return
+        if not isinstance(to_pos, (tuple, list)) or len(to_pos) < 2:
+            return
+
+        from_cell = self._state_xy_to_view_xy(int(from_pos[0]), int(from_pos[1]))
+        to_cell = self._state_xy_to_view_xy(int(to_pos[0]), int(to_pos[1]))
+        if from_cell is None or to_cell is None:
+            return
+
+        from_center = self._cell_center(from_cell[0], from_cell[1])
+        to_center = self._cell_center(to_cell[0], to_cell[1])
+        no_move = bool(payload.get("no_move")) or (from_cell == to_cell)
+
+        painter.save()
+        if payload is self._log_move_overlay_hover:
+            line_alpha = 150
+            marker_alpha = 170
+        else:
+            line_alpha = 220
+            marker_alpha = 235
+
+        if not no_move:
+            trail_icon = self._icon_for_unit_name(str(payload.get("unit_name") or ""))
+            if trail_icon is not None and not trail_icon.isNull():
+                ghost_steps = 4
+                ghost_size = max(6.0, self.cell_size * self._model_icon_scale)
+                for i in range(1, ghost_steps + 1):
+                    t = i / (ghost_steps + 1)
+                    ghost_center = QtCore.QPointF(
+                        from_center.x() + (to_center.x() - from_center.x()) * t,
+                        from_center.y() + (to_center.y() - from_center.y()) * t,
+                    )
+                    ghost_rect = QtCore.QRectF(
+                        ghost_center.x() - ghost_size / 2,
+                        ghost_center.y() - ghost_size / 2,
+                        ghost_size,
+                        ghost_size,
+                    )
+                    painter.setOpacity(0.18 + 0.10 * (1.0 - t))
+                    painter.drawPixmap(ghost_rect, trail_icon, QtCore.QRectF(trail_icon.rect()))
+            painter.setOpacity(1.0)
+            path_pen = QtGui.QPen(QtGui.QColor(95, 192, 255, line_alpha), 2.6)
+            path_pen.setCosmetic(True)
+            path_pen.setCapStyle(QtCore.Qt.RoundCap)
+            painter.setPen(path_pen)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawLine(from_center, to_center)
+
+            angle = math.atan2(to_center.y() - from_center.y(), to_center.x() - from_center.x())
+            head_len = max(8.0, self.cell_size * 0.35)
+            left = QtCore.QPointF(
+                to_center.x() - head_len * math.cos(angle - math.pi / 6.0),
+                to_center.y() - head_len * math.sin(angle - math.pi / 6.0),
+            )
+            right = QtCore.QPointF(
+                to_center.x() - head_len * math.cos(angle + math.pi / 6.0),
+                to_center.y() - head_len * math.sin(angle + math.pi / 6.0),
+            )
+            painter.setBrush(QtGui.QColor(95, 192, 255, line_alpha))
+            painter.drawPolygon(QtGui.QPolygonF([to_center, left, right]))
+        else:
+            # No-move: явно показываем, что юнит остался на месте.
+            radius = max(6.0, self.cell_size * 0.34)
+            pulse = 0.5 + 0.5 * math.sin(monotonic() * 6.0)
+            ring_color = QtGui.QColor(255, 210, 92, int(130 + 80 * pulse))
+            ring_pen = QtGui.QPen(ring_color, 2.2)
+            ring_pen.setCosmetic(True)
+            painter.setPen(ring_pen)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawEllipse(from_center, radius, radius)
+            painter.drawEllipse(from_center, radius * 1.35, radius * 1.35)
+
+        start_pen = QtGui.QPen(QtGui.QColor(68, 214, 118, marker_alpha), 2.0)
+        start_pen.setCosmetic(True)
+        painter.setPen(start_pen)
+        painter.setBrush(QtGui.QBrush(QtGui.QColor(68, 214, 118, 85)))
+        painter.drawEllipse(from_center, max(4.0, self.cell_size * 0.22), max(4.0, self.cell_size * 0.22))
+
+        end_pen = QtGui.QPen(QtGui.QColor(255, 109, 109, marker_alpha), 2.0)
+        end_pen.setCosmetic(True)
+        painter.setPen(end_pen)
+        painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 109, 109, 95)))
+        painter.drawEllipse(to_center, max(4.0, self.cell_size * 0.24), max(4.0, self.cell_size * 0.24))
+        painter.restore()
 
     def _target_hitbox_for_info(self, info: Dict[str, object]) -> Optional[QtCore.QRectF]:
         key = info.get("unit_key")
