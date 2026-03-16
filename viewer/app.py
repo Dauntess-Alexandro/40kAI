@@ -8,7 +8,7 @@ import sys
 import time
 from collections import OrderedDict, deque
 from dataclasses import dataclass
-from typing import Callable, Deque, Optional, Tuple
+from typing import Any, Callable, Deque, Optional, Tuple
 from datetime import datetime
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -66,6 +66,14 @@ class FxShotEvent:
     target_id: int
     weapon_name: str
     damage: float
+
+
+@dataclass
+class ModelStep:
+    phase: str
+    unit_id: Optional[int]
+    kind: str
+    data: dict[str, Any]
 
 
 class FxLogParser:
@@ -253,6 +261,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.status_phase = QtWidgets.QLabel("Фаза: —")
         self.status_active = QtWidgets.QLabel("Активен: —")
         self.status_deployment = QtWidgets.QLabel("Деплой: ожидание ролл-оффа")
+        self.model_step_label = QtWidgets.QLabel("MODEL · ожидание")
+        self.model_step_next_btn = QtWidgets.QPushButton("Следующий шаг")
+        self.model_step_next_btn.clicked.connect(self._next_model_step)
+        self.model_step_play_btn = QtWidgets.QPushButton("Play")
+        self.model_step_play_btn.clicked.connect(self._toggle_model_step_play)
+        self.model_step_reset_btn = QtWidgets.QPushButton("Сброс")
+        self.model_step_reset_btn.clicked.connect(self._stop_model_step_playback)
 
         self.points_vp_player = QtWidgets.QLabel("Player VP: —")
         self.points_vp_model = QtWidgets.QLabel("Model VP: —")
@@ -284,6 +299,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_log_source = None
         self._model_events_stream = []
         self._model_events_current = []
+        self._model_steps: list[ModelStep] = []
+        self._model_step_cursor = -1
+        self._model_turn_token: tuple[int | None, str | None] | None = None
+        self._model_step_playing = False
+        self._model_step_autoplay_ms = int(os.getenv("MODEL_STEP_AUTOPLAY_MS", "700") or "700")
+        self._model_step_timer = QtCore.QTimer(self)
+        self._model_step_timer.setSingleShot(False)
+        self._model_step_timer.setInterval(max(150, self._model_step_autoplay_ms))
+        self._model_step_timer.timeout.connect(self._on_model_step_timer)
         self._log_view = None
         self._log_filter_buttons = {}
         self._log_status_label = None
@@ -383,6 +407,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.timer.timeout.connect(self._poll_state)
         self.timer.start()
 
+        self._refresh_model_step_ui()
         self._poll_state()
         QtCore.QTimer.singleShot(0, self._start_controller)
 
@@ -429,6 +454,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.status_phase)
         layout.addWidget(self.status_active)
         layout.addWidget(self.status_deployment)
+        layout.addWidget(self.model_step_label)
+        controls = QtWidgets.QHBoxLayout()
+        controls.addWidget(self.model_step_next_btn)
+        controls.addWidget(self.model_step_play_btn)
+        controls.addWidget(self.model_step_reset_btn)
+        layout.addLayout(controls)
         return box
 
     def _group_points(self):
@@ -1627,6 +1658,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_log_source = "stream"
             self._model_events_stream.extend(self._filter_model_events(drained))
             self._model_events_current = list(self._model_events_stream)
+            if self._model_turn_token and self._model_turn_token[1] == "model":
+                self._rebuild_model_steps_from_events(self._model_events_current)
             self._refresh_log_views()
 
     def _start_controller(self):
@@ -1665,6 +1698,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._deploy_status_text = ""
         self._rolloff_attacker_side = None
         self._rolloff_defender_side = None
+        self._model_turn_token = None
+        self._model_steps = []
+        self._stop_model_step_playback()
 
     def _submit_text(self):
         text = self.command_input.text().strip()
@@ -1894,6 +1930,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._update_log(state.get("log_tail", []))
         self._update_model_events(state.get("model_events", []))
         self._drain_event_queue()
+        turn_token = self._resolve_model_turn_token(state)
+        if turn_token != self._model_turn_token:
+            self._model_turn_token = turn_token
+            if turn_token[1] == "model":
+                self._rebuild_model_steps_from_events(self._model_events_current)
+            else:
+                self._stop_model_step_playback()
+        elif turn_token[1] == "model" and not self._model_steps and self._model_events_current:
+            self._rebuild_model_steps_from_events(self._model_events_current)
         self._refresh_active_context()
         if not (self._is_shooting_target_request(self._pending_request) or self._is_shooting_dice_request(self._pending_request)):
             self._close_shoot_popover()
@@ -1965,6 +2010,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_events_snapshot = list(events)
             self._model_log_source = "state"
             self._model_events_current = list(filtered)
+            if self._model_turn_token and self._model_turn_token[1] == "model":
+                self._rebuild_model_steps_from_events(self._model_events_current)
             self._refresh_log_views()
         elif self._model_log_source is None:
             self._drain_event_queue()
@@ -1978,6 +2025,168 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if side in ("enemy", "model"):
                 filtered.append(event)
         return filtered
+
+    def _rebuild_model_steps_from_events(self, events: list[dict]) -> None:
+        steps: list[ModelStep] = []
+        phase_order = ["command", "movement", "shooting", "charge", "fight"]
+        phase_labels = {
+            "command": "Command",
+            "movement": "Movement",
+            "shooting": "Shooting",
+            "charge": "Charge",
+            "fight": "Fight",
+        }
+        for phase in phase_order:
+            steps.append(ModelStep(phase=phase, unit_id=None, kind="phase_header", data={"title": phase_labels[phase]}))
+            for event in events:
+                event_phase = str(event.get("phase") or "").strip().lower()
+                if event_phase != phase:
+                    continue
+                unit_id_raw = event.get("unit_id")
+                unit_id = int(unit_id_raw) if isinstance(unit_id_raw, (int, float)) else None
+                event_type = str(event.get("type") or "").strip().lower()
+                if phase != "command" and unit_id is None:
+                    continue
+                kind = event_type if event_type in {"move", "shoot", "charge", "fight"} else ("phase_header" if event_type == "phase_start" else "info")
+                if phase == "movement" and "позиция" in str(event.get("msg") or "").lower():
+                    kind = "move"
+                if phase == "shooting" and event_type in {"scan", "skip", "shoot"}:
+                    kind = "shoot"
+                if phase == "charge" and event_type in {"charge", "skip"}:
+                    kind = "charge"
+                if phase == "fight" and event_type in {"fight", "skip"}:
+                    kind = "fight"
+                steps.append(
+                    ModelStep(
+                        phase=phase,
+                        unit_id=unit_id,
+                        kind=kind,
+                        data={
+                            "msg": str(event.get("msg") or ""),
+                            "event_type": event_type,
+                            "unit_name": event.get("unit_name"),
+                            "payload": dict(event.get("data") or {}),
+                        },
+                    )
+                )
+        self._model_steps = steps
+        self._model_step_cursor = -1
+        self._model_step_playing = False
+        self._model_step_timer.stop()
+        self._refresh_model_step_ui()
+        if os.getenv("VIEWER_DEBUG", "0") == "1":
+            self.add_log_line(f"[VIEWER_DEBUG][MODEL_STEPS] создано шагов={len(steps)}")
+            for idx, step in enumerate(steps, start=1):
+                self.add_log_line(
+                    f"[VIEWER_DEBUG][MODEL_STEPS] i={idx}/{len(steps)} phase={step.phase} unit={step.unit_id} kind={step.kind}"
+                )
+
+    def _resolve_model_turn_token(self, state: dict) -> tuple[int | None, str | None]:
+        turn = state.get("turn") if isinstance(state, dict) else None
+        active = state.get("active") if isinstance(state, dict) else None
+        turn_num = int(turn) if isinstance(turn, (int, float)) else None
+        active_text = str(active or "").strip().lower() if active is not None else None
+        return turn_num, active_text
+
+    def _phase_ru_label(self, phase: str) -> str:
+        return {
+            "command": "Command",
+            "movement": "Movement",
+            "shooting": "Shooting",
+            "charge": "Charge",
+            "fight": "Fight",
+        }.get(str(phase or "").lower(), str(phase or "—"))
+
+    def _refresh_model_step_ui(self) -> None:
+        total = len(self._model_steps)
+        idx = self._model_step_cursor
+        if total <= 0:
+            self.model_step_label.setText("MODEL · шаги не готовы")
+            self.model_step_next_btn.setEnabled(False)
+            self.model_step_play_btn.setEnabled(False)
+            self.model_step_play_btn.setText("Play")
+            self.model_step_reset_btn.setEnabled(False)
+            return
+        safe_idx = min(max(idx, 0), total - 1)
+        step = self._model_steps[safe_idx] if idx >= 0 else self._model_steps[0]
+        unit = f"Unit {step.unit_id}" if isinstance(step.unit_id, int) else "—"
+        shown_idx = safe_idx + 1 if idx >= 0 else 0
+        self.model_step_label.setText(
+            f"MODEL · {self._phase_ru_label(step.phase)} · {unit} ({shown_idx}/{total})"
+        )
+        self.model_step_next_btn.setEnabled(self._model_step_cursor < (total - 1))
+        self.model_step_play_btn.setEnabled(True)
+        self.model_step_play_btn.setText("Pause" if self._model_step_playing else "Play")
+        self.model_step_reset_btn.setEnabled(self._model_step_cursor >= 0)
+
+    def _apply_model_step(self, step: ModelStep) -> None:
+        unit_id = step.unit_id
+        side = self._side_from_unit_id(unit_id) if isinstance(unit_id, int) else None
+        phase = step.phase
+        self.map_scene.set_active_context(
+            active_unit_id=unit_id,
+            active_unit_side=side,
+            selected_unit_id=unit_id if isinstance(unit_id, int) else self._selected_unit_id,
+            selected_unit_side=side if side else self._selected_unit_side,
+            phase=phase,
+            move_range=None,
+            shoot_range=None,
+            show_objective_radius=self._show_objective_radius,
+            targets=None,
+        )
+        if isinstance(unit_id, int):
+            self.map_scene.set_active_unit(unit_id)
+            self._select_row_for_unit_id(unit_id, side=side)
+        if phase == "shooting":
+            self._drain_fx_queue()
+        if os.getenv("VIEWER_DEBUG", "0") == "1":
+            self.add_log_line(
+                f"[VIEWER_DEBUG][MODEL_STEPS] apply idx={self._model_step_cursor + 1}/{len(self._model_steps)} phase={step.phase} unit={step.unit_id} kind={step.kind}"
+            )
+
+    def _next_model_step(self) -> None:
+        if not self._model_steps:
+            self._refresh_model_step_ui()
+            return
+        if self._model_step_cursor >= len(self._model_steps) - 1:
+            self._model_step_playing = False
+            self._model_step_timer.stop()
+            self._refresh_model_step_ui()
+            return
+        self._model_step_cursor += 1
+        step = self._model_steps[self._model_step_cursor]
+        self._apply_model_step(step)
+        self._refresh_model_step_ui()
+
+    def _toggle_model_step_play(self) -> None:
+        if not self._model_steps:
+            self._refresh_model_step_ui()
+            return
+        self._model_step_playing = not self._model_step_playing
+        if self._model_step_playing:
+            self._model_step_timer.start()
+        else:
+            self._model_step_timer.stop()
+        self._refresh_model_step_ui()
+
+    def _on_model_step_timer(self) -> None:
+        if not self._model_step_playing:
+            self._model_step_timer.stop()
+            return
+        if self._model_step_cursor >= len(self._model_steps) - 1:
+            self._model_step_playing = False
+            self._model_step_timer.stop()
+            self._refresh_model_step_ui()
+            return
+        self._next_model_step()
+
+    def _stop_model_step_playback(self) -> None:
+        self._model_step_playing = False
+        self._model_step_timer.stop()
+        self._model_step_cursor = -1
+        self.map_scene.set_active_unit(None)
+        self.map_scene.set_target_unit(None)
+        self._refresh_model_step_ui()
 
     def _set_selected_unit(self, side, unit_id, *, source: str, select_row: bool = False):
         self._selected_unit_side = side
@@ -2567,7 +2776,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_events_snapshot = None
         self._model_events_stream = []
         self._model_events_current = []
+        self._model_steps = []
+        self._model_turn_token = None
         self._fx_shot_queue.clear()
+        self._stop_model_step_playback()
         self._fx_parser.reset(preserve_seen=False)
         self.log_view.clear()
 
@@ -2746,6 +2958,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._syncing_table_selection = False
 
     def _refresh_active_context(self):
+        if self._model_turn_token and self._model_turn_token[1] == "model" and self._model_steps and self._model_step_cursor >= 0:
+            self._refresh_model_step_ui()
+            return
         unit_id, side = self._resolve_active_unit()
         if unit_id is None:
             unit_id = self._shoot_resolver_attacker_id or self._last_shooter_id or self._selected_unit_id
@@ -2897,6 +3112,22 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return "shoot" in phase_text or "стрел" in phase_text or "shooting" in phase_text
 
     def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.KeyPress:
+            if event.isAutoRepeat():
+                return True
+            key = event.key()
+            if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+                if self._model_turn_token and self._model_turn_token[1] == "model":
+                    self._next_model_step()
+                    return True
+            if key == QtCore.Qt.Key_Space:
+                if self._model_turn_token and self._model_turn_token[1] == "model":
+                    self._toggle_model_step_play()
+                    return True
+            if key == QtCore.Qt.Key_Escape:
+                if self._model_turn_token and self._model_turn_token[1] == "model":
+                    self._stop_model_step_playback()
+                    return True
         if event.type() == QtCore.QEvent.KeyPress and self._pending_request:
             if event.isAutoRepeat():
                 return True
