@@ -2526,6 +2526,10 @@ class Warhammer40kEnv(gym.Env):
                 "turn_token": dict(turn_token),
             }
         )
+        # Важно для viewer step-replay: публикуем state сразу на каждом шаге MODEL,
+        # иначе GUI увидит только финальное состояние после полного env.step(...).
+        if bool(getattr(self, "playType", False)):
+            self._flush_state_snapshot(reason="viewer_model_step", force=True)
 
     def _get_unit_data(self, side: str, unit_idx: int):
         side = side.lower()

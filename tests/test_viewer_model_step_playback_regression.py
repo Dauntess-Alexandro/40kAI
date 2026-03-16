@@ -38,3 +38,4 @@ def test_env_collects_model_steps_with_snapshots():
     assert "def _append_viewer_model_step" in source
     assert '"snapshot": self._capture_viewer_units_snapshot()' in source
     assert "kind=\"phase_header\"" in source
+    assert 'self._flush_state_snapshot(reason="viewer_model_step", force=True)' in source
