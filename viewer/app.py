@@ -1844,9 +1844,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._ingest_state(self.state_watcher.state)
 
     def _ingest_state(self, state):
-        active = state.get("active") or state.get("active_side")
-        is_model_active = str(active or "").strip().lower() == "model"
-        if not (self._model_step_mode_enabled and is_model_active):
+        if not self._model_step_mode_enabled:
             self._model_step_queue.clear()
             self._update_model_step_status("realtime")
             self._apply_state(state)
@@ -1855,13 +1853,20 @@ class ViewerWindow(QtWidgets.QMainWindow):
         events = list(state.get("model_events") or [])
         new_events = self._new_model_events_since_last_state(events)
         step_label = self._build_model_step_label(state, new_events)
-        if step_label is None:
-            self._update_model_step_status("ожидание действия")
+
+        if step_label is not None:
+            self._model_step_queue.append({"state": dict(state), "label": step_label})
+            self._update_model_step_status(step_label)
+            if self._model_step_autoplay:
+                self._step_model_timeline_once()
             return
-        self._model_step_queue.append({"state": state, "label": step_label})
-        self._update_model_step_status(step_label)
-        if self._model_step_autoplay:
-            self._step_model_timeline_once()
+
+        if self._model_step_queue:
+            self._update_model_step_status("ожидание: примените След. шаг")
+            return
+
+        self._update_model_step_status("realtime")
+        self._apply_state(state)
 
     def _new_model_events_since_last_state(self, events: list) -> list:
         prev = self._last_model_events_for_step
