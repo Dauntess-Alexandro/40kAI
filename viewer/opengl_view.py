@@ -2525,6 +2525,41 @@ class OpenGLBoardWidget(QOpenGLWidget):
             )
             painter.setBrush(QtGui.QColor(95, 192, 255, line_alpha))
             painter.drawPolygon(QtGui.QPolygonF([to_center, left, right]))
+
+            # Бейдж дистанции по центру траектории: "N кл."
+            move_cells = payload.get("distance")
+            try:
+                move_cells = int(move_cells)
+            except (TypeError, ValueError):
+                move_cells = 0
+            if move_cells > 0:
+                badge_center = QtCore.QPointF(
+                    (from_center.x() + to_center.x()) * 0.5,
+                    (from_center.y() + to_center.y()) * 0.5,
+                )
+                badge_text = f"{move_cells} кл."
+                font = QtGui.QFont(painter.font())
+                font.setPointSizeF(max(8.0, float(font.pointSizeF() if font.pointSizeF() > 0 else 10.0)))
+                font.setBold(True)
+                painter.setFont(font)
+                fm = QtGui.QFontMetricsF(font)
+                text_rect = fm.boundingRect(badge_text)
+                pad_x = 8.0
+                pad_y = 4.0
+                badge_rect = QtCore.QRectF(
+                    badge_center.x() - text_rect.width() * 0.5 - pad_x,
+                    badge_center.y() - text_rect.height() * 0.5 - pad_y,
+                    text_rect.width() + pad_x * 2.0,
+                    text_rect.height() + pad_y * 2.0,
+                )
+                badge_bg = QtGui.QColor(95, 192, 255, max(120, line_alpha - 25))
+                badge_border = QtGui.QPen(QtGui.QColor(135, 214, 255, max(170, line_alpha)), 1.2)
+                badge_border.setCosmetic(True)
+                painter.setPen(badge_border)
+                painter.setBrush(QtGui.QBrush(badge_bg))
+                painter.drawRoundedRect(badge_rect, 6.0, 6.0)
+                painter.setPen(QtGui.QPen(QtGui.QColor(12, 20, 32, 245)))
+                painter.drawText(badge_rect, QtCore.Qt.AlignCenter, badge_text)
         else:
             # No-move: явно показываем, что юнит остался на месте.
             radius = max(6.0, self.cell_size * 0.34)
