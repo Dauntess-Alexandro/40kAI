@@ -301,6 +301,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_step_state_queue: Deque[dict] = deque()
         self._model_step_buffering_active = False
         self._model_step_visual_state: Optional[dict] = None
+        self._model_step_end_announced = False
         self._init_log_viewer()
         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
@@ -1707,6 +1708,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_step_state_queue.clear()
         self._model_step_buffering_active = False
         self._model_step_visual_state = None
+        self._model_step_end_announced = False
 
     def _submit_text(self):
         text = self.command_input.text().strip()
@@ -2665,6 +2667,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_step_cursor = -1
             self._model_step_turn_start_idx = None
             self._model_step_current_phase = None
+            self._model_step_end_announced = False
             self._update_model_step_labels()
             return
 
@@ -2672,6 +2675,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_step_turn_start_idx = start_idx
             self._model_step_cursor = -1
             self._model_step_current_phase = None
+            self._model_step_end_announced = False
 
         timeline = []
         phase = None
@@ -2710,6 +2714,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
 
         self.model_step_button.setEnabled(True)
+        if self._model_step_cursor >= (total - 1):
+            self.model_step_button.setEnabled(False)
         if self._model_step_cursor < 0:
             next_item = self._model_step_timeline[0]
             self.model_step_phase_label.setText(f"MODEL: фаза {self._phase_label_ru(next_item.get('phase'))}")
@@ -2735,10 +2741,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         next_cursor = self._model_step_cursor + 1
         if next_cursor >= total:
-            self.add_log_line(
-                "Шаг MODEL: ход уже дошёл до конца. Где: viewer/app.py (_advance_model_step). "
-                "Что делать дальше: дождитесь следующего хода MODEL."
-            )
+            if not self._model_step_end_announced:
+                self._model_step_end_announced = True
+                self.add_log_line(
+                    "Шаг MODEL: ход уже дошёл до конца. Где: viewer/app.py (_advance_model_step). "
+                    "Что делать дальше: дождитесь следующего хода MODEL."
+                )
             self._update_model_step_labels()
             return
 
@@ -2751,12 +2759,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.add_log_line(f"[STEP][MODEL] {item.get('text')}")
         self._apply_model_step_visual_update(item)
         if self._model_step_buffering_active and not self._has_pending_model_step_actions():
-            final_state = self._model_step_state_queue[-1] if self._model_step_state_queue else None
             self._model_step_state_queue.clear()
             self._model_step_buffering_active = False
-            self._model_step_visual_state = None
-            if isinstance(final_state, dict):
-                self._apply_state(final_state)
+            self._model_step_end_announced = False
         self._update_model_step_labels()
 
     def _apply_model_step_visual_update(self, item: dict) -> None:
@@ -2889,6 +2894,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_step_state_queue.clear()
         self._model_step_buffering_active = False
         self._model_step_visual_state = None
+        self._model_step_end_announced = False
         self._fx_shot_queue.clear()
         self._fx_parser.reset(preserve_seen=False)
         self.log_view.clear()
