@@ -2208,7 +2208,7 @@ class Warhammer40kEnv(gym.Env):
                 "x": int(self.unit_coords[idx][1]),
                 "y": int(self.unit_coords[idx][0]),
                 "hp": float(self.unit_health[idx]),
-                "alive_models": int(self._remaining_models("model", idx, self.unit_health[idx])),
+                "alive_models": int(self._alive_models_from_pool("model", idx)),
             }
         if uid >= 11:
             idx = uid - 11
@@ -2220,7 +2220,7 @@ class Warhammer40kEnv(gym.Env):
                 "x": int(self.enemy_coords[idx][1]),
                 "y": int(self.enemy_coords[idx][0]),
                 "hp": float(self.enemy_health[idx]),
-                "alive_models": int(self._remaining_models("enemy", idx, self.enemy_health[idx])),
+                "alive_models": int(self._alive_models_from_pool("enemy", idx)),
             }
         return None
 
