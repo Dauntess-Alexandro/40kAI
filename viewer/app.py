@@ -298,6 +298,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_step_autoplay = False
         self._model_step_queue: Deque[dict] = deque()
         self._last_model_events_for_step: list = []
+        self._model_replay_path = os.path.join(ROOT_DIR, "gui", "model_replay.jsonl")
+        self._model_replay_read_offset = 0
+        self._last_replay_state_sig = None
         self._init_log_viewer()
         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
@@ -1686,6 +1689,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_step_queue.clear()
         self._last_model_events_for_step = []
         self._model_step_autoplay = False
+        self._model_replay_read_offset = 0
+        self._last_replay_state_sig = None
+        try:
+            with open(self._model_replay_path, "w", encoding="utf-8") as replay_file:
+                replay_file.write("")
+        except OSError:
+            self.add_log_line("[VIEWER][MODEL_STEP][WARN] Не удалось очистить model_replay.jsonl. Где: viewer/app.py (_reset_viewer_session_visuals). Что делать дальше: проверить права записи в gui/.")
         self._update_model_step_status("realtime")
 
     def _submit_text(self):
@@ -1855,18 +1865,118 @@ class ViewerWindow(QtWidgets.QMainWindow):
         step_label = self._build_model_step_label(state, new_events)
 
         if step_label is not None:
-            self._model_step_queue.append({"state": dict(state), "label": step_label})
-            self._update_model_step_status(step_label)
+            self._append_model_replay_record(state=state, label=step_label, reason="event")
+        else:
+            replay_reason = self._replay_state_change_reason(state)
+            if replay_reason is not None:
+                synth_label = self._build_synthetic_step_label(state, replay_reason)
+                self._append_model_replay_record(state=state, label=synth_label, reason=replay_reason)
+
+        self._load_replay_records_into_queue()
+
+        if self._model_step_queue:
+            self._update_model_step_status("ожидание: примените След. шаг")
             if self._model_step_autoplay:
                 self._step_model_timeline_once()
             return
 
-        if self._model_step_queue:
-            self._update_model_step_status("ожидание: примените След. шаг")
-            return
-
         self._update_model_step_status("realtime")
         self._apply_state(state)
+
+    def _replay_state_signature(self, state: dict) -> tuple:
+        units_sig = []
+        for unit in list(state.get("units") or []):
+            if not isinstance(unit, dict):
+                continue
+            units_sig.append(
+                (
+                    unit.get("side"),
+                    int(unit.get("id") or -1),
+                    int(unit.get("x") or -1),
+                    int(unit.get("y") or -1),
+                    float(unit.get("hp") or 0.0),
+                    int(unit.get("models") or 0),
+                )
+            )
+        units_sig.sort()
+        return (
+            int(state.get("turn") or -1),
+            str(state.get("phase") or ""),
+            str(state.get("active") or state.get("active_side") or ""),
+            tuple(units_sig),
+        )
+
+    def _replay_state_change_reason(self, state: dict) -> Optional[str]:
+        sig = self._replay_state_signature(state)
+        if self._last_replay_state_sig is None:
+            self._last_replay_state_sig = sig
+            return None
+        if sig == self._last_replay_state_sig:
+            return None
+        self._last_replay_state_sig = sig
+        active = str(state.get("active") or state.get("active_side") or "").strip().lower()
+        if active == "model":
+            return "state_delta_model"
+        if self._model_step_queue:
+            return "state_delta_queue_pending"
+        return None
+
+    def _build_synthetic_step_label(self, state: dict, reason: str) -> str:
+        turn = state.get("turn", "—")
+        phase = state.get("phase", "—")
+        return f"Ход {turn} • Фаза {phase} • synthetic_step ({reason})"
+
+    def _append_model_replay_record(self, state: dict, label: str, reason: str) -> None:
+        payload = {
+            "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "label": str(label or "шаг"),
+            "reason": str(reason or "unknown"),
+            "state": dict(state or {}),
+        }
+        try:
+            os.makedirs(os.path.dirname(self._model_replay_path), exist_ok=True)
+            with open(self._model_replay_path, "a", encoding="utf-8") as replay_file:
+                replay_file.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except OSError:
+            self.add_log_line(
+                "[VIEWER][MODEL_STEP][WARN] Не удалось записать replay-кадр. Где: viewer/app.py (_append_model_replay_record). "
+                "Что делать дальше: проверить права записи и путь gui/model_replay.jsonl."
+            )
+
+    def _load_replay_records_into_queue(self) -> None:
+        if not os.path.exists(self._model_replay_path):
+            return
+        loaded = 0
+        try:
+            with open(self._model_replay_path, "r", encoding="utf-8") as replay_file:
+                replay_file.seek(self._model_replay_read_offset)
+                for line in replay_file:
+                    raw = str(line or "").strip()
+                    if not raw:
+                        continue
+                    try:
+                        row = json.loads(raw)
+                    except json.JSONDecodeError:
+                        self.add_log_line(
+                            "[VIEWER][MODEL_STEP][WARN] Битая строка replay.jsonl пропущена. Где: viewer/app.py (_load_replay_records_into_queue). "
+                            "Что делать дальше: проверить целостность файла gui/model_replay.jsonl."
+                        )
+                        continue
+                    state = row.get("state") if isinstance(row, dict) else None
+                    if not isinstance(state, dict):
+                        continue
+                    label = str(row.get("label") or "шаг")
+                    self._model_step_queue.append({"state": state, "label": label})
+                    loaded += 1
+                self._model_replay_read_offset = replay_file.tell()
+        except OSError:
+            self.add_log_line(
+                "[VIEWER][MODEL_STEP][WARN] Не удалось прочитать replay.jsonl. Где: viewer/app.py (_load_replay_records_into_queue). "
+                "Что делать дальше: проверить доступ к gui/model_replay.jsonl."
+            )
+            return
+        if loaded > 0:
+            self.add_log_line(f"[VIEWER][MODEL_STEP] replay: загружено кадров={loaded}, очередь={len(self._model_step_queue)}")
 
     def _new_model_events_since_last_state(self, events: list) -> list:
         prev = self._last_model_events_for_step
