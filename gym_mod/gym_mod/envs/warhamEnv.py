@@ -998,6 +998,8 @@ class Warhammer40kEnv(gym.Env):
         self.terrain_obscuring_cells: set[tuple[int, int]] = self.get_terrain_obscuring_cells_set()
         self.visibility_mode = str(os.getenv("VISIBILITY_MODE", "multi_ray_5") or "multi_ray_5").strip().lower()
         self._terrain_shaping_shot_bonus_units: set[int] = set()
+        self._viewer_model_steps: list[dict] = []
+        self._viewer_model_turn_token: dict | None = None
         log_name = str(os.getenv("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_PLAY.md") or "LOGS_FOR_AGENTS_PLAY.md")
         self._agent_log_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "..", log_name)
@@ -2413,6 +2415,13 @@ class Warhammer40kEnv(gym.Env):
                 "verbosity": "verbose" if verbose_only else "normal",
             }
         )
+        self._append_viewer_model_step(
+            phase=phase_value,
+            unit_id=resolved_unit_id if isinstance(resolved_unit_id, int) else None,
+            kind=event_type,
+            msg=str(msg or ""),
+            data={"event_type": event_type, "unit_name": resolved_unit_name, "raw": msg},
+        )
 
     def _classify_event_type(self, msg: str, phase: str | None) -> str:
         lowered = msg.lower()
@@ -2459,6 +2468,64 @@ class Warhammer40kEnv(gym.Env):
     def _unit_id(self, side: str, unit_idx: int) -> int:
         side = side.lower()
         return (21 + unit_idx) if side == "model" else (11 + unit_idx)
+
+    def _capture_viewer_units_snapshot(self) -> list[dict]:
+        snapshot: list[dict] = []
+        for idx, coords in enumerate(getattr(self, "enemy_coords", [])):
+            hp = float(self.enemy_health[idx]) if idx < len(self.enemy_health) else 0.0
+            if hp <= 0:
+                continue
+            unit_data = self._get_unit_data("enemy", idx)
+            snapshot.append(
+                {
+                    "side": "player",
+                    "id": int(self._unit_id("enemy", idx)),
+                    "name": (unit_data or {}).get("Name") if isinstance(unit_data, dict) else None,
+                    "x": int(coords[1]),
+                    "y": int(coords[0]),
+                    "hp": float(hp),
+                    "models": int(self._alive_models_from_pool("enemy", idx)),
+                }
+            )
+        for idx, coords in enumerate(getattr(self, "unit_coords", [])):
+            hp = float(self.unit_health[idx]) if idx < len(self.unit_health) else 0.0
+            if hp <= 0:
+                continue
+            unit_data = self._get_unit_data("model", idx)
+            snapshot.append(
+                {
+                    "side": "model",
+                    "id": int(self._unit_id("model", idx)),
+                    "name": (unit_data or {}).get("Name") if isinstance(unit_data, dict) else None,
+                    "x": int(coords[1]),
+                    "y": int(coords[0]),
+                    "hp": float(hp),
+                    "models": int(self._alive_models_from_pool("model", idx)),
+                }
+            )
+        return snapshot
+
+    def _append_viewer_model_step(self, *, phase: str, unit_id: int | None, kind: str, msg: str, data: dict | None = None) -> None:
+        if str(self.active_side or "").lower() != "model":
+            return
+        turn_token = {
+            "round": int(getattr(self, "battle_round", 0) or 0),
+            "turn": int(getattr(self, "numTurns", 0) or 0),
+        }
+        if self._viewer_model_turn_token != turn_token:
+            self._viewer_model_turn_token = dict(turn_token)
+            self._viewer_model_steps = []
+        self._viewer_model_steps.append(
+            {
+                "phase": str(phase or self.phase or ""),
+                "unit_id": int(unit_id) if isinstance(unit_id, int) else None,
+                "kind": str(kind or "info"),
+                "msg": str(msg or ""),
+                "data": dict(data or {}),
+                "snapshot": self._capture_viewer_units_snapshot(),
+                "turn_token": dict(turn_token),
+            }
+        )
 
     def _get_unit_data(self, side: str, unit_idx: int):
         side = side.lower()
@@ -2860,6 +2927,12 @@ class Warhammer40kEnv(gym.Env):
         self.phase = phase
         self._phase_event_emitted = False
         self._phase_unit_logged = set()
+        if side == "model" and phase == "command":
+            self._viewer_model_steps = []
+            self._viewer_model_turn_token = {
+                "round": int(getattr(self, "battle_round", 0) or 0),
+                "turn": int(getattr(self, "numTurns", 0) or 0),
+            }
         if not self._round_banner_shown:
             self._log(f"=== БОЕВОЙ РАУНД {self.battle_round} ===")
             self._round_banner_shown = True
@@ -2881,6 +2954,14 @@ class Warhammer40kEnv(gym.Env):
             elif side == "enemy":
                 self.enemyFellBack = [False] * len(self.enemy_health)
         self._log_phase(self._side_label(side), phase)
+        if side == "model":
+            self._append_viewer_model_step(
+                phase=phase,
+                unit_id=None,
+                kind="phase_header",
+                msg=f"Фаза {phase}",
+                data={"phase": phase},
+            )
         if side == "model":
             self._emit_event(
                 {
@@ -5003,6 +5084,8 @@ class Warhammer40kEnv(gym.Env):
         self._phase_event_emitted = False
         self._phase_unit_logged = set()
         self._terrain_shaping_shot_bonus_units = set()
+        self._viewer_model_steps = []
+        self._viewer_model_turn_token = None
         get_event_recorder().clear()
 
         for i in range(len(self.enemy_data)):

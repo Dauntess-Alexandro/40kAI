@@ -19,8 +19,22 @@ def test_model_step_hotkeys_present():
     assert "self._stop_model_step_playback()" in source
 
 
-def test_model_steps_rebuild_from_events():
+def test_model_steps_rebuild_from_state_and_snapshot_render():
     source = Path("viewer/app.py").read_text(encoding="utf-8")
-    assert "def _rebuild_model_steps_from_events" in source
-    assert "phase_order = [\"command\", \"movement\", \"shooting\", \"charge\", \"fight\"]" in source
-    assert "[VIEWER_DEBUG][MODEL_STEPS] создано шагов=" in source
+    assert "def _rebuild_model_steps_from_state" in source
+    assert "steps_raw = (state or {}).get(\"model_steps\")" in source
+    assert "def _render_state_from_step_snapshot" in source
+    assert "self._model_step_replay_active = True" in source
+
+
+def test_engine_exports_model_steps_payload():
+    source = Path("gym_mod/gym_mod/engine/state_export.py").read_text(encoding="utf-8")
+    assert 'payload["model_steps"] = list(model_steps)' in source
+    assert 'payload["model_step_turn_token"]' in source
+
+
+def test_env_collects_model_steps_with_snapshots():
+    source = Path("gym_mod/gym_mod/envs/warhamEnv.py").read_text(encoding="utf-8")
+    assert "def _append_viewer_model_step" in source
+    assert '"snapshot": self._capture_viewer_units_snapshot()' in source
+    assert "kind=\"phase_header\"" in source

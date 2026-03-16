@@ -710,6 +710,11 @@ def write_state_json(env, path=None):
         "generated_at": datetime.utcnow().isoformat() + "Z",
     }
 
+    model_steps = getattr(env, "_viewer_model_steps", None)
+    if isinstance(model_steps, list) and model_steps:
+        payload["model_steps"] = list(model_steps)
+        payload["model_step_turn_token"] = dict(getattr(env, "_viewer_model_turn_token", {}) or {})
+
     payload_mode = str(os.getenv("STATE_PAYLOAD_MODE", "auto")).strip().lower()
     include_full_payload = payload_mode in {"full", "always"}
     if payload_mode in {"auto", "", "default"}:

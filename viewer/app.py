@@ -302,6 +302,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_steps: list[ModelStep] = []
         self._model_step_cursor = -1
         self._model_turn_token: tuple[int | None, str | None] | None = None
+        self._model_step_turn_token_from_state: tuple[int | None, int | None] | None = None
+        self._model_step_replay_active = False
+        self._model_step_base_state: Optional[dict] = None
+        self._model_step_live_state: Optional[dict] = None
+        self._last_non_model_state: Optional[dict] = None
         self._model_step_playing = False
         self._model_step_autoplay_ms = int(os.getenv("MODEL_STEP_AUTOPLAY_MS", "700") or "700")
         self._model_step_timer = QtCore.QTimer(self)
@@ -1659,7 +1664,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_events_stream.extend(self._filter_model_events(drained))
             self._model_events_current = list(self._model_events_stream)
             if self._model_turn_token and self._model_turn_token[1] == "model":
-                self._rebuild_model_steps_from_events(self._model_events_current)
+                self._rebuild_model_steps_from_state(self._model_step_live_state or self.state_watcher.state)
             self._refresh_log_views()
 
     def _start_controller(self):
@@ -1699,7 +1704,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._rolloff_attacker_side = None
         self._rolloff_defender_side = None
         self._model_turn_token = None
+        self._model_step_turn_token_from_state = None
         self._model_steps = []
+        self._model_step_replay_active = False
+        self._model_step_base_state = None
+        self._model_step_live_state = None
+        self._last_non_model_state = None
         self._stop_model_step_playback()
 
     def _submit_text(self):
@@ -1858,13 +1868,21 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._apply_state(self.state_watcher.state)
 
     def _apply_state(self, state):
-        self.map_scene.update_state(state)
+        active_now = str((state or {}).get("active") or (state or {}).get("active_side") or "").strip().lower()
+        if active_now != "model":
+            self._last_non_model_state = json.loads(json.dumps(state))
+
+        self._model_step_live_state = state
+        rendered_state = state
+        if self._model_step_replay_active:
+            rendered_state = self._model_step_base_state or state
+        self.map_scene.update_state(rendered_state)
         if not self._did_initial_fit:
             self._did_initial_fit = True
             QtCore.QTimer.singleShot(0, self._fit_view)
 
         self._units_by_key = {}
-        for unit in state.get("units", []) or []:
+        for unit in rendered_state.get("units", []) or []:
             self._units_by_key[(unit.get("side"), unit.get("id"))] = unit
 
         self.status_round.setText(f"Раунд: {state.get('round', '—')}")
@@ -1926,7 +1944,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.points_cp_player.setText(f"Player CP: {cp.get('player', '—')}")
         self.points_cp_model.setText(f"Model CP: {cp.get('model', '—')}")
 
-        self._populate_units_table(state.get("units", []))
+        self._populate_units_table(rendered_state.get("units", []))
         self._update_log(state.get("log_tail", []))
         self._update_model_events(state.get("model_events", []))
         self._drain_event_queue()
@@ -1934,11 +1952,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if turn_token != self._model_turn_token:
             self._model_turn_token = turn_token
             if turn_token[1] == "model":
-                self._rebuild_model_steps_from_events(self._model_events_current)
+                self._model_step_replay_active = True
+                self._model_step_base_state = json.loads(json.dumps(self._last_non_model_state or state))
+                self.map_scene.update_state(self._model_step_base_state)
+                self._rebuild_model_steps_from_state(self._model_step_live_state or self.state_watcher.state)
             else:
+                self._model_step_replay_active = False
                 self._stop_model_step_playback()
-        elif turn_token[1] == "model" and not self._model_steps and self._model_events_current:
-            self._rebuild_model_steps_from_events(self._model_events_current)
+        elif turn_token[1] == "model" and not self._model_steps:
+            self._rebuild_model_steps_from_state(self._model_step_live_state or self.state_watcher.state)
         self._refresh_active_context()
         if not (self._is_shooting_target_request(self._pending_request) or self._is_shooting_dice_request(self._pending_request)):
             self._close_shoot_popover()
@@ -2011,7 +2033,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_log_source = "state"
             self._model_events_current = list(filtered)
             if self._model_turn_token and self._model_turn_token[1] == "model":
-                self._rebuild_model_steps_from_events(self._model_events_current)
+                self._rebuild_model_steps_from_state(self._model_step_live_state or self.state_watcher.state)
             self._refresh_log_views()
         elif self._model_log_source is None:
             self._drain_event_queue()
@@ -2026,49 +2048,39 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 filtered.append(event)
         return filtered
 
-    def _rebuild_model_steps_from_events(self, events: list[dict]) -> None:
+    def _rebuild_model_steps_from_state(self, state: dict | None) -> None:
+        steps_raw = (state or {}).get("model_steps") if isinstance(state, dict) else None
+        turn_token_raw = (state or {}).get("model_step_turn_token") if isinstance(state, dict) else None
+        if not isinstance(steps_raw, list) or not steps_raw:
+            self._model_steps = []
+            self._refresh_model_step_ui()
+            return
+        turn_round = None
+        turn_turn = None
+        if isinstance(turn_token_raw, dict):
+            round_raw = turn_token_raw.get("round")
+            turn_raw = turn_token_raw.get("turn")
+            turn_round = int(round_raw) if isinstance(round_raw, (int, float)) else None
+            turn_turn = int(turn_raw) if isinstance(turn_raw, (int, float)) else None
+        self._model_step_turn_token_from_state = (turn_round, turn_turn)
         steps: list[ModelStep] = []
-        phase_order = ["command", "movement", "shooting", "charge", "fight"]
-        phase_labels = {
-            "command": "Command",
-            "movement": "Movement",
-            "shooting": "Shooting",
-            "charge": "Charge",
-            "fight": "Fight",
-        }
-        for phase in phase_order:
-            steps.append(ModelStep(phase=phase, unit_id=None, kind="phase_header", data={"title": phase_labels[phase]}))
-            for event in events:
-                event_phase = str(event.get("phase") or "").strip().lower()
-                if event_phase != phase:
-                    continue
-                unit_id_raw = event.get("unit_id")
-                unit_id = int(unit_id_raw) if isinstance(unit_id_raw, (int, float)) else None
-                event_type = str(event.get("type") or "").strip().lower()
-                if phase != "command" and unit_id is None:
-                    continue
-                kind = event_type if event_type in {"move", "shoot", "charge", "fight"} else ("phase_header" if event_type == "phase_start" else "info")
-                if phase == "movement" and "позиция" in str(event.get("msg") or "").lower():
-                    kind = "move"
-                if phase == "shooting" and event_type in {"scan", "skip", "shoot"}:
-                    kind = "shoot"
-                if phase == "charge" and event_type in {"charge", "skip"}:
-                    kind = "charge"
-                if phase == "fight" and event_type in {"fight", "skip"}:
-                    kind = "fight"
-                steps.append(
-                    ModelStep(
-                        phase=phase,
-                        unit_id=unit_id,
-                        kind=kind,
-                        data={
-                            "msg": str(event.get("msg") or ""),
-                            "event_type": event_type,
-                            "unit_name": event.get("unit_name"),
-                            "payload": dict(event.get("data") or {}),
-                        },
-                    )
+        for raw in steps_raw:
+            if not isinstance(raw, dict):
+                continue
+            unit_id_raw = raw.get("unit_id")
+            unit_id = int(unit_id_raw) if isinstance(unit_id_raw, (int, float)) else None
+            steps.append(
+                ModelStep(
+                    phase=str(raw.get("phase") or ""),
+                    unit_id=unit_id,
+                    kind=str(raw.get("kind") or "info"),
+                    data={
+                        "msg": str(raw.get("msg") or ""),
+                        "payload": dict(raw.get("data") or {}),
+                        "snapshot": list(raw.get("snapshot") or []),
+                    },
                 )
+            )
         self._model_steps = steps
         self._model_step_cursor = -1
         self._model_step_playing = False
@@ -2096,6 +2108,33 @@ class ViewerWindow(QtWidgets.QMainWindow):
             "charge": "Charge",
             "fight": "Fight",
         }.get(str(phase or "").lower(), str(phase or "—"))
+
+    def _render_state_from_step_snapshot(self, snapshot_units: list[dict]) -> None:
+        base = json.loads(json.dumps(self._model_step_base_state or self._model_step_live_state or {}))
+        if not isinstance(base, dict):
+            return
+        base_units = base.get("units") if isinstance(base.get("units"), list) else []
+        unit_map = {}
+        for unit in base_units:
+            if not isinstance(unit, dict):
+                continue
+            unit_map[(unit.get("side"), unit.get("id"))] = dict(unit)
+        next_units = []
+        for su in snapshot_units or []:
+            if not isinstance(su, dict):
+                continue
+            side = su.get("side")
+            unit_id = su.get("id")
+            key = (side, unit_id)
+            unit = dict(unit_map.get(key) or {"side": side, "id": unit_id})
+            for fld in ("x", "y", "hp", "models", "name"):
+                if fld in su:
+                    unit[fld] = su.get(fld)
+            next_units.append(unit)
+        base["units"] = next_units
+        self.map_scene.update_state(base)
+        self._units_by_key = {(u.get("side"), u.get("id")): u for u in next_units if isinstance(u, dict)}
+        self._populate_units_table(next_units)
 
     def _refresh_model_step_ui(self) -> None:
         total = len(self._model_steps)
@@ -2137,6 +2176,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if isinstance(unit_id, int):
             self.map_scene.set_active_unit(unit_id)
             self._select_row_for_unit_id(unit_id, side=side)
+        snapshot = step.data.get("snapshot") if isinstance(step.data, dict) else None
+        if isinstance(snapshot, list):
+            self._render_state_from_step_snapshot(snapshot)
         if phase == "shooting":
             self._drain_fx_queue()
         if os.getenv("VIEWER_DEBUG", "0") == "1":
@@ -2778,6 +2820,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_events_current = []
         self._model_steps = []
         self._model_turn_token = None
+        self._model_step_turn_token_from_state = None
+        self._model_step_replay_active = False
+        self._model_step_base_state = None
+        self._model_step_live_state = None
+        self._last_non_model_state = None
         self._fx_shot_queue.clear()
         self._stop_model_step_playback()
         self._fx_parser.reset(preserve_seen=False)
@@ -2958,7 +3005,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._syncing_table_selection = False
 
     def _refresh_active_context(self):
-        if self._model_turn_token and self._model_turn_token[1] == "model" and self._model_steps and self._model_step_cursor >= 0:
+        if self._model_step_replay_active and self._model_steps and self._model_step_cursor >= 0:
             self._refresh_model_step_ui()
             return
         unit_id, side = self._resolve_active_unit()
