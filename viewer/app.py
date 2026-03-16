@@ -1862,6 +1862,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         if self.state_watcher.load_if_changed():
             state = self.state_watcher.state
+            if self._model_step_buffering_active and self._has_pending_model_step_actions():
+                self._queue_model_step_state(state)
+                self._ingest_state_logs_only(state)
+                return
             if self._should_buffer_model_state(state):
                 self._queue_model_step_state(state)
                 self._ingest_state_logs_only(state)
@@ -1899,6 +1903,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._update_log(state.get("log_tail", []))
         self._update_model_events(state.get("model_events", []))
         self._drain_event_queue()
+
+    def _has_pending_model_step_actions(self) -> bool:
+        total = len(self._model_step_timeline)
+        if total <= 0:
+            return True
+        return self._model_step_cursor < (total - 1)
 
     def _apply_state(self, state):
         self.map_scene.update_state(state)
@@ -2629,6 +2639,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return None
 
     def _is_model_step_candidate(self, entry: dict) -> bool:
+        raw = str(entry.get("raw") or "")
+        if "[step][model]" in raw.lower():
+            return False
         categories = entry.get("categories") or set()
         if "combat_basic" not in categories:
             return False
@@ -2737,6 +2750,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.add_log_line(f"[STEP][MODEL] Автопереход к фазе: {phase_text}.")
         self.add_log_line(f"[STEP][MODEL] {item.get('text')}")
         self._apply_model_step_visual_update(item)
+        if self._model_step_buffering_active and not self._has_pending_model_step_actions():
+            final_state = self._model_step_state_queue[-1] if self._model_step_state_queue else None
+            self._model_step_state_queue.clear()
+            self._model_step_buffering_active = False
+            self._model_step_visual_state = None
+            if isinstance(final_state, dict):
+                self._apply_state(final_state)
         self._update_model_step_labels()
 
     def _apply_model_step_visual_update(self, item: dict) -> None:
