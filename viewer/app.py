@@ -253,6 +253,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.status_phase = QtWidgets.QLabel("Фаза: —")
         self.status_active = QtWidgets.QLabel("Активен: —")
         self.status_deployment = QtWidgets.QLabel("Деплой: ожидание ролл-оффа")
+        self.status_model_step = QtWidgets.QLabel("Шаг модели: realtime")
 
         self.points_vp_player = QtWidgets.QLabel("Player VP: —")
         self.points_vp_model = QtWidgets.QLabel("Model VP: —")
@@ -293,6 +294,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS_PLAY.md")
         self._log_file_max_bytes = 5 * 1024 * 1024
         self._last_active_side = None
+        self._model_step_mode_enabled = True
+        self._model_step_autoplay = False
+        self._model_step_queue: Deque[dict] = deque()
+        self._last_model_events_for_step: list = []
         self._init_log_viewer()
         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
@@ -429,6 +434,19 @@ class ViewerWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.status_phase)
         layout.addWidget(self.status_active)
         layout.addWidget(self.status_deployment)
+        layout.addWidget(self.status_model_step)
+
+        controls = QtWidgets.QHBoxLayout()
+        self.btn_model_next_step = QtWidgets.QPushButton("След. шаг")
+        self.btn_model_auto = QtWidgets.QPushButton("Авто")
+        self.btn_model_pause = QtWidgets.QPushButton("Пауза")
+        self.btn_model_next_step.clicked.connect(self._step_model_timeline_once)
+        self.btn_model_auto.clicked.connect(self._enable_model_autoplay)
+        self.btn_model_pause.clicked.connect(self._disable_model_autoplay)
+        controls.addWidget(self.btn_model_next_step)
+        controls.addWidget(self.btn_model_auto)
+        controls.addWidget(self.btn_model_pause)
+        layout.addLayout(controls)
         return box
 
     def _group_points(self):
@@ -1665,6 +1683,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._deploy_status_text = ""
         self._rolloff_attacker_side = None
         self._rolloff_defender_side = None
+        self._model_step_queue.clear()
+        self._last_model_events_for_step = []
+        self._model_step_autoplay = False
+        self._update_model_step_status("realtime")
 
     def _submit_text(self):
         text = self.command_input.text().strip()
@@ -1819,7 +1841,85 @@ class ViewerWindow(QtWidgets.QMainWindow):
             )
             return
         if self.state_watcher.load_if_changed():
-            self._apply_state(self.state_watcher.state)
+            self._ingest_state(self.state_watcher.state)
+
+    def _ingest_state(self, state):
+        active = state.get("active") or state.get("active_side")
+        is_model_active = str(active or "").strip().lower() == "model"
+        if not (self._model_step_mode_enabled and is_model_active):
+            self._model_step_queue.clear()
+            self._update_model_step_status("realtime")
+            self._apply_state(state)
+            return
+
+        events = list(state.get("model_events") or [])
+        new_events = self._new_model_events_since_last_state(events)
+        step_label = self._build_model_step_label(state, new_events)
+        if step_label is None:
+            self._update_model_step_status("ожидание действия")
+            return
+        self._model_step_queue.append({"state": state, "label": step_label})
+        self._update_model_step_status(step_label)
+        if self._model_step_autoplay:
+            self._step_model_timeline_once()
+
+    def _new_model_events_since_last_state(self, events: list) -> list:
+        prev = self._last_model_events_for_step
+        self._last_model_events_for_step = list(events)
+        if not prev:
+            return list(events)
+        if len(events) >= len(prev) and events[: len(prev)] == prev:
+            return list(events[len(prev) :])
+        return list(events)
+
+    def _build_model_step_label(self, state: dict, new_events: list) -> Optional[str]:
+        if not new_events:
+            return None
+        latest = None
+        for event in reversed(new_events):
+            if not isinstance(event, dict):
+                continue
+            if str(event.get("side") or "").lower() not in {"model", "enemy"}:
+                continue
+            event_type = str(event.get("type") or "").lower()
+            phase = str(event.get("phase") or state.get("phase") or "").lower()
+            if event_type == "phase_start" and phase == "command":
+                continue
+            if event_type in {"move", "shoot", "charge", "fight", "unit_start", "skip", "phase_start"}:
+                latest = event
+                break
+        if latest is None:
+            return None
+        turn = latest.get("turn", state.get("turn", "—"))
+        phase = latest.get("phase", state.get("phase", "—"))
+        unit_id = latest.get("unit_id")
+        event_type = str(latest.get("type") or "шаг")
+        unit_part = f"Юнит {unit_id}" if unit_id is not None else "без юнита"
+        return f"Ход {turn} • Фаза {phase} • {unit_part} • {event_type}"
+
+    def _step_model_timeline_once(self):
+        if not self._model_step_queue:
+            self._update_model_step_status("очередь пуста")
+            return
+        frame = self._model_step_queue.popleft()
+        self._apply_state(frame.get("state") or {})
+        label = str(frame.get("label") or "шаг")
+        self._update_model_step_status(label)
+        self.add_log_line(f"[VIEWER][MODEL_STEP] {label} | queue_left={len(self._model_step_queue)}")
+
+    def _enable_model_autoplay(self):
+        self._model_step_autoplay = True
+        self._update_model_step_status("авто")
+        self._step_model_timeline_once()
+
+    def _disable_model_autoplay(self):
+        self._model_step_autoplay = False
+        self._update_model_step_status("пауза")
+
+    def _update_model_step_status(self, text: str) -> None:
+        queue_size = len(self._model_step_queue)
+        mode = "step" if self._model_step_mode_enabled else "realtime"
+        self.status_model_step.setText(f"Шаг модели: {mode} • {text} • очередь={queue_size}")
 
     def _apply_state(self, state):
         self.map_scene.update_state(state)
