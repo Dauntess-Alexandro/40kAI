@@ -2623,8 +2623,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         payload = self._movement_payload_from_log_item(item)
         if payload is None:
             return
-        self._log_persistent_move_overlay = payload
-        self.map_scene.set_log_movement_overlay(payload, persistent=True)
+        # По UX: не фиксируем overlay кликом, показываем только пока есть hover.
+        self._log_persistent_move_overlay = None
+        self.map_scene.set_log_movement_overlay(None, persistent=True)
         self._focus_camera_for_movement_payload(payload)
 
     def _on_log_item_hovered(self, item: QtWidgets.QListWidgetItem) -> None:
@@ -2635,7 +2636,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.map_scene.set_log_movement_overlay(payload, persistent=False)
 
     def _on_log_item_hover_left(self) -> None:
+        # Увод курсора с movement-строки должен полностью убирать визуализацию.
         self.map_scene.clear_log_movement_hover_overlay()
+        self.map_scene.set_log_movement_overlay(None, persistent=True)
 
     def _focus_camera_for_movement_payload(self, payload: dict) -> None:
         to_pos = payload.get("to")
@@ -2657,6 +2660,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return None
         entry_idx = data.get("entry_idx")
         if not isinstance(entry_idx, int) or entry_idx < 0 or entry_idx >= len(self._log_entries):
+            return None
+        entry = self._log_entries[entry_idx] if 0 <= entry_idx < len(self._log_entries) else {}
+        categories = entry.get("categories") if isinstance(entry, dict) else set()
+        raw_text = str(entry.get("raw") or "") if isinstance(entry, dict) else ""
+        # Ограничение: overlay только для явных movement-строк "Позиция до/после".
+        if "movement" not in (categories or set()):
+            return None
+        lowered = raw_text.lower()
+        if "позиция до:" not in lowered and "позиция после:" not in lowered:
             return None
         return self._extract_movement_payload(entry_idx)
 
