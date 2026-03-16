@@ -18,6 +18,10 @@ def _default_state() -> Dict[str, Any]:
         "objectives": [],
         "terrain_features": [],
         "log_tail": [],
+        "last_event_id": 0,
+        "events_tail": [],
+        "snapshot_base_id": 0,
+        "replay_snapshot": {},
     }
 
 

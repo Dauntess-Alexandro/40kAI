@@ -6,7 +6,7 @@ from datetime import datetime
 
 from gym_mod.engine.visibility import visibility_report
 
-from gym_mod.engine.event_bus import get_event_recorder
+from gym_mod.engine.event_bus import get_event_recorder, get_replay_event_recorder
 from gym_mod.engine.io_profiler import get_io_profiler
 
 
@@ -110,6 +110,18 @@ def _read_event_tail(default_max_events=500):
     return recorder.snapshot(limit=limit)
 
 
+
+
+def _read_replay_event_tail(default_max_events=400):
+    recorder = get_replay_event_recorder()
+    raw_limit = os.getenv("STATE_REPLAY_EVENTS_LIMIT", str(default_max_events))
+    try:
+        limit = max(0, int(raw_limit))
+    except (TypeError, ValueError):
+        limit = default_max_events
+    if limit == 0:
+        return []
+    return recorder.snapshot(limit=limit)
 def _unit_payload(
     side,
     unit_id,
@@ -708,6 +720,21 @@ def write_state_json(env, path=None):
         },
         "payload_kind": "light",
         "generated_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+    replay_tail = _read_replay_event_tail()
+    replay_last_event_id = int(get_replay_event_recorder().last_event_id())
+    payload["last_event_id"] = replay_last_event_id
+    payload["events_tail"] = replay_tail
+    payload["snapshot_base_id"] = int(replay_tail[0].get("event_id")) if replay_tail else replay_last_event_id
+    payload["replay_snapshot"] = {
+        "units": units,
+        "vp": payload.get("vp", {}),
+        "cp": payload.get("cp", {}),
+        "round": payload.get("round"),
+        "turn": payload.get("turn"),
+        "phase": payload.get("phase"),
+        "active": payload.get("active"),
     }
 
     payload_mode = str(os.getenv("STATE_PAYLOAD_MODE", "auto")).strip().lower()

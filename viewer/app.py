@@ -284,6 +284,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_log_source = None
         self._model_events_stream = []
         self._model_events_current = []
+        self._replay_events_tail = []
+        self._replay_last_event_id = 0
+        self._replay_last_applied_event_id = 0
+        self._replay_state = None
+        self._replay_step_spam_guard = False
         self._log_view = None
         self._log_filter_buttons = {}
         self._log_status_label = None
@@ -303,6 +308,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         fit_button = QtWidgets.QPushButton("Fit")
         fit_button.clicked.connect(self._fit_view)
+        self.replay_step_button = QtWidgets.QPushButton("Шаг MODEL")
+        self.replay_step_button.clicked.connect(self._apply_next_replay_event)
+        self.replay_step_button.setEnabled(False)
 
         left_widget = QtWidgets.QWidget()
         left_widget.setSizePolicy(
@@ -312,7 +320,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         left_layout = QtWidgets.QVBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(6)
-        left_layout.addWidget(fit_button, alignment=QtCore.Qt.AlignLeft)
+        controls_row = QtWidgets.QHBoxLayout()
+        controls_row.addWidget(fit_button)
+        controls_row.addWidget(self.replay_step_button)
+        controls_row.addStretch()
+        left_layout.addLayout(controls_row)
         left_layout.addWidget(self.map_scene, 1)
 
         log_group = QtWidgets.QGroupBox("ЖУРНАЛ")
@@ -1822,7 +1834,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._apply_state(self.state_watcher.state)
 
     def _apply_state(self, state):
-        self.map_scene.update_state(state)
+        self._sync_replay_events_from_state(state)
+        render_state = self._replay_state if isinstance(self._replay_state, dict) else state
+        self.map_scene.update_state(render_state)
         if not self._did_initial_fit:
             self._did_initial_fit = True
             QtCore.QTimer.singleShot(0, self._fit_view)
@@ -1894,11 +1908,92 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._update_log(state.get("log_tail", []))
         self._update_model_events(state.get("model_events", []))
         self._drain_event_queue()
+        self.replay_step_button.setEnabled(self._replay_last_applied_event_id < self._replay_last_event_id)
         self._refresh_active_context()
         if not (self._is_shooting_target_request(self._pending_request) or self._is_shooting_dice_request(self._pending_request)):
             self._close_shoot_popover()
         elif self._shoot_popover_target_id is not None and int(self._shoot_popover_target_id) not in self._shoot_targets_valid:
             self._close_shoot_popover()
+
+    def _sync_replay_events_from_state(self, state: dict) -> None:
+        if not isinstance(state, dict):
+            return
+        events_tail = state.get("events_tail") if isinstance(state.get("events_tail"), list) else []
+        self._replay_events_tail = [evt for evt in events_tail if isinstance(evt, dict)]
+        self._replay_last_event_id = int(state.get("last_event_id") or 0)
+        if self._replay_state is None:
+            snapshot = state.get("replay_snapshot")
+            if isinstance(snapshot, dict):
+                self._replay_state = dict(state)
+                for key in ("units", "vp", "cp", "round", "turn", "phase", "active"):
+                    if key in snapshot:
+                        self._replay_state[key] = snapshot.get(key)
+                self._replay_last_applied_event_id = int(state.get("snapshot_base_id") or 0)
+                self.add_log_line(f"[VIEWER][REPLAY] replay_buffer_size={len(self._replay_events_tail)} snapshot_base_id={self._replay_last_applied_event_id}")
+
+    def _apply_next_replay_event(self) -> None:
+        if self._replay_last_applied_event_id >= self._replay_last_event_id:
+            if not self._replay_step_spam_guard:
+                self.add_log_line("[VIEWER][REPLAY] Нет новых событий для шага. Где: viewer/app.py (_apply_next_replay_event). Что делать дальше: дождитесь нового хода MODEL.")
+                self._replay_step_spam_guard = True
+            self.replay_step_button.setEnabled(False)
+            return
+        self._replay_step_spam_guard = False
+        expected_id = self._replay_last_applied_event_id + 1
+        next_event = None
+        for evt in self._replay_events_tail:
+            if int(evt.get("event_id") or -1) == expected_id:
+                next_event = evt
+                break
+        if next_event is None:
+            self.add_log_line(f"[VIEWER][REPLAY] dropped/duplicate event detection: ожидаем event_id={expected_id}, но в tail нет. Где: viewer/app.py (_apply_next_replay_event). Что делать дальше: выполнен мягкий ресинк.")
+            self._replay_state = None
+            self._replay_last_applied_event_id = 0
+            return
+        self.add_log_line(f"[VIEWER][REPLAY] applying_event_id={expected_id} replay_buffer_size={len(self._replay_events_tail)}")
+        self._apply_replay_diff(next_event)
+        self._replay_last_applied_event_id = expected_id
+        self.replay_step_button.setEnabled(self._replay_last_applied_event_id < self._replay_last_event_id)
+
+    def _apply_replay_diff(self, event: dict) -> None:
+        if not isinstance(self._replay_state, dict):
+            return
+        diff = event.get("diff") if isinstance(event.get("diff"), dict) else {}
+        units = self._replay_state.get("units") if isinstance(self._replay_state.get("units"), list) else []
+        unit_by_id = {}
+        for unit in units:
+            if isinstance(unit, dict) and isinstance(unit.get("id"), int):
+                unit_by_id[int(unit.get("id"))] = unit
+        for changed in diff.get("units", []) if isinstance(diff.get("units"), list) else []:
+            if not isinstance(changed, dict):
+                continue
+            uid = changed.get("unit_id")
+            if not isinstance(uid, int):
+                continue
+            target = unit_by_id.get(uid)
+            if target is None:
+                continue
+            if isinstance(changed.get("x"), int):
+                target["x"] = changed.get("x")
+            if isinstance(changed.get("y"), int):
+                target["y"] = changed.get("y")
+            if isinstance(changed.get("hp"), (int, float)):
+                target["hp"] = changed.get("hp")
+            if isinstance(changed.get("alive_models"), int):
+                target["alive_models"] = changed.get("alive_models")
+        if isinstance(diff.get("vp"), dict):
+            self._replay_state["vp"] = diff.get("vp")
+        if isinstance(diff.get("cp"), dict):
+            self._replay_state["cp"] = diff.get("cp")
+        if event.get("phase"):
+            self._replay_state["phase"] = event.get("phase")
+        if event.get("round") is not None:
+            self._replay_state["round"] = event.get("round")
+        if event.get("turn_id") is not None:
+            self._replay_state["turn"] = event.get("turn_id")
+        if event.get("side"):
+            self._replay_state["active"] = event.get("side")
+        self.map_scene.update_state(self._replay_state)
 
     def _populate_units_table(self, units):
         self.units_table.setRowCount(len(units))

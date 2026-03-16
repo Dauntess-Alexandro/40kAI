@@ -31,7 +31,7 @@ from gym_mod.engine.skills import apply_end_of_command_phase
 from gym_mod.engine.logging_utils import format_unit
 from gym_mod.engine.state_export import write_state_json
 from gym_mod.engine.game_io import DICE_CANCEL_TOKEN, get_active_io
-from gym_mod.engine.event_bus import get_event_bus, get_event_recorder
+from gym_mod.engine.event_bus import get_event_bus, get_event_recorder, get_replay_event_recorder
 
 # ============================================================
 # 🔧 FIX: resolve string weapons like "Bolt pistol [PISTOL]"
@@ -1007,6 +1007,7 @@ class Warhammer40kEnv(gym.Env):
         self.enemyOC = []
         self.modelUpdates = ""
         get_event_recorder().clear()
+        get_replay_event_recorder().clear()
 
         for i in range(len(enemy)):
             self.enemy_weapon.append(enemy[i].showWeapon())
@@ -2182,6 +2183,72 @@ class Warhammer40kEnv(gym.Env):
             return data.get("Name")
         return None
 
+    def _replay_side(self, side: str) -> str:
+        raw = str(side or "").lower()
+        if raw in {"enemy", "model"}:
+            return "model"
+        if raw in {"player", "human"}:
+            return "player"
+        return raw or "unknown"
+
+    def _replay_unit_state(self, unit_id: int | None):
+        if unit_id is None:
+            return None
+        try:
+            uid = int(unit_id)
+        except (TypeError, ValueError):
+            return None
+        if uid >= 21:
+            idx = uid - 21
+            if idx < 0 or idx >= len(self.unit_health):
+                return None
+            return {
+                "unit_id": uid,
+                "side": "model",
+                "x": int(self.unit_coords[idx][1]),
+                "y": int(self.unit_coords[idx][0]),
+                "hp": float(self.unit_health[idx]),
+                "alive_models": int(self._remaining_models("model", idx, self.unit_health[idx])),
+            }
+        if uid >= 11:
+            idx = uid - 11
+            if idx < 0 or idx >= len(self.enemy_health):
+                return None
+            return {
+                "unit_id": uid,
+                "side": "player",
+                "x": int(self.enemy_coords[idx][1]),
+                "y": int(self.enemy_coords[idx][0]),
+                "hp": float(self.enemy_health[idx]),
+                "alive_models": int(self._remaining_models("enemy", idx, self.enemy_health[idx])),
+            }
+        return None
+
+    def _replay_diff_payload(self, event: dict) -> dict:
+        data = event.get("data") if isinstance(event.get("data"), dict) else {}
+        unit_ids = []
+        for raw in (event.get("unit_id"), data.get("target_id"), event.get("target_id")):
+            if raw is None:
+                continue
+            try:
+                unit_ids.append(int(raw))
+            except (TypeError, ValueError):
+                continue
+        seen = set()
+        units = []
+        for uid in unit_ids:
+            if uid in seen:
+                continue
+            seen.add(uid)
+            payload = self._replay_unit_state(uid)
+            if payload is not None:
+                units.append(payload)
+        return {
+            "units": units,
+            "vp": {"player": int(self.enemyVP), "model": int(self.modelVP)},
+            "cp": {"player": int(self.enemyCP), "model": int(self.modelCP)},
+        }
+
     def _emit_event(self, event: dict) -> None:
         if not isinstance(event, dict):
             return
@@ -2191,6 +2258,19 @@ class Warhammer40kEnv(gym.Env):
         event.setdefault("data", {})
         event.setdefault("msg", "")
         event.setdefault("verbosity", "normal")
+        replay_payload = {
+            "turn_id": event.get("turn", self.numTurns),
+            "round": event.get("battle_round", self.battle_round),
+            "phase": event.get("phase", self.phase),
+            "side": self._replay_side(event.get("side", "")),
+            "unit_id": event.get("unit_id"),
+            "target_id": (event.get("data") or {}).get("target_id") if isinstance(event.get("data"), dict) else None,
+            "event_type": event.get("type", "summary"),
+            "diff": self._replay_diff_payload(event),
+            "msg": event.get("msg", ""),
+        }
+        replay_event = get_replay_event_recorder().record(replay_payload)
+        event["replay_event_id"] = replay_event.get("event_id")
         get_event_bus().emit(event)
 
     def _append_agent_log(self, msg: str) -> None:
@@ -5004,6 +5084,7 @@ class Warhammer40kEnv(gym.Env):
         self._phase_unit_logged = set()
         self._terrain_shaping_shot_bonus_units = set()
         get_event_recorder().clear()
+        get_replay_event_recorder().clear()
 
         for i in range(len(self.enemy_data)):
             self.enemy_coords.append([self.enemy[i].showCoords()[0], self.enemy[i].showCoords()[1]])
