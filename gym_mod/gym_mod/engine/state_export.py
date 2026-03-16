@@ -706,6 +706,7 @@ def write_state_json(env, path=None):
             "mode": getattr(env, "deployment_mode", None),
             "rl_stats": getattr(env, "deployment_rl_stats", None),
         },
+        "model_playback_frames": list(getattr(env, "_model_playback_frames", []) or []),
         "payload_kind": "light",
         "generated_at": datetime.utcnow().isoformat() + "Z",
     }

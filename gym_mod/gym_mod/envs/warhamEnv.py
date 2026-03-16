@@ -998,6 +998,10 @@ class Warhammer40kEnv(gym.Env):
         self.terrain_obscuring_cells: set[tuple[int, int]] = self.get_terrain_obscuring_cells_set()
         self.visibility_mode = str(os.getenv("VISIBILITY_MODE", "multi_ray_5") or "multi_ray_5").strip().lower()
         self._terrain_shaping_shot_bonus_units: set[int] = set()
+        self._model_playback_frames: list[dict] = []
+        self._model_playback_seq = 0
+        self._model_playback_last_sig = None
+        self._model_playback_last_known: dict[int, tuple[int, int]] = {}
         log_name = str(os.getenv("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_PLAY.md") or "LOGS_FOR_AGENTS_PLAY.md")
         self._agent_log_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "..", log_name)
@@ -2411,6 +2415,72 @@ class Warhammer40kEnv(gym.Env):
                 "unit_id": resolved_unit_id,
                 "unit_name": resolved_unit_name,
                 "verbosity": "verbose" if verbose_only else "normal",
+            }
+        )
+        self._capture_model_playback_frame(
+            phase=phase_value,
+            unit_id=resolved_unit_id,
+            event_type=event_type,
+            msg=msg,
+        )
+
+    def _capture_model_playback_frame(
+        self,
+        *,
+        phase: str | None,
+        unit_id: int | None,
+        event_type: str,
+        msg: str,
+        force: bool = False,
+    ) -> None:
+        if not bool(getattr(self, "playType", False)):
+            return
+        if str(getattr(self, "active_side", "")).strip().lower() != "model":
+            return
+        capture_types = {"phase_start", "phase_end", "move", "shoot", "charge", "fight", "skip", "unit_start"}
+        if not force and event_type not in capture_types:
+            return
+
+        units = []
+        sig_units = []
+        last_known = dict(getattr(self, "_model_playback_last_known", {}) or {})
+
+        for idx in range(len(getattr(self, "enemy_coords", []))):
+            unit_id_player = 11 + idx
+            coords = self.enemy_coords[idx]
+            y, x = int(coords[0]), int(coords[1])
+            hp = float(self.enemy_health[idx]) if idx < len(self.enemy_health) else 0.0
+            alive = hp > 0.0
+            last_known[unit_id_player] = (x, y)
+            units.append({"side": "player", "id": unit_id_player, "x": x, "y": y, "hp": hp, "alive": alive})
+            sig_units.append((unit_id_player, x, y, int(round(hp))))
+
+        for idx in range(len(getattr(self, "unit_coords", []))):
+            unit_id_model = 21 + idx
+            coords = self.unit_coords[idx]
+            y, x = int(coords[0]), int(coords[1])
+            hp = float(self.unit_health[idx]) if idx < len(self.unit_health) else 0.0
+            alive = hp > 0.0
+            last_known[unit_id_model] = (x, y)
+            units.append({"side": "model", "id": unit_id_model, "x": x, "y": y, "hp": hp, "alive": alive})
+            sig_units.append((unit_id_model, x, y, int(round(hp))))
+
+        signature = (str(phase or ""), int(unit_id or 0), event_type, tuple(sig_units))
+        if not force and signature == getattr(self, "_model_playback_last_sig", None):
+            return
+        self._model_playback_last_sig = signature
+        self._model_playback_last_known = last_known
+
+        self._model_playback_seq = int(getattr(self, "_model_playback_seq", 0) or 0) + 1
+        self._model_playback_frames.append(
+            {
+                "seq": self._model_playback_seq,
+                "phase": phase,
+                "unit_id": unit_id,
+                "event_type": event_type,
+                "msg": msg,
+                "units": units,
+                "last_known_positions": {str(k): [int(v[0]), int(v[1])] for k, v in last_known.items()},
             }
         )
 
@@ -5003,6 +5073,10 @@ class Warhammer40kEnv(gym.Env):
         self._phase_event_emitted = False
         self._phase_unit_logged = set()
         self._terrain_shaping_shot_bonus_units = set()
+        self._model_playback_frames = []
+        self._model_playback_seq = 0
+        self._model_playback_last_sig = None
+        self._model_playback_last_known = {}
         get_event_recorder().clear()
 
         for i in range(len(self.enemy_data)):
@@ -5475,6 +5549,16 @@ class Warhammer40kEnv(gym.Env):
 
 
     def step(self, action):
+        self._model_playback_frames = []
+        self._model_playback_seq = 0
+        self._model_playback_last_sig = None
+        self._capture_model_playback_frame(
+            phase="command",
+            unit_id=None,
+            event_type="phase_start",
+            msg="Начало хода MODEL",
+            force=True,
+        )
         self._invalidate_target_cache("model_step_start")
         reward = 0
         res = 0

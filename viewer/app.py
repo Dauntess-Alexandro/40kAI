@@ -289,6 +289,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_status_label = None
         self._fx_shot_queue: Deque[FxShotEvent] = deque()
         self._fx_parser = FxLogParser(self._enqueue_fx_event, self._fx_debug, seen_max=400)
+        self._latest_state_snapshot = None
+        self._model_step_mode = False
+        self._model_step_frames = []
+        self._model_step_index = -1
+        self._model_step_sig = None
         self._max_log_lines = 5000
         self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS_PLAY.md")
         self._log_file_max_bytes = 5 * 1024 * 1024
@@ -400,6 +405,116 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.map_scene.set_objective_radius_visible(checked)
         self.map_scene.refresh_overlays()
 
+    def _on_next_step_clicked(self) -> None:
+        if not self._model_step_mode or not self._model_step_frames:
+            self.add_log_line("[STEP] Нет активного пошагового хода MODEL.")
+            return
+        if self._model_step_index >= len(self._model_step_frames) - 1:
+            self._model_step_mode = False
+            self._model_step_frames = []
+            self._model_step_index = -1
+            self._refresh_model_step_status()
+            if isinstance(self._latest_state_snapshot, dict):
+                self.map_scene.update_state(self._latest_state_snapshot)
+            return
+        self._model_step_index += 1
+        frame = self._model_step_frames[self._model_step_index]
+        self._apply_model_playback_frame(frame)
+        self._refresh_model_step_status()
+
+    def _refresh_model_step_status(self) -> None:
+        if not hasattr(self, "status_model_step"):
+            return
+        if not self._model_step_mode or not self._model_step_frames:
+            self.status_model_step.setText("MODEL step: —")
+            return
+        idx = max(0, int(self._model_step_index))
+        total = len(self._model_step_frames)
+        frame = self._model_step_frames[idx]
+        phase = str(frame.get("phase") or "—").capitalize()
+        unit_id = frame.get("unit_id")
+        unit_part = f"Unit {int(unit_id)}" if unit_id is not None else "Unit —"
+        self.status_model_step.setText(f"MODEL · {phase} · {unit_part} ({idx + 1}/{total})")
+
+    def _apply_model_playback_frame(self, frame: dict) -> None:
+        if not isinstance(self._latest_state_snapshot, dict):
+            return
+        units_index = {}
+        for unit in (self._latest_state_snapshot.get("units", []) or []):
+            if isinstance(unit, dict) and unit.get("id") is not None:
+                units_index[int(unit.get("id"))] = dict(unit)
+
+        for unit_frame in list(frame.get("units", []) or []):
+            if not isinstance(unit_frame, dict) or unit_frame.get("id") is None:
+                continue
+            uid = int(unit_frame.get("id"))
+            side = unit_frame.get("side")
+            base = units_index.get(uid, {"id": uid, "side": side})
+            base["x"] = int(unit_frame.get("x", base.get("x", 0)))
+            base["y"] = int(unit_frame.get("y", base.get("y", 0)))
+            hp = float(unit_frame.get("hp", base.get("hp", 0.0)) or 0.0)
+            base["hp"] = hp
+            if hp <= 0:
+                base["alive_models"] = 0
+            units_index[uid] = base
+
+        playback_state = dict(self._latest_state_snapshot)
+        playback_state["units"] = list(units_index.values())
+        playback_state["phase"] = frame.get("phase") or playback_state.get("phase")
+        playback_state["active"] = "model"
+        self.map_scene.update_state(playback_state)
+
+        if str(frame.get("event_type") or "") == "shoot":
+            self._spawn_step_shoot_fx(frame)
+
+    def _spawn_step_shoot_fx(self, frame: dict) -> None:
+        shooter_id = frame.get("unit_id")
+        if shooter_id is None:
+            return
+        shooter_id = int(shooter_id)
+        last_known = frame.get("last_known_positions") if isinstance(frame.get("last_known_positions"), dict) else {}
+        shooter_pos = last_known.get(str(shooter_id))
+        if not isinstance(shooter_pos, (list, tuple)) or len(shooter_pos) < 2:
+            return
+        target_id = None
+        target_pos = None
+        for candidate in list(frame.get("units", []) or []):
+            if not isinstance(candidate, dict):
+                continue
+            if str(candidate.get("side")) != "player":
+                continue
+            target_id = int(candidate.get("id"))
+            target_pos = [int(candidate.get("x", 0)), int(candidate.get("y", 0))]
+            if float(candidate.get("hp", 0.0) or 0.0) > 0:
+                break
+        if target_pos is None:
+            for key, pos in last_known.items():
+                if str(key).startswith("1") and isinstance(pos, (list, tuple)) and len(pos) >= 2:
+                    target_id = int(key)
+                    target_pos = [int(pos[0]), int(pos[1])]
+                    break
+        if target_pos is None:
+            return
+
+        event = FxShotEvent(
+            ts=str(frame.get("seq") or "step"),
+            report_type="step",
+            attacker_id=shooter_id,
+            target_id=int(target_id or 11),
+            weapon_name="Gauss flayer",
+            damage=0.0,
+        )
+        start = self.map_scene._state_xy_to_view_xy(shooter_pos[0], shooter_pos[1])
+        end = self.map_scene._state_xy_to_view_xy(target_pos[0], target_pos[1])
+        if start is None or end is None:
+            return
+        cell = self.map_scene.cell_size
+        self._spawn_gauss_effect(
+            QtCore.QPointF(start[0] * cell + cell / 2, start[1] * cell + cell / 2),
+            QtCore.QPointF(end[0] * cell + cell / 2, end[1] * cell + cell / 2),
+            event,
+        )
+
     def _apply_dark_theme(self):
         palette = self.palette()
         palette.setColor(QtGui.QPalette.Window, Theme.background)
@@ -429,6 +544,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.status_phase)
         layout.addWidget(self.status_active)
         layout.addWidget(self.status_deployment)
+        self.status_model_step = QtWidgets.QLabel("MODEL step: —")
+        self.next_step_button = QtWidgets.QPushButton("Next Step")
+        self.next_step_button.clicked.connect(self._on_next_step_clicked)
+        layout.addWidget(self.status_model_step)
+        layout.addWidget(self.next_step_button)
         return box
 
     def _group_points(self):
@@ -1822,7 +1942,22 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._apply_state(self.state_watcher.state)
 
     def _apply_state(self, state):
-        self.map_scene.update_state(state)
+        self._latest_state_snapshot = state
+        frames = state.get("model_playback_frames", []) if isinstance(state, dict) else []
+        new_sig = None
+        if isinstance(frames, list) and frames:
+            last = frames[-1] if isinstance(frames[-1], dict) else {}
+            new_sig = (state.get("round"), state.get("turn"), len(frames), last.get("seq"))
+        if new_sig and new_sig != self._model_step_sig:
+            self._model_step_sig = new_sig
+            self._model_step_mode = True
+            self._model_step_frames = list(frames)
+            self._model_step_index = 0
+            first_frame = self._model_step_frames[0] if self._model_step_frames else None
+            if isinstance(first_frame, dict):
+                self._apply_model_playback_frame(first_frame)
+        elif not self._model_step_mode:
+            self.map_scene.update_state(state)
         if not self._did_initial_fit:
             self._did_initial_fit = True
             QtCore.QTimer.singleShot(0, self._fit_view)
@@ -1899,6 +2034,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._close_shoot_popover()
         elif self._shoot_popover_target_id is not None and int(self._shoot_popover_target_id) not in self._shoot_targets_valid:
             self._close_shoot_popover()
+        self._refresh_model_step_status()
 
     def _populate_units_table(self, units):
         self.units_table.setRowCount(len(units))
