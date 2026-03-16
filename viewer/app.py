@@ -2666,8 +2666,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
             re.IGNORECASE,
         )
         move_after_re = re.compile(r"Unit\s+(?P<id>\d+).*?Позиция после:\s*\((?P<x>-?\d+),\s*(?P<y>-?\d+)\)", re.IGNORECASE)
+        unit_id_re = re.compile(r"Unit\s+(?P<id>\d+)", re.IGNORECASE)
 
-        unit_id = None
+        anchor_text = str((self._log_entries[entry_idx] or {}).get("raw") or "") if 0 <= entry_idx < len(self._log_entries) else ""
+        hinted_unit_id = None
+        hinted_match = unit_id_re.search(anchor_text)
+        if hinted_match:
+            hinted_unit_id = int(hinted_match.group("id"))
+
+        unit_id = hinted_unit_id
         from_pos = None
         to_pos = None
         unit_name = ""
