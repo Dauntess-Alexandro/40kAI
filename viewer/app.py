@@ -2675,6 +2675,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
         no_move = False
         start = max(0, entry_idx - 12)
         end = min(len(self._log_entries), entry_idx + 12)
+
+        def _log_pos_to_state_xy(raw_a: str, raw_b: str) -> tuple[int, int]:
+            # В movement-логах координаты исторически пишутся как (y, x),
+            # а рендер использует state-space (x, y).
+            row_y = int(raw_a)
+            col_x = int(raw_b)
+            return col_x, row_y
+
         for idx in range(start, end):
             text = str((self._log_entries[idx] or {}).get("raw") or "")
             before = move_before_re.search(text)
@@ -2683,7 +2691,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 if unit_id is None:
                     unit_id = current_id
                 if current_id == unit_id:
-                    from_pos = (int(before.group("x")), int(before.group("y")))
+                    from_pos = _log_pos_to_state_xy(before.group("x"), before.group("y"))
                     distance = int(before.group("dist"))
                     name_match = re.search(r"Unit\s+\d+\s+—\s+([^:]+):", text)
                     if name_match:
@@ -2694,7 +2702,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 if unit_id is None:
                     unit_id = current_id
                 if current_id == unit_id:
-                    to_pos = (int(after.group("x")), int(after.group("y")))
+                    to_pos = _log_pos_to_state_xy(after.group("x"), after.group("y"))
                     if "no move" in text.lower() or "движение пропущено" in text.lower():
                         no_move = True
             if "no move" in text.lower() and unit_id is not None and f"Unit {unit_id}" in text:
