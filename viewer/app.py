@@ -284,6 +284,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_log_source = None
         self._model_events_stream = []
         self._model_events_current = []
+        self._replay_phase_buttons = {}
+        self._replay_phase_events = {}
+        self._replay_phase_event_idx = {}
+        self._replay_round = None
+        self._replay_phase_idx = 0
         self._log_view = None
         self._log_filter_buttons = {}
         self._log_status_label = None
@@ -317,6 +322,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         log_group = QtWidgets.QGroupBox("ЖУРНАЛ")
         log_layout = QtWidgets.QVBoxLayout(log_group)
+        log_layout.addLayout(self._replay_controls_layout)
         log_layout.addLayout(self._log_controls_layout)
         log_layout.addWidget(self.log_view)
         log_group.setSizePolicy(
@@ -1565,6 +1571,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         fixed_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
         fixed_font.setPointSize(10)
 
+        self._init_replay_controls()
+
         self.log_view = QtWidgets.QTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setFont(fixed_font)
@@ -1602,6 +1610,169 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_controls_layout.addWidget(self.log_clear_all_button)
         self._log_controls_layout.addStretch()
 
+    def _init_replay_controls(self):
+        self._replay_controls_layout = QtWidgets.QHBoxLayout()
+        self._replay_controls_layout.setContentsMargins(0, 0, 0, 0)
+        self._replay_controls_layout.setSpacing(4)
+
+        self._replay_controls_layout.addWidget(QtWidgets.QLabel("MODEL Replay"))
+        for phase in ("command", "movement", "shooting", "charge", "fight"):
+            btn = QtWidgets.QToolButton()
+            btn.setText(phase[0].upper())
+            btn.setCheckable(True)
+            btn.setAutoExclusive(True)
+            btn.setToolTip(f"Перейти к фазе: {phase}")
+            btn.clicked.connect(lambda _checked=False, phase_name=phase: self._replay_jump_to_phase(phase_name))
+            self._replay_phase_buttons[phase] = btn
+            self._replay_controls_layout.addWidget(btn)
+
+        self.replay_next_phase_btn = QtWidgets.QToolButton()
+        self.replay_next_phase_btn.setText("▶Ф")
+        self.replay_next_phase_btn.setToolTip("Следующая фаза")
+        self.replay_next_phase_btn.clicked.connect(self._replay_next_phase)
+        self._replay_controls_layout.addWidget(self.replay_next_phase_btn)
+
+        self.replay_next_event_btn = QtWidgets.QToolButton()
+        self.replay_next_event_btn.setText("▶E")
+        self.replay_next_event_btn.setToolTip("Следующее событие в текущей фазе")
+        self.replay_next_event_btn.clicked.connect(self._replay_next_event)
+        self._replay_controls_layout.addWidget(self.replay_next_event_btn)
+
+        self.replay_status_label = QtWidgets.QLabel("MODEL replay: ожидание событий")
+        self.replay_status_label.setStyleSheet(f"color: {Theme.muted.name()};")
+        self._replay_controls_layout.addWidget(self.replay_status_label, 1)
+
+        self._update_replay_controls_enabled(False)
+
+    def _replay_phase_order(self) -> list[str]:
+        return ["command", "movement", "shooting", "charge", "fight"]
+
+    def _update_replay_controls_enabled(self, enabled: bool) -> None:
+        for btn in self._replay_phase_buttons.values():
+            btn.setEnabled(enabled)
+        self.replay_next_phase_btn.setEnabled(enabled)
+        self.replay_next_event_btn.setEnabled(enabled)
+
+    def _phase_human_label(self, phase: str) -> str:
+        labels = {
+            "command": "Командование",
+            "movement": "Движение",
+            "shooting": "Стрельба",
+            "charge": "Чардж",
+            "fight": "Бой",
+        }
+        return labels.get(str(phase or "").lower(), str(phase or "—"))
+
+    def _refresh_model_replay_data(self) -> None:
+        phase_order = self._replay_phase_order()
+        model_events = []
+        for event in self._model_events_current:
+            if not isinstance(event, dict):
+                continue
+            if str(event.get("side") or "").lower() not in {"enemy", "model"}:
+                continue
+            model_events.append(event)
+        if not model_events:
+            self._replay_phase_events = {}
+            self._replay_phase_event_idx = {}
+            self._replay_round = None
+            self._replay_phase_idx = 0
+            self.replay_status_label.setText("MODEL replay: ожидание событий")
+            self._update_replay_controls_enabled(False)
+            for btn in self._replay_phase_buttons.values():
+                btn.setChecked(False)
+            return
+
+        latest_round = None
+        for event in reversed(model_events):
+            round_id = event.get("battle_round")
+            if round_id is not None:
+                latest_round = int(round_id)
+                break
+        if latest_round is None:
+            latest_round = int(model_events[-1].get("turn") or 0)
+        self._replay_round = latest_round
+
+        per_phase = {phase: [] for phase in phase_order}
+        for event in model_events:
+            event_round = event.get("battle_round")
+            if event_round is not None and int(event_round) != latest_round:
+                continue
+            phase_name = str(event.get("phase") or "").lower()
+            if phase_name in per_phase:
+                per_phase[phase_name].append(event)
+        self._replay_phase_events = per_phase
+
+        for phase in phase_order:
+            self._replay_phase_event_idx.setdefault(phase, 0)
+            phase_count = len(self._replay_phase_events.get(phase, []))
+            if phase_count <= 0:
+                self._replay_phase_event_idx[phase] = 0
+            else:
+                self._replay_phase_event_idx[phase] = min(self._replay_phase_event_idx[phase], phase_count - 1)
+
+        available = [idx for idx, phase in enumerate(phase_order) if self._replay_phase_events.get(phase)]
+        if available:
+            self._replay_phase_idx = available[0] if self._replay_phase_idx not in available else self._replay_phase_idx
+            self._update_replay_controls_enabled(True)
+        else:
+            self._replay_phase_idx = 0
+            self._update_replay_controls_enabled(False)
+
+        self._render_replay_status()
+
+    def _render_replay_status(self) -> None:
+        phase_order = self._replay_phase_order()
+        for phase, btn in self._replay_phase_buttons.items():
+            btn.blockSignals(True)
+            btn.setChecked(phase == phase_order[self._replay_phase_idx])
+            btn.blockSignals(False)
+
+        phase_name = phase_order[self._replay_phase_idx]
+        events = self._replay_phase_events.get(phase_name, [])
+        if not events:
+            round_text = self._replay_round if self._replay_round is not None else "—"
+            self.replay_status_label.setText(
+                f"BR{round_text} • {self._phase_human_label(phase_name)} • нет событий"
+            )
+            return
+        event_idx = min(self._replay_phase_event_idx.get(phase_name, 0), len(events) - 1)
+        self._replay_phase_event_idx[phase_name] = event_idx
+        event = events[event_idx]
+        msg = str(event.get("msg") or "").strip() or "—"
+        if len(msg) > 90:
+            msg = msg[:87] + "..."
+        self.replay_status_label.setText(
+            f"BR{self._replay_round} • {self._phase_human_label(phase_name)} {event_idx + 1}/{len(events)} • {msg}"
+        )
+
+    def _replay_jump_to_phase(self, phase_name: str) -> None:
+        phase_order = self._replay_phase_order()
+        if phase_name not in phase_order:
+            return
+        self._replay_phase_idx = phase_order.index(phase_name)
+        self._render_replay_status()
+
+    def _replay_next_phase(self) -> None:
+        phase_order = self._replay_phase_order()
+        if not phase_order:
+            return
+        for offset in range(1, len(phase_order) + 1):
+            idx = (self._replay_phase_idx + offset) % len(phase_order)
+            if self._replay_phase_events.get(phase_order[idx]):
+                self._replay_phase_idx = idx
+                break
+        self._render_replay_status()
+
+    def _replay_next_event(self) -> None:
+        phase_name = self._replay_phase_order()[self._replay_phase_idx]
+        events = self._replay_phase_events.get(phase_name, [])
+        if not events:
+            return
+        cur = self._replay_phase_event_idx.get(phase_name, 0)
+        self._replay_phase_event_idx[phase_name] = (cur + 1) % len(events)
+        self._render_replay_status()
+
     def _append_log(self, messages):
         if not messages:
             return
@@ -1627,6 +1798,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_log_source = "stream"
             self._model_events_stream.extend(self._filter_model_events(drained))
             self._model_events_current = list(self._model_events_stream)
+            self._refresh_model_replay_data()
             self._refresh_log_views()
 
     def _start_controller(self):
@@ -1965,6 +2137,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._model_events_snapshot = list(events)
             self._model_log_source = "state"
             self._model_events_current = list(filtered)
+            self._refresh_model_replay_data()
             self._refresh_log_views()
         elif self._model_log_source is None:
             self._drain_event_queue()
@@ -2567,6 +2740,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_events_snapshot = None
         self._model_events_stream = []
         self._model_events_current = []
+        self._refresh_model_replay_data()
         self._fx_shot_queue.clear()
         self._fx_parser.reset(preserve_seen=False)
         self.log_view.clear()
