@@ -2487,23 +2487,39 @@ class OpenGLBoardWidget(QOpenGLWidget):
             marker_alpha = 235
 
         if not no_move:
+            # Показываем alpha-ghost всего отряда только в стартовой точке (без следа по траектории).
             trail_icon = self._icon_for_unit_name(str(payload.get("unit_name") or ""))
             if trail_icon is not None and not trail_icon.isNull():
-                ghost_steps = 4
-                ghost_size = max(6.0, self.cell_size * self._model_icon_scale)
-                for i in range(1, ghost_steps + 1):
-                    t = i / (ghost_steps + 1)
-                    ghost_center = QtCore.QPointF(
-                        from_center.x() + (to_center.x() - from_center.x()) * t,
-                        from_center.y() + (to_center.y() - from_center.y()) * t,
-                    )
+                ghost_alpha = 0.30 if payload is self._log_move_overlay_hover else 0.38
+                painter.setOpacity(ghost_alpha)
+                unit_id = self._safe_int(payload.get("unit_id"))
+                matched_render = None
+                if unit_id is not None:
+                    for render in self._units:
+                        if int(render.key[1]) == int(unit_id):
+                            matched_render = render
+                            break
+
+                if matched_render is not None and matched_render.model_centers:
+                    icon_size = max(6.0, self.cell_size * self._model_icon_scale)
+                    for model_center in matched_render.model_centers:
+                        offset = model_center - matched_render.center
+                        ghost_center = from_center + offset
+                        ghost_rect = QtCore.QRectF(
+                            ghost_center.x() - icon_size / 2,
+                            ghost_center.y() - icon_size / 2,
+                            icon_size,
+                            icon_size,
+                        )
+                        painter.drawPixmap(ghost_rect, trail_icon, QtCore.QRectF(trail_icon.rect()))
+                else:
+                    icon_size = max(6.0, self.cell_size * self._unit_icon_scale)
                     ghost_rect = QtCore.QRectF(
-                        ghost_center.x() - ghost_size / 2,
-                        ghost_center.y() - ghost_size / 2,
-                        ghost_size,
-                        ghost_size,
+                        from_center.x() - icon_size / 2,
+                        from_center.y() - icon_size / 2,
+                        icon_size,
+                        icon_size,
                     )
-                    painter.setOpacity(0.18 + 0.10 * (1.0 - t))
                     painter.drawPixmap(ghost_rect, trail_icon, QtCore.QRectF(trail_icon.rect()))
             painter.setOpacity(1.0)
             path_pen = QtGui.QPen(QtGui.QColor(95, 192, 255, line_alpha), 2.6)
