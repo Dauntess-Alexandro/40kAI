@@ -1469,7 +1469,20 @@ def main():
             for idx, ctx in enumerate(env_contexts):
                 ctx["conn"].send(("step", action_dicts[idx]))
             for idx, ctx in enumerate(env_contexts):
-                step_results[idx] = ctx["conn"].recv()
+                step_payload = ctx["conn"].recv()
+                if isinstance(step_payload, dict) and step_payload.get("error"):
+                    raise RuntimeError(
+                        "Subproc env step failed: "
+                        f"env_idx={idx}, error={step_payload.get('error')}. "
+                        "Где: train.py main batched recv(step). Что делать дальше: проверить traceback/логи воркера."
+                    )
+                if not (isinstance(step_payload, tuple) and len(step_payload) == 5):
+                    raise RuntimeError(
+                        "Subproc env step returned unexpected payload: "
+                        f"env_idx={idx}, type={type(step_payload)}, payload={step_payload}. "
+                        "Где: train.py main batched recv(step). Что делать дальше: проверить формат ответа _env_worker(cmd='step')."
+                    )
+                step_results[idx] = step_payload
             perf_stats["env_step_s"] += time.perf_counter() - step_start
             perf_counts["env_steps"] += len(env_contexts)
 
@@ -1480,7 +1493,14 @@ def main():
                     env_contexts[idx]["conn"].send(("get_shoot_mask", None))
                     pending_next_mask_indices.append(idx)
             for idx in pending_next_mask_indices:
-                next_shoot_masks[idx] = env_contexts[idx]["conn"].recv()
+                mask_payload = env_contexts[idx]["conn"].recv()
+                if isinstance(mask_payload, dict) and mask_payload.get("error"):
+                    raise RuntimeError(
+                        "Subproc env get_shoot_mask failed: "
+                        f"env_idx={idx}, error={mask_payload.get('error')}. "
+                        "Где: train.py main batched recv(get_shoot_mask). Что делать дальше: проверить traceback/логи воркера."
+                    )
+                next_shoot_masks[idx] = mask_payload
 
         for idx, ctx in enumerate(env_contexts):
             step_start = time.perf_counter()
