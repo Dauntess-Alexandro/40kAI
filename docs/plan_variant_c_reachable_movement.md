@@ -198,3 +198,23 @@
 5. Фаза 5 (обновлённое обучение).
 
 Этот порядок даёт минимальный риск и быстрый контроль качества.
+
+---
+
+## Статус реализации в коде (текущий шаг)
+
+- ✅ Фаза 0 (базово):
+  - добавлен feature-flag `MOVEMENT_POLICY_MODE=legacy|variant_c_shadow|variant_c_live`,
+  - добавлен debug-лог формата `[MOVE][VARC] ...` через `_append_agent_log`.
+
+- ✅ Фаза 1 (базово):
+  - добавлен единый builder кандидатов `_build_movement_candidates(...)`,
+  - добавлен scorer `_score_movement_candidate_variant_c(...)`,
+  - добавлен selector `_select_movement_candidate_variant_c(...)`.
+
+- ✅ Фаза 2 (shadow):
+  - в `_pick_destination_from_overlay(...)` добавлен shadow-сравнитель legacy vs variant_c,
+  - в `variant_c_shadow` поведение не меняется (только логируем сравнение),
+  - в `variant_c_live` подготовлен технический переключатель на variant_c-выбор.
+
+Дальше можно переходить к следующим шагам (расширение охвата на enemy RL/heur и более точные intent-score правила).

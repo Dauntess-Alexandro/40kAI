@@ -1518,6 +1518,129 @@ class Warhammer40kEnv(gym.Env):
             "advance_cells": advance_cells,
         }
 
+    def _movement_policy_mode(self) -> str:
+        mode = str(os.getenv("MOVEMENT_POLICY_MODE", "legacy") or "legacy").strip().lower()
+        if mode not in {"legacy", "variant_c_shadow", "variant_c_live"}:
+            return "legacy"
+        return mode
+
+    def _variant_c_intent_from_move_dir(self, move_dir: int) -> str:
+        # Фаза 0/2: маппинг legacy-намерения в intent для shadow-аналитики.
+        return {
+            0: "threat_avoid",
+            1: "to_cover",
+            2: "engage_target",
+            3: "to_objective",
+            4: "stay",
+        }.get(int(move_dir), "stay")
+
+    def _build_movement_candidates(self, side: str, idx: int, *, include_stay: bool = True) -> list[dict]:
+        overlay = self.get_unit_movement_overlay(side, idx)
+        move_cells = [(int(x), int(y)) for x, y in list(overlay.get("move_cells") or [])]
+        advance_cells = [(int(x), int(y)) for x, y in list(overlay.get("advance_cells") or [])]
+        coords = self.unit_coords if side == "model" else self.enemy_coords
+        row = int(coords[int(idx)][0])
+        col = int(coords[int(idx)][1])
+
+        candidates: list[dict] = []
+        for x, y in move_cells:
+            candidates.append({"x": int(x), "y": int(y), "mode": "normal"})
+        for x, y in advance_cells:
+            candidates.append({"x": int(x), "y": int(y), "mode": "advance"})
+        if include_stay:
+            candidates.append({"x": int(col), "y": int(row), "mode": "stay"})
+
+        nearest_objective = None
+        if isinstance(getattr(self, "coordsOfOM", None), list) and self.coordsOfOM:
+            nearest_objective = min(
+                self.coordsOfOM,
+                key=lambda obj: self._grid_distance_euclid((row, col), (int(obj[0]), int(obj[1]))),
+            )
+
+        enemy_coords = self.enemy_coords if side == "model" else self.unit_coords
+        enemy_health = self.enemy_health if side == "model" else self.unit_health
+        alive_enemy_cells = [
+            (int(pos[0]), int(pos[1]))
+            for j, pos in enumerate(enemy_coords)
+            if j < len(enemy_health) and float(enemy_health[j] or 0.0) > 0 and isinstance(pos, (list, tuple)) and len(pos) >= 2
+        ]
+
+        for item in candidates:
+            x = int(item["x"])
+            y = int(item["y"])
+            item["distance"] = int(self._grid_distance_chebyshev((row, col), (y, x)))
+            if nearest_objective is not None:
+                item["dist_obj"] = float(
+                    self._grid_distance_euclid((y, x), (int(nearest_objective[0]), int(nearest_objective[1])))
+                )
+            else:
+                item["dist_obj"] = 999.0
+            if alive_enemy_cells:
+                item["dist_enemy"] = float(
+                    min(self._grid_distance_euclid((y, x), (er, ec)) for er, ec in alive_enemy_cells)
+                )
+            else:
+                item["dist_enemy"] = 999.0
+            item["is_advance"] = 1 if item["mode"] == "advance" else 0
+            item["is_stay"] = 1 if item["mode"] == "stay" else 0
+        return candidates
+
+    def _score_movement_candidate_variant_c(self, item: dict, *, intent: str, desired: int) -> tuple:
+        distance = int(item.get("distance") or 0)
+        dist_obj = float(item.get("dist_obj") or 999.0)
+        dist_enemy = float(item.get("dist_enemy") or 999.0)
+        is_advance = int(item.get("is_advance") or 0)
+        is_stay = int(item.get("is_stay") or 0)
+
+        if intent == "stay":
+            return (0 if is_stay else 1, abs(distance - 0), is_advance, dist_obj)
+        if intent == "to_objective":
+            return (dist_obj, abs(distance - int(desired)), is_advance, dist_enemy)
+        if intent == "to_cover":
+            # Пока как ранняя прокси-эвристика: умеренная дистанция + без лишнего advance.
+            return (abs(distance - max(1, int(desired // 2))), is_advance, dist_obj, dist_enemy)
+        if intent == "threat_avoid":
+            # Увеличиваем дистанцию до врага, но избегаем бессмысленного advance.
+            return (-dist_enemy, is_advance, abs(distance - int(desired)), dist_obj)
+        if intent == "engage_target":
+            return (dist_enemy, abs(distance - int(desired)), is_advance, dist_obj)
+        return (abs(distance - int(desired)), is_advance, dist_obj, dist_enemy)
+
+    def _select_movement_candidate_variant_c(
+        self,
+        side: str,
+        idx: int,
+        *,
+        intent: str,
+        desired: int,
+        allow_advance: bool = True,
+    ) -> tuple[tuple[int, int] | None, str | None, int, dict]:
+        candidates = self._build_movement_candidates(side, idx, include_stay=True)
+        if not candidates:
+            return None, None, 0, {"intent": intent, "candidates": 0, "reason": "empty_candidates"}
+        filtered = candidates
+        if not allow_advance:
+            filtered = [c for c in filtered if str(c.get("mode")) != "advance"]
+            if not filtered:
+                filtered = candidates
+
+        best = min(filtered, key=lambda c: self._score_movement_candidate_variant_c(c, intent=intent, desired=int(desired)))
+        bx = int(best.get("x") or 0)
+        by = int(best.get("y") or 0)
+        mode = str(best.get("mode") or "stay")
+        dist = int(best.get("distance") or 0)
+        diag = {
+            "intent": str(intent),
+            "desired": int(desired),
+            "candidates": int(len(candidates)),
+            "filtered": int(len(filtered)),
+            "chosen": (bx, by, mode),
+            "dist_obj": round(float(best.get("dist_obj") or 0.0), 3),
+            "dist_enemy": round(float(best.get("dist_enemy") or 0.0), 3),
+            "distance": dist,
+        }
+        return (bx, by), mode, dist, diag
+
     def _pick_destination_from_overlay(
         self,
         side: str,
@@ -1584,6 +1707,29 @@ class Warhammer40kEnv(gym.Env):
             best_mode = "normal"
         elif (bx, by) in advance_set:
             best_mode = "advance"
+
+        policy_mode = self._movement_policy_mode()
+        if policy_mode in {"variant_c_shadow", "variant_c_live"}:
+            intent = self._variant_c_intent_from_move_dir(int(move_dir))
+            allow_advance = bool(int(desired) > int(base_m)) if 'desired' in locals() else True
+            cand_pos, cand_mode, cand_dist, diag = self._select_movement_candidate_variant_c(
+                side,
+                idx,
+                intent=intent,
+                desired=int(desired),
+                allow_advance=allow_advance,
+            )
+            if hasattr(self, "_append_agent_log"):
+                self._append_agent_log(
+                    "[MOVE][VARC] "
+                    f"mode={policy_mode} unit={self._unit_id(side, int(idx)) if hasattr(self, '_unit_id') else int(idx)} "
+                    f"intent={intent} legacy=({bx},{by},{best_mode},d={dist}) "
+                    f"variant_c={diag.get('chosen')} d={diag.get('distance')} "
+                    f"candidates={diag.get('candidates')} filtered={diag.get('filtered')}"
+                )
+            if policy_mode == "variant_c_live" and cand_pos is not None and cand_mode is not None:
+                return cand_pos, cand_mode, int(cand_dist),
+
         return (bx, by), best_mode, dist
 
     def _visibility_report_between_units(self, attacker_side: str, attacker_idx: int, target_side: str, target_idx: int) -> dict:
