@@ -226,4 +226,11 @@
   - enemy RL ветка переведена на `_pick_destination_from_overlay(...)` вместо прямого осевого шага,
   - это автоматически включает shadow/live Variant C через `MOVEMENT_POLICY_MODE`.
 
+- ✅ Фаза 5 (schema/replay bootstrap, без полного retrain):
+  - добавлены optional action-head ключи `move_intent_i` и `move_mode_i` (флаг `MOVEMENT_ACTION_SCHEMA=variant_c`),
+  - model/enemy movement-loop умеют читать эти ключи как `intent_override`/`allow_advance_override`,
+  - `train.py` собирает новые головы автоматически, если они присутствуют в `env.action_space`.
+
+⚠️ Полный retrain и метрики parity по сидовому батчу остаются следующим шагом.
+
 Дальше можно переходить к следующим шагам (расширение охвата на enemy RL/heur и более точные intent-score правила).

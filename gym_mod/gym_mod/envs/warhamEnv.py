@@ -924,6 +924,14 @@ class Warhammer40kEnv(gym.Env):
         for i in range(len(model)):
             action_spaces[f"move_num_{i}"] = spaces.Discrete(12)
 
+        # Phase 5 (schema-ready): optional Variant C action heads.
+        # Включается флагом, чтобы не ломать legacy-чеки и старые чекпойнты.
+        action_schema = str(os.getenv("MOVEMENT_ACTION_SCHEMA", "legacy") or "legacy").strip().lower()
+        if action_schema == "variant_c":
+            for i in range(len(model)):
+                action_spaces[f"move_intent_{i}"] = spaces.Discrete(5)  # to_obj/to_cover/threat_avoid/engage/stay
+                action_spaces[f"move_mode_{i}"] = spaces.Discrete(2)    # 0 normal_only, 1 allow_advance
+
         # ✅ 3) Теперь только ОДИН раз создаём spaces.Dict
         self.action_space = spaces.Dict(action_spaces)
         get_active_io().log(f"Action keys: {self.action_space.spaces.keys()}")
@@ -1534,6 +1542,15 @@ class Warhammer40kEnv(gym.Env):
             4: "stay",
         }.get(int(move_dir), "stay")
 
+    def _variant_c_intent_from_action_value(self, intent_value: int) -> str:
+        return {
+            0: "to_objective",
+            1: "to_cover",
+            2: "threat_avoid",
+            3: "engage_target",
+            4: "stay",
+        }.get(int(intent_value), "stay")
+
     def _build_movement_candidates(self, side: str, idx: int, *, include_stay: bool = True) -> list[dict]:
         overlay = self.get_unit_movement_overlay(side, idx)
         move_cells = [(int(x), int(y)) for x, y in list(overlay.get("move_cells") or [])]
@@ -1650,6 +1667,8 @@ class Warhammer40kEnv(gym.Env):
         want: int,
         base_m: int,
         unit_label: str,
+        intent_override: Optional[str] = None,
+        allow_advance_override: Optional[bool] = None,
     ) -> tuple[tuple[int, int] | None, str | None, int]:
         overlay = self.get_unit_movement_overlay(side, idx)
         move_cells = overlay.get("move_cells") or []
@@ -1710,8 +1729,8 @@ class Warhammer40kEnv(gym.Env):
 
         policy_mode = self._movement_policy_mode()
         if policy_mode in {"variant_c_shadow", "variant_c_live"}:
-            intent = self._variant_c_intent_from_move_dir(int(move_dir))
-            allow_advance = bool(int(desired) > int(base_m)) if 'desired' in locals() else True
+            intent = str(intent_override or self._variant_c_intent_from_move_dir(int(move_dir)))
+            allow_advance = bool(allow_advance_override) if allow_advance_override is not None else bool(int(desired) > int(base_m))
             cand_pos, cand_mode, cand_dist, diag = self._select_movement_candidate_variant_c(
                 side,
                 idx,
@@ -3294,6 +3313,20 @@ class Warhammer40kEnv(gym.Env):
                     label = "move_num_" + str(i)
                     want = int(action[label])
                     move_dir = int(action["move"])
+                    intent_key = f"move_intent_{i}"
+                    mode_key = f"move_mode_{i}"
+                    intent_override = None
+                    allow_advance_override = None
+                    if isinstance(action, dict) and intent_key in action:
+                        try:
+                            intent_override = self._variant_c_intent_from_action_value(int(action[intent_key]))
+                        except Exception:
+                            intent_override = None
+                    if isinstance(action, dict) and mode_key in action:
+                        try:
+                            allow_advance_override = bool(int(action[mode_key]) == 1)
+                        except Exception:
+                            allow_advance_override = None
                     advance_roll = None
                     movement = 0.0
 
@@ -3305,6 +3338,8 @@ class Warhammer40kEnv(gym.Env):
                             want=want,
                             base_m=base_m,
                             unit_label=self._format_unit_label("model", i, unit_id=modelName),
+                            intent_override=intent_override,
+                            allow_advance_override=allow_advance_override,
                         )
                         if dest is None:
                             advanced_flags[i] = False
@@ -3551,6 +3586,20 @@ class Warhammer40kEnv(gym.Env):
                     base_m = int(self.enemy_data[i]["Movement"])
                     label = "move_num_" + str(i)
                     want = int(action.get(label, base_m)) if isinstance(action, dict) else int(base_m)
+                    intent_key = f"move_intent_{i}"
+                    mode_key = f"move_mode_{i}"
+                    intent_override = None
+                    allow_advance_override = None
+                    if isinstance(action, dict) and intent_key in action:
+                        try:
+                            intent_override = self._variant_c_intent_from_action_value(int(action[intent_key]))
+                        except Exception:
+                            intent_override = None
+                    if isinstance(action, dict) and mode_key in action:
+                        try:
+                            allow_advance_override = bool(int(action[mode_key]) == 1)
+                        except Exception:
+                            allow_advance_override = None
                     advance_roll = None
                     movement = 0
                     move_mode = "stay"
@@ -3563,6 +3612,8 @@ class Warhammer40kEnv(gym.Env):
                             want=int(want),
                             base_m=int(base_m),
                             unit_label=self._format_unit_label("enemy", i, unit_id=unit_id),
+                            intent_override=intent_override,
+                            allow_advance_override=allow_advance_override,
                         )
                         if dest is None:
                             self.enemy_used_advance[i] = False

@@ -1072,6 +1072,14 @@ def main():
     ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
     for i_u in range(primary_ctx["len_model"]):
         ordered_keys.append(f"move_num_{i_u}")
+    # Phase 5 schema-ready: optional Variant C heads (present only if env exposes them).
+    for i_u in range(primary_ctx["len_model"]):
+        intent_key = f"move_intent_{i_u}"
+        mode_key = f"move_mode_{i_u}"
+        if intent_key in env.action_space.spaces:
+            ordered_keys.append(intent_key)
+        if mode_key in env.action_space.spaces:
+            ordered_keys.append(mode_key)
     
     if USE_SUBPROC_ENVS:
         primary_ctx["conn"].send(("get_action_space", ordered_keys))
