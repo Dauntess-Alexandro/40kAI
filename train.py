@@ -614,6 +614,7 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                 "state": state,
                 "info": info,
                 "len_model": len(model),
+                "action_keys": list(env.action_space.spaces.keys()),
             }
         )
 
@@ -1007,6 +1008,7 @@ def main():
                     "state": init_payload["state"],
                     "info": init_payload["info"],
                     "len_model": init_payload["len_model"],
+                    "action_keys": init_payload.get("action_keys", []),
                 }
             )
             subproc_envs.append(proc)
@@ -1068,6 +1070,11 @@ def main():
     model = primary_ctx.get("model")
     enemy = primary_ctx.get("enemy")
     env = primary_ctx.get("env")
+    available_action_keys = set()
+    if env is not None and hasattr(env, "action_space") and hasattr(env.action_space, "spaces"):
+        available_action_keys = set(env.action_space.spaces.keys())
+    elif USE_SUBPROC_ENVS:
+        available_action_keys = set(primary_ctx.get("action_keys", []))
     
     ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
     for i_u in range(primary_ctx["len_model"]):
@@ -1076,9 +1083,9 @@ def main():
     for i_u in range(primary_ctx["len_model"]):
         intent_key = f"move_intent_{i_u}"
         mode_key = f"move_mode_{i_u}"
-        if intent_key in env.action_space.spaces:
+        if intent_key in available_action_keys:
             ordered_keys.append(intent_key)
-        if mode_key in env.action_space.spaces:
+        if mode_key in available_action_keys:
             ordered_keys.append(mode_key)
     
     if USE_SUBPROC_ENVS:
