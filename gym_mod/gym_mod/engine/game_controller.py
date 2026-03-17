@@ -12,7 +12,7 @@ import torch
 from gym_mod.engine.game_io import GuiIO, set_active_io
 from gym_mod.engine.state_export import DEFAULT_STATE_PATH
 from model.DQN import DQN
-from model.utils import select_action, convertToDict, build_shoot_action_mask, normalize_state_dict
+from model.utils import select_action, build_shoot_action_mask, normalize_state_dict
 from gym_mod.envs.warhamEnv import roll_off_attacker_defender
 
 
@@ -195,9 +195,31 @@ class GameController:
                 options={"m": model, "e": enemy, "playType": True, "Type": "big", "trunc": True}
             )
 
-            n_actions = [5, 2, len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
-            for _ in range(len(model)):
-                n_actions.append(12)
+            ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
+            available_action_keys = set(env.action_space.spaces.keys())
+            for i_u in range(len(model)):
+                ordered_keys.append(f"move_num_{i_u}")
+                intent_key = f"move_intent_{i_u}"
+                mode_key = f"move_mode_{i_u}"
+                cell_selector_key = f"move_cell_selector_{i_u}"
+                if intent_key in available_action_keys:
+                    ordered_keys.append(intent_key)
+                if mode_key in available_action_keys:
+                    ordered_keys.append(mode_key)
+                if cell_selector_key in available_action_keys:
+                    ordered_keys.append(cell_selector_key)
+
+            n_actions: list[int] = []
+            for key in ordered_keys:
+                sp = env.action_space.spaces[key]
+                if hasattr(sp, "n"):
+                    n_actions.append(int(sp.n))
+                elif hasattr(sp, "nvec"):
+                    n_actions.extend([int(x) for x in sp.nvec])
+                else:
+                    raise TypeError(f"Unsupported action space for {key}: {type(sp)}")
+
+            self._io.log(f"[MODEL] Action keys (viewer): {ordered_keys}")
             n_observations = len(state)
 
             net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
@@ -244,7 +266,17 @@ class GameController:
                 state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
                 shoot_mask = build_shoot_action_mask(env)
                 action = select_action(env, state_tensor, i, policy_net, len(model), shoot_mask=shoot_mask)
-                action_dict = convertToDict(action)
+                raw_action = action.numpy()[0]
+                action_dict = {}
+                for idx_key, key in enumerate(ordered_keys):
+                    if idx_key >= len(raw_action):
+                        self._io.log(
+                            f"[MODEL][ACTION] Недостаточно action-head значений: got={len(raw_action)}, "
+                            f"expected={len(ordered_keys)}. Где: game_controller._run_game_loop. "
+                            "Что делать дальше: проверить action_space и чекпойнт."
+                        )
+                        break
+                    action_dict[key] = int(raw_action[idx_key])
                 if done is not True:
                     next_observation, reward, done, _, info = env.step(action_dict)
                     reward_tensor = torch.tensor([reward], device=device)
