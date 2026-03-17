@@ -912,7 +912,7 @@ class Warhammer40kEnv(gym.Env):
 
         # ✅ 1) Собираем Обычный Python dict со всеми ключами
         action_spaces = {
-            'move':   spaces.Discrete(5),          # 0 down, 1 up, 2 left, 3 right, 4 none
+            'move':   spaces.Discrete(5),          # legacy: глобальное направление (используется как fallback)
             'attack': spaces.Discrete(2),          # 0 = fallback/leave fight, 1 = try charge/engage
             'shoot':  spaces.Discrete(len(enemy)), # индекс цели для стрельбы
             'charge': spaces.Discrete(len(enemy)), # индекс цели для чарджа
@@ -921,6 +921,8 @@ class Warhammer40kEnv(gym.Env):
         }
 
         # ✅ 2) Добавляем индивидуальные "move_num_i" для каждого модельного юнита
+        # move_num_i теперь трактуется как индекс клетки в списке reachable-клеток
+        # (с fallback на старую directional-логику при невалидном выборе).
         for i in range(len(model)):
             action_spaces[f"move_num_{i}"] = spaces.Discrete(12)
 
@@ -1585,6 +1587,56 @@ class Warhammer40kEnv(gym.Env):
         elif (bx, by) in advance_set:
             best_mode = "advance"
         return (bx, by), best_mode, dist
+
+    def _pick_destination_by_reachable_index(
+        self,
+        side: str,
+        idx: int,
+        *,
+        choice: int,
+        base_m: int,
+        unit_label: str,
+    ) -> tuple[tuple[int, int] | None, str | None, int, int | None, int]:
+        """
+        Выбор конечной клетки по индексу в reachable-списке.
+        Возвращает: (dest, mode, dist, chosen_idx, total_candidates)
+        """
+        overlay = self.get_unit_movement_overlay(side, idx)
+        move_cells = overlay.get("move_cells") or []
+        advance_cells = overlay.get("advance_cells") or []
+        move_set = set((int(x), int(y)) for x, y in move_cells)
+        advance_set = set((int(x), int(y)) for x, y in advance_cells)
+        coords = self.unit_coords if side == "model" else self.enemy_coords
+        row = int(coords[int(idx)][0])
+        col = int(coords[int(idx)][1])
+        stay_cell = (int(col), int(row), "stay")
+
+        candidates: list[tuple[int, int, str]] = [stay_cell]
+        candidates.extend((int(x), int(y), "normal") for x, y in move_cells)
+        candidates.extend((int(x), int(y), "advance") for x, y in advance_cells)
+        if not candidates:
+            self._log(f"{unit_label}: нет достижимых клеток для движения (budget={int(base_m) + 6}).")
+            return None, None, 0, None, 0
+
+        total = len(candidates)
+        if not (0 <= int(choice) < total):
+            self._log(
+                f"{unit_label}: move_num_{int(idx)}={int(choice)} вне диапазона reachable[0..{total - 1}]. "
+                "Где: warhamEnv._pick_destination_by_reachable_index. "
+                "Что делать дальше: скорректировать действие или применить fallback."
+            )
+            return None, None, 0, None, total
+
+        x, y, mode = candidates[int(choice)]
+        dist = int(self._grid_distance_chebyshev((row, col), (int(y), int(x))))
+        best_mode = str(mode)
+        if (x, y) in move_set:
+            best_mode = "normal"
+        elif (x, y) in advance_set:
+            best_mode = "advance"
+        elif (x, y) == (col, row):
+            best_mode = "stay"
+        return (int(x), int(y)), best_mode, dist, int(choice), total
 
     def _visibility_report_between_units(self, attacker_side: str, attacker_idx: int, target_side: str, target_idx: int) -> dict:
         attacker_coords = self.unit_coords if attacker_side == "model" else self.enemy_coords
@@ -3147,34 +3199,48 @@ class Warhammer40kEnv(gym.Env):
                     base_m = int(self.unit_data[i]["Movement"])
                     label = "move_num_" + str(i)
                     want = int(action[label])
-                    move_dir = int(action["move"])
+                    move_dir = int(action.get("move", 4))
                     advance_roll = None
                     movement = 0.0
 
-                    if move_dir != 4:
-                        dest, move_mode, movement = self._pick_destination_from_overlay(
-                            "model",
-                            i,
-                            move_dir=move_dir,
-                            want=want,
-                            base_m=base_m,
-                            unit_label=self._format_unit_label("model", i, unit_id=modelName),
-                        )
-                        if dest is None:
-                            advanced_flags[i] = False
-                            self.model_used_advance[i] = False
-                            self.model_advance_roll[i] = None
-                            continue
-                        advanced = str(move_mode) == "advance" or int(movement) > int(base_m)
-                        if advanced:
-                            adv_used = max(0, int(movement) - int(base_m))
-                            advance_roll = max(1, min(6, int(adv_used)))
-                        self.unit_coords[i] = [int(dest[1]), int(dest[0])]
-                    else:
-                        move_mode = "stay"
-                        advanced = False
+                    unit_label = self._format_unit_label("model", i, unit_id=modelName)
+                    dest, move_mode, movement, chosen_idx, candidate_count = self._pick_destination_by_reachable_index(
+                        "model",
+                        i,
+                        choice=want,
+                        base_m=base_m,
+                        unit_label=unit_label,
+                    )
+                    if dest is None:
+                        if move_dir != 4:
+                            dest, move_mode, movement = self._pick_destination_from_overlay(
+                                "model",
+                                i,
+                                move_dir=move_dir,
+                                want=want,
+                                base_m=base_m,
+                                unit_label=unit_label,
+                            )
+                            chosen_idx = None
+                            if dest is None:
+                                advanced_flags[i] = False
+                                self.model_used_advance[i] = False
+                                self.model_advance_roll[i] = None
+                                continue
+                        else:
+                            move_mode = "stay"
+                            movement = 0
+                            chosen_idx = 0
+                            candidate_count = max(1, int(candidate_count))
+                            dest = (int(pos_before[1]), int(pos_before[0]))
 
-                    if move_dir == 4:
+                    advanced = str(move_mode) == "advance" or int(movement) > int(base_m)
+                    if advanced:
+                        adv_used = max(0, int(movement) - int(base_m))
+                        advance_roll = max(1, min(6, int(adv_used)))
+                    self.unit_coords[i] = [int(dest[1]), int(dest[0])]
+
+                    if str(move_mode) == "stay":
                         nearest_obj_idx = None
                         nearest_obj_dist = None
                         for j, obj in enumerate(self.coordsOfOM):
@@ -3245,8 +3311,7 @@ class Warhammer40kEnv(gym.Env):
                     advanced_flags[i] = advanced
                     self.model_used_advance[i] = bool(advanced)
                     self.model_advance_roll[i] = int(advance_roll) if advance_roll is not None else None
-                    direction = {0: "down", 1: "up", 2: "left", 3: "right", 4: "stay"}.get(move_dir, "stay")
-                    actual_movement = int(movement) if move_dir != 4 else 0
+                    actual_movement = int(movement)
                     advance_text = "да" if advanced else "нет"
                     if advance_roll is not None:
                         max_move = int(base_m + advance_roll)
@@ -3257,7 +3322,9 @@ class Warhammer40kEnv(gym.Env):
                         "MODEL",
                         modelName,
                         i,
-                        f"Позиция до: {pos_before}. Выбор: {direction}, advance={advance_text}{advance_detail}, distance={actual_movement}",
+                        f"Позиция до: {pos_before}. Выбор reachable_idx={chosen_idx if chosen_idx is not None else 'fallback'}"
+                        f"/{max(0, int(candidate_count) - 1)}, mode={move_mode}, advance={advance_text}{advance_detail}, "
+                        f"distance={actual_movement}",
                     )
 
                     self.unit_coords[i] = bounds(self.unit_coords[i], self.b_len, self.b_hei)
@@ -3265,7 +3332,7 @@ class Warhammer40kEnv(gym.Env):
                         if self.unit_coords[i] == self.enemy_coords[j]:
                             self.unit_coords[i][0] -= 1
                     pos_after = tuple(self.unit_coords[i])
-                    if move_dir == 4:
+                    if str(move_mode) == "stay":
                         self._log_unit("MODEL", modelName, i, f"Движение пропущено (no move). Позиция после: {pos_after}")
                     else:
                         self._log_unit("MODEL", modelName, i, f"Позиция после: {pos_after}")
@@ -3402,38 +3469,54 @@ class Warhammer40kEnv(gym.Env):
                     self._log_unit("enemy", unit_id, i, f"Юнит мертв, движение пропущено. Позиция: {pos_before}")
                     continue
                 if self.enemyInAttack[i][0] == 0 and self.enemy_health[i] > 0:
-                    base_m = self.enemy_data[i]["Movement"]
+                    base_m = int(self.enemy_data[i]["Movement"])
                     label = "move_num_" + str(i)
-                    want = int(action.get(label, base_m)) if isinstance(action, dict) else base_m
-                    advanced = (move_dir != 4) and (want > base_m)
+                    want = int(action.get(label, 0)) if isinstance(action, dict) else 0
+                    unit_label = self._format_unit_label("enemy", i, unit_id=unit_id)
+                    dest, move_mode, movement, chosen_idx, candidate_count = self._pick_destination_by_reachable_index(
+                        "enemy",
+                        i,
+                        choice=want,
+                        base_m=base_m,
+                        unit_label=unit_label,
+                    )
+                    if dest is None:
+                        if move_dir != 4:
+                            dest, move_mode, movement = self._pick_destination_from_overlay(
+                                "enemy",
+                                i,
+                                move_dir=move_dir,
+                                want=want,
+                                base_m=base_m,
+                                unit_label=unit_label,
+                            )
+                            chosen_idx = None
+                            if dest is None:
+                                advanced_flags[i] = False
+                                self.enemy_used_advance[i] = False
+                                self.enemy_advance_roll[i] = None
+                                continue
+                        else:
+                            move_mode = "stay"
+                            movement = 0
+                            chosen_idx = 0
+                            candidate_count = max(1, int(candidate_count))
+                            dest = (int(pos_before[1]), int(pos_before[0]))
+
+                    advanced = str(move_mode) == "advance" or int(movement) > int(base_m)
                     advance_roll = None
                     if advanced:
-                        advance_roll = dice()
-                        max_move = base_m + advance_roll
-                    else:
-                        max_move = base_m
-                    movement = min(want, max_move)
-
-                    if move_dir == 0:
-                        self.enemy_coords[i][0] += movement
-                    elif move_dir == 1:
-                        self.enemy_coords[i][0] -= movement
-                    elif move_dir == 2:
-                        self.enemy_coords[i][1] -= movement
-                    elif move_dir == 3:
-                        self.enemy_coords[i][1] += movement
-                    elif move_dir == 4:
-                        for j in range(len(self.coordsOfOM)):
-                            if distance(self.enemy_coords[i], self.coordsOfOM[j]) <= 5:
-                                pass
+                        adv_used = max(0, int(movement) - int(base_m))
+                        advance_roll = max(1, min(6, int(adv_used)))
+                    self.enemy_coords[i] = [int(dest[1]), int(dest[0])]
 
                     advanced_flags[i] = advanced
                     self.enemy_used_advance[i] = bool(advanced)
                     self.enemy_advance_roll[i] = int(advance_roll) if advance_roll is not None else None
-                    direction = {0: "down", 1: "up", 2: "left", 3: "right", 4: "stay"}.get(move_dir, "stay")
-                    actual_movement = movement if move_dir != 4 else 0
+                    actual_movement = int(movement)
                     advance_text = "да" if advanced else "нет"
                     if advance_roll is not None:
+                        max_move = int(base_m + advance_roll)
                         advance_detail = f", бросок={advance_roll}, макс={max_move}"
                     else:
                         advance_detail = ""
@@ -3441,7 +3524,9 @@ class Warhammer40kEnv(gym.Env):
                         "enemy",
                         unit_id,
                         i,
-                        f"Позиция до: {pos_before}. Выбор: {direction}, advance={advance_text}{advance_detail}, distance={actual_movement}",
+                        f"Позиция до: {pos_before}. Выбор reachable_idx={chosen_idx if chosen_idx is not None else 'fallback'}"
+                        f"/{max(0, int(candidate_count) - 1)}, mode={move_mode}, advance={advance_text}{advance_detail}, "
+                        f"distance={actual_movement}",
                     )
 
                     self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
@@ -3450,7 +3535,7 @@ class Warhammer40kEnv(gym.Env):
                             self.enemy_coords[i][0] -= 1
                     self._adjust_end_move_from_terrain("enemy", i, pos_before, "movement_phase:enemy")
                     pos_after = tuple(self.enemy_coords[i])
-                    if move_dir == 4:
+                    if str(move_mode) == "stay":
                         self._log_unit("enemy", unit_id, i, f"Движение пропущено (no move). Позиция после: {pos_after}")
                     else:
                         self._log_unit("enemy", unit_id, i, f"Позиция после: {pos_after}")
