@@ -3548,27 +3548,34 @@ class Warhammer40kEnv(gym.Env):
                     self._log_unit("enemy", unit_id, i, f"Юнит мертв, движение пропущено. Позиция: {pos_before}")
                     continue
                 if self.enemyInAttack[i][0] == 0 and self.enemy_health[i] > 0:
-                    base_m = self.enemy_data[i]["Movement"]
+                    base_m = int(self.enemy_data[i]["Movement"])
                     label = "move_num_" + str(i)
-                    want = int(action.get(label, base_m)) if isinstance(action, dict) else base_m
-                    advanced = (move_dir != 4) and (want > base_m)
+                    want = int(action.get(label, base_m)) if isinstance(action, dict) else int(base_m)
                     advance_roll = None
-                    if advanced:
-                        advance_roll = dice()
-                        max_move = base_m + advance_roll
+                    movement = 0
+                    move_mode = "stay"
+                    advanced = False
+                    if int(move_dir) != 4:
+                        dest, move_mode, movement = self._pick_destination_from_overlay(
+                            "enemy",
+                            i,
+                            move_dir=int(move_dir),
+                            want=int(want),
+                            base_m=int(base_m),
+                            unit_label=self._format_unit_label("enemy", i, unit_id=unit_id),
+                        )
+                        if dest is None:
+                            self.enemy_used_advance[i] = False
+                            self.enemy_advance_roll[i] = None
+                            advanced_flags[i] = False
+                            continue
+                        advanced = str(move_mode) == "advance" or int(movement) > int(base_m)
+                        if advanced:
+                            adv_used = max(0, int(movement) - int(base_m))
+                            advance_roll = max(1, min(6, int(adv_used)))
+                        self.enemy_coords[i] = [int(dest[1]), int(dest[0])]
                     else:
-                        max_move = base_m
-                    movement = min(want, max_move)
-
-                    if move_dir == 0:
-                        self.enemy_coords[i][0] += movement
-                    elif move_dir == 1:
-                        self.enemy_coords[i][0] -= movement
-                    elif move_dir == 2:
-                        self.enemy_coords[i][1] -= movement
-                    elif move_dir == 3:
-                        self.enemy_coords[i][1] += movement
-                    elif move_dir == 4:
+                        move_mode = "stay"
                         for j in range(len(self.coordsOfOM)):
                             if distance(self.enemy_coords[i], self.coordsOfOM[j]) <= 5:
                                 pass
@@ -3577,9 +3584,10 @@ class Warhammer40kEnv(gym.Env):
                     self.enemy_used_advance[i] = bool(advanced)
                     self.enemy_advance_roll[i] = int(advance_roll) if advance_roll is not None else None
                     direction = {0: "down", 1: "up", 2: "left", 3: "right", 4: "stay"}.get(move_dir, "stay")
-                    actual_movement = movement if move_dir != 4 else 0
+                    actual_movement = int(movement) if int(move_dir) != 4 else 0
                     advance_text = "да" if advanced else "нет"
                     if advance_roll is not None:
+                        max_move = int(base_m) + int(advance_roll)
                         advance_detail = f", бросок={advance_roll}, макс={max_move}"
                     else:
                         advance_detail = ""
@@ -3596,7 +3604,7 @@ class Warhammer40kEnv(gym.Env):
                             self.enemy_coords[i][0] -= 1
                     self._adjust_end_move_from_terrain("enemy", i, pos_before, "movement_phase:enemy")
                     pos_after = tuple(self.enemy_coords[i])
-                    if move_dir == 4:
+                    if int(move_dir) == 4:
                         self._log_unit("enemy", unit_id, i, f"Движение пропущено (no move). Позиция после: {pos_after}")
                     else:
                         self._log_unit("enemy", unit_id, i, f"Позиция после: {pos_after}")
@@ -3877,13 +3885,48 @@ class Warhammer40kEnv(gym.Env):
                         return (dist_to_target, mode_penalty, -dist_from_start)
 
                     best_x, best_y, best_mode = min(candidates, key=_heur_score)
-                    movement = int(self._grid_distance_chebyshev((int(self.enemy_coords[i][0]), int(self.enemy_coords[i][1])), (int(best_y), int(best_x))))
-                    advanced = str(best_mode) == "advance" or int(movement) > int(base_m)
+                    legacy_x, legacy_y, legacy_mode = int(best_x), int(best_y), str(best_mode)
+                    legacy_movement = int(
+                        self._grid_distance_chebyshev(
+                            (int(self.enemy_coords[i][0]), int(self.enemy_coords[i][1])),
+                            (int(legacy_y), int(legacy_x)),
+                        )
+                    )
+
+                    chosen_x, chosen_y, chosen_mode = int(legacy_x), int(legacy_y), str(legacy_mode)
+                    movement = int(legacy_movement)
+
                     if str(best_mode) == "stay":
+                        # Совместимость с существующей эвристической веткой и тестами контракта.
+                        pass
+
+                    policy_mode = self._movement_policy_mode()
+                    if policy_mode in {"variant_c_shadow", "variant_c_live"}:
+                        cand_pos, cand_mode, cand_dist, diag = self._select_movement_candidate_variant_c(
+                            "enemy",
+                            i,
+                            intent="engage_target",
+                            desired=max(1, int(base_m)),
+                            allow_advance=True,
+                        )
+                        if hasattr(self, "_append_agent_log"):
+                            self._append_agent_log(
+                                "[MOVE][VARC] "
+                                f"mode={policy_mode} unit={self._unit_id('enemy', int(i)) if hasattr(self, '_unit_id') else int(i)} "
+                                f"intent=engage_target legacy=({legacy_x},{legacy_y},{legacy_mode},d={legacy_movement}) "
+                                f"variant_c={diag.get('chosen')} d={diag.get('distance')} "
+                                f"candidates={diag.get('candidates')} filtered={diag.get('filtered')}"
+                            )
+                        if policy_mode == "variant_c_live" and cand_pos is not None and cand_mode is not None:
+                            chosen_x, chosen_y, chosen_mode = int(cand_pos[0]), int(cand_pos[1]), str(cand_mode)
+                            movement = int(cand_dist)
+
+                    advanced = str(chosen_mode) == "advance" or int(movement) > int(base_m)
+                    if str(chosen_mode) == "stay":
                         self._log(f"[ENEMY][HEUR] Unit {i + 11}: выбран режим stay (distance=0).")
                     adv_used = max(0, int(movement) - int(base_m))
                     advance_roll = max(1, min(6, int(adv_used))) if advanced else None
-                    self.enemy_coords[i] = [int(best_y), int(best_x)]
+                    self.enemy_coords[i] = [int(chosen_y), int(chosen_x)]
 
                     self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
                     for j in range(len(self.unit_health)):

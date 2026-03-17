@@ -215,6 +215,15 @@
 - ✅ Фаза 2 (shadow):
   - в `_pick_destination_from_overlay(...)` добавлен shadow-сравнитель legacy vs variant_c,
   - в `variant_c_shadow` поведение не меняется (только логируем сравнение),
-  - в `variant_c_live` подготовлен технический переключатель на variant_c-выбор.
+- в `variant_c_live` подготовлен технический переключатель на variant_c-выбор.
+
+- ✅ Фаза 3 (heuristic enemy live):
+  - enemy heuristic теперь использует тот же variant_c-selector,
+  - в `variant_c_shadow` логируется сравнение legacy vs variant_c,
+  - в `variant_c_live` применяется variant_c-выбор клетки.
+
+- ✅ Фаза 4 (model/enemy RL rollout):
+  - enemy RL ветка переведена на `_pick_destination_from_overlay(...)` вместо прямого осевого шага,
+  - это автоматически включает shadow/live Variant C через `MOVEMENT_POLICY_MODE`.
 
 Дальше можно переходить к следующим шагам (расширение охвата на enemy RL/heur и более точные intent-score правила).
