@@ -59,6 +59,7 @@ class GUIController(QtCore.QObject):
     factionIconSizeChanged = QtCore.Signal(int)
     unitIconSizeChanged = QtCore.Signal(int)
     deploymentModeChanged = QtCore.Signal(str)
+    movementPolicyPresetChanged = QtCore.Signal(str)
     trainingHyperparamsChanged = QtCore.Signal()
     settingsDirtyChanged = QtCore.Signal(bool)
     settingsSaveStateChanged = QtCore.Signal(str)
@@ -126,9 +127,15 @@ class GUIController(QtCore.QObject):
         self._disable_train_logging = False
         self._auto_clear_logs = True
         self._deployment_mode_options = ["manual_player", "auto", "rl_phase"]
-        self._deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "rl_phase")).strip().lower() or "rl_phase"
-        if self._deployment_mode not in self._deployment_mode_options:
-            self._deployment_mode = "rl_phase"
+        self._movement_policy_options = ["cell_head_live", "legacy"]
+        self._deployment_mode = "rl_phase"
+        self._movement_policy_preset = "cell_head_live"
+        self._settings_path = os.path.join(self._repo_root, "gui_qt", "runtime_settings.json")
+        self._default_runtime_settings = {
+            "deployment_mode": "rl_phase",
+            "movement_policy_preset": "cell_head_live",
+        }
+        self._load_runtime_settings_from_disk(log_errors=True)
 
         self._hyperparams_path = os.path.join(self._repo_root, "hyperparams.json")
         self._default_hyperparams = {
@@ -313,6 +320,14 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=deploymentModeChanged)
     def deploymentMode(self) -> str:
         return self._deployment_mode
+
+    @QtCore.Property("QStringList", constant=True)
+    def movementPolicyOptions(self):
+        return self._movement_policy_options
+
+    @QtCore.Property(str, notify=movementPolicyPresetChanged)
+    def movementPolicyPreset(self) -> str:
+        return self._movement_policy_preset
 
     @QtCore.Property(float, notify=trainingHyperparamsChanged)
     def hpLr(self) -> float:
@@ -635,6 +650,19 @@ class GUIController(QtCore.QObject):
         self._emit_status(f"Режим деплоя: {self._deployment_mode_label(mode)}")
         self.mark_settings_dirty()
 
+    @QtCore.Slot(str)
+    def set_movement_policy_preset(self, value: str) -> None:
+        mode = str(value or "").strip().lower()
+        if mode not in self._movement_policy_options:
+            mode = "cell_head_live"
+        if self._movement_policy_preset == mode:
+            return
+        self._movement_policy_preset = mode
+        self.movementPolicyPresetChanged.emit(mode)
+        self._emit_log(f"[GUI] MOVEMENT_POLICY_PRESET={mode}", level="INFO")
+        self._emit_status(f"Движение модели: {self._movement_policy_label(mode)}")
+        self.mark_settings_dirty()
+
     def _deployment_mode_label(self, mode: str) -> str:
         labels = {
             "manual_player": "Ручной игрок (клик в Viewer)",
@@ -642,6 +670,91 @@ class GUIController(QtCore.QObject):
             "rl_phase": "RL-деплой модели (игрок вручную)",
         }
         return labels.get(mode, mode)
+
+    def _movement_policy_label(self, mode: str) -> str:
+        labels = {
+            "legacy": "Legacy (направления up/down/left/right)",
+            "cell_head_live": "Новый cell-head (strict reachable-клетка)",
+        }
+        return labels.get(mode, mode)
+
+    def _movement_env_overrides(self) -> dict[str, str]:
+        if self._movement_policy_preset == "legacy":
+            return {
+                "MOVEMENT_ACTION_SCHEMA": "legacy",
+                "MOVEMENT_POLICY_MODE": "legacy",
+                "MOVEMENT_CELL_HEAD_MODE": "off",
+                "MOVEMENT_CELL_HEAD_TOPK": "12",
+            }
+        return {
+            "MOVEMENT_ACTION_SCHEMA": "variant_c",
+            "MOVEMENT_POLICY_MODE": "variant_d_cell_live",
+            "MOVEMENT_CELL_HEAD_MODE": "live",
+            "MOVEMENT_CELL_HEAD_TOPK": "12",
+        }
+
+    def _movement_runtime_summary(self) -> str:
+        flags = self._movement_env_overrides()
+        return (
+            f"preset={self._movement_policy_preset} "
+            f"schema={flags['MOVEMENT_ACTION_SCHEMA']} "
+            f"policy={flags['MOVEMENT_POLICY_MODE']} "
+            f"cell_head={flags['MOVEMENT_CELL_HEAD_MODE']} "
+            f"topk={flags['MOVEMENT_CELL_HEAD_TOPK']}"
+        )
+
+    def _append_runtime_log(self, log_file: str, marker: str) -> None:
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        summary = self._movement_runtime_summary()
+        line = f"{timestamp} | [RUNTIME][MOVEMENT] {marker}: {summary}"
+        path = os.path.join(self._repo_root, log_file)
+        try:
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write(line + "\n")
+        except OSError as exc:
+            self._emit_log(
+                "[GUI] Не удалось записать runtime-лог движения. "
+                f"Где: gui_qt/main.py (_append_runtime_log). Что делать: проверить права на {log_file}. Детали: {exc}",
+                level="WARN",
+            )
+
+    def _load_runtime_settings_from_disk(self, log_errors: bool = False) -> bool:
+        payload: dict[str, str] = {}
+        if os.path.exists(self._settings_path):
+            try:
+                with open(self._settings_path, "r", encoding="utf-8") as handle:
+                    payload = json.load(handle)
+            except (OSError, json.JSONDecodeError) as exc:
+                if log_errors:
+                    self._emit_log(
+                        "[GUI] Не удалось прочитать gui_qt/runtime_settings.json. "
+                        f"Использую значения по умолчанию. Детали: {exc}",
+                        level="WARN",
+                    )
+
+        dep = str(payload.get("deployment_mode", os.getenv("DEPLOYMENT_MODE", self._default_runtime_settings["deployment_mode"])) or "").strip().lower()
+        if dep not in self._deployment_mode_options:
+            dep = self._default_runtime_settings["deployment_mode"]
+        self._deployment_mode = dep
+
+        movement = str(payload.get("movement_policy_preset", os.getenv("MOVEMENT_POLICY_PRESET", self._default_runtime_settings["movement_policy_preset"])) or "").strip().lower()
+        if movement not in self._movement_policy_options:
+            movement = self._default_runtime_settings["movement_policy_preset"]
+        self._movement_policy_preset = movement
+        return True
+
+    def _save_runtime_settings_to_disk(self) -> str | None:
+        payload = {
+            "deployment_mode": self._deployment_mode,
+            "movement_policy_preset": self._movement_policy_preset,
+        }
+        try:
+            with open(self._settings_path, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=4, ensure_ascii=False)
+                handle.write("\n")
+        except OSError as exc:
+            return str(exc)
+        return None
 
     @QtCore.Slot(str, str)
     def set_training_hyperparam(self, key: str, value: str) -> None:
@@ -670,16 +783,25 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Slot()
     def reload_training_hyperparams(self) -> None:
-        if self._load_hyperparams_from_disk(log_errors=True):
+        hp_ok = self._load_hyperparams_from_disk(log_errors=True)
+        runtime_ok = self._load_runtime_settings_from_disk(log_errors=True)
+        if runtime_ok:
+            self.deploymentModeChanged.emit(self._deployment_mode)
+            self.movementPolicyPresetChanged.emit(self._movement_policy_preset)
+        if hp_ok and runtime_ok:
             self.mark_settings_saved("✓ Сохранено")
-            self._emit_status("Параметры тренировки перечитаны из hyperparams.json.")
+            self._emit_status("Параметры тренировки и настройки GUI перечитаны из файлов.")
 
     @QtCore.Slot()
     def reset_training_hyperparams(self) -> None:
         self._hyperparams = dict(self._default_hyperparams)
+        self._deployment_mode = self._default_runtime_settings["deployment_mode"]
+        self._movement_policy_preset = self._default_runtime_settings["movement_policy_preset"]
         self.trainingHyperparamsChanged.emit()
+        self.deploymentModeChanged.emit(self._deployment_mode)
+        self.movementPolicyPresetChanged.emit(self._movement_policy_preset)
         self.mark_settings_dirty()
-        self._emit_status("Параметры тренировки сброшены к значениям по умолчанию.")
+        self._emit_status("Параметры тренировки и режим движения сброшены к значениям по умолчанию.")
 
     @QtCore.Slot()
     def save_training_hyperparams(self) -> None:
@@ -703,8 +825,20 @@ class GUIController(QtCore.QObject):
             return
 
         self._emit_log(f"[GUI] hyperparams.json сохранён: {self._hyperparams}", level="INFO")
+        runtime_error = self._save_runtime_settings_to_disk()
+        if runtime_error:
+            self._emit_status(
+                "Не удалось записать gui_qt/runtime_settings.json в Настройках. "
+                f"Причина: {runtime_error}. Проверьте права доступа и повторите."
+            )
+            self._emit_log(f"[GUI] Ошибка записи {self._settings_path}: {runtime_error}", level="ERROR")
+            return
+        self._emit_log(
+            f"[GUI] runtime_settings.json сохранён: deployment={self._deployment_mode}, movement={self._movement_policy_preset}",
+            level="INFO",
+        )
         self.mark_settings_saved("✓ Сохранено")
-        self._emit_status("Параметры тренировки сохранены в hyperparams.json.")
+        self._emit_status("Параметры тренировки и режим движения сохранены.")
 
     @QtCore.Slot()
     def mark_settings_dirty(self) -> None:
@@ -972,7 +1106,11 @@ class GUIController(QtCore.QObject):
         env.insert("MISSION_NAME", self._selected_mission)
         env.insert("DEPLOYMENT_MODE", self._deployment_mode)
         env.insert("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_TRAIN.md")
+        for key, value in self._movement_env_overrides().items():
+            env.insert(key, value)
         self._process.setProcessEnvironment(env)
+        self._emit_log(f"[GUI] [MOVEMENT] eval env: {self._movement_runtime_summary()}", level="INFO")
+        self._append_runtime_log("LOGS_FOR_AGENTS_TRAIN.md", "eval_start")
 
         self._process.readyReadStandardOutput.connect(self._read_stdout)
         self._process.readyReadStandardError.connect(self._read_stderr)
@@ -1025,12 +1163,15 @@ class GUIController(QtCore.QObject):
         env["MISSION_NAME"] = self._selected_mission
         env["DEPLOYMENT_MODE"] = self._deployment_mode
         env["AGENT_LOG_FILE"] = "LOGS_FOR_AGENTS_PLAY.md"
+        env.update(self._movement_env_overrides())
         subprocess.Popen(
             command,
             cwd=self._repo_root,
             env=env,
             start_new_session=True,
         )
+        self._emit_log(f"[GUI] [MOVEMENT] play terminal env: {self._movement_runtime_summary()}", level="INFO")
+        self._append_runtime_log("LOGS_FOR_AGENTS_PLAY.md", "play_terminal_start")
         self._emit_status("Запуск игры в терминале.")
 
     @QtCore.Slot()
@@ -1055,6 +1196,7 @@ class GUIController(QtCore.QObject):
         env["MISSION_NAME"] = self._selected_mission
         env["DEPLOYMENT_MODE"] = self._deployment_mode
         env["AGENT_LOG_FILE"] = "LOGS_FOR_AGENTS_PLAY.md"
+        env.update(self._movement_env_overrides())
         command = self._build_script_command(script, [])
         subprocess.Popen(
             command,
@@ -1062,6 +1204,8 @@ class GUIController(QtCore.QObject):
             env=env,
             start_new_session=True,
         )
+        self._emit_log(f"[GUI] [MOVEMENT] play gui env: {self._movement_runtime_summary()}", level="INFO")
+        self._append_runtime_log("LOGS_FOR_AGENTS_PLAY.md", "play_gui_start")
         self._emit_log("[VIEWER] Запуск в greedy-режиме: exploration отключен (epsilon=0).", level="INFO")
         self._emit_status("Запуск игры в GUI через Viewer (greedy, без исследования).")
 
@@ -1230,9 +1374,13 @@ class GUIController(QtCore.QObject):
         env.insert("MISSION_NAME", self._selected_mission)
         env.insert("DEPLOYMENT_MODE", self._deployment_mode)
         env.insert("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_TRAIN.md")
+        for key, value in self._movement_env_overrides().items():
+            env.insert(key, value)
         for key, value in env_overrides.items():
             env.insert(key, value)
         self._process.setProcessEnvironment(env)
+        self._emit_log(f"[GUI] [MOVEMENT] train env: {self._movement_runtime_summary()}", level="INFO")
+        self._append_runtime_log("LOGS_FOR_AGENTS_TRAIN.md", "train_start")
 
         self._process.readyReadStandardOutput.connect(self._read_stdout)
         self._process.readyReadStandardError.connect(self._read_stderr)

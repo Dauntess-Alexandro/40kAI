@@ -1,0 +1,4 @@
+{
+    "deployment_mode": "rl_phase",
+    "movement_policy_preset": "cell_head_live"
+}

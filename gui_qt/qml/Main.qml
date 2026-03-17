@@ -1296,6 +1296,63 @@ ApplicationWindow {
                             color: "#f8f9fb"
                             border.color: "#d9dee8"
                             border.width: 1
+                            implicitHeight: movementCardLayout.implicitHeight + root.spacingMd * 2
+
+                            ColumnLayout {
+                                id: movementCardLayout
+                                anchors.fill: parent
+                                anchors.margins: root.spacingMd
+                                spacing: root.spacingSm
+
+                                Label {
+                                    text: "Тип движения модели"
+                                    font.bold: true
+                                    Layout.fillWidth: true
+                                }
+
+                                Label {
+                                    text: "Выберите режим движения для train/play. По умолчанию включён новый cell-based режим."
+                                    wrapMode: Text.WordWrap
+                                    color: "#666666"
+                                    Layout.fillWidth: true
+                                }
+
+                                ComboBox {
+                                    id: movementPolicyCombo
+                                    Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(420 * root.uiScale))
+                                    model: [
+                                        { value: "cell_head_live", label: "Новый (cell-head, strict reachable-клетка)" },
+                                        { value: "legacy", label: "Legacy (направления up/down/left/right)" }
+                                    ]
+                                    textRole: "label"
+                                    valueRole: "value"
+                                    currentIndex: {
+                                        for (var i = 0; i < model.length; i++) {
+                                            if (model[i].value === controller.movementPolicyPreset)
+                                                return i
+                                        }
+                                        return 0
+                                    }
+                                    onActivated: {
+                                        if (currentIndex >= 0 && currentIndex < model.length)
+                                            controller.set_movement_policy_preset(model[currentIndex].value)
+                                    }
+                                }
+
+                                Label {
+                                    text: "Текущий режим: " + controller.movementPolicyPreset
+                                    color: "#555555"
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            radius: Math.round(10 * root.uiScale)
+                            color: "#f8f9fb"
+                            border.color: "#d9dee8"
+                            border.width: 1
                             implicitHeight: deploymentCardLayout.implicitHeight + root.spacingMd * 2
 
                             ColumnLayout {
