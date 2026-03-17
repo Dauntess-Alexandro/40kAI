@@ -179,6 +179,38 @@ class FxLogParser:
         self._pending.pop()
 
 
+class HoverLogListWidget(QtWidgets.QListWidget):
+    """List widget with explicit hover/leave signals for transient map previews."""
+
+    itemHovered = QtCore.Signal(object)
+    hoverLeft = QtCore.Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._last_hover_row = -1
+        self.setMouseTracking(True)
+
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
+        super().mouseMoveEvent(event)
+        item = self.itemAt(event.pos())
+        if item is None:
+            if self._last_hover_row != -1:
+                self._last_hover_row = -1
+                self.hoverLeft.emit()
+            return
+        row = self.row(item)
+        if row == self._last_hover_row:
+            return
+        self._last_hover_row = row
+        self.itemHovered.emit(item)
+
+    def leaveEvent(self, event: QtCore.QEvent) -> None:
+        super().leaveEvent(event)
+        if self._last_hover_row != -1:
+            self._last_hover_row = -1
+            self.hoverLeft.emit()
+
+
 class ViewerWindow(QtWidgets.QMainWindow):
     def __init__(self, state_path, model_path=None):
         super().__init__()
@@ -285,6 +317,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_events_stream = []
         self._model_events_current = []
         self._log_view = None
+        self._visible_log_entries: list[dict] = []
+        self._log_persistent_move_overlay: Optional[dict] = None
         self._log_filter_buttons = {}
         self._log_status_label = None
         self._fx_shot_queue: Deque[FxShotEvent] = deque()
@@ -1565,10 +1599,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
         fixed_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
         fixed_font.setPointSize(10)
 
-        self.log_view = QtWidgets.QTextEdit()
-        self.log_view.setReadOnly(True)
+        self.log_view = HoverLogListWidget()
+        self.log_view.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.log_view.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.log_view.setMouseTracking(True)
         self.log_view.setFont(fixed_font)
-        self.log_view.document().setMaximumBlockCount(self._max_log_lines)
+        self.log_view.itemClicked.connect(self._on_log_item_clicked)
+        self.log_view.itemHovered.connect(self._on_log_item_hovered)
+        self.log_view.hoverLeft.connect(self._on_log_item_hover_left)
 
         self._log_status_label = QtWidgets.QLabel("Режим: Игровой")
         self._log_status_label.setStyleSheet(f"color: {Theme.muted.name()};")
@@ -2454,15 +2492,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _collect_visible_entries(self):
         visible = []
-        for entry in self._log_entries:
+        for idx, entry in enumerate(self._log_entries):
             if not self._should_show_entry(entry):
                 continue
             text = entry["display"] if entry.get("channel") in {"fx", "los", "reward", "req", "system"} else (entry.get("compact") or entry["display"])
             color = self._line_color(entry)
-            if visible and visible[-1][0] == text:
-                visible[-1][2] += 1
-            else:
-                visible.append([text, color, 1])
+            visible.append({"text": text, "color": color, "entry_idx": idx, "is_aux": False})
         return visible
 
     def _line_color(self, entry: dict) -> str:
@@ -2486,7 +2521,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _refresh_log_views(self):
         visible_entries = self._collect_visible_entries()
-        lines = [f"{text} ×{count}" if count > 1 else text for text, _color, count in visible_entries]
+        lines = [v["text"] for v in visible_entries]
 
         alert_lines = self._collect_alert_lines()
         result_btn = self._log_filter_buttons.get("result")
@@ -2505,23 +2540,23 @@ class ViewerWindow(QtWidgets.QMainWindow):
         mode_text = f"{mode_core} | {self._timeline_label_text()}"
         self._log_status_label.setText(mode_text)
 
-        html_lines = []
-        for text, color, count in visible_entries:
-            shown = f"{text} ×{count}" if count > 1 else text
-            html_lines.append(f"<span style='color:{color}'>{html.escape(shown)}</span>")
+        self._visible_log_entries = list(visible_entries)
         if show_alerts:
-            html_lines.append("<br><span style='color:#ff9f43'>=== АЛЕРТЫ ===</span>")
+            self._visible_log_entries.append({"text": "=== АЛЕРТЫ ===", "color": "#ff9f43", "entry_idx": -1, "is_aux": True})
             for alert in alert_lines:
-                html_lines.append(f"<span style='color:#ff9f43'>{html.escape(alert)}</span>")
+                self._visible_log_entries.append({"text": alert, "color": "#ff9f43", "entry_idx": -1, "is_aux": True})
         if round_card:
-            html_lines.append("<br><span style='color:#7aa2f7'>🏁 === КАРТОЧКА РАУНДА ===</span>")
+            self._visible_log_entries.append({"text": "🏁 === КАРТОЧКА РАУНДА ===", "color": "#7aa2f7", "entry_idx": -1, "is_aux": True})
             for line in round_card[1:]:
-                html_lines.append(f"<span style='color:#7aa2f7'>{html.escape(line)}</span>")
-        if not html_lines:
-            html_lines = ["<span>Пока нет логов.</span>"]
-        self.log_view.setHtml("<br>".join(html_lines))
-        scrollbar = self.log_view.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+                self._visible_log_entries.append({"text": line, "color": "#7aa2f7", "entry_idx": -1, "is_aux": True})
+        self.log_view.clear()
+        for item_data in self._visible_log_entries:
+            item = QtWidgets.QListWidgetItem(str(item_data.get("text") or ""))
+            item.setForeground(QtGui.QBrush(QtGui.QColor(str(item_data.get("color") or Theme.text.name()))))
+            item.setData(QtCore.Qt.UserRole, item_data)
+            self.log_view.addItem(item)
+        if self.log_view.count() > 0:
+            self.log_view.scrollToBottom()
 
     def _reset_log_lines(self, lines, write_to_file: bool):
         self._log_entries = []
@@ -2570,9 +2605,143 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._fx_shot_queue.clear()
         self._fx_parser.reset(preserve_seen=False)
         self.log_view.clear()
+        self._visible_log_entries = []
+        self._log_persistent_move_overlay = None
+        self.map_scene.set_log_movement_overlay(None, persistent=True)
+        self.map_scene.clear_log_movement_hover_overlay()
 
     def _collect_current_turn_logs(self):
-        return self.log_view.toPlainText()
+        lines = []
+        for i in range(self.log_view.count()):
+            item = self.log_view.item(i)
+            if item is None:
+                continue
+            lines.append(item.text())
+        return "\n".join(lines)
+
+    def _on_log_item_clicked(self, item: QtWidgets.QListWidgetItem) -> None:
+        payload = self._movement_payload_from_log_item(item)
+        if payload is None:
+            return
+        # По UX: не фиксируем overlay кликом, показываем только пока есть hover.
+        self._log_persistent_move_overlay = None
+        self.map_scene.set_log_movement_overlay(None, persistent=True)
+        self._focus_camera_for_movement_payload(payload)
+
+    def _on_log_item_hovered(self, item: QtWidgets.QListWidgetItem) -> None:
+        payload = self._movement_payload_from_log_item(item)
+        if payload is None:
+            self.map_scene.clear_log_movement_hover_overlay()
+            return
+        self.map_scene.set_log_movement_overlay(payload, persistent=False)
+
+    def _on_log_item_hover_left(self) -> None:
+        # Увод курсора с movement-строки должен полностью убирать визуализацию.
+        self.map_scene.clear_log_movement_hover_overlay()
+        self.map_scene.set_log_movement_overlay(None, persistent=True)
+
+    def _focus_camera_for_movement_payload(self, payload: dict) -> None:
+        to_pos = payload.get("to")
+        from_pos = payload.get("from")
+        target = to_pos if isinstance(to_pos, tuple) else from_pos
+        if not (isinstance(target, tuple) and len(target) >= 2):
+            return
+        ok = self.map_scene.center_on_state_cell(int(target[0]), int(target[1]))
+        if not ok:
+            self.add_log_line(
+                "[VIEWER] Не удалось центрировать камеру: координаты вне карты. Где: viewer/app.py (_focus_camera_for_movement_payload). Что дальше: проверьте событие движения."
+            )
+
+    def _movement_payload_from_log_item(self, item: Optional[QtWidgets.QListWidgetItem]) -> Optional[dict]:
+        if item is None:
+            return None
+        data = item.data(QtCore.Qt.UserRole)
+        if not isinstance(data, dict) or data.get("is_aux"):
+            return None
+        entry_idx = data.get("entry_idx")
+        if not isinstance(entry_idx, int) or entry_idx < 0 or entry_idx >= len(self._log_entries):
+            return None
+        entry = self._log_entries[entry_idx] if 0 <= entry_idx < len(self._log_entries) else {}
+        categories = entry.get("categories") if isinstance(entry, dict) else set()
+        raw_text = str(entry.get("raw") or "") if isinstance(entry, dict) else ""
+        # Ограничение: overlay только для явных movement-строк "Позиция до/после".
+        if "movement" not in (categories or set()):
+            return None
+        lowered = raw_text.lower()
+        if "позиция до:" not in lowered and "позиция после:" not in lowered:
+            return None
+        return self._extract_movement_payload(entry_idx)
+
+    def _extract_movement_payload(self, entry_idx: int) -> Optional[dict]:
+        move_before_re = re.compile(
+            r"Unit\s+(?P<id>\d+).*?Позиция до:\s*\((?P<x>-?\d+),\s*(?P<y>-?\d+)\).*?distance=(?P<dist>\d+)",
+            re.IGNORECASE,
+        )
+        move_after_re = re.compile(r"Unit\s+(?P<id>\d+).*?Позиция после:\s*\((?P<x>-?\d+),\s*(?P<y>-?\d+)\)", re.IGNORECASE)
+        unit_id_re = re.compile(r"Unit\s+(?P<id>\d+)", re.IGNORECASE)
+
+        anchor_text = str((self._log_entries[entry_idx] or {}).get("raw") or "") if 0 <= entry_idx < len(self._log_entries) else ""
+        hinted_unit_id = None
+        hinted_match = unit_id_re.search(anchor_text)
+        if hinted_match:
+            hinted_unit_id = int(hinted_match.group("id"))
+
+        unit_id = hinted_unit_id
+        from_pos = None
+        to_pos = None
+        unit_name = ""
+        distance = None
+        no_move = False
+        start = max(0, entry_idx - 12)
+        end = min(len(self._log_entries), entry_idx + 12)
+
+        def _log_pos_to_state_xy(raw_a: str, raw_b: str) -> tuple[int, int]:
+            # В movement-логах координаты исторически пишутся как (y, x),
+            # а рендер использует state-space (x, y).
+            row_y = int(raw_a)
+            col_x = int(raw_b)
+            return col_x, row_y
+
+        for idx in range(start, end):
+            text = str((self._log_entries[idx] or {}).get("raw") or "")
+            before = move_before_re.search(text)
+            if before:
+                current_id = int(before.group("id"))
+                if unit_id is None:
+                    unit_id = current_id
+                if current_id == unit_id:
+                    from_pos = _log_pos_to_state_xy(before.group("x"), before.group("y"))
+                    distance = int(before.group("dist"))
+                    name_match = re.search(r"Unit\s+\d+\s+—\s+([^:]+):", text)
+                    if name_match:
+                        unit_name = str(name_match.group(1)).strip()
+            after = move_after_re.search(text)
+            if after:
+                current_id = int(after.group("id"))
+                if unit_id is None:
+                    unit_id = current_id
+                if current_id == unit_id:
+                    to_pos = _log_pos_to_state_xy(after.group("x"), after.group("y"))
+                    if "no move" in text.lower() or "движение пропущено" in text.lower():
+                        no_move = True
+            if "no move" in text.lower() and unit_id is not None and f"Unit {unit_id}" in text:
+                no_move = True
+
+        if unit_id is None or from_pos is None:
+            return None
+        if to_pos is None:
+            to_pos = from_pos
+            no_move = True
+        if distance == 0:
+            no_move = True
+        return {
+            "unit_id": int(unit_id),
+            "from": from_pos,
+            "to": to_pos,
+            "unit_name": unit_name,
+            "distance": int(distance) if isinstance(distance, int) else None,
+            "no_move": bool(no_move or from_pos == to_pos),
+        }
 
     def _copy_current_turn(self):
         QtWidgets.QApplication.clipboard().setText(self._collect_current_turn_logs())

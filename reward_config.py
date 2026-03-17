@@ -50,6 +50,13 @@ MOVEMENT_MELEE_RETREAT_PENALTY = 0.5
 MOVEMENT_MELEE_STAY_BONUS = 0.2
 # Бонус за успешный чардж.
 CHARGE_SUCCESS_REWARD = 0.5
+# Штраф за stay/no-move, если после movement нет валидной цели для стрельбы.
+MOVE_STAY_NO_SHOOT_PENALTY = 0.06
+# Бонус за вход в effective range (переход из no-target в has-target после movement).
+MOVE_ENTER_EFFECTIVE_RANGE_BONUS = 0.08
+# Верхняя граница суммарного range-бонуса за шаг движения.
+MOVE_RANGE_BONUS_CAP = 0.12
+
 # Штраф за неуспешный чардж.
 CHARGE_FAIL_PENALTY = 0.0
 

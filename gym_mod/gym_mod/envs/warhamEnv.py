@@ -924,6 +924,19 @@ class Warhammer40kEnv(gym.Env):
         for i in range(len(model)):
             action_spaces[f"move_num_{i}"] = spaces.Discrete(12)
 
+        # Phase 5 (schema-ready): optional Variant C action heads.
+        # Включается флагом, чтобы не ломать legacy-чеки и старые чекпойнты.
+        action_schema = str(os.getenv("MOVEMENT_ACTION_SCHEMA", "legacy") or "legacy").strip().lower()
+        if action_schema == "variant_c":
+            for i in range(len(model)):
+                action_spaces[f"move_intent_{i}"] = spaces.Discrete(5)  # to_obj/to_cover/threat_avoid/engage/stay
+                action_spaces[f"move_mode_{i}"] = spaces.Discrete(2)    # 0 normal_only, 1 allow_advance
+            cell_head_mode = str(os.getenv("MOVEMENT_CELL_HEAD_MODE", "off") or "off").strip().lower()
+            if cell_head_mode in {"shadow", "live"}:
+                for i in range(len(model)):
+                    # Индекс в top-K кандидатах (см. MOVEMENT_CELL_HEAD_TOPK).
+                    action_spaces[f"move_cell_selector_{i}"] = spaces.Discrete(16)
+
         # ✅ 3) Теперь только ОДИН раз создаём spaces.Dict
         self.action_space = spaces.Dict(action_spaces)
         get_active_io().log(f"Action keys: {self.action_space.spaces.keys()}")
@@ -1518,6 +1531,254 @@ class Warhammer40kEnv(gym.Env):
             "advance_cells": advance_cells,
         }
 
+    def _movement_policy_mode(self) -> str:
+        mode = str(os.getenv("MOVEMENT_POLICY_MODE", "legacy") or "legacy").strip().lower()
+        if mode not in {"legacy", "variant_c_shadow", "variant_c_live"}:
+            return "legacy"
+        return mode
+
+    def _movement_cell_head_mode(self) -> str:
+        mode = str(os.getenv("MOVEMENT_CELL_HEAD_MODE", "off") or "off").strip().lower()
+        if mode not in {"off", "shadow", "live"}:
+            return "off"
+        return mode
+
+    def _movement_cell_head_topk(self) -> int:
+        raw = str(os.getenv("MOVEMENT_CELL_HEAD_TOPK", "12") or "12").strip()
+        try:
+            val = int(raw)
+        except Exception:
+            val = 12
+        return max(1, min(64, val))
+
+    def _variant_c_intent_from_move_dir(self, move_dir: int) -> str:
+        # Фаза 0/2: маппинг legacy-намерения в intent для shadow-аналитики.
+        return {
+            0: "threat_avoid",
+            1: "to_cover",
+            2: "engage_target",
+            3: "to_objective",
+            4: "stay",
+        }.get(int(move_dir), "stay")
+
+    def _variant_c_intent_from_action_value(self, intent_value: int) -> str:
+        return {
+            0: "to_objective",
+            1: "to_cover",
+            2: "threat_avoid",
+            3: "engage_target",
+            4: "stay",
+        }.get(int(intent_value), "stay")
+
+    def _weapon_range_for_unit(self, side: str, unit_idx: int) -> float:
+        weapon = self.unit_weapon[unit_idx] if side == "model" else self.enemy_weapon[unit_idx]
+        if weapon == "None":
+            return 0.0
+        try:
+            return float(weapon.get("Range", 0) or 0.0)
+        except Exception:
+            return 0.0
+
+    def _unit_has_valid_shoot_target_live(self, side: str, unit_idx: int) -> tuple[bool, float]:
+        range_eps = self._shoot_range_epsilon()
+        if side == "model":
+            if not (0 <= unit_idx < len(self.unit_health)):
+                return False, 999.0
+            if self.unit_health[unit_idx] <= 0 or self.unitFellBack[unit_idx] or self.unitInAttack[unit_idx][0] == 1:
+                return False, 999.0
+            if self.unit_weapon[unit_idx] == "None":
+                return False, 999.0
+            own_coords = self.unit_coords
+            enemy_health = self.enemy_health
+            enemy_coords = self.enemy_coords
+            enemy_attack = self.enemyInAttack
+            enemy_side = "enemy"
+        else:
+            if not (0 <= unit_idx < len(self.enemy_health)):
+                return False, 999.0
+            if self.enemy_health[unit_idx] <= 0 or self.enemyFellBack[unit_idx] or self.enemyInAttack[unit_idx][0] == 1:
+                return False, 999.0
+            if self.enemy_weapon[unit_idx] == "None":
+                return False, 999.0
+            own_coords = self.enemy_coords
+            enemy_health = self.unit_health
+            enemy_coords = self.unit_coords
+            enemy_attack = self.unitInAttack
+            enemy_side = "model"
+
+        range_limit = self._weapon_range_for_unit(side, unit_idx)
+        if range_limit <= 0:
+            return False, 999.0
+        best_gap = 999.0
+        has_target = False
+        for other_idx in range(len(enemy_health)):
+            if float(enemy_health[other_idx] or 0.0) <= 0:
+                continue
+            if enemy_attack[other_idx][0] == 1:
+                continue
+            dist = float(distance(own_coords[unit_idx], enemy_coords[other_idx]))
+            gap = dist - float(range_limit)
+            if gap < best_gap:
+                best_gap = gap
+            if dist <= (float(range_limit) + range_eps) and self._unit_has_los(side, unit_idx, enemy_side, int(other_idx)):
+                has_target = True
+        return has_target, float(best_gap)
+
+    def _build_movement_candidates(self, side: str, idx: int, *, include_stay: bool = True) -> list[dict]:
+        overlay = self.get_unit_movement_overlay(side, idx)
+        move_cells = [(int(x), int(y)) for x, y in list(overlay.get("move_cells") or [])]
+        advance_cells = [(int(x), int(y)) for x, y in list(overlay.get("advance_cells") or [])]
+        coords = self.unit_coords if side == "model" else self.enemy_coords
+        row = int(coords[int(idx)][0])
+        col = int(coords[int(idx)][1])
+
+        candidates: list[dict] = []
+        for x, y in move_cells:
+            candidates.append({"x": int(x), "y": int(y), "mode": "normal"})
+        for x, y in advance_cells:
+            candidates.append({"x": int(x), "y": int(y), "mode": "advance"})
+        if include_stay:
+            candidates.append({"x": int(col), "y": int(row), "mode": "stay"})
+
+        nearest_objective = None
+        if isinstance(getattr(self, "coordsOfOM", None), list) and self.coordsOfOM:
+            nearest_objective = min(
+                self.coordsOfOM,
+                key=lambda obj: self._grid_distance_euclid((row, col), (int(obj[0]), int(obj[1]))),
+            )
+
+        enemy_coords = self.enemy_coords if side == "model" else self.unit_coords
+        enemy_health = self.enemy_health if side == "model" else self.unit_health
+        alive_enemy_cells = [
+            (int(pos[0]), int(pos[1]))
+            for j, pos in enumerate(enemy_coords)
+            if j < len(enemy_health) and float(enemy_health[j] or 0.0) > 0 and isinstance(pos, (list, tuple)) and len(pos) >= 2
+        ]
+
+        for item in candidates:
+            x = int(item["x"])
+            y = int(item["y"])
+            item["distance"] = int(self._grid_distance_chebyshev((row, col), (y, x)))
+            if nearest_objective is not None:
+                item["dist_obj"] = float(
+                    self._grid_distance_euclid((y, x), (int(nearest_objective[0]), int(nearest_objective[1])))
+                )
+            else:
+                item["dist_obj"] = 999.0
+            if alive_enemy_cells:
+                item["dist_enemy"] = float(
+                    min(self._grid_distance_euclid((y, x), (er, ec)) for er, ec in alive_enemy_cells)
+                )
+            else:
+                item["dist_enemy"] = 999.0
+            range_limit = self._weapon_range_for_unit(side, int(idx))
+            if range_limit > 0 and alive_enemy_cells:
+                min_gap = min(
+                    float(self._grid_distance_euclid((y, x), (er, ec))) - float(range_limit)
+                    for er, ec in alive_enemy_cells
+                )
+                item["shoot_range_gap"] = float(max(0.0, min_gap))
+                item["shoot_range_abs_delta"] = float(abs(min_gap))
+                item["shoot_in_range"] = 1 if min_gap <= float(self._shoot_range_epsilon()) else 0
+            else:
+                item["shoot_range_gap"] = 999.0
+                item["shoot_range_abs_delta"] = 999.0
+                item["shoot_in_range"] = 0
+            item["is_advance"] = 1 if item["mode"] == "advance" else 0
+            item["is_stay"] = 1 if item["mode"] == "stay" else 0
+        return candidates
+
+    def _score_movement_candidate_variant_c(self, item: dict, *, intent: str, desired: int) -> tuple:
+        distance = int(item.get("distance") or 0)
+        dist_obj = float(item.get("dist_obj") or 999.0)
+        dist_enemy = float(item.get("dist_enemy") or 999.0)
+        is_advance = int(item.get("is_advance") or 0)
+        is_stay = int(item.get("is_stay") or 0)
+
+        if intent == "stay":
+            return (0 if is_stay else 1, abs(distance - 0), is_advance, dist_obj)
+        if intent == "to_objective":
+            return (dist_obj, abs(distance - int(desired)), is_advance, dist_enemy)
+        if intent == "to_cover":
+            # Пока как ранняя прокси-эвристика: умеренная дистанция + без лишнего advance.
+            return (abs(distance - max(1, int(desired // 2))), is_advance, dist_obj, dist_enemy)
+        shoot_range_gap = float(item.get("shoot_range_gap") or 999.0)
+        shoot_range_abs_delta = float(item.get("shoot_range_abs_delta") or 999.0)
+        shoot_in_range = int(item.get("shoot_in_range") or 0)
+
+        if intent == "threat_avoid":
+            # Увеличиваем дистанцию до врага, но избегаем бессмысленного advance.
+            return (-dist_enemy, is_advance, abs(distance - int(desired)), dist_obj)
+        if intent == "engage_target":
+            return (shoot_range_gap, abs(distance - int(desired)), is_advance, dist_enemy, dist_obj)
+        if intent == "to_shoot_range":
+            return (shoot_range_gap, shoot_range_abs_delta, is_advance, dist_enemy, dist_obj)
+        return (abs(distance - int(desired)), is_advance, dist_obj, dist_enemy, -shoot_in_range)
+
+    def _select_movement_candidate_variant_c(
+        self,
+        side: str,
+        idx: int,
+        *,
+        intent: str,
+        desired: int,
+        allow_advance: bool = True,
+        cell_selector_value: Optional[int] = None,
+    ) -> tuple[tuple[int, int] | None, str | None, int, dict]:
+        candidates = self._build_movement_candidates(side, idx, include_stay=True)
+        if not candidates:
+            return None, None, 0, {"intent": intent, "candidates": 0, "reason": "empty_candidates"}
+        filtered = candidates
+        if not allow_advance:
+            filtered = [c for c in filtered if str(c.get("mode")) != "advance"]
+            if not filtered:
+                filtered = candidates
+
+        scored = sorted(filtered, key=lambda c: self._score_movement_candidate_variant_c(c, intent=intent, desired=int(desired)))
+        topk_limit = int(self._movement_cell_head_topk())
+        topk_candidates = list(scored[:topk_limit]) if scored else []
+        if not topk_candidates:
+            return None, None, 0, {"intent": intent, "candidates": len(candidates), "filtered": len(filtered), "reason": "empty_topk"}
+
+        best = topk_candidates[0]
+        chosen_reason = "variant_c_score"
+
+        cell_head_mode = self._movement_cell_head_mode()
+        selector_used = None
+        selector_norm = None
+        if cell_head_mode in {"shadow", "live"} and cell_selector_value is not None:
+            selector_used = int(cell_selector_value)
+            selector_norm = int(selector_used) % len(topk_candidates)
+            cell_choice = topk_candidates[selector_norm]
+            if cell_head_mode == "live":
+                best = cell_choice
+                chosen_reason = "cell_head_live"
+            else:
+                chosen_reason = "cell_head_shadow_fallback"
+
+        bx = int(best.get("x") or 0)
+        by = int(best.get("y") or 0)
+        mode = str(best.get("mode") or "stay")
+        dist = int(best.get("distance") or 0)
+        diag = {
+            "intent": str(intent),
+            "desired": int(desired),
+            "candidates": int(len(candidates)),
+            "filtered": int(len(filtered)),
+            "topk": int(len(topk_candidates)),
+            "chosen_reason": chosen_reason,
+            "cell_head_mode": cell_head_mode,
+            "cell_selector_used": selector_used,
+            "cell_selector_norm": selector_norm,
+            "chosen": (bx, by, mode),
+            "dist_obj": round(float(best.get("dist_obj") or 0.0), 3),
+            "dist_enemy": round(float(best.get("dist_enemy") or 0.0), 3),
+            "distance": dist,
+            "shoot_range_gap": round(float(best.get("shoot_range_gap") or 0.0), 3),
+            "shoot_in_range": int(best.get("shoot_in_range") or 0),
+        }
+        return (bx, by), mode, dist, diag
+
     def _pick_destination_from_overlay(
         self,
         side: str,
@@ -1527,6 +1788,9 @@ class Warhammer40kEnv(gym.Env):
         want: int,
         base_m: int,
         unit_label: str,
+        intent_override: Optional[str] = None,
+        allow_advance_override: Optional[bool] = None,
+        cell_selector_override: Optional[int] = None,
     ) -> tuple[tuple[int, int] | None, str | None, int]:
         overlay = self.get_unit_movement_overlay(side, idx)
         move_cells = overlay.get("move_cells") or []
@@ -1584,6 +1848,39 @@ class Warhammer40kEnv(gym.Env):
             best_mode = "normal"
         elif (bx, by) in advance_set:
             best_mode = "advance"
+
+        policy_mode = self._movement_policy_mode()
+        if policy_mode in {"variant_c_shadow", "variant_c_live"}:
+            intent_raw = str(intent_override or self._variant_c_intent_from_move_dir(int(move_dir)))
+            intent = "to_shoot_range" if intent_raw == "engage_target" else intent_raw
+            allow_advance = bool(allow_advance_override) if allow_advance_override is not None else bool(int(desired) > int(base_m))
+            cand_pos, cand_mode, cand_dist, diag = self._select_movement_candidate_variant_c(
+                side,
+                idx,
+                intent=intent,
+                desired=int(desired),
+                allow_advance=allow_advance,
+                cell_selector_value=cell_selector_override,
+            )
+            if hasattr(self, "_append_agent_log"):
+                self._append_agent_log(
+                    "[MOVE][VARC] "
+                    f"mode={policy_mode} unit={self._unit_id(side, int(idx)) if hasattr(self, '_unit_id') else int(idx)} "
+                    f"intent={intent_raw}->{intent} legacy=({bx},{by},{best_mode},d={dist}) "
+                    f"variant_c={diag.get('chosen')} d={diag.get('distance')} "
+                    f"candidates={diag.get('candidates')} filtered={diag.get('filtered')} shoot_gap={diag.get('shoot_range_gap')}"
+                )
+                self._log(
+                    f"[MOVE][INTENT] {unit_label}: raw={intent_raw}, effective={intent}, chosen={diag.get('chosen')}, "
+                    f"score_obj={diag.get('dist_obj')}, score_range={diag.get('shoot_range_gap')}, allow_advance={int(allow_advance)}"
+                )
+                self._log(
+                    f"[MOVE][CELL_HEAD] {unit_label}: mode={diag.get('cell_head_mode')}, selector={diag.get('cell_selector_used')}, "
+                    f"selector_norm={diag.get('cell_selector_norm')}, topk={diag.get('topk')}, reason={diag.get('chosen_reason')}"
+                )
+            if policy_mode == "variant_c_live" and cand_pos is not None and cand_mode is not None:
+                return cand_pos, cand_mode, int(cand_dist),
+
         return (bx, by), best_mode, dist
 
     def _visibility_report_between_units(self, attacker_side: str, attacker_idx: int, target_side: str, target_idx: int) -> dict:
@@ -3135,6 +3432,11 @@ class Warhammer40kEnv(gym.Env):
             movement_meta = {
                 "applied_hold_penalty": False,
                 "hold_penalty_events": 0,
+                "stay_count": 0,
+                "stay_without_shoot_count": 0,
+                "entered_effective_range_count": 0,
+                "effective_range_bonus_total": 0.0,
+                "stay_no_shoot_penalty_total": 0.0,
             }
             for i in range(len(self.unit_health)):
                 modelName = i + 21
@@ -3144,10 +3446,32 @@ class Warhammer40kEnv(gym.Env):
                     self._log_unit("MODEL", modelName, i, f"Юнит мертв, движение пропущено. Позиция: {pos_before}")
                     continue
                 if self.unitInAttack[i][0] == 0 and self.unit_health[i] > 0:
+                    had_target_before_move, range_gap_before_move = self._unit_has_valid_shoot_target_live("model", i)
                     base_m = int(self.unit_data[i]["Movement"])
                     label = "move_num_" + str(i)
                     want = int(action[label])
                     move_dir = int(action["move"])
+                    intent_key = f"move_intent_{i}"
+                    mode_key = f"move_mode_{i}"
+                    cell_selector_key = f"move_cell_selector_{i}"
+                    intent_override = None
+                    allow_advance_override = None
+                    cell_selector_override = None
+                    if isinstance(action, dict) and intent_key in action:
+                        try:
+                            intent_override = self._variant_c_intent_from_action_value(int(action[intent_key]))
+                        except Exception:
+                            intent_override = None
+                    if isinstance(action, dict) and mode_key in action:
+                        try:
+                            allow_advance_override = bool(int(action[mode_key]) == 1)
+                        except Exception:
+                            allow_advance_override = None
+                    if isinstance(action, dict) and cell_selector_key in action:
+                        try:
+                            cell_selector_override = int(action[cell_selector_key])
+                        except Exception:
+                            cell_selector_override = None
                     advance_roll = None
                     movement = 0.0
 
@@ -3159,6 +3483,9 @@ class Warhammer40kEnv(gym.Env):
                             want=want,
                             base_m=base_m,
                             unit_label=self._format_unit_label("model", i, unit_id=modelName),
+                            intent_override=intent_override,
+                            allow_advance_override=allow_advance_override,
+                            cell_selector_override=cell_selector_override,
                         )
                         if dest is None:
                             advanced_flags[i] = False
@@ -3269,6 +3596,49 @@ class Warhammer40kEnv(gym.Env):
                         self._log_unit("MODEL", modelName, i, f"Движение пропущено (no move). Позиция после: {pos_after}")
                     else:
                         self._log_unit("MODEL", modelName, i, f"Позиция после: {pos_after}")
+
+                    has_target_after_move, range_gap_after_move = self._unit_has_valid_shoot_target_live("model", i)
+                    if int(move_dir) == 4:
+                        movement_meta["stay_count"] += 1
+                        if not has_target_after_move:
+                            stay_penalty = float(getattr(reward_cfg, "MOVE_STAY_NO_SHOOT_PENALTY", 0.06))
+                            stay_penalty = max(0.0, stay_penalty)
+                            if stay_penalty > 0:
+                                reward_delta -= stay_penalty
+                                movement_meta["stay_without_shoot_count"] += 1
+                                movement_meta["stay_no_shoot_penalty_total"] += stay_penalty
+                                self._log_reward_unit(
+                                    "model",
+                                    modelName,
+                                    i,
+                                    f"[MOVE][QUALITY] stay=1 no_shoot_after_move=1 penalty=-{stay_penalty:.3f} "
+                                    f"reason=stay_without_effective_range gap_before={range_gap_before_move:+.3f} gap_after={range_gap_after_move:+.3f}",
+                                )
+                    entered_effective_range = (not had_target_before_move) and has_target_after_move
+                    if entered_effective_range:
+                        range_bonus = float(getattr(reward_cfg, "MOVE_ENTER_EFFECTIVE_RANGE_BONUS", 0.08))
+                        range_cap = max(0.0, float(getattr(reward_cfg, "MOVE_RANGE_BONUS_CAP", 0.12)))
+                        already_bonus = float(movement_meta.get("effective_range_bonus_total", 0.0))
+                        allowed_bonus = min(max(0.0, range_bonus), max(0.0, range_cap - already_bonus))
+                        if allowed_bonus > 0:
+                            reward_delta += allowed_bonus
+                            movement_meta["entered_effective_range_count"] += 1
+                            movement_meta["effective_range_bonus_total"] = already_bonus + allowed_bonus
+                            self._log_reward_unit(
+                                "model",
+                                modelName,
+                                i,
+                                f"[MOVE][QUALITY] entered_effective_range=1 bonus=+{allowed_bonus:.3f} "
+                                f"range_before={range_gap_before_move:+.3f} range_after={range_gap_after_move:+.3f}",
+                            )
+
+                    chosen_cell = tuple(int(v) for v in dest) if dest is not None else None
+                    self._log_unit(
+                        "MODEL",
+                        modelName,
+                        i,
+                        f"[MOVE][DEBUG] chosen_cell={chosen_cell}, move_mode={move_mode}, intent_override={intent_override}, allow_advance_override={allow_advance_override}",
+                    )
 
                     if pos_before != pos_after:
                         self._resolve_overwatch(
@@ -3402,27 +3772,58 @@ class Warhammer40kEnv(gym.Env):
                     self._log_unit("enemy", unit_id, i, f"Юнит мертв, движение пропущено. Позиция: {pos_before}")
                     continue
                 if self.enemyInAttack[i][0] == 0 and self.enemy_health[i] > 0:
-                    base_m = self.enemy_data[i]["Movement"]
+                    base_m = int(self.enemy_data[i]["Movement"])
                     label = "move_num_" + str(i)
-                    want = int(action.get(label, base_m)) if isinstance(action, dict) else base_m
-                    advanced = (move_dir != 4) and (want > base_m)
+                    want = int(action.get(label, base_m)) if isinstance(action, dict) else int(base_m)
+                    intent_key = f"move_intent_{i}"
+                    mode_key = f"move_mode_{i}"
+                    cell_selector_key = f"move_cell_selector_{i}"
+                    intent_override = None
+                    allow_advance_override = None
+                    cell_selector_override = None
+                    if isinstance(action, dict) and intent_key in action:
+                        try:
+                            intent_override = self._variant_c_intent_from_action_value(int(action[intent_key]))
+                        except Exception:
+                            intent_override = None
+                    if isinstance(action, dict) and mode_key in action:
+                        try:
+                            allow_advance_override = bool(int(action[mode_key]) == 1)
+                        except Exception:
+                            allow_advance_override = None
+                    if isinstance(action, dict) and cell_selector_key in action:
+                        try:
+                            cell_selector_override = int(action[cell_selector_key])
+                        except Exception:
+                            cell_selector_override = None
                     advance_roll = None
-                    if advanced:
-                        advance_roll = dice()
-                        max_move = base_m + advance_roll
+                    movement = 0
+                    move_mode = "stay"
+                    advanced = False
+                    if int(move_dir) != 4:
+                        dest, move_mode, movement = self._pick_destination_from_overlay(
+                            "enemy",
+                            i,
+                            move_dir=int(move_dir),
+                            want=int(want),
+                            base_m=int(base_m),
+                            unit_label=self._format_unit_label("enemy", i, unit_id=unit_id),
+                            intent_override=intent_override,
+                            allow_advance_override=allow_advance_override,
+                            cell_selector_override=cell_selector_override,
+                        )
+                        if dest is None:
+                            self.enemy_used_advance[i] = False
+                            self.enemy_advance_roll[i] = None
+                            advanced_flags[i] = False
+                            continue
+                        advanced = str(move_mode) == "advance" or int(movement) > int(base_m)
+                        if advanced:
+                            adv_used = max(0, int(movement) - int(base_m))
+                            advance_roll = max(1, min(6, int(adv_used)))
+                        self.enemy_coords[i] = [int(dest[1]), int(dest[0])]
                     else:
-                        max_move = base_m
-                    movement = min(want, max_move)
-
-                    if move_dir == 0:
-                        self.enemy_coords[i][0] += movement
-                    elif move_dir == 1:
-                        self.enemy_coords[i][0] -= movement
-                    elif move_dir == 2:
-                        self.enemy_coords[i][1] -= movement
-                    elif move_dir == 3:
-                        self.enemy_coords[i][1] += movement
-                    elif move_dir == 4:
+                        move_mode = "stay"
                         for j in range(len(self.coordsOfOM)):
                             if distance(self.enemy_coords[i], self.coordsOfOM[j]) <= 5:
                                 pass
@@ -3431,9 +3832,10 @@ class Warhammer40kEnv(gym.Env):
                     self.enemy_used_advance[i] = bool(advanced)
                     self.enemy_advance_roll[i] = int(advance_roll) if advance_roll is not None else None
                     direction = {0: "down", 1: "up", 2: "left", 3: "right", 4: "stay"}.get(move_dir, "stay")
-                    actual_movement = movement if move_dir != 4 else 0
+                    actual_movement = int(movement) if int(move_dir) != 4 else 0
                     advance_text = "да" if advanced else "нет"
                     if advance_roll is not None:
+                        max_move = int(base_m) + int(advance_roll)
                         advance_detail = f", бросок={advance_roll}, макс={max_move}"
                     else:
                         advance_detail = ""
@@ -3450,10 +3852,17 @@ class Warhammer40kEnv(gym.Env):
                             self.enemy_coords[i][0] -= 1
                     self._adjust_end_move_from_terrain("enemy", i, pos_before, "movement_phase:enemy")
                     pos_after = tuple(self.enemy_coords[i])
-                    if move_dir == 4:
+                    if int(move_dir) == 4:
                         self._log_unit("enemy", unit_id, i, f"Движение пропущено (no move). Позиция после: {pos_after}")
                     else:
                         self._log_unit("enemy", unit_id, i, f"Позиция после: {pos_after}")
+                    chosen_cell = tuple(int(v) for v in dest) if dest is not None else None
+                    self._log_unit(
+                        "enemy",
+                        unit_id,
+                        i,
+                        f"[MOVE][DEBUG] chosen_cell={chosen_cell}, move_mode={move_mode}, intent_override={intent_override}, allow_advance_override={allow_advance_override}",
+                    )
 
                     if pos_before != pos_after:
                         self._resolve_overwatch(
@@ -3731,13 +4140,49 @@ class Warhammer40kEnv(gym.Env):
                         return (dist_to_target, mode_penalty, -dist_from_start)
 
                     best_x, best_y, best_mode = min(candidates, key=_heur_score)
-                    movement = int(self._grid_distance_chebyshev((int(self.enemy_coords[i][0]), int(self.enemy_coords[i][1])), (int(best_y), int(best_x))))
-                    advanced = str(best_mode) == "advance" or int(movement) > int(base_m)
+                    legacy_x, legacy_y, legacy_mode = int(best_x), int(best_y), str(best_mode)
+                    legacy_movement = int(
+                        self._grid_distance_chebyshev(
+                            (int(self.enemy_coords[i][0]), int(self.enemy_coords[i][1])),
+                            (int(legacy_y), int(legacy_x)),
+                        )
+                    )
+
+                    chosen_x, chosen_y, chosen_mode = int(legacy_x), int(legacy_y), str(legacy_mode)
+                    movement = int(legacy_movement)
+
                     if str(best_mode) == "stay":
+                        # Совместимость с существующей эвристической веткой и тестами контракта.
+                        pass
+
+                    policy_mode = self._movement_policy_mode()
+                    if policy_mode in {"variant_c_shadow", "variant_c_live"}:
+                        cand_pos, cand_mode, cand_dist, diag = self._select_movement_candidate_variant_c(
+                            "enemy",
+                            i,
+                            intent="engage_target",
+                            desired=max(1, int(base_m)),
+                            allow_advance=True,
+                            cell_selector_value=None,
+                        )
+                        if hasattr(self, "_append_agent_log"):
+                            self._append_agent_log(
+                                "[MOVE][VARC] "
+                                f"mode={policy_mode} unit={self._unit_id('enemy', int(i)) if hasattr(self, '_unit_id') else int(i)} "
+                                f"intent=engage_target legacy=({legacy_x},{legacy_y},{legacy_mode},d={legacy_movement}) "
+                                f"variant_c={diag.get('chosen')} d={diag.get('distance')} "
+                                f"candidates={diag.get('candidates')} filtered={diag.get('filtered')}"
+                            )
+                        if policy_mode == "variant_c_live" and cand_pos is not None and cand_mode is not None:
+                            chosen_x, chosen_y, chosen_mode = int(cand_pos[0]), int(cand_pos[1]), str(cand_mode)
+                            movement = int(cand_dist)
+
+                    advanced = str(chosen_mode) == "advance" or int(movement) > int(base_m)
+                    if str(chosen_mode) == "stay":
                         self._log(f"[ENEMY][HEUR] Unit {i + 11}: выбран режим stay (distance=0).")
                     adv_used = max(0, int(movement) - int(base_m))
                     advance_roll = max(1, min(6, int(adv_used))) if advanced else None
-                    self.enemy_coords[i] = [int(best_y), int(best_x)]
+                    self.enemy_coords[i] = [int(chosen_y), int(chosen_x)]
 
                     self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
                     for j in range(len(self.unit_health)):
@@ -5644,6 +6089,18 @@ class Warhammer40kEnv(gym.Env):
                     f"kills={kills_dealt}, moved_closer={int(moved_closer)}, "
                     f"min_dist={min_obj_dist_start}->{min_obj_dist_end}"
                 )
+
+        stay_count = int(movement_meta.get("stay_count", 0))
+        stay_no_shoot_count = int(movement_meta.get("stay_without_shoot_count", 0))
+        stay_no_shoot_rate = (float(stay_no_shoot_count) / float(stay_count)) if stay_count > 0 else 0.0
+        self._log_reward(
+            "[MOVE][QUALITY][SUMMARY] "
+            f"stay_count={stay_count}, stay_without_shoot_count={stay_no_shoot_count}, "
+            f"stay_without_shoot_rate={stay_no_shoot_rate:.3f}, "
+            f"entered_effective_range_count={int(movement_meta.get('entered_effective_range_count', 0))}, "
+            f"range_bonus_total={float(movement_meta.get('effective_range_bonus_total', 0.0)):+.3f}, "
+            f"stay_no_shoot_penalty_total=-{float(movement_meta.get('stay_no_shoot_penalty_total', 0.0)):.3f}"
+        )
 
         terrain_snapshot_after = self._terrain_potential_snapshot(start_obj_dists)
         terrain_gamma = float(getattr(reward_cfg, "TERRAIN_POTENTIAL_GAMMA", 0.99))
