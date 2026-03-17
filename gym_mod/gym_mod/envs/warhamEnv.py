@@ -932,7 +932,8 @@ class Warhammer40kEnv(gym.Env):
                 action_spaces[f"move_intent_{i}"] = spaces.Discrete(5)  # to_obj/to_cover/threat_avoid/engage/stay
                 action_spaces[f"move_mode_{i}"] = spaces.Discrete(2)    # 0 normal_only, 1 allow_advance
             cell_head_mode = str(os.getenv("MOVEMENT_CELL_HEAD_MODE", "off") or "off").strip().lower()
-            if cell_head_mode in {"shadow", "live"}:
+            policy_mode = str(os.getenv("MOVEMENT_POLICY_MODE", "legacy") or "legacy").strip().lower()
+            if cell_head_mode in {"shadow", "live"} or policy_mode == "variant_d_cell_live":
                 for i in range(len(model)):
                     # Индекс в top-K кандидатах (см. MOVEMENT_CELL_HEAD_TOPK).
                     action_spaces[f"move_cell_selector_{i}"] = spaces.Discrete(16)
@@ -1533,7 +1534,7 @@ class Warhammer40kEnv(gym.Env):
 
     def _movement_policy_mode(self) -> str:
         mode = str(os.getenv("MOVEMENT_POLICY_MODE", "legacy") or "legacy").strip().lower()
-        if mode not in {"legacy", "variant_c_shadow", "variant_c_live"}:
+        if mode not in {"legacy", "variant_c_shadow", "variant_c_live", "variant_d_cell_live"}:
             return "legacy"
         return mode
 
@@ -1850,7 +1851,7 @@ class Warhammer40kEnv(gym.Env):
             best_mode = "advance"
 
         policy_mode = self._movement_policy_mode()
-        if policy_mode in {"variant_c_shadow", "variant_c_live"}:
+        if policy_mode in {"variant_c_shadow", "variant_c_live", "variant_d_cell_live"}:
             intent_raw = str(intent_override or self._variant_c_intent_from_move_dir(int(move_dir)))
             intent = "to_shoot_range" if intent_raw == "engage_target" else intent_raw
             allow_advance = bool(allow_advance_override) if allow_advance_override is not None else bool(int(desired) > int(base_m))
@@ -1878,8 +1879,15 @@ class Warhammer40kEnv(gym.Env):
                     f"[MOVE][CELL_HEAD] {unit_label}: mode={diag.get('cell_head_mode')}, selector={diag.get('cell_selector_used')}, "
                     f"selector_norm={diag.get('cell_selector_norm')}, topk={diag.get('topk')}, reason={diag.get('chosen_reason')}"
                 )
-            if policy_mode == "variant_c_live" and cand_pos is not None and cand_mode is not None:
+            if policy_mode in {"variant_c_live", "variant_d_cell_live"} and cand_pos is not None and cand_mode is not None:
                 return cand_pos, cand_mode, int(cand_dist),
+            if policy_mode == "variant_d_cell_live":
+                self._log(
+                    f"[MOVE][CELL_HEAD] {unit_label}: strict_mode=1, valid_variant_candidate=0 -> stay. "
+                    "Что случилось: variant selection не вернул валидную клетку. "
+                    "Где: warhamEnv._pick_destination_from_overlay. Что делать дальше: проверить mask/top-K/selector."
+                )
+                return (int(col), int(row)), "stay", 0
 
         return (bx, by), best_mode, dist
 
@@ -4158,7 +4166,7 @@ class Warhammer40kEnv(gym.Env):
                         pass
 
                     policy_mode = self._movement_policy_mode()
-                    if policy_mode in {"variant_c_shadow", "variant_c_live"}:
+                    if policy_mode in {"variant_c_shadow", "variant_c_live", "variant_d_cell_live"}:
                         cand_pos, cand_mode, cand_dist, diag = self._select_movement_candidate_variant_c(
                             "enemy",
                             i,
@@ -4175,9 +4183,12 @@ class Warhammer40kEnv(gym.Env):
                                 f"variant_c={diag.get('chosen')} d={diag.get('distance')} "
                                 f"candidates={diag.get('candidates')} filtered={diag.get('filtered')}"
                             )
-                        if policy_mode == "variant_c_live" and cand_pos is not None and cand_mode is not None:
+                        if policy_mode in {"variant_c_live", "variant_d_cell_live"} and cand_pos is not None and cand_mode is not None:
                             chosen_x, chosen_y, chosen_mode = int(cand_pos[0]), int(cand_pos[1]), str(cand_mode)
                             movement = int(cand_dist)
+                        elif policy_mode == "variant_d_cell_live":
+                            chosen_x, chosen_y, chosen_mode = int(stay_cell[0]), int(stay_cell[1]), "stay"
+                            movement = 0
 
                     advanced = str(chosen_mode) == "advance" or int(movement) > int(base_m)
                     if str(chosen_mode) == "stay":

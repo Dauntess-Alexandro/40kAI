@@ -66,7 +66,7 @@
 
 ## Фаза 0. Инструментация и флаги
 1. Добавить feature-flag:
-   - `MOVEMENT_POLICY_MODE=legacy|variant_c_shadow|variant_c_live`.
+   - `MOVEMENT_POLICY_MODE=legacy|variant_c_shadow|variant_c_live|variant_d_cell_live`.
 2. Добавить логи (без ломки формата):
    - `[MOVE][VARC] unit=... intent=... candidates=... chosen=(x,y,mode) ...`.
 3. Добавить trace-поля в `movement_meta` для offline-сравнения.
@@ -383,6 +383,11 @@
 
 **Условие входа в этап D**
 - Стабильный parity-результат на нескольких seed-батчах подряд.
+
+**Статус этапа D (базово выполнено, gated)**
+- ✅ Добавлен `MOVEMENT_POLICY_MODE=variant_d_cell_live` как строгий cell-based режим без fallback на legacy-направление.
+- ✅ В strict-режиме при невалидном выборе пишется явный лог с причиной и безопасный `stay` (вместо скрытого legacy-подбора).
+- ✅ Для `variant_d_cell_live` автоматически поднимается action-head `move_cell_selector_i` в `variant_c` schema.
 
 ---
 
