@@ -3474,6 +3474,7 @@ class Warhammer40kEnv(gym.Env):
                             cell_selector_override = None
                     advance_roll = None
                     movement = 0.0
+                    dest = None
 
                     if move_dir != 4:
                         dest, move_mode, movement = self._pick_destination_from_overlay(
@@ -3800,6 +3801,7 @@ class Warhammer40kEnv(gym.Env):
                     movement = 0
                     move_mode = "stay"
                     advanced = False
+                    dest = None
                     if int(move_dir) != 4:
                         dest, move_mode, movement = self._pick_destination_from_overlay(
                             "enemy",
