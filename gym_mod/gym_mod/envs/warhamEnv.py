@@ -924,7 +924,7 @@ class Warhammer40kEnv(gym.Env):
         # move_num_i теперь трактуется как индекс клетки в списке reachable-клеток
         # (с fallback на старую directional-логику при невалидном выборе).
         for i in range(len(model)):
-            action_spaces[f"move_num_{i}"] = spaces.Discrete(12)
+            action_spaces[f"move_num_{i}"] = spaces.Discrete(24)
 
         # ✅ 3) Теперь только ОДИН раз создаём spaces.Dict
         self.action_space = spaces.Dict(action_spaces)
