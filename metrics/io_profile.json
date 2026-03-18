@@ -1,23 +1,23 @@
 {
-  "generated_at": "2026-03-18T06:59:33Z",
+  "generated_at": "2026-03-18T12:01:40Z",
   "categories": {
     "log append": {
       "count": 3,
-      "total_ms": 1.137,
-      "avg_ms": 0.379,
-      "max_ms": 0.71
+      "total_ms": 0.86,
+      "avg_ms": 0.287,
+      "max_ms": 0.404
     },
     "checkpoint save": {
-      "count": 4,
-      "total_ms": 19081.033,
-      "avg_ms": 4770.258,
-      "max_ms": 5845.279
+      "count": 7,
+      "total_ms": 53430.299,
+      "avg_ms": 7632.9,
+      "max_ms": 9625.873
     },
     "metrics save": {
       "count": 2,
-      "total_ms": 5.223,
-      "avg_ms": 2.612,
-      "max_ms": 4.933
+      "total_ms": 9.597,
+      "avg_ms": 4.799,
+      "max_ms": 9.37
     }
   }
 }
