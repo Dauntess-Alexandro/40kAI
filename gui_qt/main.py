@@ -1182,27 +1182,42 @@ class GUIController(QtCore.QObject):
             env_overrides["SELF_PLAY_ENABLED"] = "1"
 
         if mode == "selfplay" and self._self_play_from_checkpoint:
-            checkpoint_path = self._find_latest_checkpoint_file()
+            checkpoint_path = self._find_latest_resume_file()
             if not checkpoint_path:
-                self._emit_status(
-                    "Чекпойнты .pth не найдены. "
-                    "Снимите галочку или включите сохранение чекпойнтов."
+                message = (
+                    "Не найден checkpoint/model для самообучения от старой модели. "
+                    "Где: gui_qt/main.py (_start_training). "
+                    "Что делать дальше: сохраните checkpoint_ep*.pth (или model-*.pth) "
+                    "или снимите галочку 'Самообучение от старой модели'."
                 )
+                self._emit_status(message)
+                self._emit_log(f"[GUI] {message}", level="ERROR")
                 return
             env_overrides["SELF_PLAY_OPPONENT_MODE"] = "fixed_checkpoint"
             env_overrides["SELF_PLAY_FIXED_PATH"] = checkpoint_path
+            self._emit_log(f"[GUI] [SELFPLAY] fixed checkpoint: {checkpoint_path}", level="INFO")
 
         if self._resume_from_checkpoint:
             resume_path = self._find_latest_resume_file()
             if not resume_path:
-                self._emit_status(
+                message = (
                     "Resume включён, но checkpoint_ep*.pth и model-*.pth не найдены. "
                     "Где: gui_qt/main.py (_start_training). "
-                    "Что делать: сохраните чекпойнт и запустите снова или снимите галочку resume."
+                    "Что делать дальше: сохраните чекпойнт и запустите снова или снимите галочку resume."
                 )
+                self._emit_status(message)
+                self._emit_log(f"[GUI] {message}", level="ERROR")
                 return
             env_overrides["RESUME_CHECKPOINT"] = resume_path
             self._emit_log(f"[GUI] [RESUME] Использую чекпойнт: {resume_path}", level="INFO")
+
+        self._emit_log(
+            "[GUI] Параметры запуска: "
+            f"mode={mode}, self_play_from_checkpoint={int(self._self_play_from_checkpoint)}, "
+            f"resume={int(self._resume_from_checkpoint)}, auto_clear_logs={int(self._auto_clear_logs)}, "
+            f"disable_train_logging={int(self._disable_train_logging)}",
+            level="INFO",
+        )
 
         self._emit_log(f"[GUI] Запуск {status_prefix.lower()}...", level="INFO")
         self._emit_status(f"{status_prefix}...")
