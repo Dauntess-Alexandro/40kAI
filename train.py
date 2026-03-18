@@ -117,9 +117,110 @@ SELF_PLAY_UPDATE_EVERY_EPISODES = int(os.getenv("SELF_PLAY_UPDATE_EVERY_EPISODES
 SELF_PLAY_OPPONENT_MODE = os.getenv("SELF_PLAY_OPPONENT_MODE", "snapshot")
 SELF_PLAY_FIXED_PATH = os.getenv("SELF_PLAY_FIXED_PATH", "")
 SELF_PLAY_OPPONENT_EPSILON = float(os.getenv("SELF_PLAY_OPPONENT_EPSILON", "0.0"))
+SELF_PLAY_OPPONENT_EPSILON_MIN = float(os.getenv("SELF_PLAY_OPPONENT_EPSILON_MIN", str(SELF_PLAY_OPPONENT_EPSILON)))
+SELF_PLAY_OPPONENT_EPSILON_MAX = float(os.getenv("SELF_PLAY_OPPONENT_EPSILON_MAX", str(max(SELF_PLAY_OPPONENT_EPSILON, 0.08))))
+SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES = int(os.getenv("SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES", "800"))
+SELF_PLAY_ADAPTIVE_UPDATE = os.getenv("SELF_PLAY_ADAPTIVE_UPDATE", "1") == "1"
+SELF_PLAY_UPDATE_EVERY_MIN = int(os.getenv("SELF_PLAY_UPDATE_EVERY_MIN", "25"))
+SELF_PLAY_UPDATE_EVERY_MAX = int(os.getenv("SELF_PLAY_UPDATE_EVERY_MAX", "150"))
+SELF_PLAY_DRAW_RATE_HIGH = float(os.getenv("SELF_PLAY_DRAW_RATE_HIGH", "0.70"))
+SELF_PLAY_DRAW_RATE_LOW = float(os.getenv("SELF_PLAY_DRAW_RATE_LOW", "0.45"))
+SELF_PLAY_POOL_ENABLED = os.getenv("SELF_PLAY_POOL_ENABLED", "1") == "1"
+SELF_PLAY_POOL_SIZE = int(os.getenv("SELF_PLAY_POOL_SIZE", "6"))
+SELF_PLAY_POOL_SAMPLE_OLD_PROB = float(os.getenv("SELF_PLAY_POOL_SAMPLE_OLD_PROB", "0.60"))
+SELF_PLAY_POOL_SMART_SAMPLING = os.getenv("SELF_PLAY_POOL_SMART_SAMPLING", "1") == "1"
+SELF_PLAY_POOL_SCORE_WIN_W = float(os.getenv("SELF_PLAY_POOL_SCORE_WIN_W", "0.55"))
+SELF_PLAY_POOL_SCORE_DRAW_W = float(os.getenv("SELF_PLAY_POOL_SCORE_DRAW_W", "0.30"))
+SELF_PLAY_POOL_SCORE_VP_W = float(os.getenv("SELF_PLAY_POOL_SCORE_VP_W", "0.15"))
+SELF_PLAY_POOL_SCORE_EXPLORE_BONUS = float(os.getenv("SELF_PLAY_POOL_SCORE_EXPLORE_BONUS", "0.20"))
+SELF_PLAY_POOL_EMA_ENABLED = os.getenv("SELF_PLAY_POOL_EMA_ENABLED", "1") == "1"
+SELF_PLAY_POOL_EMA_ALPHA = float(os.getenv("SELF_PLAY_POOL_EMA_ALPHA", "0.15"))
+SELF_PLAY_POOL_MIN_GAMES_FOR_SMART = int(os.getenv("SELF_PLAY_POOL_MIN_GAMES_FOR_SMART", "3"))
+
+EVAL_WINDOW_EPISODES = int(os.getenv("EVAL_WINDOW_EPISODES", "100"))
+EVAL_WINDOW_LOG_EVERY = int(os.getenv("EVAL_WINDOW_LOG_EVERY", "50"))
+DRAW_PIT_ALERT_RATE = float(os.getenv("DRAW_PIT_ALERT_RATE", "0.70"))
+DRAW_PIT_ALERT_WIN_MAX = float(os.getenv("DRAW_PIT_ALERT_WIN_MAX", "0.15"))
+DRAW_PIT_ALERT_STREAK = int(os.getenv("DRAW_PIT_ALERT_STREAK", "3"))
+
+BEST_EVAL_ENABLED = os.getenv("BEST_EVAL_ENABLED", "1") == "1"
+BEST_EVAL_W_WIN = float(os.getenv("BEST_EVAL_W_WIN", "1.00"))
+BEST_EVAL_W_DRAW = float(os.getenv("BEST_EVAL_W_DRAW", "0.50"))
+BEST_EVAL_W_WIPE_ENEMY = float(os.getenv("BEST_EVAL_W_WIPE_ENEMY", "0.30"))
+BEST_EVAL_W_WIPE_MODEL = float(os.getenv("BEST_EVAL_W_WIPE_MODEL", "0.20"))
+BEST_EVAL_W_VP = float(os.getenv("BEST_EVAL_W_VP", "0.25"))
+
+DRAW_GUARD_ENABLED = os.getenv("DRAW_GUARD_ENABLED", "1") == "1"
+DRAW_GUARD_PENALTY_STEP = float(os.getenv("DRAW_GUARD_PENALTY_STEP", "0.02"))
+DRAW_GUARD_PENALTY_MAX = float(os.getenv("DRAW_GUARD_PENALTY_MAX", "1.00"))
+DRAW_GUARD_POOL_OLD_PROB_STEP = float(os.getenv("DRAW_GUARD_POOL_OLD_PROB_STEP", "0.05"))
+DRAW_GUARD_POOL_OLD_PROB_MAX = float(os.getenv("DRAW_GUARD_POOL_OLD_PROB_MAX", "0.95"))
+
+DET_EVAL_ENABLED = os.getenv("DET_EVAL_ENABLED", "1") == "1"
+DET_EVAL_EVERY_EPISODES = int(os.getenv("DET_EVAL_EVERY_EPISODES", "250"))
+DET_EVAL_EPISODES = int(os.getenv("DET_EVAL_EPISODES", "20"))
+DET_EVAL_OPPONENT_EPSILON = float(os.getenv("DET_EVAL_OPPONENT_EPSILON", "0.0"))
+
+REWARD_SCHEDULE_ENABLED = os.getenv("REWARD_SCHEDULE_ENABLED", "1") == "1"
+REWARD_STAGE1_END_EP = int(os.getenv("REWARD_STAGE1_END_EP", "1500"))
+REWARD_STAGE2_END_EP = int(os.getenv("REWARD_STAGE2_END_EP", "3500"))
+REWARD_STAGE1_DRAW_PENALTY = float(os.getenv("REWARD_STAGE1_DRAW_PENALTY", str(getattr(reward_cfg, "TURN_LIMIT_DRAW_PENALTY", 0.35))))
+REWARD_STAGE2_DRAW_PENALTY = float(os.getenv("REWARD_STAGE2_DRAW_PENALTY", str(max(getattr(reward_cfg, "TURN_LIMIT_DRAW_PENALTY", 0.35), 0.45))))
+REWARD_STAGE3_DRAW_PENALTY = float(os.getenv("REWARD_STAGE3_DRAW_PENALTY", str(max(getattr(reward_cfg, "TURN_LIMIT_DRAW_PENALTY", 0.35), 0.60))))
+REWARD_STAGE1_VP_REWARD_SCALE = float(os.getenv("REWARD_STAGE1_VP_REWARD_SCALE", str(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_REWARD_SCALE", 0.12))))
+REWARD_STAGE2_VP_REWARD_SCALE = float(os.getenv("REWARD_STAGE2_VP_REWARD_SCALE", str(max(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_REWARD_SCALE", 0.12), 0.16))))
+REWARD_STAGE3_VP_REWARD_SCALE = float(os.getenv("REWARD_STAGE3_VP_REWARD_SCALE", str(max(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_REWARD_SCALE", 0.12), 0.20))))
 
 if SELF_PLAY_UPDATE_EVERY_EPISODES < 1:
     SELF_PLAY_UPDATE_EVERY_EPISODES = 1
+if SELF_PLAY_UPDATE_EVERY_MIN < 1:
+    SELF_PLAY_UPDATE_EVERY_MIN = 1
+if SELF_PLAY_UPDATE_EVERY_MAX < SELF_PLAY_UPDATE_EVERY_MIN:
+    SELF_PLAY_UPDATE_EVERY_MAX = SELF_PLAY_UPDATE_EVERY_MIN
+if SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES < 1:
+    SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES = 1
+if SELF_PLAY_OPPONENT_EPSILON_MIN < 0:
+    SELF_PLAY_OPPONENT_EPSILON_MIN = 0.0
+if SELF_PLAY_OPPONENT_EPSILON_MAX < SELF_PLAY_OPPONENT_EPSILON_MIN:
+    SELF_PLAY_OPPONENT_EPSILON_MAX = SELF_PLAY_OPPONENT_EPSILON_MIN
+if SELF_PLAY_POOL_SIZE < 1:
+    SELF_PLAY_POOL_SIZE = 1
+if SELF_PLAY_POOL_SAMPLE_OLD_PROB < 0:
+    SELF_PLAY_POOL_SAMPLE_OLD_PROB = 0.0
+if SELF_PLAY_POOL_SAMPLE_OLD_PROB > 1:
+    SELF_PLAY_POOL_SAMPLE_OLD_PROB = 1.0
+if SELF_PLAY_POOL_SCORE_EXPLORE_BONUS < 0:
+    SELF_PLAY_POOL_SCORE_EXPLORE_BONUS = 0.0
+if SELF_PLAY_POOL_EMA_ALPHA <= 0:
+    SELF_PLAY_POOL_EMA_ALPHA = 0.05
+if SELF_PLAY_POOL_EMA_ALPHA > 1:
+    SELF_PLAY_POOL_EMA_ALPHA = 1.0
+if SELF_PLAY_POOL_MIN_GAMES_FOR_SMART < 0:
+    SELF_PLAY_POOL_MIN_GAMES_FOR_SMART = 0
+if DRAW_GUARD_PENALTY_STEP < 0:
+    DRAW_GUARD_PENALTY_STEP = 0.0
+if DRAW_GUARD_PENALTY_MAX < 0:
+    DRAW_GUARD_PENALTY_MAX = 0.0
+if DRAW_GUARD_POOL_OLD_PROB_STEP < 0:
+    DRAW_GUARD_POOL_OLD_PROB_STEP = 0.0
+if DRAW_GUARD_POOL_OLD_PROB_MAX < 0:
+    DRAW_GUARD_POOL_OLD_PROB_MAX = 0.0
+if DRAW_GUARD_POOL_OLD_PROB_MAX > 1:
+    DRAW_GUARD_POOL_OLD_PROB_MAX = 1.0
+if DET_EVAL_EVERY_EPISODES < 1:
+    DET_EVAL_EVERY_EPISODES = 1
+if DET_EVAL_EPISODES < 1:
+    DET_EVAL_EPISODES = 1
+if REWARD_STAGE1_END_EP < 0:
+    REWARD_STAGE1_END_EP = 0
+if REWARD_STAGE2_END_EP < REWARD_STAGE1_END_EP:
+    REWARD_STAGE2_END_EP = REWARD_STAGE1_END_EP
+if EVAL_WINDOW_EPISODES < 1:
+    EVAL_WINDOW_EPISODES = 1
+if EVAL_WINDOW_LOG_EVERY < 1:
+    EVAL_WINDOW_LOG_EVERY = 1
+if DRAW_PIT_ALERT_STREAK < 1:
+    DRAW_PIT_ALERT_STREAK = 1
 if SELF_PLAY_OPPONENT_MODE not in ("snapshot", "fixed_checkpoint"):
     raise ValueError(
         "SELF_PLAY_OPPONENT_MODE должен быть 'snapshot' или 'fixed_checkpoint'. "
@@ -992,10 +1093,28 @@ def main():
             "[TRAIN][BOOT] "
             f"SELF_PLAY_ENABLED={int(SELF_PLAY_ENABLED)} "
             f"SELF_PLAY_OPPONENT_MODE={SELF_PLAY_OPPONENT_MODE} "
+            f"SELF_PLAY_OPP_EPS_MIN={SELF_PLAY_OPPONENT_EPSILON_MIN:.3f} "
+            f"SELF_PLAY_OPP_EPS_MAX={SELF_PLAY_OPPONENT_EPSILON_MAX:.3f} "
+            f"SELF_PLAY_OPP_EPS_DECAY_EP={SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES} "
+            f"SELF_PLAY_ADAPTIVE_UPDATE={int(SELF_PLAY_ADAPTIVE_UPDATE)} "
+            f"SELF_PLAY_POOL_ENABLED={int(SELF_PLAY_POOL_ENABLED)} "
+            f"SELF_PLAY_POOL_SIZE={SELF_PLAY_POOL_SIZE} "
+            f"SELF_PLAY_POOL_SAMPLE_OLD_PROB={SELF_PLAY_POOL_SAMPLE_OLD_PROB:.2f} "
+            f"SELF_PLAY_POOL_SMART_SAMPLING={int(SELF_PLAY_POOL_SMART_SAMPLING)} "
+            f"SELF_PLAY_POOL_EMA_ENABLED={int(SELF_PLAY_POOL_EMA_ENABLED)} "
+            f"SELF_PLAY_POOL_EMA_ALPHA={SELF_PLAY_POOL_EMA_ALPHA:.3f} "
+            f"SELF_PLAY_POOL_MIN_GAMES_FOR_SMART={SELF_PLAY_POOL_MIN_GAMES_FOR_SMART} "
             f"RESUME_CHECKPOINT={'set' if bool(RESUME_CHECKPOINT) else 'empty'} "
             f"DEPLOYMENT_MODE={deployment_mode} "
             f"DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE={int(manual_in_rl_phase)} "
-            f"stdin_is_tty={int(stdin_is_tty)}"
+            f"stdin_is_tty={int(stdin_is_tty)} "
+            f"EVAL_WINDOW_EPISODES={EVAL_WINDOW_EPISODES} "
+            f"DRAW_PIT_ALERT_RATE={DRAW_PIT_ALERT_RATE:.2f} "
+            f"DRAW_PIT_ALERT_WIN_MAX={DRAW_PIT_ALERT_WIN_MAX:.2f} "
+            f"BEST_EVAL_ENABLED={int(BEST_EVAL_ENABLED)} "
+            f"DRAW_GUARD_ENABLED={int(DRAW_GUARD_ENABLED)} "
+            f"DET_EVAL_ENABLED={int(DET_EVAL_ENABLED)} "
+            f"REWARD_SCHEDULE_ENABLED={int(REWARD_SCHEDULE_ENABLED)}"
         )
         if TRAIN_LOG_TO_FILE:
             append_agent_log(boot_env_line)
@@ -1205,6 +1324,98 @@ def main():
             print(f"[WARN] torch.compile недоступен: {exc}")
     
     opponent_policy_net = None
+    current_selfplay_update_every = SELF_PLAY_UPDATE_EVERY_EPISODES
+    opponent_eps_state = {"value": float(SELF_PLAY_OPPONENT_EPSILON)}
+    opponent_pool_entries = collections.deque(maxlen=SELF_PLAY_POOL_SIZE)
+    opponent_pool_next_id = {"value": 1}
+    opponent_source_state = {"source": "unset", "id": None, "score": None}
+    pool_sampling_state = {"old_prob": float(SELF_PLAY_POOL_SAMPLE_OLD_PROB)}
+    draw_guard_state = {"turn_limit_draw_penalty": float(getattr(reward_cfg, "TURN_LIMIT_DRAW_PENALTY", 0.0))}
+
+    def _clone_state_dict_cpu(state_dict: dict) -> dict:
+        cloned = {}
+        for key, value in state_dict.items():
+            if torch.is_tensor(value):
+                cloned[key] = value.detach().cpu().clone()
+            else:
+                cloned[key] = value
+        return cloned
+
+    def _load_opponent_state(state_dict: dict, source_label: str, source_id=None, source_score=None) -> None:
+        if opponent_policy_net is None:
+            return
+        opponent_policy_net.load_state_dict(normalize_state_dict(state_dict))
+        opponent_source_state["source"] = source_label
+        opponent_source_state["id"] = source_id
+        opponent_source_state["score"] = source_score
+
+    def _create_pool_entry(state_dict: dict) -> dict:
+        entry_id = int(opponent_pool_next_id["value"])
+        opponent_pool_next_id["value"] += 1
+        return {
+            "id": entry_id,
+            "state_dict": _clone_state_dict_cpu(state_dict),
+            "games": 0,
+            "wins": 0,
+            "draws": 0,
+            "vp_diff_sum": 0.0,
+            "ema_win": 0.5,
+            "ema_draw": 0.5,
+            "ema_vp_diff": 0.0,
+        }
+
+    def _pool_entry_score(entry: dict) -> float:
+        games = max(0, int(entry.get("games", 0)))
+        if games <= 0:
+            win_rate = 0.5
+            draw_rate = 0.5
+            vp_diff_mean = 0.0
+        else:
+            if SELF_PLAY_POOL_EMA_ENABLED:
+                win_rate = float(entry.get("ema_win", 0.5))
+                draw_rate = float(entry.get("ema_draw", 0.5))
+                vp_diff_mean = float(entry.get("ema_vp_diff", 0.0))
+            else:
+                win_rate = float(entry.get("wins", 0)) / float(games)
+                draw_rate = float(entry.get("draws", 0)) / float(games)
+                vp_diff_mean = float(entry.get("vp_diff_sum", 0.0)) / float(games)
+
+        if games < SELF_PLAY_POOL_MIN_GAMES_FOR_SMART:
+            # Пока мало наблюдений — смягчаем оценку, чтобы не переоценивать шум.
+            confidence = float(games) / max(1.0, float(SELF_PLAY_POOL_MIN_GAMES_FOR_SMART))
+            win_rate = 0.5 + (win_rate - 0.5) * confidence
+            draw_rate = 0.5 + (draw_rate - 0.5) * confidence
+            vp_diff_mean = vp_diff_mean * confidence
+        vp_hard = max(0.0, -vp_diff_mean) / max(1.0, float(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_CLAMP", 3.0)))
+        explore_bonus = SELF_PLAY_POOL_SCORE_EXPLORE_BONUS / float(1 + games)
+        score = (
+            SELF_PLAY_POOL_SCORE_WIN_W * (1.0 - win_rate)
+            + SELF_PLAY_POOL_SCORE_DRAW_W * draw_rate
+            + SELF_PLAY_POOL_SCORE_VP_W * vp_hard
+            + explore_bonus
+        )
+        return float(max(1e-6, score))
+
+    def _choose_opponent_from_pool(latest_policy_state: dict):
+        if not SELF_PLAY_POOL_ENABLED or len(opponent_pool_entries) == 0:
+            return latest_policy_state, "latest", None, None
+        sample_old = random.random() < float(pool_sampling_state.get("old_prob", SELF_PLAY_POOL_SAMPLE_OLD_PROB))
+        if not sample_old:
+            return latest_policy_state, "latest", None, None
+
+        # исключаем самый свежий элемент (он соответствует latest-снапшоту)
+        candidates = list(opponent_pool_entries)[:-1] if len(opponent_pool_entries) > 1 else []
+        if not candidates:
+            return latest_policy_state, "latest", None, None
+
+        if SELF_PLAY_POOL_SMART_SAMPLING:
+            weights = [_pool_entry_score(entry) for entry in candidates]
+            picked = random.choices(candidates, weights=weights, k=1)[0]
+            picked_score = _pool_entry_score(picked)
+            return picked["state_dict"], "pool_smart", int(picked.get("id")), float(picked_score)
+
+        picked = random.choice(candidates)
+        return picked["state_dict"], "pool_random", int(picked.get("id")), None
     if SELF_PLAY_ENABLED:
         opponent_policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
         opponent_policy_net.eval()
@@ -1278,8 +1489,20 @@ def main():
             append_agent_log(
                 f"[SELFPLAY] fixed_checkpoint path={SELF_PLAY_FIXED_PATH}"
             )
+            opponent_source_state["source"] = "fixed_checkpoint"
+            opponent_source_state["id"] = None
+            opponent_source_state["score"] = None
         else:
-            opponent_policy_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
+            initial_policy_state = normalize_state_dict(policy_net.state_dict())
+            _load_opponent_state(initial_policy_state, "latest_init", source_id=None, source_score=None)
+            opponent_pool_entries.append(_create_pool_entry(initial_policy_state))
+
+        opponent_eps_state["value"] = float(
+            max(
+                SELF_PLAY_OPPONENT_EPSILON_MIN,
+                min(SELF_PLAY_OPPONENT_EPSILON_MAX, SELF_PLAY_OPPONENT_EPSILON_MAX),
+            )
+        )
     
     scaler = torch.cuda.amp.GradScaler(enabled=USE_AMP)
     
@@ -1290,7 +1513,7 @@ def main():
             env,
             obs,
             opponent_policy_net,
-            SELF_PLAY_OPPONENT_EPSILON,
+            float(opponent_eps_state["value"]),
             len_model,
         )
         return convertToDict(action)
@@ -1351,6 +1574,11 @@ def main():
     randNum = np.random.randint(0, 10000000)
     metrics_obj = metrics(fold, randNum, date)
     ep_rows = [] 
+    eval_window = collections.deque(maxlen=EVAL_WINDOW_EPISODES)
+    draw_pit_alert_streak = 0
+    best_eval_score = float("-inf")
+    best_eval_episode = 0
+    reward_schedule_state = {"stage": None}
     
     global_step = int(resume_meta.get("global_step", 0) or 0)
     optimize_steps = int(resume_meta.get("optimize_steps", 0) or 0)
@@ -1401,6 +1629,133 @@ def main():
         append_agent_log(
             "Старт обучения: USE_SUBPROC_ENVS=1, начальные HP недоступны из subprocess env."
         )
+
+    def _apply_reward_schedule(total_episode: int) -> None:
+        if not REWARD_SCHEDULE_ENABLED:
+            return
+        if total_episode <= REWARD_STAGE1_END_EP:
+            stage = 1
+            draw_penalty = REWARD_STAGE1_DRAW_PENALTY
+            vp_reward_scale = REWARD_STAGE1_VP_REWARD_SCALE
+        elif total_episode <= REWARD_STAGE2_END_EP:
+            stage = 2
+            draw_penalty = REWARD_STAGE2_DRAW_PENALTY
+            vp_reward_scale = REWARD_STAGE2_VP_REWARD_SCALE
+        else:
+            stage = 3
+            draw_penalty = REWARD_STAGE3_DRAW_PENALTY
+            vp_reward_scale = REWARD_STAGE3_VP_REWARD_SCALE
+        reward_cfg.TURN_LIMIT_DRAW_PENALTY = float(draw_penalty)
+        reward_cfg.TURN_LIMIT_VP_MARGIN_REWARD_SCALE = float(vp_reward_scale)
+        draw_guard_state["turn_limit_draw_penalty"] = float(draw_penalty)
+        if reward_schedule_state["stage"] != stage:
+            reward_schedule_state["stage"] = stage
+            append_agent_log(
+                "[TRAIN][REWARD_SCHEDULE] "
+                f"episode={total_episode} stage={stage} "
+                f"TURN_LIMIT_DRAW_PENALTY={draw_penalty:.3f} "
+                f"TURN_LIMIT_VP_MARGIN_REWARD_SCALE={vp_reward_scale:.3f}"
+            )
+
+    def _run_deterministic_eval(total_episode: int) -> None:
+        if not DET_EVAL_ENABLED:
+            return
+        if total_episode <= 0 or total_episode % DET_EVAL_EVERY_EPISODES != 0:
+            return
+        wins = 0
+        draws = 0
+        wipeout_enemy = 0
+        wipeout_model = 0
+        turn_limit = 0
+        vp_diff_sum = 0.0
+        for _ in range(DET_EVAL_EPISODES):
+            eval_enemy, eval_model = _build_units_from_config(roster_config, b_len, b_hei)
+            mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+            attacker_side, defender_side = roll_off_attacker_defender(manual_roll_allowed=False, log_fn=None)
+            deploy_for_mission(
+                mission_name,
+                model_units=eval_model,
+                enemy_units=eval_enemy,
+                b_len=b_len,
+                b_hei=b_hei,
+                attacker_side=attacker_side,
+                log_fn=None,
+            )
+            post_deploy_setup(log_fn=None)
+            eval_env = gym.make("40kAI-v0", disable_env_checker=True, enemy=eval_enemy, model=eval_model, b_len=b_len, b_hei=b_hei)
+            eval_env.attacker_side = attacker_side
+            eval_env.defender_side = defender_side
+            state_eval, info_eval = eval_env.reset(options={"m": eval_model, "e": eval_enemy, "trunc": True})
+            done_eval = False
+            step_guard = 0
+            while not done_eval and step_guard < 256:
+                step_guard += 1
+                shoot_mask_eval = build_shoot_action_mask(eval_env, log_fn=None, debug=False)
+                action_eval = select_action_with_epsilon(
+                    eval_env,
+                    state_eval,
+                    policy_net,
+                    0.0,
+                    len(eval_model),
+                    shoot_mask=shoot_mask_eval,
+                )
+                action_eval_dict = convertToDict(action_eval)
+                eval_unwrapped = unwrap_env(eval_env)
+                if SELF_PLAY_ENABLED and opponent_policy_net is not None:
+                    eval_unwrapped.enemyTurn(
+                        trunc=trunc,
+                        policy_fn=lambda obs, env=eval_env, lm=len(eval_model): convertToDict(
+                            select_action_with_epsilon(
+                                env,
+                                obs,
+                                opponent_policy_net,
+                                DET_EVAL_OPPONENT_EPSILON,
+                                lm,
+                            )
+                        ),
+                    )
+                else:
+                    eval_unwrapped.enemyTurn(trunc=trunc)
+                next_state_eval, _reward_eval, done_eval, _res_eval, info_eval = eval_env.step(action_eval_dict)
+                state_eval = next_state_eval
+            end_reason_eval = info_eval.get("end reason", "")
+            vp_diff_eval = int(info_eval.get("model VP", 0)) - int(info_eval.get("player VP", 0))
+            vp_diff_sum += float(vp_diff_eval)
+            if end_reason_eval == "wipeout_enemy":
+                wins += 1
+                wipeout_enemy += 1
+            elif end_reason_eval == "wipeout_model":
+                wipeout_model += 1
+            elif str(end_reason_eval).startswith("turn_limit"):
+                turn_limit += 1
+                if vp_diff_eval > 0:
+                    wins += 1
+                elif vp_diff_eval == 0:
+                    draws += 1
+            else:
+                if vp_diff_eval > 0:
+                    wins += 1
+                elif vp_diff_eval == 0:
+                    draws += 1
+            try:
+                eval_env.close()
+            except Exception:
+                pass
+        n_eval = max(1, DET_EVAL_EPISODES)
+        eval_det_line = (
+            "[EVAL][DET] "
+            f"episode={total_episode} "
+            f"eval_episodes={n_eval} "
+            f"win_rate={wins/n_eval:.3f} "
+            f"draw_rate={draws/n_eval:.3f} "
+            f"turn_limit_rate={turn_limit/n_eval:.3f} "
+            f"wipeout_enemy_rate={wipeout_enemy/n_eval:.3f} "
+            f"wipeout_model_rate={wipeout_model/n_eval:.3f} "
+            f"vp_diff_mean={vp_diff_sum/n_eval:.3f}"
+        )
+        append_agent_log(eval_det_line)
+
+    _apply_reward_schedule(resume_episode_base + numLifeT)
     
     while end is False:
         shoot_masks = []
@@ -1497,7 +1852,7 @@ def main():
             else:
                 ctx["shoot_windows_with_targets"] += 1
                 shoot_raw = int(action_dict.get("shoot", -1))
-                if shoot_raw < 0 or shoot_raw >= len(valid_shoot_indices):
+                if shoot_raw not in valid_shoot_indices:
                     ctx["action_head_invalid"]["shoot"] += 1
 
         step_results = [None] * len(env_contexts)
@@ -1603,7 +1958,10 @@ def main():
                     append_agent_log(
                         f"Конец эпизода {numLifeT + 1}. "
                         f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
-                        f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
+                        f"update_every={current_selfplay_update_every} opp_eps={float(opponent_eps_state.get('value', SELF_PLAY_OPPONENT_EPSILON)):.3f} "
+                        f"opponent_source={opponent_source_state.get('source', 'unknown')} "
+                        f"opponent_id={opponent_source_state.get('id')} "
+                        f"opponent_score={opponent_source_state.get('score')}"
                     )
                 end_reason_env = info.get("end reason", "")
                 winner_env = info.get("winner")
@@ -1734,6 +2092,162 @@ def main():
                         append_agent_log(train_ep_line)
                     if TRAIN_LOG_TO_CONSOLE:
                         print(train_ep_line)
+
+                eval_window.append(
+                    {
+                        "win": 1 if result == "win" else 0,
+                        "draw": 1 if result == "draw" else 0,
+                        "wipeout_enemy": 1 if end_reason == "wipeout_enemy" else 0,
+                        "wipeout_model": 1 if end_reason == "wipeout_model" else 0,
+                        "turn_limit": 1 if str(end_reason).startswith("turn_limit") else 0,
+                        "vp_diff": float(vp_diff),
+                    }
+                )
+                should_log_eval_window = (
+                    len(eval_window) >= EVAL_WINDOW_EPISODES
+                    and ((numLifeT + 1) % EVAL_WINDOW_LOG_EVERY == 0 or (numLifeT + 1) == totLifeT)
+                )
+                if should_log_eval_window:
+                    window_len = max(1, len(eval_window))
+                    win_rate_w = sum(item["win"] for item in eval_window) / window_len
+                    draw_rate_w = sum(item["draw"] for item in eval_window) / window_len
+                    turn_limit_rate_w = sum(item["turn_limit"] for item in eval_window) / window_len
+                    wipeout_enemy_rate_w = sum(item["wipeout_enemy"] for item in eval_window) / window_len
+                    wipeout_model_rate_w = sum(item["wipeout_model"] for item in eval_window) / window_len
+                    vp_diff_mean_w = sum(item["vp_diff"] for item in eval_window) / window_len
+                    eval_line = (
+                        "[TRAIN][EVAL_WINDOW] "
+                        f"ep={numLifeT + 1} "
+                        f"window={window_len} "
+                        f"win_rate={win_rate_w:.3f} "
+                        f"draw_rate={draw_rate_w:.3f} "
+                        f"turn_limit_rate={turn_limit_rate_w:.3f} "
+                        f"wipeout_enemy_rate={wipeout_enemy_rate_w:.3f} "
+                        f"wipeout_model_rate={wipeout_model_rate_w:.3f} "
+                        f"vp_diff_mean={vp_diff_mean_w:.3f} "
+                        f"opp_eps={float(opponent_eps_state.get('value', SELF_PLAY_OPPONENT_EPSILON)):.3f} "
+                        f"snapshot_update_every={int(current_selfplay_update_every)} "
+                        f"pool_old_prob={float(pool_sampling_state.get('old_prob', SELF_PLAY_POOL_SAMPLE_OLD_PROB)):.3f} "
+                        f"turn_limit_draw_penalty={float(getattr(reward_cfg, 'TURN_LIMIT_DRAW_PENALTY', 0.0)):.3f} "
+                        f"opponent_source={opponent_source_state.get('source', 'unknown')} "
+                        f"opponent_id={opponent_source_state.get('id')} "
+                        f"opponent_score={opponent_source_state.get('score')}"
+                    )
+                    if TRAIN_LOG_TO_FILE:
+                        append_agent_log(eval_line)
+                    if TRAIN_LOG_TO_CONSOLE:
+                        print(eval_line)
+
+                    vp_diff_norm = math.tanh(vp_diff_mean_w / max(1.0, float(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_CLAMP", 3.0))))
+                    eval_score = (
+                        BEST_EVAL_W_WIN * win_rate_w
+                        - BEST_EVAL_W_DRAW * draw_rate_w
+                        + BEST_EVAL_W_WIPE_ENEMY * wipeout_enemy_rate_w
+                        - BEST_EVAL_W_WIPE_MODEL * wipeout_model_rate_w
+                        + BEST_EVAL_W_VP * vp_diff_norm
+                    )
+                    if BEST_EVAL_ENABLED and eval_score > best_eval_score:
+                        prev_best = best_eval_score
+                        best_eval_score = float(eval_score)
+                        best_eval_episode = int(numLifeT + 1)
+                        best_path = f"models/{safe_name}/best_eval_checkpoint.pth"
+                        os.makedirs(f"models/{safe_name}", exist_ok=True)
+                        with IO_PROFILER.timed("checkpoint save"):
+                            torch.save(
+                                {
+                                    "policy_net": policy_net.state_dict(),
+                                    "target_net": target_net.state_dict(),
+                                    "net_type": NET_TYPE,
+                                    "optimizer": optimizer.state_dict(),
+                                    "global_step": int(global_step),
+                                    "optimize_steps": int(optimize_steps),
+                                    "episode": int(resume_episode_base + numLifeT + 1),
+                                    "replay_memory": memory.state_dict(),
+                                    "best_eval_score": float(best_eval_score),
+                                    "best_eval_episode": int(best_eval_episode),
+                                    "eval_window_metrics": {
+                                        "win_rate": float(win_rate_w),
+                                        "draw_rate": float(draw_rate_w),
+                                        "turn_limit_rate": float(turn_limit_rate_w),
+                                        "wipeout_enemy_rate": float(wipeout_enemy_rate_w),
+                                        "wipeout_model_rate": float(wipeout_model_rate_w),
+                                        "vp_diff_mean": float(vp_diff_mean_w),
+                                        "vp_diff_norm": float(vp_diff_norm),
+                                        "eval_score": float(eval_score),
+                                    },
+                                },
+                                best_path,
+                            )
+                        best_line = (
+                            "[TRAIN][BEST] "
+                            f"ep={numLifeT + 1} "
+                            f"old_score={prev_best if prev_best != float('-inf') else 'none'} "
+                            f"new_score={best_eval_score:.4f} "
+                            f"win_rate={win_rate_w:.3f} draw_rate={draw_rate_w:.3f} "
+                            f"wipe_enemy={wipeout_enemy_rate_w:.3f} wipe_model={wipeout_model_rate_w:.3f} "
+                            f"vp_diff_mean={vp_diff_mean_w:.3f} "
+                            f"path={best_path}"
+                        )
+                        if TRAIN_LOG_TO_FILE:
+                            append_agent_log(best_line)
+                        if TRAIN_LOG_TO_CONSOLE:
+                            print(best_line)
+
+                    if draw_rate_w >= DRAW_PIT_ALERT_RATE and win_rate_w <= DRAW_PIT_ALERT_WIN_MAX:
+                        draw_pit_alert_streak += 1
+                    else:
+                        draw_pit_alert_streak = 0
+                    if draw_pit_alert_streak >= DRAW_PIT_ALERT_STREAK:
+                        alert_line = (
+                            "[TRAIN][ALERT] draw_pit "
+                            f"ep={numLifeT + 1} "
+                            f"streak={draw_pit_alert_streak} "
+                            f"draw_rate={draw_rate_w:.3f} "
+                            f"win_rate={win_rate_w:.3f} "
+                            f"thresholds(draw>={DRAW_PIT_ALERT_RATE:.2f}, win<={DRAW_PIT_ALERT_WIN_MAX:.2f})"
+                        )
+                        if TRAIN_LOG_TO_FILE:
+                            append_agent_log(alert_line)
+                        if TRAIN_LOG_TO_CONSOLE:
+                            print(alert_line)
+                        if DRAW_GUARD_ENABLED:
+                            old_penalty = float(getattr(reward_cfg, "TURN_LIMIT_DRAW_PENALTY", 0.0))
+                            new_penalty = min(DRAW_GUARD_PENALTY_MAX, old_penalty + DRAW_GUARD_PENALTY_STEP)
+                            reward_cfg.TURN_LIMIT_DRAW_PENALTY = float(new_penalty)
+                            draw_guard_state["turn_limit_draw_penalty"] = float(new_penalty)
+
+                            old_prob = float(pool_sampling_state.get("old_prob", SELF_PLAY_POOL_SAMPLE_OLD_PROB))
+                            new_prob = min(DRAW_GUARD_POOL_OLD_PROB_MAX, old_prob + DRAW_GUARD_POOL_OLD_PROB_STEP)
+                            pool_sampling_state["old_prob"] = float(new_prob)
+
+                            guard_line = (
+                                "[TRAIN][GUARD] anti_draw_adjustment "
+                                f"ep={numLifeT + 1} "
+                                f"draw_penalty={old_penalty:.3f}->{new_penalty:.3f} "
+                                f"pool_old_prob={old_prob:.3f}->{new_prob:.3f}"
+                            )
+                            if TRAIN_LOG_TO_FILE:
+                                append_agent_log(guard_line)
+                            if TRAIN_LOG_TO_CONSOLE:
+                                print(guard_line)
+
+                pool_opponent_id = opponent_source_state.get("id")
+                if SELF_PLAY_POOL_ENABLED and pool_opponent_id is not None:
+                    for entry in opponent_pool_entries:
+                        if int(entry.get("id", -1)) == int(pool_opponent_id):
+                            entry["games"] = int(entry.get("games", 0)) + 1
+                            game_outcome_win = 1.0 if result == "win" else 0.0
+                            game_outcome_draw = 1.0 if result == "draw" else 0.0
+                            if result == "win":
+                                entry["wins"] = int(entry.get("wins", 0)) + 1
+                            if result == "draw":
+                                entry["draws"] = int(entry.get("draws", 0)) + 1
+                            entry["vp_diff_sum"] = float(entry.get("vp_diff_sum", 0.0)) + float(vp_diff)
+                            alpha = float(SELF_PLAY_POOL_EMA_ALPHA)
+                            entry["ema_win"] = (1.0 - alpha) * float(entry.get("ema_win", 0.5)) + alpha * game_outcome_win
+                            entry["ema_draw"] = (1.0 - alpha) * float(entry.get("ema_draw", 0.5)) + alpha * game_outcome_draw
+                            entry["ema_vp_diff"] = (1.0 - alpha) * float(entry.get("ema_vp_diff", 0.0)) + alpha * float(vp_diff)
+                            break
     
                 ep_rows.append(
                     {
@@ -1766,6 +2280,7 @@ def main():
                     print("Restarting...")
                 numLifeT += 1
                 total_episode = resume_episode_base + numLifeT
+                _apply_reward_schedule(total_episode)
                 if SAVE_EVERY > 0 and total_episode % SAVE_EVERY == 0:
                     checkpoint_path = f"models/{safe_name}/checkpoint_ep{total_episode}.pth"
                     os.makedirs(f"models/{safe_name}", exist_ok=True)
@@ -1790,12 +2305,49 @@ def main():
                         if TRAIN_LOG_TO_CONSOLE:
                             print(save_line)
     
+                if SELF_PLAY_ENABLED:
+                    # curriculum по epsilon оппонента: от max к min по эпизодам
+                    decay_progress = min(1.0, float(total_episode) / float(SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES))
+                    next_opp_eps = SELF_PLAY_OPPONENT_EPSILON_MAX + (
+                        SELF_PLAY_OPPONENT_EPSILON_MIN - SELF_PLAY_OPPONENT_EPSILON_MAX
+                    ) * decay_progress
+                    opponent_eps_state["value"] = float(
+                        max(SELF_PLAY_OPPONENT_EPSILON_MIN, min(SELF_PLAY_OPPONENT_EPSILON_MAX, next_opp_eps))
+                    )
+
+                    if SELF_PLAY_ADAPTIVE_UPDATE and len(eval_window) >= EVAL_WINDOW_EPISODES:
+                        window_len = max(1, len(eval_window))
+                        draw_rate_w = sum(item["draw"] for item in eval_window) / window_len
+                        prev_update = int(current_selfplay_update_every)
+                        if draw_rate_w >= SELF_PLAY_DRAW_RATE_HIGH:
+                            current_selfplay_update_every = min(
+                                SELF_PLAY_UPDATE_EVERY_MAX, current_selfplay_update_every + 10
+                            )
+                        elif draw_rate_w <= SELF_PLAY_DRAW_RATE_LOW:
+                            current_selfplay_update_every = max(
+                                SELF_PLAY_UPDATE_EVERY_MIN, current_selfplay_update_every - 5
+                            )
+                        if current_selfplay_update_every != prev_update:
+                            append_agent_log(
+                                "[SELFPLAY] adaptive_update_every "
+                                f"episode={total_episode} draw_rate={draw_rate_w:.3f} "
+                                f"from={prev_update} to={current_selfplay_update_every}"
+                            )
+
                 if SELF_PLAY_ENABLED and SELF_PLAY_OPPONENT_MODE == "snapshot":
-                    if total_episode % SELF_PLAY_UPDATE_EVERY_EPISODES == 0:
-                        opponent_policy_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
+                    if total_episode % max(1, int(current_selfplay_update_every)) == 0:
+                        latest_policy_state = normalize_state_dict(policy_net.state_dict())
+                        if SELF_PLAY_POOL_ENABLED:
+                            opponent_pool_entries.append(_create_pool_entry(latest_policy_state))
+                        selected_state, selected_source, selected_id, selected_score = _choose_opponent_from_pool(latest_policy_state)
+                        _load_opponent_state(selected_state, selected_source, source_id=selected_id, source_score=selected_score)
                         append_agent_log(
-                            f"[SELFPLAY] opponent snapshot updated at episode {total_episode}"
+                            "[SELFPLAY] opponent snapshot updated "
+                            f"at episode {total_episode} source={selected_source} "
+                            f"picked_id={selected_id} picked_score={selected_score} "
+                            f"pool_size={len(opponent_pool_entries)}"
                         )
+                _run_deterministic_eval(total_episode)
     
                 if USE_SUBPROC_ENVS:
                     ctx["conn"].send(("reset", None))
@@ -1827,6 +2379,11 @@ def main():
                     )
                 ctx["ep_len"] = 0
                 ctx["rew_arr"] = []
+                ctx["action_head_total"] = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+                ctx["action_head_skip"] = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+                ctx["action_head_invalid"] = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+                ctx["shoot_windows_with_targets"] = 0
+                ctx["shoot_windows_without_targets"] = 0
                 perf_stats["logging_s"] += time.perf_counter() - logging_start
     
             if numLifeT == totLifeT:
