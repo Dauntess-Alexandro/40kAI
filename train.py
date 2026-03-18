@@ -117,9 +117,48 @@ SELF_PLAY_UPDATE_EVERY_EPISODES = int(os.getenv("SELF_PLAY_UPDATE_EVERY_EPISODES
 SELF_PLAY_OPPONENT_MODE = os.getenv("SELF_PLAY_OPPONENT_MODE", "snapshot")
 SELF_PLAY_FIXED_PATH = os.getenv("SELF_PLAY_FIXED_PATH", "")
 SELF_PLAY_OPPONENT_EPSILON = float(os.getenv("SELF_PLAY_OPPONENT_EPSILON", "0.0"))
+SELF_PLAY_OPPONENT_EPSILON_MIN = float(os.getenv("SELF_PLAY_OPPONENT_EPSILON_MIN", str(SELF_PLAY_OPPONENT_EPSILON)))
+SELF_PLAY_OPPONENT_EPSILON_MAX = float(os.getenv("SELF_PLAY_OPPONENT_EPSILON_MAX", str(max(SELF_PLAY_OPPONENT_EPSILON, 0.08))))
+SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES = int(os.getenv("SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES", "800"))
+SELF_PLAY_ADAPTIVE_UPDATE = os.getenv("SELF_PLAY_ADAPTIVE_UPDATE", "1") == "1"
+SELF_PLAY_UPDATE_EVERY_MIN = int(os.getenv("SELF_PLAY_UPDATE_EVERY_MIN", "25"))
+SELF_PLAY_UPDATE_EVERY_MAX = int(os.getenv("SELF_PLAY_UPDATE_EVERY_MAX", "150"))
+SELF_PLAY_DRAW_RATE_HIGH = float(os.getenv("SELF_PLAY_DRAW_RATE_HIGH", "0.70"))
+SELF_PLAY_DRAW_RATE_LOW = float(os.getenv("SELF_PLAY_DRAW_RATE_LOW", "0.45"))
+SELF_PLAY_POOL_ENABLED = os.getenv("SELF_PLAY_POOL_ENABLED", "1") == "1"
+SELF_PLAY_POOL_SIZE = int(os.getenv("SELF_PLAY_POOL_SIZE", "6"))
+SELF_PLAY_POOL_SAMPLE_OLD_PROB = float(os.getenv("SELF_PLAY_POOL_SAMPLE_OLD_PROB", "0.60"))
+
+EVAL_WINDOW_EPISODES = int(os.getenv("EVAL_WINDOW_EPISODES", "100"))
+EVAL_WINDOW_LOG_EVERY = int(os.getenv("EVAL_WINDOW_LOG_EVERY", "50"))
+DRAW_PIT_ALERT_RATE = float(os.getenv("DRAW_PIT_ALERT_RATE", "0.70"))
+DRAW_PIT_ALERT_WIN_MAX = float(os.getenv("DRAW_PIT_ALERT_WIN_MAX", "0.15"))
+DRAW_PIT_ALERT_STREAK = int(os.getenv("DRAW_PIT_ALERT_STREAK", "3"))
 
 if SELF_PLAY_UPDATE_EVERY_EPISODES < 1:
     SELF_PLAY_UPDATE_EVERY_EPISODES = 1
+if SELF_PLAY_UPDATE_EVERY_MIN < 1:
+    SELF_PLAY_UPDATE_EVERY_MIN = 1
+if SELF_PLAY_UPDATE_EVERY_MAX < SELF_PLAY_UPDATE_EVERY_MIN:
+    SELF_PLAY_UPDATE_EVERY_MAX = SELF_PLAY_UPDATE_EVERY_MIN
+if SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES < 1:
+    SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES = 1
+if SELF_PLAY_OPPONENT_EPSILON_MIN < 0:
+    SELF_PLAY_OPPONENT_EPSILON_MIN = 0.0
+if SELF_PLAY_OPPONENT_EPSILON_MAX < SELF_PLAY_OPPONENT_EPSILON_MIN:
+    SELF_PLAY_OPPONENT_EPSILON_MAX = SELF_PLAY_OPPONENT_EPSILON_MIN
+if SELF_PLAY_POOL_SIZE < 1:
+    SELF_PLAY_POOL_SIZE = 1
+if SELF_PLAY_POOL_SAMPLE_OLD_PROB < 0:
+    SELF_PLAY_POOL_SAMPLE_OLD_PROB = 0.0
+if SELF_PLAY_POOL_SAMPLE_OLD_PROB > 1:
+    SELF_PLAY_POOL_SAMPLE_OLD_PROB = 1.0
+if EVAL_WINDOW_EPISODES < 1:
+    EVAL_WINDOW_EPISODES = 1
+if EVAL_WINDOW_LOG_EVERY < 1:
+    EVAL_WINDOW_LOG_EVERY = 1
+if DRAW_PIT_ALERT_STREAK < 1:
+    DRAW_PIT_ALERT_STREAK = 1
 if SELF_PLAY_OPPONENT_MODE not in ("snapshot", "fixed_checkpoint"):
     raise ValueError(
         "SELF_PLAY_OPPONENT_MODE должен быть 'snapshot' или 'fixed_checkpoint'. "
@@ -992,10 +1031,20 @@ def main():
             "[TRAIN][BOOT] "
             f"SELF_PLAY_ENABLED={int(SELF_PLAY_ENABLED)} "
             f"SELF_PLAY_OPPONENT_MODE={SELF_PLAY_OPPONENT_MODE} "
+            f"SELF_PLAY_OPP_EPS_MIN={SELF_PLAY_OPPONENT_EPSILON_MIN:.3f} "
+            f"SELF_PLAY_OPP_EPS_MAX={SELF_PLAY_OPPONENT_EPSILON_MAX:.3f} "
+            f"SELF_PLAY_OPP_EPS_DECAY_EP={SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES} "
+            f"SELF_PLAY_ADAPTIVE_UPDATE={int(SELF_PLAY_ADAPTIVE_UPDATE)} "
+            f"SELF_PLAY_POOL_ENABLED={int(SELF_PLAY_POOL_ENABLED)} "
+            f"SELF_PLAY_POOL_SIZE={SELF_PLAY_POOL_SIZE} "
+            f"SELF_PLAY_POOL_SAMPLE_OLD_PROB={SELF_PLAY_POOL_SAMPLE_OLD_PROB:.2f} "
             f"RESUME_CHECKPOINT={'set' if bool(RESUME_CHECKPOINT) else 'empty'} "
             f"DEPLOYMENT_MODE={deployment_mode} "
             f"DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE={int(manual_in_rl_phase)} "
-            f"stdin_is_tty={int(stdin_is_tty)}"
+            f"stdin_is_tty={int(stdin_is_tty)} "
+            f"EVAL_WINDOW_EPISODES={EVAL_WINDOW_EPISODES} "
+            f"DRAW_PIT_ALERT_RATE={DRAW_PIT_ALERT_RATE:.2f} "
+            f"DRAW_PIT_ALERT_WIN_MAX={DRAW_PIT_ALERT_WIN_MAX:.2f}"
         )
         if TRAIN_LOG_TO_FILE:
             append_agent_log(boot_env_line)
@@ -1205,6 +1254,35 @@ def main():
             print(f"[WARN] torch.compile недоступен: {exc}")
     
     opponent_policy_net = None
+    current_selfplay_update_every = SELF_PLAY_UPDATE_EVERY_EPISODES
+    opponent_eps_state = {"value": float(SELF_PLAY_OPPONENT_EPSILON)}
+    opponent_pool_states = collections.deque(maxlen=SELF_PLAY_POOL_SIZE)
+    opponent_source_state = {"source": "unset"}
+
+    def _clone_state_dict_cpu(state_dict: dict) -> dict:
+        cloned = {}
+        for key, value in state_dict.items():
+            if torch.is_tensor(value):
+                cloned[key] = value.detach().cpu().clone()
+            else:
+                cloned[key] = value
+        return cloned
+
+    def _load_opponent_state(state_dict: dict, source_label: str) -> None:
+        if opponent_policy_net is None:
+            return
+        opponent_policy_net.load_state_dict(normalize_state_dict(state_dict))
+        opponent_source_state["source"] = source_label
+
+    def _choose_opponent_from_pool(latest_policy_state: dict):
+        if not SELF_PLAY_POOL_ENABLED or len(opponent_pool_states) == 0:
+            return latest_policy_state, "latest"
+        sample_old = random.random() < SELF_PLAY_POOL_SAMPLE_OLD_PROB
+        if sample_old and len(opponent_pool_states) > 1:
+            # исключаем самый свежий (последний), чтобы реально брать "исторического" оппонента
+            idx = random.randint(0, len(opponent_pool_states) - 2)
+            return opponent_pool_states[idx], f"pool[{idx}]"
+        return latest_policy_state, "latest"
     if SELF_PLAY_ENABLED:
         opponent_policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
         opponent_policy_net.eval()
@@ -1278,8 +1356,18 @@ def main():
             append_agent_log(
                 f"[SELFPLAY] fixed_checkpoint path={SELF_PLAY_FIXED_PATH}"
             )
+            opponent_source_state["source"] = "fixed_checkpoint"
         else:
-            opponent_policy_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
+            initial_policy_state = normalize_state_dict(policy_net.state_dict())
+            _load_opponent_state(initial_policy_state, "latest_init")
+            opponent_pool_states.append(_clone_state_dict_cpu(initial_policy_state))
+
+        opponent_eps_state["value"] = float(
+            max(
+                SELF_PLAY_OPPONENT_EPSILON_MIN,
+                min(SELF_PLAY_OPPONENT_EPSILON_MAX, SELF_PLAY_OPPONENT_EPSILON_MAX),
+            )
+        )
     
     scaler = torch.cuda.amp.GradScaler(enabled=USE_AMP)
     
@@ -1290,7 +1378,7 @@ def main():
             env,
             obs,
             opponent_policy_net,
-            SELF_PLAY_OPPONENT_EPSILON,
+            float(opponent_eps_state["value"]),
             len_model,
         )
         return convertToDict(action)
@@ -1351,6 +1439,8 @@ def main():
     randNum = np.random.randint(0, 10000000)
     metrics_obj = metrics(fold, randNum, date)
     ep_rows = [] 
+    eval_window = collections.deque(maxlen=EVAL_WINDOW_EPISODES)
+    draw_pit_alert_streak = 0
     
     global_step = int(resume_meta.get("global_step", 0) or 0)
     optimize_steps = int(resume_meta.get("optimize_steps", 0) or 0)
@@ -1497,7 +1587,7 @@ def main():
             else:
                 ctx["shoot_windows_with_targets"] += 1
                 shoot_raw = int(action_dict.get("shoot", -1))
-                if shoot_raw < 0 or shoot_raw >= len(valid_shoot_indices):
+                if shoot_raw not in valid_shoot_indices:
                     ctx["action_head_invalid"]["shoot"] += 1
 
         step_results = [None] * len(env_contexts)
@@ -1603,7 +1693,8 @@ def main():
                     append_agent_log(
                         f"Конец эпизода {numLifeT + 1}. "
                         f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
-                        f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
+                        f"update_every={current_selfplay_update_every} opp_eps={float(opponent_eps_state.get('value', SELF_PLAY_OPPONENT_EPSILON)):.3f} "
+                        f"opponent_source={opponent_source_state.get('source', 'unknown')}"
                     )
                 end_reason_env = info.get("end reason", "")
                 winner_env = info.get("winner")
@@ -1734,6 +1825,65 @@ def main():
                         append_agent_log(train_ep_line)
                     if TRAIN_LOG_TO_CONSOLE:
                         print(train_ep_line)
+
+                eval_window.append(
+                    {
+                        "win": 1 if result == "win" else 0,
+                        "draw": 1 if result == "draw" else 0,
+                        "wipeout_enemy": 1 if end_reason == "wipeout_enemy" else 0,
+                        "wipeout_model": 1 if end_reason == "wipeout_model" else 0,
+                        "turn_limit": 1 if str(end_reason).startswith("turn_limit") else 0,
+                        "vp_diff": float(vp_diff),
+                    }
+                )
+                should_log_eval_window = (
+                    len(eval_window) >= EVAL_WINDOW_EPISODES
+                    and ((numLifeT + 1) % EVAL_WINDOW_LOG_EVERY == 0 or (numLifeT + 1) == totLifeT)
+                )
+                if should_log_eval_window:
+                    window_len = max(1, len(eval_window))
+                    win_rate_w = sum(item["win"] for item in eval_window) / window_len
+                    draw_rate_w = sum(item["draw"] for item in eval_window) / window_len
+                    turn_limit_rate_w = sum(item["turn_limit"] for item in eval_window) / window_len
+                    wipeout_enemy_rate_w = sum(item["wipeout_enemy"] for item in eval_window) / window_len
+                    wipeout_model_rate_w = sum(item["wipeout_model"] for item in eval_window) / window_len
+                    vp_diff_mean_w = sum(item["vp_diff"] for item in eval_window) / window_len
+                    eval_line = (
+                        "[TRAIN][EVAL_WINDOW] "
+                        f"ep={numLifeT + 1} "
+                        f"window={window_len} "
+                        f"win_rate={win_rate_w:.3f} "
+                        f"draw_rate={draw_rate_w:.3f} "
+                        f"turn_limit_rate={turn_limit_rate_w:.3f} "
+                        f"wipeout_enemy_rate={wipeout_enemy_rate_w:.3f} "
+                        f"wipeout_model_rate={wipeout_model_rate_w:.3f} "
+                        f"vp_diff_mean={vp_diff_mean_w:.3f} "
+                        f"opp_eps={float(opponent_eps_state.get('value', SELF_PLAY_OPPONENT_EPSILON)):.3f} "
+                        f"snapshot_update_every={int(current_selfplay_update_every)} "
+                        f"opponent_source={opponent_source_state.get('source', 'unknown')}"
+                    )
+                    if TRAIN_LOG_TO_FILE:
+                        append_agent_log(eval_line)
+                    if TRAIN_LOG_TO_CONSOLE:
+                        print(eval_line)
+
+                    if draw_rate_w >= DRAW_PIT_ALERT_RATE and win_rate_w <= DRAW_PIT_ALERT_WIN_MAX:
+                        draw_pit_alert_streak += 1
+                    else:
+                        draw_pit_alert_streak = 0
+                    if draw_pit_alert_streak >= DRAW_PIT_ALERT_STREAK:
+                        alert_line = (
+                            "[TRAIN][ALERT] draw_pit "
+                            f"ep={numLifeT + 1} "
+                            f"streak={draw_pit_alert_streak} "
+                            f"draw_rate={draw_rate_w:.3f} "
+                            f"win_rate={win_rate_w:.3f} "
+                            f"thresholds(draw>={DRAW_PIT_ALERT_RATE:.2f}, win<={DRAW_PIT_ALERT_WIN_MAX:.2f})"
+                        )
+                        if TRAIN_LOG_TO_FILE:
+                            append_agent_log(alert_line)
+                        if TRAIN_LOG_TO_CONSOLE:
+                            print(alert_line)
     
                 ep_rows.append(
                     {
@@ -1790,11 +1940,46 @@ def main():
                         if TRAIN_LOG_TO_CONSOLE:
                             print(save_line)
     
+                if SELF_PLAY_ENABLED:
+                    # curriculum по epsilon оппонента: от max к min по эпизодам
+                    decay_progress = min(1.0, float(total_episode) / float(SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES))
+                    next_opp_eps = SELF_PLAY_OPPONENT_EPSILON_MAX + (
+                        SELF_PLAY_OPPONENT_EPSILON_MIN - SELF_PLAY_OPPONENT_EPSILON_MAX
+                    ) * decay_progress
+                    opponent_eps_state["value"] = float(
+                        max(SELF_PLAY_OPPONENT_EPSILON_MIN, min(SELF_PLAY_OPPONENT_EPSILON_MAX, next_opp_eps))
+                    )
+
+                    if SELF_PLAY_ADAPTIVE_UPDATE and len(eval_window) >= EVAL_WINDOW_EPISODES:
+                        window_len = max(1, len(eval_window))
+                        draw_rate_w = sum(item["draw"] for item in eval_window) / window_len
+                        prev_update = int(current_selfplay_update_every)
+                        if draw_rate_w >= SELF_PLAY_DRAW_RATE_HIGH:
+                            current_selfplay_update_every = min(
+                                SELF_PLAY_UPDATE_EVERY_MAX, current_selfplay_update_every + 10
+                            )
+                        elif draw_rate_w <= SELF_PLAY_DRAW_RATE_LOW:
+                            current_selfplay_update_every = max(
+                                SELF_PLAY_UPDATE_EVERY_MIN, current_selfplay_update_every - 5
+                            )
+                        if current_selfplay_update_every != prev_update:
+                            append_agent_log(
+                                "[SELFPLAY] adaptive_update_every "
+                                f"episode={total_episode} draw_rate={draw_rate_w:.3f} "
+                                f"from={prev_update} to={current_selfplay_update_every}"
+                            )
+
                 if SELF_PLAY_ENABLED and SELF_PLAY_OPPONENT_MODE == "snapshot":
-                    if total_episode % SELF_PLAY_UPDATE_EVERY_EPISODES == 0:
-                        opponent_policy_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
+                    if total_episode % max(1, int(current_selfplay_update_every)) == 0:
+                        latest_policy_state = normalize_state_dict(policy_net.state_dict())
+                        if SELF_PLAY_POOL_ENABLED:
+                            opponent_pool_states.append(_clone_state_dict_cpu(latest_policy_state))
+                        selected_state, selected_source = _choose_opponent_from_pool(latest_policy_state)
+                        _load_opponent_state(selected_state, selected_source)
                         append_agent_log(
-                            f"[SELFPLAY] opponent snapshot updated at episode {total_episode}"
+                            "[SELFPLAY] opponent snapshot updated "
+                            f"at episode {total_episode} source={selected_source} "
+                            f"pool_size={len(opponent_pool_states)}"
                         )
     
                 if USE_SUBPROC_ENVS:
@@ -1827,6 +2012,11 @@ def main():
                     )
                 ctx["ep_len"] = 0
                 ctx["rew_arr"] = []
+                ctx["action_head_total"] = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+                ctx["action_head_skip"] = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+                ctx["action_head_invalid"] = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+                ctx["shoot_windows_with_targets"] = 0
+                ctx["shoot_windows_without_targets"] = 0
                 perf_stats["logging_s"] += time.perf_counter() - logging_start
     
             if numLifeT == totLifeT:

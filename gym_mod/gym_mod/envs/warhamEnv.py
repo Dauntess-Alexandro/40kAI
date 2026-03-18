@@ -5652,6 +5652,33 @@ class Warhammer40kEnv(gym.Env):
                 f"prev={prev_vp_diff}, curr={curr_vp_diff}, "
                 f"delta={vp_delta}, reward=+{vp_reward:.3f}, penalty=-{vp_penalty:.3f}"
             )
+        if game_over and end_reason == "turn_limit":
+            vp_margin_cap = max(0.0, float(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_CLAMP", 3.0)))
+            vp_margin = float(curr_vp_diff)
+            if vp_margin_cap > 0:
+                vp_margin = max(-vp_margin_cap, min(vp_margin_cap, vp_margin))
+
+            draw_penalty = 0.0
+            if winner is None:
+                draw_penalty = float(getattr(reward_cfg, "TURN_LIMIT_DRAW_PENALTY", 0.0))
+                if draw_penalty > 0:
+                    reward -= draw_penalty
+
+            margin_bonus = 0.0
+            margin_penalty = 0.0
+            if vp_margin > 0:
+                margin_bonus = float(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_REWARD_SCALE", 0.0)) * vp_margin
+                reward += margin_bonus
+            elif vp_margin < 0:
+                margin_penalty = float(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_PENALTY_SCALE", 0.0)) * abs(vp_margin)
+                reward -= margin_penalty
+
+            self._log_reward(
+                "Reward (turn_limit endgame): "
+                f"winner={winner}, vp_diff={curr_vp_diff}, vp_margin_clamped={vp_margin:.3f}, "
+                f"draw_penalty=-{draw_penalty:.3f}, margin_bonus=+{margin_bonus:.3f}, "
+                f"margin_penalty=-{margin_penalty:.3f}"
+            )
         self._prev_vp_diff = curr_vp_diff
 
         streak_bonus = 0.0
