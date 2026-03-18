@@ -128,6 +128,11 @@ SELF_PLAY_DRAW_RATE_LOW = float(os.getenv("SELF_PLAY_DRAW_RATE_LOW", "0.45"))
 SELF_PLAY_POOL_ENABLED = os.getenv("SELF_PLAY_POOL_ENABLED", "1") == "1"
 SELF_PLAY_POOL_SIZE = int(os.getenv("SELF_PLAY_POOL_SIZE", "6"))
 SELF_PLAY_POOL_SAMPLE_OLD_PROB = float(os.getenv("SELF_PLAY_POOL_SAMPLE_OLD_PROB", "0.60"))
+SELF_PLAY_POOL_SMART_SAMPLING = os.getenv("SELF_PLAY_POOL_SMART_SAMPLING", "1") == "1"
+SELF_PLAY_POOL_SCORE_WIN_W = float(os.getenv("SELF_PLAY_POOL_SCORE_WIN_W", "0.55"))
+SELF_PLAY_POOL_SCORE_DRAW_W = float(os.getenv("SELF_PLAY_POOL_SCORE_DRAW_W", "0.30"))
+SELF_PLAY_POOL_SCORE_VP_W = float(os.getenv("SELF_PLAY_POOL_SCORE_VP_W", "0.15"))
+SELF_PLAY_POOL_SCORE_EXPLORE_BONUS = float(os.getenv("SELF_PLAY_POOL_SCORE_EXPLORE_BONUS", "0.20"))
 
 EVAL_WINDOW_EPISODES = int(os.getenv("EVAL_WINDOW_EPISODES", "100"))
 EVAL_WINDOW_LOG_EVERY = int(os.getenv("EVAL_WINDOW_LOG_EVERY", "50"))
@@ -153,6 +158,8 @@ if SELF_PLAY_POOL_SAMPLE_OLD_PROB < 0:
     SELF_PLAY_POOL_SAMPLE_OLD_PROB = 0.0
 if SELF_PLAY_POOL_SAMPLE_OLD_PROB > 1:
     SELF_PLAY_POOL_SAMPLE_OLD_PROB = 1.0
+if SELF_PLAY_POOL_SCORE_EXPLORE_BONUS < 0:
+    SELF_PLAY_POOL_SCORE_EXPLORE_BONUS = 0.0
 if EVAL_WINDOW_EPISODES < 1:
     EVAL_WINDOW_EPISODES = 1
 if EVAL_WINDOW_LOG_EVERY < 1:
@@ -1038,6 +1045,7 @@ def main():
             f"SELF_PLAY_POOL_ENABLED={int(SELF_PLAY_POOL_ENABLED)} "
             f"SELF_PLAY_POOL_SIZE={SELF_PLAY_POOL_SIZE} "
             f"SELF_PLAY_POOL_SAMPLE_OLD_PROB={SELF_PLAY_POOL_SAMPLE_OLD_PROB:.2f} "
+            f"SELF_PLAY_POOL_SMART_SAMPLING={int(SELF_PLAY_POOL_SMART_SAMPLING)} "
             f"RESUME_CHECKPOINT={'set' if bool(RESUME_CHECKPOINT) else 'empty'} "
             f"DEPLOYMENT_MODE={deployment_mode} "
             f"DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE={int(manual_in_rl_phase)} "
@@ -1256,8 +1264,9 @@ def main():
     opponent_policy_net = None
     current_selfplay_update_every = SELF_PLAY_UPDATE_EVERY_EPISODES
     opponent_eps_state = {"value": float(SELF_PLAY_OPPONENT_EPSILON)}
-    opponent_pool_states = collections.deque(maxlen=SELF_PLAY_POOL_SIZE)
-    opponent_source_state = {"source": "unset"}
+    opponent_pool_entries = collections.deque(maxlen=SELF_PLAY_POOL_SIZE)
+    opponent_pool_next_id = {"value": 1}
+    opponent_source_state = {"source": "unset", "id": None, "score": None}
 
     def _clone_state_dict_cpu(state_dict: dict) -> dict:
         cloned = {}
@@ -1268,21 +1277,66 @@ def main():
                 cloned[key] = value
         return cloned
 
-    def _load_opponent_state(state_dict: dict, source_label: str) -> None:
+    def _load_opponent_state(state_dict: dict, source_label: str, source_id=None, source_score=None) -> None:
         if opponent_policy_net is None:
             return
         opponent_policy_net.load_state_dict(normalize_state_dict(state_dict))
         opponent_source_state["source"] = source_label
+        opponent_source_state["id"] = source_id
+        opponent_source_state["score"] = source_score
+
+    def _create_pool_entry(state_dict: dict) -> dict:
+        entry_id = int(opponent_pool_next_id["value"])
+        opponent_pool_next_id["value"] += 1
+        return {
+            "id": entry_id,
+            "state_dict": _clone_state_dict_cpu(state_dict),
+            "games": 0,
+            "wins": 0,
+            "draws": 0,
+            "vp_diff_sum": 0.0,
+        }
+
+    def _pool_entry_score(entry: dict) -> float:
+        games = max(0, int(entry.get("games", 0)))
+        if games <= 0:
+            win_rate = 0.5
+            draw_rate = 0.5
+            vp_diff_mean = 0.0
+        else:
+            win_rate = float(entry.get("wins", 0)) / float(games)
+            draw_rate = float(entry.get("draws", 0)) / float(games)
+            vp_diff_mean = float(entry.get("vp_diff_sum", 0.0)) / float(games)
+        vp_hard = max(0.0, -vp_diff_mean) / max(1.0, float(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_CLAMP", 3.0)))
+        explore_bonus = SELF_PLAY_POOL_SCORE_EXPLORE_BONUS / float(1 + games)
+        score = (
+            SELF_PLAY_POOL_SCORE_WIN_W * (1.0 - win_rate)
+            + SELF_PLAY_POOL_SCORE_DRAW_W * draw_rate
+            + SELF_PLAY_POOL_SCORE_VP_W * vp_hard
+            + explore_bonus
+        )
+        return float(max(1e-6, score))
 
     def _choose_opponent_from_pool(latest_policy_state: dict):
-        if not SELF_PLAY_POOL_ENABLED or len(opponent_pool_states) == 0:
-            return latest_policy_state, "latest"
+        if not SELF_PLAY_POOL_ENABLED or len(opponent_pool_entries) == 0:
+            return latest_policy_state, "latest", None, None
         sample_old = random.random() < SELF_PLAY_POOL_SAMPLE_OLD_PROB
-        if sample_old and len(opponent_pool_states) > 1:
-            # исключаем самый свежий (последний), чтобы реально брать "исторического" оппонента
-            idx = random.randint(0, len(opponent_pool_states) - 2)
-            return opponent_pool_states[idx], f"pool[{idx}]"
-        return latest_policy_state, "latest"
+        if not sample_old:
+            return latest_policy_state, "latest", None, None
+
+        # исключаем самый свежий элемент (он соответствует latest-снапшоту)
+        candidates = list(opponent_pool_entries)[:-1] if len(opponent_pool_entries) > 1 else []
+        if not candidates:
+            return latest_policy_state, "latest", None, None
+
+        if SELF_PLAY_POOL_SMART_SAMPLING:
+            weights = [_pool_entry_score(entry) for entry in candidates]
+            picked = random.choices(candidates, weights=weights, k=1)[0]
+            picked_score = _pool_entry_score(picked)
+            return picked["state_dict"], "pool_smart", int(picked.get("id")), float(picked_score)
+
+        picked = random.choice(candidates)
+        return picked["state_dict"], "pool_random", int(picked.get("id")), None
     if SELF_PLAY_ENABLED:
         opponent_policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
         opponent_policy_net.eval()
@@ -1357,10 +1411,12 @@ def main():
                 f"[SELFPLAY] fixed_checkpoint path={SELF_PLAY_FIXED_PATH}"
             )
             opponent_source_state["source"] = "fixed_checkpoint"
+            opponent_source_state["id"] = None
+            opponent_source_state["score"] = None
         else:
             initial_policy_state = normalize_state_dict(policy_net.state_dict())
-            _load_opponent_state(initial_policy_state, "latest_init")
-            opponent_pool_states.append(_clone_state_dict_cpu(initial_policy_state))
+            _load_opponent_state(initial_policy_state, "latest_init", source_id=None, source_score=None)
+            opponent_pool_entries.append(_create_pool_entry(initial_policy_state))
 
         opponent_eps_state["value"] = float(
             max(
@@ -1694,7 +1750,9 @@ def main():
                         f"Конец эпизода {numLifeT + 1}. "
                         f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
                         f"update_every={current_selfplay_update_every} opp_eps={float(opponent_eps_state.get('value', SELF_PLAY_OPPONENT_EPSILON)):.3f} "
-                        f"opponent_source={opponent_source_state.get('source', 'unknown')}"
+                        f"opponent_source={opponent_source_state.get('source', 'unknown')} "
+                        f"opponent_id={opponent_source_state.get('id')} "
+                        f"opponent_score={opponent_source_state.get('score')}"
                     )
                 end_reason_env = info.get("end reason", "")
                 winner_env = info.get("winner")
@@ -1860,7 +1918,9 @@ def main():
                         f"vp_diff_mean={vp_diff_mean_w:.3f} "
                         f"opp_eps={float(opponent_eps_state.get('value', SELF_PLAY_OPPONENT_EPSILON)):.3f} "
                         f"snapshot_update_every={int(current_selfplay_update_every)} "
-                        f"opponent_source={opponent_source_state.get('source', 'unknown')}"
+                        f"opponent_source={opponent_source_state.get('source', 'unknown')} "
+                        f"opponent_id={opponent_source_state.get('id')} "
+                        f"opponent_score={opponent_source_state.get('score')}"
                     )
                     if TRAIN_LOG_TO_FILE:
                         append_agent_log(eval_line)
@@ -1884,6 +1944,18 @@ def main():
                             append_agent_log(alert_line)
                         if TRAIN_LOG_TO_CONSOLE:
                             print(alert_line)
+
+                pool_opponent_id = opponent_source_state.get("id")
+                if SELF_PLAY_POOL_ENABLED and pool_opponent_id is not None:
+                    for entry in opponent_pool_entries:
+                        if int(entry.get("id", -1)) == int(pool_opponent_id):
+                            entry["games"] = int(entry.get("games", 0)) + 1
+                            if result == "win":
+                                entry["wins"] = int(entry.get("wins", 0)) + 1
+                            if result == "draw":
+                                entry["draws"] = int(entry.get("draws", 0)) + 1
+                            entry["vp_diff_sum"] = float(entry.get("vp_diff_sum", 0.0)) + float(vp_diff)
+                            break
     
                 ep_rows.append(
                     {
@@ -1973,13 +2045,14 @@ def main():
                     if total_episode % max(1, int(current_selfplay_update_every)) == 0:
                         latest_policy_state = normalize_state_dict(policy_net.state_dict())
                         if SELF_PLAY_POOL_ENABLED:
-                            opponent_pool_states.append(_clone_state_dict_cpu(latest_policy_state))
-                        selected_state, selected_source = _choose_opponent_from_pool(latest_policy_state)
-                        _load_opponent_state(selected_state, selected_source)
+                            opponent_pool_entries.append(_create_pool_entry(latest_policy_state))
+                        selected_state, selected_source, selected_id, selected_score = _choose_opponent_from_pool(latest_policy_state)
+                        _load_opponent_state(selected_state, selected_source, source_id=selected_id, source_score=selected_score)
                         append_agent_log(
                             "[SELFPLAY] opponent snapshot updated "
                             f"at episode {total_episode} source={selected_source} "
-                            f"pool_size={len(opponent_pool_states)}"
+                            f"picked_id={selected_id} picked_score={selected_score} "
+                            f"pool_size={len(opponent_pool_entries)}"
                         )
     
                 if USE_SUBPROC_ENVS:

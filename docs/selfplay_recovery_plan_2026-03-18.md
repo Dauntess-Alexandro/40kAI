@@ -62,6 +62,10 @@
   - текущий снапшот добавляется в pool,
   - с вероятностью `SELF_PLAY_POOL_SAMPLE_OLD_PROB` выбирается старый оппонент из pool,
   - иначе используется latest.
+- Добавлен smart-sampling (v2.1):
+  - для исторических оппонентов ведутся stats (`games/wins/draws/vp_diff_sum`),
+  - считается difficulty-score (трудность + draw-pressure + vp-pressure + explore bonus),
+  - выбор старого оппонента идёт с весами по этому score.
 - Добавлены логи источника оппонента:
   - `opponent_source=...` в `[TRAIN][EVAL_WINDOW]` и self-play end-of-episode логах,
   - `source=..., pool_size=...` в логе обновления снапшота.
