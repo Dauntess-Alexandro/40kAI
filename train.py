@@ -312,7 +312,15 @@ def _resume_from_checkpoint(policy_net, target_net, optimizer, memory, checkpoin
         raise FileNotFoundError(err_msg)
 
     try:
+        load_start_line = f"[RESUME] loading checkpoint path={checkpoint_path}"
+        print(load_start_line)
+        append_agent_log(load_start_line)
+        load_start_ts = time.perf_counter()
         checkpoint = _load_checkpoint_payload(checkpoint_path)
+        load_elapsed = time.perf_counter() - load_start_ts
+        loaded_line = f"[RESUME] checkpoint payload loaded in {load_elapsed:.2f}s"
+        print(loaded_line)
+        append_agent_log(loaded_line)
     except Exception as exc:
         err_msg = (
             "[RESUME][ERROR] Не удалось загрузить чекпойнт. "
@@ -915,6 +923,30 @@ def main():
     vec_env_count = int(os.getenv("NUM_ENVS", os.getenv("VEC_ENV_COUNT", "1")))
     if vec_env_count < 1:
         vec_env_count = 1
+    deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "auto")).strip().lower() or "auto"
+    manual_in_rl_phase = os.getenv("DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE", "1").strip().lower() not in {"0", "false", "no"}
+    stdin_is_tty = bool(getattr(sys.stdin, "isatty", lambda: False)())
+    if not stdin_is_tty:
+        if deployment_mode == "manual_player":
+            warn_msg = (
+                "[TRAIN][WARN] DEPLOYMENT_MODE=manual_player в неинтерактивном процессе. "
+                "Где: train.py (main). Что делать дальше: переключаю DEPLOYMENT_MODE=auto, "
+                "иначе тренировка зависнет в ожидании ручного ввода."
+            )
+            print(warn_msg)
+            append_agent_log(warn_msg)
+            deployment_mode = "auto"
+            os.environ["DEPLOYMENT_MODE"] = "auto"
+        if deployment_mode == "rl_phase" and manual_in_rl_phase:
+            warn_msg = (
+                "[TRAIN][WARN] DEPLOYMENT_MODE=rl_phase + ручной деплой игрока в неинтерактивном процессе. "
+                "Где: train.py (main). Что делать дальше: выставляю DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE=0, "
+                "иначе запуск зависнет на первом reset/deploy."
+            )
+            print(warn_msg)
+            append_agent_log(warn_msg)
+            os.environ["DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE"] = "0"
+            manual_in_rl_phase = False
     
     if USE_SUBPROC_ENVS and vec_env_count < 2:
         USE_SUBPROC_ENVS = False
@@ -956,6 +988,19 @@ def main():
             append_agent_log(train_start_line)
         if TRAIN_LOG_TO_CONSOLE:
             print(train_start_line)
+        boot_env_line = (
+            "[TRAIN][BOOT] "
+            f"SELF_PLAY_ENABLED={int(SELF_PLAY_ENABLED)} "
+            f"SELF_PLAY_OPPONENT_MODE={SELF_PLAY_OPPONENT_MODE} "
+            f"RESUME_CHECKPOINT={'set' if bool(RESUME_CHECKPOINT) else 'empty'} "
+            f"DEPLOYMENT_MODE={deployment_mode} "
+            f"DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE={int(manual_in_rl_phase)} "
+            f"stdin_is_tty={int(stdin_is_tty)}"
+        )
+        if TRAIN_LOG_TO_FILE:
+            append_agent_log(boot_env_line)
+        if TRAIN_LOG_TO_CONSOLE:
+            print(boot_env_line)
         if update_ratio < 0.25:
             ratio_warn = (
                 "[TRAIN][WARN] Низкий update_ratio: "
@@ -1171,11 +1216,23 @@ def main():
                     f"SELF_PLAY_FIXED_PATH не найден: {SELF_PLAY_FIXED_PATH}. Проверь путь."
                 )
             try:
+                fixed_load_start = f"[SELFPLAY] loading fixed checkpoint path={SELF_PLAY_FIXED_PATH}"
+                print(fixed_load_start)
+                append_agent_log(fixed_load_start)
+                fixed_start_ts = time.perf_counter()
                 checkpoint = torch.load(
                     SELF_PLAY_FIXED_PATH, map_location=device, weights_only=False
                 )
+                fixed_elapsed = time.perf_counter() - fixed_start_ts
+                fixed_loaded = f"[SELFPLAY] fixed checkpoint payload loaded in {fixed_elapsed:.2f}s"
+                print(fixed_loaded)
+                append_agent_log(fixed_loaded)
             except TypeError:
                 checkpoint = torch.load(SELF_PLAY_FIXED_PATH, map_location=device)
+                fixed_elapsed = time.perf_counter() - fixed_start_ts
+                fixed_loaded = f"[SELFPLAY] fixed checkpoint payload loaded in {fixed_elapsed:.2f}s"
+                print(fixed_loaded)
+                append_agent_log(fixed_loaded)
             except Exception as exc:
                 err_msg = (
                     "[SELFPLAY][ERROR] Не удалось загрузить fixed_checkpoint. "

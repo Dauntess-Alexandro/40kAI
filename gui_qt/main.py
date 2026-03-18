@@ -1244,6 +1244,15 @@ class GUIController(QtCore.QObject):
         env.insert("CLIP_REWARD", "1")
         env.insert("MISSION_NAME", self._selected_mission)
         env.insert("DEPLOYMENT_MODE", self._deployment_mode)
+        if self._deployment_mode == "manual_player":
+            self._emit_log(
+                "[GUI] [TRAIN] DEPLOYMENT_MODE=manual_player не поддерживается для неинтерактивного train.py; "
+                "принудительно переключаю в auto.",
+                level="WARN",
+            )
+            env.insert("DEPLOYMENT_MODE", "auto")
+        if self._deployment_mode == "rl_phase":
+            env.insert("DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE", "0")
         env.insert("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_TRAIN.md")
         for key, value in env_overrides.items():
             env.insert(key, value)
@@ -1372,9 +1381,13 @@ class GUIController(QtCore.QObject):
             "[TRAIN] Старт",
             "[SELFPLAY] Старт",
             "[TRAIN][START]",
+            "[TRAIN][BOOT]",
+            "[TRAIN][WARN]",
             "[DEVICE CHECK]",
             "[RESUME]",
             "[metrics] saved:",
+            "[SELFPLAY] loading",
+            "[SELFPLAY] fixed checkpoint payload",
         )
         allowed_contains = (
             "Training...",
