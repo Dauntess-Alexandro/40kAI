@@ -400,6 +400,29 @@ def _extract_policy_state_dict(checkpoint):
     return None
 
 
+def _normalize_train_side(raw_value: str) -> str:
+    normalized = str(raw_value or "").strip().upper()
+    if normalized in ("P1", "PLAYER1", "MODEL", "ATTACKER"):
+        return "P1"
+    if normalized in ("P2", "PLAYER2", "ENEMY", "DEFENDER"):
+        return "P2"
+    warn_line = (
+        "[TRAIN][WARN] Некорректное значение TRAIN_SIDE. "
+        "Где: train.py (_normalize_train_side). "
+        "Что делать: используйте P1 или P2. "
+        f"Получено: {raw_value}. Будет использовано P1."
+    )
+    print(warn_line)
+    append_agent_log(warn_line)
+    return "P1"
+
+
+def _write_checkpoint_metadata(meta_path: str, payload: dict):
+    os.makedirs(os.path.dirname(meta_path), exist_ok=True)
+    with open(meta_path, "w", encoding="utf-8") as meta_file:
+        json.dump(payload, meta_file, ensure_ascii=False, indent=2)
+
+
 def _resume_from_checkpoint(policy_net, target_net, optimizer, memory, checkpoint_path: str) -> dict:
     if not os.path.isfile(checkpoint_path):
         err_msg = (
@@ -1569,8 +1592,21 @@ def main():
         return value
     
     safe_name = _sanitize_fs_name(name)
-    fold = "models/" + safe_name
-    fileName = fold+"/model-"+date+".pickle"
+    train_side = _normalize_train_side(os.getenv("TRAIN_SIDE", "P1"))
+    train_faction_raw = os.getenv("TRAIN_FACTION", roster_config.get("model_faction", "unknown"))
+    opponent_faction_raw = os.getenv("OPPONENT_FACTION", roster_config.get("enemy_faction", "unknown"))
+    train_faction = _sanitize_fs_name(str(train_faction_raw))
+    opponent_faction = _sanitize_fs_name(str(opponent_faction_raw))
+    model_scope = _sanitize_fs_name(f"{train_side}_{train_faction}_vs_{opponent_faction}")
+    model_dir = os.path.join("models", model_scope, safe_name)
+    fold = model_dir
+    fileName = os.path.join(fold, f"model-{date}.pickle")
+    metadata_path = os.path.join(model_dir, "checkpoint_meta.json")
+    append_agent_log(
+        "[TRAIN][TARGET] "
+        f"side={train_side} train_faction={train_faction} opponent_faction={opponent_faction} "
+        f"model_scope={model_scope}"
+    )
     randNum = np.random.randint(0, 10000000)
     metrics_obj = metrics(fold, randNum, date)
     ep_rows = [] 
@@ -2150,8 +2186,8 @@ def main():
                         prev_best = best_eval_score
                         best_eval_score = float(eval_score)
                         best_eval_episode = int(numLifeT + 1)
-                        best_path = f"models/{safe_name}/best_eval_checkpoint.pth"
-                        os.makedirs(f"models/{safe_name}", exist_ok=True)
+                        best_path = os.path.join(model_dir, "best_eval_checkpoint.pth")
+                        os.makedirs(model_dir, exist_ok=True)
                         with IO_PROFILER.timed("checkpoint save"):
                             torch.save(
                                 {
@@ -2163,6 +2199,12 @@ def main():
                                     "optimize_steps": int(optimize_steps),
                                     "episode": int(resume_episode_base + numLifeT + 1),
                                     "replay_memory": memory.state_dict(),
+                                    "model_scope": model_scope,
+                                    "training_target": {
+                                        "side": train_side,
+                                        "train_faction": train_faction,
+                                        "opponent_faction": opponent_faction,
+                                    },
                                     "best_eval_score": float(best_eval_score),
                                     "best_eval_episode": int(best_eval_episode),
                                     "eval_window_metrics": {
@@ -2175,9 +2217,23 @@ def main():
                                         "vp_diff_norm": float(vp_diff_norm),
                                         "eval_score": float(eval_score),
                                     },
+                            },
+                            best_path,
+                        )
+                        _write_checkpoint_metadata(
+                            metadata_path,
+                            {
+                                "latest_checkpoint": best_path,
+                                "checkpoint_type": "best_eval",
+                                "episode": int(resume_episode_base + numLifeT + 1),
+                                "model_scope": model_scope,
+                                "training_target": {
+                                    "side": train_side,
+                                    "train_faction": train_faction,
+                                    "opponent_faction": opponent_faction,
                                 },
-                                best_path,
-                            )
+                            },
+                        )
                         best_line = (
                             "[TRAIN][BEST] "
                             f"ep={numLifeT + 1} "
@@ -2282,8 +2338,8 @@ def main():
                 total_episode = resume_episode_base + numLifeT
                 _apply_reward_schedule(total_episode)
                 if SAVE_EVERY > 0 and total_episode % SAVE_EVERY == 0:
-                    checkpoint_path = f"models/{safe_name}/checkpoint_ep{total_episode}.pth"
-                    os.makedirs(f"models/{safe_name}", exist_ok=True)
+                    checkpoint_path = os.path.join(model_dir, f"checkpoint_ep{total_episode}.pth")
+                    os.makedirs(model_dir, exist_ok=True)
                     with IO_PROFILER.timed("checkpoint save"):
                         torch.save(
                             {
@@ -2295,9 +2351,29 @@ def main():
                                 "optimize_steps": int(optimize_steps),
                                 "episode": int(total_episode),
                                 "replay_memory": memory.state_dict(),
+                                "model_scope": model_scope,
+                                "training_target": {
+                                    "side": train_side,
+                                    "train_faction": train_faction,
+                                    "opponent_faction": opponent_faction,
+                                },
                             },
                             checkpoint_path,
                         )
+                    _write_checkpoint_metadata(
+                        metadata_path,
+                        {
+                            "latest_checkpoint": checkpoint_path,
+                            "checkpoint_type": "periodic",
+                            "episode": int(total_episode),
+                            "model_scope": model_scope,
+                            "training_target": {
+                                "side": train_side,
+                                "train_faction": train_faction,
+                                "opponent_faction": opponent_faction,
+                            },
+                        },
+                    )
                     if TRAIN_LOG_ENABLED:
                         save_line = f"[TRAIN][SAVE] ep={total_episode} path={checkpoint_path}"
                         if TRAIN_LOG_TO_FILE:
@@ -2561,11 +2637,31 @@ def main():
                 "optimize_steps": int(optimize_steps),
                 "episode": int(resume_episode_base + numLifeT),
                 "replay_memory": memory.state_dict(),
+                "model_scope": model_scope,
+                "training_target": {
+                    "side": train_side,
+                    "train_faction": train_faction,
+                    "opponent_faction": opponent_faction,
+                },
             },
-            ("models/{}/model-{}.pth".format(safe_name, date)),
+            os.path.join(model_dir, f"model-{date}.pth"),
         )
+    _write_checkpoint_metadata(
+        metadata_path,
+        {
+            "latest_checkpoint": os.path.join(model_dir, f"model-{date}.pth"),
+            "checkpoint_type": "final",
+            "episode": int(resume_episode_base + numLifeT),
+            "model_scope": model_scope,
+            "training_target": {
+                "side": train_side,
+                "train_faction": train_faction,
+                "opponent_faction": opponent_faction,
+            },
+        },
+    )
     train_elapsed_s = time.perf_counter() - train_start_time
-    model_tag = f"{safe_name}/model-{date}"
+    model_tag = f"{model_scope}/{safe_name}/model-{date}"
     save_training_summary(
         run_id=str(randNum),
         model_tag=model_tag,
