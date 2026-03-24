@@ -23,12 +23,8 @@ class TestIoP1Regression(unittest.TestCase):
         self.assertIn("SAVE_EVERY_ALLOW_LOW", source)
         self.assertIn("if SAVE_EVERY > 0 and SAVE_EVERY < SAVE_EVERY_MIN and not SAVE_EVERY_ALLOW_LOW:", source)
 
-    def test_checklist_marks_p1_done(self):
-        source = Path("I_O_PERF_CHECKLIST.md").read_text(encoding="utf-8")
-        self.assertIn("✅ P1 выполнен.", source)
-        self.assertIn("- [x] **Убрать частые open/write/close для `gui/response.txt`**", source)
-        self.assertIn("- [x] **Снизить нагрузку от train-логирования в файл**", source)
-        self.assertIn("- [x] **Проверить частоту checkpoint-save**", source)
+    def test_checklist_removed_from_regression_gate(self):
+        self.assertFalse(Path("I_O_PERF_CHECKLIST.md").exists())
 
 
 if __name__ == "__main__":

@@ -21,10 +21,8 @@ class TestIoP2Regression(unittest.TestCase):
         self.assertIn('timed("metrics save")', train_src)
         self.assertIn('IO_PROFILER.write_snapshot()', train_src)
 
-    def test_checklist_marks_p2_items_done(self):
-        source = Path("I_O_PERF_CHECKLIST.md").read_text(encoding="utf-8")
-        self.assertIn("- [x] **Разделить “лёгкий” и “полный” state payload**", source)
-        self.assertIn("- [x] **Сделать профилирование I/O по категориям**", source)
+    def test_checklist_removed_from_regression_gate(self):
+        self.assertFalse(Path("I_O_PERF_CHECKLIST.md").exists())
 
 
 if __name__ == "__main__":

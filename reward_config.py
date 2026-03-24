@@ -18,7 +18,7 @@ VP_CAP_PER_COMMAND = 3
 
 # Награды, связанные с удержанием/контролем objectives.
 # Бонус за удержание objective.
-VP_OBJECTIVE_HOLD_REWARD = 0.5
+VP_OBJECTIVE_HOLD_REWARD = 0.65
 # Штраф за упущенное удержание/прогресс по objective.
 VP_OBJECTIVE_HOLD_PENALTY = 0.12
 # Бонус за приближение к objective.
@@ -27,9 +27,17 @@ VP_OBJECTIVE_PROXIMITY_REWARD = 0.5
 # penalty = -VP_OBJECTIVE_HOLD_PENALTY * clamp01(missed_progress / VP_OBJECTIVE_MISSED_PROGRESS_NORM)
 VP_OBJECTIVE_MISSED_PROGRESS_NORM = 6.0
 # Масштаб бонуса за улучшение разницы VP (vp_diff > 0).
-VP_DIFF_REWARD_SCALE = 0.05
+VP_DIFF_REWARD_SCALE = 0.11
 # Масштаб штрафа за ухудшение разницы VP (vp_diff < 0).
-VP_DIFF_PENALTY_SCALE = 0.05
+VP_DIFF_PENALTY_SCALE = 0.12
+# Доп. штраф за ничью на turn_limit (анти "ничейная яма").
+TURN_LIMIT_DRAW_PENALTY = 0.60
+# Доп. масштаб бонуса за победу по VP на turn_limit.
+TURN_LIMIT_VP_MARGIN_REWARD_SCALE = 0.28
+# Доп. масштаб штрафа за проигрыш по VP на turn_limit.
+TURN_LIMIT_VP_MARGIN_PENALTY_SCALE = 0.24
+# Ограничение абсолютного VP margin для turn_limit shaping.
+TURN_LIMIT_VP_MARGIN_CLAMP = 3.0
 # Длина серии удержания objective для streak-бонуса.
 VP_OBJECTIVE_STREAK_LEN = 2
 # Дополнительный бонус за достижение серии удержания objective.
@@ -47,7 +55,7 @@ MOVEMENT_MELEE_TARGET_DEAD_BONUS = 0.3
 # Штраф за отступление из мили (fallback), когда это нежелательно.
 MOVEMENT_MELEE_RETREAT_PENALTY = 0.5
 # Бонус за удержание выгодного мили-контакта (stay in melee).
-MOVEMENT_MELEE_STAY_BONUS = 0.2
+MOVEMENT_MELEE_STAY_BONUS = 0.1
 # Бонус за успешный чардж.
 CHARGE_SUCCESS_REWARD = 0.5
 # Штраф за неуспешный чардж.
@@ -75,7 +83,7 @@ SHOOT_REWARD_ACTION_BONUS = 0.0
 
 # Масштаб штрафа за полученный урон в шаге модели
 # (нормируется относительно суммарного максимального HP модели).
-DAMAGE_TAKEN_SCALE = 0.5
+DAMAGE_TAKEN_SCALE = 0.38
 
 # ==============================================
 # Шэйпинг наград (objectives / utility-сигналы)
@@ -83,7 +91,7 @@ DAMAGE_TAKEN_SCALE = 0.5
 # Штраф за бездействие вне целей (idle out of objective).
 IDLE_OUT_OF_OBJECTIVE_PENALTY = 0.02
 # Масштаб пошагового бонуса за прогресс к objective.
-OBJECTIVE_PROGRESS_STEP_SCALE = 0.03
+OBJECTIVE_PROGRESS_STEP_SCALE = 0.05
 # Верхняя граница бонуса за прогресс к objective за шаг.
 OBJECTIVE_PROGRESS_STEP_CAP = 0.10
 # Бонус за убийство цели, находящейся на objective.
@@ -179,3 +187,76 @@ MELEE_ADVANTAGE_SCALE = 0.15
 MELEE_STRENGTH_SCALE = 0.1
 # Масштаб бонуса за контроль objective через ближний бой.
 MELEE_OBJECTIVE_CONTROL_SCALE = 0.2
+
+# ===========================================
+# Enemy heuristic (профили и matchup-дистанция)
+# ===========================================
+# Порог разницы между ranged/melee профилями для роли юнита.
+ENEMY_HEUR_PROFILE_GAP_THRESHOLD = 0.05
+# Буфер дистанции для режима kite (ranged vs melee).
+ENEMY_HEUR_KITE_BUFFER = 3.0
+# Веса компонент enemy movement heuristic (matchup-aware).
+ENEMY_HEUR_MATCHUP_DIST_W = 0.38
+ENEMY_HEUR_TARGET_DIST_W = 0.26
+ENEMY_HEUR_MODE_W = 0.16
+ENEMY_HEUR_PROGRESS_W = 0.15
+ENEMY_HEUR_OBJECTIVE_DIST_W = 0.14
+ENEMY_HEUR_RISK_W = 0.18
+ENEMY_HEUR_COVER_W = 0.18
+ENEMY_HEUR_LOOKAHEAD_TOP_K = 4
+ENEMY_HEUR_LOOKAHEAD_W = 0.30
+ENEMY_HEUR_TEAM_FOCUS_PENALTY_W = 0.12
+ENEMY_HEUR_OBJECTIVE_PRESSURE_W = 0.18
+ENEMY_HEUR_THREAT_W = 0.18
+
+# Feature flags / strategy layers
+ENEMY_HEUR_ROLE_SWITCH_ENABLED = 1
+ENEMY_HEUR_LOW_HP_THRESHOLD = 0.45
+ENEMY_HEUR_HIGH_RISK_THRESHOLD = 0.55
+ENEMY_HEUR_TEAM_TACTIC_ENABLED = 1
+ENEMY_HEUR_LOOK2_ENABLED = 1
+ENEMY_HEUR_LOOK2_TOP_K = 3
+ENEMY_HEUR_LOOK2_FUTURE_W = 0.35
+ENEMY_HEUR_LOOK2_RISK_W = 0.20
+ENEMY_HEUR_THREAT_MAP_CACHE = 1
+
+# Веса выбора целей для enemy heuristic (стрельба/чардж).
+ENEMY_HEUR_SHOOT_KILL_W = 0.45
+ENEMY_HEUR_SHOOT_DAMAGE_W = 0.30
+ENEMY_HEUR_SHOOT_OBJECTIVE_W = 0.15
+ENEMY_HEUR_SHOOT_OVERKILL_W = 0.18
+ENEMY_HEUR_CHARGE_MATCHUP_W = 0.40
+ENEMY_HEUR_CHARGE_DISTANCE_W = 0.35
+ENEMY_HEUR_CHARGE_OBJECTIVE_W = 0.25
+
+# EV target-selection (enemy heuristic)
+ENEMY_HEUR_SHOOT_EV_KILL_VALUE_W = 1.00
+ENEMY_HEUR_SHOOT_EV_DMG_VALUE_W = 0.95
+ENEMY_HEUR_SHOOT_EV_RETURN_RISK_W = 0.45
+ENEMY_HEUR_CHARGE_EV_SUCCESS_W = 1.15
+ENEMY_HEUR_CHARGE_EV_LOCK_W = 0.35
+ENEMY_HEUR_CHARGE_EV_COUNTER_W = 0.25
+
+# Quota logic: минимальные доли режимов движения при подходящих условиях
+ENEMY_HEUR_MODE_QUOTA_ENABLED = 1
+ENEMY_HEUR_MODE_QUOTA_START_ROUND = 3
+ENEMY_HEUR_MODE_QUOTA_MIN_KITE_RATIO = 0.04
+ENEMY_HEUR_MODE_QUOTA_MIN_COMMIT_RATIO = 0.06
+ENEMY_HEUR_MODE_QUOTA_COMMIT_DELTA_MIN = 0.04
+ENEMY_HEUR_MODE_QUOTA_ONLY_WHEN_BEHIND = 1
+ENEMY_HEUR_MODE_QUOTA_MAX_RISK = 0.52
+ENEMY_HEUR_MODE_QUOTA_MIN_TARGET_DIST = 5.5
+
+# Phase calibration (early/mid/late): динамика весов по раундам
+ENEMY_HEUR_PHASE_CALIBRATION_ENABLED = 1
+ENEMY_HEUR_EARLY_MAX_ROUND = 2
+ENEMY_HEUR_MID_MAX_ROUND = 3
+ENEMY_HEUR_EARLY_RISK_MULT = 1.03
+ENEMY_HEUR_EARLY_OBJ_MULT = 0.98
+ENEMY_HEUR_EARLY_MODE_MULT = 1.0
+ENEMY_HEUR_MID_RISK_MULT = 1.0
+ENEMY_HEUR_MID_OBJ_MULT = 1.0
+ENEMY_HEUR_MID_MODE_MULT = 1.0
+ENEMY_HEUR_LATE_RISK_MULT = 0.97
+ENEMY_HEUR_LATE_OBJ_MULT = 1.08
+ENEMY_HEUR_LATE_MODE_MULT = 0.99

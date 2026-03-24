@@ -44,8 +44,11 @@ class GUIController(QtCore.QObject):
     metricsChanged = QtCore.Signal()
     metricsLabelChanged = QtCore.Signal(str)
     metricsSummaryChanged = QtCore.Signal()
+    heuristicMetricsChanged = QtCore.Signal()
     playModelPathChanged = QtCore.Signal(str)
     playModelLabelChanged = QtCore.Signal(str)
+    playViewerPlayerRoleLabelChanged = QtCore.Signal(str)
+    playViewerModelRoleLabelChanged = QtCore.Signal(str)
     evalModelPathChanged = QtCore.Signal(str)
     evalModelLabelChanged = QtCore.Signal(str)
     evalGamesChanged = QtCore.Signal(int)
@@ -59,6 +62,13 @@ class GUIController(QtCore.QObject):
     factionIconSizeChanged = QtCore.Signal(int)
     unitIconSizeChanged = QtCore.Signal(int)
     deploymentModeChanged = QtCore.Signal(str)
+    learnerSideChanged = QtCore.Signal(str)
+    learnerFactionChanged = QtCore.Signal(str)
+    opponentPolicyChanged = QtCore.Signal(str)
+    opponentSourceChanged = QtCore.Signal(str)
+    specificOpponentOptionsChanged = QtCore.Signal()
+    selectedSpecificOpponentIdChanged = QtCore.Signal(str)
+    opponentPreviewTextChanged = QtCore.Signal(str)
     trainingHyperparamsChanged = QtCore.Signal()
     settingsDirtyChanged = QtCore.Signal(bool)
     settingsSaveStateChanged = QtCore.Signal(str)
@@ -103,6 +113,8 @@ class GUIController(QtCore.QObject):
         self._metrics_mtimes: dict[str, Optional[float]] = {}
         self._metrics_label = "По умолчанию"
         self._metrics_run_id = ""
+        self._heuristic_metrics: dict[str, object] = {}
+        self._heuristic_metrics_text = "Нет данных метрик эвристики."
         self._metric_summary_texts = {
             "reward": "Текущее: — | Среднее: — | Мин: — | Макс: —",
             "loss": "Текущее: — | Среднее: — | Мин: — | Макс: —",
@@ -114,6 +126,8 @@ class GUIController(QtCore.QObject):
 
         self._play_model_path = ""
         self._play_model_label = "Модель не выбрана"
+        self._play_viewer_player_role_label = "Ты: —"
+        self._play_viewer_model_role_label = "ИИ: —"
         self._eval_model_path = ""
         self._eval_model_label = "Модель не выбрана"
         self._eval_games = 50
@@ -125,10 +139,31 @@ class GUIController(QtCore.QObject):
         self._resume_from_checkpoint = False
         self._disable_train_logging = False
         self._auto_clear_logs = True
+        self._unit_faction_by_name: dict[str, str] = {}
         self._deployment_mode_options = ["manual_player", "auto", "rl_phase"]
         self._deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "rl_phase")).strip().lower() or "rl_phase"
         if self._deployment_mode not in self._deployment_mode_options:
             self._deployment_mode = "rl_phase"
+        self._learner_side_options = ["P1", "P2"]
+        self._learner_side = str(os.getenv("LEARNER_SIDE", "P1")).strip().upper() or "P1"
+        if self._learner_side not in self._learner_side_options:
+            self._learner_side = "P1"
+        self._learner_faction_options = ["Necrons", "SpaceMarines", "AstraMilitarum", "Aeldari"]
+        self._learner_faction = str(os.getenv("LEARNER_FACTION", "Necrons")).strip() or "Necrons"
+        if self._learner_faction not in self._learner_faction_options:
+            self._learner_faction = "Necrons"
+        self._opponent_policy_options = ["mirror", "cross_faction", "league"]
+        self._opponent_policy = str(os.getenv("OPPONENT_POLICY", "mirror")).strip().lower() or "mirror"
+        if self._opponent_policy not in self._opponent_policy_options:
+            self._opponent_policy = "mirror"
+        self._opponent_source_options = ["heuristic", "latest_snapshot", "specific_agent"]
+        self._opponent_source = str(os.getenv("OPPONENT_SOURCE", "heuristic")).strip().lower() or "heuristic"
+        if self._opponent_source not in self._opponent_source_options:
+            self._opponent_source = "heuristic"
+        self._specific_opponent_agent_ids: list[str] = []
+        self._specific_opponent_agent_labels: list[str] = []
+        self._selected_specific_opponent_id = ""
+        self._opponent_preview_text = "Сейчас будет: —"
 
         self._hyperparams_path = os.path.join(self._repo_root, "hyperparams.json")
         self._default_hyperparams = {
@@ -149,13 +184,38 @@ class GUIController(QtCore.QObject):
 
         self._load_available_units()
         self._load_rosters_from_file()
+        self._update_learner_faction_from_rosters()
         self._refresh_models()
         self._select_latest_metrics()
+        self._load_latest_heuristic_metrics()
         self._select_latest_play_model(initial=True)
         self._select_latest_eval_model(initial=True)
         self._update_roster_summary()
+        self._refresh_specific_opponent_options()
 
-        self._emit_status("Нажмите «Тренировка 8х» или «Самообучение», чтобы запустить обучение.")
+        self._emit_status("Нажмите «Тренировка 8х», чтобы запустить обучение.")
+
+    def _infer_faction_from_roster(self, roster: list[RosterEntry]) -> str:
+        if not roster:
+            return self._learner_faction
+        first_name = str(roster[0].name or "").strip()
+        if not first_name:
+            return self._learner_faction
+        return self._unit_faction_by_name.get(first_name, self._learner_faction)
+
+    def _update_learner_faction_from_rosters(self) -> None:
+        # Фракция обучения берётся из ростера той стороны, которая выбрана как learner.
+        if self._learner_side == "P1":
+            inferred = self._infer_faction_from_roster(self._player_roster)
+        else:
+            inferred = self._infer_faction_from_roster(self._model_roster)
+        if inferred and inferred != self._learner_faction:
+            self._learner_faction = inferred
+            try:
+                self.learnerFactionChanged.emit(inferred)
+            except Exception:
+                pass
+        self._update_opponent_preview_text()
 
     @QtCore.Property(QtCore.QObject, constant=True)
     def availableUnitsModel(self) -> QtCore.QObject:
@@ -257,6 +317,10 @@ class GUIController(QtCore.QObject):
     def modelStateText(self) -> str:
         return self._model_state_text
 
+    @QtCore.Property(str, notify=heuristicMetricsChanged)
+    def heuristicMetricsText(self) -> str:
+        return self._heuristic_metrics_text
+
     @QtCore.Property(str, notify=playModelPathChanged)
     def playModelPath(self) -> str:
         return self._play_model_path
@@ -264,6 +328,14 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=playModelLabelChanged)
     def playModelLabel(self) -> str:
         return self._play_model_label
+
+    @QtCore.Property(str, notify=playViewerPlayerRoleLabelChanged)
+    def playViewerPlayerRoleLabel(self) -> str:
+        return self._play_viewer_player_role_label
+
+    @QtCore.Property(str, notify=playViewerModelRoleLabelChanged)
+    def playViewerModelRoleLabel(self) -> str:
+        return self._play_viewer_model_role_label
 
     @QtCore.Property(str, notify=evalModelPathChanged)
     def evalModelPath(self) -> str:
@@ -313,6 +385,62 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=deploymentModeChanged)
     def deploymentMode(self) -> str:
         return self._deployment_mode
+
+    @QtCore.Property("QStringList", constant=True)
+    def learnerSideOptions(self):
+        return self._learner_side_options
+
+    @QtCore.Property(str, notify=learnerSideChanged)
+    def learnerSide(self) -> str:
+        return self._learner_side
+
+    @QtCore.Property("QStringList", constant=True)
+    def learnerFactionOptions(self):
+        return self._learner_faction_options
+
+    @QtCore.Property(str, notify=learnerFactionChanged)
+    def learnerFaction(self) -> str:
+        return self._learner_faction
+
+    @QtCore.Property("QStringList", constant=True)
+    def opponentPolicyOptions(self):
+        return self._opponent_policy_options
+
+    @QtCore.Property(str, notify=opponentPolicyChanged)
+    def opponentPolicy(self) -> str:
+        return self._opponent_policy
+
+    @QtCore.Property("QStringList", constant=True)
+    def opponentSourceOptions(self):
+        return self._opponent_source_options
+
+    @QtCore.Property(str, notify=opponentSourceChanged)
+    def opponentSource(self) -> str:
+        return self._opponent_source
+
+    @QtCore.Property("QStringList", notify=specificOpponentOptionsChanged)
+    def specificOpponentAgentOptions(self):
+        return self._specific_opponent_agent_labels
+
+    @QtCore.Property(str, notify=selectedSpecificOpponentIdChanged)
+    def selectedSpecificOpponentId(self) -> str:
+        return self._selected_specific_opponent_id
+
+    @QtCore.Property(str, notify=selectedSpecificOpponentIdChanged)
+    def selectedSpecificOpponentLabel(self) -> str:
+        if not self._selected_specific_opponent_id:
+            return ""
+        try:
+            idx = self._specific_opponent_agent_ids.index(self._selected_specific_opponent_id)
+        except ValueError:
+            return ""
+        if 0 <= idx < len(self._specific_opponent_agent_labels):
+            return self._specific_opponent_agent_labels[idx]
+        return ""
+
+    @QtCore.Property(str, notify=opponentPreviewTextChanged)
+    def opponentPreviewText(self) -> str:
+        return self._opponent_preview_text
 
     @QtCore.Property(float, notify=trainingHyperparamsChanged)
     def hpLr(self) -> float:
@@ -524,7 +652,8 @@ class GUIController(QtCore.QObject):
         self._persist_rosters()
         self._refresh_models()
         self._update_roster_summary()
-        self._emit_status("Юнит добавлен в ростер игрока.")
+        self._update_learner_faction_from_rosters()
+        self._emit_status("Юнит добавлен в ростер P1.")
 
     @QtCore.Slot(int)
     def add_unit_to_model(self, index: int) -> None:
@@ -537,29 +666,32 @@ class GUIController(QtCore.QObject):
         self._persist_rosters()
         self._refresh_models()
         self._update_roster_summary()
-        self._emit_status("Юнит добавлен в ростер модели.")
+        self._update_learner_faction_from_rosters()
+        self._emit_status("Юнит добавлен в ростер P2.")
 
     @QtCore.Slot(int)
     def remove_player_unit(self, index: int) -> None:
         if index < 0 or index >= len(self._player_roster):
-            self._emit_status("Сначала выберите юнит игрока для удаления.")
+            self._emit_status("Сначала выберите юнит P1 для удаления.")
             return
         self._player_roster.pop(index)
         self._persist_rosters()
         self._refresh_models()
         self._update_roster_summary()
-        self._emit_status("Юнит удалён из ростера игрока.")
+        self._update_learner_faction_from_rosters()
+        self._emit_status("Юнит удалён из ростера P1.")
 
     @QtCore.Slot(int)
     def remove_model_unit(self, index: int) -> None:
         if index < 0 or index >= len(self._model_roster):
-            self._emit_status("Сначала выберите юнит модели для удаления.")
+            self._emit_status("Сначала выберите юнит P2 для удаления.")
             return
         self._model_roster.pop(index)
         self._persist_rosters()
         self._refresh_models()
         self._update_roster_summary()
-        self._emit_status("Юнит удалён из ростера модели.")
+        self._update_learner_faction_from_rosters()
+        self._emit_status("Юнит удалён из ростера P2.")
 
     @QtCore.Slot()
     def clear_player_roster(self) -> None:
@@ -567,7 +699,8 @@ class GUIController(QtCore.QObject):
         self._persist_rosters()
         self._refresh_models()
         self._update_roster_summary()
-        self._emit_status("Ростер игрока очищен.")
+        self._update_learner_faction_from_rosters()
+        self._emit_status("Ростер P1 очищен.")
 
     @QtCore.Slot()
     def clear_model_roster(self) -> None:
@@ -575,7 +708,8 @@ class GUIController(QtCore.QObject):
         self._persist_rosters()
         self._refresh_models()
         self._update_roster_summary()
-        self._emit_status("Ростер модели очищен.")
+        self._update_learner_faction_from_rosters()
+        self._emit_status("Ростер P2 очищен.")
 
     @QtCore.Slot()
     def start_train(self) -> None:
@@ -583,7 +717,10 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Slot()
     def start_train_8x(self) -> None:
-        self._start_training(mode="train8")
+        # Единая кнопка "Тренировка 8х": режим выбирается по источнику оппонента.
+        # Эвристика -> обычная тренировка, модель/агент -> self-play.
+        mode = "selfplay" if self._opponent_source in {"latest_snapshot", "specific_agent"} else "train8"
+        self._start_training(mode=mode)
 
     @QtCore.Slot()
     def start_self_play(self) -> None:
@@ -635,6 +772,88 @@ class GUIController(QtCore.QObject):
         self._emit_status(f"Режим деплоя: {self._deployment_mode_label(mode)}")
         self.mark_settings_dirty()
 
+    @QtCore.Slot(str)
+    def set_learner_side(self, value: str) -> None:
+        side = str(value or "").strip().upper()
+        if side not in self._learner_side_options:
+            side = "P1"
+        if side == self._learner_side:
+            return
+        self._learner_side = side
+        self.learnerSideChanged.emit(side)
+        self._update_learner_faction_from_rosters()
+        self._refresh_specific_opponent_options()
+        self._emit_status(f"Сторона обучения: {side}")
+        self.mark_settings_dirty()
+
+    @QtCore.Slot(str)
+    def set_learner_faction(self, value: str) -> None:
+        faction = str(value or "").strip() or "Necrons"
+        if faction not in self._learner_faction_options:
+            faction = "Necrons"
+        if faction == self._learner_faction:
+            return
+        self._learner_faction = faction
+        self.learnerFactionChanged.emit(faction)
+        self._emit_status(f"Фракция обучения: {faction}")
+        self.mark_settings_dirty()
+
+    @QtCore.Slot(str)
+    def set_opponent_policy(self, value: str) -> None:
+        policy = str(value or "").strip().lower()
+        if policy not in self._opponent_policy_options:
+            policy = "mirror"
+        if policy == self._opponent_policy:
+            return
+        self._opponent_policy = policy
+        self.opponentPolicyChanged.emit(policy)
+        self._emit_status(f"Политика оппонента: {policy}")
+        self.mark_settings_dirty()
+
+    @QtCore.Slot(str)
+    def set_opponent_source(self, value: str) -> None:
+        source = str(value or "").strip().lower()
+        if source not in self._opponent_source_options:
+            source = "latest_snapshot"
+        if source == self._opponent_source:
+            return
+        self._opponent_source = source
+        self.opponentSourceChanged.emit(source)
+        self._refresh_specific_opponent_options()
+        if source == "latest_snapshot" and self._specific_opponent_agent_ids:
+            latest_id = self._specific_opponent_agent_ids[0]
+            if latest_id != self._selected_specific_opponent_id:
+                self._selected_specific_opponent_id = latest_id
+                self.selectedSpecificOpponentIdChanged.emit(self._selected_specific_opponent_id)
+                self._update_opponent_preview_text()
+        self._emit_status(f"Источник оппонента: {self._opponent_source_label(source)}")
+        self.mark_settings_dirty()
+
+    @QtCore.Slot(str)
+    def set_specific_opponent_agent(self, agent_id: str) -> None:
+        normalized = str(agent_id or "").strip()
+        if normalized and normalized not in self._specific_opponent_agent_ids:
+            normalized = ""
+        if normalized == self._selected_specific_opponent_id:
+            return
+        self._selected_specific_opponent_id = normalized
+        self.selectedSpecificOpponentIdChanged.emit(self._selected_specific_opponent_id)
+        self._update_opponent_preview_text()
+        self.mark_settings_dirty()
+
+    @QtCore.Slot(str)
+    def set_specific_opponent_agent_by_label(self, label: str) -> None:
+        text = str(label or "").strip()
+        if not text:
+            self.set_specific_opponent_agent("")
+            return
+        try:
+            idx = self._specific_opponent_agent_labels.index(text)
+        except ValueError:
+            return
+        if 0 <= idx < len(self._specific_opponent_agent_ids):
+            self.set_specific_opponent_agent(self._specific_opponent_agent_ids[idx])
+
     def _deployment_mode_label(self, mode: str) -> str:
         labels = {
             "manual_player": "Ручной игрок (клик в Viewer)",
@@ -642,6 +861,93 @@ class GUIController(QtCore.QObject):
             "rl_phase": "RL-деплой модели (игрок вручную)",
         }
         return labels.get(mode, mode)
+
+    def _opponent_source_label(self, source: str) -> str:
+        labels = {
+            "heuristic": "Эвристика",
+            "latest_snapshot": "Последний снапшот",
+            "specific_agent": "Конкретный агент",
+        }
+        return labels.get(source, source)
+
+    def _collect_registered_agents_meta(self) -> list[dict[str, str]]:
+        agents_root = os.path.join(self._repo_root, "models", "agents")
+        if not os.path.isdir(agents_root):
+            return []
+        records: list[dict[str, str]] = []
+        for root, _, files in os.walk(agents_root):
+            if "meta.json" not in files:
+                continue
+            meta_path = os.path.join(root, "meta.json")
+            try:
+                with open(meta_path, "r", encoding="utf-8") as handle:
+                    payload = json.load(handle)
+            except (OSError, json.JSONDecodeError):
+                continue
+            agent_id = str(payload.get("agent_id", "")).strip()
+            side = str(payload.get("side", "")).strip().upper()
+            faction = str(payload.get("faction", "")).strip()
+            created_at = str(payload.get("created_at", "")).strip()
+            if not agent_id or side not in {"P1", "P2"}:
+                continue
+            records.append(
+                {
+                    "agent_id": agent_id,
+                    "side": side,
+                    "faction": faction or "Unknown",
+                    "created_at": created_at,
+                }
+            )
+        records.sort(key=lambda item: (item.get("created_at", ""), item["agent_id"]), reverse=True)
+        return records
+
+    def _refresh_specific_opponent_options(self) -> None:
+        opposite_side = "P2" if self._learner_side == "P1" else "P1"
+        records = [rec for rec in self._collect_registered_agents_meta() if rec.get("side") == opposite_side]
+        self._specific_opponent_agent_ids = [str(rec["agent_id"]) for rec in records]
+        self._specific_opponent_agent_labels = [
+            f"{rec['agent_id']} ({rec.get('faction', 'Unknown')})" for rec in records
+        ]
+        if self._selected_specific_opponent_id not in self._specific_opponent_agent_ids:
+            self._selected_specific_opponent_id = self._specific_opponent_agent_ids[0] if self._specific_opponent_agent_ids else ""
+            self.selectedSpecificOpponentIdChanged.emit(self._selected_specific_opponent_id)
+        self.specificOpponentOptionsChanged.emit()
+        self._update_opponent_preview_text()
+
+    def _display_faction_for_side(self, side: str) -> str:
+        normalized_side = str(side or "").strip().upper()
+        if normalized_side == "P1":
+            return self._infer_faction_from_roster(self._player_roster)
+        if normalized_side == "P2":
+            return self._infer_faction_from_roster(self._model_roster)
+        return "Unknown"
+
+    def _update_opponent_preview_text(self) -> None:
+        learner_side = self._learner_side
+        opponent_side = "P2" if learner_side == "P1" else "P1"
+        learner_faction = self._display_faction_for_side(learner_side)
+        opponent_faction = self._display_faction_for_side(opponent_side)
+
+        if self._opponent_source == "heuristic":
+            suffix = "эвристика"
+        elif self._opponent_source == "latest_snapshot":
+            if self._selected_specific_opponent_id:
+                suffix = f"последний снапшот, agent_id {self._selected_specific_opponent_id}"
+            else:
+                suffix = "последний снапшот"
+        else:
+            if self._selected_specific_opponent_id:
+                suffix = f"agent_id {self._selected_specific_opponent_id}"
+            else:
+                suffix = "конкретный агент не выбран"
+
+        text = (
+            f"Сейчас будет: {learner_side} {learner_faction} vs "
+            f"{opponent_side} {opponent_faction} ({suffix})."
+        )
+        if text != self._opponent_preview_text:
+            self._opponent_preview_text = text
+            self.opponentPreviewTextChanged.emit(text)
 
     @QtCore.Slot(str, str)
     def set_training_hyperparam(self, key: str, value: str) -> None:
@@ -971,6 +1277,9 @@ class GUIController(QtCore.QObject):
         env.insert("PYTHONPATH", self._pythonpath_with_gym_mod())
         env.insert("MISSION_NAME", self._selected_mission)
         env.insert("DEPLOYMENT_MODE", self._deployment_mode)
+        env.insert("LEARNER_SIDE", self._learner_side)
+        env.insert("LEARNER_FACTION", self._learner_faction)
+        env.insert("LEAGUE_ENABLE", "1")
         env.insert("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_TRAIN.md")
         self._process.setProcessEnvironment(env)
 
@@ -1025,6 +1334,9 @@ class GUIController(QtCore.QObject):
         env["MISSION_NAME"] = self._selected_mission
         env["DEPLOYMENT_MODE"] = self._deployment_mode
         env["AGENT_LOG_FILE"] = "LOGS_FOR_AGENTS_PLAY.md"
+        player_label, model_label = self._infer_viewer_role_labels_from_model_pickle(model_path)
+        env["VIEWER_PLAYER_ROLE_LABEL"] = player_label
+        env["VIEWER_MODEL_ROLE_LABEL"] = model_label
         subprocess.Popen(
             command,
             cwd=self._repo_root,
@@ -1055,6 +1367,9 @@ class GUIController(QtCore.QObject):
         env["MISSION_NAME"] = self._selected_mission
         env["DEPLOYMENT_MODE"] = self._deployment_mode
         env["AGENT_LOG_FILE"] = "LOGS_FOR_AGENTS_PLAY.md"
+        player_label, model_label = self._infer_viewer_role_labels_from_model_pickle(model_path)
+        env["VIEWER_PLAYER_ROLE_LABEL"] = player_label
+        env["VIEWER_MODEL_ROLE_LABEL"] = model_label
         command = self._build_script_command(script, [])
         subprocess.Popen(
             command,
@@ -1064,6 +1379,35 @@ class GUIController(QtCore.QObject):
         )
         self._emit_log("[VIEWER] Запуск в greedy-режиме: exploration отключен (epsilon=0).", level="INFO")
         self._emit_status("Запуск игры в GUI через Viewer (greedy, без исследования).")
+
+    def _infer_viewer_role_labels_from_model_pickle(self, pickle_path: str) -> tuple[str, str]:
+        """
+        Подписи для Viewer легенды.
+        В Viewer: side=`player` = человек, side=`model` = policy (ИИ).
+        В папке models/<safe_name>/model-*.pickle safe_name содержит:
+          ...__learner_<P1|P2>_<Faction>
+        и часть вида ..._vs_P_<EnemyFaction>__learner_...
+        """
+        default_player = "Игрок"
+        default_model = "Модель"
+        if not pickle_path or pickle_path == "None":
+            return default_player, default_model
+
+        try:
+            folder = os.path.basename(os.path.dirname(pickle_path))
+            ai_match = re.search(r"__learner_(P[12])_([^_].+?)$", folder)
+            if not ai_match:
+                return default_player, default_model
+            ai_side = ai_match.group(1)
+            ai_faction = ai_match.group(2)
+
+            enemy_match = re.search(r"_vs_P_(.*?)__learner_", folder)
+            human_faction = enemy_match.group(1) if enemy_match else "Unknown"
+            human_side = "P2" if ai_side == "P1" else "P1"
+
+            return f"Ты: {human_side} ({human_faction})", f"ИИ: {ai_side} ({ai_faction})"
+        except Exception:
+            return default_player, default_model
 
     def _check_torch_import(self) -> bool:
         command = [
@@ -1170,6 +1514,7 @@ class GUIController(QtCore.QObject):
         train_label = "TRAIN"
         status_prefix = "Обучение"
         env_overrides: dict[str, str] = {}
+        selected_opponent_source = self._opponent_source
         if mode == "train8":
             train_label = "TRAIN8"
             status_prefix = "Обучение"
@@ -1181,28 +1526,67 @@ class GUIController(QtCore.QObject):
             env_overrides["VEC_ENV_COUNT"] = "12"
             env_overrides["SELF_PLAY_ENABLED"] = "1"
 
-        if mode == "selfplay" and self._self_play_from_checkpoint:
-            checkpoint_path = self._find_latest_checkpoint_file()
+        if mode == "selfplay" and self._self_play_from_checkpoint and selected_opponent_source == "latest_snapshot":
+            checkpoint_path = self._find_latest_resume_file()
             if not checkpoint_path:
-                self._emit_status(
-                    "Чекпойнты .pth не найдены. "
-                    "Снимите галочку или включите сохранение чекпойнтов."
+                message = (
+                    "Не найден checkpoint/model для самообучения от старой модели. "
+                    "Где: gui_qt/main.py (_start_training). "
+                    "Что делать дальше: сохраните checkpoint_ep*.pth (или model-*.pth) "
+                    "или снимите галочку 'Самообучение от старой модели'."
                 )
+                self._emit_status(message)
+                self._emit_log(f"[GUI] {message}", level="ERROR")
                 return
             env_overrides["SELF_PLAY_OPPONENT_MODE"] = "fixed_checkpoint"
             env_overrides["SELF_PLAY_FIXED_PATH"] = checkpoint_path
+            self._emit_log(f"[GUI] [SELFPLAY] fixed checkpoint: {checkpoint_path}", level="INFO")
+
+        # Выбор источника оппонента из UI.
+        env_overrides.pop("OPPONENT_AGENT_ID", None)
+        if selected_opponent_source == "heuristic":
+            env_overrides["SELF_PLAY_ENABLED"] = "0"
+            env_overrides.pop("SELF_PLAY_FIXED_PATH", None)
+            env_overrides.pop("SELF_PLAY_OPPONENT_MODE", None)
+        elif selected_opponent_source == "latest_snapshot":
+            env_overrides["SELF_PLAY_ENABLED"] = "1"
+            env_overrides["SELF_PLAY_OPPONENT_MODE"] = env_overrides.get("SELF_PLAY_OPPONENT_MODE", "snapshot")
+        elif selected_opponent_source == "specific_agent":
+            if not self._selected_specific_opponent_id:
+                self._emit_status(
+                    "Не выбран конкретный агент-оппонент. "
+                    "Где: gui_qt/main.py (_start_training). "
+                    "Что делать: выберите agent_id в поле 'Конкретный агент' или смените источник оппонента."
+                )
+                return
+            env_overrides["SELF_PLAY_ENABLED"] = "1"
+            env_overrides["SELF_PLAY_OPPONENT_MODE"] = "snapshot"
+            env_overrides["OPPONENT_AGENT_ID"] = self._selected_specific_opponent_id
+            env_overrides.pop("SELF_PLAY_FIXED_PATH", None)
 
         if self._resume_from_checkpoint:
             resume_path = self._find_latest_resume_file()
             if not resume_path:
-                self._emit_status(
+                message = (
                     "Resume включён, но checkpoint_ep*.pth и model-*.pth не найдены. "
                     "Где: gui_qt/main.py (_start_training). "
-                    "Что делать: сохраните чекпойнт и запустите снова или снимите галочку resume."
+                    "Что делать дальше: сохраните чекпойнт и запустите снова или снимите галочку resume."
                 )
+                self._emit_status(message)
+                self._emit_log(f"[GUI] {message}", level="ERROR")
                 return
             env_overrides["RESUME_CHECKPOINT"] = resume_path
             self._emit_log(f"[GUI] [RESUME] Использую чекпойнт: {resume_path}", level="INFO")
+
+        self._emit_log(
+            "[GUI] Параметры запуска: "
+            f"mode={mode}, self_play_from_checkpoint={int(self._self_play_from_checkpoint)}, "
+            f"resume={int(self._resume_from_checkpoint)}, auto_clear_logs={int(self._auto_clear_logs)}, "
+            f"disable_train_logging={int(self._disable_train_logging)}, "
+            f"opponent_source={selected_opponent_source}, "
+            f"opponent_agent_id={self._selected_specific_opponent_id or '-'}",
+            level="INFO",
+        )
 
         self._emit_log(f"[GUI] Запуск {status_prefix.lower()}...", level="INFO")
         self._emit_status(f"{status_prefix}...")
@@ -1214,8 +1598,9 @@ class GUIController(QtCore.QObject):
         if self._disable_train_logging:
             env.insert("TRAIN_LOG_ENABLED", "0")
             env.insert("TRAIN_LOG_TO_CONSOLE", "0")
-            env.insert("TRAIN_LOG_TO_FILE", "0")
-            env.insert("REWARD_DEBUG", "0")
+            # Для отладки эвристики всегда пишем файл лога, даже в speed-режиме.
+            env.insert("TRAIN_LOG_TO_FILE", "1")
+            env.insert("REWARD_DEBUG", "1")
             env.insert("LOG_EVERY", "1000")
         else:
             env.insert("TRAIN_LOG_ENABLED", "1")
@@ -1223,12 +1608,26 @@ class GUIController(QtCore.QObject):
             env.insert("TRAIN_LOG_TO_FILE", "1")
             env.insert("REWARD_DEBUG", "1")
             env.insert("LOG_EVERY", "500")
+        env.insert("HEURISTIC_MODE", "v2")
+        env.insert("HEURISTIC_DEBUG", "1")
         env.insert("PER_ENABLED", "1")
         env.insert("N_STEP", "3")
         env.insert("SAVE_EVERY", "500")
         env.insert("CLIP_REWARD", "1")
         env.insert("MISSION_NAME", self._selected_mission)
+        env.insert("LEARNER_SIDE", self._learner_side)
+        env.insert("LEARNER_FACTION", self._learner_faction)
+        env.insert("LEAGUE_ENABLE", "1")
         env.insert("DEPLOYMENT_MODE", self._deployment_mode)
+        if self._deployment_mode == "manual_player":
+            self._emit_log(
+                "[GUI] [TRAIN] DEPLOYMENT_MODE=manual_player не поддерживается для неинтерактивного train.py; "
+                "принудительно переключаю в auto.",
+                level="WARN",
+            )
+            env.insert("DEPLOYMENT_MODE", "auto")
+        if self._deployment_mode == "rl_phase":
+            env.insert("DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE", "0")
         env.insert("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_TRAIN.md")
         for key, value in env_overrides.items():
             env.insert(key, value)
@@ -1251,7 +1650,7 @@ class GUIController(QtCore.QObject):
         self._emit_log(f"[{train_label}] {start_message}")
         if self._disable_train_logging:
             self._emit_log(
-                f"[{train_label}] Speed-режим: TRAIN_LOG_*=0, REWARD_DEBUG=0, LOG_EVERY=1000.",
+                f"[{train_label}] Speed-режим: TRAIN_LOG_TO_CONSOLE=0, TRAIN_LOG_TO_FILE=1, REWARD_DEBUG=1, LOG_EVERY=1000.",
                 level="INFO",
             )
         self._emit_status(start_message)
@@ -1275,10 +1674,19 @@ class GUIController(QtCore.QObject):
         try:
             self._persist_rosters()
             script = self._script_path("data")
+            # initFile.py получает modelFaction/enemyFaction, а unit-списки берутся из gui/units.txt.
+            # Поэтому faction для model/enemy берём из тех ростеров, которые мы записали в эти секции.
+            if self._learner_side == "P1":
+                model_faction = self._infer_faction_from_roster(self._player_roster)
+                enemy_faction = self._infer_faction_from_roster(self._model_roster)
+            else:
+                model_faction = self._infer_faction_from_roster(self._model_roster)
+                enemy_faction = self._infer_faction_from_roster(self._player_roster)
+
             args = [
                 str(self._num_games),
-                "Necrons",
-                "Necrons",
+                str(model_faction),
+                str(enemy_faction),
                 "60",
                 "40",
                 self._selected_mission,
@@ -1315,7 +1723,8 @@ class GUIController(QtCore.QObject):
     def _read_stdout(self) -> None:
         if self._process is None:
             return
-        data = self._process.readAllStandardOutput().data().decode("utf-8", errors="replace")
+        raw = self._process.readAllStandardOutput().data()
+        data = self._decode_process_bytes(raw)
         for line in data.splitlines():
             if line.strip():
                 if self._active_process_kind == "eval":
@@ -1328,7 +1737,8 @@ class GUIController(QtCore.QObject):
     def _read_stderr(self) -> None:
         if self._process is None:
             return
-        data = self._process.readAllStandardError().data().decode("utf-8", errors="replace")
+        raw = self._process.readAllStandardError().data()
+        data = self._decode_process_bytes(raw)
         for line in data.splitlines():
             if line.strip():
                 if self._active_process_kind == "eval":
@@ -1336,6 +1746,25 @@ class GUIController(QtCore.QObject):
                 if not self._is_tqdm_progress_line(line):
                     self._emit_log(line, level="ERROR")
                 self._handle_progress_line(line)
+
+    def _decode_process_bytes(self, raw: bytes) -> str:
+        """
+        stdout/stderr из subprocess в Windows иногда приходят в кодировке системы.
+        Если декодировать строго как utf-8, получаем "�" (replacement chars).
+        Пробуем несколько распространённых кодировок и берём ту, где меньше всего "�".
+        """
+        candidates = ("utf-8-sig", "utf-8", "cp1251", "latin-1")
+        best_text: str = ""
+        best_score: int | None = None
+        for enc in candidates:
+            text = raw.decode(enc, errors="replace")
+            score = text.count("\ufffd")  # �
+            if best_score is None or score < best_score:
+                best_score = score
+                best_text = text
+            if score == 0:
+                return text
+        return best_text
 
     def _is_tqdm_progress_line(self, line: str) -> bool:
         normalized = line.strip()
@@ -1357,15 +1786,18 @@ class GUIController(QtCore.QObject):
             "[TRAIN] Старт",
             "[SELFPLAY] Старт",
             "[TRAIN][START]",
-            "[DEVICE CHECK]",
+            "[TRAIN][BOOT]",
+            "[TRAIN][CONFIG]",
+            "[TRAIN][ROSTER]",
+            "[TRAIN][OPPONENT]",
+            "[TRAIN][WARN]",
             "[RESUME]",
             "[metrics] saved:",
+            "[SELFPLAY] loading",
+            "[SELFPLAY] fixed checkpoint payload",
         )
         allowed_contains = (
             "Training...",
-            "Model Units:",
-            "Enemy Units:",
-            "Action keys:",
             "Generated metrics",
             "Forging model_train.gif",
             "genDisplay.makeGif:",
@@ -1451,6 +1883,8 @@ class GUIController(QtCore.QObject):
             else:
                 self._emit_status("Обучение завершено с ошибкой.")
             self._select_latest_metrics()
+            self._load_latest_heuristic_metrics()
+            self._refresh_specific_opponent_options()
         self._cleanup_process()
 
     def _cleanup_process(self) -> None:
@@ -1560,6 +1994,13 @@ class GUIController(QtCore.QObject):
         self._play_model_label = f"{label_prefix}: {os.path.basename(path)}"
         self.playModelPathChanged.emit(self._play_model_path)
         self.playModelLabelChanged.emit(self._play_model_label)
+
+        # Подсказки для вкладки "Игра" (кто за кого играет).
+        player_label, model_label = self._infer_viewer_role_labels_from_model_pickle(path)
+        self._play_viewer_player_role_label = player_label
+        self._play_viewer_model_role_label = model_label
+        self.playViewerPlayerRoleLabelChanged.emit(player_label)
+        self.playViewerModelRoleLabelChanged.emit(model_label)
 
     def _set_eval_model(self, path: str, source: str) -> None:
         self._eval_model_path = path
@@ -1704,10 +2145,12 @@ class GUIController(QtCore.QObject):
 
     def _extract_metrics_id(self, path: str) -> str:
         base = os.path.basename(path)
-        match = re.search(r"model-(\d+-\d+)\.pickle$", base)
+        # В legacy-формате было: model-<sec>-<micro>.pickle
+        # В новом удобочитаемом формате может быть: model-<sec>-<micro>_P1_Faction_... .pickle
+        match = re.search(r"model-(\d+-\d+)", base)
         if match:
             return match.group(1)
-        match = re.search(r"model-(-?\d+)\.pickle$", base)
+        match = re.search(r"model-(-?\d+)", base)
         if match:
             return match.group(1)
         tail = path[-16:-7]
@@ -1859,6 +2302,38 @@ class GUIController(QtCore.QObject):
             return values
         return values
 
+    def _league_matchup_summary(self) -> str:
+        path = os.path.join(self._repo_root, "models", "matchups.json")
+        if not os.path.exists(path):
+            return "League: нет данных матчапов."
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            return "League: не удалось прочитать matchups.json."
+        records = payload.get("records", []) if isinstance(payload, dict) else []
+        if not isinstance(records, list) or not records:
+            return "League: матчапы пока не записаны."
+        tail = records[-500:]
+        by_opp: dict[str, dict[str, float]] = {}
+        for rec in tail:
+            if not isinstance(rec, dict):
+                continue
+            opp = str(rec.get("opponent_agent_id", "unknown"))
+            stat = by_opp.setdefault(opp, {"games": 0.0, "wins": 0.0, "draws": 0.0, "vp": 0.0})
+            stat["games"] += 1.0
+            stat["wins"] += float(rec.get("win", 0.0))
+            stat["draws"] += float(rec.get("draw", 0.0))
+            stat["vp"] += float(rec.get("vp_diff", 0.0))
+        ranked = sorted(by_opp.items(), key=lambda kv: kv[1]["games"], reverse=True)[:3]
+        lines = ["League (top-3 по числу игр):"]
+        for opp, stat in ranked:
+            games = max(1.0, stat["games"])
+            lines.append(
+                f"• {opp}: games={int(stat['games'])}, winrate={stat['wins']/games:.2f}, draw={stat['draws']/games:.2f}, vp={stat['vp']/games:.2f}"
+            )
+        return "\n".join(lines)
+
     def _refresh_metrics_summaries(self) -> None:
         defaults = {
             "reward": "Текущее: — | Среднее: — | Мин: — | Макс: —",
@@ -1909,19 +2384,74 @@ class GUIController(QtCore.QObject):
             f"• optimize_steps: {resume['optimize_steps']}\n"
             f"• episode: {resume['episode']}\n"
             f"• replay_size: {resume['replay_size']}\n"
-            f"• eps: {resume['eps']}"
+            f"• eps: {resume['eps']}\n\n"
+            f"{self._league_matchup_summary()}"
         )
 
         self._metric_summary_texts = summaries
         self._model_state_text = model_state
         self.metricsSummaryChanged.emit()
+        self._load_latest_heuristic_metrics()
+
+    def _load_latest_heuristic_metrics(self) -> None:
+        path = os.path.join(self._repo_root, "metrics", "heur_metrics_latest.json")
+        if not os.path.exists(path):
+            self._heuristic_metrics = {}
+            self._heuristic_metrics_text = "Нет данных метрик эвристики."
+            self.heuristicMetricsChanged.emit()
+            return
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            self._heuristic_metrics = {}
+            self._heuristic_metrics_text = "Не удалось прочитать metrics/heur_metrics_latest.json."
+            self.heuristicMetricsChanged.emit()
+            return
+        self._heuristic_metrics = payload if isinstance(payload, dict) else {}
+        mode_usage = self._heuristic_metrics.get("mode_usage", {}) or {}
+        role_usage = self._heuristic_metrics.get("role_usage", {}) or {}
+        run_id = str(self._heuristic_metrics.get("run_id", "-"))
+        updated_at = str(self._heuristic_metrics.get("updated_at", "-"))
+
+        lines = [
+            f"Последний ран: {run_id}",
+            f"Обновлено: {updated_at}",
+            "",
+            "Только метрики эвристики:",
+            f"Винрейт эвристики (все train-игры): {float(self._heuristic_metrics.get('train_heur_winrate', 0.0)):.3f}",
+            f"Доля ничьих (все train-игры): {float(self._heuristic_metrics.get('train_draw_rate', 0.0)):.3f}",
+            f"Всего train-игр: {int(self._heuristic_metrics.get('train_total_games', 0))}",
+            f"Invalid rate: {float(self._heuristic_metrics.get('invalid_rate_total', 0.0)):.4f}",
+            f"Avg risk: {float(self._heuristic_metrics.get('avg_risk', 0.0)):.3f}",
+            f"Avg cover: {float(self._heuristic_metrics.get('avg_cover', 0.0)):.3f}",
+            f"Charge success: {float(self._heuristic_metrics.get('charge_success_rate', 0.0)):.3f}",
+            f"Shoot overkill rate: {float(self._heuristic_metrics.get('shoot_overkill_rate', 0.0)):.3f}",
+            f"Fallback rate: {float(self._heuristic_metrics.get('fallback_rate', 0.0)):.3f}",
+            "Mode usage: "
+            f"kite={int(mode_usage.get('kite', 0))}, hold={int(mode_usage.get('hold', 0))}, commit={int(mode_usage.get('commit', 0))}",
+            "Role usage: "
+            f"ranged={int(role_usage.get('ranged', 0))}, hybrid={int(role_usage.get('hybrid', 0))}, melee={int(role_usage.get('melee', 0))}",
+        ]
+        self._heuristic_metrics_text = "\n".join(lines)
+        self.heuristicMetricsChanged.emit()
 
     def _find_latest_model_file(self) -> Optional[str]:
         models_path = os.path.join(self._repo_root, "models")
         if not os.path.isdir(models_path):
             return None
-        latest_path = None
-        latest_mtime = -1.0
+        def is_human_readable(name: str) -> bool:
+            # Новый удобочитаемый формат:
+            # model-<sec>-<micro>_P1_<Faction>_<mission>_final_ep<...>.pickle
+            # Для выбора "Последней модели" приоритет отдаём именно ему.
+            s = str(name or "")
+            return ("final_ep" in s) and (re.search(r"(_P[12]_)", s) is not None)
+
+        latest_human_path = None
+        latest_human_mtime = -1.0
+        latest_legacy_path = None
+        latest_legacy_mtime = -1.0
+
         for root, _, files in os.walk(models_path):
             for name in files:
                 if not name.endswith(".pickle"):
@@ -1933,10 +2463,16 @@ class GUIController(QtCore.QObject):
                     mtime = os.path.getmtime(path)
                 except OSError:
                     continue
-                if mtime > latest_mtime:
-                    latest_mtime = mtime
-                    latest_path = path
-        return latest_path
+                if is_human_readable(name):
+                    if mtime > latest_human_mtime:
+                        latest_human_mtime = mtime
+                        latest_human_path = path
+                else:
+                    if mtime > latest_legacy_mtime:
+                        latest_legacy_mtime = mtime
+                        latest_legacy_path = path
+
+        return latest_human_path or latest_legacy_path
 
     def _find_latest_checkpoint_file(self) -> Optional[str]:
         models_path = os.path.join(self._repo_root, "models")
@@ -2096,8 +2632,8 @@ class GUIController(QtCore.QObject):
 
     def _update_roster_summary(self) -> None:
         self._roster_summary = (
-            f"Юниты игрока: {len(self._player_roster)} | "
-            f"Юниты модели: {len(self._model_roster)}"
+            f"Юниты P1: {len(self._player_roster)} | "
+            f"Юниты P2: {len(self._model_roster)}"
         )
         self.rosterSummaryChanged.emit(self._roster_summary)
 
@@ -2114,6 +2650,8 @@ class GUIController(QtCore.QObject):
             faction = unit.get("Army")
             if not name or not faction:
                 continue
+            # Используем для вывода faction из ростера (даже если UI сейчас показывает только часть фракций).
+            self._unit_faction_by_name[str(name).strip()] = str(faction).strip()
             if faction.lower() != "necrons":
                 continue
             default_count = unit.get("#OfModels", 1)
@@ -2140,10 +2678,24 @@ class GUIController(QtCore.QObject):
                 entry = self._parse_roster_line(line)
                 if entry is None:
                     continue
-                if section == "player":
-                    self._player_roster.append(entry)
+                # Маппим секции файла gui/units.txt в P1/P2 в зависимости от learner_side.
+                # Это обратное действие к логике _persist_rosters().
+                if self._learner_side == "P1":
+                    # В момент сохранения при learner_side=P1:
+                    # - "Player Units" => P2
+                    # - "Model Units" => P1
+                    if section == "player":
+                        self._model_roster.append(entry)
+                    else:
+                        self._player_roster.append(entry)
                 else:
-                    self._model_roster.append(entry)
+                    # В момент сохранения при learner_side=P2:
+                    # - "Player Units" => P1
+                    # - "Model Units" => P2
+                    if section == "player":
+                        self._player_roster.append(entry)
+                    else:
+                        self._model_roster.append(entry)
 
     def _parse_roster_line(self, line: str) -> Optional[RosterEntry]:
         if "|" not in line:
@@ -2163,11 +2715,22 @@ class GUIController(QtCore.QObject):
 
     def _persist_rosters(self) -> None:
         units_path = os.path.join(self._repo_root, "gui", "units.txt")
+        # В файле gui/units.txt:
+        # - "Player Units" попадает как enemy в initFile.py
+        # - "Model Units" попадает как model в initFile.py
+        # Поэтому записываем в эти секции так, чтобы learner-сторона стала model-стороной.
+        if self._learner_side == "P1":
+            enemy_roster = self._model_roster  # P2
+            model_roster = self._player_roster  # P1
+        else:
+            enemy_roster = self._player_roster  # P1
+            model_roster = self._model_roster  # P2
+
         lines = ["Player Units"]
-        for entry in self._player_roster:
+        for entry in enemy_roster:
             lines.append(f"{entry.name}|{entry.count}|{entry.instance_id}")
         lines.append("Model Units")
-        for entry in self._model_roster:
+        for entry in model_roster:
             lines.append(f"{entry.name}|{entry.count}|{entry.instance_id}")
         os.makedirs(os.path.dirname(units_path), exist_ok=True)
         with open(units_path, "w", encoding="utf-8") as handle:

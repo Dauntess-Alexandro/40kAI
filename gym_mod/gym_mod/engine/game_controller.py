@@ -9,6 +9,7 @@ from typing import Optional
 
 import torch
 
+from gym_mod.engine.agent_registry import compatible_contracts, load_agent_by_id, make_env_contract
 from gym_mod.engine.game_io import GuiIO, set_active_io
 from gym_mod.engine.state_export import DEFAULT_STATE_PATH
 from model.DQN import DQN
@@ -74,6 +75,9 @@ class GameController:
                     return None
 
     def _load_game(self):
+        agent_id_override = os.getenv("VIEWER_AGENT_ID", "").strip()
+        if isinstance(self.model_path, str) and self.model_path.startswith("agent:"):
+            agent_id_override = self.model_path.split("agent:", 1)[1].strip()
         if self.model_path == "None":
             save_path = "models/"
             folders = os.listdir(save_path) if os.path.isdir(save_path) else []
@@ -116,6 +120,33 @@ class GameController:
             env, model, enemy = pickle.load(handle)
 
         checkpoint = load_trusted_checkpoint(checkpoint_path)
+        if agent_id_override:
+            payload = load_agent_by_id(agent_id_override)
+            model_info, enemy_info = env.reset(options={"m": model, "e": enemy, "playType": True, "Type": "big", "trunc": True})
+            n_actions = [5, 2, len(enemy_info["player health"]), len(enemy_info["player health"]), 5, len(enemy_info["model health"])]
+            for _ in range(len(model)):
+                n_actions.append(12)
+            runtime_contract = make_env_contract(
+                n_observations=len(model_info),
+                n_actions=n_actions,
+                mission_name=str(getattr(env.unwrapped, "mission_name", "only_war")),
+                ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v1")),
+            )
+            ok, reason = compatible_contracts(runtime_contract, payload.get("contract", {}))
+            if not ok:
+                raise ValueError(
+                    f"Несовместимый VIEWER_AGENT_ID={agent_id_override}: {reason}. "
+                    "Что делать дальше: выберите агента с тем же контрактом."
+                )
+            checkpoint = {
+                "policy_net": payload.get("policy_state"),
+                "target_net": payload.get("target_state") or payload.get("policy_state"),
+                "optimizer": payload.get("optimizer_state") or {},
+                "net_type": "dueling"
+                if any(str(k).startswith("value_heads.") for k in (payload.get("policy_state") or {}).keys())
+                else "basic",
+            }
+            self._io.log(f"[LEAGUE] Viewer использует agent-id={agent_id_override}")
         return env, model, enemy, checkpoint
 
     def _run_game_loop(self):

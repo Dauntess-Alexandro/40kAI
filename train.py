@@ -25,6 +25,16 @@ from gym_mod.engine.mission import (
     deploy_for_mission,
     post_deploy_setup,
 )
+from gym_mod.engine.agent_registry import (
+    AgentIdentity,
+    build_agent_id,
+    compatible_contracts,
+    load_agent_by_id,
+    make_env_contract,
+    list_agents,
+    save_agent_artifact,
+)
+from gym_mod.engine.matchmaker import choose_opponent, record_matchup
 from gymnasium import spaces
 
 AGENT_TRAIN_LOG_FILE = "LOGS_FOR_AGENTS_TRAIN.md"
@@ -38,11 +48,21 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+from torch.optim import Optimizer
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 import torch
 print("[DEVICE CHECK] cuda:", torch.cuda.is_available())
 if torch.cuda.is_available():
     print("[DEVICE CHECK] name:", torch.cuda.get_device_name(0))
+
+# Workaround для окружений, где torch._dynamo падает из-за несовместимого triton.
+if os.getenv("TORCH_OPTIMIZER_NO_DYNAMO", "1") == "1":
+    if hasattr(Optimizer.add_param_group, "__wrapped__"):
+        Optimizer.add_param_group = Optimizer.add_param_group.__wrapped__
+    if hasattr(Optimizer.state_dict, "__wrapped__"):
+        Optimizer.state_dict = Optimizer.state_dict.__wrapped__
+    if hasattr(Optimizer.load_state_dict, "__wrapped__"):
+        Optimizer.load_state_dict = Optimizer.load_state_dict.__wrapped__
 
 
 import warnings
@@ -117,9 +137,110 @@ SELF_PLAY_UPDATE_EVERY_EPISODES = int(os.getenv("SELF_PLAY_UPDATE_EVERY_EPISODES
 SELF_PLAY_OPPONENT_MODE = os.getenv("SELF_PLAY_OPPONENT_MODE", "snapshot")
 SELF_PLAY_FIXED_PATH = os.getenv("SELF_PLAY_FIXED_PATH", "")
 SELF_PLAY_OPPONENT_EPSILON = float(os.getenv("SELF_PLAY_OPPONENT_EPSILON", "0.0"))
+SELF_PLAY_OPPONENT_EPSILON_MIN = float(os.getenv("SELF_PLAY_OPPONENT_EPSILON_MIN", str(SELF_PLAY_OPPONENT_EPSILON)))
+SELF_PLAY_OPPONENT_EPSILON_MAX = float(os.getenv("SELF_PLAY_OPPONENT_EPSILON_MAX", str(max(SELF_PLAY_OPPONENT_EPSILON, 0.08))))
+SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES = int(os.getenv("SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES", "1600"))
+SELF_PLAY_ADAPTIVE_UPDATE = os.getenv("SELF_PLAY_ADAPTIVE_UPDATE", "1") == "1"
+SELF_PLAY_UPDATE_EVERY_MIN = int(os.getenv("SELF_PLAY_UPDATE_EVERY_MIN", "25"))
+SELF_PLAY_UPDATE_EVERY_MAX = int(os.getenv("SELF_PLAY_UPDATE_EVERY_MAX", "150"))
+SELF_PLAY_DRAW_RATE_HIGH = float(os.getenv("SELF_PLAY_DRAW_RATE_HIGH", "0.70"))
+SELF_PLAY_DRAW_RATE_LOW = float(os.getenv("SELF_PLAY_DRAW_RATE_LOW", "0.45"))
+SELF_PLAY_POOL_ENABLED = os.getenv("SELF_PLAY_POOL_ENABLED", "1") == "1"
+SELF_PLAY_POOL_SIZE = int(os.getenv("SELF_PLAY_POOL_SIZE", "6"))
+SELF_PLAY_POOL_SAMPLE_OLD_PROB = float(os.getenv("SELF_PLAY_POOL_SAMPLE_OLD_PROB", "0.45"))
+SELF_PLAY_POOL_SMART_SAMPLING = os.getenv("SELF_PLAY_POOL_SMART_SAMPLING", "1") == "1"
+SELF_PLAY_POOL_SCORE_WIN_W = float(os.getenv("SELF_PLAY_POOL_SCORE_WIN_W", "0.50"))
+SELF_PLAY_POOL_SCORE_DRAW_W = float(os.getenv("SELF_PLAY_POOL_SCORE_DRAW_W", "0.15"))
+SELF_PLAY_POOL_SCORE_VP_W = float(os.getenv("SELF_PLAY_POOL_SCORE_VP_W", "0.35"))
+SELF_PLAY_POOL_SCORE_EXPLORE_BONUS = float(os.getenv("SELF_PLAY_POOL_SCORE_EXPLORE_BONUS", "0.25"))
+SELF_PLAY_POOL_EMA_ENABLED = os.getenv("SELF_PLAY_POOL_EMA_ENABLED", "1") == "1"
+SELF_PLAY_POOL_EMA_ALPHA = float(os.getenv("SELF_PLAY_POOL_EMA_ALPHA", "0.15"))
+SELF_PLAY_POOL_MIN_GAMES_FOR_SMART = int(os.getenv("SELF_PLAY_POOL_MIN_GAMES_FOR_SMART", "3"))
+
+EVAL_WINDOW_EPISODES = int(os.getenv("EVAL_WINDOW_EPISODES", "100"))
+EVAL_WINDOW_LOG_EVERY = int(os.getenv("EVAL_WINDOW_LOG_EVERY", "50"))
+DRAW_PIT_ALERT_RATE = float(os.getenv("DRAW_PIT_ALERT_RATE", "0.70"))
+DRAW_PIT_ALERT_WIN_MAX = float(os.getenv("DRAW_PIT_ALERT_WIN_MAX", "0.15"))
+DRAW_PIT_ALERT_STREAK = int(os.getenv("DRAW_PIT_ALERT_STREAK", "3"))
+
+BEST_EVAL_ENABLED = os.getenv("BEST_EVAL_ENABLED", "1") == "1"
+BEST_EVAL_W_WIN = float(os.getenv("BEST_EVAL_W_WIN", "1.00"))
+BEST_EVAL_W_DRAW = float(os.getenv("BEST_EVAL_W_DRAW", "0.75"))
+BEST_EVAL_W_WIPE_ENEMY = float(os.getenv("BEST_EVAL_W_WIPE_ENEMY", "0.30"))
+BEST_EVAL_W_WIPE_MODEL = float(os.getenv("BEST_EVAL_W_WIPE_MODEL", "0.25"))
+BEST_EVAL_W_VP = float(os.getenv("BEST_EVAL_W_VP", "0.45"))
+
+DRAW_GUARD_ENABLED = os.getenv("DRAW_GUARD_ENABLED", "1") == "1"
+DRAW_GUARD_PENALTY_STEP = float(os.getenv("DRAW_GUARD_PENALTY_STEP", "0.02"))
+DRAW_GUARD_PENALTY_MAX = float(os.getenv("DRAW_GUARD_PENALTY_MAX", "1.00"))
+DRAW_GUARD_POOL_OLD_PROB_STEP = float(os.getenv("DRAW_GUARD_POOL_OLD_PROB_STEP", "0.05"))
+DRAW_GUARD_POOL_OLD_PROB_MAX = float(os.getenv("DRAW_GUARD_POOL_OLD_PROB_MAX", "0.95"))
+
+DET_EVAL_ENABLED = os.getenv("DET_EVAL_ENABLED", "1") == "1"
+DET_EVAL_EVERY_EPISODES = int(os.getenv("DET_EVAL_EVERY_EPISODES", "250"))
+DET_EVAL_EPISODES = int(os.getenv("DET_EVAL_EPISODES", "20"))
+DET_EVAL_OPPONENT_EPSILON = float(os.getenv("DET_EVAL_OPPONENT_EPSILON", "0.0"))
+
+REWARD_SCHEDULE_ENABLED = os.getenv("REWARD_SCHEDULE_ENABLED", "1") == "1"
+REWARD_STAGE1_END_EP = int(os.getenv("REWARD_STAGE1_END_EP", "1500"))
+REWARD_STAGE2_END_EP = int(os.getenv("REWARD_STAGE2_END_EP", "3500"))
+REWARD_STAGE1_DRAW_PENALTY = float(os.getenv("REWARD_STAGE1_DRAW_PENALTY", str(getattr(reward_cfg, "TURN_LIMIT_DRAW_PENALTY", 0.35))))
+REWARD_STAGE2_DRAW_PENALTY = float(os.getenv("REWARD_STAGE2_DRAW_PENALTY", str(max(getattr(reward_cfg, "TURN_LIMIT_DRAW_PENALTY", 0.35), 0.45))))
+REWARD_STAGE3_DRAW_PENALTY = float(os.getenv("REWARD_STAGE3_DRAW_PENALTY", str(max(getattr(reward_cfg, "TURN_LIMIT_DRAW_PENALTY", 0.35), 0.60))))
+REWARD_STAGE1_VP_REWARD_SCALE = float(os.getenv("REWARD_STAGE1_VP_REWARD_SCALE", str(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_REWARD_SCALE", 0.12))))
+REWARD_STAGE2_VP_REWARD_SCALE = float(os.getenv("REWARD_STAGE2_VP_REWARD_SCALE", str(max(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_REWARD_SCALE", 0.12), 0.16))))
+REWARD_STAGE3_VP_REWARD_SCALE = float(os.getenv("REWARD_STAGE3_VP_REWARD_SCALE", str(max(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_REWARD_SCALE", 0.12), 0.20))))
 
 if SELF_PLAY_UPDATE_EVERY_EPISODES < 1:
     SELF_PLAY_UPDATE_EVERY_EPISODES = 1
+if SELF_PLAY_UPDATE_EVERY_MIN < 1:
+    SELF_PLAY_UPDATE_EVERY_MIN = 1
+if SELF_PLAY_UPDATE_EVERY_MAX < SELF_PLAY_UPDATE_EVERY_MIN:
+    SELF_PLAY_UPDATE_EVERY_MAX = SELF_PLAY_UPDATE_EVERY_MIN
+if SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES < 1:
+    SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES = 1
+if SELF_PLAY_OPPONENT_EPSILON_MIN < 0:
+    SELF_PLAY_OPPONENT_EPSILON_MIN = 0.0
+if SELF_PLAY_OPPONENT_EPSILON_MAX < SELF_PLAY_OPPONENT_EPSILON_MIN:
+    SELF_PLAY_OPPONENT_EPSILON_MAX = SELF_PLAY_OPPONENT_EPSILON_MIN
+if SELF_PLAY_POOL_SIZE < 1:
+    SELF_PLAY_POOL_SIZE = 1
+if SELF_PLAY_POOL_SAMPLE_OLD_PROB < 0:
+    SELF_PLAY_POOL_SAMPLE_OLD_PROB = 0.0
+if SELF_PLAY_POOL_SAMPLE_OLD_PROB > 1:
+    SELF_PLAY_POOL_SAMPLE_OLD_PROB = 1.0
+if SELF_PLAY_POOL_SCORE_EXPLORE_BONUS < 0:
+    SELF_PLAY_POOL_SCORE_EXPLORE_BONUS = 0.0
+if SELF_PLAY_POOL_EMA_ALPHA <= 0:
+    SELF_PLAY_POOL_EMA_ALPHA = 0.05
+if SELF_PLAY_POOL_EMA_ALPHA > 1:
+    SELF_PLAY_POOL_EMA_ALPHA = 1.0
+if SELF_PLAY_POOL_MIN_GAMES_FOR_SMART < 0:
+    SELF_PLAY_POOL_MIN_GAMES_FOR_SMART = 0
+if DRAW_GUARD_PENALTY_STEP < 0:
+    DRAW_GUARD_PENALTY_STEP = 0.0
+if DRAW_GUARD_PENALTY_MAX < 0:
+    DRAW_GUARD_PENALTY_MAX = 0.0
+if DRAW_GUARD_POOL_OLD_PROB_STEP < 0:
+    DRAW_GUARD_POOL_OLD_PROB_STEP = 0.0
+if DRAW_GUARD_POOL_OLD_PROB_MAX < 0:
+    DRAW_GUARD_POOL_OLD_PROB_MAX = 0.0
+if DRAW_GUARD_POOL_OLD_PROB_MAX > 1:
+    DRAW_GUARD_POOL_OLD_PROB_MAX = 1.0
+if DET_EVAL_EVERY_EPISODES < 1:
+    DET_EVAL_EVERY_EPISODES = 1
+if DET_EVAL_EPISODES < 1:
+    DET_EVAL_EPISODES = 1
+if REWARD_STAGE1_END_EP < 0:
+    REWARD_STAGE1_END_EP = 0
+if REWARD_STAGE2_END_EP < REWARD_STAGE1_END_EP:
+    REWARD_STAGE2_END_EP = REWARD_STAGE1_END_EP
+if EVAL_WINDOW_EPISODES < 1:
+    EVAL_WINDOW_EPISODES = 1
+if EVAL_WINDOW_LOG_EVERY < 1:
+    EVAL_WINDOW_LOG_EVERY = 1
+if DRAW_PIT_ALERT_STREAK < 1:
+    DRAW_PIT_ALERT_STREAK = 1
 if SELF_PLAY_OPPONENT_MODE not in ("snapshot", "fixed_checkpoint"):
     raise ValueError(
         "SELF_PLAY_OPPONENT_MODE должен быть 'snapshot' или 'fixed_checkpoint'. "
@@ -129,6 +250,13 @@ if SELF_PLAY_OPPONENT_MODE not in ("snapshot", "fixed_checkpoint"):
 
 
 DEFAULT_MISSION_NAME = "only_war"
+LEAGUE_ENABLE = os.getenv("LEAGUE_ENABLE", "1") == "1"
+LEARNER_SIDE = str(os.getenv("LEARNER_SIDE", "P1")).strip().upper() or "P1"
+LEARNER_FACTION = str(os.getenv("LEARNER_FACTION", "Necrons")).strip() or "Necrons"
+OPPONENT_POLICY = str(os.getenv("OPPONENT_POLICY", "mirror")).strip().lower() or "mirror"
+OPPONENT_AGENT_ID = str(os.getenv("OPPONENT_AGENT_ID", "")).strip()
+RULESET_VERSION = str(os.getenv("RULESET_VERSION", "only_war_v1")).strip() or "only_war_v1"
+HEURISTIC_MODE = str(os.getenv("HEURISTIC_MODE", "v2")).strip().lower() or "v2"
 IO_PROFILER = get_io_profiler()
 
 def to_np_state(s):
@@ -312,7 +440,15 @@ def _resume_from_checkpoint(policy_net, target_net, optimizer, memory, checkpoin
         raise FileNotFoundError(err_msg)
 
     try:
+        load_start_line = f"[RESUME] loading checkpoint path={checkpoint_path}"
+        print(load_start_line)
+        append_agent_log(load_start_line)
+        load_start_ts = time.perf_counter()
         checkpoint = _load_checkpoint_payload(checkpoint_path)
+        load_elapsed = time.perf_counter() - load_start_ts
+        loaded_line = f"[RESUME] checkpoint payload loaded in {load_elapsed:.2f}s"
+        print(loaded_line)
+        append_agent_log(loaded_line)
     except Exception as exc:
         err_msg = (
             "[RESUME][ERROR] Не удалось загрузить чекпойнт. "
@@ -495,6 +631,124 @@ def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
 
     print(f"[metrics] saved: {csv_path}")
 
+
+def _safe_div(n: float, d: float) -> float:
+    return float(n) / float(d) if float(d) > 0 else 0.0
+
+
+def save_heuristic_metrics_snapshot(run_id: str, ep_rows: list[dict] | None = None, metrics_dir: str = "metrics") -> str | None:
+    """
+    Агрегирует ключевые метрики эвристики из train-логов и сохраняет JSON:
+    - metrics/heur_metrics_<run_id>.json
+    - metrics/heur_metrics_latest.json
+    """
+    log_path = os.path.abspath(AGENT_TRAIN_LOG_FILE)
+    if not os.path.exists(log_path):
+        return None
+
+    mode_counts = {"kite": 0, "hold": 0, "commit": 0}
+    role_counts = {"ranged": 0, "hybrid": 0, "melee": 0}
+    risk_vals: list[float] = []
+    cover_vals: list[float] = []
+    invalid_vals: list[float] = []
+    fallback_count = 0
+    shoot_overkill_vals: list[float] = []
+    charge_attempts = 0
+    charge_success = 0
+    win_rate = 0.0
+    draw_rate = 0.0
+    turn_limit_rate = 0.0
+
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as handle:
+            all_lines = handle.readlines()
+            start_idx = 0
+            for idx, line in enumerate(all_lines):
+                if "[TRAIN][START]" in line:
+                    start_idx = idx
+            for line in all_lines[start_idx:]:
+                if "[ENEMY][HEUR][MOVE]" in line:
+                    mode_match = re.search(r"mode=(kite|hold|commit)", line)
+                    if mode_match:
+                        mode_counts[mode_match.group(1)] += 1
+                    role_match = re.search(r"enemy_role=(ranged|hybrid|melee)", line)
+                    if role_match:
+                        role_counts[role_match.group(1)] += 1
+                    risk_match = re.search(r"risk=([-\d\.]+)", line)
+                    if risk_match:
+                        risk_vals.append(float(risk_match.group(1)))
+                    cover_match = re.search(r"cover=([-\d\.]+)", line)
+                    if cover_match:
+                        cover_vals.append(float(cover_match.group(1)))
+                if "[ENEMY][HEUR][CHARGE]" in line:
+                    charge_attempts += 1
+                if "Reward (чардж): success_bonus" in line:
+                    charge_success += 1
+                if "fallback_target=" in line:
+                    fallback_count += 1
+                if "[ENEMY][HEUR][SHOOT]" in line:
+                    ovk_match = re.findall(r"ovk=([-\d\.]+)", line)
+                    for token in ovk_match:
+                        shoot_overkill_vals.append(float(token))
+                if "[TRAIN][ACTIONS]" in line:
+                    invalid_block = re.search(r"invalid_rate=\{([^}]*)\}", line)
+                    if invalid_block:
+                        vals = re.findall(r":([0-9\.]+)", invalid_block.group(1))
+                        if vals:
+                            avg_inv = sum(float(v) for v in vals) / len(vals)
+                            invalid_vals.append(avg_inv)
+                if "[EVAL][DET]" in line:
+                    m = re.search(r"win_rate=([0-9\.]+)", line)
+                    if m:
+                        win_rate = float(m.group(1))
+                    m = re.search(r"draw_rate=([0-9\.]+)", line)
+                    if m:
+                        draw_rate = float(m.group(1))
+                    m = re.search(r"turn_limit_rate=([0-9\.]+)", line)
+                    if m:
+                        turn_limit_rate = float(m.group(1))
+    except OSError:
+        return None
+
+    total_games = len(ep_rows) if ep_rows else 0
+    model_wins = sum(1 for r in (ep_rows or []) if str(r.get("result", "")) == "win")
+    model_draws = sum(1 for r in (ep_rows or []) if str(r.get("result", "")) == "draw")
+    heur_wins = sum(1 for r in (ep_rows or []) if str(r.get("result", "")) == "loss")
+
+    os.makedirs(metrics_dir, exist_ok=True)
+    payload = {
+        "run_id": str(run_id),
+        "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        # DET-EVAL метрики (сохраняем для отладки, но UI эвристики может их игнорировать)
+        "winrate": float(win_rate),
+        "draw_rate": float(draw_rate),
+        "turn_limit_rate": float(turn_limit_rate),
+        # Метрики эвристики по ВСЕМ тренировочным играм текущего рана
+        "train_total_games": int(total_games),
+        "train_heur_winrate": _safe_div(float(heur_wins), float(total_games)),
+        "train_model_winrate": _safe_div(float(model_wins), float(total_games)),
+        "train_draw_rate": _safe_div(float(model_draws), float(total_games)),
+        "invalid_rate_total": float(sum(invalid_vals) / len(invalid_vals)) if invalid_vals else 0.0,
+        "mode_usage": mode_counts,
+        "role_usage": role_counts,
+        "avg_risk": float(sum(risk_vals) / len(risk_vals)) if risk_vals else 0.0,
+        "avg_cover": float(sum(cover_vals) / len(cover_vals)) if cover_vals else 0.0,
+        "charge_attempt_rate": _safe_div(charge_attempts, max(1, len(risk_vals))),
+        "charge_success_rate": _safe_div(charge_success, max(1, charge_attempts)),
+        "shoot_overkill_rate": _safe_div(sum(1 for v in shoot_overkill_vals if v > 0.15), max(1, len(shoot_overkill_vals))),
+        "fallback_rate": _safe_div(fallback_count, max(1, charge_attempts + len(shoot_overkill_vals))),
+    }
+    out_path = os.path.join(metrics_dir, f"heur_metrics_{run_id}.json")
+    latest_path = os.path.join(metrics_dir, "heur_metrics_latest.json")
+    try:
+        with open(out_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        with open(latest_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+    except OSError:
+        return None
+    return out_path
+
 def save_training_summary(run_id: str, model_tag: str, ep_rows: list[dict], elapsed_s: float, results_path: str = "results.txt") -> None:
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ep_count = len(ep_rows)
@@ -533,6 +787,117 @@ def append_agent_log(line: str) -> None:
     with _TRAIN_LOG_LOCK:
         _TRAIN_LOG_BUFFER.append(full_line)
     _flush_agent_log_buffer(force=False)
+
+
+def _log_train(line: str) -> None:
+    """Лог в `LOGS_FOR_AGENTS_TRAIN.md` + (опционально) в консоль."""
+    if TRAIN_LOG_TO_CONSOLE:
+        # Печатаем без timestamp, чтобы консоль не была слишком шумной.
+        print(line)
+    append_agent_log(line)
+
+
+def _units_as_inline(units: list[dict]) -> str:
+    """Компактное человеко-читаемое представление ростера."""
+    parts: list[str] = []
+    for spec in units or []:
+        name = str(spec.get("name") or "-").strip()
+        count = spec.get("count", None)
+        count_part = ""
+        try:
+            if count is not None and float(count) > 0:
+                # В roster_config count обычно целое.
+                count_part = f" x{int(float(count))}"
+        except (TypeError, ValueError):
+            pass
+
+        weapons = spec.get("weapons") or ()
+        ranged = ""
+        melee = ""
+        if isinstance(weapons, (list, tuple)) and len(weapons) >= 2:
+            ranged = str(weapons[0] or "").strip()
+            melee = str(weapons[1] or "").strip()
+        elif isinstance(weapons, str):
+            ranged = weapons.strip()
+
+        weapons_part = ""
+        if ranged and melee and ranged.lower() != "none" and melee.lower() != "none":
+            weapons_part = f" ({ranged} / {melee})"
+        elif ranged and ranged.lower() != "none":
+            weapons_part = f" ({ranged})"
+
+        parts.append(f"{name}{count_part}{weapons_part}")
+
+    return "; ".join(parts) if parts else "-"
+
+
+def _opponent_type_label(
+    *,
+    opponent_policy_net,
+    opponent_source_state: dict[str, object],
+    self_play_enabled: bool,
+) -> tuple[str, str]:
+    """Возвращает: (тип, agent_id_text)."""
+    if not self_play_enabled or opponent_policy_net is None:
+        return "эвристика (policy_net отсутствует)", "-"
+
+    source = str(opponent_source_state.get("source") or "").strip()
+    agent_id = opponent_source_state.get("id", None)
+
+    if source in {"roster", "roster_fixed"}:
+        return "policy (roster_fixed)", str(agent_id) if agent_id is not None else "-"
+    if source == "explicit":
+        # Явно заданный agent_id, но по смыслу это всё равно roster_fixed-оппонент.
+        return "policy (roster_fixed / explicit)", str(agent_id) if agent_id is not None else "-"
+    if source == "fixed_checkpoint":
+        return "policy (fixed_checkpoint)", "-"
+    if source.startswith("pool") or source in {"latest_init"}:
+        return f"policy (snapshot: {source})", f"{agent_id}" if agent_id is not None else "-"
+
+    # fallback
+    return f"policy ({source or 'unknown'})", str(agent_id) if agent_id is not None else "-"
+
+
+def _log_roster_and_opponent_summary(
+    *,
+    learner_identity: AgentIdentity,
+    roster_config: dict,
+    opponent_policy_net,
+    opponent_source_state: dict[str, object],
+    self_play_enabled: bool,
+    league_enabled: bool,
+) -> None:
+    mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+    learner_side = str(learner_identity.side or "").strip().upper() or "P1"
+    learner_faction = str(learner_identity.faction or "Unknown").strip()
+
+    opponent_side = "P2" if learner_side == "P1" else "P1"
+    opponent_faction = str(roster_config.get("enemy_faction", "Unknown")).strip()
+
+    model_units = roster_config.get("model_units", []) or []
+    enemy_units = roster_config.get("enemy_units", []) or []
+
+    opponent_type, opponent_agent_id_text = _opponent_type_label(
+        opponent_policy_net=opponent_policy_net,
+        opponent_source_state=opponent_source_state,
+        self_play_enabled=self_play_enabled,
+    )
+
+    league_hint = "включена" if league_enabled else "выключена"
+
+    # Важно для GUI: каждая строка должна начинаться с нужного префикса,
+    # иначе GUI-фильтр не покажет часть многострочного блока.
+    _log_train(f"[TRAIN][CONFIG] Миссия: {mission_name}")
+    _log_train(f"[TRAIN][CONFIG] Обучение: {learner_side} ({learner_faction})")
+    _log_train(f"[TRAIN][CONFIG] Heuristic mode: {HEURISTIC_MODE}")
+    _log_train(f"[TRAIN][CONFIG] League: {league_hint}")
+
+    _log_train(f"[TRAIN][ROSTER] model_units (сторона обучения): {_units_as_inline(model_units)}")
+    _log_train(f"[TRAIN][ROSTER] enemy_units (оппонент): {_units_as_inline(enemy_units)}")
+
+    _log_train(f"[TRAIN][OPPONENT] Тип: {opponent_type}")
+    _log_train(f"[TRAIN][OPPONENT] side/faction (из ростера): {opponent_side} ({opponent_faction})")
+    _log_train(f"[TRAIN][OPPONENT] agent_id: {opponent_agent_id_text}")
 
 
 _TRAIN_LOG_BUFFER: list[str] = []
@@ -681,9 +1046,21 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                 conn.send(sizes)
             elif cmd == "save_pickle":
                 try:
-                    with open(payload, "wb") as file:
+                    legacy_path = payload
+                    human_path = None
+                    if isinstance(payload, dict):
+                        legacy_path = payload.get("legacy")
+                        human_path = payload.get("human")
+                    if not legacy_path:
+                        raise ValueError("save_pickle: legacy path is empty")
+                    os.makedirs(os.path.dirname(str(legacy_path)) or ".", exist_ok=True)
+                    with open(legacy_path, "wb") as file:
                         pickle.dump([env, model, enemy], file)
-                    conn.send({"ok": True, "path": payload})
+                    if human_path and str(human_path) != str(legacy_path):
+                        os.makedirs(os.path.dirname(str(human_path)) or ".", exist_ok=True)
+                        with open(human_path, "wb") as file:
+                            pickle.dump([env, model, enemy], file)
+                    conn.send({"ok": True, "path": legacy_path, "human_path": human_path})
                 except Exception as exc:
                     conn.send({"ok": False, "error": str(exc)})
             elif cmd == "close":
@@ -909,12 +1286,50 @@ def main():
     
     roster_config = _load_roster_config()
     totLifeT = roster_config["totLifeT"]
+    episodes_override_raw = str(os.getenv("TRAIN_EPISODES_OVERRIDE", "")).strip()
+    if episodes_override_raw:
+        try:
+            episodes_override = max(1, int(episodes_override_raw))
+            totLifeT = episodes_override
+        except ValueError:
+            warn_line = (
+                "[TRAIN][WARN] TRAIN_EPISODES_OVERRIDE не число. "
+                "Где: train.py (main). Что делать дальше: используйте целое > 0."
+            )
+            if TRAIN_LOG_TO_FILE:
+                append_agent_log(warn_line)
+            if TRAIN_LOG_TO_CONSOLE:
+                print(warn_line)
     b_len = roster_config["b_len"]
     b_hei = roster_config["b_hei"]
     
     vec_env_count = int(os.getenv("NUM_ENVS", os.getenv("VEC_ENV_COUNT", "1")))
     if vec_env_count < 1:
         vec_env_count = 1
+    deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "auto")).strip().lower() or "auto"
+    manual_in_rl_phase = os.getenv("DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE", "1").strip().lower() not in {"0", "false", "no"}
+    stdin_is_tty = bool(getattr(sys.stdin, "isatty", lambda: False)())
+    if not stdin_is_tty:
+        if deployment_mode == "manual_player":
+            warn_msg = (
+                "[TRAIN][WARN] DEPLOYMENT_MODE=manual_player в неинтерактивном процессе. "
+                "Где: train.py (main). Что делать дальше: переключаю DEPLOYMENT_MODE=auto, "
+                "иначе тренировка зависнет в ожидании ручного ввода."
+            )
+            print(warn_msg)
+            append_agent_log(warn_msg)
+            deployment_mode = "auto"
+            os.environ["DEPLOYMENT_MODE"] = "auto"
+        if deployment_mode == "rl_phase" and manual_in_rl_phase:
+            warn_msg = (
+                "[TRAIN][WARN] DEPLOYMENT_MODE=rl_phase + ручной деплой игрока в неинтерактивном процессе. "
+                "Где: train.py (main). Что делать дальше: выставляю DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE=0, "
+                "иначе запуск зависнет на первом reset/deploy."
+            )
+            print(warn_msg)
+            append_agent_log(warn_msg)
+            os.environ["DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE"] = "0"
+            manual_in_rl_phase = False
     
     if USE_SUBPROC_ENVS and vec_env_count < 2:
         USE_SUBPROC_ENVS = False
@@ -956,6 +1371,38 @@ def main():
             append_agent_log(train_start_line)
         if TRAIN_LOG_TO_CONSOLE:
             print(train_start_line)
+        boot_env_line = (
+            "[TRAIN][BOOT] "
+            f"SELF_PLAY_ENABLED={int(SELF_PLAY_ENABLED)} "
+            f"SELF_PLAY_OPPONENT_MODE={SELF_PLAY_OPPONENT_MODE} "
+            f"SELF_PLAY_OPP_EPS_MIN={SELF_PLAY_OPPONENT_EPSILON_MIN:.3f} "
+            f"SELF_PLAY_OPP_EPS_MAX={SELF_PLAY_OPPONENT_EPSILON_MAX:.3f} "
+            f"SELF_PLAY_OPP_EPS_DECAY_EP={SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES} "
+            f"SELF_PLAY_ADAPTIVE_UPDATE={int(SELF_PLAY_ADAPTIVE_UPDATE)} "
+            f"SELF_PLAY_POOL_ENABLED={int(SELF_PLAY_POOL_ENABLED)} "
+            f"SELF_PLAY_POOL_SIZE={SELF_PLAY_POOL_SIZE} "
+            f"SELF_PLAY_POOL_SAMPLE_OLD_PROB={SELF_PLAY_POOL_SAMPLE_OLD_PROB:.2f} "
+            f"SELF_PLAY_POOL_SMART_SAMPLING={int(SELF_PLAY_POOL_SMART_SAMPLING)} "
+            f"SELF_PLAY_POOL_EMA_ENABLED={int(SELF_PLAY_POOL_EMA_ENABLED)} "
+            f"SELF_PLAY_POOL_EMA_ALPHA={SELF_PLAY_POOL_EMA_ALPHA:.3f} "
+            f"SELF_PLAY_POOL_MIN_GAMES_FOR_SMART={SELF_PLAY_POOL_MIN_GAMES_FOR_SMART} "
+            f"RESUME_CHECKPOINT={'set' if bool(RESUME_CHECKPOINT) else 'empty'} "
+            f"DEPLOYMENT_MODE={deployment_mode} "
+            f"DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE={int(manual_in_rl_phase)} "
+            f"stdin_is_tty={int(stdin_is_tty)} "
+            f"EVAL_WINDOW_EPISODES={EVAL_WINDOW_EPISODES} "
+            f"TRAIN_EPISODES_OVERRIDE={(episodes_override_raw if episodes_override_raw else 'off')} "
+            f"DRAW_PIT_ALERT_RATE={DRAW_PIT_ALERT_RATE:.2f} "
+            f"DRAW_PIT_ALERT_WIN_MAX={DRAW_PIT_ALERT_WIN_MAX:.2f} "
+            f"BEST_EVAL_ENABLED={int(BEST_EVAL_ENABLED)} "
+            f"DRAW_GUARD_ENABLED={int(DRAW_GUARD_ENABLED)} "
+            f"DET_EVAL_ENABLED={int(DET_EVAL_ENABLED)} "
+            f"REWARD_SCHEDULE_ENABLED={int(REWARD_SCHEDULE_ENABLED)}"
+        )
+        if TRAIN_LOG_TO_FILE:
+            append_agent_log(boot_env_line)
+        if TRAIN_LOG_TO_CONSOLE:
+            print(boot_env_line)
         if update_ratio < 0.25:
             ratio_warn = (
                 "[TRAIN][WARN] Низкий update_ratio: "
@@ -979,14 +1426,6 @@ def main():
     
     verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
     log_fn = print if verbose else None
-    
-    if os.path.isfile("gui/data.json"):
-        print("Model Units:\n")
-        for spec in roster_config["model_units"]:
-            print("Name:", spec["name"], "Weapons: ", spec["weapons"][0], spec["weapons"][1])
-        print("Enemy Units:\n")
-        for spec in roster_config["enemy_units"]:
-            print("Name:", spec["name"], "Weapons: ", spec["weapons"][0], spec["weapons"][1])
     
     if USE_SUBPROC_ENVS:
         ctx = mp.get_context("spawn")
@@ -1021,19 +1460,9 @@ def main():
                 log_fn=print if env_idx == 0 else None,
             )
             if verbose and env_idx == 0:
+                # Юниты/ростеры уже выводятся единым “шапочным” блоком выше по логике.
+                # Здесь оставляем только компактный sanity-check по количеству.
                 print(f"[roster] model_units={len(model)} enemy_units={len(enemy)}")
-                for idx, unit in enumerate(model):
-                    unit_data = unit.showUnitData()
-                    unit_name = unit_data.get("Name", "Unknown")
-                    unit_models = unit_data.get("#OfModels", 1)
-                    print(f"[roster] model[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
-                for idx, unit in enumerate(enemy):
-                    unit_data = unit.showUnitData()
-                    unit_name = unit_data.get("Name", "Unknown")
-                    unit_models = unit_data.get("#OfModels", 1)
-                    print(f"[roster] enemy[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
-                print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
-                print("Units:", [(u.name, u.instance_id, u.models_count) for u in model])
     
             deploy_for_mission(
                 mission_name,
@@ -1117,6 +1546,23 @@ def main():
         n_observations = len(list(state.values()))
     else:
         n_observations = int(np.array(state).shape[0])
+
+    learner_side_cfg = LEARNER_SIDE if LEARNER_SIDE in {"P1", "P2"} else "P1"
+    learner_identity = AgentIdentity(
+        side=learner_side_cfg,
+        faction=LEARNER_FACTION,
+        ruleset_version=RULESET_VERSION,
+    ).normalized()
+    env_contract = make_env_contract(
+        n_observations=n_observations,
+        n_actions=n_actions,
+        mission_name=normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME)),
+        ruleset_version=learner_identity.ruleset_version,
+        extras={
+            "vec_env_count": int(vec_env_count),
+            "self_play_enabled": int(SELF_PLAY_ENABLED),
+        },
+    )
     
     if USE_COMPILE and torch.cuda.is_available():
         torch.backends.cudnn.benchmark = True
@@ -1160,10 +1606,203 @@ def main():
             print(f"[WARN] torch.compile недоступен: {exc}")
     
     opponent_policy_net = None
+    current_selfplay_update_every = SELF_PLAY_UPDATE_EVERY_EPISODES
+    opponent_eps_state = {"value": float(SELF_PLAY_OPPONENT_EPSILON)}
+    opponent_pool_entries = collections.deque(maxlen=SELF_PLAY_POOL_SIZE)
+    opponent_pool_next_id = {"value": 1}
+    opponent_source_state = {"source": "unset", "id": None, "score": None}
+    pool_sampling_state = {"old_prob": float(SELF_PLAY_POOL_SAMPLE_OLD_PROB)}
+    draw_guard_state = {"turn_limit_draw_penalty": float(getattr(reward_cfg, "TURN_LIMIT_DRAW_PENALTY", 0.0))}
+
+    def _clone_state_dict_cpu(state_dict: dict) -> dict:
+        cloned = {}
+        for key, value in state_dict.items():
+            if torch.is_tensor(value):
+                cloned[key] = value.detach().cpu().clone()
+            else:
+                cloned[key] = value
+        return cloned
+
+    def _load_opponent_state(state_dict: dict, source_label: str, source_id=None, source_score=None) -> None:
+        if opponent_policy_net is None:
+            return
+        opponent_policy_net.load_state_dict(normalize_state_dict(state_dict))
+        opponent_source_state["source"] = source_label
+        opponent_source_state["id"] = source_id
+        opponent_source_state["score"] = source_score
+
+    def _create_pool_entry(state_dict: dict) -> dict:
+        entry_id = int(opponent_pool_next_id["value"])
+        opponent_pool_next_id["value"] += 1
+        return {
+            "id": entry_id,
+            "state_dict": _clone_state_dict_cpu(state_dict),
+            "games": 0,
+            "wins": 0,
+            "draws": 0,
+            "vp_diff_sum": 0.0,
+            "ema_win": 0.5,
+            "ema_draw": 0.5,
+            "ema_vp_diff": 0.0,
+        }
+
+    def _pool_entry_score(entry: dict) -> float:
+        games = max(0, int(entry.get("games", 0)))
+        if games <= 0:
+            win_rate = 0.5
+            draw_rate = 0.5
+            vp_diff_mean = 0.0
+        else:
+            if SELF_PLAY_POOL_EMA_ENABLED:
+                win_rate = float(entry.get("ema_win", 0.5))
+                draw_rate = float(entry.get("ema_draw", 0.5))
+                vp_diff_mean = float(entry.get("ema_vp_diff", 0.0))
+            else:
+                win_rate = float(entry.get("wins", 0)) / float(games)
+                draw_rate = float(entry.get("draws", 0)) / float(games)
+                vp_diff_mean = float(entry.get("vp_diff_sum", 0.0)) / float(games)
+
+        if games < SELF_PLAY_POOL_MIN_GAMES_FOR_SMART:
+            # Пока мало наблюдений — смягчаем оценку, чтобы не переоценивать шум.
+            confidence = float(games) / max(1.0, float(SELF_PLAY_POOL_MIN_GAMES_FOR_SMART))
+            win_rate = 0.5 + (win_rate - 0.5) * confidence
+            draw_rate = 0.5 + (draw_rate - 0.5) * confidence
+            vp_diff_mean = vp_diff_mean * confidence
+        vp_hard = max(0.0, -vp_diff_mean) / max(1.0, float(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_CLAMP", 3.0)))
+        explore_bonus = SELF_PLAY_POOL_SCORE_EXPLORE_BONUS / float(1 + games)
+        score = (
+            SELF_PLAY_POOL_SCORE_WIN_W * (1.0 - win_rate)
+            + SELF_PLAY_POOL_SCORE_DRAW_W * draw_rate
+            + SELF_PLAY_POOL_SCORE_VP_W * vp_hard
+            + explore_bonus
+        )
+        return float(max(1e-6, score))
+
+    def _choose_opponent_from_pool(latest_policy_state: dict):
+        if not SELF_PLAY_POOL_ENABLED or len(opponent_pool_entries) == 0:
+            return latest_policy_state, "latest", None, None
+        sample_old = random.random() < float(pool_sampling_state.get("old_prob", SELF_PLAY_POOL_SAMPLE_OLD_PROB))
+        if not sample_old:
+            return latest_policy_state, "latest", None, None
+
+        # исключаем самый свежий элемент (он соответствует latest-снапшоту)
+        candidates = list(opponent_pool_entries)[:-1] if len(opponent_pool_entries) > 1 else []
+        if not candidates:
+            return latest_policy_state, "latest", None, None
+
+        if SELF_PLAY_POOL_SMART_SAMPLING:
+            weights = [_pool_entry_score(entry) for entry in candidates]
+            picked = random.choices(candidates, weights=weights, k=1)[0]
+            picked_score = _pool_entry_score(picked)
+            return picked["state_dict"], "pool_smart", int(picked.get("id")), float(picked_score)
+
+        picked = random.choice(candidates)
+        return picked["state_dict"], "pool_random", int(picked.get("id")), None
+
+    def _choose_opponent_from_roster(
+        *,
+        desired_side: str,
+        desired_faction: str,
+        learner_contract: dict[str, object],
+    ):
+        """
+        Выбираем оппонента строго по ростеру:
+        - desired_side: противоположная side (P1/P2)
+        - desired_faction: фракция с противоположной стороны из roster_config
+        """
+        desired_side_norm = str(desired_side or "").strip().upper()
+        desired_faction_norm = str(desired_faction or "").strip().lower()
+        candidates: list[dict[str, object]] = []
+
+        def _load_contract_by_entry(entry: dict[str, object]) -> dict[str, object]:
+            contract_path = entry.get("contract_path")
+            if not contract_path:
+                return {}
+            try:
+                with open(contract_path, "r", encoding="utf-8") as handle:
+                    payload = json.load(handle)
+                return payload if isinstance(payload, dict) else {}
+            except Exception:
+                return {}
+
+        for entry in list_agents():
+            entry_side = str(entry.get("side", "")).strip().upper()
+            if entry_side != desired_side_norm:
+                continue
+            entry_faction = str(entry.get("faction", "")).strip().lower()
+            if entry_faction != desired_faction_norm:
+                continue
+            contract = _load_contract_by_entry(entry)
+            ok_contract, _ = compatible_contracts(learner_contract, contract)
+            if not ok_contract:
+                continue
+            candidates.append(entry)
+
+        if not candidates:
+            return None
+
+        # Если несколько кандидатов: берем самый свежий по updated_at.
+        candidates.sort(key=lambda e: str(e.get("updated_at", "")), reverse=True)
+        chosen = candidates[0]
+        return {
+            "agent_id": str(chosen.get("agent_id", "")),
+            "source": "roster",
+            "reason": f"side={desired_side_norm}, faction={desired_faction_norm}",
+        }
     if SELF_PLAY_ENABLED:
         opponent_policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
         opponent_policy_net.eval()
-        if SELF_PLAY_OPPONENT_MODE == "fixed_checkpoint":
+        league_pick = None
+        if LEAGUE_ENABLE:
+            desired_side = "P2" if str(learner_identity.side).upper() == "P1" else "P1"
+            desired_faction = roster_config.get("enemy_faction", "")
+
+            if OPPONENT_AGENT_ID:
+                try:
+                    payload_explicit = load_agent_by_id(OPPONENT_AGENT_ID)
+                    entry = payload_explicit.get("entry", {}) if isinstance(payload_explicit, dict) else {}
+                    entry_side = str(entry.get("side", "")).strip().upper()
+                    entry_faction = str(entry.get("faction", "")).strip().lower()
+                    if entry_side == desired_side and entry_faction == str(desired_faction).strip().lower():
+                        league_pick = {"agent_id": OPPONENT_AGENT_ID, "source": "explicit"}
+                    else:
+                        append_agent_log(
+                            "[LEAGUE][WARN] OPPONENT_AGENT_ID задан, но side/faction не совпадают с ростером. "
+                            f"skip explicit agent_id={OPPONENT_AGENT_ID} entry_side={entry_side} entry_faction={entry_faction} "
+                            f"desired_side={desired_side} desired_faction={str(desired_faction).strip().lower()}"
+                        )
+                except Exception as exc:
+                    append_agent_log(
+                        "[LEAGUE][WARN] OPPONENT_AGENT_ID задан, но не удалось загрузить/проверить агент. "
+                        f"skip explicit agent_id={OPPONENT_AGENT_ID}. exc={exc}"
+                    )
+
+            if league_pick is None:
+                picked = _choose_opponent_from_roster(
+                    desired_side=desired_side,
+                    desired_faction=desired_faction,
+                    learner_contract=env_contract,
+                )
+                if picked is not None:
+                    league_pick = picked
+        if league_pick is not None:
+            selected_id = str(league_pick["agent_id"])
+            payload = load_agent_by_id(selected_id)
+            ok_contract, mismatch_reason = compatible_contracts(env_contract, payload.get("contract", {}))
+            if not ok_contract:
+                raise ValueError(
+                    f"Несовместимый агент-оппонент '{selected_id}': {mismatch_reason}. "
+                    "Что делать: переобучите агента с тем же ruleset/action/obs контрактом."
+                )
+            loaded_policy = normalize_state_dict(payload["policy_state"])
+            opponent_policy_net.load_state_dict(loaded_policy)
+            opponent_source_state["source"] = str(league_pick.get("source", "registry"))
+            opponent_source_state["id"] = selected_id
+            opponent_source_state["score"] = league_pick.get("reason")
+            append_agent_log(
+                f"[LEAGUE] выбран оппонент agent_id={selected_id} source={opponent_source_state['source']} mode=roster_fixed"
+            )
+        elif SELF_PLAY_OPPONENT_MODE == "fixed_checkpoint":
             if not SELF_PLAY_FIXED_PATH:
                 raise ValueError("SELF_PLAY_FIXED_PATH обязателен для режима fixed_checkpoint.")
             if not os.path.isfile(SELF_PLAY_FIXED_PATH):
@@ -1171,11 +1810,23 @@ def main():
                     f"SELF_PLAY_FIXED_PATH не найден: {SELF_PLAY_FIXED_PATH}. Проверь путь."
                 )
             try:
+                fixed_load_start = f"[SELFPLAY] loading fixed checkpoint path={SELF_PLAY_FIXED_PATH}"
+                print(fixed_load_start)
+                append_agent_log(fixed_load_start)
+                fixed_start_ts = time.perf_counter()
                 checkpoint = torch.load(
                     SELF_PLAY_FIXED_PATH, map_location=device, weights_only=False
                 )
+                fixed_elapsed = time.perf_counter() - fixed_start_ts
+                fixed_loaded = f"[SELFPLAY] fixed checkpoint payload loaded in {fixed_elapsed:.2f}s"
+                print(fixed_loaded)
+                append_agent_log(fixed_loaded)
             except TypeError:
                 checkpoint = torch.load(SELF_PLAY_FIXED_PATH, map_location=device)
+                fixed_elapsed = time.perf_counter() - fixed_start_ts
+                fixed_loaded = f"[SELFPLAY] fixed checkpoint payload loaded in {fixed_elapsed:.2f}s"
+                print(fixed_loaded)
+                append_agent_log(fixed_loaded)
             except Exception as exc:
                 err_msg = (
                     "[SELFPLAY][ERROR] Не удалось загрузить fixed_checkpoint. "
@@ -1221,8 +1872,30 @@ def main():
             append_agent_log(
                 f"[SELFPLAY] fixed_checkpoint path={SELF_PLAY_FIXED_PATH}"
             )
+            opponent_source_state["source"] = "fixed_checkpoint"
+            opponent_source_state["id"] = None
+            opponent_source_state["score"] = None
         else:
-            opponent_policy_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
+            initial_policy_state = normalize_state_dict(policy_net.state_dict())
+            _load_opponent_state(initial_policy_state, "latest_init", source_id=None, source_score=None)
+            opponent_pool_entries.append(_create_pool_entry(initial_policy_state))
+
+        opponent_eps_state["value"] = float(
+            max(
+                SELF_PLAY_OPPONENT_EPSILON_MIN,
+                min(SELF_PLAY_OPPONENT_EPSILON_MAX, SELF_PLAY_OPPONENT_EPSILON_MAX),
+            )
+        )
+
+    # Один понятный блок вместо нагромождений:
+    _log_roster_and_opponent_summary(
+        learner_identity=learner_identity,
+        roster_config=roster_config,
+        opponent_policy_net=opponent_policy_net,
+        opponent_source_state=opponent_source_state,
+        self_play_enabled=SELF_PLAY_ENABLED,
+        league_enabled=LEAGUE_ENABLE,
+    )
     
     scaler = torch.cuda.amp.GradScaler(enabled=USE_AMP)
     
@@ -1233,7 +1906,7 @@ def main():
             env,
             obs,
             opponent_policy_net,
-            SELF_PLAY_OPPONENT_EPSILON,
+            float(opponent_eps_state["value"]),
             len_model,
         )
         return convertToDict(action)
@@ -1288,12 +1961,18 @@ def main():
             value = value.replace(ch, "_")
         return value
     
-    safe_name = _sanitize_fs_name(name)
+    side_tag = f"{learner_identity.side}_{learner_identity.faction}"
+    safe_name = _sanitize_fs_name(f"{name}__learner_{side_tag}")
     fold = "models/" + safe_name
     fileName = fold+"/model-"+date+".pickle"
     randNum = np.random.randint(0, 10000000)
     metrics_obj = metrics(fold, randNum, date)
     ep_rows = [] 
+    eval_window = collections.deque(maxlen=EVAL_WINDOW_EPISODES)
+    draw_pit_alert_streak = 0
+    best_eval_score = float("-inf")
+    best_eval_episode = 0
+    reward_schedule_state = {"stage": None}
     
     global_step = int(resume_meta.get("global_step", 0) or 0)
     optimize_steps = int(resume_meta.get("optimize_steps", 0) or 0)
@@ -1344,6 +2023,134 @@ def main():
         append_agent_log(
             "Старт обучения: USE_SUBPROC_ENVS=1, начальные HP недоступны из subprocess env."
         )
+
+    def _apply_reward_schedule(total_episode: int) -> None:
+        if not REWARD_SCHEDULE_ENABLED:
+            return
+        if total_episode <= REWARD_STAGE1_END_EP:
+            stage = 1
+            draw_penalty = REWARD_STAGE1_DRAW_PENALTY
+            vp_reward_scale = REWARD_STAGE1_VP_REWARD_SCALE
+        elif total_episode <= REWARD_STAGE2_END_EP:
+            stage = 2
+            draw_penalty = REWARD_STAGE2_DRAW_PENALTY
+            vp_reward_scale = REWARD_STAGE2_VP_REWARD_SCALE
+        else:
+            stage = 3
+            draw_penalty = REWARD_STAGE3_DRAW_PENALTY
+            vp_reward_scale = REWARD_STAGE3_VP_REWARD_SCALE
+        reward_cfg.TURN_LIMIT_DRAW_PENALTY = float(draw_penalty)
+        reward_cfg.TURN_LIMIT_VP_MARGIN_REWARD_SCALE = float(vp_reward_scale)
+        draw_guard_state["turn_limit_draw_penalty"] = float(draw_penalty)
+        if reward_schedule_state["stage"] != stage:
+            reward_schedule_state["stage"] = stage
+            append_agent_log(
+                "[TRAIN][REWARD_SCHEDULE] "
+                f"episode={total_episode} stage={stage} "
+                f"TURN_LIMIT_DRAW_PENALTY={draw_penalty:.3f} "
+                f"TURN_LIMIT_VP_MARGIN_REWARD_SCALE={vp_reward_scale:.3f}"
+            )
+
+    def _run_deterministic_eval(total_episode: int) -> None:
+        if not DET_EVAL_ENABLED:
+            return
+        if total_episode <= 0 or total_episode % DET_EVAL_EVERY_EPISODES != 0:
+            return
+        wins = 0
+        draws = 0
+        wipeout_enemy = 0
+        wipeout_model = 0
+        turn_limit = 0
+        vp_diff_sum = 0.0
+        for eval_i in range(DET_EVAL_EPISODES):
+            eval_enemy, eval_model = _build_units_from_config(roster_config, b_len, b_hei)
+            mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+            attacker_side, defender_side = roll_off_attacker_defender(manual_roll_allowed=False, log_fn=None)
+            deploy_for_mission(
+                mission_name,
+                model_units=eval_model,
+                enemy_units=eval_enemy,
+                b_len=b_len,
+                b_hei=b_hei,
+                attacker_side=attacker_side,
+                log_fn=None,
+            )
+            post_deploy_setup(log_fn=None)
+            eval_env = gym.make("40kAI-v0", disable_env_checker=True, enemy=eval_enemy, model=eval_model, b_len=b_len, b_hei=b_hei)
+            eval_env.attacker_side = attacker_side
+            eval_env.defender_side = defender_side
+            state_eval, info_eval = eval_env.reset(options={"m": eval_model, "e": eval_enemy, "trunc": True})
+            done_eval = False
+            step_guard = 0
+            while not done_eval and step_guard < 256:
+                step_guard += 1
+                shoot_mask_eval = build_shoot_action_mask(eval_env, log_fn=None, debug=False)
+                action_eval = select_action_with_epsilon(
+                    eval_env,
+                    state_eval,
+                    policy_net,
+                    0.0,
+                    len(eval_model),
+                    shoot_mask=shoot_mask_eval,
+                )
+                action_eval_dict = convertToDict(action_eval)
+                eval_unwrapped = unwrap_env(eval_env)
+                if SELF_PLAY_ENABLED and opponent_policy_net is not None:
+                    eval_unwrapped.enemyTurn(
+                        trunc=trunc,
+                        policy_fn=lambda obs, env=eval_env, lm=len(eval_model): convertToDict(
+                            select_action_with_epsilon(
+                                env,
+                                obs,
+                                opponent_policy_net,
+                                DET_EVAL_OPPONENT_EPSILON,
+                                lm,
+                            )
+                        ),
+                    )
+                else:
+                    eval_unwrapped.enemyTurn(trunc=trunc)
+                next_state_eval, _reward_eval, done_eval, _res_eval, info_eval = eval_env.step(action_eval_dict)
+                state_eval = next_state_eval
+            end_reason_eval = info_eval.get("end reason", "")
+            vp_diff_eval = int(info_eval.get("model VP", 0)) - int(info_eval.get("player VP", 0))
+            vp_diff_sum += float(vp_diff_eval)
+
+            if end_reason_eval == "wipeout_enemy":
+                wins += 1
+                wipeout_enemy += 1
+            elif end_reason_eval == "wipeout_model":
+                wipeout_model += 1
+            elif str(end_reason_eval).startswith("turn_limit"):
+                turn_limit += 1
+                if vp_diff_eval > 0:
+                    wins += 1
+                elif vp_diff_eval == 0:
+                    draws += 1
+            else:
+                if vp_diff_eval > 0:
+                    wins += 1
+                elif vp_diff_eval == 0:
+                    draws += 1
+            try:
+                eval_env.close()
+            except Exception:
+                pass
+        n_eval = max(1, DET_EVAL_EPISODES)
+        eval_det_line = (
+            "[EVAL][DET] "
+            f"episode={total_episode} "
+            f"eval_episodes={n_eval} "
+            f"win_rate={wins/n_eval:.3f} "
+            f"draw_rate={draws/n_eval:.3f} "
+            f"turn_limit_rate={turn_limit/n_eval:.3f} "
+            f"wipeout_enemy_rate={wipeout_enemy/n_eval:.3f} "
+            f"wipeout_model_rate={wipeout_model/n_eval:.3f} "
+            f"vp_diff_mean={vp_diff_sum/n_eval:.3f}"
+        )
+        append_agent_log(eval_det_line)
+
+    _apply_reward_schedule(resume_episode_base + numLifeT)
     
     while end is False:
         shoot_masks = []
@@ -1440,7 +2247,7 @@ def main():
             else:
                 ctx["shoot_windows_with_targets"] += 1
                 shoot_raw = int(action_dict.get("shoot", -1))
-                if shoot_raw < 0 or shoot_raw >= len(valid_shoot_indices):
+                if shoot_raw not in valid_shoot_indices:
                     ctx["action_head_invalid"]["shoot"] += 1
 
         step_results = [None] * len(env_contexts)
@@ -1546,7 +2353,10 @@ def main():
                     append_agent_log(
                         f"Конец эпизода {numLifeT + 1}. "
                         f"[SELFPLAY] enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
-                        f"update_every={SELF_PLAY_UPDATE_EVERY_EPISODES} opp_eps={SELF_PLAY_OPPONENT_EPSILON}"
+                        f"update_every={current_selfplay_update_every} opp_eps={float(opponent_eps_state.get('value', SELF_PLAY_OPPONENT_EPSILON)):.3f} "
+                        f"opponent_source={opponent_source_state.get('source', 'unknown')} "
+                        f"opponent_id={opponent_source_state.get('id')} "
+                        f"opponent_score={opponent_source_state.get('score')}"
                     )
                 end_reason_env = info.get("end reason", "")
                 winner_env = info.get("winner")
@@ -1639,6 +2449,21 @@ def main():
     
                 resolved_winner = "model" if result == "win" else ("enemy" if result == "loss" else "draw")
                 resolved_end_reason = end_reason_env or end_reason
+                learner_episode_agent_id = f"{learner_identity.side}_{learner_identity.faction}_live"
+                opponent_agent_id = (
+                    str(opponent_source_state.get("id"))
+                    if opponent_source_state.get("id") is not None
+                    else "heuristic_or_snapshot"
+                )
+                if LEAGUE_ENABLE:
+                    record_matchup(
+                        learner_agent_id=learner_episode_agent_id,
+                        opponent_agent_id=opponent_agent_id,
+                        win=(result == "win"),
+                        draw=(result == "draw"),
+                        vp_diff=float(vp_diff),
+                        reason=str(resolved_end_reason),
+                    )
                 if TRAIN_LOG_TO_FILE:
                     append_agent_log(
                         "Конец эпизода: "
@@ -1677,6 +2502,162 @@ def main():
                         append_agent_log(train_ep_line)
                     if TRAIN_LOG_TO_CONSOLE:
                         print(train_ep_line)
+
+                eval_window.append(
+                    {
+                        "win": 1 if result == "win" else 0,
+                        "draw": 1 if result == "draw" else 0,
+                        "wipeout_enemy": 1 if end_reason == "wipeout_enemy" else 0,
+                        "wipeout_model": 1 if end_reason == "wipeout_model" else 0,
+                        "turn_limit": 1 if str(end_reason).startswith("turn_limit") else 0,
+                        "vp_diff": float(vp_diff),
+                    }
+                )
+                should_log_eval_window = (
+                    len(eval_window) >= EVAL_WINDOW_EPISODES
+                    and ((numLifeT + 1) % EVAL_WINDOW_LOG_EVERY == 0 or (numLifeT + 1) == totLifeT)
+                )
+                if should_log_eval_window:
+                    window_len = max(1, len(eval_window))
+                    win_rate_w = sum(item["win"] for item in eval_window) / window_len
+                    draw_rate_w = sum(item["draw"] for item in eval_window) / window_len
+                    turn_limit_rate_w = sum(item["turn_limit"] for item in eval_window) / window_len
+                    wipeout_enemy_rate_w = sum(item["wipeout_enemy"] for item in eval_window) / window_len
+                    wipeout_model_rate_w = sum(item["wipeout_model"] for item in eval_window) / window_len
+                    vp_diff_mean_w = sum(item["vp_diff"] for item in eval_window) / window_len
+                    eval_line = (
+                        "[TRAIN][EVAL_WINDOW] "
+                        f"ep={numLifeT + 1} "
+                        f"window={window_len} "
+                        f"win_rate={win_rate_w:.3f} "
+                        f"draw_rate={draw_rate_w:.3f} "
+                        f"turn_limit_rate={turn_limit_rate_w:.3f} "
+                        f"wipeout_enemy_rate={wipeout_enemy_rate_w:.3f} "
+                        f"wipeout_model_rate={wipeout_model_rate_w:.3f} "
+                        f"vp_diff_mean={vp_diff_mean_w:.3f} "
+                        f"opp_eps={float(opponent_eps_state.get('value', SELF_PLAY_OPPONENT_EPSILON)):.3f} "
+                        f"snapshot_update_every={int(current_selfplay_update_every)} "
+                        f"pool_old_prob={float(pool_sampling_state.get('old_prob', SELF_PLAY_POOL_SAMPLE_OLD_PROB)):.3f} "
+                        f"turn_limit_draw_penalty={float(getattr(reward_cfg, 'TURN_LIMIT_DRAW_PENALTY', 0.0)):.3f} "
+                        f"opponent_source={opponent_source_state.get('source', 'unknown')} "
+                        f"opponent_id={opponent_source_state.get('id')} "
+                        f"opponent_score={opponent_source_state.get('score')}"
+                    )
+                    if TRAIN_LOG_TO_FILE:
+                        append_agent_log(eval_line)
+                    if TRAIN_LOG_TO_CONSOLE:
+                        print(eval_line)
+
+                    vp_diff_norm = math.tanh(vp_diff_mean_w / max(1.0, float(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_CLAMP", 3.0))))
+                    eval_score = (
+                        BEST_EVAL_W_WIN * win_rate_w
+                        - BEST_EVAL_W_DRAW * draw_rate_w
+                        + BEST_EVAL_W_WIPE_ENEMY * wipeout_enemy_rate_w
+                        - BEST_EVAL_W_WIPE_MODEL * wipeout_model_rate_w
+                        + BEST_EVAL_W_VP * vp_diff_norm
+                    )
+                    if BEST_EVAL_ENABLED and eval_score > best_eval_score:
+                        prev_best = best_eval_score
+                        best_eval_score = float(eval_score)
+                        best_eval_episode = int(numLifeT + 1)
+                        best_path = f"models/{safe_name}/best_eval_checkpoint.pth"
+                        os.makedirs(f"models/{safe_name}", exist_ok=True)
+                        with IO_PROFILER.timed("checkpoint save"):
+                            torch.save(
+                                {
+                                    "policy_net": policy_net.state_dict(),
+                                    "target_net": target_net.state_dict(),
+                                    "net_type": NET_TYPE,
+                                    "optimizer": optimizer.state_dict(),
+                                    "global_step": int(global_step),
+                                    "optimize_steps": int(optimize_steps),
+                                    "episode": int(resume_episode_base + numLifeT + 1),
+                                    "replay_memory": memory.state_dict(),
+                                    "best_eval_score": float(best_eval_score),
+                                    "best_eval_episode": int(best_eval_episode),
+                                    "eval_window_metrics": {
+                                        "win_rate": float(win_rate_w),
+                                        "draw_rate": float(draw_rate_w),
+                                        "turn_limit_rate": float(turn_limit_rate_w),
+                                        "wipeout_enemy_rate": float(wipeout_enemy_rate_w),
+                                        "wipeout_model_rate": float(wipeout_model_rate_w),
+                                        "vp_diff_mean": float(vp_diff_mean_w),
+                                        "vp_diff_norm": float(vp_diff_norm),
+                                        "eval_score": float(eval_score),
+                                    },
+                                },
+                                best_path,
+                            )
+                        best_line = (
+                            "[TRAIN][BEST] "
+                            f"ep={numLifeT + 1} "
+                            f"old_score={prev_best if prev_best != float('-inf') else 'none'} "
+                            f"new_score={best_eval_score:.4f} "
+                            f"win_rate={win_rate_w:.3f} draw_rate={draw_rate_w:.3f} "
+                            f"wipe_enemy={wipeout_enemy_rate_w:.3f} wipe_model={wipeout_model_rate_w:.3f} "
+                            f"vp_diff_mean={vp_diff_mean_w:.3f} "
+                            f"path={best_path}"
+                        )
+                        if TRAIN_LOG_TO_FILE:
+                            append_agent_log(best_line)
+                        if TRAIN_LOG_TO_CONSOLE:
+                            print(best_line)
+
+                    if draw_rate_w >= DRAW_PIT_ALERT_RATE and win_rate_w <= DRAW_PIT_ALERT_WIN_MAX:
+                        draw_pit_alert_streak += 1
+                    else:
+                        draw_pit_alert_streak = 0
+                    if draw_pit_alert_streak >= DRAW_PIT_ALERT_STREAK:
+                        alert_line = (
+                            "[TRAIN][ALERT] draw_pit "
+                            f"ep={numLifeT + 1} "
+                            f"streak={draw_pit_alert_streak} "
+                            f"draw_rate={draw_rate_w:.3f} "
+                            f"win_rate={win_rate_w:.3f} "
+                            f"thresholds(draw>={DRAW_PIT_ALERT_RATE:.2f}, win<={DRAW_PIT_ALERT_WIN_MAX:.2f})"
+                        )
+                        if TRAIN_LOG_TO_FILE:
+                            append_agent_log(alert_line)
+                        if TRAIN_LOG_TO_CONSOLE:
+                            print(alert_line)
+                        if DRAW_GUARD_ENABLED:
+                            old_penalty = float(getattr(reward_cfg, "TURN_LIMIT_DRAW_PENALTY", 0.0))
+                            new_penalty = min(DRAW_GUARD_PENALTY_MAX, old_penalty + DRAW_GUARD_PENALTY_STEP)
+                            reward_cfg.TURN_LIMIT_DRAW_PENALTY = float(new_penalty)
+                            draw_guard_state["turn_limit_draw_penalty"] = float(new_penalty)
+
+                            old_prob = float(pool_sampling_state.get("old_prob", SELF_PLAY_POOL_SAMPLE_OLD_PROB))
+                            new_prob = min(DRAW_GUARD_POOL_OLD_PROB_MAX, old_prob + DRAW_GUARD_POOL_OLD_PROB_STEP)
+                            pool_sampling_state["old_prob"] = float(new_prob)
+
+                            guard_line = (
+                                "[TRAIN][GUARD] anti_draw_adjustment "
+                                f"ep={numLifeT + 1} "
+                                f"draw_penalty={old_penalty:.3f}->{new_penalty:.3f} "
+                                f"pool_old_prob={old_prob:.3f}->{new_prob:.3f}"
+                            )
+                            if TRAIN_LOG_TO_FILE:
+                                append_agent_log(guard_line)
+                            if TRAIN_LOG_TO_CONSOLE:
+                                print(guard_line)
+
+                pool_opponent_id = opponent_source_state.get("id")
+                if SELF_PLAY_POOL_ENABLED and pool_opponent_id is not None:
+                    for entry in opponent_pool_entries:
+                        if int(entry.get("id", -1)) == int(pool_opponent_id):
+                            entry["games"] = int(entry.get("games", 0)) + 1
+                            game_outcome_win = 1.0 if result == "win" else 0.0
+                            game_outcome_draw = 1.0 if result == "draw" else 0.0
+                            if result == "win":
+                                entry["wins"] = int(entry.get("wins", 0)) + 1
+                            if result == "draw":
+                                entry["draws"] = int(entry.get("draws", 0)) + 1
+                            entry["vp_diff_sum"] = float(entry.get("vp_diff_sum", 0.0)) + float(vp_diff)
+                            alpha = float(SELF_PLAY_POOL_EMA_ALPHA)
+                            entry["ema_win"] = (1.0 - alpha) * float(entry.get("ema_win", 0.5)) + alpha * game_outcome_win
+                            entry["ema_draw"] = (1.0 - alpha) * float(entry.get("ema_draw", 0.5)) + alpha * game_outcome_draw
+                            entry["ema_vp_diff"] = (1.0 - alpha) * float(entry.get("ema_vp_diff", 0.0)) + alpha * float(vp_diff)
+                            break
     
                 ep_rows.append(
                     {
@@ -1709,6 +2690,7 @@ def main():
                     print("Restarting...")
                 numLifeT += 1
                 total_episode = resume_episode_base + numLifeT
+                _apply_reward_schedule(total_episode)
                 if SAVE_EVERY > 0 and total_episode % SAVE_EVERY == 0:
                     checkpoint_path = f"models/{safe_name}/checkpoint_ep{total_episode}.pth"
                     os.makedirs(f"models/{safe_name}", exist_ok=True)
@@ -1726,6 +2708,21 @@ def main():
                             },
                             checkpoint_path,
                         )
+                    periodic_agent_id = build_agent_id(learner_identity, f"ep{total_episode}")
+                    save_agent_artifact(
+                        identity=learner_identity,
+                        agent_id=periodic_agent_id,
+                        env_contract=env_contract,
+                        policy_state_dict=normalize_state_dict(policy_net.state_dict()),
+                        target_state_dict=normalize_state_dict(target_net.state_dict()),
+                        optimizer_state_dict=optimizer.state_dict(),
+                        extra_meta={
+                            "episode": int(total_episode),
+                            "legacy_checkpoint_path": checkpoint_path,
+                            "opponent_source": opponent_source_state.get("source"),
+                            "opponent_id": opponent_source_state.get("id"),
+                        },
+                    )
                     if TRAIN_LOG_ENABLED:
                         save_line = f"[TRAIN][SAVE] ep={total_episode} path={checkpoint_path}"
                         if TRAIN_LOG_TO_FILE:
@@ -1733,12 +2730,56 @@ def main():
                         if TRAIN_LOG_TO_CONSOLE:
                             print(save_line)
     
+                if SELF_PLAY_ENABLED:
+                    # curriculum по epsilon оппонента: от max к min по эпизодам
+                    decay_progress = min(1.0, float(total_episode) / float(SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES))
+                    next_opp_eps = SELF_PLAY_OPPONENT_EPSILON_MAX + (
+                        SELF_PLAY_OPPONENT_EPSILON_MIN - SELF_PLAY_OPPONENT_EPSILON_MAX
+                    ) * decay_progress
+                    opponent_eps_state["value"] = float(
+                        max(SELF_PLAY_OPPONENT_EPSILON_MIN, min(SELF_PLAY_OPPONENT_EPSILON_MAX, next_opp_eps))
+                    )
+
+                    if SELF_PLAY_ADAPTIVE_UPDATE and len(eval_window) >= EVAL_WINDOW_EPISODES:
+                        window_len = max(1, len(eval_window))
+                        draw_rate_w = sum(item["draw"] for item in eval_window) / window_len
+                        prev_update = int(current_selfplay_update_every)
+                        if draw_rate_w >= SELF_PLAY_DRAW_RATE_HIGH:
+                            current_selfplay_update_every = min(
+                                SELF_PLAY_UPDATE_EVERY_MAX, current_selfplay_update_every + 10
+                            )
+                        elif draw_rate_w <= SELF_PLAY_DRAW_RATE_LOW:
+                            current_selfplay_update_every = max(
+                                SELF_PLAY_UPDATE_EVERY_MIN, current_selfplay_update_every - 5
+                            )
+                        if current_selfplay_update_every != prev_update:
+                            append_agent_log(
+                                "[SELFPLAY] adaptive_update_every "
+                                f"episode={total_episode} draw_rate={draw_rate_w:.3f} "
+                                f"from={prev_update} to={current_selfplay_update_every}"
+                            )
+
                 if SELF_PLAY_ENABLED and SELF_PLAY_OPPONENT_MODE == "snapshot":
-                    if total_episode % SELF_PLAY_UPDATE_EVERY_EPISODES == 0:
-                        opponent_policy_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
-                        append_agent_log(
-                            f"[SELFPLAY] opponent snapshot updated at episode {total_episode}"
+                    if total_episode % max(1, int(current_selfplay_update_every)) == 0:
+                        latest_policy_state = normalize_state_dict(policy_net.state_dict())
+                        if SELF_PLAY_POOL_ENABLED:
+                            opponent_pool_entries.append(_create_pool_entry(latest_policy_state))
+                        selected_state, selected_source, selected_id, selected_score = _choose_opponent_from_pool(latest_policy_state)
+                        _load_opponent_state(selected_state, selected_source, source_id=selected_id, source_score=selected_score)
+                        opponent_type, opponent_agent_id_text = _opponent_type_label(
+                            opponent_policy_net=opponent_policy_net,
+                            opponent_source_state=opponent_source_state,
+                            self_play_enabled=True,
                         )
+                        enemy_units_inline = _units_as_inline(roster_config.get("enemy_units", []) or [])
+                        _log_train(
+                            f"[TRAIN][OPPONENT] Snapshot обновлен: эпизод={total_episode} "
+                            f"тип={opponent_type} agent_id={opponent_agent_id_text} "
+                            f"Enemy units={enemy_units_inline} "
+                            f"pool_source={selected_source} picked_id={selected_id} picked_score={selected_score} "
+                            f"pool_size={len(opponent_pool_entries)}"
+                        )
+                _run_deterministic_eval(total_episode)
     
                 if USE_SUBPROC_ENVS:
                     ctx["conn"].send(("reset", None))
@@ -1770,6 +2811,11 @@ def main():
                     )
                 ctx["ep_len"] = 0
                 ctx["rew_arr"] = []
+                ctx["action_head_total"] = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+                ctx["action_head_skip"] = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+                ctx["action_head_invalid"] = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+                ctx["shoot_windows_with_targets"] = 0
+                ctx["shoot_windows_without_targets"] = 0
                 perf_stats["logging_s"] += time.perf_counter() - logging_start
     
             if numLifeT == totLifeT:
@@ -1930,6 +2976,9 @@ def main():
     metrics_obj.showEpLen()
 
     save_extra_metrics(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
+    heur_metrics_path = save_heuristic_metrics_snapshot(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
+    if heur_metrics_path:
+        _log_train(f"[HEUR][METRICS] saved={heur_metrics_path}")
     with IO_PROFILER.timed("metrics save"):
         metrics_obj.createJson()
     print("Generated metrics")
@@ -1950,6 +2999,25 @@ def main():
             },
             ("models/{}/model-{}.pth".format(safe_name, date)),
         )
+    final_agent_id = build_agent_id(learner_identity, f"final_ep{resume_episode_base + numLifeT}")
+    artifact_dir = save_agent_artifact(
+        identity=learner_identity,
+        agent_id=final_agent_id,
+        env_contract=env_contract,
+        policy_state_dict=normalize_state_dict(policy_net.state_dict()),
+        target_state_dict=normalize_state_dict(target_net.state_dict()),
+        optimizer_state_dict=optimizer.state_dict(),
+        extra_meta={
+            "episode": int(resume_episode_base + numLifeT),
+            "legacy_model_tag": f"{safe_name}/model-{date}",
+            "opponent_policy": "roster_fixed",
+            "opponent_source": opponent_source_state.get("source"),
+            "opponent_id": opponent_source_state.get("id"),
+            "learner_side": learner_identity.side,
+            "learner_faction": learner_identity.faction,
+        },
+    )
+    append_agent_log(f"[LEAGUE][SAVE] agent_id={final_agent_id} artifact_dir={artifact_dir}")
     train_elapsed_s = time.perf_counter() - train_start_time
     model_tag = f"{safe_name}/model-{date}"
     save_training_summary(
@@ -1959,14 +3027,31 @@ def main():
         elapsed_s=train_elapsed_s,
     )
 
+    final_episode = int(resume_episode_base + numLifeT)
+    mission_tag = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+    # Человекочитаемое имя для pickle (для удобства выбора в GUI).
+    # legacy-путь сохраняем, чтобы не ломать старые сценарии/парсинг метрик.
+    mission_tag_s = _sanitize_fs_name(mission_tag)
+    human_pickle_path = os.path.join(
+        fold,
+        f"model-{date}_{learner_identity.side}_{learner_identity.faction}_{mission_tag_s}_final_ep{final_episode}.pickle",
+    )
+
     if "env" in primary_ctx and "model" in primary_ctx and "enemy" in primary_ctx:
         toSave = [primary_ctx["env"], primary_ctx["model"], primary_ctx["enemy"]]
         with open(fileName, "wb") as file:
             pickle.dump(toSave, file)
+        # Дублируем в человекочитаемый файл (single final save).
+        try:
+            with open(human_pickle_path, "wb") as file:
+                pickle.dump(toSave, file)
+        except Exception:
+            # Не критично: legacy-модель уже сохранена.
+            pass
     else:
         if USE_SUBPROC_ENVS:
             try:
-                primary_ctx["conn"].send(("save_pickle", fileName))
+                primary_ctx["conn"].send(("save_pickle", {"legacy": fileName, "human": human_pickle_path}))
                 save_resp = primary_ctx["conn"].recv()
             except (BrokenPipeError, EOFError, OSError) as exc:
                 err_line = (

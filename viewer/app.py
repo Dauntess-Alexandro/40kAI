@@ -220,6 +220,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self.controller = GameController(model_path=model_path, state_path=state_path)
         os.environ.setdefault("DEPLOYMENT_MODE", "manual_player")
+        # GUI может подсказать, за кого играет человек и за кого ИИ (P1/P2 + фракция).
+        # Если переменные не заданы — используем старые подписи.
+        self._viewer_player_role_label = os.getenv("VIEWER_PLAYER_ROLE_LABEL", "Игрок")
+        self._viewer_model_role_label = os.getenv("VIEWER_MODEL_ROLE_LABEL", "Модель")
         self._pending_request = None
         self._pending_requests: Deque = deque()
         self._awaiting_player_action = False
@@ -483,8 +487,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _group_legend(self):
         box = QtWidgets.QGroupBox("ЛЕГЕНДА")
         layout = QtWidgets.QVBoxLayout(box)
-        layout.addLayout(self._legend_row("Игрок", Theme.player))
-        layout.addLayout(self._legend_row("Модель", Theme.model))
+        layout.addLayout(self._legend_row(self._viewer_player_role_label, Theme.player))
+        layout.addLayout(self._legend_row(self._viewer_model_role_label, Theme.model))
         layout.addLayout(self._legend_row("Цель", Theme.objective))
         return box
 
@@ -1873,7 +1877,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.status_turn.setText(f"Ход: {state.get('turn', '—')}")
         self.status_phase.setText(f"Фаза: {state.get('phase', '—')}")
         active = state.get("active") or state.get("active_side")
-        active_label = "Игрок" if active == "player" else "Модель" if active == "model" else "—"
+        active_label = (
+            self._viewer_player_role_label
+            if active == "player"
+            else self._viewer_model_role_label
+            if active == "model"
+            else "—"
+        )
         self.status_active.setText(f"Активен: {active_label}")
 
         deployment = state.get("deployment", {}) if isinstance(state.get("deployment", {}), dict) else {}
@@ -1883,9 +1893,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         def _side_label(raw):
             side = str(raw or "").strip().lower()
             if side == "model":
-                return "Модель"
+                return self._viewer_model_role_label
             if side in {"enemy", "player"}:
-                return "Игрок"
+                return self._viewer_player_role_label
             return None
 
         attacker_label = _side_label(attacker)
@@ -1943,7 +1953,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.units_table.setSortingEnabled(False)
         self._unit_row_by_key = {}
         for row, unit in enumerate(units):
-            side_label = "Игрок" if unit.get("side") == "player" else "Модель"
+            side_label = (
+                self._viewer_player_role_label
+                if unit.get("side") == "player"
+                else self._viewer_model_role_label
+            )
             unit_key = (unit.get("side"), unit.get("id"))
             values = [
                 side_label,
