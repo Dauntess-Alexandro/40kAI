@@ -350,7 +350,8 @@ def main():
 
     log(
         f"Старт оценки: игр={games}, epsilon={epsilon:.3f}, "
-        f"модель={os.path.basename(pickle_path)}, checkpoint={os.path.basename(checkpoint_path)}."
+        f"модель={os.path.basename(pickle_path)}, checkpoint={os.path.basename(checkpoint_path)}, "
+        f"heuristic_mode={str(os.getenv('HEURISTIC_MODE', 'v2')).strip().lower() or 'v2'}."
     )
 
     wins = 0

@@ -44,6 +44,7 @@ class GUIController(QtCore.QObject):
     metricsChanged = QtCore.Signal()
     metricsLabelChanged = QtCore.Signal(str)
     metricsSummaryChanged = QtCore.Signal()
+    heuristicMetricsChanged = QtCore.Signal()
     playModelPathChanged = QtCore.Signal(str)
     playModelLabelChanged = QtCore.Signal(str)
     playViewerPlayerRoleLabelChanged = QtCore.Signal(str)
@@ -112,6 +113,8 @@ class GUIController(QtCore.QObject):
         self._metrics_mtimes: dict[str, Optional[float]] = {}
         self._metrics_label = "По умолчанию"
         self._metrics_run_id = ""
+        self._heuristic_metrics: dict[str, object] = {}
+        self._heuristic_metrics_text = "Нет данных метрик эвристики."
         self._metric_summary_texts = {
             "reward": "Текущее: — | Среднее: — | Мин: — | Макс: —",
             "loss": "Текущее: — | Среднее: — | Мин: — | Макс: —",
@@ -154,7 +157,9 @@ class GUIController(QtCore.QObject):
         if self._opponent_policy not in self._opponent_policy_options:
             self._opponent_policy = "mirror"
         self._opponent_source_options = ["heuristic", "latest_snapshot", "specific_agent"]
-        self._opponent_source = "latest_snapshot"
+        self._opponent_source = str(os.getenv("OPPONENT_SOURCE", "heuristic")).strip().lower() or "heuristic"
+        if self._opponent_source not in self._opponent_source_options:
+            self._opponent_source = "heuristic"
         self._specific_opponent_agent_ids: list[str] = []
         self._specific_opponent_agent_labels: list[str] = []
         self._selected_specific_opponent_id = ""
@@ -182,6 +187,7 @@ class GUIController(QtCore.QObject):
         self._update_learner_faction_from_rosters()
         self._refresh_models()
         self._select_latest_metrics()
+        self._load_latest_heuristic_metrics()
         self._select_latest_play_model(initial=True)
         self._select_latest_eval_model(initial=True)
         self._update_roster_summary()
@@ -310,6 +316,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=metricsSummaryChanged)
     def modelStateText(self) -> str:
         return self._model_state_text
+
+    @QtCore.Property(str, notify=heuristicMetricsChanged)
+    def heuristicMetricsText(self) -> str:
+        return self._heuristic_metrics_text
 
     @QtCore.Property(str, notify=playModelPathChanged)
     def playModelPath(self) -> str:
@@ -1588,8 +1598,9 @@ class GUIController(QtCore.QObject):
         if self._disable_train_logging:
             env.insert("TRAIN_LOG_ENABLED", "0")
             env.insert("TRAIN_LOG_TO_CONSOLE", "0")
-            env.insert("TRAIN_LOG_TO_FILE", "0")
-            env.insert("REWARD_DEBUG", "0")
+            # Для отладки эвристики всегда пишем файл лога, даже в speed-режиме.
+            env.insert("TRAIN_LOG_TO_FILE", "1")
+            env.insert("REWARD_DEBUG", "1")
             env.insert("LOG_EVERY", "1000")
         else:
             env.insert("TRAIN_LOG_ENABLED", "1")
@@ -1597,6 +1608,8 @@ class GUIController(QtCore.QObject):
             env.insert("TRAIN_LOG_TO_FILE", "1")
             env.insert("REWARD_DEBUG", "1")
             env.insert("LOG_EVERY", "500")
+        env.insert("HEURISTIC_MODE", "v2")
+        env.insert("HEURISTIC_DEBUG", "1")
         env.insert("PER_ENABLED", "1")
         env.insert("N_STEP", "3")
         env.insert("SAVE_EVERY", "500")
@@ -1637,7 +1650,7 @@ class GUIController(QtCore.QObject):
         self._emit_log(f"[{train_label}] {start_message}")
         if self._disable_train_logging:
             self._emit_log(
-                f"[{train_label}] Speed-режим: TRAIN_LOG_*=0, REWARD_DEBUG=0, LOG_EVERY=1000.",
+                f"[{train_label}] Speed-режим: TRAIN_LOG_TO_CONSOLE=0, TRAIN_LOG_TO_FILE=1, REWARD_DEBUG=1, LOG_EVERY=1000.",
                 level="INFO",
             )
         self._emit_status(start_message)
@@ -1870,6 +1883,7 @@ class GUIController(QtCore.QObject):
             else:
                 self._emit_status("Обучение завершено с ошибкой.")
             self._select_latest_metrics()
+            self._load_latest_heuristic_metrics()
             self._refresh_specific_opponent_options()
         self._cleanup_process()
 
@@ -2377,6 +2391,50 @@ class GUIController(QtCore.QObject):
         self._metric_summary_texts = summaries
         self._model_state_text = model_state
         self.metricsSummaryChanged.emit()
+        self._load_latest_heuristic_metrics()
+
+    def _load_latest_heuristic_metrics(self) -> None:
+        path = os.path.join(self._repo_root, "metrics", "heur_metrics_latest.json")
+        if not os.path.exists(path):
+            self._heuristic_metrics = {}
+            self._heuristic_metrics_text = "Нет данных метрик эвристики."
+            self.heuristicMetricsChanged.emit()
+            return
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            self._heuristic_metrics = {}
+            self._heuristic_metrics_text = "Не удалось прочитать metrics/heur_metrics_latest.json."
+            self.heuristicMetricsChanged.emit()
+            return
+        self._heuristic_metrics = payload if isinstance(payload, dict) else {}
+        mode_usage = self._heuristic_metrics.get("mode_usage", {}) or {}
+        role_usage = self._heuristic_metrics.get("role_usage", {}) or {}
+        run_id = str(self._heuristic_metrics.get("run_id", "-"))
+        updated_at = str(self._heuristic_metrics.get("updated_at", "-"))
+
+        lines = [
+            f"Последний ран: {run_id}",
+            f"Обновлено: {updated_at}",
+            "",
+            "Только метрики эвристики:",
+            f"Винрейт эвристики (все train-игры): {float(self._heuristic_metrics.get('train_heur_winrate', 0.0)):.3f}",
+            f"Доля ничьих (все train-игры): {float(self._heuristic_metrics.get('train_draw_rate', 0.0)):.3f}",
+            f"Всего train-игр: {int(self._heuristic_metrics.get('train_total_games', 0))}",
+            f"Invalid rate: {float(self._heuristic_metrics.get('invalid_rate_total', 0.0)):.4f}",
+            f"Avg risk: {float(self._heuristic_metrics.get('avg_risk', 0.0)):.3f}",
+            f"Avg cover: {float(self._heuristic_metrics.get('avg_cover', 0.0)):.3f}",
+            f"Charge success: {float(self._heuristic_metrics.get('charge_success_rate', 0.0)):.3f}",
+            f"Shoot overkill rate: {float(self._heuristic_metrics.get('shoot_overkill_rate', 0.0)):.3f}",
+            f"Fallback rate: {float(self._heuristic_metrics.get('fallback_rate', 0.0)):.3f}",
+            "Mode usage: "
+            f"kite={int(mode_usage.get('kite', 0))}, hold={int(mode_usage.get('hold', 0))}, commit={int(mode_usage.get('commit', 0))}",
+            "Role usage: "
+            f"ranged={int(role_usage.get('ranged', 0))}, hybrid={int(role_usage.get('hybrid', 0))}, melee={int(role_usage.get('melee', 0))}",
+        ]
+        self._heuristic_metrics_text = "\n".join(lines)
+        self.heuristicMetricsChanged.emit()
 
     def _find_latest_model_file(self) -> Optional[str]:
         models_path = os.path.join(self._repo_root, "models")

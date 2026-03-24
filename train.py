@@ -256,6 +256,7 @@ LEARNER_FACTION = str(os.getenv("LEARNER_FACTION", "Necrons")).strip() or "Necro
 OPPONENT_POLICY = str(os.getenv("OPPONENT_POLICY", "mirror")).strip().lower() or "mirror"
 OPPONENT_AGENT_ID = str(os.getenv("OPPONENT_AGENT_ID", "")).strip()
 RULESET_VERSION = str(os.getenv("RULESET_VERSION", "only_war_v1")).strip() or "only_war_v1"
+HEURISTIC_MODE = str(os.getenv("HEURISTIC_MODE", "v2")).strip().lower() or "v2"
 IO_PROFILER = get_io_profiler()
 
 def to_np_state(s):
@@ -630,6 +631,124 @@ def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
 
     print(f"[metrics] saved: {csv_path}")
 
+
+def _safe_div(n: float, d: float) -> float:
+    return float(n) / float(d) if float(d) > 0 else 0.0
+
+
+def save_heuristic_metrics_snapshot(run_id: str, ep_rows: list[dict] | None = None, metrics_dir: str = "metrics") -> str | None:
+    """
+    Агрегирует ключевые метрики эвристики из train-логов и сохраняет JSON:
+    - metrics/heur_metrics_<run_id>.json
+    - metrics/heur_metrics_latest.json
+    """
+    log_path = os.path.abspath(AGENT_TRAIN_LOG_FILE)
+    if not os.path.exists(log_path):
+        return None
+
+    mode_counts = {"kite": 0, "hold": 0, "commit": 0}
+    role_counts = {"ranged": 0, "hybrid": 0, "melee": 0}
+    risk_vals: list[float] = []
+    cover_vals: list[float] = []
+    invalid_vals: list[float] = []
+    fallback_count = 0
+    shoot_overkill_vals: list[float] = []
+    charge_attempts = 0
+    charge_success = 0
+    win_rate = 0.0
+    draw_rate = 0.0
+    turn_limit_rate = 0.0
+
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as handle:
+            all_lines = handle.readlines()
+            start_idx = 0
+            for idx, line in enumerate(all_lines):
+                if "[TRAIN][START]" in line:
+                    start_idx = idx
+            for line in all_lines[start_idx:]:
+                if "[ENEMY][HEUR][MOVE]" in line:
+                    mode_match = re.search(r"mode=(kite|hold|commit)", line)
+                    if mode_match:
+                        mode_counts[mode_match.group(1)] += 1
+                    role_match = re.search(r"enemy_role=(ranged|hybrid|melee)", line)
+                    if role_match:
+                        role_counts[role_match.group(1)] += 1
+                    risk_match = re.search(r"risk=([-\d\.]+)", line)
+                    if risk_match:
+                        risk_vals.append(float(risk_match.group(1)))
+                    cover_match = re.search(r"cover=([-\d\.]+)", line)
+                    if cover_match:
+                        cover_vals.append(float(cover_match.group(1)))
+                if "[ENEMY][HEUR][CHARGE]" in line:
+                    charge_attempts += 1
+                if "Reward (чардж): success_bonus" in line:
+                    charge_success += 1
+                if "fallback_target=" in line:
+                    fallback_count += 1
+                if "[ENEMY][HEUR][SHOOT]" in line:
+                    ovk_match = re.findall(r"ovk=([-\d\.]+)", line)
+                    for token in ovk_match:
+                        shoot_overkill_vals.append(float(token))
+                if "[TRAIN][ACTIONS]" in line:
+                    invalid_block = re.search(r"invalid_rate=\{([^}]*)\}", line)
+                    if invalid_block:
+                        vals = re.findall(r":([0-9\.]+)", invalid_block.group(1))
+                        if vals:
+                            avg_inv = sum(float(v) for v in vals) / len(vals)
+                            invalid_vals.append(avg_inv)
+                if "[EVAL][DET]" in line:
+                    m = re.search(r"win_rate=([0-9\.]+)", line)
+                    if m:
+                        win_rate = float(m.group(1))
+                    m = re.search(r"draw_rate=([0-9\.]+)", line)
+                    if m:
+                        draw_rate = float(m.group(1))
+                    m = re.search(r"turn_limit_rate=([0-9\.]+)", line)
+                    if m:
+                        turn_limit_rate = float(m.group(1))
+    except OSError:
+        return None
+
+    total_games = len(ep_rows) if ep_rows else 0
+    model_wins = sum(1 for r in (ep_rows or []) if str(r.get("result", "")) == "win")
+    model_draws = sum(1 for r in (ep_rows or []) if str(r.get("result", "")) == "draw")
+    heur_wins = sum(1 for r in (ep_rows or []) if str(r.get("result", "")) == "loss")
+
+    os.makedirs(metrics_dir, exist_ok=True)
+    payload = {
+        "run_id": str(run_id),
+        "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        # DET-EVAL метрики (сохраняем для отладки, но UI эвристики может их игнорировать)
+        "winrate": float(win_rate),
+        "draw_rate": float(draw_rate),
+        "turn_limit_rate": float(turn_limit_rate),
+        # Метрики эвристики по ВСЕМ тренировочным играм текущего рана
+        "train_total_games": int(total_games),
+        "train_heur_winrate": _safe_div(float(heur_wins), float(total_games)),
+        "train_model_winrate": _safe_div(float(model_wins), float(total_games)),
+        "train_draw_rate": _safe_div(float(model_draws), float(total_games)),
+        "invalid_rate_total": float(sum(invalid_vals) / len(invalid_vals)) if invalid_vals else 0.0,
+        "mode_usage": mode_counts,
+        "role_usage": role_counts,
+        "avg_risk": float(sum(risk_vals) / len(risk_vals)) if risk_vals else 0.0,
+        "avg_cover": float(sum(cover_vals) / len(cover_vals)) if cover_vals else 0.0,
+        "charge_attempt_rate": _safe_div(charge_attempts, max(1, len(risk_vals))),
+        "charge_success_rate": _safe_div(charge_success, max(1, charge_attempts)),
+        "shoot_overkill_rate": _safe_div(sum(1 for v in shoot_overkill_vals if v > 0.15), max(1, len(shoot_overkill_vals))),
+        "fallback_rate": _safe_div(fallback_count, max(1, charge_attempts + len(shoot_overkill_vals))),
+    }
+    out_path = os.path.join(metrics_dir, f"heur_metrics_{run_id}.json")
+    latest_path = os.path.join(metrics_dir, "heur_metrics_latest.json")
+    try:
+        with open(out_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        with open(latest_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+    except OSError:
+        return None
+    return out_path
+
 def save_training_summary(run_id: str, model_tag: str, ep_rows: list[dict], elapsed_s: float, results_path: str = "results.txt") -> None:
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ep_count = len(ep_rows)
@@ -770,6 +889,7 @@ def _log_roster_and_opponent_summary(
     # иначе GUI-фильтр не покажет часть многострочного блока.
     _log_train(f"[TRAIN][CONFIG] Миссия: {mission_name}")
     _log_train(f"[TRAIN][CONFIG] Обучение: {learner_side} ({learner_faction})")
+    _log_train(f"[TRAIN][CONFIG] Heuristic mode: {HEURISTIC_MODE}")
     _log_train(f"[TRAIN][CONFIG] League: {league_hint}")
 
     _log_train(f"[TRAIN][ROSTER] model_units (сторона обучения): {_units_as_inline(model_units)}")
@@ -2856,6 +2976,9 @@ def main():
     metrics_obj.showEpLen()
 
     save_extra_metrics(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
+    heur_metrics_path = save_heuristic_metrics_snapshot(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
+    if heur_metrics_path:
+        _log_train(f"[HEUR][METRICS] saved={heur_metrics_path}")
     with IO_PROFILER.timed("metrics save"):
         metrics_obj.createJson()
     print("Generated metrics")

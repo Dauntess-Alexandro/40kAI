@@ -6,6 +6,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import datetime
 import inspect
+import math
 import os
 import random
 import re
@@ -236,6 +237,10 @@ def _fight_report_enabled() -> bool:
     Включаем: FIGHT_REPORT=1.
     """
     return os.getenv("FIGHT_REPORT", "0") == "1"
+
+
+def _heuristic_debug_enabled() -> bool:
+    return os.getenv("HEURISTIC_DEBUG", "0") == "1" or os.getenv("REWARD_DEBUG", "0") == "1"
 
 def auto_dice(num=1, max=6):
     """RNG-роллер с такой же сигнатурой, как player_dice (для логов бота)."""
@@ -1700,6 +1705,14 @@ class Warhammer40kEnv(gym.Env):
             )
             self._log(cover_msg)
             self._append_agent_log(cover_msg)
+            if defender_side == "enemy" and _heuristic_debug_enabled():
+                heur_cover_msg = (
+                    f"[ENEMY][HEUR][COVER] {self._format_unit_label('enemy', int(defender_idx))}: "
+                    "получен защитный бонус Benefit of Cover при входящем выстреле."
+                )
+                self._append_agent_log(heur_cover_msg)
+                if self._should_log():
+                    self._log(heur_cover_msg)
             return "benefit of cover"
         return base_effect
 
@@ -2305,6 +2318,14 @@ class Warhammer40kEnv(gym.Env):
             return
         self._log_reward(msg)
 
+    def _heur_log(self, msg: str) -> None:
+        """Пишет HEUR-диагностику в train log даже при trunc=True."""
+        if not _heuristic_debug_enabled():
+            return
+        self._append_agent_log(msg)
+        if self._should_log():
+            self._log(msg)
+
     def _objective_positions_available(self) -> bool:
         return isinstance(getattr(self, "coordsOfOM", None), (list, np.ndarray)) and len(self.coordsOfOM) > 0
 
@@ -2360,15 +2381,548 @@ class Warhammer40kEnv(gym.Env):
         weapon = weapons[idx]
         if not isinstance(weapon, dict):
             return 0.0
-        attacks = float(weapon.get("A", 1))
-        strength = float(weapon.get("S", 1))
-        damage = float(weapon.get("Damage", 1))
-        ws = float(weapon.get("WS", 4))
-        ap = float(weapon.get("AP", 0))
+        attacks = self._stat_float(weapon, ["Attacks", "A", "#Attacks"], default=1.0)
+        strength = self._stat_float(weapon, ["Strength", "S"], default=4.0)
+        damage = self._stat_float(weapon, ["Damage", "D"], default=1.0)
+        ws = self._stat_float(weapon, ["WS", "Ws", "WeaponSkill", "WS+"], default=4.0)
+        ap = self._stat_float(weapon, ["AP"], default=0.0)
+        if ws <= 0:
+            ws = 4.0
+        if strength <= 0:
+            strength = 4.0
         hit_chance = max(0.0, min(1.0, (7.0 - ws) / 6.0))
         ap_bonus = 1.0 + max(0.0, -ap) * 0.05
         models = float(data_list[idx].get("#OfModels", 1)) if isinstance(data_list[idx], dict) else 1.0
         return attacks * strength * damage * hit_chance * ap_bonus * models
+
+    def _stat_float(self, payload, keys: list[str], default: float = 0.0) -> float:
+        if not isinstance(payload, dict):
+            return float(default)
+        for key in keys:
+            if key not in payload:
+                continue
+            raw = payload.get(key)
+            if isinstance(raw, (int, float)):
+                return float(raw)
+            if isinstance(raw, str):
+                match = re.search(r"-?\d+(?:\.\d+)?", raw)
+                if match:
+                    try:
+                        return float(match.group(0))
+                    except ValueError:
+                        continue
+        return float(default)
+
+    def _unit_ranged_score(self, side: str, idx: int) -> float:
+        weapons = self.unit_weapon if side == "model" else self.enemy_weapon
+        data_list = self.unit_data if side == "model" else self.enemy_data
+        if not (0 <= int(idx) < len(weapons)) or not (0 <= int(idx) < len(data_list)):
+            return 0.0
+        weapon = weapons[int(idx)]
+        unit_data = data_list[int(idx)] if isinstance(data_list[int(idx)], dict) else {}
+        if not isinstance(weapon, dict):
+            return 0.0
+
+        attacks = self._stat_float(weapon, ["Attacks", "A", "#Attacks", "Shots"], default=1.0)
+        strength = self._stat_float(weapon, ["Strength", "S"], default=4.0)
+        damage = self._stat_float(weapon, ["Damage", "D"], default=1.0)
+        weapon_range = max(0.0, self._stat_float(weapon, ["Range"], default=0.0))
+        ap = self._stat_float(weapon, ["AP"], default=0.0)
+        bs = self._stat_float(weapon, ["BS", "Bs", "BallisticSkill", "BS+"], default=4.0)
+        if bs <= 0:
+            bs = 4.0
+        if strength <= 0:
+            strength = 4.0
+        hit_chance = max(0.05, min(0.95, (7.0 - bs) / 6.0))
+        ap_bonus = 1.0 + max(0.0, -ap) * 0.06
+        models = max(1.0, self._stat_float(unit_data, ["#OfModels"], default=1.0))
+        range_factor = min(1.0, weapon_range / 24.0)
+        return attacks * strength * damage * hit_chance * ap_bonus * models * (0.70 + 0.30 * range_factor)
+
+    def _unit_durability_score(self, side: str, idx: int) -> float:
+        data_list = self.unit_data if side == "model" else self.enemy_data
+        if not (0 <= int(idx) < len(data_list)):
+            return 1.0
+        unit_data = data_list[int(idx)]
+        if not isinstance(unit_data, dict):
+            return 1.0
+        total_wounds = max(1.0, self._unit_max_hp(side, int(idx)))
+        save_val = self._stat_float(unit_data, ["Sv", "SV", "Save", "Sv+"], default=4.0)
+        inv_val = self._stat_float(unit_data, ["IVSave", "Invul", "Invulnerable", "Inv", "Invul+"], default=7.0)
+        save_quality = max(0.2, min(1.2, (7.0 - max(2.0, save_val)) / 5.0 + 0.2))
+        inv_quality = 0.0
+        if inv_val <= 6:
+            inv_quality = max(0.0, min(0.5, (7.0 - max(2.0, inv_val)) / 10.0))
+        return total_wounds * (0.65 * save_quality + 0.35 * (0.7 + inv_quality))
+
+    def _unit_mobility_score(self, side: str, idx: int) -> float:
+        data_list = self.unit_data if side == "model" else self.enemy_data
+        if not (0 <= int(idx) < len(data_list)):
+            return 1.0
+        unit_data = data_list[int(idx)]
+        if not isinstance(unit_data, dict):
+            return 1.0
+        move = max(0.0, self._stat_float(unit_data, ["Movement", "M"], default=6.0))
+        return 1.0 + min(1.5, move / 8.0)
+
+    def _unit_profile(self, side: str, idx: int) -> dict[str, float | str]:
+        ranged_power = self._unit_ranged_score(side, idx)
+        melee_power = self._melee_strength_score(side, idx)
+        durability = self._unit_durability_score(side, idx)
+        mobility = self._unit_mobility_score(side, idx)
+
+        profile_ranged = 0.65 * ranged_power + 0.15 * durability + 0.20 * mobility
+        profile_melee = 0.65 * melee_power + 0.15 * durability + 0.20 * mobility
+        profile_gap = profile_ranged - profile_melee
+        threshold = float(getattr(reward_cfg, "ENEMY_HEUR_PROFILE_GAP_THRESHOLD", 0.12))
+        unit_role = "hybrid"
+        if profile_gap >= threshold:
+            unit_role = "ranged"
+        elif -profile_gap >= threshold:
+            unit_role = "melee"
+        return {
+            "role": unit_role,
+            "ranged_power": float(ranged_power),
+            "melee_power": float(melee_power),
+            "durability": float(durability),
+            "mobility": float(mobility),
+            "score_ranged": float(profile_ranged),
+            "score_melee": float(profile_melee),
+            "gap": float(profile_gap),
+        }
+
+    def _enemy_team_tactic(self) -> tuple[str, str]:
+        if int(getattr(reward_cfg, "ENEMY_HEUR_TEAM_TACTIC_ENABLED", 1)) != 1:
+            return "balanced", "feature_disabled"
+        vp_diff = float(self.enemyVP - self.modelVP)
+        round_now = int(getattr(self, "battle_round", 1))
+        enemy_hp = sum(max(0.0, float(hp)) for hp in self.enemy_health)
+        model_hp = sum(max(0.0, float(hp)) for hp in self.unit_health)
+        hp_diff = enemy_hp - model_hp
+        if round_now >= 4 and vp_diff < 0:
+            return "desperate_push", "late_round_vp_behind"
+        if vp_diff > 0 and hp_diff >= 0:
+            return "preserve_lead", "vp_ahead_and_hp_not_behind"
+        if vp_diff < 0:
+            return "play_objective", "vp_behind"
+        if hp_diff > 0:
+            return "focus_fire", "hp_ahead"
+        return "trade_up", "default_trade"
+
+    def _enemy_effective_role(self, enemy_idx: int, target_idx: int, base_role: str, risk_norm: float) -> tuple[str, str]:
+        if int(getattr(reward_cfg, "ENEMY_HEUR_ROLE_SWITCH_ENABLED", 1)) != 1:
+            return str(base_role), "feature_disabled"
+        cur_hp = max(0.0, float(self.enemy_health[int(enemy_idx)]))
+        max_hp = max(1.0, float(self._unit_max_hp("enemy", int(enemy_idx))))
+        hp_ratio = cur_hp / max_hp
+        low_hp_th = float(getattr(reward_cfg, "ENEMY_HEUR_LOW_HP_THRESHOLD", 0.45))
+        high_risk_th = float(getattr(reward_cfg, "ENEMY_HEUR_HIGH_RISK_THRESHOLD", 0.55))
+        target_on_obj = self._is_position_near_objective(self.unit_coords[int(target_idx)])
+        if hp_ratio <= low_hp_th and float(risk_norm) >= high_risk_th:
+            return "survive", "low_hp_and_high_risk"
+        if target_on_obj and str(base_role) in {"ranged", "hybrid"}:
+            return "objective_pressure", "target_on_objective"
+        return str(base_role), "base_role"
+
+    def _enemy_cell_threat_score(self, cell_x: int, cell_y: int) -> float:
+        """Обобщённая оценка угрозы клетки от model-стороны (стрельба + чардж)."""
+        threat = 0.0
+        target_cell = (int(cell_y), int(cell_x))
+        for model_idx in range(len(self.unit_health)):
+            if self.unit_health[model_idx] <= 0:
+                continue
+            mdata = self.unit_data[model_idx] if 0 <= model_idx < len(self.unit_data) else {}
+            mweapon = self.unit_weapon[model_idx] if 0 <= model_idx < len(self.unit_weapon) else {}
+            model_cell = self._cell_from_coord(self.unit_coords[model_idx])
+            dist = float(self._grid_distance_euclid(model_cell, target_cell))
+            shoot_term = 0.0
+            charge_term = 0.0
+            range_limit = max(0.0, self._stat_float(mweapon, ["Range"], default=0.0))
+            if range_limit > 0 and dist <= range_limit:
+                shoot_term = max(0.0, 1.0 - (dist / max(1.0, range_limit)))
+            model_move = max(0.0, self._stat_float(mdata, ["Movement", "M"], default=6.0))
+            charge_reach = model_move + 7.0
+            if dist <= charge_reach:
+                charge_term = max(0.0, 1.0 - (dist / max(1.0, charge_reach)))
+            threat += 0.70 * shoot_term + 0.30 * charge_term
+        return float(threat)
+
+    def _enemy_matchup_distance_plan(self, enemy_idx: int, model_idx: int, forced_mode: str | None = None) -> dict[str, float | str]:
+        enemy_profile = self._unit_profile("enemy", int(enemy_idx))
+        model_profile = self._unit_profile("model", int(model_idx))
+        enemy_role = str(enemy_profile.get("role", "hybrid"))
+        model_role = str(model_profile.get("role", "hybrid"))
+        enemy_score = 0.55 * float(enemy_profile.get("score_ranged", 0.0) if enemy_role == "ranged" else enemy_profile.get("score_melee", 0.0))
+        enemy_score += 0.30 * float(enemy_profile.get("durability", 1.0)) + 0.15 * float(enemy_profile.get("mobility", 1.0))
+        model_score = 0.55 * float(model_profile.get("score_ranged", 0.0) if model_role == "ranged" else model_profile.get("score_melee", 0.0))
+        model_score += 0.30 * float(model_profile.get("durability", 1.0)) + 0.15 * float(model_profile.get("mobility", 1.0))
+        delta = enemy_score - model_score
+
+        enemy_weapon = self.enemy_weapon[int(enemy_idx)] if 0 <= int(enemy_idx) < len(self.enemy_weapon) else {}
+        enemy_range = max(1.0, self._stat_float(enemy_weapon, ["Range"], default=6.0))
+        enemy_move = max(0.0, self._stat_float(self.enemy_data[int(enemy_idx)] if 0 <= int(enemy_idx) < len(self.enemy_data) else {}, ["Movement", "M"], default=6.0))
+        model_move = max(0.0, self._stat_float(self.unit_data[int(model_idx)] if 0 <= int(model_idx) < len(self.unit_data) else {}, ["Movement", "M"], default=6.0))
+        enemy_charge = enemy_move + 7.0
+        model_charge = model_move + 7.0
+
+        mode = "hold"
+        desired_dist = max(2.0, min(enemy_range * 0.5, 10.0))
+        if enemy_role == "ranged" and model_role == "melee" and delta >= -0.10:
+            mode = "kite"
+            kite_buffer = float(getattr(reward_cfg, "ENEMY_HEUR_KITE_BUFFER", 2.0))
+            desired_dist = max(enemy_range * 0.70, model_charge + kite_buffer)
+        elif enemy_role == "melee" and (model_role == "ranged" or delta >= 0.05):
+            mode = "commit"
+            desired_dist = max(1.0, model_charge - 1.0)
+        if forced_mode in {"kite", "commit", "hold"}:
+            mode = str(forced_mode)
+            if mode == "kite":
+                kite_buffer = float(getattr(reward_cfg, "ENEMY_HEUR_KITE_BUFFER", 2.0))
+                desired_dist = max(enemy_range * 0.70, model_charge + kite_buffer)
+            elif mode == "commit":
+                desired_dist = max(1.0, model_charge - 1.0)
+            else:
+                desired_dist = max(2.0, min(enemy_range * 0.5, 10.0))
+
+        return {
+            "mode": mode,
+            "desired_dist": float(desired_dist),
+            "delta": float(delta),
+            "enemy_role": enemy_role,
+            "model_role": model_role,
+            "enemy_charge": float(enemy_charge),
+        }
+
+    def _enemy_phase_profile(self) -> str:
+        if int(getattr(reward_cfg, "ENEMY_HEUR_PHASE_CALIBRATION_ENABLED", 1)) != 1:
+            return "neutral"
+        round_now = int(getattr(self, "battle_round", 1))
+        early_max = int(getattr(reward_cfg, "ENEMY_HEUR_EARLY_MAX_ROUND", 2))
+        mid_max = int(getattr(reward_cfg, "ENEMY_HEUR_MID_MAX_ROUND", 3))
+        if round_now <= early_max:
+            return "early"
+        if round_now <= mid_max:
+            return "mid"
+        return "late"
+
+    def _enemy_mode_quota_override(
+        self,
+        *,
+        enemy_idx: int,
+        target_idx: int,
+        matchup: dict[str, float | str],
+        mode_usage: dict[str, int],
+        decisions_done: int,
+    ) -> tuple[str | None, str]:
+        if int(getattr(reward_cfg, "ENEMY_HEUR_MODE_QUOTA_ENABLED", 1)) != 1:
+            return None, "quota_disabled"
+        round_now = int(getattr(self, "battle_round", 1))
+        start_round = int(getattr(reward_cfg, "ENEMY_HEUR_MODE_QUOTA_START_ROUND", 2))
+        if round_now < start_round:
+            return None, "round_before_quota"
+        if int(getattr(reward_cfg, "ENEMY_HEUR_MODE_QUOTA_ONLY_WHEN_BEHIND", 1)) == 1:
+            vp_diff = float(self.enemyVP - self.modelVP)
+            if vp_diff >= 0.0:
+                return None, "quota_only_when_behind"
+
+        enemy_role = str(matchup.get("enemy_role", "hybrid"))
+        model_role = str(matchup.get("model_role", "hybrid"))
+        delta = float(matchup.get("delta", 0.0))
+        enemy_pos = self.enemy_coords[int(enemy_idx)] if 0 <= int(enemy_idx) < len(self.enemy_coords) else [0, 0]
+        target_pos = self.unit_coords[int(target_idx)] if 0 <= int(target_idx) < len(self.unit_coords) else [0, 0]
+        dist_now = float(
+            self._grid_distance_euclid(
+                (int(enemy_pos[0]), int(enemy_pos[1])),
+                (int(target_pos[0]), int(target_pos[1])),
+            )
+        )
+        min_target_dist = float(getattr(reward_cfg, "ENEMY_HEUR_MODE_QUOTA_MIN_TARGET_DIST", 5.0))
+        if dist_now < min_target_dist:
+            return None, f"quota_target_too_close(dist={dist_now:.2f})"
+        risk_now = self._enemy_heur_exposure_risk(int(enemy_idx), int(enemy_pos[1]), int(enemy_pos[0]))
+        risk_now_norm = float(risk_now) / max(1.0, float(len(self.unit_health)))
+        max_risk = float(getattr(reward_cfg, "ENEMY_HEUR_MODE_QUOTA_MAX_RISK", 0.60))
+        if risk_now_norm > max_risk:
+            return None, f"quota_risk_too_high({risk_now_norm:.2f}>{max_risk:.2f})"
+
+        kite_allowed = (enemy_role in {"ranged", "hybrid"}) and (model_role == "melee")
+        commit_delta_min = float(getattr(reward_cfg, "ENEMY_HEUR_MODE_QUOTA_COMMIT_DELTA_MIN", -0.05))
+        commit_allowed = (enemy_role in {"melee", "hybrid"}) and (model_role == "ranged" or delta >= commit_delta_min)
+        if not (kite_allowed or commit_allowed):
+            return None, "no_allowed_modes"
+
+        total_after = max(1, int(decisions_done) + 1)
+        min_kite_ratio = max(0.0, min(1.0, float(getattr(reward_cfg, "ENEMY_HEUR_MODE_QUOTA_MIN_KITE_RATIO", 0.15))))
+        min_commit_ratio = max(0.0, min(1.0, float(getattr(reward_cfg, "ENEMY_HEUR_MODE_QUOTA_MIN_COMMIT_RATIO", 0.20))))
+        need_kite = max(0, int(math.ceil(min_kite_ratio * total_after)) - int(mode_usage.get("kite", 0)))
+        need_commit = max(0, int(math.ceil(min_commit_ratio * total_after)) - int(mode_usage.get("commit", 0)))
+
+        if kite_allowed and need_kite > 0 and (need_kite >= need_commit or not commit_allowed):
+            return "kite", f"quota_kite_deficit={need_kite}"
+        if commit_allowed and need_commit > 0:
+            return "commit", f"quota_commit_deficit={need_commit}"
+        return None, "quota_satisfied"
+
+    def _enemy_heur_objective_distance(self, cell_x: int, cell_y: int) -> float:
+        if not self._objective_positions_available():
+            return 0.0
+        return min(
+            float(self._grid_distance_euclid((int(cell_y), int(cell_x)), (int(obj[0]), int(obj[1]))))
+            for obj in self.coordsOfOM
+        )
+
+    def _enemy_heur_exposure_risk(self, enemy_idx: int, cell_x: int, cell_y: int) -> float:
+        risk = 0.0
+        for model_idx in range(len(self.unit_health)):
+            if self.unit_health[model_idx] <= 0:
+                continue
+            model_weapon = self.unit_weapon[model_idx] if 0 <= int(model_idx) < len(self.unit_weapon) else {}
+            model_range = max(0.0, self._stat_float(model_weapon, ["Range"], default=0.0))
+            if model_range <= 0:
+                continue
+            dist = float(self._grid_distance_euclid((int(cell_y), int(cell_x)), (int(self.unit_coords[model_idx][0]), int(self.unit_coords[model_idx][1]))))
+            if dist <= model_range:
+                proximity = 1.0 - (dist / max(1.0, model_range))
+                risk += max(0.0, proximity)
+        return float(risk)
+
+    def _enemy_heur_cover_soft_at_cell(self, enemy_idx: int, cell_x: int, cell_y: int) -> tuple[float, str]:
+        """Оценка «мягкого» cover для enemy на гипотетической клетке."""
+        if not (0 <= int(enemy_idx) < len(self.enemy_health)) or self.enemy_health[int(enemy_idx)] <= 0:
+            return 0.0, "enemy unit dead"
+        if not self._unit_has_keyword(self.enemy_data[int(enemy_idx)], "infantry"):
+            return 0.0, "enemy unit is not INFANTRY"
+
+        barricades = self._barricade_cells()
+        if not barricades:
+            return 0.0, "no barricades on map"
+
+        target_cell = (int(cell_y), int(cell_x))
+        min_dist = min(self._grid_distance_chebyshev(target_cell, cell) for cell in barricades)
+        cover_radius = float(getattr(reward_cfg, "TERRAIN_COVER_RADIUS", 3.0))
+        if min_dist > cover_radius:
+            return 0.0, f"too far from barricade (dist={min_dist}, need<={cover_radius:.0f})"
+
+        threat_count = 0
+        obscured_threats = 0
+        for model_idx in range(len(self.unit_health)):
+            if not (0 <= int(model_idx) < len(self.unit_health)) or self.unit_health[int(model_idx)] <= 0:
+                continue
+            if self.unitFellBack[int(model_idx)] or self.unitInAttack[int(model_idx)][0] == 1:
+                continue
+            if self.unit_weapon[int(model_idx)] == "None":
+                continue
+            range_limit = max(0.0, self._stat_float(self.unit_weapon[int(model_idx)], ["Range"], default=0.0))
+            if range_limit <= 0:
+                continue
+            attacker_cell = self._cell_from_coord(self.unit_coords[int(model_idx)])
+            dist = float(self._grid_distance_euclid(attacker_cell, target_cell))
+            if dist > range_limit:
+                continue
+
+            report = visibility_report(
+                attacker_cell,
+                target_cell,
+                opaque_cells_set=self.terrain_opaque_cells,
+                obscuring_cells_set=self.get_terrain_obscuring_cells_set(),
+                target_cover_cells_set=self._target_cover_cells_for_unit("enemy", int(enemy_idx), radius=3),
+                visibility_mode=self.visibility_mode,
+            )
+            if not bool(report.get("los", False)):
+                continue
+            threat_count += 1
+            if not bool(report.get("fully_visible", True)):
+                obscured_threats += 1
+
+        if threat_count <= 0:
+            return 0.0, "no ranged threats from model"
+        cover_soft = obscured_threats / max(1.0, float(threat_count))
+        return float(max(0.0, min(1.0, cover_soft))), f"obscured_threats={obscured_threats}/{threat_count}"
+
+    def _enemy_heur_movement_score(
+        self,
+        *,
+        enemy_idx: int,
+        target_idx: int,
+        cell_x: int,
+        cell_y: int,
+        mode: str,
+        pos_before: tuple[int, int],
+        matchup: dict[str, float | str],
+        focus_count: int,
+        team_tactic: str = "balanced",
+    ) -> tuple[float, dict[str, float | str]]:
+        target_row = int(self.unit_coords[target_idx][0])
+        target_col = int(self.unit_coords[target_idx][1])
+        desired_dist = float(matchup.get("desired_dist", 6.0))
+        mode_pref = str(matchup.get("mode", "hold"))
+
+        dist_to_target = float(self._grid_distance_euclid((int(cell_y), int(cell_x)), (target_row, target_col)))
+        dist_from_start = float(self._grid_distance_chebyshev((int(pos_before[0]), int(pos_before[1])), (int(cell_y), int(cell_x))))
+        dist_pref_penalty = abs(dist_to_target - desired_dist) / max(1.0, desired_dist)
+        obj_dist = self._enemy_heur_objective_distance(int(cell_x), int(cell_y))
+        obj_norm = obj_dist / max(1.0, float(max(self.b_len, self.b_hei)))
+        risk = self._enemy_heur_exposure_risk(enemy_idx, int(cell_x), int(cell_y))
+        risk_norm = risk / max(1.0, float(len(self.unit_health)))
+        threat_score = self._enemy_cell_threat_score(int(cell_x), int(cell_y))
+        threat_norm = threat_score / max(1.0, float(len(self.unit_health)))
+        cover_soft, _cover_reason = self._enemy_heur_cover_soft_at_cell(enemy_idx, int(cell_x), int(cell_y))
+        cover_bonus = max(0.0, min(1.0, float(cover_soft)))
+        obj_pressure = 1.0 if self._is_position_near_objective(self.unit_coords[int(target_idx)]) else 0.0
+        effective_role, role_reason = self._enemy_effective_role(
+            int(enemy_idx), int(target_idx), str(matchup.get("enemy_role", "hybrid")), float(risk_norm)
+        )
+
+        mode_penalty = 0.0 if mode == "normal" else 0.10 if mode == "advance" else 0.25
+        if mode_pref == "commit":
+            mode_penalty = 0.02 if mode == "advance" else mode_penalty
+        if mode_pref == "kite":
+            mode_penalty = 0.05 if mode == "normal" else mode_penalty
+
+        w_matchup = float(getattr(reward_cfg, "ENEMY_HEUR_MATCHUP_DIST_W", 0.35))
+        w_target = float(getattr(reward_cfg, "ENEMY_HEUR_TARGET_DIST_W", 0.30))
+        w_mode = float(getattr(reward_cfg, "ENEMY_HEUR_MODE_W", 0.10))
+        w_progress = float(getattr(reward_cfg, "ENEMY_HEUR_PROGRESS_W", 0.15))
+        w_obj = float(getattr(reward_cfg, "ENEMY_HEUR_OBJECTIVE_DIST_W", 0.20))
+        w_risk = float(getattr(reward_cfg, "ENEMY_HEUR_RISK_W", 0.22))
+        w_cover = float(getattr(reward_cfg, "ENEMY_HEUR_COVER_W", 0.18))
+        w_threat = float(getattr(reward_cfg, "ENEMY_HEUR_THREAT_W", 0.20))
+        w_obj_press = float(getattr(reward_cfg, "ENEMY_HEUR_OBJECTIVE_PRESSURE_W", 0.18))
+        w_team = float(getattr(reward_cfg, "ENEMY_HEUR_TEAM_FOCUS_PENALTY_W", 0.12))
+        team_focus_penalty = max(0, int(focus_count) - 1) * w_team
+
+        phase_profile = self._enemy_phase_profile()
+        phase_risk_mult = 1.0
+        phase_obj_mult = 1.0
+        phase_mode_mult = 1.0
+        if phase_profile == "early":
+            phase_risk_mult = float(getattr(reward_cfg, "ENEMY_HEUR_EARLY_RISK_MULT", 1.20))
+            phase_obj_mult = float(getattr(reward_cfg, "ENEMY_HEUR_EARLY_OBJ_MULT", 0.90))
+            phase_mode_mult = float(getattr(reward_cfg, "ENEMY_HEUR_EARLY_MODE_MULT", 1.10))
+        elif phase_profile == "mid":
+            phase_risk_mult = float(getattr(reward_cfg, "ENEMY_HEUR_MID_RISK_MULT", 1.00))
+            phase_obj_mult = float(getattr(reward_cfg, "ENEMY_HEUR_MID_OBJ_MULT", 1.00))
+            phase_mode_mult = float(getattr(reward_cfg, "ENEMY_HEUR_MID_MODE_MULT", 1.00))
+        elif phase_profile == "late":
+            phase_risk_mult = float(getattr(reward_cfg, "ENEMY_HEUR_LATE_RISK_MULT", 0.85))
+            phase_obj_mult = float(getattr(reward_cfg, "ENEMY_HEUR_LATE_OBJ_MULT", 1.35))
+            phase_mode_mult = float(getattr(reward_cfg, "ENEMY_HEUR_LATE_MODE_MULT", 0.95))
+
+        # Team-tactic multipliers
+        risk_mult = 1.0
+        obj_mult = 1.0
+        focus_mult = 1.0
+        if team_tactic == "focus_fire":
+            focus_mult = 0.35
+        elif team_tactic == "play_objective":
+            obj_mult = 1.35
+        elif team_tactic == "preserve_lead":
+            risk_mult = 1.35
+        elif team_tactic == "desperate_push":
+            risk_mult = 0.85
+            obj_mult = 1.45
+
+        # Dynamic role multipliers
+        if effective_role == "survive":
+            risk_mult *= 1.35
+            obj_mult *= 0.85
+        elif effective_role == "objective_pressure":
+            obj_mult *= 1.30
+
+        score = (
+            w_target * dist_to_target
+            + w_matchup * dist_pref_penalty
+            + (w_mode * phase_mode_mult) * mode_penalty
+            + (w_obj * obj_mult * phase_obj_mult) * obj_norm
+            + (w_risk * risk_mult * phase_risk_mult) * risk_norm
+            + (w_threat * risk_mult * phase_risk_mult) * threat_norm
+            + ((team_focus_penalty) * focus_mult)
+            - (w_obj_press * obj_mult * phase_obj_mult) * obj_pressure
+            - w_cover * cover_bonus
+            - w_progress * dist_from_start
+        )
+        explain = {
+            "dist_to_target": dist_to_target,
+            "dist_pref_penalty": dist_pref_penalty,
+            "obj_norm": obj_norm,
+            "risk_norm": risk_norm,
+            "threat_norm": threat_norm,
+            "mode_penalty": mode_penalty,
+            "team_focus_penalty": team_focus_penalty,
+            "cover_bonus": cover_bonus,
+            "obj_pressure": obj_pressure,
+            "team_tactic": team_tactic,
+            "effective_role": effective_role,
+            "role_reason": role_reason,
+            "score": float(score),
+            "mode_pref": mode_pref,
+            "phase_profile": phase_profile,
+        }
+        return float(score), explain
+
+    def _enemy_heur_pick_shoot_target(self, enemy_idx: int, target_ids: list[int]) -> tuple[int, list[tuple[int, float, dict[str, float]]]]:
+        scored: list[tuple[int, float, dict[str, float]]] = []
+        kill_w = float(getattr(reward_cfg, "ENEMY_HEUR_SHOOT_KILL_W", 0.45))
+        dmg_w = float(getattr(reward_cfg, "ENEMY_HEUR_SHOOT_DAMAGE_W", 0.30))
+        obj_w = float(getattr(reward_cfg, "ENEMY_HEUR_SHOOT_OBJECTIVE_W", 0.15))
+        overkill_w = float(getattr(reward_cfg, "ENEMY_HEUR_SHOOT_OVERKILL_W", 0.10))
+        ev_kill_w = float(getattr(reward_cfg, "ENEMY_HEUR_SHOOT_EV_KILL_VALUE_W", 1.00))
+        ev_dmg_w = float(getattr(reward_cfg, "ENEMY_HEUR_SHOOT_EV_DMG_VALUE_W", 0.80))
+        ev_return_w = float(getattr(reward_cfg, "ENEMY_HEUR_SHOOT_EV_RETURN_RISK_W", 0.45))
+        attacker_ranged = max(0.1, self._unit_ranged_score("enemy", int(enemy_idx)))
+        for target_idx in target_ids:
+            hp = max(1.0, float(self.unit_health[int(target_idx)]))
+            max_hp = max(1.0, self._unit_max_hp("model", int(target_idx)))
+            kill_pressure = 1.0 - (hp / max_hp)
+            expected_damage = min(1.0, attacker_ranged / max(1.0, hp))
+            on_obj = 1.0 if self._is_position_near_objective(self.unit_coords[int(target_idx)]) else 0.0
+            overkill = max(0.0, attacker_ranged - hp) / max(1.0, max_hp)
+            # EV-like extension: ценность килла/урона минус риск ответного фокуса
+            return_risk = self._enemy_cell_threat_score(
+                int(self.enemy_coords[int(enemy_idx)][1]), int(self.enemy_coords[int(enemy_idx)][0])
+            ) / max(1.0, float(len(self.unit_health)))
+            ev_value = (ev_kill_w * kill_pressure) + (ev_dmg_w * expected_damage) - (ev_return_w * return_risk)
+            total = kill_w * kill_pressure + dmg_w * expected_damage + obj_w * on_obj - overkill_w * overkill + 0.25 * ev_value
+            scored.append((int(target_idx), float(total), {
+                "kill": float(kill_pressure),
+                "dmg": float(expected_damage),
+                "obj": float(on_obj),
+                "overkill": float(overkill),
+                "ev": float(ev_value),
+                "return_risk": float(return_risk),
+            }))
+        scored.sort(key=lambda item: item[1], reverse=True)
+        return int(scored[0][0]), scored
+
+    def _enemy_heur_pick_charge_target(self, enemy_idx: int, target_ids: list[int]) -> tuple[int, list[tuple[int, float, dict[str, float]]]]:
+        scored: list[tuple[int, float, dict[str, float]]] = []
+        matchup_w = float(getattr(reward_cfg, "ENEMY_HEUR_CHARGE_MATCHUP_W", 0.40))
+        dist_w = float(getattr(reward_cfg, "ENEMY_HEUR_CHARGE_DISTANCE_W", 0.35))
+        obj_w = float(getattr(reward_cfg, "ENEMY_HEUR_CHARGE_OBJECTIVE_W", 0.25))
+        ev_success_w = float(getattr(reward_cfg, "ENEMY_HEUR_CHARGE_EV_SUCCESS_W", 1.00))
+        ev_lock_w = float(getattr(reward_cfg, "ENEMY_HEUR_CHARGE_EV_LOCK_W", 0.35))
+        ev_counter_w = float(getattr(reward_cfg, "ENEMY_HEUR_CHARGE_EV_COUNTER_W", 0.40))
+        for target_idx in target_ids:
+            plan = self._enemy_matchup_distance_plan(int(enemy_idx), int(target_idx))
+            delta = float(plan.get("delta", 0.0))
+            dist = float(distance(self.enemy_coords[int(enemy_idx)], self.unit_coords[int(target_idx)]))
+            dist_term = 1.0 / max(1.0, dist)
+            obj_term = 1.0 if self._is_position_near_objective(self.unit_coords[int(target_idx)]) else 0.0
+            p_success = max(0.05, min(0.95, (12.0 - max(2.0, dist - 5.0)) / 12.0))
+            lock_value = 1.0 if str(plan.get("model_role", "hybrid")) == "ranged" else 0.35
+            counter_risk = max(0.0, -delta)
+            ev_charge = (ev_success_w * p_success) + (ev_lock_w * lock_value) - (ev_counter_w * counter_risk)
+            total = matchup_w * delta + dist_w * dist_term + obj_w * obj_term + 0.25 * ev_charge
+            scored.append((int(target_idx), float(total), {
+                "delta": delta,
+                "dist_term": dist_term,
+                "obj": obj_term,
+                "ev": float(ev_charge),
+                "p_success": float(p_success),
+                "counter_risk": float(counter_risk),
+            }))
+        scored.sort(key=lambda item: item[1], reverse=True)
+        return int(scored[0][0]), scored
 
     def _log_phase(self, side: str, phase: str):
         if not self._should_log():
@@ -3203,6 +3757,9 @@ class Warhammer40kEnv(gym.Env):
 
     def movement_phase(self, side: str, action=None, manual: bool = False, battle_shock=None):
         self.begin_phase(side, "movement")
+        if side == "enemy" and _heuristic_debug_enabled():
+            action_mode = "policy_action" if action is not None and not manual else "heuristic_auto"
+            self._append_agent_log(f"[ENEMY][HEUR] movement phase active ({action_mode})")
         if side == "model":
             advanced_flags = [False] * len(self.unit_health)
             self.model_used_advance = [False] * len(self.unit_health)
@@ -3489,6 +4046,9 @@ class Warhammer40kEnv(gym.Env):
             attack_choice = action.get("attack", 1) if isinstance(action, dict) else 1
             for i in range(len(self.enemy_health)):
                 unit_id = i + 11
+                if _heuristic_debug_enabled():
+                    self._log_unit("enemy", unit_id, i, "[ENEMY][HEUR] movement action-branch active")
+                    self._append_agent_log(f"[PLAYER] {self._format_unit_label('enemy', i, unit_id=unit_id)}: [ENEMY][HEUR] movement action-branch active")
                 battleSh = battle_shock[i] if battle_shock else False
                 pos_before = tuple(self.enemy_coords[i])
                 if self.enemy_health[i] <= 0:
@@ -3797,6 +4357,12 @@ class Warhammer40kEnv(gym.Env):
             self.enemy_advance_roll = [None] * len(self.enemy_health)
             cp_on = getattr(self, "_enemy_cp_on", None)
             use_cp = getattr(self, "_enemy_use_cp", None)
+            focus_counter: dict[int, int] = {}
+            mode_usage_counter = {"kite": 0, "hold": 0, "commit": 0}
+            mode_decisions = 0
+            team_tactic, tactic_reason = self._enemy_team_tactic()
+            if _heuristic_debug_enabled():
+                self._heur_log(f"[ENEMY][HEUR][TEAM] tactic={team_tactic} reason={tactic_reason}")
             for i in range(len(self.enemy_health)):
                 pos_before = tuple(self.enemy_coords[i])
                 if self.enemyInAttack[i][0] == 1 and self.enemy_health[i] > 0:
@@ -3821,7 +4387,20 @@ class Warhammer40kEnv(gym.Env):
                     aliveUnits = [j for j in range(len(self.unit_health)) if self.unit_health[j] > 0]
                     if len(aliveUnits) == 0:
                         break
-                    idOfM = np.random.choice(aliveUnits)
+                    best_match_idx = aliveUnits[0]
+                    best_match_score = -1e9
+                    for candidate_idx in aliveUnits:
+                        plan = self._enemy_matchup_distance_plan(i, int(candidate_idx))
+                        score = float(plan.get("delta", 0.0))
+                        if str(plan.get("mode")) == "commit":
+                            score += 0.25
+                        elif str(plan.get("mode")) == "kite":
+                            score += 0.10
+                        if score > best_match_score:
+                            best_match_score = score
+                            best_match_idx = int(candidate_idx)
+                    idOfM = int(best_match_idx)
+                    focus_counter[idOfM] = int(focus_counter.get(idOfM, 0)) + 1
                     base_m = int(self.enemy_data[i]["Movement"])
                     overlay = self.get_unit_movement_overlay("enemy", i)
                     move_cells = [(int(x), int(y), "normal") for x, y in (overlay.get("move_cells") or [])]
@@ -3829,23 +4408,102 @@ class Warhammer40kEnv(gym.Env):
                     stay_cell = (int(pos_before[1]), int(pos_before[0]), "stay")
                     candidates = move_cells + adv_cells + [stay_cell]
                     if not (move_cells or adv_cells):
-                        self._log(f"[ENEMY][HEUR] Unit {i + 11}: движение stay, причина: нет reachable-клеток.")
+                        self._heur_log(f"[ENEMY][HEUR] unit={i + 11} movement: stay reason=no_reachable_cells")
 
-                    target_row = int(self.unit_coords[idOfM][0])
-                    target_col = int(self.unit_coords[idOfM][1])
-
-                    def _heur_score(item):
-                        x, y, mode = item
-                        dist_to_target = float(self._grid_distance_euclid((int(y), int(x)), (target_row, target_col)))
-                        dist_from_start = float(self._grid_distance_chebyshev((int(self.enemy_coords[i][0]), int(self.enemy_coords[i][1])), (int(y), int(x))))
-                        mode_penalty = 0.0 if mode == "normal" else 0.1 if mode == "advance" else 0.25
-                        return (dist_to_target, mode_penalty, -dist_from_start)
-
-                    best_x, best_y, best_mode = min(candidates, key=_heur_score)
+                    base_matchup = self._enemy_matchup_distance_plan(i, idOfM)
+                    forced_mode, quota_reason = self._enemy_mode_quota_override(
+                        enemy_idx=int(i),
+                        target_idx=int(idOfM),
+                        matchup=base_matchup,
+                        mode_usage=mode_usage_counter,
+                        decisions_done=int(mode_decisions),
+                    )
+                    matchup = self._enemy_matchup_distance_plan(i, idOfM, forced_mode=forced_mode) if forced_mode else base_matchup
+                    desired_dist = float(matchup.get("desired_dist", 6.0))
+                    mode_pref = str(matchup.get("mode", "hold"))
+                    mode_usage_counter[mode_pref] = int(mode_usage_counter.get(mode_pref, 0)) + 1
+                    mode_decisions += 1
+                    scored_candidates: list[tuple[float, int, int, str, dict[str, float | str]]] = []
+                    for x, y, mode in candidates:
+                        base_score, details = self._enemy_heur_movement_score(
+                            enemy_idx=i,
+                            target_idx=idOfM,
+                            cell_x=int(x),
+                            cell_y=int(y),
+                            mode=str(mode),
+                            pos_before=(int(self.enemy_coords[i][0]), int(self.enemy_coords[i][1])),
+                            matchup=matchup,
+                            focus_count=int(focus_counter.get(idOfM, 1)),
+                            team_tactic=team_tactic,
+                        )
+                        scored_candidates.append((float(base_score), int(x), int(y), str(mode), details))
+                    scored_candidates.sort(key=lambda item: item[0])
+                    base_top_k = max(1, int(getattr(reward_cfg, "ENEMY_HEUR_LOOKAHEAD_TOP_K", 4)))
+                    if int(getattr(reward_cfg, "ENEMY_HEUR_LOOK2_ENABLED", 1)) == 1:
+                        top_k = max(1, int(getattr(reward_cfg, "ENEMY_HEUR_LOOK2_TOP_K", base_top_k)))
+                    else:
+                        top_k = base_top_k
+                    lookahead_w = float(getattr(reward_cfg, "ENEMY_HEUR_LOOKAHEAD_W", 0.30))
+                    top_candidates = scored_candidates[:top_k]
+                    best_eval = None
+                    for base_score, x, y, mode, details in top_candidates:
+                        future_shootable = 0
+                        future_obj_term = 0.0
+                        future_risk = 0.0
+                        for model_idx in range(len(self.unit_health)):
+                            if self.unit_health[model_idx] <= 0:
+                                continue
+                            range_limit = max(0.0, self._stat_float(self.enemy_weapon[i] if i < len(self.enemy_weapon) else {}, ["Range"], default=0.0))
+                            dist_next = float(self._grid_distance_euclid((int(y), int(x)), (int(self.unit_coords[model_idx][0]), int(self.unit_coords[model_idx][1]))))
+                            if range_limit > 0 and dist_next <= range_limit:
+                                future_shootable += 1
+                        if self._is_position_near_objective((int(y), int(x))):
+                            future_obj_term = 1.0
+                        future_risk = self._enemy_cell_threat_score(int(x), int(y)) / max(1.0, float(len(self.unit_health)))
+                        lookahead_bonus = -lookahead_w * min(2.0, float(future_shootable))
+                        if int(getattr(reward_cfg, "ENEMY_HEUR_LOOK2_ENABLED", 1)) == 1:
+                            w_future = float(getattr(reward_cfg, "ENEMY_HEUR_LOOK2_FUTURE_W", 0.30))
+                            w_future_risk = float(getattr(reward_cfg, "ENEMY_HEUR_LOOK2_RISK_W", 0.20))
+                            look2_term = (-w_future * future_obj_term) + (w_future_risk * future_risk)
+                        else:
+                            look2_term = 0.0
+                        total_eval = float(base_score) + float(lookahead_bonus) + float(look2_term)
+                        if best_eval is None or total_eval < best_eval[0]:
+                            best_eval = (total_eval, x, y, mode, details, lookahead_bonus, float(look2_term))
+                    if best_eval is None:
+                        best_score, best_x, best_y, best_mode, best_details = scored_candidates[0]
+                        lookahead_bonus = 0.0
+                        look2_term = 0.0
+                    else:
+                        best_score, best_x, best_y, best_mode, best_details, lookahead_bonus, look2_term = best_eval
                     movement = int(self._grid_distance_chebyshev((int(self.enemy_coords[i][0]), int(self.enemy_coords[i][1])), (int(best_y), int(best_x))))
                     advanced = str(best_mode) == "advance" or int(movement) > int(base_m)
+                    if _heuristic_debug_enabled():
+                        self._heur_log(
+                            f"[ENEMY][HEUR][MOVE] unit={i + 11} target={idOfM + 21} mode={mode_pref} "
+                            f"enemy_role={matchup.get('enemy_role')} target_role={matchup.get('model_role')} "
+                            f"desired_dist={desired_dist:.2f} delta={float(matchup.get('delta', 0.0)):.3f} "
+                            f"score={float(best_score):.3f} lookahead={float(lookahead_bonus):.3f} look2={float(look2_term):.3f} "
+                            f"obj={float(best_details.get('obj_norm', 0.0)):.3f} risk={float(best_details.get('risk_norm', 0.0)):.3f} "
+                            f"cover={float(best_details.get('cover_bonus', 0.0)):.3f} "
+                            f"threat={float(best_details.get('threat_norm', 0.0)):.3f} obj_press={float(best_details.get('obj_pressure', 0.0)):.3f} "
+                            f"effective_role={best_details.get('effective_role', matchup.get('enemy_role'))} "
+                            f"phase={best_details.get('phase_profile', 'neutral')} "
+                            f"team_tactic={best_details.get('team_tactic', team_tactic)} "
+                            f"team_pen={float(best_details.get('team_focus_penalty', 0.0)):.3f} "
+                            f"quota={quota_reason}"
+                        )
+                        self._heur_log(
+                            f"[ENEMY][HEUR][ROLE] unit={i + 11} base={matchup.get('enemy_role')} "
+                            f"effective={best_details.get('effective_role', matchup.get('enemy_role'))} "
+                            f"reason={best_details.get('role_reason', 'n/a')}"
+                        )
+                        self._heur_log(
+                            f"[ENEMY][HEUR][LOOK2] unit={i + 11} base={float(best_score):.3f} "
+                            f"lookahead={float(lookahead_bonus):.3f} look2={float(look2_term):.3f}"
+                        )
                     if str(best_mode) == "stay":
-                        self._log(f"[ENEMY][HEUR] Unit {i + 11}: выбран режим stay (distance=0).")
+                        self._heur_log(f"[ENEMY][HEUR][MOVE] unit={i + 11} chosen_mode=stay distance=0")
                     adv_used = max(0, int(movement) - int(base_m))
                     advance_roll = max(1, min(6, int(adv_used))) if advanced else None
                     self.enemy_coords[i] = [int(best_y), int(best_x)]
@@ -3874,6 +4532,9 @@ class Warhammer40kEnv(gym.Env):
 
     def shooting_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False):
         self.begin_phase(side, "shooting")
+        if side == "enemy" and _heuristic_debug_enabled():
+            action_mode = "policy_action" if action is not None and not manual else "heuristic_auto"
+            self._append_agent_log(f"[ENEMY][HEUR] shooting phase active ({action_mode})")
         if side == "model":
             reward_delta = 0
             for i in range(len(self.unit_health)):
@@ -4164,6 +4825,9 @@ class Warhammer40kEnv(gym.Env):
         elif side == "enemy" and action is not None and not manual:
             for i in range(len(self.enemy_health)):
                 unit_id = i + 11
+                if _heuristic_debug_enabled():
+                    self._log_unit("enemy", unit_id, i, "[ENEMY][HEUR] shooting action-branch active")
+                    self._append_agent_log(f"[PLAYER] {self._format_unit_label('enemy', i, unit_id=unit_id)}: [ENEMY][HEUR] shooting action-branch active")
                 advanced = advanced_flags[i] if advanced_flags else False
                 if self.enemy_health[i] <= 0:
                     self._log_unit("enemy", unit_id, i, "Юнит мертв, стрельба пропущена.")
@@ -4185,6 +4849,7 @@ class Warhammer40kEnv(gym.Env):
                 if len(shootAbleUnits) > 0:
                     valid_target_ids = shootAbleUnits
                     raw = action.get("shoot", 0) if isinstance(action, dict) else 0
+                    heur_target, scored_targets = self._enemy_heur_pick_shoot_target(i, [int(v) for v in valid_target_ids])
                     if 0 <= raw < len(valid_target_ids):
                         idOfM = valid_target_ids[raw]
                         target_list = self._format_unit_choices("model", valid_target_ids)
@@ -4194,6 +4859,14 @@ class Warhammer40kEnv(gym.Env):
                             i,
                             f"Цели в дальности: {target_list}, выбрана: {self._format_unit_label('model', idOfM)} (причина: выбор политики)",
                         )
+                        if _heuristic_debug_enabled():
+                            top = scored_targets[:3]
+                            rendered = ", ".join(
+                                f"{self._format_unit_label('model', tid)}={score:.3f}"
+                                f"(kill={_meta.get('kill', 0.0):.2f},dmg={_meta.get('dmg', 0.0):.2f},obj={_meta.get('obj', 0.0):.0f},ovk={_meta.get('overkill', 0.0):.2f},ev={_meta.get('ev', 0.0):.2f})"
+                                for tid, score, _meta in top
+                            )
+                            self._heur_log(f"[ENEMY][HEUR][SHOOT] unit={unit_id} raw={raw} policy_target={idOfM + 21} top_targets: {rendered}")
                         effect = self._maybe_use_smokescreen(
                             defender_side="model",
                             defender_idx=idOfM,
@@ -4254,18 +4927,38 @@ class Warhammer40kEnv(gym.Env):
                             )
                     else:
                         target_list = self._format_unit_choices("model", valid_target_ids)
+                        idOfM = int(heur_target)
                         self._log_unit(
                             "enemy",
                             unit_id,
                             i,
-                            f"Цели в дальности: {target_list}, выбрана недоступная цель (raw={raw}). Стрельба пропущена.",
+                            f"Цели в дальности: {target_list}, невалидный raw={raw}. Fallback на эвристику: {self._format_unit_label('model', idOfM)}.",
                         )
-                        if _verbose_logs_enabled():
-                            self._log(
-                                f"[PLAYER][SHOOT] Невалидный выбор цели: raw={raw}, доступные={valid_target_ids} (ожидался индекс 0..{len(valid_target_ids) - 1}). Стрельба пропущена."
+                        if _heuristic_debug_enabled():
+                            top = scored_targets[:3]
+                            rendered = ", ".join(
+                                f"{self._format_unit_label('model', tid)}={score:.3f}"
+                                f"(kill={_meta.get('kill', 0.0):.2f},dmg={_meta.get('dmg', 0.0):.2f},obj={_meta.get('obj', 0.0):.0f},ovk={_meta.get('overkill', 0.0):.2f},ev={_meta.get('ev', 0.0):.2f})"
+                                for tid, score, _meta in top
                             )
-                        if self.trunc is False:
-                            self._log(f"{self._format_unit_label('enemy', i)} не смог стрелять: выбранная цель недоступна.")
+                            self._heur_log(f"[ENEMY][HEUR][SHOOT] unit={unit_id} raw={raw} fallback_target={idOfM + 21} top_targets: {rendered}")
+                        effect = self._maybe_use_smokescreen(
+                            defender_side="model",
+                            defender_idx=idOfM,
+                            phase="shooting",
+                            manual=os.getenv("MANUAL_DICE", "0") == "1",
+                        )
+                        effect = self._resolve_cover_effect_for_shot("enemy", i, "model", idOfM, base_effect=effect, phase="shooting")
+                        dmg, modHealth = attack(
+                            self.enemy_health[i],
+                            self.enemy_weapon[i],
+                            self.enemy_data[i],
+                            self.unit_health[idOfM],
+                            self.unit_data[idOfM],
+                            effects=effect,
+                            distance_to_target=self._shooting_distance_between_units("enemy", i, "model", idOfM),
+                        )
+                        self._apply_health_update("model", idOfM, modHealth, reason="shooting")
                 else:
                     self._log_unit("enemy", unit_id, i, "Нет целей в дальности, стрельба пропущена.")
         elif side == "enemy" and manual:
@@ -4391,7 +5084,15 @@ class Warhammer40kEnv(gym.Env):
                     else:
                         shootAbleUnits = self.get_shoot_targets_for_unit("enemy", i)
                         if len(shootAbleUnits) > 0:
-                            idOfM = np.random.choice(shootAbleUnits)
+                            idOfM, scored_targets = self._enemy_heur_pick_shoot_target(i, [int(v) for v in shootAbleUnits])
+                            if _heuristic_debug_enabled():
+                                top = scored_targets[:3]
+                                rendered = ", ".join(
+                                    f"{self._format_unit_label('model', tid)}={score:.3f}"
+                                    f"(kill={_meta.get('kill', 0.0):.2f},dmg={_meta.get('dmg', 0.0):.2f},obj={_meta.get('obj', 0.0):.0f},ovk={_meta.get('overkill', 0.0):.2f},ev={_meta.get('ev', 0.0):.2f})"
+                                    for tid, score, _meta in top
+                                )
+                                self._heur_log(f"[ENEMY][HEUR][SHOOT] unit={i + 11} target={idOfM + 21} top_targets: {rendered}")
                             effect = self._maybe_use_smokescreen(
                                 defender_side="model",
                                 defender_idx=idOfM,
@@ -4417,6 +5118,9 @@ class Warhammer40kEnv(gym.Env):
 
     def charge_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False):
         self.begin_phase(side, "charge")
+        if side == "enemy" and _heuristic_debug_enabled():
+            action_mode = "policy_action" if action is not None and not manual else "heuristic_auto"
+            self._append_agent_log(f"[ENEMY][HEUR] charge phase active ({action_mode})")
         if side == "model":
             reward_delta = 0
             any_charge_targets = False
@@ -4576,6 +5280,9 @@ class Warhammer40kEnv(gym.Env):
             any_charge_targets = False
             for i in range(len(self.enemy_health)):
                 unit_id = i + 11
+                if _heuristic_debug_enabled():
+                    self._log_unit("enemy", unit_id, i, "[ENEMY][HEUR] charge action-branch active")
+                    self._append_agent_log(f"[PLAYER] {self._format_unit_label('enemy', i, unit_id=unit_id)}: [ENEMY][HEUR] charge action-branch active")
                 advanced = advanced_flags[i] if advanced_flags else False
                 pos_before = tuple(self.enemy_coords[i])
                 if self.enemy_health[i] <= 0:
@@ -4617,6 +5324,7 @@ class Warhammer40kEnv(gym.Env):
                                 chargeAble.append(j)
                     if len(chargeAble) > 0:
                         idOfM = action.get("charge", 0)
+                        heur_charge_target, charge_scored = self._enemy_heur_pick_charge_target(i, [int(v) for v in chargeAble])
                         target_list = self._format_unit_choices("model", chargeAble)
                         dist_to_target = distance(self.unit_coords[idOfM], self.enemy_coords[i]) if idOfM in chargeAble else None
                         if _verbose_logs_enabled():
@@ -4662,6 +5370,7 @@ class Warhammer40kEnv(gym.Env):
                                 manual=os.getenv("MANUAL_DICE", "0") == "1",
                             )
                         else:
+                            idOfM = int(heur_charge_target)
                             reason = "цель вне досягаемости" if idOfM in potential_targets else "цель недоступна"
                             if idOfM in potential_targets:
                                 dist_to_target = distance(self.unit_coords[idOfM], self.enemy_coords[i])
@@ -4677,8 +5386,16 @@ class Warhammer40kEnv(gym.Env):
                                 "enemy",
                                 unit_id,
                                 i,
-                                f"Чардж цели: {target_list}, выбрана {self._format_unit_label('model', idOfM)}. {roll_text}. Результат: провал ({reason}).",
+                                f"Невалидный выбор цели из policy. Fallback на эвристику -> {self._format_unit_label('model', idOfM)}. {roll_text}. Результат: провал ({reason}).",
                             )
+                            if _heuristic_debug_enabled():
+                                top = charge_scored[:3]
+                                rendered = ", ".join(
+                                    f"{self._format_unit_label('model', tid)}={score:.3f}"
+                                    f"(delta={_meta.get('delta', 0.0):.2f},dist={_meta.get('dist_term', 0.0):.2f},obj={_meta.get('obj', 0.0):.0f},ev={_meta.get('ev', 0.0):.2f},p={_meta.get('p_success', 0.0):.2f})"
+                                    for tid, score, _meta in top
+                                )
+                                self._heur_log(f"[ENEMY][HEUR][CHARGE] unit={unit_id} raw={action.get('charge', 0)} fallback_target={idOfM + 21} top_targets: {rendered}")
                     else:
                         if potential_targets:
                             target_list = self._format_unit_choices("model", potential_targets)
@@ -4802,9 +5519,17 @@ class Warhammer40kEnv(gym.Env):
                             if distance(self.enemy_coords[i], self.unit_coords[j]) - diceRoll <= 5:
                                 chargeAble.append(j)
                     if len(chargeAble) > 0:
-                        idOfM = int(np.random.choice(chargeAble))
+                        idOfM, charge_scored = self._enemy_heur_pick_charge_target(i, [int(v) for v in chargeAble])
                         dist = distance(self.enemy_coords[i], self.unit_coords[idOfM])
                         required = max(0, dist - 1)
+                        if _heuristic_debug_enabled():
+                            top = charge_scored[:3]
+                            rendered = ", ".join(
+                                f"{self._format_unit_label('model', tid)}={score:.3f}"
+                                f"(delta={_meta.get('delta', 0.0):.2f},dist={_meta.get('dist_term', 0.0):.2f},obj={_meta.get('obj', 0.0):.0f},ev={_meta.get('ev', 0.0):.2f},p={_meta.get('p_success', 0.0):.2f})"
+                                for tid, score, _meta in top
+                            )
+                            self._heur_log(f"[ENEMY][HEUR][CHARGE] unit={i + 11} target={idOfM + 21} top_targets: {rendered}")
                         self._log_unit_phase(
                             self._display_side("enemy"),
                             "charge",
@@ -5173,6 +5898,9 @@ class Warhammer40kEnv(gym.Env):
         if policy_fn is not None:
             obs = self.get_observation_for_side("enemy")
             action = policy_fn(obs)
+        if action is not None and _heuristic_debug_enabled():
+            self._log("[ENEMY][HEUR] enemyTurn: action policy branch active")
+            self._append_agent_log("[ENEMY][HEUR] enemyTurn: action policy branch active")
         battle_shock = self.command_phase("enemy", action=action)
         advanced_flags = self.movement_phase("enemy", action=action, battle_shock=battle_shock)
         self._invalidate_target_cache("enemy_after_movement")
