@@ -203,16 +203,69 @@ ApplicationWindow {
                                         onToggled: controller.set_auto_clear_logs(checked)
                                     }
 
+                                    Label { text: "Сторона обучения" }
+                                    ComboBox {
+                                        model: controller.learnerSideOptions
+                                        Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(220 * root.uiScale))
+                                        currentIndex: Math.max(0, controller.learnerSideOptions.indexOf(controller.learnerSide))
+                                        enabled: !controller.running
+                                        onActivated: controller.set_learner_side(currentText)
+                                    }
+
+                                    Label { text: "Источник оппонента" }
+                                    ComboBox {
+                                        Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(220 * root.uiScale))
+                                        model: [
+                                            { value: "heuristic", label: "Эвристика" },
+                                            { value: "latest_snapshot", label: "Последний снапшот" },
+                                            { value: "specific_agent", label: "Конкретный агент" }
+                                        ]
+                                        textRole: "label"
+                                        valueRole: "value"
+                                        currentIndex: {
+                                            for (var i = 0; i < model.length; i++) {
+                                                if (model[i].value === controller.opponentSource)
+                                                    return i
+                                            }
+                                            return 0
+                                        }
+                                        enabled: !controller.running
+                                        onActivated: {
+                                            if (currentIndex >= 0 && currentIndex < model.length)
+                                                controller.set_opponent_source(model[currentIndex].value)
+                                        }
+                                    }
+
+                                    Label {
+                                        text: "Конкретный агент"
+                                    }
+                                    ComboBox {
+                                        Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(460 * root.uiScale))
+                                        model: controller.specificOpponentAgentOptions
+                                        currentIndex: controller.specificOpponentAgentOptions.length > 0
+                                            ? Math.max(0, controller.specificOpponentAgentOptions.indexOf(controller.selectedSpecificOpponentLabel))
+                                            : -1
+                                        enabled: !controller.running
+                                                 && controller.opponentSource === "specific_agent"
+                                                 && controller.specificOpponentAgentOptions.length > 0
+                                        opacity: controller.opponentSource === "specific_agent" ? 1.0 : 0.65
+                                        onActivated: controller.set_specific_opponent_agent_by_label(currentText)
+                                    }
+
+                                    Label {
+                                        Layout.columnSpan: 2
+                                        text: controller.opponentPreviewText
+                                        color: "#555555"
+                                        Layout.fillWidth: true
+                                        wrapMode: Text.NoWrap
+                                        elide: Text.ElideRight
+                                        maximumLineCount: 1
+                                    }
+
                                     Button {
                                         text: "Тренировка 8х"
                                         enabled: !controller.running
                                         onClicked: controller.start_train_8x()
-                                    }
-
-                                    Button {
-                                        text: "Самообучение"
-                                        enabled: !controller.running
-                                        onClicked: controller.start_self_play()
                                     }
 
                                     Button {
@@ -312,7 +365,7 @@ ApplicationWindow {
                                 spacing: root.spacingXs
 
                                 Label {
-                                    text: "Игрок:"
+                                    text: "P1:"
                                     color: "#666666"
                                 }
 
@@ -338,7 +391,7 @@ ApplicationWindow {
                                 }
 
                                 Label {
-                                    text: "Модель:"
+                                    text: "P2:"
                                     color: "#666666"
                                 }
 
@@ -545,12 +598,12 @@ ApplicationWindow {
                                 RowLayout {
                                     spacing: root.spacingSm
                                     Button {
-                                        text: "Добавить в игрока"
+                                        text: "Добавить в P1"
                                         highlighted: true
                                         onClicked: controller.add_unit_to_player(availableUnitsView.currentIndex)
                                     }
                                     Button {
-                                        text: "Добавить в модель"
+                                        text: "Добавить в P2"
                                         flat: true
                                         onClicked: controller.add_unit_to_model(availableUnitsView.currentIndex)
                                     }
@@ -571,7 +624,7 @@ ApplicationWindow {
                                 spacing: root.spacingSm
 
                                 Label {
-                                    text: "Ростер игрока"
+                                    text: "Ростер P1"
                                     font.bold: true
                                     Layout.preferredHeight: Math.round(24 * root.uiScale)
                                     verticalAlignment: Text.AlignVCenter
@@ -651,7 +704,7 @@ ApplicationWindow {
                                 spacing: root.spacingSm
 
                                 Label {
-                                    text: "Ростер модели"
+                                    text: "Ростер P2"
                                     font.bold: true
                                     Layout.preferredHeight: Math.round(24 * root.uiScale)
                                     verticalAlignment: Text.AlignVCenter
@@ -1064,6 +1117,22 @@ ApplicationWindow {
 
                                 Label {
                                     text: controller.playModelLabel
+                                    wrapMode: Text.WordWrap
+                                }
+
+                                Label {
+                                    text: "Кто за кого:"
+                                    font.bold: true
+                                    wrapMode: Text.WordWrap
+                                }
+
+                                Label {
+                                    text: controller.playViewerPlayerRoleLabel
+                                    wrapMode: Text.WordWrap
+                                }
+
+                                Label {
+                                    text: controller.playViewerModelRoleLabel
                                     wrapMode: Text.WordWrap
                                 }
                             }

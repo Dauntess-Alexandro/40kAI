@@ -18,7 +18,7 @@ VP_CAP_PER_COMMAND = 3
 
 # Награды, связанные с удержанием/контролем objectives.
 # Бонус за удержание objective.
-VP_OBJECTIVE_HOLD_REWARD = 0.5
+VP_OBJECTIVE_HOLD_REWARD = 0.65
 # Штраф за упущенное удержание/прогресс по objective.
 VP_OBJECTIVE_HOLD_PENALTY = 0.12
 # Бонус за приближение к objective.
@@ -27,15 +27,15 @@ VP_OBJECTIVE_PROXIMITY_REWARD = 0.5
 # penalty = -VP_OBJECTIVE_HOLD_PENALTY * clamp01(missed_progress / VP_OBJECTIVE_MISSED_PROGRESS_NORM)
 VP_OBJECTIVE_MISSED_PROGRESS_NORM = 6.0
 # Масштаб бонуса за улучшение разницы VP (vp_diff > 0).
-VP_DIFF_REWARD_SCALE = 0.05
+VP_DIFF_REWARD_SCALE = 0.11
 # Масштаб штрафа за ухудшение разницы VP (vp_diff < 0).
-VP_DIFF_PENALTY_SCALE = 0.05
+VP_DIFF_PENALTY_SCALE = 0.12
 # Доп. штраф за ничью на turn_limit (анти "ничейная яма").
-TURN_LIMIT_DRAW_PENALTY = 0.35
+TURN_LIMIT_DRAW_PENALTY = 0.60
 # Доп. масштаб бонуса за победу по VP на turn_limit.
-TURN_LIMIT_VP_MARGIN_REWARD_SCALE = 0.12
+TURN_LIMIT_VP_MARGIN_REWARD_SCALE = 0.28
 # Доп. масштаб штрафа за проигрыш по VP на turn_limit.
-TURN_LIMIT_VP_MARGIN_PENALTY_SCALE = 0.18
+TURN_LIMIT_VP_MARGIN_PENALTY_SCALE = 0.24
 # Ограничение абсолютного VP margin для turn_limit shaping.
 TURN_LIMIT_VP_MARGIN_CLAMP = 3.0
 # Длина серии удержания objective для streak-бонуса.
@@ -55,7 +55,7 @@ MOVEMENT_MELEE_TARGET_DEAD_BONUS = 0.3
 # Штраф за отступление из мили (fallback), когда это нежелательно.
 MOVEMENT_MELEE_RETREAT_PENALTY = 0.5
 # Бонус за удержание выгодного мили-контакта (stay in melee).
-MOVEMENT_MELEE_STAY_BONUS = 0.2
+MOVEMENT_MELEE_STAY_BONUS = 0.1
 # Бонус за успешный чардж.
 CHARGE_SUCCESS_REWARD = 0.5
 # Штраф за неуспешный чардж.
@@ -83,7 +83,7 @@ SHOOT_REWARD_ACTION_BONUS = 0.0
 
 # Масштаб штрафа за полученный урон в шаге модели
 # (нормируется относительно суммарного максимального HP модели).
-DAMAGE_TAKEN_SCALE = 0.5
+DAMAGE_TAKEN_SCALE = 0.38
 
 # ==============================================
 # Шэйпинг наград (objectives / utility-сигналы)
@@ -91,7 +91,7 @@ DAMAGE_TAKEN_SCALE = 0.5
 # Штраф за бездействие вне целей (idle out of objective).
 IDLE_OUT_OF_OBJECTIVE_PENALTY = 0.02
 # Масштаб пошагового бонуса за прогресс к objective.
-OBJECTIVE_PROGRESS_STEP_SCALE = 0.03
+OBJECTIVE_PROGRESS_STEP_SCALE = 0.05
 # Верхняя граница бонуса за прогресс к objective за шаг.
 OBJECTIVE_PROGRESS_STEP_CAP = 0.10
 # Бонус за убийство цели, находящейся на objective.

@@ -1,4 +1,5 @@
 # play warhammer!
+import argparse
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -18,6 +19,7 @@ from model.utils import *
 from gym_mod.engine.game_io import ConsoleIO, set_active_io
 from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
 from gym_mod.envs.warhamEnv import roll_off_attacker_defender
+from gym_mod.engine.agent_registry import compatible_contracts, load_agent_by_id, make_env_contract
 
 
 def load_trusted_checkpoint(path: str):
@@ -30,43 +32,41 @@ PLAY_NO_EXPLORATION = os.getenv("PLAY_NO_EXPLORATION", "0") == "1"
 if PLAY_NO_EXPLORATION:
     PLAY_EPS = 0.0
 
-if sys.argv[1] == "None":
+parser = argparse.ArgumentParser()
+parser.add_argument("model", nargs="?", default="None")
+parser.add_argument("play_in_gui", nargs="?", default="False")
+parser.add_argument("--agent-id", default=os.getenv("PLAY_AGENT_ID", "").strip())
+args = parser.parse_args()
+
+if args.model == "None":
     savePath = "models/"
-
-    folders = os.listdir(savePath)
-
+    folders = os.listdir(savePath) if os.path.isdir(savePath) else []
     envs = []
     modelpth = []
-
     for i in folders:
-        
-        if os.path.isdir(savePath+i):
-            fs = os.listdir(savePath+i)
+        full_dir = os.path.join(savePath, i)
+        if os.path.isdir(full_dir):
+            fs = os.listdir(full_dir)
             for j in fs:
-                if j[-len(".pickle"):] == ".pickle":
-                    envs.append(savePath+i+"/"+j)
-                elif j[-len(".pth"):] == ".pth":
-                    modelpth.append(savePath+i+"/"+j)
-
+                full_path = os.path.join(full_dir, j)
+                if j.endswith(".pickle"):
+                    envs.append(full_path)
+                elif j.endswith(".pth"):
+                    modelpth.append(full_path)
+    if not envs or not modelpth:
+        raise FileNotFoundError("Не найдены legacy модели в models/. Что делать: укажите --agent-id или путь к .pickle.")
     envs.sort(key=lambda x: os.path.getmtime(x))
     modelpth.sort()
-
     checkpoint = load_trusted_checkpoint(modelpth[-1])
-
-    #print("Playing with environment saved here: ", envs[-1])
-    with open(envs[-1], 'rb') as f:
+    with open(envs[-1], "rb") as f:
         env, model, enemy = pickle.load(f)
-else: 
-    #print("Playing with model saved here: ", sys.argv[1])
-    with open(sys.argv[1], 'rb') as f:
+else:
+    with open(args.model, "rb") as f:
         env, model, enemy = pickle.load(f)
-    f = str(sys.argv[1])
-    modelpth = f[:-len("pickle")]+"pth"
+    modelpth = str(args.model)[:-len("pickle")] + "pth"
     checkpoint = load_trusted_checkpoint(modelpth)
 
-playInGUI = False
-if sys.argv[2] == "True":
-    playInGUI = True
+playInGUI = str(args.play_in_gui).strip().lower() == "true"
 
 io = ConsoleIO()
 set_active_io(io)
@@ -143,6 +143,27 @@ n_actions = [5,2,len(info["player health"]), len(info["player health"]), 5, len(
 for i in range(len(model)):
     n_actions.append(12)
 n_observations = len(state)
+if args.agent_id:
+    agent_payload = load_agent_by_id(args.agent_id)
+    runtime_contract = make_env_contract(
+        n_observations=n_observations,
+        n_actions=n_actions,
+        mission_name=str(getattr(env.unwrapped, "mission_name", "only_war")),
+        ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v1")),
+    )
+    ok, reason = compatible_contracts(runtime_contract, agent_payload.get("contract", {}))
+    if not ok:
+        raise ValueError(
+            f"Несовместимый --agent-id={args.agent_id}: {reason}. "
+            "Что делать: выберите агента с тем же ruleset/action/obs контрактом."
+        )
+    checkpoint = {
+        "policy_net": agent_payload.get("policy_state"),
+        "target_net": agent_payload.get("target_state") or agent_payload.get("policy_state"),
+        "optimizer": agent_payload.get("optimizer_state") or {},
+        "net_type": "dueling" if any(str(k).startswith("value_heads.") for k in (agent_payload.get("policy_state") or {}).keys()) else "basic",
+    }
+    _log(f"[LEAGUE] Используется agent-id={args.agent_id} из registry.")
 
 net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
 dueling = net_type == "dueling"
@@ -157,7 +178,8 @@ optimizer = torch.optim.Adam(policy_net.parameters())
 
 policy_net.load_state_dict(normalize_state_dict(checkpoint['policy_net']))
 target_net.load_state_dict(normalize_state_dict(checkpoint['target_net']))
-optimizer.load_state_dict(checkpoint['optimizer'])
+if isinstance(checkpoint.get("optimizer"), dict) and checkpoint["optimizer"]:
+    optimizer.load_state_dict(checkpoint["optimizer"])
 
 policy_net.eval()
 target_net.eval()

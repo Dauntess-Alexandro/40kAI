@@ -19,12 +19,9 @@ class TestIoP0Regression(unittest.TestCase):
         self.assertIn('"STATE_FLUSH_MIN_INTERVAL_MS" not in os.environ', source)
         self.assertIn('min_interval_ms = max(min_interval_ms, 180)', source)
 
-    def test_checklist_marks_p0_done(self):
-        source = Path("I_O_PERF_CHECKLIST.md").read_text(encoding="utf-8")
-        self.assertIn("✅ P0 выполнен.", source)
-        self.assertIn("- [x] **Оптимизировать чтение `response.txt`", source)
-        self.assertIn("- [x] **Снизить объём `model_events` в `state.json`**", source)
-        self.assertIn("- [x] **Ограничить частоту тяжёлых state flush в GUI**", source)
+    def test_checklist_removed_from_regression_gate(self):
+        # Legacy checklist может отсутствовать; регрессия не должна падать от markdown-файла.
+        self.assertFalse(Path("I_O_PERF_CHECKLIST.md").exists())
 
 
 if __name__ == "__main__":

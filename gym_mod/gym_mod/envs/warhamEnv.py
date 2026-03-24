@@ -33,6 +33,22 @@ from gym_mod.engine.state_export import write_state_json
 from gym_mod.engine.game_io import DICE_CANCEL_TOKEN, get_active_io
 from gym_mod.engine.event_bus import get_event_bus, get_event_recorder
 
+ENV_RULESET_VERSION = os.getenv("ENV_RULESET_VERSION", "only_war_v1")
+
+_ACTION_KEYS_LOGGED = False
+
+
+def build_env_contract_from_spaces(*, n_observations: int, n_actions: list[int], mission_name: str) -> dict:
+    """Стабильный контракт пространства состояния/действий для матчмейкера."""
+    obs_signature = f"vec:{int(n_observations)}"
+    action_signature = "heads:" + ",".join(str(int(v)) for v in n_actions)
+    return {
+        "ruleset_version": str(ENV_RULESET_VERSION),
+        "mission_name": str(mission_name or "only_war"),
+        "obs_space_signature": obs_signature,
+        "action_space_signature": action_signature,
+    }
+
 # ============================================================
 # 🔧 FIX: resolve string weapons like "Bolt pistol [PISTOL]"
 # so engine.utils.attack() always receives a dict (or we safely
@@ -928,7 +944,10 @@ class Warhammer40kEnv(gym.Env):
 
         # ✅ 3) Теперь только ОДИН раз создаём spaces.Dict
         self.action_space = spaces.Dict(action_spaces)
-        get_active_io().log(f"Action keys: {self.action_space.spaces.keys()}")
+        global _ACTION_KEYS_LOGGED
+        if not _ACTION_KEYS_LOGGED:
+            get_active_io().log(f"Action keys: {self.action_space.spaces.keys()}")
+            _ACTION_KEYS_LOGGED = True
 
         # Initialize game state + board
         self.iter = 0
@@ -1286,7 +1305,7 @@ class Warhammer40kEnv(gym.Env):
 
 
     def _los_debug_enabled(self) -> bool:
-        raw = str(os.getenv("LOS_DEBUG", "1")).strip().lower()
+        raw = str(os.getenv("LOS_DEBUG", "0")).strip().lower()
         return raw not in {"0", "false", "off", "no"}
 
     def _log_los_debug(
@@ -2257,6 +2276,8 @@ class Warhammer40kEnv(gym.Env):
             return
 
     def _log_reward(self, msg: str, unit_id: int | None = None, unit_name: str | None = None) -> None:
+        if os.getenv("REWARD_DEBUG", "0") != "1":
+            return
         self._log(msg)
         self._append_agent_log(msg)
         if self.active_side == "model":
@@ -2963,7 +2984,12 @@ class Warhammer40kEnv(gym.Env):
         self.numTurns = self.battle_round
         self._round_banner_shown = False
         self._auto_fix_all_coherency(reason="конец боевого раунда")
-        apply_end_of_battle(self, log_fn=self._log)
+        # Важно: end_reason/last_winner должны обновляться и в этом пути,
+        # иначе info["end reason"] будет пустым, а классификация win/draw в eval сломается.
+        game_over, reason, winner = apply_end_of_battle(self, log_fn=self._log)
+        if game_over:
+            self.last_end_reason = reason
+            self.last_winner = winner
 
     def _advance_turn_order(self):
         if self.active_side == self.turn_order[-1]:
@@ -5154,7 +5180,10 @@ class Warhammer40kEnv(gym.Env):
         self.charge_phase("enemy", advanced_flags=advanced_flags, action=action)
         self.fight_phase("enemy")
         self._invalidate_target_cache("enemy_after_fight")
-        apply_end_of_battle(self, log_fn=self._log)
+        game_over, reason, winner = apply_end_of_battle(self, log_fn=self._log)
+        if game_over:
+            self.last_end_reason = reason
+            self.last_winner = winner
 
         if self.modelStrat["overwatch"] != -1:
             self.modelStrat["overwatch"] = -1

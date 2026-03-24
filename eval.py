@@ -9,6 +9,7 @@ from typing import Optional
 
 import torch
 
+from gym_mod.engine.agent_registry import compatible_contracts, load_agent_by_id, make_env_contract
 from gym_mod.engine.mission import (
     check_end_of_battle,
     normalize_mission_name,
@@ -225,6 +226,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--games", type=int, default=50)
     parser.add_argument("--model", type=str, default=None)
+    parser.add_argument("--learner-agent-id", type=str, default="")
+    parser.add_argument("--opponent-agent-id", type=str, default="")
+    parser.add_argument("--opponent-policy", type=str, default="mirror")
     args = parser.parse_args()
 
     games = args.games
@@ -278,10 +282,46 @@ def main():
     for _ in range(len(model_units)):
         n_actions.append(12)
     n_observations = len(state)
+    eval_contract = make_env_contract(
+        n_observations=n_observations,
+        n_actions=n_actions,
+        mission_name=mission_name,
+        ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v1")),
+    )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    policy_state = None
+    selected_agent_id = (args.learner_agent_id or "").strip()
+    if selected_agent_id:
+        payload = load_agent_by_id(selected_agent_id)
+        ok, reason = compatible_contracts(eval_contract, payload.get("contract", {}))
+        if not ok:
+            log(
+                f"[ERROR] Несовместимый learner-agent-id={selected_agent_id}: {reason}. "
+                "Где: eval.py (compatible_contracts). Что делать: выберите агента с тем же контрактом окружения."
+            )
+            return 1
+        policy_state = payload.get("policy_state")
+        log(f"Используется learner-agent-id={selected_agent_id} (policy из registry).")
+    else:
+        policy_state = _extract_policy_state_dict(checkpoint)
 
-    policy_state = _extract_policy_state_dict(checkpoint)
+    opponent_agent_id = (args.opponent_agent_id or "").strip()
+    if opponent_agent_id:
+        payload = load_agent_by_id(opponent_agent_id)
+        ok, reason = compatible_contracts(eval_contract, payload.get("contract", {}))
+        if not ok:
+            log(
+                f"[ERROR] Несовместимый opponent-agent-id={opponent_agent_id}: {reason}. "
+                "Где: eval.py (compatible_contracts). Что делать: выберите оппонента с тем же контрактом."
+            )
+            return 1
+        log(
+            f"Проверка оппонента пройдена: opponent-agent-id={opponent_agent_id}, "
+            f"policy={args.opponent_policy}. "
+            "Примечание: в текущем eval оппонент остаётся эвристикой."
+        )
+
     if not isinstance(policy_state, dict):
         log(
             "[ERROR] В checkpoint отсутствует policy state_dict. "

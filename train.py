@@ -25,6 +25,16 @@ from gym_mod.engine.mission import (
     deploy_for_mission,
     post_deploy_setup,
 )
+from gym_mod.engine.agent_registry import (
+    AgentIdentity,
+    build_agent_id,
+    compatible_contracts,
+    load_agent_by_id,
+    make_env_contract,
+    list_agents,
+    save_agent_artifact,
+)
+from gym_mod.engine.matchmaker import choose_opponent, record_matchup
 from gymnasium import spaces
 
 AGENT_TRAIN_LOG_FILE = "LOGS_FOR_AGENTS_TRAIN.md"
@@ -38,11 +48,21 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+from torch.optim import Optimizer
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 import torch
 print("[DEVICE CHECK] cuda:", torch.cuda.is_available())
 if torch.cuda.is_available():
     print("[DEVICE CHECK] name:", torch.cuda.get_device_name(0))
+
+# Workaround для окружений, где torch._dynamo падает из-за несовместимого triton.
+if os.getenv("TORCH_OPTIMIZER_NO_DYNAMO", "1") == "1":
+    if hasattr(Optimizer.add_param_group, "__wrapped__"):
+        Optimizer.add_param_group = Optimizer.add_param_group.__wrapped__
+    if hasattr(Optimizer.state_dict, "__wrapped__"):
+        Optimizer.state_dict = Optimizer.state_dict.__wrapped__
+    if hasattr(Optimizer.load_state_dict, "__wrapped__"):
+        Optimizer.load_state_dict = Optimizer.load_state_dict.__wrapped__
 
 
 import warnings
@@ -119,7 +139,7 @@ SELF_PLAY_FIXED_PATH = os.getenv("SELF_PLAY_FIXED_PATH", "")
 SELF_PLAY_OPPONENT_EPSILON = float(os.getenv("SELF_PLAY_OPPONENT_EPSILON", "0.0"))
 SELF_PLAY_OPPONENT_EPSILON_MIN = float(os.getenv("SELF_PLAY_OPPONENT_EPSILON_MIN", str(SELF_PLAY_OPPONENT_EPSILON)))
 SELF_PLAY_OPPONENT_EPSILON_MAX = float(os.getenv("SELF_PLAY_OPPONENT_EPSILON_MAX", str(max(SELF_PLAY_OPPONENT_EPSILON, 0.08))))
-SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES = int(os.getenv("SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES", "800"))
+SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES = int(os.getenv("SELF_PLAY_OPPONENT_EPSILON_DECAY_EPISODES", "1600"))
 SELF_PLAY_ADAPTIVE_UPDATE = os.getenv("SELF_PLAY_ADAPTIVE_UPDATE", "1") == "1"
 SELF_PLAY_UPDATE_EVERY_MIN = int(os.getenv("SELF_PLAY_UPDATE_EVERY_MIN", "25"))
 SELF_PLAY_UPDATE_EVERY_MAX = int(os.getenv("SELF_PLAY_UPDATE_EVERY_MAX", "150"))
@@ -127,12 +147,12 @@ SELF_PLAY_DRAW_RATE_HIGH = float(os.getenv("SELF_PLAY_DRAW_RATE_HIGH", "0.70"))
 SELF_PLAY_DRAW_RATE_LOW = float(os.getenv("SELF_PLAY_DRAW_RATE_LOW", "0.45"))
 SELF_PLAY_POOL_ENABLED = os.getenv("SELF_PLAY_POOL_ENABLED", "1") == "1"
 SELF_PLAY_POOL_SIZE = int(os.getenv("SELF_PLAY_POOL_SIZE", "6"))
-SELF_PLAY_POOL_SAMPLE_OLD_PROB = float(os.getenv("SELF_PLAY_POOL_SAMPLE_OLD_PROB", "0.60"))
+SELF_PLAY_POOL_SAMPLE_OLD_PROB = float(os.getenv("SELF_PLAY_POOL_SAMPLE_OLD_PROB", "0.45"))
 SELF_PLAY_POOL_SMART_SAMPLING = os.getenv("SELF_PLAY_POOL_SMART_SAMPLING", "1") == "1"
-SELF_PLAY_POOL_SCORE_WIN_W = float(os.getenv("SELF_PLAY_POOL_SCORE_WIN_W", "0.55"))
-SELF_PLAY_POOL_SCORE_DRAW_W = float(os.getenv("SELF_PLAY_POOL_SCORE_DRAW_W", "0.30"))
-SELF_PLAY_POOL_SCORE_VP_W = float(os.getenv("SELF_PLAY_POOL_SCORE_VP_W", "0.15"))
-SELF_PLAY_POOL_SCORE_EXPLORE_BONUS = float(os.getenv("SELF_PLAY_POOL_SCORE_EXPLORE_BONUS", "0.20"))
+SELF_PLAY_POOL_SCORE_WIN_W = float(os.getenv("SELF_PLAY_POOL_SCORE_WIN_W", "0.50"))
+SELF_PLAY_POOL_SCORE_DRAW_W = float(os.getenv("SELF_PLAY_POOL_SCORE_DRAW_W", "0.15"))
+SELF_PLAY_POOL_SCORE_VP_W = float(os.getenv("SELF_PLAY_POOL_SCORE_VP_W", "0.35"))
+SELF_PLAY_POOL_SCORE_EXPLORE_BONUS = float(os.getenv("SELF_PLAY_POOL_SCORE_EXPLORE_BONUS", "0.25"))
 SELF_PLAY_POOL_EMA_ENABLED = os.getenv("SELF_PLAY_POOL_EMA_ENABLED", "1") == "1"
 SELF_PLAY_POOL_EMA_ALPHA = float(os.getenv("SELF_PLAY_POOL_EMA_ALPHA", "0.15"))
 SELF_PLAY_POOL_MIN_GAMES_FOR_SMART = int(os.getenv("SELF_PLAY_POOL_MIN_GAMES_FOR_SMART", "3"))
@@ -145,10 +165,10 @@ DRAW_PIT_ALERT_STREAK = int(os.getenv("DRAW_PIT_ALERT_STREAK", "3"))
 
 BEST_EVAL_ENABLED = os.getenv("BEST_EVAL_ENABLED", "1") == "1"
 BEST_EVAL_W_WIN = float(os.getenv("BEST_EVAL_W_WIN", "1.00"))
-BEST_EVAL_W_DRAW = float(os.getenv("BEST_EVAL_W_DRAW", "0.50"))
+BEST_EVAL_W_DRAW = float(os.getenv("BEST_EVAL_W_DRAW", "0.75"))
 BEST_EVAL_W_WIPE_ENEMY = float(os.getenv("BEST_EVAL_W_WIPE_ENEMY", "0.30"))
-BEST_EVAL_W_WIPE_MODEL = float(os.getenv("BEST_EVAL_W_WIPE_MODEL", "0.20"))
-BEST_EVAL_W_VP = float(os.getenv("BEST_EVAL_W_VP", "0.25"))
+BEST_EVAL_W_WIPE_MODEL = float(os.getenv("BEST_EVAL_W_WIPE_MODEL", "0.25"))
+BEST_EVAL_W_VP = float(os.getenv("BEST_EVAL_W_VP", "0.45"))
 
 DRAW_GUARD_ENABLED = os.getenv("DRAW_GUARD_ENABLED", "1") == "1"
 DRAW_GUARD_PENALTY_STEP = float(os.getenv("DRAW_GUARD_PENALTY_STEP", "0.02"))
@@ -230,6 +250,12 @@ if SELF_PLAY_OPPONENT_MODE not in ("snapshot", "fixed_checkpoint"):
 
 
 DEFAULT_MISSION_NAME = "only_war"
+LEAGUE_ENABLE = os.getenv("LEAGUE_ENABLE", "1") == "1"
+LEARNER_SIDE = str(os.getenv("LEARNER_SIDE", "P1")).strip().upper() or "P1"
+LEARNER_FACTION = str(os.getenv("LEARNER_FACTION", "Necrons")).strip() or "Necrons"
+OPPONENT_POLICY = str(os.getenv("OPPONENT_POLICY", "mirror")).strip().lower() or "mirror"
+OPPONENT_AGENT_ID = str(os.getenv("OPPONENT_AGENT_ID", "")).strip()
+RULESET_VERSION = str(os.getenv("RULESET_VERSION", "only_war_v1")).strip() or "only_war_v1"
 IO_PROFILER = get_io_profiler()
 
 def to_np_state(s):
@@ -644,6 +670,116 @@ def append_agent_log(line: str) -> None:
     _flush_agent_log_buffer(force=False)
 
 
+def _log_train(line: str) -> None:
+    """Лог в `LOGS_FOR_AGENTS_TRAIN.md` + (опционально) в консоль."""
+    if TRAIN_LOG_TO_CONSOLE:
+        # Печатаем без timestamp, чтобы консоль не была слишком шумной.
+        print(line)
+    append_agent_log(line)
+
+
+def _units_as_inline(units: list[dict]) -> str:
+    """Компактное человеко-читаемое представление ростера."""
+    parts: list[str] = []
+    for spec in units or []:
+        name = str(spec.get("name") or "-").strip()
+        count = spec.get("count", None)
+        count_part = ""
+        try:
+            if count is not None and float(count) > 0:
+                # В roster_config count обычно целое.
+                count_part = f" x{int(float(count))}"
+        except (TypeError, ValueError):
+            pass
+
+        weapons = spec.get("weapons") or ()
+        ranged = ""
+        melee = ""
+        if isinstance(weapons, (list, tuple)) and len(weapons) >= 2:
+            ranged = str(weapons[0] or "").strip()
+            melee = str(weapons[1] or "").strip()
+        elif isinstance(weapons, str):
+            ranged = weapons.strip()
+
+        weapons_part = ""
+        if ranged and melee and ranged.lower() != "none" and melee.lower() != "none":
+            weapons_part = f" ({ranged} / {melee})"
+        elif ranged and ranged.lower() != "none":
+            weapons_part = f" ({ranged})"
+
+        parts.append(f"{name}{count_part}{weapons_part}")
+
+    return "; ".join(parts) if parts else "-"
+
+
+def _opponent_type_label(
+    *,
+    opponent_policy_net,
+    opponent_source_state: dict[str, object],
+    self_play_enabled: bool,
+) -> tuple[str, str]:
+    """Возвращает: (тип, agent_id_text)."""
+    if not self_play_enabled or opponent_policy_net is None:
+        return "эвристика (policy_net отсутствует)", "-"
+
+    source = str(opponent_source_state.get("source") or "").strip()
+    agent_id = opponent_source_state.get("id", None)
+
+    if source in {"roster", "roster_fixed"}:
+        return "policy (roster_fixed)", str(agent_id) if agent_id is not None else "-"
+    if source == "explicit":
+        # Явно заданный agent_id, но по смыслу это всё равно roster_fixed-оппонент.
+        return "policy (roster_fixed / explicit)", str(agent_id) if agent_id is not None else "-"
+    if source == "fixed_checkpoint":
+        return "policy (fixed_checkpoint)", "-"
+    if source.startswith("pool") or source in {"latest_init"}:
+        return f"policy (snapshot: {source})", f"{agent_id}" if agent_id is not None else "-"
+
+    # fallback
+    return f"policy ({source or 'unknown'})", str(agent_id) if agent_id is not None else "-"
+
+
+def _log_roster_and_opponent_summary(
+    *,
+    learner_identity: AgentIdentity,
+    roster_config: dict,
+    opponent_policy_net,
+    opponent_source_state: dict[str, object],
+    self_play_enabled: bool,
+    league_enabled: bool,
+) -> None:
+    mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+    learner_side = str(learner_identity.side or "").strip().upper() or "P1"
+    learner_faction = str(learner_identity.faction or "Unknown").strip()
+
+    opponent_side = "P2" if learner_side == "P1" else "P1"
+    opponent_faction = str(roster_config.get("enemy_faction", "Unknown")).strip()
+
+    model_units = roster_config.get("model_units", []) or []
+    enemy_units = roster_config.get("enemy_units", []) or []
+
+    opponent_type, opponent_agent_id_text = _opponent_type_label(
+        opponent_policy_net=opponent_policy_net,
+        opponent_source_state=opponent_source_state,
+        self_play_enabled=self_play_enabled,
+    )
+
+    league_hint = "включена" if league_enabled else "выключена"
+
+    # Важно для GUI: каждая строка должна начинаться с нужного префикса,
+    # иначе GUI-фильтр не покажет часть многострочного блока.
+    _log_train(f"[TRAIN][CONFIG] Миссия: {mission_name}")
+    _log_train(f"[TRAIN][CONFIG] Обучение: {learner_side} ({learner_faction})")
+    _log_train(f"[TRAIN][CONFIG] League: {league_hint}")
+
+    _log_train(f"[TRAIN][ROSTER] model_units (сторона обучения): {_units_as_inline(model_units)}")
+    _log_train(f"[TRAIN][ROSTER] enemy_units (оппонент): {_units_as_inline(enemy_units)}")
+
+    _log_train(f"[TRAIN][OPPONENT] Тип: {opponent_type}")
+    _log_train(f"[TRAIN][OPPONENT] side/faction (из ростера): {opponent_side} ({opponent_faction})")
+    _log_train(f"[TRAIN][OPPONENT] agent_id: {opponent_agent_id_text}")
+
+
 _TRAIN_LOG_BUFFER: list[str] = []
 _TRAIN_LOG_LOCK = threading.Lock()
 _TRAIN_LOG_LAST_FLUSH = time.monotonic()
@@ -790,9 +926,21 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                 conn.send(sizes)
             elif cmd == "save_pickle":
                 try:
-                    with open(payload, "wb") as file:
+                    legacy_path = payload
+                    human_path = None
+                    if isinstance(payload, dict):
+                        legacy_path = payload.get("legacy")
+                        human_path = payload.get("human")
+                    if not legacy_path:
+                        raise ValueError("save_pickle: legacy path is empty")
+                    os.makedirs(os.path.dirname(str(legacy_path)) or ".", exist_ok=True)
+                    with open(legacy_path, "wb") as file:
                         pickle.dump([env, model, enemy], file)
-                    conn.send({"ok": True, "path": payload})
+                    if human_path and str(human_path) != str(legacy_path):
+                        os.makedirs(os.path.dirname(str(human_path)) or ".", exist_ok=True)
+                        with open(human_path, "wb") as file:
+                            pickle.dump([env, model, enemy], file)
+                    conn.send({"ok": True, "path": legacy_path, "human_path": human_path})
                 except Exception as exc:
                     conn.send({"ok": False, "error": str(exc)})
             elif cmd == "close":
@@ -1018,6 +1166,20 @@ def main():
     
     roster_config = _load_roster_config()
     totLifeT = roster_config["totLifeT"]
+    episodes_override_raw = str(os.getenv("TRAIN_EPISODES_OVERRIDE", "")).strip()
+    if episodes_override_raw:
+        try:
+            episodes_override = max(1, int(episodes_override_raw))
+            totLifeT = episodes_override
+        except ValueError:
+            warn_line = (
+                "[TRAIN][WARN] TRAIN_EPISODES_OVERRIDE не число. "
+                "Где: train.py (main). Что делать дальше: используйте целое > 0."
+            )
+            if TRAIN_LOG_TO_FILE:
+                append_agent_log(warn_line)
+            if TRAIN_LOG_TO_CONSOLE:
+                print(warn_line)
     b_len = roster_config["b_len"]
     b_hei = roster_config["b_hei"]
     
@@ -1109,6 +1271,7 @@ def main():
             f"DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE={int(manual_in_rl_phase)} "
             f"stdin_is_tty={int(stdin_is_tty)} "
             f"EVAL_WINDOW_EPISODES={EVAL_WINDOW_EPISODES} "
+            f"TRAIN_EPISODES_OVERRIDE={(episodes_override_raw if episodes_override_raw else 'off')} "
             f"DRAW_PIT_ALERT_RATE={DRAW_PIT_ALERT_RATE:.2f} "
             f"DRAW_PIT_ALERT_WIN_MAX={DRAW_PIT_ALERT_WIN_MAX:.2f} "
             f"BEST_EVAL_ENABLED={int(BEST_EVAL_ENABLED)} "
@@ -1144,14 +1307,6 @@ def main():
     verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
     log_fn = print if verbose else None
     
-    if os.path.isfile("gui/data.json"):
-        print("Model Units:\n")
-        for spec in roster_config["model_units"]:
-            print("Name:", spec["name"], "Weapons: ", spec["weapons"][0], spec["weapons"][1])
-        print("Enemy Units:\n")
-        for spec in roster_config["enemy_units"]:
-            print("Name:", spec["name"], "Weapons: ", spec["weapons"][0], spec["weapons"][1])
-    
     if USE_SUBPROC_ENVS:
         ctx = mp.get_context("spawn")
         for env_idx in range(vec_env_count):
@@ -1185,19 +1340,9 @@ def main():
                 log_fn=print if env_idx == 0 else None,
             )
             if verbose and env_idx == 0:
+                # Юниты/ростеры уже выводятся единым “шапочным” блоком выше по логике.
+                # Здесь оставляем только компактный sanity-check по количеству.
                 print(f"[roster] model_units={len(model)} enemy_units={len(enemy)}")
-                for idx, unit in enumerate(model):
-                    unit_data = unit.showUnitData()
-                    unit_name = unit_data.get("Name", "Unknown")
-                    unit_models = unit_data.get("#OfModels", 1)
-                    print(f"[roster] model[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
-                for idx, unit in enumerate(enemy):
-                    unit_data = unit.showUnitData()
-                    unit_name = unit_data.get("Name", "Unknown")
-                    unit_models = unit_data.get("#OfModels", 1)
-                    print(f"[roster] enemy[{idx}] name={unit_name} instance_id={unit.instance_id} models={unit_models}")
-                print(f"[MISSION Only War] Attacker={attacker_side}, Defender={defender_side}")
-                print("Units:", [(u.name, u.instance_id, u.models_count) for u in model])
     
             deploy_for_mission(
                 mission_name,
@@ -1281,6 +1426,23 @@ def main():
         n_observations = len(list(state.values()))
     else:
         n_observations = int(np.array(state).shape[0])
+
+    learner_side_cfg = LEARNER_SIDE if LEARNER_SIDE in {"P1", "P2"} else "P1"
+    learner_identity = AgentIdentity(
+        side=learner_side_cfg,
+        faction=LEARNER_FACTION,
+        ruleset_version=RULESET_VERSION,
+    ).normalized()
+    env_contract = make_env_contract(
+        n_observations=n_observations,
+        n_actions=n_actions,
+        mission_name=normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME)),
+        ruleset_version=learner_identity.ruleset_version,
+        extras={
+            "vec_env_count": int(vec_env_count),
+            "self_play_enabled": int(SELF_PLAY_ENABLED),
+        },
+    )
     
     if USE_COMPILE and torch.cuda.is_available():
         torch.backends.cudnn.benchmark = True
@@ -1416,10 +1578,111 @@ def main():
 
         picked = random.choice(candidates)
         return picked["state_dict"], "pool_random", int(picked.get("id")), None
+
+    def _choose_opponent_from_roster(
+        *,
+        desired_side: str,
+        desired_faction: str,
+        learner_contract: dict[str, object],
+    ):
+        """
+        Выбираем оппонента строго по ростеру:
+        - desired_side: противоположная side (P1/P2)
+        - desired_faction: фракция с противоположной стороны из roster_config
+        """
+        desired_side_norm = str(desired_side or "").strip().upper()
+        desired_faction_norm = str(desired_faction or "").strip().lower()
+        candidates: list[dict[str, object]] = []
+
+        def _load_contract_by_entry(entry: dict[str, object]) -> dict[str, object]:
+            contract_path = entry.get("contract_path")
+            if not contract_path:
+                return {}
+            try:
+                with open(contract_path, "r", encoding="utf-8") as handle:
+                    payload = json.load(handle)
+                return payload if isinstance(payload, dict) else {}
+            except Exception:
+                return {}
+
+        for entry in list_agents():
+            entry_side = str(entry.get("side", "")).strip().upper()
+            if entry_side != desired_side_norm:
+                continue
+            entry_faction = str(entry.get("faction", "")).strip().lower()
+            if entry_faction != desired_faction_norm:
+                continue
+            contract = _load_contract_by_entry(entry)
+            ok_contract, _ = compatible_contracts(learner_contract, contract)
+            if not ok_contract:
+                continue
+            candidates.append(entry)
+
+        if not candidates:
+            return None
+
+        # Если несколько кандидатов: берем самый свежий по updated_at.
+        candidates.sort(key=lambda e: str(e.get("updated_at", "")), reverse=True)
+        chosen = candidates[0]
+        return {
+            "agent_id": str(chosen.get("agent_id", "")),
+            "source": "roster",
+            "reason": f"side={desired_side_norm}, faction={desired_faction_norm}",
+        }
     if SELF_PLAY_ENABLED:
         opponent_policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
         opponent_policy_net.eval()
-        if SELF_PLAY_OPPONENT_MODE == "fixed_checkpoint":
+        league_pick = None
+        if LEAGUE_ENABLE:
+            desired_side = "P2" if str(learner_identity.side).upper() == "P1" else "P1"
+            desired_faction = roster_config.get("enemy_faction", "")
+
+            if OPPONENT_AGENT_ID:
+                try:
+                    payload_explicit = load_agent_by_id(OPPONENT_AGENT_ID)
+                    entry = payload_explicit.get("entry", {}) if isinstance(payload_explicit, dict) else {}
+                    entry_side = str(entry.get("side", "")).strip().upper()
+                    entry_faction = str(entry.get("faction", "")).strip().lower()
+                    if entry_side == desired_side and entry_faction == str(desired_faction).strip().lower():
+                        league_pick = {"agent_id": OPPONENT_AGENT_ID, "source": "explicit"}
+                    else:
+                        append_agent_log(
+                            "[LEAGUE][WARN] OPPONENT_AGENT_ID задан, но side/faction не совпадают с ростером. "
+                            f"skip explicit agent_id={OPPONENT_AGENT_ID} entry_side={entry_side} entry_faction={entry_faction} "
+                            f"desired_side={desired_side} desired_faction={str(desired_faction).strip().lower()}"
+                        )
+                except Exception as exc:
+                    append_agent_log(
+                        "[LEAGUE][WARN] OPPONENT_AGENT_ID задан, но не удалось загрузить/проверить агент. "
+                        f"skip explicit agent_id={OPPONENT_AGENT_ID}. exc={exc}"
+                    )
+
+            if league_pick is None:
+                picked = _choose_opponent_from_roster(
+                    desired_side=desired_side,
+                    desired_faction=desired_faction,
+                    learner_contract=env_contract,
+                )
+                if picked is not None:
+                    league_pick = picked
+        if league_pick is not None:
+            selected_id = str(league_pick["agent_id"])
+            payload = load_agent_by_id(selected_id)
+            ok_contract, mismatch_reason = compatible_contracts(env_contract, payload.get("contract", {}))
+            if not ok_contract:
+                raise ValueError(
+                    f"Несовместимый агент-оппонент '{selected_id}': {mismatch_reason}. "
+                    "Что делать: переобучите агента с тем же ruleset/action/obs контрактом."
+                )
+            loaded_policy = normalize_state_dict(payload["policy_state"])
+            opponent_policy_net.load_state_dict(loaded_policy)
+            opponent_source_state["source"] = str(league_pick.get("source", "registry"))
+            opponent_source_state["id"] = selected_id
+            opponent_source_state["score"] = league_pick.get("reason")
+            append_agent_log(
+                f"[LEAGUE] выбран оппонент agent_id={selected_id} source={opponent_source_state['source']} mode=roster_fixed"
+            )
+        elif SELF_PLAY_OPPONENT_MODE == "fixed_checkpoint":
             if not SELF_PLAY_FIXED_PATH:
                 raise ValueError("SELF_PLAY_FIXED_PATH обязателен для режима fixed_checkpoint.")
             if not os.path.isfile(SELF_PLAY_FIXED_PATH):
@@ -1503,6 +1766,16 @@ def main():
                 min(SELF_PLAY_OPPONENT_EPSILON_MAX, SELF_PLAY_OPPONENT_EPSILON_MAX),
             )
         )
+
+    # Один понятный блок вместо нагромождений:
+    _log_roster_and_opponent_summary(
+        learner_identity=learner_identity,
+        roster_config=roster_config,
+        opponent_policy_net=opponent_policy_net,
+        opponent_source_state=opponent_source_state,
+        self_play_enabled=SELF_PLAY_ENABLED,
+        league_enabled=LEAGUE_ENABLE,
+    )
     
     scaler = torch.cuda.amp.GradScaler(enabled=USE_AMP)
     
@@ -1568,7 +1841,8 @@ def main():
             value = value.replace(ch, "_")
         return value
     
-    safe_name = _sanitize_fs_name(name)
+    side_tag = f"{learner_identity.side}_{learner_identity.faction}"
+    safe_name = _sanitize_fs_name(f"{name}__learner_{side_tag}")
     fold = "models/" + safe_name
     fileName = fold+"/model-"+date+".pickle"
     randNum = np.random.randint(0, 10000000)
@@ -1668,7 +1942,7 @@ def main():
         wipeout_model = 0
         turn_limit = 0
         vp_diff_sum = 0.0
-        for _ in range(DET_EVAL_EPISODES):
+        for eval_i in range(DET_EVAL_EPISODES):
             eval_enemy, eval_model = _build_units_from_config(roster_config, b_len, b_hei)
             mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
             attacker_side, defender_side = roll_off_attacker_defender(manual_roll_allowed=False, log_fn=None)
@@ -1721,6 +1995,7 @@ def main():
             end_reason_eval = info_eval.get("end reason", "")
             vp_diff_eval = int(info_eval.get("model VP", 0)) - int(info_eval.get("player VP", 0))
             vp_diff_sum += float(vp_diff_eval)
+
             if end_reason_eval == "wipeout_enemy":
                 wins += 1
                 wipeout_enemy += 1
@@ -2054,6 +2329,21 @@ def main():
     
                 resolved_winner = "model" if result == "win" else ("enemy" if result == "loss" else "draw")
                 resolved_end_reason = end_reason_env or end_reason
+                learner_episode_agent_id = f"{learner_identity.side}_{learner_identity.faction}_live"
+                opponent_agent_id = (
+                    str(opponent_source_state.get("id"))
+                    if opponent_source_state.get("id") is not None
+                    else "heuristic_or_snapshot"
+                )
+                if LEAGUE_ENABLE:
+                    record_matchup(
+                        learner_agent_id=learner_episode_agent_id,
+                        opponent_agent_id=opponent_agent_id,
+                        win=(result == "win"),
+                        draw=(result == "draw"),
+                        vp_diff=float(vp_diff),
+                        reason=str(resolved_end_reason),
+                    )
                 if TRAIN_LOG_TO_FILE:
                     append_agent_log(
                         "Конец эпизода: "
@@ -2298,6 +2588,21 @@ def main():
                             },
                             checkpoint_path,
                         )
+                    periodic_agent_id = build_agent_id(learner_identity, f"ep{total_episode}")
+                    save_agent_artifact(
+                        identity=learner_identity,
+                        agent_id=periodic_agent_id,
+                        env_contract=env_contract,
+                        policy_state_dict=normalize_state_dict(policy_net.state_dict()),
+                        target_state_dict=normalize_state_dict(target_net.state_dict()),
+                        optimizer_state_dict=optimizer.state_dict(),
+                        extra_meta={
+                            "episode": int(total_episode),
+                            "legacy_checkpoint_path": checkpoint_path,
+                            "opponent_source": opponent_source_state.get("source"),
+                            "opponent_id": opponent_source_state.get("id"),
+                        },
+                    )
                     if TRAIN_LOG_ENABLED:
                         save_line = f"[TRAIN][SAVE] ep={total_episode} path={checkpoint_path}"
                         if TRAIN_LOG_TO_FILE:
@@ -2341,10 +2646,17 @@ def main():
                             opponent_pool_entries.append(_create_pool_entry(latest_policy_state))
                         selected_state, selected_source, selected_id, selected_score = _choose_opponent_from_pool(latest_policy_state)
                         _load_opponent_state(selected_state, selected_source, source_id=selected_id, source_score=selected_score)
-                        append_agent_log(
-                            "[SELFPLAY] opponent snapshot updated "
-                            f"at episode {total_episode} source={selected_source} "
-                            f"picked_id={selected_id} picked_score={selected_score} "
+                        opponent_type, opponent_agent_id_text = _opponent_type_label(
+                            opponent_policy_net=opponent_policy_net,
+                            opponent_source_state=opponent_source_state,
+                            self_play_enabled=True,
+                        )
+                        enemy_units_inline = _units_as_inline(roster_config.get("enemy_units", []) or [])
+                        _log_train(
+                            f"[TRAIN][OPPONENT] Snapshot обновлен: эпизод={total_episode} "
+                            f"тип={opponent_type} agent_id={opponent_agent_id_text} "
+                            f"Enemy units={enemy_units_inline} "
+                            f"pool_source={selected_source} picked_id={selected_id} picked_score={selected_score} "
                             f"pool_size={len(opponent_pool_entries)}"
                         )
                 _run_deterministic_eval(total_episode)
@@ -2564,6 +2876,25 @@ def main():
             },
             ("models/{}/model-{}.pth".format(safe_name, date)),
         )
+    final_agent_id = build_agent_id(learner_identity, f"final_ep{resume_episode_base + numLifeT}")
+    artifact_dir = save_agent_artifact(
+        identity=learner_identity,
+        agent_id=final_agent_id,
+        env_contract=env_contract,
+        policy_state_dict=normalize_state_dict(policy_net.state_dict()),
+        target_state_dict=normalize_state_dict(target_net.state_dict()),
+        optimizer_state_dict=optimizer.state_dict(),
+        extra_meta={
+            "episode": int(resume_episode_base + numLifeT),
+            "legacy_model_tag": f"{safe_name}/model-{date}",
+            "opponent_policy": "roster_fixed",
+            "opponent_source": opponent_source_state.get("source"),
+            "opponent_id": opponent_source_state.get("id"),
+            "learner_side": learner_identity.side,
+            "learner_faction": learner_identity.faction,
+        },
+    )
+    append_agent_log(f"[LEAGUE][SAVE] agent_id={final_agent_id} artifact_dir={artifact_dir}")
     train_elapsed_s = time.perf_counter() - train_start_time
     model_tag = f"{safe_name}/model-{date}"
     save_training_summary(
@@ -2573,14 +2904,31 @@ def main():
         elapsed_s=train_elapsed_s,
     )
 
+    final_episode = int(resume_episode_base + numLifeT)
+    mission_tag = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+    # Человекочитаемое имя для pickle (для удобства выбора в GUI).
+    # legacy-путь сохраняем, чтобы не ломать старые сценарии/парсинг метрик.
+    mission_tag_s = _sanitize_fs_name(mission_tag)
+    human_pickle_path = os.path.join(
+        fold,
+        f"model-{date}_{learner_identity.side}_{learner_identity.faction}_{mission_tag_s}_final_ep{final_episode}.pickle",
+    )
+
     if "env" in primary_ctx and "model" in primary_ctx and "enemy" in primary_ctx:
         toSave = [primary_ctx["env"], primary_ctx["model"], primary_ctx["enemy"]]
         with open(fileName, "wb") as file:
             pickle.dump(toSave, file)
+        # Дублируем в человекочитаемый файл (single final save).
+        try:
+            with open(human_pickle_path, "wb") as file:
+                pickle.dump(toSave, file)
+        except Exception:
+            # Не критично: legacy-модель уже сохранена.
+            pass
     else:
         if USE_SUBPROC_ENVS:
             try:
-                primary_ctx["conn"].send(("save_pickle", fileName))
+                primary_ctx["conn"].send(("save_pickle", {"legacy": fileName, "human": human_pickle_path}))
                 save_resp = primary_ctx["conn"].recv()
             except (BrokenPipeError, EOFError, OSError) as exc:
                 err_line = (
