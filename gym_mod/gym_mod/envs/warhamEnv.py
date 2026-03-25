@@ -1,6 +1,11 @@
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
+try:
+    # Ускорение сканов целей (numba опционально).
+    from gym_mod.engine.hotloops import scan_targets_in_range
+except Exception:  # pragma: no cover
+    scan_targets_in_range = None
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -5213,9 +5218,22 @@ class Warhammer40kEnv(gym.Env):
                     self._log_unit("MODEL", modelName, i, "Advance — чардж невозможен.")
                 else:
                     potential_targets = []
-                    for j in range(len(self.enemy_health)):
-                        if distance(self.enemy_coords[j], self.unit_coords[i]) <= 12 and self.enemyInAttack[j][0] == 0 and self.enemy_health[j] > 0:
-                            potential_targets.append(j)
+                    if scan_targets_in_range is not None:
+                        coords = np.asarray(self.enemy_coords, dtype=np.float64)
+                        health = np.asarray(self.enemy_health, dtype=np.float64)
+                        in_attack = np.asarray([int(x[0]) for x in self.enemyInAttack], dtype=np.int8)
+                        idxs, _used_numba = scan_targets_in_range(
+                            np.asarray(self.unit_coords[i], dtype=np.float64),
+                            coords,
+                            health,
+                            in_attack,
+                            12.0,
+                        )
+                        potential_targets = [int(x) for x in idxs.tolist()]
+                    else:
+                        for j in range(len(self.enemy_health)):
+                            if distance(self.enemy_coords[j], self.unit_coords[i]) <= 12 and self.enemyInAttack[j][0] == 0 and self.enemy_health[j] > 0:
+                                potential_targets.append(j)
                     if potential_targets:
                         any_charge_targets = True
                     if action["attack"] != 1:
@@ -5234,10 +5252,15 @@ class Warhammer40kEnv(gym.Env):
                     dice_vals = dice(num=2)
                     diceRoll = sum(dice_vals)
                     if action["attack"] == 1:
-                        for j in range(len(self.enemy_health)):
-                            if distance(self.enemy_coords[j], self.unit_coords[i]) <= 12 and self.enemyInAttack[j][0] == 0 and self.enemy_health[j] > 0:
+                        if potential_targets:
+                            for j in potential_targets:
                                 if distance(self.enemy_coords[j], self.unit_coords[i]) - diceRoll <= 5:
                                     chargeAble.append(j)
+                        else:
+                            for j in range(len(self.enemy_health)):
+                                if distance(self.enemy_coords[j], self.unit_coords[i]) <= 12 and self.enemyInAttack[j][0] == 0 and self.enemy_health[j] > 0:
+                                    if distance(self.enemy_coords[j], self.unit_coords[i]) - diceRoll <= 5:
+                                        chargeAble.append(j)
                     if len(chargeAble) > 0:
                         idOfE = action["charge"]
                         target_list = self._format_unit_choices("enemy", chargeAble)

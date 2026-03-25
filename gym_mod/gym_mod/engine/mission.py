@@ -29,7 +29,8 @@ ONLY_WAR_DEPLOY_DEPTH_RATIO = 0.25
 
 # TODO(Only War): support post-deploy units ("set up after both armies deployed").
 # Currently no post-deploy units supported.
-MAX_BATTLE_ROUNDS = 10
+# Only War: увеличиваем лимит раундов в 2 раза (меньше ничьих по turn_limit).
+MAX_BATTLE_ROUNDS = 20
 START_SCORING_ROUND = reward_cfg.VP_START_SCORING_ROUND
 VP_CAP_PER_COMMAND = reward_cfg.VP_CAP_PER_COMMAND
 

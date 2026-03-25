@@ -58,6 +58,7 @@ class GUIController(QtCore.QObject):
     selfPlayFromCheckpointChanged = QtCore.Signal(bool)
     resumeFromCheckpointChanged = QtCore.Signal(bool)
     disableTrainLoggingChanged = QtCore.Signal(bool)
+    actorLearnerChanged = QtCore.Signal(bool)
     autoClearLogsChanged = QtCore.Signal(bool)
     factionIconSizeChanged = QtCore.Signal(int)
     unitIconSizeChanged = QtCore.Signal(int)
@@ -138,6 +139,7 @@ class GUIController(QtCore.QObject):
         self._self_play_from_checkpoint = False
         self._resume_from_checkpoint = False
         self._disable_train_logging = False
+        self._actor_learner = str(os.getenv("ACTOR_LEARNER", "0")).strip() == "1"
         self._auto_clear_logs = True
         self._unit_faction_by_name: dict[str, str] = {}
         self._deployment_mode_options = ["manual_player", "auto", "rl_phase"]
@@ -372,6 +374,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(bool, notify=disableTrainLoggingChanged)
     def disableTrainLogging(self) -> bool:
         return self._disable_train_logging
+
+    @QtCore.Property(bool, notify=actorLearnerChanged)
+    def actorLearner(self) -> bool:
+        return self._actor_learner
 
     @QtCore.Property(bool, notify=autoClearLogsChanged)
     def autoClearLogs(self) -> bool:
@@ -749,6 +755,14 @@ class GUIController(QtCore.QObject):
             return
         self._disable_train_logging = flag
         self.disableTrainLoggingChanged.emit(flag)
+
+    @QtCore.Slot(bool)
+    def set_actor_learner(self, value: bool) -> None:
+        flag = bool(value)
+        if self._actor_learner == flag:
+            return
+        self._actor_learner = flag
+        self.actorLearnerChanged.emit(flag)
 
     @QtCore.Slot(bool)
     def set_auto_clear_logs(self, value: bool) -> None:
@@ -1520,6 +1534,15 @@ class GUIController(QtCore.QObject):
             status_prefix = "Обучение"
             env_overrides["NUM_ENVS"] = "12"
             env_overrides["USE_SUBPROC_ENVS"] = "1"
+            if self._actor_learner:
+                # Preset Actor-Learner для train8x: CPU акторы генерят transitions, GPU learner учится.
+                env_overrides["ACTOR_LEARNER"] = "1"
+                env_overrides["USE_SUBPROC_ENVS"] = "0"
+                env_overrides.setdefault("NUM_ACTORS", "8")
+                env_overrides.setdefault("ACTOR_BATCH_SEND", "64")
+                env_overrides.setdefault("UPDATES_PER_BATCH", "8")
+                env_overrides.setdefault("ACTOR_QUEUE_MAX", "256")
+                env_overrides.setdefault("ACTOR_EVAL_EPISODES", "20")
         elif mode == "selfplay":
             train_label = "SELFPLAY"
             status_prefix = "Самообучение"
@@ -1551,6 +1574,9 @@ class GUIController(QtCore.QObject):
         elif selected_opponent_source == "latest_snapshot":
             env_overrides["SELF_PLAY_ENABLED"] = "1"
             env_overrides["SELF_PLAY_OPPONENT_MODE"] = env_overrides.get("SELF_PLAY_OPPONENT_MODE", "snapshot")
+            # Для Actor-Learner self-play нам нужен конкретный agent_id (чтобы акторы могли загрузить снапшот).
+            if self._selected_specific_opponent_id:
+                env_overrides["OPPONENT_AGENT_ID"] = self._selected_specific_opponent_id
         elif selected_opponent_source == "specific_agent":
             if not self._selected_specific_opponent_id:
                 self._emit_status(
@@ -1563,6 +1589,17 @@ class GUIController(QtCore.QObject):
             env_overrides["SELF_PLAY_OPPONENT_MODE"] = "snapshot"
             env_overrides["OPPONENT_AGENT_ID"] = self._selected_specific_opponent_id
             env_overrides.pop("SELF_PLAY_FIXED_PATH", None)
+
+        # Actor-Learner preset для self-play тоже (ускоряет генерацию данных при snapshot-opponent).
+        if mode == "selfplay" and self._actor_learner:
+            env_overrides["ACTOR_LEARNER"] = "1"
+            # в actor-learner мы не используем vec-env пайплайн
+            env_overrides["USE_SUBPROC_ENVS"] = "0"
+            env_overrides.setdefault("NUM_ACTORS", "8")
+            env_overrides.setdefault("ACTOR_BATCH_SEND", "64")
+            env_overrides.setdefault("UPDATES_PER_BATCH", "8")
+            env_overrides.setdefault("ACTOR_QUEUE_MAX", "256")
+            env_overrides.setdefault("ACTOR_EVAL_EPISODES", "20")
 
         if self._resume_from_checkpoint:
             resume_path = self._find_latest_resume_file()
@@ -1583,6 +1620,7 @@ class GUIController(QtCore.QObject):
             f"mode={mode}, self_play_from_checkpoint={int(self._self_play_from_checkpoint)}, "
             f"resume={int(self._resume_from_checkpoint)}, auto_clear_logs={int(self._auto_clear_logs)}, "
             f"disable_train_logging={int(self._disable_train_logging)}, "
+            f"actor_learner={int(self._actor_learner)}, "
             f"opponent_source={selected_opponent_source}, "
             f"opponent_agent_id={self._selected_specific_opponent_id or '-'}",
             level="INFO",
@@ -2181,6 +2219,15 @@ class GUIController(QtCore.QObject):
         return True
 
     def _select_latest_metrics(self) -> bool:
+        # Сначала пробуем самый свежий data_*.json — это работает и для actor-learner,
+        # и для обычных прогонов, и не зависит от наличия .pickle.
+        latest_json = self._find_latest_metrics_json()
+        if latest_json and self._load_metrics_from_json(latest_json):
+            self._metrics_label = f"Файл: {os.path.basename(latest_json)}"
+            self.metricsLabelChanged.emit(self._metrics_label)
+            return True
+
+        # Фолбэк: если есть .pickle — пытаемся маппить его на data_<metrics_id>.json.
         latest_model = self._find_latest_model_file()
         if latest_model:
             metrics_id = self._extract_metrics_id(latest_model)
@@ -2190,11 +2237,7 @@ class GUIController(QtCore.QObject):
                     self._metrics_label = f"Файл: {os.path.basename(latest_model)}"
                     self.metricsLabelChanged.emit(self._metrics_label)
                     return True
-        latest_json = self._find_latest_metrics_json()
-        if latest_json and self._load_metrics_from_json(latest_json):
-            self._metrics_label = f"Файл: {os.path.basename(latest_json)}"
-            self.metricsLabelChanged.emit(self._metrics_label)
-            return True
+
         self._set_metrics_files(dict(self._metrics_defaults))
         self._metrics_label = "По умолчанию"
         self._metrics_run_id = ""

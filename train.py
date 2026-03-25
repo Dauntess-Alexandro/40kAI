@@ -15,6 +15,7 @@ import time
 import multiprocessing as mp
 import threading
 import atexit
+import queue as mp_queue
 from tqdm import tqdm
 from gym_mod.envs.warhamEnv import *
 from gym_mod.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
@@ -44,6 +45,10 @@ from model.DQN import *
 from model.memory import *
 from model.utils import *
 
+# Workaround: на некоторых окружениях torch._dynamo падает из-за несовместимого triton.
+# Важно: используем setdefault, чтобы пользователь мог включить dynamo вручную.
+os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -63,6 +68,39 @@ if os.getenv("TORCH_OPTIMIZER_NO_DYNAMO", "1") == "1":
         Optimizer.state_dict = Optimizer.state_dict.__wrapped__
     if hasattr(Optimizer.load_state_dict, "__wrapped__"):
         Optimizer.load_state_dict = Optimizer.load_state_dict.__wrapped__
+
+def _unwrap_wrapped_callable(fn):
+    base = fn
+    while hasattr(base, "__wrapped__"):
+        base = base.__wrapped__
+    return base
+
+def _patch_optimizer_methods_no_compile(optimizer) -> None:
+    """
+    На некоторых сборках PyTorch оптимизаторные методы обёрнуты torch._compile wrapper,
+    что тянет torch._dynamo и падает на несовместимом triton. Здесь просто снимаем обёртки.
+    """
+    try:
+        base_zero_grad = _unwrap_wrapped_callable(optimizer.zero_grad)
+        optimizer.zero_grad = base_zero_grad.__get__(optimizer, optimizer.__class__)
+    except Exception:
+        pass
+
+    # optimizer.step в новых torch может идти через wrapper/_use_grad, который импортит torch._dynamo.
+    # Снимаем обёртки и гарантируем no_grad вручную, чтобы:
+    # - не трогать torch._dynamo (triton incompat)
+    # - не ловить "leaf Variable ... in-place" (нужно no_grad)
+    try:
+        base_step = _unwrap_wrapped_callable(optimizer.step)
+        bound_step = base_step.__get__(optimizer, optimizer.__class__)
+
+        def _step_no_grad(*args, **kwargs):
+            with torch.no_grad():
+                return bound_step(*args, **kwargs)
+
+        optimizer.step = _step_no_grad
+    except Exception:
+        pass
 
 
 import warnings
@@ -92,7 +130,7 @@ REWARD_DEBUG_EVERY = int(os.getenv("REWARD_DEBUG_EVERY", "200"))
 TRAIN_LOG_ENABLED = os.getenv("TRAIN_LOG_ENABLED", "1") == "1"
 TRAIN_LOG_EVERY_UPDATES = int(os.getenv("TRAIN_LOG_EVERY_UPDATES", "200"))
 TRAIN_LOG_TO_FILE = os.getenv("TRAIN_LOG_TO_FILE", "1") == "1"
-TRAIN_LOG_TO_CONSOLE = os.getenv("TRAIN_LOG_TO_CONSOLE", "0") == "1"
+TRAIN_LOG_TO_CONSOLE = str(os.getenv("TRAIN_LOG_TO_CONSOLE", "0")).strip() == "1"
 TRAIN_DEBUG = os.getenv("TRAIN_DEBUG", "0") == "1"
 LOG_EVERY = int(os.getenv("LOG_EVERY", "200"))
 if TRAIN_LOG_EVERY_UPDATES < 1:
@@ -134,7 +172,7 @@ USE_SUBPROC_ENVS = os.getenv("USE_SUBPROC_ENVS", "0") == "1"
 # ===== self-play config =====
 SELF_PLAY_ENABLED = os.getenv("SELF_PLAY_ENABLED", "0") == "1"
 SELF_PLAY_UPDATE_EVERY_EPISODES = int(os.getenv("SELF_PLAY_UPDATE_EVERY_EPISODES", "50"))
-SELF_PLAY_OPPONENT_MODE = os.getenv("SELF_PLAY_OPPONENT_MODE", "snapshot")
+SELF_PLAY_OPPONENT_MODE = str(os.getenv("SELF_PLAY_OPPONENT_MODE", "snapshot")).strip()
 SELF_PLAY_FIXED_PATH = os.getenv("SELF_PLAY_FIXED_PATH", "")
 SELF_PLAY_OPPONENT_EPSILON = float(os.getenv("SELF_PLAY_OPPONENT_EPSILON", "0.0"))
 SELF_PLAY_OPPONENT_EPSILON_MIN = float(os.getenv("SELF_PLAY_OPPONENT_EPSILON_MIN", str(SELF_PLAY_OPPONENT_EPSILON)))
@@ -660,6 +698,19 @@ def save_heuristic_metrics_snapshot(run_id: str, ep_rows: list[dict] | None = No
     turn_limit_rate = 0.0
 
     try:
+        def _safe_float(token: str) -> float | None:
+            if token is None:
+                return None
+            s = str(token).strip()
+            # Иногда парсер цепляет кусок timestamp/мусор (например "0.8162026-03-25").
+            m = re.match(r"^[+-]?\d+(?:\.\d+)?", s)
+            if not m:
+                return None
+            try:
+                return float(m.group(0))
+            except ValueError:
+                return None
+
         with open(log_path, "r", encoding="utf-8", errors="replace") as handle:
             all_lines = handle.readlines()
             start_idx = 0
@@ -676,10 +727,14 @@ def save_heuristic_metrics_snapshot(run_id: str, ep_rows: list[dict] | None = No
                         role_counts[role_match.group(1)] += 1
                     risk_match = re.search(r"risk=([-\d\.]+)", line)
                     if risk_match:
-                        risk_vals.append(float(risk_match.group(1)))
+                        v = _safe_float(risk_match.group(1))
+                        if v is not None:
+                            risk_vals.append(v)
                     cover_match = re.search(r"cover=([-\d\.]+)", line)
                     if cover_match:
-                        cover_vals.append(float(cover_match.group(1)))
+                        v = _safe_float(cover_match.group(1))
+                        if v is not None:
+                            cover_vals.append(v)
                 if "[ENEMY][HEUR][CHARGE]" in line:
                     charge_attempts += 1
                 if "Reward (чардж): success_bonus" in line:
@@ -689,14 +744,22 @@ def save_heuristic_metrics_snapshot(run_id: str, ep_rows: list[dict] | None = No
                 if "[ENEMY][HEUR][SHOOT]" in line:
                     ovk_match = re.findall(r"ovk=([-\d\.]+)", line)
                     for token in ovk_match:
-                        shoot_overkill_vals.append(float(token))
+                        v = _safe_float(token)
+                        if v is not None:
+                            shoot_overkill_vals.append(v)
                 if "[TRAIN][ACTIONS]" in line:
                     invalid_block = re.search(r"invalid_rate=\{([^}]*)\}", line)
                     if invalid_block:
                         vals = re.findall(r":([0-9\.]+)", invalid_block.group(1))
                         if vals:
-                            avg_inv = sum(float(v) for v in vals) / len(vals)
-                            invalid_vals.append(avg_inv)
+                            try:
+                                parsed = [x for x in (_safe_float(v) for v in vals) if x is not None]
+                                if not parsed:
+                                    continue
+                                avg_inv = sum(parsed) / len(parsed)
+                                invalid_vals.append(avg_inv)
+                            except ValueError:
+                                pass
                 if "[EVAL][DET]" in line:
                     m = re.search(r"win_rate=([0-9\.]+)", line)
                     if m:
@@ -935,6 +998,12 @@ atexit.register(lambda: _flush_agent_log_buffer(force=True))
 def _env_worker(conn, roster_config, b_len, b_hei, trunc):
     try:
         lean_info_enabled = os.getenv("TRAIN_LEAN_INFO", "1") == "1"
+        include_masks = os.getenv("TRAIN_IPC_INCLUDE_MASKS", "1") == "1"
+
+        def _to_np_state(state):
+            if isinstance(state, (dict, collections.OrderedDict)):
+                return np.array(list(state.values()), dtype=np.float32)
+            return np.array(state, dtype=np.float32)
 
         def _lean_train_info(info):
             if not isinstance(info, dict):
@@ -974,11 +1043,14 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
         env.defender_side = defender_side
 
         state, info = env.reset(options={"m": model, "e": enemy, "Type": "big", "trunc": True})
+        state = _to_np_state(state)
+        shoot_mask = build_shoot_action_mask(env, log_fn=None, debug=False) if include_masks else None
         conn.send(
             {
                 "state": state,
                 "info": info,
                 "len_model": len(model),
+                "shoot_mask": shoot_mask,
             }
         )
 
@@ -990,9 +1062,13 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                 conn.send(True)
             elif cmd == "step":
                 next_observation, reward, done, res, info = env.step(payload)
+                next_observation = _to_np_state(next_observation)
                 if lean_info_enabled:
                     info = _lean_train_info(info)
-                conn.send((next_observation, reward, done, res, info))
+                next_mask = None
+                if include_masks and not done:
+                    next_mask = build_shoot_action_mask(env, log_fn=None, debug=False)
+                conn.send((next_observation, reward, done, res, info, next_mask))
             elif cmd == "reset":
                 mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
                 attacker_side, defender_side = roll_off_attacker_defender(
@@ -1028,7 +1104,9 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                 state, info = env.reset(
                     options={"m": model, "e": enemy, "Type": "small", "trunc": True}
                 )
-                conn.send((state, info))
+                state = _to_np_state(state)
+                mask = build_shoot_action_mask(env, log_fn=None, debug=False) if include_masks else None
+                conn.send((state, info, mask))
             elif cmd == "get_shoot_mask":
                 mask = build_shoot_action_mask(env, log_fn=None, debug=False)
                 conn.send(mask)
@@ -1306,6 +1384,20 @@ def main():
     vec_env_count = int(os.getenv("NUM_ENVS", os.getenv("VEC_ENV_COUNT", "1")))
     if vec_env_count < 1:
         vec_env_count = 1
+
+    if TRAIN_LOG_TO_CONSOLE:
+        print(f"[TRAIN][MODE] ACTOR_LEARNER={os.getenv('ACTOR_LEARNER', '')!r}")
+    if str(os.getenv("ACTOR_LEARNER", "0")).strip() == "1":
+        if TRAIN_LOG_TO_CONSOLE:
+            print("[TRAIN][MODE] ACTOR_LEARNER=1 (actors CPU + learner GPU)")
+        _main_actor_learner(
+            roster_config=roster_config,
+            totLifeT=totLifeT,
+            clip_reward_enabled=clip_reward_enabled,
+            clip_reward_min=clip_reward_min,
+            clip_reward_max=clip_reward_max,
+        )
+        return
     deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "auto")).strip().lower() or "auto"
     manual_in_rl_phase = os.getenv("DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE", "1").strip().lower() not in {"0", "false", "no"}
     stdin_is_tty = bool(getattr(sys.stdin, "isatty", lambda: False)())
@@ -1446,6 +1538,7 @@ def main():
                     "state": init_payload["state"],
                     "info": init_payload["info"],
                     "len_model": init_payload["len_model"],
+                    "shoot_mask": init_payload.get("shoot_mask"),
                 }
             )
             subproc_envs.append(proc)
@@ -1577,6 +1670,8 @@ def main():
     policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
     target_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
     optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
+    if os.getenv("TORCH_OPTIMIZER_NO_DYNAMO", "1") == "1":
+        _patch_optimizer_methods_no_compile(optimizer)
 
     replay_capacity = int(os.getenv("REPLAY_CAPACITY", "100000"))
     if PER_ENABLED:
@@ -1910,6 +2005,23 @@ def main():
             len_model,
         )
         return convertToDict(action)
+
+    if SELF_PLAY_ENABLED:
+        opp_source = str(opponent_source_state.get("source", "unknown"))
+        opp_id = str(opponent_source_state.get("id"))
+        opp_type, opp_agent_id_text = _opponent_type_label(
+            opponent_policy_net=opponent_policy_net,
+            opponent_source_state=opponent_source_state,
+            self_play_enabled=True,
+        )
+        enemy_policy_mode = "snapshot_policy_fn" if opponent_policy_net is not None else "heuristic_auto"
+        _log_train(
+            "[SELFPLAY][CONFIG] "
+            f"enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
+            f"opponent_source={opp_source} opponent_id={opp_id} "
+            f"opponent_type={opp_type} opponent_agent_id={opp_agent_id_text} "
+            f"enemy_policy_mode={enemy_policy_mode}"
+        )
     
     inText = []
     
@@ -1932,7 +2044,7 @@ def main():
     for ctx in env_contexts:
         if USE_SUBPROC_ENVS:
             ctx["conn"].send(("reset", None))
-            ctx["state"], ctx["info"] = ctx["conn"].recv()
+            ctx["state"], ctx["info"], ctx["shoot_mask"] = ctx["conn"].recv()
         else:
             ctx["state"], ctx["info"] = ctx["env"].reset(
                 options={"m": ctx["model"], "e": ctx["enemy"], "Type": "big", "trunc": True}
@@ -2153,14 +2265,10 @@ def main():
     _apply_reward_schedule(resume_episode_base + numLifeT)
     
     while end is False:
-        shoot_masks = []
         if USE_SUBPROC_ENVS:
-            # Batched IPC: сначала отправляем всем env, затем читаем ответы по порядку.
-            for ctx in env_contexts:
-                ctx["conn"].send(("get_shoot_mask", None))
-            for ctx in env_contexts:
-                shoot_masks.append(ctx["conn"].recv())
+            shoot_masks = [ctx.get("shoot_mask") for ctx in env_contexts]
         else:
+            shoot_masks = []
             for idx, ctx in enumerate(env_contexts):
                 mask_log_fn = append_agent_log if idx == 0 else None
                 shoot_masks.append(build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG))
@@ -2203,7 +2311,7 @@ def main():
         else:
             for idx, ctx in enumerate(env_contexts):
                 env_unwrapped = unwrap_env(ctx["env"])
-                if SELF_PLAY_ENABLED:
+                if SELF_PLAY_ENABLED and opponent_policy_net is not None:
                     env_unwrapped.enemyTurn(
                         trunc=trunc,
                         policy_fn=lambda obs, env=ctx["env"], lm=ctx["len_model"]: opponent_policy(obs, env, lm),
@@ -2251,7 +2359,6 @@ def main():
                     ctx["action_head_invalid"]["shoot"] += 1
 
         step_results = [None] * len(env_contexts)
-        next_shoot_masks = [None] * len(env_contexts)
         if USE_SUBPROC_ENVS:
             # Batched IPC: сначала отправляем step всем env, затем собираем ответы.
             step_start = time.perf_counter()
@@ -2262,19 +2369,11 @@ def main():
             perf_stats["env_step_s"] += time.perf_counter() - step_start
             perf_counts["env_steps"] += len(env_contexts)
 
-            # Batched IPC для масок стрельбы после шага (только где эпизод не завершён).
-            pending_next_mask_indices = []
-            for idx, (_next_observation, _reward, done, _res, _info) in enumerate(step_results):
-                if not done:
-                    env_contexts[idx]["conn"].send(("get_shoot_mask", None))
-                    pending_next_mask_indices.append(idx)
-            for idx in pending_next_mask_indices:
-                next_shoot_masks[idx] = env_contexts[idx]["conn"].recv()
-
         for idx, ctx in enumerate(env_contexts):
             step_start = time.perf_counter()
             if USE_SUBPROC_ENVS:
-                next_observation, reward, done, res, info = step_results[idx]
+                next_observation, reward, done, res, info, next_shoot_mask = step_results[idx]
+                ctx["shoot_mask"] = next_shoot_mask
             else:
                 next_observation, reward, done, res, info = ctx["env"].step(action_dicts[idx])
                 perf_stats["env_step_s"] += time.perf_counter() - step_start
@@ -2318,12 +2417,14 @@ def main():
     
             state_t = torch.tensor(to_np_state(ctx["state"]), device=dev).unsqueeze(0)
             next_state_t = None
-            next_shoot_mask = None
+            if not USE_SUBPROC_ENVS:
+                next_shoot_mask = None
             if not done:
                 next_state_t = torch.tensor(to_np_state(next_observation), device=dev).unsqueeze(0)
                 mask_log_fn = append_agent_log if idx == 0 else None
                 if USE_SUBPROC_ENVS:
-                    next_shoot_mask = next_shoot_masks[idx]
+                    # маска уже пришла вместе с step()
+                    pass
                 else:
                     next_shoot_mask = build_shoot_action_mask(ctx["env"], log_fn=mask_log_fn, debug=TRAIN_DEBUG)
     
@@ -2783,7 +2884,7 @@ def main():
     
                 if USE_SUBPROC_ENVS:
                     ctx["conn"].send(("reset", None))
-                    ctx["state"], ctx["info"] = ctx["conn"].recv()
+                    ctx["state"], ctx["info"], ctx["shoot_mask"] = ctx["conn"].recv()
                 else:
                     mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
                     attacker_side, defender_side = roll_off_attacker_defender(
@@ -3103,6 +3204,694 @@ def main():
     
     if os.path.isfile("gui/data.json"):
         initFile.delFile()
+
+
+def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_reward_min, clip_reward_max) -> None:
+    """
+    Actor-Learner MVP (Windows-friendly, spawn):
+    - Actors (CPU) гоняют env и шлют transitions батчами в очередь.
+    - Learner (GPU) читает очередь, наполняет replay и делает optimize_model.
+    Важно: это отдельный режим, не ломает текущий pipeline (ACTOR_LEARNER=0 по умолчанию).
+    """
+    num_actors = max(1, int(os.getenv("NUM_ACTORS", "8")))
+    batch_send = max(8, int(os.getenv("ACTOR_BATCH_SEND", "32")))
+    updates_per_batch = max(1, int(os.getenv("UPDATES_PER_BATCH", "8")))
+    queue_max = max(64, int(os.getenv("ACTOR_QUEUE_MAX", "256")))
+
+    b_len = roster_config["b_len"]
+    b_hei = roster_config["b_hei"]
+    trunc = True
+
+    # 1) Определяем размеры наблюдения и action-space
+    enemy0, model0 = _build_units_from_config(roster_config, b_len, b_hei)
+    env0 = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy0, model=model0, b_len=b_len, b_hei=b_hei)
+    state0, _info0 = env0.reset(options={"m": model0, "e": enemy0, "Type": "big", "trunc": True})
+    if isinstance(state0, dict) or "OrderedDict" in str(type(state0)):
+        n_observations = len(list(state0.values()))
+    else:
+        n_observations = int(np.array(state0).shape[0])
+
+    ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
+    for i_u in range(len(model0)):
+        ordered_keys.append(f"move_num_{i_u}")
+    n_actions = []
+    for k in ordered_keys:
+        sp = env0.action_space.spaces[k]
+        if hasattr(sp, "n"):
+            n_actions.append(int(sp.n))
+        elif hasattr(sp, "nvec"):
+            n_actions.extend([int(x) for x in sp.nvec])
+        else:
+            raise TypeError(f"Unsupported action space for {k}: {type(sp)}")
+    try:
+        env0.close()
+    except Exception:
+        pass
+
+    # 2) Learner (GPU)
+    learner_side_cfg = LEARNER_SIDE if LEARNER_SIDE in {"P1", "P2"} else "P1"
+    learner_identity = AgentIdentity(
+        side=learner_side_cfg,
+        faction=LEARNER_FACTION,
+        ruleset_version=RULESET_VERSION,
+    ).normalized()
+    env_contract = make_env_contract(
+        n_observations=n_observations,
+        n_actions=n_actions,
+        mission_name=normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME)),
+        ruleset_version=learner_identity.ruleset_version,
+        extras={
+            "actor_learner": 1,
+            "num_actors": int(num_actors),
+        },
+    )
+
+    # Self-play opponent snapshot (optional): загружаем один раз в learner и раздаём акторам.
+    opponent_state_dict_cpu = None
+    opponent_eps = float(SELF_PLAY_OPPONENT_EPSILON)
+    if SELF_PLAY_ENABLED:
+        try:
+            if SELF_PLAY_OPPONENT_MODE == "fixed_checkpoint" and SELF_PLAY_FIXED_PATH:
+                checkpoint = torch.load(SELF_PLAY_FIXED_PATH, map_location="cpu", weights_only=False)
+                if isinstance(checkpoint, dict) and "policy_net" in checkpoint:
+                    opponent_state_dict_cpu = normalize_state_dict(checkpoint["policy_net"])
+                elif isinstance(checkpoint, dict):
+                    opponent_state_dict_cpu = normalize_state_dict(checkpoint)
+                else:
+                    opponent_state_dict_cpu = normalize_state_dict(checkpoint)
+            else:
+                if not OPPONENT_AGENT_ID:
+                    raise ValueError("SELF_PLAY: нужен OPPONENT_AGENT_ID (GUI должен подставить последний снапшот).")
+                payload = load_agent_by_id(OPPONENT_AGENT_ID)
+                ok_contract, mismatch_reason = compatible_contracts(env_contract, payload.get("contract", {}))
+                if not ok_contract:
+                    raise ValueError(f"Несовместимый агент-оппонент '{OPPONENT_AGENT_ID}': {mismatch_reason}")
+                opponent_state_dict_cpu = normalize_state_dict(payload["policy_state"])
+        except Exception as exc:
+            warn = f"[SELFPLAY][WARN] Actor-Learner: не удалось загрузить снапшот оппонента, откатываюсь на эвристику. exc={exc}"
+            append_agent_log(warn)
+            if TRAIN_LOG_TO_CONSOLE:
+                print(warn)
+            opponent_state_dict_cpu = None
+        enemy_policy_mode = "snapshot_policy_fn" if opponent_state_dict_cpu is not None else "heuristic_auto"
+        _log_train(
+            "[SELFPLAY][CONFIG] "
+            f"enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
+            f"opponent_agent_id={OPPONENT_AGENT_ID or '-'} "
+            f"enemy_policy_mode={enemy_policy_mode}"
+        )
+
+    policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
+    target_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
+    optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
+    if os.getenv("TORCH_OPTIMIZER_NO_DYNAMO", "1") == "1":
+        _patch_optimizer_methods_no_compile(optimizer)
+
+    replay_capacity = int(os.getenv("REPLAY_CAPACITY", "200000"))
+    if PER_ENABLED:
+        memory = PrioritizedReplayMemory(replay_capacity, alpha=PER_ALPHA, eps=PER_EPS)
+    else:
+        memory = ReplayMemory(replay_capacity)
+
+    target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
+    target_net.eval()
+    scaler = torch.cuda.amp.GradScaler(enabled=bool(USE_AMP and device.type == "cuda"))
+
+    # Веса для акторов (CPU). MVP: без онлайн-синхронизации, только стартовая копия.
+    init_weights = {
+        k: v.detach().cpu().clone()
+        for k, v in normalize_state_dict(policy_net.state_dict()).items()
+    }
+
+    # Online sync (learner -> actors) через файл: Windows-friendly.
+    sync_enabled = os.getenv("ACTOR_SYNC_ENABLED", "1") == "1"
+    sync_every_updates = max(1, int(os.getenv("ACTOR_SYNC_EVERY_UPDATES", "200")))
+    sync_path = os.path.join("models", "actor_sync", "latest_policy.pth")
+    os.makedirs(os.path.dirname(sync_path), exist_ok=True)
+    last_sync_opt_steps = 0
+
+    ctx = mp.get_context("spawn")
+    data_q: mp.Queue = ctx.Queue(maxsize=queue_max)
+
+    per_actor = int(math.ceil(float(totLifeT) / float(num_actors)))
+
+    procs = []
+    for a_idx in range(num_actors):
+        episodes = per_actor if a_idx < (num_actors - 1) else max(0, totLifeT - per_actor * (num_actors - 1))
+        cr_min = 0.0 if clip_reward_min is None else float(clip_reward_min)
+        cr_max = 0.0 if clip_reward_max is None else float(clip_reward_max)
+        p = ctx.Process(
+            target=_actor_learner_actor_entry,
+            args=(
+                a_idx,
+                int(episodes),
+                roster_config,
+                int(b_len),
+                int(b_hei),
+                int(n_observations),
+                list(n_actions),
+                init_weights,
+                int(batch_send),
+                cr_min,
+                cr_max,
+                bool(clip_reward_enabled),
+                data_q,
+                opponent_state_dict_cpu,
+                float(opponent_eps),
+                int(1 if SELF_PLAY_ENABLED else 0),
+            ),
+            daemon=True,
+        )
+        p.start()
+        procs.append(p)
+
+    done_actors = 0
+    optimize_steps = 0
+    global_step = 0
+    episodes_finished = 0
+    last_loss = None
+    ep_rows: list[dict] = []
+    randNum = random.randint(1000000, 9999999)
+    loss_trace: list[float] = []
+
+    started = time.perf_counter()
+    pbar = tqdm(total=int(totLifeT), mininterval=0.5)
+
+    while done_actors < num_actors:
+        try:
+            kind, payload = data_q.get(timeout=1.0)
+        except mp_queue.Empty:
+            continue
+
+        if kind == "error":
+            raise RuntimeError(payload)
+        if kind == "done":
+            done_actors += 1
+            continue
+        if kind == "ep":
+            if isinstance(payload, dict):
+                if payload.get("episode") is None:
+                    payload["episode"] = len(ep_rows) + 1
+                ep_rows.append(payload)
+                episodes_finished = len(ep_rows)
+                if episodes_finished:
+                    pbar.n = min(int(totLifeT), int(episodes_finished))
+                    pbar.refresh()
+            continue
+        if kind != "batch":
+            continue
+
+        for (s_np, a_list, r_sum, ns_np, done_flag, n_count) in payload:
+            dev = next(policy_net.parameters()).device
+            state_t = torch.tensor(np.asarray(s_np, dtype=np.float32), device=dev).unsqueeze(0)
+            action_t = torch.tensor([a_list], device="cpu")
+            reward_t = torch.tensor([float(r_sum)], device=dev, dtype=torch.float32)
+            next_state_t = None
+            if ns_np is not None:
+                next_state_t = torch.tensor(np.asarray(ns_np, dtype=np.float32), device=dev).unsqueeze(0)
+            memory.push(state_t, action_t, next_state_t, reward_t, int(n_count), None)
+            global_step += 1
+
+        for _ in range(updates_per_batch):
+            per_beta = PER_BETA_START
+            if PER_ENABLED and PER_BETA_FRAMES > 0:
+                per_beta = min(
+                    1.0,
+                    PER_BETA_START + (1.0 - PER_BETA_START) * (optimize_steps / float(PER_BETA_FRAMES)),
+                )
+            result = optimize_model(
+                policy_net,
+                target_net,
+                optimizer,
+                memory,
+                n_observations,
+                double_dqn_enabled=DOUBLE_DQN_ENABLED,
+                per_enabled=PER_ENABLED,
+                per_beta=per_beta,
+                per_eps=PER_EPS,
+                use_amp=USE_AMP,
+                scaler=scaler,
+                pin_memory=PIN_MEMORY,
+                prefetch=PREFETCH,
+            )
+            if result and result.get("loss") is not None:
+                last_loss = float(result["loss"])
+                optimize_steps += 1
+                loss_trace.append(float(last_loss))
+
+            # периодически публикуем свежие веса для акторов
+            if sync_enabled and (optimize_steps - last_sync_opt_steps) >= sync_every_updates:
+                try:
+                    cpu_sd = {
+                        k: v.detach().cpu()
+                        for k, v in normalize_state_dict(policy_net.state_dict()).items()
+                    }
+                    torch.save({"optimize_steps": int(optimize_steps), "state_dict": cpu_sd}, sync_path)
+                    last_sync_opt_steps = int(optimize_steps)
+                except Exception:
+                    pass
+
+            with torch.no_grad():
+                for p_tgt, p in zip(target_net.parameters(), policy_net.parameters()):
+                    p_tgt.data.mul_(1.0 - TAU)
+                    p_tgt.data.add_(p.data, alpha=TAU)
+
+        # прогресс по ep_rows (приходит отдельными сообщениями "ep")
+
+    pbar.close()
+    elapsed = time.perf_counter() - started
+    print(
+        f"[ACTOR_LEARNER] done: episodes={totLifeT} steps={global_step} updates={optimize_steps} "
+        f"loss={last_loss} elapsed_s={elapsed:.2f}"
+    )
+
+    # Сохранение метрик/графиков как в обычном режиме.
+    try:
+        run_id = str(randNum)
+
+        # --- side mapping: кто считается "model" в CSV/метриках ---
+        try:
+            learner_side = str(learner_identity.side or "P1").strip().upper() or "P1"
+            opponent_side = "P2" if learner_side == "P1" else "P1"
+            _log_train(
+                "[METRICS][SIDES] "
+                f"learner_side={learner_side} opponent_side={opponent_side} "
+                "CSV fields: model_* == learner_side, player_* == opponent_side; "
+                "result='win' означает победу learner_side."
+            )
+        except Exception:
+            pass
+
+        # --- plots + csv ---
+        save_extra_metrics(run_id=run_id, ep_rows=ep_rows)
+
+        # reward / epLen plots (GUI expects these)
+        os.makedirs("gui/img", exist_ok=True)
+        os.makedirs("metrics", exist_ok=True)
+        ep_idx = list(range(1, len(ep_rows) + 1))
+        rewards = [float(r.get("ep_reward", 0.0)) for r in ep_rows]
+        ep_lens = [int(r.get("ep_len", 0)) for r in ep_rows]
+
+        plt.figure()
+        plt.plot(ep_idx, rewards, color="#1f77b4", linewidth=1.0)
+        # Прямая trend-line (линейная регрессия), чтобы было визуально видно рост/падение.
+        if len(ep_idx) >= 2:
+            x = np.asarray(ep_idx, dtype=np.float64)
+            y = np.asarray(rewards, dtype=np.float64)
+            try:
+                a, b = np.polyfit(x, y, 1)  # y ~= a*x + b
+                y_fit = a * x + b
+                plt.plot(ep_idx, y_fit.tolist(), color="#ff7f0e", linewidth=2.5)
+            except Exception:
+                pass
+        plt.xlabel("Episodes")
+        plt.ylabel("Reward")
+        plt.title("Avg. Reward per Episode")
+        plt.savefig(os.path.join("metrics", f"reward_{run_id}.png"))
+        plt.savefig(os.path.join("gui/img", f"reward_{run_id}.png"))
+        plt.savefig(os.path.join("gui/img", "reward.png"))
+        plt.close()
+
+        plt.figure()
+        plt.plot(ep_idx, ep_lens)
+        plt.xlabel("Episodes")
+        plt.ylabel("Episode length")
+        plt.title("Episode Length")
+        plt.savefig(os.path.join("metrics", f"epLen_{run_id}.png"))
+        plt.savefig(os.path.join("gui/img", f"epLen_{run_id}.png"))
+        plt.savefig(os.path.join("gui/img", "epLen.png"))
+        plt.close()
+
+        # loss plot (если есть апдейты)
+        if loss_trace:
+            loss_ma = moving_avg(loss_trace, window=50)
+            lx = list(range(1, len(loss_trace) + 1))
+            plt.figure()
+            plt.plot(lx, loss_trace)
+            plt.plot(lx, loss_ma)
+            plt.xlabel("Updates")
+            plt.ylabel("Loss")
+            plt.title("Loss Curve")
+            plt.savefig(os.path.join("metrics", f"loss_{run_id}.png"))
+            plt.savefig(os.path.join("gui/img", f"loss_{run_id}.png"))
+            plt.savefig(os.path.join("gui/img", "loss.png"))
+            plt.close()
+
+        # --- save model (so GUI can find latest model) ---
+        safe_name = "ACTOR_LEARNER"
+        date = datetime.datetime.now().strftime("%d-%H%M%S")
+        os.makedirs(os.path.join("models", safe_name), exist_ok=True)
+        model_path = os.path.join("models", safe_name, f"model-{date}-{run_id}.pth")
+        with IO_PROFILER.timed("checkpoint save"):
+            torch.save(
+                {
+                    "policy_net": policy_net.state_dict(),
+                    "target_net": target_net.state_dict(),
+                    "net_type": NET_TYPE,
+                    "optimizer": optimizer.state_dict(),
+                    "global_step": int(global_step),
+                    "optimize_steps": int(optimize_steps),
+                    "episode": int(len(ep_rows)),
+                    "replay_memory": memory.state_dict(),
+                },
+                model_path,
+            )
+
+        # --- metrics json for GUI ---
+        data_json_path = os.path.join("models", f"data_{run_id}.json")
+        payload = {
+            "run_id": run_id,
+            "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "reward": os.path.join("gui/img", f"reward_{run_id}.png"),
+            "loss": os.path.join("gui/img", f"loss_{run_id}.png") if loss_trace else os.path.join("gui/img", "loss.png"),
+            "epLen": os.path.join("gui/img", f"epLen_{run_id}.png"),
+            "winrate": os.path.join("gui/img", f"winrate_{run_id}.png"),
+            "vpdiff": os.path.join("gui/img", f"vpdiff_{run_id}.png"),
+            "endreasons": os.path.join("gui/img", f"endreasons_{run_id}.png"),
+            "model_path": model_path,
+            "mode": "actor_learner",
+        }
+        with open(data_json_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+        # --- agent snapshot for GUI self-play "latest_snapshot" ---
+        final_agent_id = build_agent_id(learner_identity, f"final_ep{len(ep_rows)}")
+        artifact_dir = save_agent_artifact(
+            identity=learner_identity,
+            agent_id=final_agent_id,
+            env_contract=env_contract,
+            policy_state_dict=normalize_state_dict(policy_net.state_dict()),
+            target_state_dict=normalize_state_dict(target_net.state_dict()),
+            optimizer_state_dict=optimizer.state_dict(),
+            extra_meta={
+                "episode": int(len(ep_rows)),
+                "legacy_model_tag": model_path.replace("\\", "/"),
+                "mode": "actor_learner",
+                "num_actors": int(num_actors),
+            },
+        )
+        append_agent_log(f"[LEAGUE][SAVE] agent_id={final_agent_id} artifact_dir={artifact_dir}")
+
+        print("Generated metrics")
+        save_training_summary(run_id=run_id, model_tag=model_path.replace("\\", "/"), ep_rows=ep_rows, elapsed_s=elapsed)
+        save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows)
+    except Exception as exc:
+        if TRAIN_LOG_TO_CONSOLE:
+            print(f"[ACTOR_LEARNER][WARN] не удалось сохранить метрики: {exc}")
+
+    # Быстрый sanity-check качества (по желанию).
+    eval_eps = int(os.getenv("ACTOR_EVAL_EPISODES", "20") or "20")
+    if eval_eps > 0:
+        try:
+            policy_net.eval()
+            wins = 0
+            draws = 0
+            vp_diff_sum = 0.0
+            wipeout_enemy = 0
+            wipeout_model = 0
+            turn_limit = 0
+
+            for _ in range(eval_eps):
+                enemy_e, model_e = _build_units_from_config(roster_config, b_len, b_hei)
+                env_e = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy_e, model=model_e, b_len=b_len, b_hei=b_hei)
+                state_e, info_e = env_e.reset(options={"m": model_e, "e": enemy_e, "Type": "small", "trunc": True})
+                done_e = False
+                while not done_e:
+                    shoot_mask_e = build_shoot_action_mask(env_e, log_fn=None, debug=False)
+                    action_e = select_action_with_epsilon(env_e, state_e, policy_net, 0.0, len(model_e), shoot_mask=shoot_mask_e)
+                    action_e_dict = convertToDict(action_e)
+                    env_unwrapped_e = unwrap_env(env_e)
+                    env_unwrapped_e.enemyTurn(trunc=True)
+                    next_state_e, _reward_e, done_e, _res_e, info_e = env_e.step(action_e_dict)
+                    state_e = next_state_e
+                end_reason_e = info_e.get("end reason", "")
+                vp_diff_e = int(info_e.get("model VP", 0)) - int(info_e.get("player VP", 0))
+                vp_diff_sum += float(vp_diff_e)
+
+                if end_reason_e == "wipeout_enemy":
+                    wins += 1
+                    wipeout_enemy += 1
+                elif end_reason_e == "wipeout_model":
+                    wipeout_model += 1
+                elif str(end_reason_e).startswith("turn_limit"):
+                    turn_limit += 1
+                    if vp_diff_e > 0:
+                        wins += 1
+                    elif vp_diff_e == 0:
+                        draws += 1
+                else:
+                    if vp_diff_e > 0:
+                        wins += 1
+                    elif vp_diff_e == 0:
+                        draws += 1
+                try:
+                    env_e.close()
+                except Exception:
+                    pass
+
+            n_eval = max(1, int(eval_eps))
+            print(
+                "[ACTOR_LEARNER][EVAL] "
+                f"eval_episodes={n_eval} "
+                f"win_rate={wins/n_eval:.3f} "
+                f"draw_rate={draws/n_eval:.3f} "
+                f"turn_limit_rate={turn_limit/n_eval:.3f} "
+                f"wipeout_enemy_rate={wipeout_enemy/n_eval:.3f} "
+                f"wipeout_model_rate={wipeout_model/n_eval:.3f} "
+                f"vp_diff_mean={vp_diff_sum/n_eval:.3f}"
+            )
+        except Exception as exc:
+            if TRAIN_LOG_TO_CONSOLE:
+                print(f"[ACTOR_LEARNER][EVAL][WARN] eval пропущен: {exc}")
+
+    for p in procs:
+        try:
+            p.join(timeout=1.0)
+        except Exception:
+            pass
+
+
+def _actor_learner_actor_entry(
+    actor_idx: int,
+    episodes: int,
+    roster_config: dict,
+    b_len: int,
+    b_hei: int,
+    n_observations: int,
+    n_actions: list,
+    init_weights: dict,
+    batch_send: int,
+    clip_reward_min: float,
+    clip_reward_max: float,
+    clip_reward_enabled: bool,
+    data_q,
+    opponent_state_dict_cpu,
+    opponent_eps: float,
+    self_play_enabled: int,
+):
+    """Top-level entrypoint for Windows spawn pickling."""
+    try:
+        cpu_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(torch.device("cpu"))
+        cpu_net.load_state_dict(init_weights)
+        cpu_net.eval()
+
+        trunc = True
+        enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+        mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+        env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
+
+        sync_enabled = os.getenv("ACTOR_SYNC_ENABLED", "1") == "1"
+        sync_path = os.path.join("models", "actor_sync", "latest_policy.pth")
+        sync_check_every_ep = max(1, int(os.getenv("ACTOR_SYNC_CHECK_EVERY_EP", "10")))
+        last_sync_mtime = -1.0
+
+        opponent_net = None
+        if int(self_play_enabled) == 1 and opponent_state_dict_cpu is not None:
+            opponent_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(torch.device("cpu"))
+            opponent_net.load_state_dict(normalize_state_dict(opponent_state_dict_cpu))
+            opponent_net.eval()
+        if int(self_play_enabled) == 1:
+            append_agent_log(
+                "[SELFPLAY][ACTOR] "
+                f"actor_idx={actor_idx} "
+                f"enemy_policy_mode={'snapshot_policy_fn' if opponent_net is not None else 'heuristic_auto'}"
+            )
+
+        steps_done = 0
+        buf = []
+        n_step_buf = collections.deque(maxlen=N_STEP)
+
+        for _ep in range(int(episodes)):
+            if sync_enabled and (_ep % sync_check_every_ep == 0):
+                try:
+                    if os.path.isfile(sync_path):
+                        mtime = os.path.getmtime(sync_path)
+                        if mtime > last_sync_mtime:
+                            payload = torch.load(sync_path, map_location="cpu", weights_only=False)
+                            sd = payload.get("state_dict") if isinstance(payload, dict) else None
+                            if isinstance(sd, dict):
+                                cpu_net.load_state_dict(normalize_state_dict(sd))
+                                cpu_net.eval()
+                                last_sync_mtime = float(mtime)
+                except Exception:
+                    pass
+            # ВАЖНО: повторяем init как в основном train-loop / _env_worker:
+            # roll-off ролей + deploy_for_mission + post_deploy_setup.
+            attacker_side, defender_side = roll_off_attacker_defender(
+                manual_roll_allowed=False,
+                log_fn=None,
+            )
+            deploy_for_mission(
+                mission_name,
+                model_units=model,
+                enemy_units=enemy,
+                b_len=b_len,
+                b_hei=b_hei,
+                attacker_side=attacker_side,
+                log_fn=None,
+            )
+            post_deploy_setup(log_fn=None)
+            env.attacker_side = attacker_side
+            env.defender_side = defender_side
+
+            obs, _info = env.reset(options={"m": model, "e": enemy, "Type": "small", "trunc": trunc})
+            done = False
+            ep_reward = 0.0
+            ep_len = 0
+            last_info = {}
+            last_res = 0
+            while not done:
+                shoot_mask = build_shoot_action_mask(env, log_fn=None, debug=False)
+                decay_steps = max(1.0, float(EPS_DECAY))
+                progress = min(float(steps_done) / decay_steps, 1.0)
+                eps_threshold = EPS_START + (EPS_END - EPS_START) * progress
+                action_t = select_action_with_epsilon(
+                    env, obs, cpu_net, eps_threshold, len(model), shoot_mask=shoot_mask
+                )
+                action_dict = convertToDict(action_t)
+                # ВАЖНО: как в основном train-loop — сначала ход противника, потом env.step (ход модели).
+                env_unwrapped = unwrap_env(env)
+                if opponent_net is not None:
+                    def _opp_policy_fn(obs, env=env, lm=len(model), net=opponent_net, eps=float(opponent_eps)):
+                        action = select_action_with_epsilon(env, obs, net, eps, lm)
+                        return convertToDict(action)
+                    env_unwrapped.enemyTurn(trunc=trunc, policy_fn=_opp_policy_fn)
+                else:
+                    env_unwrapped.enemyTurn(trunc=trunc)
+                next_obs, reward, done, res, info2 = env.step(action_dict)
+                last_info = info2 if isinstance(info2, dict) else {}
+                last_res = res
+                ep_reward += float(reward)
+                ep_len += 1
+
+                r_clipped, _clipped = maybe_clip_reward(
+                    float(reward), bool(clip_reward_enabled), float(clip_reward_min), float(clip_reward_max)
+                )
+
+                n_step_buf.append(
+                    (
+                        to_np_state(obs),
+                        action_t.detach().cpu().numpy()[0].tolist(),
+                        float(r_clipped),
+                        to_np_state(next_obs),
+                        bool(done),
+                    )
+                )
+
+                if len(n_step_buf) >= N_STEP:
+                    reward_sum = 0.0
+                    n_count = 0
+                    last_next = None
+                    last_done = False
+                    for idx, (_s, _a, rr, ns, dd) in enumerate(n_step_buf):
+                        reward_sum += (GAMMA ** idx) * float(rr)
+                        n_count += 1
+                        last_next = ns
+                        last_done = bool(dd)
+                        if dd:
+                            last_next = None
+                            break
+                    head_s, head_a, _, _, _ = n_step_buf[0]
+                    buf.append((head_s, head_a, reward_sum, last_next, last_done, n_count))
+                    n_step_buf.popleft()
+
+                if done:
+                    while n_step_buf:
+                        reward_sum = 0.0
+                        n_count = 0
+                        for idx, (_s, _a, rr, _ns, dd) in enumerate(n_step_buf):
+                            reward_sum += (GAMMA ** idx) * float(rr)
+                            n_count += 1
+                            if dd:
+                                break
+                        head_s, head_a, _, _, _ = n_step_buf[0]
+                        buf.append((head_s, head_a, reward_sum, None, True, n_count))
+                        n_step_buf.popleft()
+
+                obs = next_obs
+                steps_done += 1
+
+                if len(buf) >= int(batch_send):
+                    data_q.put(("batch", buf))
+                    buf = []
+
+            # Эпизод завершён: отправляем компактную строку метрик (как в обычном режиме)
+            try:
+                end_reason = str(last_info.get("end reason", "") or "")
+                model_vp = int(last_info.get("model VP", 0) or 0)
+                player_vp = int(last_info.get("player VP", 0) or 0)
+                vp_diff = int(model_vp) - int(player_vp)
+                turn = int(last_info.get("turn", 0) or 0)
+
+                result = "loss"
+                if end_reason == "wipeout_enemy":
+                    result = "win"
+                elif end_reason == "wipeout_model":
+                    result = "loss"
+                elif str(end_reason).startswith("turn_limit"):
+                    if vp_diff > 0:
+                        result = "win"
+                    elif vp_diff == 0:
+                        result = "draw"
+                else:
+                    if vp_diff > 0:
+                        result = "win"
+                    elif vp_diff == 0:
+                        result = "draw"
+
+                # Защита от явно подозрительных "побед" (обычно признак сломанного протокола).
+                if result == "win" and end_reason == "wipeout_enemy" and model_vp == 0 and player_vp == 0 and turn <= 0:
+                    end_reason = "suspicious_wipeout_enemy"
+                    result = "draw"
+
+                data_q.put(
+                    (
+                        "ep",
+                        {
+                            "episode": None,  # learner пронумерует по порядку
+                            "ep_reward": float(ep_reward),
+                            "ep_len": int(ep_len),
+                            "turn": int(turn),
+                            "model_vp": int(model_vp),
+                            "player_vp": int(player_vp),
+                            "vp_diff": int(vp_diff),
+                            "result": str(result),
+                            "end_reason": str(end_reason),
+                            "end_code": int(last_res),
+                        },
+                    )
+                )
+            except Exception:
+                pass
+
+        if buf:
+            data_q.put(("batch", buf))
+        data_q.put(("done", int(actor_idx)))
+    except Exception as exc:
+        try:
+            data_q.put(("error", f"actor[{actor_idx}] {exc}"))
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     mp.freeze_support()

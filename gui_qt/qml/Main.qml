@@ -197,6 +197,14 @@ ApplicationWindow {
                                     }
 
                                     CheckBox {
+                                        text: "Actor-Learner (нагрузить CPU+GPU) — только для Тренировки 8х"
+                                        checked: controller.actorLearner
+                                        enabled: !controller.running
+                                        Layout.columnSpan: 2
+                                        onToggled: controller.set_actor_learner(checked)
+                                    }
+
+                                    CheckBox {
                                         text: "Очищать логи автоматически"
                                         checked: controller.autoClearLogs
                                         enabled: !controller.running

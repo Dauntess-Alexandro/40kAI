@@ -31,13 +31,13 @@ VP_DIFF_REWARD_SCALE = 0.11
 # Масштаб штрафа за ухудшение разницы VP (vp_diff < 0).
 VP_DIFF_PENALTY_SCALE = 0.12
 # Доп. штраф за ничью на turn_limit (анти "ничейная яма").
-TURN_LIMIT_DRAW_PENALTY = 0.60
+TURN_LIMIT_DRAW_PENALTY = 1.25
 # Доп. масштаб бонуса за победу по VP на turn_limit.
-TURN_LIMIT_VP_MARGIN_REWARD_SCALE = 0.28
+TURN_LIMIT_VP_MARGIN_REWARD_SCALE = 0.50
 # Доп. масштаб штрафа за проигрыш по VP на turn_limit.
-TURN_LIMIT_VP_MARGIN_PENALTY_SCALE = 0.24
+TURN_LIMIT_VP_MARGIN_PENALTY_SCALE = 0.50
 # Ограничение абсолютного VP margin для turn_limit shaping.
-TURN_LIMIT_VP_MARGIN_CLAMP = 3.0
+TURN_LIMIT_VP_MARGIN_CLAMP = 6.0
 # Длина серии удержания objective для streak-бонуса.
 VP_OBJECTIVE_STREAK_LEN = 2
 # Дополнительный бонус за достижение серии удержания objective.
