@@ -10,6 +10,7 @@ from typing import Optional
 import torch
 
 from gym_mod.engine.agent_registry import compatible_contracts, load_agent_by_id, make_env_contract
+from gym_mod.engine.game_controller import n_actions_from_env
 from gym_mod.engine.mission import (
     check_end_of_battle,
     normalize_mission_name,
@@ -278,9 +279,7 @@ def main():
     state, info = env.reset(
         options={"m": model_units, "e": enemy_units, "Type": "big", "trunc": True}
     )
-    n_actions = [5, 2, len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
-    for _ in range(len(model_units)):
-        n_actions.append(12)
+    n_actions = n_actions_from_env(env, len(model_units))
     n_observations = len(state)
     eval_contract = make_env_contract(
         n_observations=n_observations,

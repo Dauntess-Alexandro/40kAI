@@ -1929,6 +1929,72 @@ class Warhammer40kEnv(gym.Env):
             )
             return False
 
+    def _viewer_pacing_effective(self) -> str:
+        raw = str(os.getenv("VIEWER_PACING_MODE", "off")).strip().lower()
+        if raw in {"", "0", "false", "off", "none"}:
+            return "off"
+        if raw == "per_unit":
+            return "per_unit"
+        if raw == "per_phase":
+            return "per_phase"
+        return "off"
+
+    def _viewer_pacing_applies_now(self) -> bool:
+        if not bool(getattr(self, "playType", False)):
+            return False
+        if self._viewer_pacing_effective() == "off":
+            return False
+        return getattr(self, "active_side", None) == "model"
+
+    def _viewer_do_pace(self, phase_slug: str, unit_index: Optional[int], step_kind: str) -> None:
+        if not self._viewer_pacing_applies_now():
+            return
+        self.current_action_index = int(unit_index) if unit_index is not None else int(getattr(self, "current_action_index", 0) or 0)
+        seq = int(getattr(self, "viewer_step_seq", 0) or 0) + 1
+        self.viewer_step_seq = seq
+        uid = None
+        if unit_index is not None and hasattr(self, "_unit_id"):
+            try:
+                uid = int(self._unit_id("model", int(unit_index)))
+            except Exception:
+                uid = None
+        self.viewer_activation = {
+            "side": "model",
+            "phase": phase_slug,
+            "unit_index": unit_index,
+            "unit_id": uid,
+            "step_kind": step_kind,
+        }
+        self.viewer_awaiting_ack = True
+        self.updateBoard()
+        io = get_active_io()
+        meta = {
+            "phase": phase_slug,
+            "unit_index": unit_index,
+            "unit_id": uid,
+            "step_seq": seq,
+            "step_kind": step_kind,
+        }
+        tag = "до применения" if step_kind == "before_unit" else "ход"
+        prompt = f"[PACE] Ход ИИ ({tag}): фаза={phase_slug}, seq={seq}"
+        if uid is not None:
+            prompt += f", юнит={uid}"
+        ack = True
+        if hasattr(io, "request_pace_ack"):
+            ack = bool(io.request_pace_ack(prompt, meta=meta))
+        self.viewer_awaiting_ack = False
+        self._log(f"[PACE] ack phase={phase_slug} unit_id={uid} seq={seq} step={step_kind} ok={ack}")
+        self.updateBoard()
+
+    def _viewer_model_pacing_before_model_unit(self, phase_slug: str, unit_index: int) -> None:
+        if self._viewer_pacing_effective() != "per_unit":
+            return
+        self._viewer_do_pace(phase_slug, unit_index, "before_unit")
+
+    def _viewer_model_pacing_after_model_phase(self, phase_slug: str) -> None:
+        if self._viewer_pacing_effective() != "per_phase":
+            return
+        self._viewer_do_pace(phase_slug, None, "phase_end")
 
     def _apply_health_update(self, side: str, idx: int, new_hp: float, reason: str = "") -> None:
         health = self.unit_health if side == "model" else self.enemy_health
@@ -3622,6 +3688,7 @@ class Warhammer40kEnv(gym.Env):
                     "data": {"vp": self.modelVP, "cp": self.modelCP},
                 }
             )
+            self._viewer_model_pacing_after_model_phase("command")
             return battle_shock, reward_delta
 
         if side == "enemy" and action is not None and not manual:
@@ -3775,6 +3842,7 @@ class Warhammer40kEnv(gym.Env):
                 modelName = i + 21
                 battleSh = battle_shock[i] if battle_shock else False
                 pos_before = tuple(self.unit_coords[i])
+                self._viewer_model_pacing_before_model_unit("movement", i)
                 if self.unit_health[i] <= 0:
                     self._log_unit("MODEL", modelName, i, f"Юнит мертв, движение пропущено. Позиция: {pos_before}")
                     continue
@@ -4025,6 +4093,7 @@ class Warhammer40kEnv(gym.Env):
                     "Reward (VP/объекты, движение): "
                     f"hold={objective_hold_delta:.3f}, proximity={objective_proximity_delta:.3f}, total={total_obj_delta:.3f}"
                 )
+            self._viewer_model_pacing_after_model_phase("movement")
             self._emit_event(
                 {
                     "side": "enemy",
@@ -4540,6 +4609,7 @@ class Warhammer40kEnv(gym.Env):
             for i in range(len(self.unit_health)):
                 modelName = i + 21
                 advanced = advanced_flags[i] if advanced_flags else False
+                self._viewer_model_pacing_before_model_unit("shooting", i)
                 if self.unit_health[i] <= 0:
                     self._log_unit("MODEL", modelName, i, "Юнит мертв, стрельба пропущена.")
                     continue
@@ -4810,6 +4880,7 @@ class Warhammer40kEnv(gym.Env):
                             self._log(f"{self._format_unit_label('model', i)} не смог стрелять: выбранная цель недоступна.")
                 else:
                     self._log_unit("MODEL", modelName, i, "Нет целей в дальности, стрельба пропущена.")
+            self._viewer_model_pacing_after_model_phase("shooting")
             self._emit_event(
                 {
                     "side": "enemy",
@@ -5128,6 +5199,7 @@ class Warhammer40kEnv(gym.Env):
                 modelName = i + 21
                 advanced = advanced_flags[i] if advanced_flags else False
                 pos_before = tuple(self.unit_coords[i])
+                self._viewer_model_pacing_before_model_unit("charge", i)
                 if self.unit_health[i] <= 0:
                     self._log_unit("MODEL", modelName, i, "Юнит мертв, чардж пропущен.")
                     continue
@@ -5264,6 +5336,7 @@ class Warhammer40kEnv(gym.Env):
                             self._log_unit("MODEL", modelName, i, "Нет целей в 12\", чардж пропущен.")
             if not any_charge_targets:
                 self._log("[MODEL] Чардж: нет доступных целей")
+            self._viewer_model_pacing_after_model_phase("charge")
             self._emit_event(
                 {
                     "side": "enemy",
@@ -5879,6 +5952,10 @@ class Warhammer40kEnv(gym.Env):
         self.last_end_reason = ""
         self.last_winner = None
         self.current_action_index = 0
+        self.viewer_step_seq = 0
+        self.viewer_activation = {}
+        self.viewer_awaiting_ack = False
+
         info = self.get_info()
 
         if Type == "big":
@@ -6206,6 +6283,7 @@ class Warhammer40kEnv(gym.Env):
                             f"picked_unit={i + 21} remaining_player={remaining_enemy} "
                             f"remaining_model={remaining_model}"
                         )
+                    self._viewer_model_pacing_before_model_unit("fight", i)
                     if _do_melee("model", i):
                         fought_model.add(i)
         else:
@@ -6270,6 +6348,7 @@ class Warhammer40kEnv(gym.Env):
                             f"picked_unit={i + 21} remaining_player={remaining_enemy} "
                             f"remaining_model={remaining_model}"
                         )
+                    self._viewer_model_pacing_before_model_unit("fight", i)
                     _do_melee("model", i)
                     fought_model.add(i)
                 next_side = "enemy"
@@ -6310,6 +6389,8 @@ class Warhammer40kEnv(gym.Env):
         # после Fight Phase — charged сбрасываем (на всякий)
         self.unitCharged = [0] * len(self.unit_health)
         self.enemyCharged = [0] * len(self.enemy_health)
+
+        self._viewer_model_pacing_after_model_phase("fight")
 
         if quiet is False:
             self._log("⚔️ Combat resolution complete.\n")

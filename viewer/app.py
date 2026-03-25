@@ -322,7 +322,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_events_current = []
         self._log_view = None
         self._visible_log_entries: list[dict] = []
-        self._log_persistent_move_overlay: Optional[dict] = None
         self._log_filter_buttons = {}
         self._log_status_label = None
         self._fx_shot_queue: Deque[FxShotEvent] = deque()
@@ -552,6 +551,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
         bool_layout.addWidget(self.bool_yes)
         bool_layout.addWidget(self.bool_no)
         self._command_pages["bool"] = self.command_stack.addWidget(bool_page)
+
+        pace_page = QtWidgets.QWidget()
+        pace_layout = QtWidgets.QHBoxLayout(pace_page)
+        self.pace_next_button = QtWidgets.QPushButton("Далее")
+        self.pace_next_button.setToolTip("Продолжить микрошаг (Viewer pacing)")
+        self.pace_next_button.clicked.connect(lambda: self._submit_answer(True))
+        pace_layout.addWidget(self.pace_next_button)
+        self._command_pages["pace"] = self.command_stack.addWidget(pace_page)
 
         int_page = QtWidgets.QWidget()
         int_layout = QtWidgets.QHBoxLayout(int_page)
@@ -1190,6 +1197,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         elif kind == "bool":
             self.command_input.setPlaceholderText("Введите команду...")
             self.command_stack.setCurrentIndex(self._command_pages["bool"])
+        elif kind == "pace":
+            self.command_input.setPlaceholderText("Далее")
+            self.command_stack.setCurrentIndex(self._command_pages["pace"])
         elif kind == "int":
             min_value = request.min_value if request.min_value is not None else 0
             max_value = request.max_value if request.max_value is not None else 999
@@ -1582,6 +1592,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_hint.setText("Горячие клавиши: ↑ ↓ ← →, пробел/0 — нет")
         elif kind == "bool":
             self.command_hint.setText("Горячие клавиши: Y — да, N — нет")
+        elif kind == "pace":
+            self.command_hint.setText("Горячие клавиши: Enter / Пробел — далее")
         elif kind == "int":
             self.command_hint.setText("Горячие клавиши: Enter — отправить")
         elif kind == "choice":
@@ -1863,6 +1875,92 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if self.state_watcher.load_if_changed():
             self._apply_state(self.state_watcher.state)
 
+    def _pace_activation_summary_ru(self, state: dict) -> Tuple[str, str]:
+        """Краткое RU-описание viewer.activation (ожидающий шаг или уже показанное для legacy)."""
+        vinfo = state.get("viewer") if isinstance(state.get("viewer"), dict) else {}
+        act = vinfo.get("activation")
+        if not isinstance(act, dict) or not act:
+            return "", ""
+        phase = str(act.get("phase") or "").strip().lower()
+        step_kind = str(act.get("step_kind") or "").strip().lower()
+        uid = act.get("unit_id")
+        unit_tail = ""
+        if uid is not None:
+            try:
+                unit_tail = f"юнит {int(uid)}"
+            except (TypeError, ValueError):
+                unit_tail = ""
+        elif act.get("unit_index") is not None:
+            try:
+                unit_tail = f"отряд #{int(act.get('unit_index'))}"
+            except (TypeError, ValueError):
+                unit_tail = ""
+
+        phase_ru = {
+            "command": "приказ",
+            "movement": "движение",
+            "shooting": "стрельба",
+            "charge": "заряд",
+            "fight": "бой",
+        }.get(phase, phase or "шаг")
+
+        if step_kind == "phase_end":
+            detail = f"конец фазы · {phase_ru}"
+        elif step_kind == "before_unit" and unit_tail:
+            detail = f"{phase_ru} · {unit_tail}"
+        elif step_kind == "before_unit":
+            detail = phase_ru
+        elif step_kind == "unit" and unit_tail:
+            detail = f"{phase_ru} · {unit_tail}"
+        elif step_kind == "unit":
+            detail = phase_ru
+        else:
+            detail = f"{phase_ru}" + (f" · {unit_tail}" if unit_tail else "")
+        short = detail[:72] + ("…" if len(detail) > 72 else "")
+        return detail, short
+
+    def _pace_action_caption_from_state(self, state: dict) -> str:
+        """Компактная кнопка: «Далее: суть шага» (фаза/юнит), без «ход ИИ» и без дублирования."""
+        vinfo = state.get("viewer") if isinstance(state.get("viewer"), dict) else {}
+        act = vinfo.get("activation")
+        if not isinstance(act, dict) or not act:
+            return "Далее"
+        _, short = self._pace_activation_summary_ru(state)
+        if not short:
+            return "Далее"
+        return f"Далее: {short}"
+
+    def _pace_action_tooltip_from_state(self, state: dict) -> str:
+        vinfo = state.get("viewer") if isinstance(state.get("viewer"), dict) else {}
+        act = vinfo.get("activation")
+        step_kind = str(act.get("step_kind") or "").strip().lower() if isinstance(act, dict) else ""
+        detail, _ = self._pace_activation_summary_ru(state)
+        if not detail:
+            return (
+                "Продолжить сценарий ИИ (Viewer pacing). "
+                "Кнопка снимает паузу: для микрошага по юниту движок применит его к полю после нажатия."
+            )
+        if step_kind == "before_unit":
+            return (
+                f"Следующий шаг: {detail}. "
+                f"После «Далее» движок применит его к полю."
+            )
+        if step_kind == "unit":
+            return (
+                f"Уже показано на поле: {detail}. "
+                f"«Далее» не повторяет этот ход — он уже выполнен движком; кнопка переводит к следующему микрошагу ИИ."
+            )
+        return (
+            f"Уже показано на поле: {detail}. "
+            f"«Далее» переводит к следующему микрошагу ИИ."
+        )
+
+    def _update_pace_next_button_from_state(self, state: dict) -> None:
+        if not hasattr(self, "pace_next_button"):
+            return
+        self.pace_next_button.setText(self._pace_action_caption_from_state(state))
+        self.pace_next_button.setToolTip(self._pace_action_tooltip_from_state(state))
+
     def _apply_state(self, state):
         self.map_scene.update_state(state)
         if not self._did_initial_fit:
@@ -1875,7 +1973,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self.status_round.setText(f"Раунд: {state.get('round', '—')}")
         self.status_turn.setText(f"Ход: {state.get('turn', '—')}")
-        self.status_phase.setText(f"Фаза: {state.get('phase', '—')}")
+        phase_text = f"Фаза: {state.get('phase', '—')}"
+        vinfo = state.get("viewer") if isinstance(state.get("viewer"), dict) else {}
+        if vinfo.get("step_seq") is not None and vinfo.get("step_seq", 0) > 0:
+            phase_text += f" | ИИ seq={vinfo.get('step_seq')}"
+        if vinfo.get("awaiting_ack"):
+            phase_text += " | ожидание «Далее»"
+        self.status_phase.setText(phase_text)
         active = state.get("active") or state.get("active_side")
         active_label = (
             self._viewer_player_role_label
@@ -1940,6 +2044,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._populate_units_table(state.get("units", []))
         self._update_log(state.get("log_tail", []))
+        self._update_pace_next_button_from_state(state)
+        # Move overlay на карте только при наведении на строку лога (hover), не после «Далее»/state.
+        self.map_scene.set_log_movement_overlay(None, persistent=True)
         self._update_model_events(state.get("model_events", []))
         self._drain_event_queue()
         self._refresh_active_context()
@@ -2620,7 +2727,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._fx_parser.reset(preserve_seen=False)
         self.log_view.clear()
         self._visible_log_entries = []
-        self._log_persistent_move_overlay = None
         self.map_scene.set_log_movement_overlay(None, persistent=True)
         self.map_scene.clear_log_movement_hover_overlay()
 
@@ -2637,9 +2743,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         payload = self._movement_payload_from_log_item(item)
         if payload is None:
             return
-        # По UX: не фиксируем overlay кликом, показываем только пока есть hover.
-        self._log_persistent_move_overlay = None
-        self.map_scene.set_log_movement_overlay(None, persistent=True)
+        self.map_scene.clear_log_movement_hover_overlay()
         self._focus_camera_for_movement_payload(payload)
 
     def _on_log_item_hovered(self, item: QtWidgets.QListWidgetItem) -> None:
@@ -2650,7 +2754,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.map_scene.set_log_movement_overlay(payload, persistent=False)
 
     def _on_log_item_hover_left(self) -> None:
-        # Увод курсора с movement-строки должен полностью убирать визуализацию.
         self.map_scene.clear_log_movement_hover_overlay()
         self.map_scene.set_log_movement_overlay(None, persistent=True)
 
@@ -3133,6 +3236,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
             elif kind == "choice":
                 if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
                     self._submit_choice()
+                    return True
+            elif kind == "pace":
+                if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter, QtCore.Qt.Key_Space):
+                    self._submit_answer(True)
                     return True
         return super().eventFilter(obj, event)
 

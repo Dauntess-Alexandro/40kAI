@@ -20,6 +20,7 @@ from gym_mod.engine.game_io import ConsoleIO, set_active_io
 from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
 from gym_mod.envs.warhamEnv import roll_off_attacker_defender
 from gym_mod.engine.agent_registry import compatible_contracts, load_agent_by_id, make_env_contract
+from gym_mod.engine.game_controller import n_actions_from_env
 
 
 def load_trusted_checkpoint(path: str):
@@ -139,9 +140,7 @@ if verbose:
     ]
     _log(f"[action_space] move_num_keys_count={len(move_num_keys)}")
     _log(f"[action_space] move_num_keys={sorted(move_num_keys)}")
-n_actions = [5,2,len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
-for i in range(len(model)):
-    n_actions.append(12)
+n_actions = n_actions_from_env(env, len(model))
 n_observations = len(state)
 if args.agent_id:
     agent_payload = load_agent_by_id(args.agent_id)

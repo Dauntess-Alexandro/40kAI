@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Any, Dict, Optional, List
 import re
 import os
 import threading
@@ -118,6 +118,11 @@ class BaseIO:
         meta: Optional[dict] = None,
     ):
         raise NotImplementedError
+
+    def request_pace_ack(self, prompt: str, meta: Optional[Dict[str, Any]] = None) -> bool:
+        """Пауза Viewer между микрошагами хода ИИ (по умолчанию без блокировки)."""
+        _ = (prompt, meta)
+        return True
 
 
 def parse_dice_values(text: str, count: int, min_value: int = 1, max_value: int = 6) -> list[int]:
@@ -415,6 +420,14 @@ class GuiIO(BaseIO):
             except ValueError:
                 return None
         return None
+
+    def request_pace_ack(self, prompt: str, meta: Optional[Dict[str, Any]] = None) -> bool:
+        request = Request(kind="pace", prompt=prompt or "Далее", meta=dict(meta or {}))
+        self.request_queue.put(request)
+        answer = self._wait_for_answer()
+        if answer is None:
+            return False
+        return True
 
 
 _ACTIVE_IO: Optional[BaseIO] = None

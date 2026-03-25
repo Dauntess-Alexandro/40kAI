@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 import random
 from time import monotonic, perf_counter
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
@@ -317,6 +317,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
         ]
 
         self._selected_unit_key: Optional[Tuple[str, int]] = None
+        self._ai_activation_key: Optional[Tuple[str, int]] = None
+        self._ai_activation_meta: Dict[str, Any] = {}
+        self._last_viewer_step_seq: Optional[int] = None
+        self._last_ai_follow_sig: Optional[Tuple[Optional[Tuple[str, int]], int]] = None
+        self._last_user_camera_ts: float = 0.0
+        self._view_pulse_timer = QtCore.QTimer(self)
+        self._view_pulse_timer.setSingleShot(True)
+        self._view_pulse_timer.timeout.connect(self._finish_ai_zoom_pulse)
+        self._ai_pulse_base_scale: Optional[float] = None
+        self._ai_ring_anim_timer = QtCore.QTimer(self)
+        self._ai_ring_anim_timer.setInterval(33)
+        self._ai_ring_anim_timer.timeout.connect(self.update)
         self._fx_active: List[GaussTracerEffect] = []
 
         self._scale = 1.0
@@ -494,6 +506,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._active_unit_side = None
             self._selected_unit_id = None
             self._selected_unit_side = None
+            self._ai_activation_key = None
+            self._ai_activation_meta = {}
+            self._last_ai_follow_sig = None
+            self._last_viewer_step_seq = None
+            self._ai_ring_anim_timer.stop()
         self._target_unit_id = None
         self._target_cell = None
         self._hover_cell = None
@@ -616,6 +633,21 @@ class OpenGLBoardWidget(QOpenGLWidget):
         for key, point in self._curr_unit_positions.items():
             self._prev_unit_positions.setdefault(key, QtCore.QPointF(point))
 
+        vinfo = state.get("viewer") if isinstance(state.get("viewer"), dict) else {}
+        self._parse_viewer_activation_vinfo(vinfo)
+        if self._ai_activation_key or self._ai_activation_meta:
+            if not self._ai_ring_anim_timer.isActive():
+                self._ai_ring_anim_timer.start()
+        else:
+            self._ai_ring_anim_timer.stop()
+        seq = vinfo.get("step_seq")
+        prev_seq = getattr(self, "_last_viewer_step_seq", None)
+        if isinstance(seq, int) and (prev_seq is None or seq > prev_seq):
+            self._unit_anim_duration_ms = max(180, 260)
+        else:
+            self._unit_anim_duration_ms = 180
+        if isinstance(seq, int):
+            self._last_viewer_step_seq = seq
 
         self._start_unit_animation()
 
@@ -658,6 +690,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
 
         self.refresh_overlays()
+        self._maybe_follow_ai_camera(vinfo, seq)
 
         if self._hover_unit_key is not None:
             if self._state_unit(self._hover_unit_key) is not None:
@@ -1096,6 +1129,112 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._set_target_view(self._scale, self._pan, immediate=False)
         self.update()
         return True
+
+    def _parse_viewer_activation_vinfo(self, vinfo: Dict) -> None:
+        self._ai_activation_key = None
+        self._ai_activation_meta = {}
+        act = vinfo.get("activation")
+        if not isinstance(act, dict) or not act:
+            return
+        if act.get("side") != "model":
+            return
+        uid = act.get("unit_id")
+        if uid is not None:
+            try:
+                uid_int = int(uid)
+            except (TypeError, ValueError):
+                uid_int = None
+            if uid_int is not None:
+                self._ai_activation_key = ("model", uid_int)
+        self._ai_activation_meta = {
+            "phase": act.get("phase"),
+            "step_kind": act.get("step_kind"),
+            "unit_index": act.get("unit_index"),
+            "unit_id": act.get("unit_id"),
+        }
+
+    @staticmethod
+    def _format_ai_phase_badge_text(meta: Dict[str, Any]) -> str:
+        phase = meta.get("phase")
+        step_kind = meta.get("step_kind")
+        phase_map = {
+            "command": "Приказ",
+            "movement": "Движение",
+            "shooting": "Стрельба",
+            "charge": "Заряд",
+            "fight": "Бой",
+        }
+        raw_phase = str(phase or "").strip()
+        phase_ru = phase_map.get(raw_phase, raw_phase or "—")
+        if step_kind == "phase_end":
+            return f"{phase_ru} · конец фазы"
+        if step_kind == "before_unit":
+            # «Действие: тип фазы · юнит N» — согласовано с кнопкой «Далее: фаза · юнит N».
+            phase_lc = phase_ru.lower() if phase_ru and phase_ru != "—" else str(raw_phase or "шаг")
+            uid = meta.get("unit_id")
+            unit_tail = ""
+            if uid is not None:
+                try:
+                    unit_tail = f" · юнит {int(uid)}"
+                except (TypeError, ValueError):
+                    unit_tail = ""
+            return f"Действие: {phase_lc}{unit_tail}"
+        if step_kind == "unit":
+            return f"{phase_ru} · ход"
+        sk = str(step_kind or "").strip()
+        return f"{phase_ru} · {sk}" if sk else phase_ru
+
+    def _note_user_camera_interaction(self) -> None:
+        self._last_user_camera_ts = monotonic()
+
+    def _finish_ai_zoom_pulse(self) -> None:
+        if self._ai_pulse_base_scale is not None:
+            self._set_target_view(self._ai_pulse_base_scale, None, immediate=False)
+            self._ai_pulse_base_scale = None
+        self.update()
+
+    def _start_ai_zoom_pulse(self) -> None:
+        if str(os.getenv("VIEWER_FOLLOW_AI_PULSE", "1")).strip() != "1":
+            return
+        base = float(self._target_scale)
+        self._ai_pulse_base_scale = base
+        boosted = min(self._max_scale, max(self._min_scale, base * 1.08))
+        if abs(boosted - base) < 1e-6:
+            self._ai_pulse_base_scale = None
+            return
+        self._set_target_view(boosted, None, immediate=False)
+        self._view_pulse_timer.stop()
+        self._view_pulse_timer.start(420)
+
+    def _maybe_follow_ai_camera(self, _vinfo: Dict, seq: object) -> None:
+        if str(os.getenv("VIEWER_FOLLOW_AI", "0")).strip() != "1":
+            return
+        if monotonic() - self._last_user_camera_ts < 2.5:
+            return
+        key = self._ai_activation_key
+        seq_int: int
+        try:
+            seq_int = int(seq) if seq is not None else -1
+        except (TypeError, ValueError):
+            seq_int = -1
+        sig: Tuple[Optional[Tuple[str, int]], int] = (key, seq_int)
+        if sig == self._last_ai_follow_sig:
+            return
+        if key is None:
+            self._last_ai_follow_sig = sig
+            return
+        unit = self._unit_state_by_key.get(key)
+        if unit is None:
+            return
+        ax, ay = self._unit_anchor_state_xy(unit)
+        sx = self._safe_int(ax)
+        sy = self._safe_int(ay)
+        if sx is None or sy is None:
+            return
+        ok = bool(self.center_on_state_cell(sx, sy))
+        if ok:
+            self._start_ai_zoom_pulse()
+        self._last_ai_follow_sig = sig
 
     def set_log_movement_overlay(self, payload: Optional[Dict[str, object]], *, persistent: bool) -> None:
         """Set overlay from log interaction: persistent=click, transient=hover."""
@@ -1870,6 +2009,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         new_scale = max(self._min_scale, min(self._max_scale, new_scale))
         if new_scale == self._scale:
             return
+        self._note_user_camera_interaction()
         target_pan = cursor - world_before * new_scale
         self._set_target_view(new_scale, target_pan)
         self.update()
@@ -1910,6 +2050,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if self._dragging:
             delta = pos - self._drag_start
             self._drag_distance = max(self._drag_distance, abs(delta.x()) + abs(delta.y()))
+            self._note_user_camera_interaction()
             self._set_target_view(pan=self._target_pan + delta)
             self._drag_start = pos
             self.update()
@@ -2252,13 +2393,15 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._draw_hovered_terrain_cells_layer(painter)
         self._draw_unit_tooltip_overlays_layer(painter)
         self._draw_shooting_layer(painter, target_pass="under")
+        # Подсветка хода ИИ — на земле, до спрайтов (иначе «полоса» режет модели по поясу)
+        self._draw_selection_layer(painter)
         self._draw_units_layer(painter)
         self._draw_deploy_snap_fx_layer(painter)
-        self._draw_selection_layer(painter)
         self._draw_shooting_layer(painter, target_pass="over")
         if self.render_fx:
             self._draw_fx_layer(painter)
         self._draw_squad_status_layer(painter)
+        self._draw_ai_phase_badge_layer(painter)
         self._draw_labels_layer(painter)
 
         painter.setTransform(QtGui.QTransform())
@@ -2357,12 +2500,31 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return
         painter.drawPixmap(rect, pixmap, QtCore.QRectF(pixmap.rect()))
 
+    def _viewer_dim_non_active_enabled(self) -> bool:
+        # По умолчанию без приглушения; включить: VIEWER_DIM_NON_ACTIVE=1
+        return str(os.getenv("VIEWER_DIM_NON_ACTIVE", "0")).strip() == "1"
+
+    def _opacity_for_unit_render(self, render: UnitRender) -> float:
+        if not self._viewer_dim_non_active_enabled():
+            return 1.0
+        if not self._ai_activation_key and not self._ai_activation_meta:
+            return 1.0
+        side = render.key[0]
+        if side == "player":
+            return 0.42
+        if side == "model" and render.key != self._ai_activation_key:
+            return 0.88
+        return 1.0
+
     def _draw_units_layer(self, painter: QtGui.QPainter) -> None:
         renders = list(self._units)
         if self._deploy_preview_units:
             existing_keys = {render.key for render in self._units}
             renders.extend(render for render in self._deploy_preview_units if render.key not in existing_keys)
         for render in renders:
+            op = self._opacity_for_unit_render(render)
+            painter.save()
+            painter.setOpacity(max(0.0, min(1.0, op)))
             marker_radius = render.radius
             model_centers = render.model_centers or []
             icon = render.icon
@@ -2388,6 +2550,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                         icon_size,
                     )
                     self._draw_pixmap_with_facing(painter, rect, icon, render.facing)
+                painter.restore()
                 continue
 
             # Fallback без кругов: небольшой квадрат, если иконки нет.
@@ -2398,6 +2561,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             for center in centers:
                 rect = QtCore.QRectF(center.x() - size / 2, center.y() - size / 2, size, size)
                 painter.drawRect(rect)
+            painter.restore()
 
     def _draw_deploy_ghost_layer(self, painter: QtGui.QPainter) -> None:
         if not self._deploy_ghost_cells:
@@ -2454,8 +2618,142 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.restore()
 
     def _draw_selection_layer(self, painter: QtGui.QPainter) -> None:
-        # Кольца выбора отключены: отдельный слой selection не используется.
-        return
+        """Ореол хода ИИ в духе «некронского» свечения: мягкий синий эллипс под отрядом (до спрайтов)."""
+        key = self._ai_activation_key
+        render = self._unit_by_key.get(key) if key else None
+        if render is None:
+            return
+
+        centers = list(render.model_centers or [render.center])
+        cell = float(self.cell_size)
+        min_x = min(c.x() for c in centers)
+        max_x = max(c.x() for c in centers)
+        min_y = min(c.y() for c in centers)
+        max_y = max(c.y() for c in centers)
+        cx = 0.5 * (min_x + max_x)
+        # Чуть ниже центра формации — ореол ближе к полу, не к головам
+        cy = 0.5 * (min_y + max_y) + cell * 0.26
+
+        span_x = max(max_x - min_x, cell * 0.48)
+        span_y = max(max_y - min_y, cell * 0.42)
+        t = monotonic()
+        breath = 0.5 + 0.5 * math.sin(t * 1.65)
+        pulse = 1.0 + 0.032 * math.sin(t * 1.9)
+        rx = (span_x * 0.58 + cell * 0.62) * pulse
+        ry = (span_y * 0.52 + cell * 0.48) * pulse
+
+        unit_disc = QtCore.QRectF(-1.0, -1.0, 2.0, 2.0)
+        painter.save()
+        painter.setClipRect(self._board_rect)
+        painter.setPen(QtCore.Qt.NoPen)
+
+        # Широкий мягкий сине-голубой ореол (типичный «плазменный» rim, но тише скрина с зелёным)
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+        painter.save()
+        painter.translate(cx, cy)
+        painter.scale(rx * 1.32, ry * 1.18)
+        outer = QtGui.QRadialGradient(0.0, 0.0, 1.0)
+        outer.setColorAt(0.0, QtGui.QColor(130, 205, 255, int(16 + 7 * breath)))
+        outer.setColorAt(0.45, QtGui.QColor(85, 165, 235, int(9 + 4 * breath)))
+        outer.setColorAt(0.78, QtGui.QColor(55, 120, 205, int(4 + 2 * breath)))
+        outer.setColorAt(1.0, QtGui.QColor(30, 85, 160, 0))
+        painter.setBrush(QtGui.QBrush(outer))
+        painter.drawEllipse(unit_disc)
+        painter.restore()
+
+        # Аддитивное ядро — лёгкий «emissive», без кислотности
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+        painter.save()
+        painter.translate(cx, cy)
+        painter.scale(rx * 0.92, ry * 0.84)
+        core = QtGui.QRadialGradient(0.0, 0.0, 1.0)
+        core.setColorAt(0.0, QtGui.QColor(200, 235, 255, int(14 + 9 * breath)))
+        core.setColorAt(0.42, QtGui.QColor(120, 195, 255, int(8 + 5 * breath)))
+        core.setColorAt(0.75, QtGui.QColor(70, 150, 230, int(3 + 2 * breath)))
+        core.setColorAt(1.0, QtGui.QColor(0, 0, 0, 0))
+        painter.setBrush(QtGui.QBrush(core))
+        painter.drawEllipse(unit_disc)
+        painter.restore()
+
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+        painter.restore()
+
+    def _ai_phase_badge_anchor_world(self, render: UnitRender) -> Tuple[float, float]:
+        """Центр X и нижняя грань плашки (мир): сразу над блоком HP отряда."""
+        compact_mode = self._scale < 0.55
+        unit = self._unit_state_by_key.get(render.key)
+        if isinstance(unit, dict):
+            status = self._interpolate_status(render.key)
+            if status is not None:
+                layout = self._build_status_layout(render, status, compact_mode)
+                hp_text_font = Theme.font(size=7 if compact_mode else 8, bold=True)
+                fm = QtGui.QFontMetrics(hp_text_font)
+                text_block_h = 0.0 if compact_mode else float(fm.height() + 2)
+                hud_top = layout.top_y - 2.0 - text_block_h
+                gap = 6.0
+                return float(layout.center_x), float(hud_top - gap)
+        centers = list(render.model_centers or [render.center])
+        min_y = min(c.y() for c in centers)
+        cx = sum(c.x() for c in centers) / len(centers)
+        zoom_safe = self.cell_size * max(0.28, 0.44 / max(0.65, self._scale))
+        return float(cx), float(min_y - zoom_safe - self.cell_size * 0.55)
+
+    def _draw_ai_phase_badge_layer(self, painter: QtGui.QPainter) -> None:
+        meta = self._ai_activation_meta
+        key = self._ai_activation_key
+        if not meta or not (meta.get("phase") is not None or meta.get("step_kind") is not None):
+            return
+        badge_text = self._format_ai_phase_badge_text(meta)
+        if not badge_text:
+            return
+
+        render = self._unit_by_key.get(key) if key else None
+        if render is not None:
+            cx, badge_bottom = self._ai_phase_badge_anchor_world(render)
+        else:
+            cx = (self._board_width * self.cell_size) * 0.5
+            badge_bottom = 24.0
+
+        font = Theme.font(9, bold=True)
+        painter.setFont(font)
+        fm = QtGui.QFontMetrics(font)
+        pad_x, pad_y = 10.0, 5.0
+        text_w = fm.horizontalAdvance(badge_text)
+        text_h = fm.height()
+        bg_w = text_w + pad_x * 2
+        bg_h = text_h + pad_y * 2
+        radius = min(bg_h * 0.5, 14.0)
+        bg_rect = QtCore.QRectF(cx - bg_w * 0.5, badge_bottom - bg_h, bg_w, bg_h)
+        margin = 4.0
+        bg_rect.moveLeft(
+            max(self._board_rect.left() + margin, min(bg_rect.left(), self._board_rect.right() - bg_w - margin))
+        )
+
+        path = QtGui.QPainterPath()
+        path.addRoundedRect(bg_rect, radius, radius)
+
+        painter.save()
+        sh = QtGui.QPainterPath()
+        sh.addRoundedRect(bg_rect.translated(1.5, 2.0), radius, radius)
+        painter.fillPath(sh, QtGui.QColor(0, 0, 0, 76))
+
+        grad = QtGui.QLinearGradient(bg_rect.topLeft(), bg_rect.bottomLeft())
+        grad.setColorAt(0.0, QtGui.QColor(48, 58, 78, 246))
+        grad.setColorAt(1.0, QtGui.QColor(24, 28, 38, 238))
+        painter.fillPath(path, grad)
+
+        bcol = QtGui.QColor(Theme.accent)
+        bcol.setAlpha(210)
+        pen = QtGui.QPen(bcol)
+        pen.setWidthF(1.25)
+        pen.setCosmetic(True)
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.drawPath(path)
+
+        painter.setPen(QtGui.QPen(QtGui.QColor(244, 240, 232, 252)))
+        painter.drawText(bg_rect, int(QtCore.Qt.AlignCenter), badge_text)
+        painter.restore()
 
     def _draw_log_movement_overlay_layer(self, painter: QtGui.QPainter) -> None:
         payload = self._log_move_overlay_hover or self._log_move_overlay_persistent

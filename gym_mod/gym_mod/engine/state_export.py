@@ -706,6 +706,12 @@ def write_state_json(env, path=None):
             "mode": getattr(env, "deployment_mode", None),
             "rl_stats": getattr(env, "deployment_rl_stats", None),
         },
+        "viewer": {
+            "pacing_mode": str(os.getenv("VIEWER_PACING_MODE", "off")).strip().lower(),
+            "awaiting_ack": bool(getattr(env, "viewer_awaiting_ack", False)),
+            "activation": getattr(env, "viewer_activation", None) or {},
+            "step_seq": _safe_int(getattr(env, "viewer_step_seq", 0), 0),
+        },
         "payload_kind": "light",
         "generated_at": datetime.utcnow().isoformat() + "Z",
     }

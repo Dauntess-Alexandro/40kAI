@@ -18,6 +18,7 @@ def _default_state() -> Dict[str, Any]:
         "objectives": [],
         "terrain_features": [],
         "log_tail": [],
+        "viewer": {},
     }
 
 

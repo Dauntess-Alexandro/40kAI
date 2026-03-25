@@ -7,8 +7,8 @@
     "cols": 60,
     "rows": 40
   },
-  "turn": 2,
-  "round": 2,
+  "turn": 3,
+  "round": 3,
   "phase": "command",
   "active": "player",
   "movement_overlay": null,
@@ -17,7 +17,7 @@
     "model": 0
   },
   "cp": {
-    "player": 2,
+    "player": 4,
     "model": 2
   },
   "units": [
@@ -26,64 +26,44 @@
       "id": 11,
       "name": "Necron Warriors",
       "models": 10,
-      "alive_models": 10,
-      "hp": 10.0,
+      "alive_models": 6,
+      "hp": 6.0,
       "max_hp": 10.0,
       "max_wounds": 10.0,
       "wounds_max": 10.0,
-      "x": 39,
-      "y": 31,
-      "anchor_x": 39,
-      "anchor_y": 31,
+      "x": 33,
+      "y": 16,
+      "anchor_x": 33,
+      "anchor_y": 16,
       "model_positions": [
         {
-          "x": 39,
-          "y": 31,
+          "x": 33,
+          "y": 16,
           "z": 0
         },
         {
-          "x": 40,
-          "y": 31,
+          "x": 34,
+          "y": 16,
           "z": 0
         },
         {
-          "x": 38,
-          "y": 31,
+          "x": 32,
+          "y": 16,
           "z": 0
         },
         {
-          "x": 39,
-          "y": 32,
+          "x": 33,
+          "y": 17,
           "z": 0
         },
         {
-          "x": 39,
-          "y": 30,
+          "x": 33,
+          "y": 15,
           "z": 0
         },
         {
-          "x": 40,
-          "y": 32,
-          "z": 0
-        },
-        {
-          "x": 38,
-          "y": 32,
-          "z": 0
-        },
-        {
-          "x": 40,
-          "y": 30,
-          "z": 0
-        },
-        {
-          "x": 38,
-          "y": 30,
-          "z": 0
-        },
-        {
-          "x": 41,
-          "y": 31,
+          "x": 34,
+          "y": 17,
           "z": 0
         }
       ],
@@ -97,16 +77,20 @@
       "unit_status": {
         "in_cover": false,
         "obscured": false,
-        "fully_visible": false,
+        "fully_visible": true,
         "objective_state": null,
         "used_advance": true,
         "advance_roll": 6,
-        "dist_cover": 5.0,
+        "dist_cover": 4.0,
         "cover_source_terrain_id": null,
         "obscured_vs": [],
-        "exposed_to": [],
+        "exposed_to": [
+          22
+        ],
         "engagement_with": [],
-        "in_range_targets": [],
+        "in_range_targets": [
+          22
+        ],
         "can_see_ids": [
           21,
           22
@@ -115,7 +99,9 @@
           21,
           22
         ],
-        "in_range_ids": [],
+        "in_range_ids": [
+          22
+        ],
         "reachable_cells": [],
         "move_cells": [],
         "advance_cells": []
@@ -126,64 +112,29 @@
       "id": 12,
       "name": "Necron Warriors",
       "models": 10,
-      "alive_models": 10,
-      "hp": 10.0,
+      "alive_models": 3,
+      "hp": 3.0,
       "max_hp": 10.0,
       "max_wounds": 10.0,
       "wounds_max": 10.0,
-      "x": 36,
-      "y": 23,
-      "anchor_x": 36,
-      "anchor_y": 23,
+      "x": 29,
+      "y": 15,
+      "anchor_x": 29,
+      "anchor_y": 15,
       "model_positions": [
         {
-          "x": 36,
-          "y": 23,
+          "x": 29,
+          "y": 15,
           "z": 0
         },
         {
-          "x": 37,
-          "y": 23,
+          "x": 30,
+          "y": 15,
           "z": 0
         },
         {
-          "x": 35,
-          "y": 23,
-          "z": 0
-        },
-        {
-          "x": 36,
-          "y": 24,
-          "z": 0
-        },
-        {
-          "x": 36,
-          "y": 22,
-          "z": 0
-        },
-        {
-          "x": 37,
-          "y": 24,
-          "z": 0
-        },
-        {
-          "x": 35,
-          "y": 24,
-          "z": 0
-        },
-        {
-          "x": 37,
-          "y": 22,
-          "z": 0
-        },
-        {
-          "x": 35,
-          "y": 22,
-          "z": 0
-        },
-        {
-          "x": 38,
-          "y": 23,
+          "x": 28,
+          "y": 15,
           "z": 0
         }
       ],
@@ -197,16 +148,22 @@
       "unit_status": {
         "in_cover": false,
         "obscured": false,
-        "fully_visible": false,
+        "fully_visible": true,
         "objective_state": null,
         "used_advance": true,
         "advance_roll": 6,
         "dist_cover": 7.0,
         "cover_source_terrain_id": null,
         "obscured_vs": [],
-        "exposed_to": [],
+        "exposed_to": [
+          21,
+          22
+        ],
         "engagement_with": [],
-        "in_range_targets": [],
+        "in_range_targets": [
+          21,
+          22
+        ],
         "can_see_ids": [
           21,
           22
@@ -215,7 +172,10 @@
           21,
           22
         ],
-        "in_range_ids": [],
+        "in_range_ids": [
+          21,
+          22
+        ],
         "reachable_cells": [],
         "move_cells": [],
         "advance_cells": []
@@ -232,58 +192,58 @@
       "max_wounds": 10.0,
       "wounds_max": 10.0,
       "x": 3,
-      "y": 5,
+      "y": 1,
       "anchor_x": 3,
-      "anchor_y": 5,
+      "anchor_y": 1,
       "model_positions": [
         {
           "x": 3,
-          "y": 5,
+          "y": 1,
           "z": 0
         },
         {
           "x": 4,
-          "y": 5,
+          "y": 1,
           "z": 0
         },
         {
           "x": 2,
-          "y": 5,
+          "y": 1,
           "z": 0
         },
         {
           "x": 3,
-          "y": 6,
+          "y": 2,
           "z": 0
         },
         {
           "x": 3,
-          "y": 4,
+          "y": 0,
           "z": 0
         },
         {
           "x": 4,
-          "y": 6,
+          "y": 2,
           "z": 0
         },
         {
           "x": 2,
-          "y": 6,
+          "y": 2,
           "z": 0
         },
         {
           "x": 4,
-          "y": 4,
+          "y": 0,
           "z": 0
         },
         {
           "x": 2,
-          "y": 4,
+          "y": 0,
           "z": 0
         },
         {
           "x": 5,
-          "y": 5,
+          "y": 1,
           "z": 0
         }
       ],
@@ -297,16 +257,20 @@
       "unit_status": {
         "in_cover": false,
         "obscured": false,
-        "fully_visible": false,
+        "fully_visible": true,
         "objective_state": null,
         "used_advance": false,
         "advance_roll": null,
         "dist_cover": 19.0,
         "cover_source_terrain_id": null,
         "obscured_vs": [],
-        "exposed_to": [],
+        "exposed_to": [
+          12
+        ],
         "engagement_with": [],
-        "in_range_targets": [],
+        "in_range_targets": [
+          12
+        ],
         "can_see_ids": [
           11,
           12
@@ -315,7 +279,9 @@
           11,
           12
         ],
-        "in_range_ids": [],
+        "in_range_ids": [
+          12
+        ],
         "reachable_cells": [],
         "move_cells": [],
         "advance_cells": []
@@ -331,59 +297,59 @@
       "max_hp": 10.0,
       "max_wounds": 10.0,
       "wounds_max": 10.0,
-      "x": 8,
-      "y": 21,
-      "anchor_x": 8,
-      "anchor_y": 21,
+      "x": 9,
+      "y": 12,
+      "anchor_x": 9,
+      "anchor_y": 12,
       "model_positions": [
         {
-          "x": 8,
-          "y": 21,
-          "z": 0
-        },
-        {
           "x": 9,
-          "y": 21,
-          "z": 0
-        },
-        {
-          "x": 7,
-          "y": 21,
-          "z": 0
-        },
-        {
-          "x": 8,
-          "y": 22,
-          "z": 0
-        },
-        {
-          "x": 8,
-          "y": 20,
-          "z": 0
-        },
-        {
-          "x": 9,
-          "y": 22,
-          "z": 0
-        },
-        {
-          "x": 7,
-          "y": 22,
-          "z": 0
-        },
-        {
-          "x": 9,
-          "y": 20,
-          "z": 0
-        },
-        {
-          "x": 7,
-          "y": 20,
+          "y": 12,
           "z": 0
         },
         {
           "x": 10,
-          "y": 21,
+          "y": 12,
+          "z": 0
+        },
+        {
+          "x": 8,
+          "y": 12,
+          "z": 0
+        },
+        {
+          "x": 9,
+          "y": 13,
+          "z": 0
+        },
+        {
+          "x": 9,
+          "y": 11,
+          "z": 0
+        },
+        {
+          "x": 10,
+          "y": 13,
+          "z": 0
+        },
+        {
+          "x": 8,
+          "y": 13,
+          "z": 0
+        },
+        {
+          "x": 10,
+          "y": 11,
+          "z": 0
+        },
+        {
+          "x": 8,
+          "y": 11,
+          "z": 0
+        },
+        {
+          "x": 11,
+          "y": 12,
           "z": 0
         }
       ],
@@ -397,16 +363,22 @@
       "unit_status": {
         "in_cover": false,
         "obscured": false,
-        "fully_visible": false,
+        "fully_visible": true,
         "objective_state": null,
         "used_advance": false,
         "advance_roll": null,
-        "dist_cover": 14.0,
+        "dist_cover": 13.0,
         "cover_source_terrain_id": null,
         "obscured_vs": [],
-        "exposed_to": [],
+        "exposed_to": [
+          11,
+          12
+        ],
         "engagement_with": [],
-        "in_range_targets": [],
+        "in_range_targets": [
+          11,
+          12
+        ],
         "can_see_ids": [
           11,
           12
@@ -415,7 +387,10 @@
           11,
           12
         ],
-        "in_range_ids": [],
+        "in_range_ids": [
+          11,
+          12
+        ],
         "reachable_cells": [],
         "move_cells": [],
         "advance_cells": []
@@ -579,6 +554,18 @@
     "mode": null,
     "rl_stats": null
   },
+  "viewer": {
+    "pacing_mode": "per_unit",
+    "awaiting_ack": false,
+    "activation": {
+      "side": "model",
+      "phase": "charge",
+      "unit_index": 1,
+      "unit_id": 22,
+      "step_kind": "before_unit"
+    },
+    "step_seq": 12
+  },
   "payload_kind": "light",
-  "generated_at": "2026-03-15T07:45:32.159914Z"
+  "generated_at": "2026-03-24T20:12:39.295574Z"
 }

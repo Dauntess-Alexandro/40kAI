@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import pickle
 import queue
+import re
 import threading
 import traceback
 from typing import Optional
@@ -23,6 +24,50 @@ def load_trusted_checkpoint(checkpoint_path: str):
         return torch.load(checkpoint_path, weights_only=False)
     except TypeError:
         return torch.load(checkpoint_path)
+
+
+def n_actions_from_env(env, model_len: int) -> list[int]:
+    """Совпадает с train.py: размеры голов DQN из env.action_space (move_num_* = Discrete(24))."""
+    ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
+    for i_u in range(int(model_len)):
+        ordered_keys.append(f"move_num_{i_u}")
+    out: list[int] = []
+    for k in ordered_keys:
+        sp = env.action_space.spaces[k]
+        if hasattr(sp, "n"):
+            out.append(int(sp.n))
+        elif hasattr(sp, "nvec"):
+            out.extend([int(x) for x in sp.nvec])
+        else:
+            raise TypeError(f"Unsupported action space for {k}: {type(sp)}")
+    return out
+
+
+def resolve_checkpoint_for_pickle(pickle_path: str) -> Optional[str]:
+    """
+    Находит .pth для .pickle: обычно тот же stem; если нет — базовый run
+    (model-<run>-<iter>.pth) или best_eval_checkpoint.pth в той же папке.
+    """
+    if not pickle_path or not os.path.isfile(pickle_path):
+        return None
+    directory = os.path.dirname(os.path.abspath(pickle_path))
+    base = os.path.splitext(os.path.basename(pickle_path))[0]
+
+    primary = os.path.join(directory, base + ".pth")
+    if os.path.isfile(primary):
+        return primary
+
+    m = re.match(r"^(model-\d+-\d+)", base)
+    if m:
+        fallback = os.path.join(directory, m.group(1) + ".pth")
+        if os.path.isfile(fallback):
+            return fallback
+
+    best = os.path.join(directory, "best_eval_checkpoint.pth")
+    if os.path.isfile(best):
+        return best
+
+    return None
 
 
 class GameController:
@@ -91,8 +136,8 @@ class GameController:
                         if not filename.endswith(".pickle"):
                             continue
                         pickle_path = os.path.join(full, filename)
-                        checkpoint_path = os.path.splitext(pickle_path)[0] + ".pth"
-                        if os.path.isfile(checkpoint_path):
+                        checkpoint_path = resolve_checkpoint_for_pickle(pickle_path)
+                        if checkpoint_path:
                             paired_models.append((os.path.getmtime(pickle_path), pickle_path, checkpoint_path))
 
             if not paired_models:
@@ -104,14 +149,18 @@ class GameController:
             _, model_path, checkpoint_path = paired_models[-1]
         else:
             model_path = self.model_path
-            checkpoint_path = os.path.splitext(model_path)[0] + ".pth"
             if not os.path.isfile(model_path):
                 raise FileNotFoundError(f"Не найден файл модели: {model_path}")
-            if not os.path.isfile(checkpoint_path):
+            expected = os.path.splitext(model_path)[0] + ".pth"
+            checkpoint_path = resolve_checkpoint_for_pickle(model_path)
+            if not checkpoint_path:
                 raise FileNotFoundError(
-                    f"Не найден checkpoint для модели: {checkpoint_path}. "
-                    "Проверьте, что рядом есть .pth файл."
+                    f"Не найден checkpoint для модели. Ожидался файл рядом с pickle: {expected}. "
+                    "Допустимы также базовый model-<run>-<iter>.pth или best_eval_checkpoint.pth в той же папке. "
+                    f"Папка: {os.path.dirname(os.path.abspath(model_path))}"
                 )
+            if os.path.normpath(checkpoint_path) != os.path.normpath(expected):
+                self._io.log(f"[MODEL] checkpoint: используется {checkpoint_path} (рядом нет {expected})")
 
         self._io.log(f"[MODEL] pickle={model_path}")
         self._io.log(f"[MODEL] checkpoint={checkpoint_path}")
@@ -123,9 +172,7 @@ class GameController:
         if agent_id_override:
             payload = load_agent_by_id(agent_id_override)
             model_info, enemy_info = env.reset(options={"m": model, "e": enemy, "playType": True, "Type": "big", "trunc": True})
-            n_actions = [5, 2, len(enemy_info["player health"]), len(enemy_info["player health"]), 5, len(enemy_info["model health"])]
-            for _ in range(len(model)):
-                n_actions.append(12)
+            n_actions = n_actions_from_env(env, len(model))
             runtime_contract = make_env_contract(
                 n_observations=len(model_info),
                 n_actions=n_actions,
@@ -151,6 +198,7 @@ class GameController:
 
     def _run_game_loop(self):
         os.environ["STATE_JSON_PATH"] = self.state_path
+        os.environ.setdefault("VIEWER_PACING_MODE", "per_unit")
         if "MANUAL_DICE" not in os.environ:
             os.environ["MANUAL_DICE"] = "1"
         if "VERBOSE_LOGS" not in os.environ and os.environ.get("MANUAL_DICE") == "1":
@@ -226,10 +274,9 @@ class GameController:
                 options={"m": model, "e": enemy, "playType": True, "Type": "big", "trunc": True}
             )
 
-            n_actions = [5, 2, len(info["player health"]), len(info["player health"]), 5, len(info["model health"])]
-            for _ in range(len(model)):
-                n_actions.append(12)
+            n_actions = n_actions_from_env(env, len(model))
             n_observations = len(state)
+            self._io.log(f"[MODEL] n_actions (из env): {n_actions}")
 
             net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
             dueling = net_type == "dueling"
