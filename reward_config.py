@@ -168,6 +168,18 @@ TERRAIN_EVENT_SHOT_FROM_COVER_BONUS = 0.03
 # Exposure penalty: fully_visible=True при наличии реальной угрозы.
 TERRAIN_EXPOSURE_PENALTY = 0.02
 
+# Митигировать штраф за полученный урон, если модель в cover под угрозой.
+# Итоговый множитель: penalty *= clamp(1 - K * cover_score_after, min=MIN_MULT, max=1)
+TERRAIN_DAMAGE_TAKEN_COVER_MITIGATION_K = 0.25
+TERRAIN_DAMAGE_TAKEN_COVER_MITIGATION_MIN_MULT = 0.75
+
+# Микробонус: если cover_score вырос И модель реально двигалась в этот шаг.
+TERRAIN_MOVE_INTO_COVER_BONUS_SCALE = 0.03
+
+# Командный бонус: доля живых INFANTRY (под угрозой) в cover.
+TERRAIN_TEAM_COVER_THRESHOLD = 0.50
+TERRAIN_TEAM_COVER_BONUS = 0.02
+
 # Анти-абьюз: clamp суммарного terrain-shaping за шаг.
 TERRAIN_SHAPING_STEP_RCAP = 0.12
 

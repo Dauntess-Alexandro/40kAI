@@ -3842,6 +3842,8 @@ class Warhammer40kEnv(gym.Env):
             movement_meta = {
                 "applied_hold_penalty": False,
                 "hold_penalty_events": 0,
+                "moved_units": 0,
+                "moved_any": False,
             }
             for i in range(len(self.unit_health)):
                 modelName = i + 21
@@ -3895,6 +3897,10 @@ class Warhammer40kEnv(gym.Env):
                         adv_used = max(0, int(movement) - int(base_m))
                         advance_roll = max(1, min(6, int(adv_used)))
                     self.unit_coords[i] = [int(dest[1]), int(dest[0])]
+                    pos_after = tuple(self.unit_coords[i])
+                    if pos_after != tuple(pos_before):
+                        movement_meta["moved_units"] += 1
+                        movement_meta["moved_any"] = True
 
                     if str(move_mode) == "stay":
                         nearest_obj_idx = None
@@ -6479,14 +6485,7 @@ class Warhammer40kEnv(gym.Env):
 
         model_hp_end = float(sum(self.unit_health))
         damage_taken = max(0.0, model_hp_start - model_hp_end)
-        if damage_taken > 0:
-            damage_taken_norm = damage_taken / max(1.0, float(self.model_hp_max_total))
-            penalty = reward_cfg.DAMAGE_TAKEN_SCALE * damage_taken_norm
-            reward -= penalty
-            self._log_reward(
-                "Reward (урон по модели): "
-                f"damage_taken={damage_taken:.2f}, norm={damage_taken_norm:.3f}, penalty=-{penalty:.3f}"
-            )
+        pending_damage_taken = float(damage_taken)
 
         if game_over:
             res = 4
@@ -6631,6 +6630,42 @@ class Warhammer40kEnv(gym.Env):
             f"guard={terrain_snapshot_before['guard_score']:.3f}->{terrain_snapshot_after['guard_score']:.3f}"
         )
 
+        # (6) micro bonus: вошли в cover и реально двигались
+        try:
+            moved_any = bool(movement_meta.get("moved_any", False))
+            cover_before = float(terrain_snapshot_before.get("cover_score", 0.0) or 0.0)
+            cover_after = float(terrain_snapshot_after.get("cover_score", 0.0) or 0.0)
+            if moved_any and cover_after > cover_before + 1e-9:
+                scale = float(getattr(reward_cfg, "TERRAIN_MOVE_INTO_COVER_BONUS_SCALE", 0.03))
+                bonus = max(0.0, scale * (cover_after - cover_before))
+                if bonus > 0:
+                    terrain_reward_total += bonus
+                    self._log_reward(
+                        "Reward (terrain/move_into_cover): "
+                        f"cover={cover_before:.3f}->{cover_after:.3f}, moved_any=1, bonus=+{bonus:.3f}"
+                    )
+        except Exception:
+            pass
+
+        # (7) мягкий командный бонус: доля в cover при наличии угроз
+        try:
+            threat_total = int(terrain_snapshot_after.get("threat_count_total", 0) or 0)
+            if threat_total > 0:
+                alive_units = max(1, sum(1 for hp in self.unit_health if hp > 0))
+                covered_units = int(terrain_snapshot_after.get("cover_units", 0) or 0)
+                ratio = float(covered_units) / float(alive_units)
+                thr = float(getattr(reward_cfg, "TERRAIN_TEAM_COVER_THRESHOLD", 0.50))
+                if ratio >= thr:
+                    team_bonus = float(getattr(reward_cfg, "TERRAIN_TEAM_COVER_BONUS", 0.02))
+                    if team_bonus != 0:
+                        terrain_reward_total += team_bonus
+                        self._log_reward(
+                            "Reward (terrain/team_cover): "
+                            f"covered={covered_units}/{alive_units} ({ratio:.3f}) thr={thr:.2f} bonus=+{team_bonus:.3f}"
+                        )
+        except Exception:
+            pass
+
         exposure_penalty_cfg = float(getattr(reward_cfg, "TERRAIN_EXPOSURE_PENALTY", 0.02))
         if terrain_snapshot_after["threat_count_total"] <= 0:
             self._log_reward("Reward (terrain/exposure): skip, reason=нет реальных угроз (threat_count=0).")
@@ -6646,6 +6681,31 @@ class Warhammer40kEnv(gym.Env):
                 "Reward (terrain/exposure): "
                 f"penalty=-{exposure_penalty:.3f} (exposed_units={terrain_snapshot_after['exposed_units']}, "
                 f"alive_units={alive_units}, threat_count={terrain_snapshot_after['threat_count_total']})"
+            )
+
+        # (3) cover-митигатор для штрафа за входящий урон (если был урон и есть угрозы)
+        if pending_damage_taken > 0:
+            damage_taken_norm = pending_damage_taken / max(1.0, float(self.model_hp_max_total))
+            penalty = float(reward_cfg.DAMAGE_TAKEN_SCALE) * float(damage_taken_norm)
+            try:
+                threat_total = int(terrain_snapshot_after.get("threat_count_total", 0) or 0)
+                cover_after = float(terrain_snapshot_after.get("cover_score", 0.0) or 0.0)
+                if threat_total > 0 and cover_after > 0:
+                    k = float(getattr(reward_cfg, "TERRAIN_DAMAGE_TAKEN_COVER_MITIGATION_K", 0.25))
+                    min_mult = float(getattr(reward_cfg, "TERRAIN_DAMAGE_TAKEN_COVER_MITIGATION_MIN_MULT", 0.75))
+                    mult = max(min_mult, min(1.0, 1.0 - (k * cover_after)))
+                    penalty *= mult
+                    self._log_reward(
+                        "Reward (damage/cover_mitigate): "
+                        f"cover_after={cover_after:.3f} threat_total={threat_total} "
+                        f"k={k:.3f} min_mult={min_mult:.3f} mult={mult:.3f}"
+                    )
+            except Exception:
+                pass
+            reward -= penalty
+            self._log_reward(
+                "Reward (урон по модели): "
+                f"damage_taken={pending_damage_taken:.2f}, norm={damage_taken_norm:.3f}, penalty=-{penalty:.3f}"
             )
 
         terrain_cap = abs(float(getattr(reward_cfg, "TERRAIN_SHAPING_STEP_RCAP", 0.12)))

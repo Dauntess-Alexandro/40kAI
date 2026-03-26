@@ -59,6 +59,7 @@ class GUIController(QtCore.QObject):
     resumeFromCheckpointChanged = QtCore.Signal(bool)
     disableTrainLoggingChanged = QtCore.Signal(bool)
     actorLearnerChanged = QtCore.Signal(bool)
+    actionTraceChanged = QtCore.Signal(bool)
     autoClearLogsChanged = QtCore.Signal(bool)
     factionIconSizeChanged = QtCore.Signal(int)
     unitIconSizeChanged = QtCore.Signal(int)
@@ -140,6 +141,7 @@ class GUIController(QtCore.QObject):
         self._resume_from_checkpoint = False
         self._disable_train_logging = False
         self._actor_learner = str(os.getenv("ACTOR_LEARNER", "0")).strip() == "1"
+        self._action_trace = str(os.getenv("ACTION_TRACE_ENABLED", "0")).strip() == "1"
         self._auto_clear_logs = True
         self._unit_faction_by_name: dict[str, str] = {}
         self._deployment_mode_options = ["manual_player", "auto", "rl_phase"]
@@ -378,6 +380,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(bool, notify=actorLearnerChanged)
     def actorLearner(self) -> bool:
         return self._actor_learner
+
+    @QtCore.Property(bool, notify=actionTraceChanged)
+    def actionTrace(self) -> bool:
+        return self._action_trace
 
     @QtCore.Property(bool, notify=autoClearLogsChanged)
     def autoClearLogs(self) -> bool:
@@ -763,6 +769,14 @@ class GUIController(QtCore.QObject):
             return
         self._actor_learner = flag
         self.actorLearnerChanged.emit(flag)
+
+    @QtCore.Slot(bool)
+    def set_action_trace(self, value: bool) -> None:
+        flag = bool(value)
+        if self._action_trace == flag:
+            return
+        self._action_trace = flag
+        self.actionTraceChanged.emit(flag)
 
     @QtCore.Slot(bool)
     def set_auto_clear_logs(self, value: bool) -> None:
@@ -1621,6 +1635,7 @@ class GUIController(QtCore.QObject):
             f"resume={int(self._resume_from_checkpoint)}, auto_clear_logs={int(self._auto_clear_logs)}, "
             f"disable_train_logging={int(self._disable_train_logging)}, "
             f"actor_learner={int(self._actor_learner)}, "
+            f"action_trace={int(self._action_trace)}, "
             f"opponent_source={selected_opponent_source}, "
             f"opponent_agent_id={self._selected_specific_opponent_id or '-'}",
             level="INFO",
@@ -1655,6 +1670,7 @@ class GUIController(QtCore.QObject):
         env.insert("MISSION_NAME", self._selected_mission)
         env.insert("LEARNER_SIDE", self._learner_side)
         env.insert("LEARNER_FACTION", self._learner_faction)
+        env.insert("ACTION_TRACE_ENABLED", "1" if self._action_trace else "0")
         env.insert("LEAGUE_ENABLE", "1")
         env.insert("DEPLOYMENT_MODE", self._deployment_mode)
         if self._deployment_mode == "manual_player":

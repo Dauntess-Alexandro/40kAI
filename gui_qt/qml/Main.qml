@@ -205,6 +205,14 @@ ApplicationWindow {
                                     }
 
                                     CheckBox {
+                                        text: "Детальный трейс действий модели (debug, пишет много в лог)"
+                                        checked: controller.actionTrace
+                                        enabled: !controller.running
+                                        Layout.columnSpan: 2
+                                        onToggled: controller.set_action_trace(checked)
+                                    }
+
+                                    CheckBox {
                                         text: "Очищать логи автоматически"
                                         checked: controller.autoClearLogs
                                         enabled: !controller.running

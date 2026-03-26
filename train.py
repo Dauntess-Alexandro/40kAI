@@ -133,6 +133,10 @@ TRAIN_LOG_TO_FILE = os.getenv("TRAIN_LOG_TO_FILE", "1") == "1"
 TRAIN_LOG_TO_CONSOLE = str(os.getenv("TRAIN_LOG_TO_CONSOLE", "0")).strip() == "1"
 TRAIN_DEBUG = os.getenv("TRAIN_DEBUG", "0") == "1"
 LOG_EVERY = int(os.getenv("LOG_EVERY", "200"))
+ACTION_TRACE_ENABLED = os.getenv("ACTION_TRACE_ENABLED", "0") == "1"
+ACTION_TRACE_FIRST_EP = max(0, int(os.getenv("ACTION_TRACE_FIRST_EP", "3") or "3"))
+ACTION_TRACE_EVERY_EP = max(1, int(os.getenv("ACTION_TRACE_EVERY_EP", "1") or "1"))
+ACTION_TRACE_MAX_LINES_PER_EP = max(20, int(os.getenv("ACTION_TRACE_MAX_LINES_PER_EP", "200") or "200"))
 if TRAIN_LOG_EVERY_UPDATES < 1:
     TRAIN_LOG_EVERY_UPDATES = 1
 if TRAIN_DEBUG:
@@ -850,6 +854,110 @@ def append_agent_log(line: str) -> None:
     with _TRAIN_LOG_LOCK:
         _TRAIN_LOG_BUFFER.append(full_line)
     _flush_agent_log_buffer(force=False)
+
+
+def _trace_ep_enabled(ep_idx_1based: int) -> bool:
+    if not ACTION_TRACE_ENABLED:
+        return False
+    if ep_idx_1based <= 0:
+        return False
+    if ep_idx_1based <= ACTION_TRACE_FIRST_EP:
+        return True
+    return (ep_idx_1based % ACTION_TRACE_EVERY_EP) == 0
+
+
+def _trace_write_lines(ep_idx_1based: int, lines: list[str], *, actor_idx: int | None = None, run_id: str | int | None = None) -> None:
+    if not _trace_ep_enabled(ep_idx_1based):
+        return
+    if not lines:
+        return
+    n = min(len(lines), ACTION_TRACE_MAX_LINES_PER_EP)
+    actor_part = f" actor={int(actor_idx)}" if actor_idx is not None else ""
+    run_part = f" run_id={run_id}" if run_id is not None else ""
+    append_agent_log(f"[TRACE][EP]{run_part} ep={ep_idx_1based}{actor_part} lines={n}/{len(lines)}")
+    for i in range(n):
+        prefix = ""
+        if actor_idx is not None:
+            prefix += f"actor={int(actor_idx)} "
+        if run_id is not None:
+            prefix += f"run_id={run_id} "
+        append_agent_log(f"[TRACE] {prefix}{lines[i]}")
+
+
+def _format_action_trace_summary(ep_idx_1based: int, actor_idx: int | None, payload: dict) -> str:
+    """
+    Компактный, но подробный блок для LOGS_FOR_AGENTS_TRAIN.md.
+    payload ожидает структуру вида:
+      {
+        "steps": int,
+        "skip": {head:int},
+        "invalid": {head:int},
+        "skip_rate": {head:float},
+        "invalid_rate": {head:float},
+        "shoot_windows": {"with_targets":int,"without_targets":int},
+        "move": {"stay":int,"nonstay":int}
+      }
+    """
+    try:
+        steps = max(1, int(payload.get("steps", 0) or 0))
+    except Exception:
+        steps = 1
+    skip = payload.get("skip") or {}
+    invalid = payload.get("invalid") or {}
+    skip_rate = payload.get("skip_rate") or {}
+    invalid_rate = payload.get("invalid_rate") or {}
+    shoot_windows = payload.get("shoot_windows") or {}
+    shoot_taken_when_targets = payload.get("shoot_taken_when_targets", None)
+    move = payload.get("move") or {}
+
+    def _g_int(d, k):
+        try:
+            return int(d.get(k, 0) or 0)
+        except Exception:
+            return 0
+
+    def _g_f(d, k):
+        try:
+            return float(d.get(k, 0.0) or 0.0)
+        except Exception:
+            return 0.0
+
+    heads = ("move", "attack", "shoot", "charge", "use_cp", "cp_on")
+    head_skip = ",".join([f"{h}:{_g_int(skip,h)}" for h in heads])
+    head_invalid = ",".join([f"{h}:{_g_int(invalid,h)}" for h in heads])
+    head_skip_rate = ",".join([f"{h}:{_g_f(skip_rate,h):.3f}" for h in heads])
+    head_invalid_rate = ",".join([f"{h}:{_g_f(invalid_rate,h):.3f}" for h in heads])
+
+    with_t = _g_int(shoot_windows, "with_targets")
+    without_t = _g_int(shoot_windows, "without_targets")
+    try:
+        taken_t = int(shoot_taken_when_targets) if shoot_taken_when_targets is not None else None
+    except Exception:
+        taken_t = None
+    taken_rate = None
+    if taken_t is not None:
+        taken_rate = float(taken_t) / float(max(1, with_t))
+    stay = _g_int(move, "stay")
+    nonstay = _g_int(move, "nonstay")
+    stay_rate = float(stay) / float(max(1, (stay + nonstay)))
+
+    actor_part = f" actor={int(actor_idx)}" if actor_idx is not None else ""
+    shoot_taken_part = ""
+    if taken_t is not None and taken_rate is not None:
+        shoot_taken_part = f" shoot_taken_when_targets={taken_t}/{with_t} ({taken_rate:.3f})"
+
+    return (
+        "[TRACE][ACTIONS] "
+        f"ep={int(ep_idx_1based)}{actor_part} "
+        f"steps={steps} "
+        f"move_stay={stay}/{stay+nonstay} ({stay_rate:.3f}) "
+        f"skip={{{{ {head_skip} }}}} "
+        f"invalid={{{{ {head_invalid} }}}} "
+        f"skip_rate={{{{ {head_skip_rate} }}}} "
+        f"invalid_rate={{{{ {head_invalid_rate} }}}} "
+        f"shoot_windows={{with_targets:{with_t},without_targets:{without_t}}}"
+        f"{shoot_taken_part}"
+    )
 
 
 def _log_train(line: str) -> None:
@@ -3397,6 +3505,31 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                 if episodes_finished:
                     pbar.n = min(int(totLifeT), int(episodes_finished))
                     pbar.refresh()
+
+                # Пишем подробную аналитику действий (из actor-процесса) в общий лог.
+                try:
+                    trace_payload = payload.get("trace_actions") if isinstance(payload, dict) else None
+                    if isinstance(trace_payload, dict):
+                        ep_i = int(payload.get("episode") or episodes_finished or 0)
+                        actor_idx = payload.get("actor_idx")
+                        _log_train(_format_action_trace_summary(ep_i, int(actor_idx) if actor_idx is not None else None, trace_payload))
+                except Exception:
+                    pass
+
+                # Пошаговый трейс пишем ТОЛЬКО из learner, чтобы global ep совпадал с CSV.
+                try:
+                    trace_steps = payload.get("trace_steps") if isinstance(payload, dict) else None
+                    if isinstance(trace_steps, list) and trace_steps:
+                        ep_i = int(payload.get("episode") or episodes_finished or 0)
+                        actor_idx = payload.get("actor_idx")
+                        _trace_write_lines(
+                            ep_i,
+                            [str(x) for x in trace_steps],
+                            actor_idx=(int(actor_idx) if actor_idx is not None else None),
+                            run_id=str(randNum),
+                        )
+                except Exception:
+                    pass
             continue
         if kind != "batch":
             continue
@@ -3722,6 +3855,18 @@ def _actor_learner_actor_entry(
         n_step_buf = collections.deque(maxlen=N_STEP)
 
         for _ep in range(int(episodes)):
+            ep_idx_1based = int(_ep) + 1
+            trace_lines: list[str] = []
+            step_idx = 0
+            action_head_total = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+            action_head_skip = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+            action_head_invalid = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+            shoot_windows_with_targets = 0
+            shoot_windows_without_targets = 0
+            shoot_taken_when_targets = 0
+            move_stay = 0
+            move_nonstay = 0
+
             if sync_enabled and (_ep % sync_check_every_ep == 0):
                 try:
                     if os.path.isfile(sync_path):
@@ -3761,6 +3906,7 @@ def _actor_learner_actor_entry(
             last_info = {}
             last_res = 0
             while not done:
+                step_idx += 1
                 shoot_mask = build_shoot_action_mask(env, log_fn=None, debug=False)
                 decay_steps = max(1.0, float(EPS_DECAY))
                 progress = min(float(steps_done) / decay_steps, 1.0)
@@ -3769,6 +3915,53 @@ def _actor_learner_actor_entry(
                     env, obs, cpu_net, eps_threshold, len(model), shoot_mask=shoot_mask
                 )
                 action_dict = convertToDict(action_t)
+
+                # --- episode action analytics (cheap) ---
+                try:
+                    for _h in ("move", "attack", "shoot", "charge", "use_cp", "cp_on"):
+                        action_head_total[_h] += 1
+
+                    move_dir = int(action_dict.get("move", 4))
+                    if move_dir == 4:
+                        move_stay += 1
+                        action_head_skip["move"] += 1
+                    else:
+                        move_nonstay += 1
+
+                    if int(action_dict.get("attack", 0)) == 0:
+                        action_head_skip["attack"] += 1
+                        action_head_skip["charge"] += 1
+                    if int(action_dict.get("use_cp", 0)) == 0:
+                        action_head_skip["use_cp"] += 1
+
+                    valid_shoot_indices = []
+                    if shoot_mask is not None:
+                        try:
+                            valid_shoot_indices = [j for j, allowed in enumerate(shoot_mask) if bool(allowed)]
+                        except Exception:
+                            valid_shoot_indices = []
+                    if len(valid_shoot_indices) == 0:
+                        shoot_windows_without_targets += 1
+                        action_head_skip["shoot"] += 1
+                    else:
+                        shoot_windows_with_targets += 1
+                        shoot_raw = int(action_dict.get("shoot", -1))
+                        if shoot_raw not in valid_shoot_indices:
+                            action_head_invalid["shoot"] += 1
+                        else:
+                            shoot_taken_when_targets += 1
+
+                    if _trace_ep_enabled(ep_idx_1based) and len(trace_lines) < ACTION_TRACE_MAX_LINES_PER_EP:
+                        trace_lines.append(
+                            f"step={step_idx} eps={eps_threshold:.3f} "
+                            f"move={move_dir} attack={int(action_dict.get('attack',0))} "
+                            f"shoot={int(action_dict.get('shoot',-1))} charge={int(action_dict.get('charge',0))} "
+                            f"use_cp={int(action_dict.get('use_cp',0))} cp_on={int(action_dict.get('cp_on',0))} "
+                            f"shoot_targets={len(valid_shoot_indices)}"
+                        )
+                except Exception:
+                    pass
+
                 # ВАЖНО: как в основном train-loop — сначала ход противника, потом env.step (ход модели).
                 env_unwrapped = unwrap_env(env)
                 if opponent_net is not None:
@@ -3869,6 +4062,8 @@ def _actor_learner_actor_entry(
                         "ep",
                         {
                             "episode": None,  # learner пронумерует по порядку
+                            "actor_idx": int(actor_idx),
+                            "actor_ep": int(ep_idx_1based),
                             "ep_reward": float(ep_reward),
                             "ep_len": int(ep_len),
                             "turn": int(turn),
@@ -3878,6 +4073,17 @@ def _actor_learner_actor_entry(
                             "result": str(result),
                             "end_reason": str(end_reason),
                             "end_code": int(last_res),
+                            "trace_steps": list(trace_lines) if (_trace_ep_enabled(ep_idx_1based) and trace_lines) else None,
+                            "trace_actions": {
+                                "steps": int(max(1, int(ep_len))),
+                                "skip": {k: int(action_head_skip.get(k, 0)) for k in ("move","attack","shoot","charge","use_cp","cp_on")},
+                                "invalid": {k: int(action_head_invalid.get(k, 0)) for k in ("move","attack","shoot","charge","use_cp","cp_on")},
+                                "skip_rate": {k: float(action_head_skip.get(k, 0)) / float(max(1, int(ep_len))) for k in ("move","attack","shoot","charge","use_cp","cp_on")},
+                                "invalid_rate": {k: float(action_head_invalid.get(k, 0)) / float(max(1, int(ep_len))) for k in ("move","attack","shoot","charge","use_cp","cp_on")},
+                                "shoot_windows": {"with_targets": int(shoot_windows_with_targets), "without_targets": int(shoot_windows_without_targets)},
+                                "shoot_taken_when_targets": int(shoot_taken_when_targets),
+                                "move": {"stay": int(move_stay), "nonstay": int(move_nonstay)},
+                            },
                         },
                     )
                 )
