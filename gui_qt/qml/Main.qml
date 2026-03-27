@@ -1071,6 +1071,82 @@ ApplicationWindow {
                                     }
                                 }
                             }
+
+                            GroupBox {
+                                title: "Actor DET-eval: Win rate"
+                                Layout.fillWidth: true
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    spacing: root.spacingXs
+
+                                    Item {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
+
+                                        Image {
+                                            id: actorDetEvalChart
+                                            anchors.fill: parent
+                                            source: controller.metricsActorDetEvalPath
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "Нет данных по Actor DET-eval."
+                                            color: "#777777"
+                                            visible: actorDetEvalChart.status !== Image.Ready
+                                        }
+                                    }
+
+                                    Label {
+                                        text: "Периодическая детерминированная оценка в Actor-Learner."
+                                        wrapMode: Text.WordWrap
+                                    }
+
+                                    Label {
+                                        text: controller.actorDetEvalSummary
+                                        wrapMode: Text.WordWrap
+                                        color: "#666666"
+                                    }
+                                }
+                            }
+
+                            GroupBox {
+                                title: "Actor DET-eval: Reward"
+                                Layout.fillWidth: true
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    spacing: root.spacingXs
+
+                                    Item {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
+
+                                        Image {
+                                            id: actorDetEvalRewardChart
+                                            anchors.fill: parent
+                                            source: controller.metricsActorDetEvalRewardPath
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "Нет данных по Reward DET-eval."
+                                            color: "#777777"
+                                            visible: actorDetEvalRewardChart.status !== Image.Ready
+                                        }
+                                    }
+
+                                    Label {
+                                        text: "Средняя награда на периодическом DET-eval."
+                                        wrapMode: Text.WordWrap
+                                    }
+                                }
+                            }
                         }
 
                         GroupBox {

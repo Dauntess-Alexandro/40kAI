@@ -223,6 +223,12 @@ DET_EVAL_EVERY_EPISODES = int(os.getenv("DET_EVAL_EVERY_EPISODES", "250"))
 DET_EVAL_EPISODES = int(os.getenv("DET_EVAL_EPISODES", "20"))
 DET_EVAL_OPPONENT_EPSILON = float(os.getenv("DET_EVAL_OPPONENT_EPSILON", "0.0"))
 
+# Actor-Learner periodic DET-like eval (во время тренировки)
+ACTOR_DET_EVAL_ENABLED = os.getenv("ACTOR_DET_EVAL_ENABLED", "1") == "1"
+ACTOR_DET_EVAL_EVERY_EPISODES = int(os.getenv("ACTOR_DET_EVAL_EVERY_EPISODES", "100"))
+ACTOR_DET_EVAL_EPISODES = int(os.getenv("ACTOR_DET_EVAL_EPISODES", "12"))
+ACTOR_DET_EVAL_OPPONENT_EPSILON = float(os.getenv("ACTOR_DET_EVAL_OPPONENT_EPSILON", "0.0"))
+
 REWARD_SCHEDULE_ENABLED = os.getenv("REWARD_SCHEDULE_ENABLED", "1") == "1"
 REWARD_STAGE1_END_EP = int(os.getenv("REWARD_STAGE1_END_EP", "1500"))
 REWARD_STAGE2_END_EP = int(os.getenv("REWARD_STAGE2_END_EP", "3500"))
@@ -273,6 +279,10 @@ if DET_EVAL_EVERY_EPISODES < 1:
     DET_EVAL_EVERY_EPISODES = 1
 if DET_EVAL_EPISODES < 1:
     DET_EVAL_EPISODES = 1
+if ACTOR_DET_EVAL_EVERY_EPISODES < 1:
+    ACTOR_DET_EVAL_EVERY_EPISODES = 1
+if ACTOR_DET_EVAL_EPISODES < 1:
+    ACTOR_DET_EVAL_EPISODES = 1
 if REWARD_STAGE1_END_EP < 0:
     REWARD_STAGE1_END_EP = 0
 if REWARD_STAGE2_END_EP < REWARD_STAGE1_END_EP:
@@ -625,14 +635,23 @@ def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
     vp_diff = [r["vp_diff"] for r in ep_rows]
     ep_idx = list(range(1, len(ep_rows) + 1))
 
-    # --- Winrate plot ---
-    winrate_ma = moving_avg(wins01, window=50)
+    # --- Winrate plot (raw + linear trend) ---
     plt.figure()
-    plt.plot(ep_idx, winrate_ma)
+    plt.plot(ep_idx, wins01, color="#1f77b4", linewidth=1.0, label="win")
+    if len(ep_idx) >= 2:
+        x = np.asarray(ep_idx, dtype=np.float64)
+        y = np.asarray(wins01, dtype=np.float64)
+        try:
+            a, b = np.polyfit(x, y, 1)
+            y_fit = a * x + b
+            plt.plot(ep_idx, y_fit.tolist(), color="#ff7f0e", linewidth=2.0, label="trend")
+        except Exception:
+            pass
     plt.xlabel("Episodes")
-    plt.ylabel("Winrate (MA 50)")
-    plt.title("Winrate (moving average)")
+    plt.ylabel("Win (0/1)")
+    plt.title("Winrate (raw + trend)")
     plt.ylim(-0.05, 1.05)
+    plt.legend()
 
     plt.savefig(os.path.join(metrics_dir, f"winrate_{run_id}.png"))
     plt.savefig(os.path.join("gui/img", f"winrate_{run_id}.png"))
@@ -672,6 +691,224 @@ def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
     plt.close()
 
     print(f"[metrics] saved: {csv_path}")
+
+
+def _append_jsonl(path: str, payload: dict) -> None:
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    line = json.dumps(payload, ensure_ascii=False)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+def append_episode_diagnostics(
+    *,
+    run_id: str,
+    episode_row: dict,
+    diagnostics: dict,
+    metrics_dir: str = "metrics",
+) -> None:
+    """
+    Пишем "супер-подробные" данные по эпизодам в JSONL, чтобы потом можно было
+    строить разбор draw-матчей без ручного ковыряния логов.
+    - metrics/episodes_<run_id>.jsonl
+    - metrics/episodes_latest.jsonl
+    """
+    os.makedirs(metrics_dir, exist_ok=True)
+    payload = {
+        "run_id": str(run_id),
+        "ts": time.time(),
+        **(episode_row or {}),
+        **(diagnostics or {}),
+    }
+    _append_jsonl(os.path.join(metrics_dir, f"episodes_{run_id}.jsonl"), payload)
+    _append_jsonl(os.path.join(metrics_dir, "episodes_latest.jsonl"), payload)
+
+
+def _save_actor_det_eval_snapshot(run_id: str, payload: dict, metrics_dir: str = "metrics") -> None:
+    os.makedirs(metrics_dir, exist_ok=True)
+    out = {"run_id": str(run_id), "updated_at": datetime.datetime.now().isoformat(timespec="seconds"), **(payload or {})}
+    _append_jsonl(os.path.join(metrics_dir, f"actor_det_eval_{run_id}.jsonl"), out)
+    with open(os.path.join(metrics_dir, "actor_det_eval_latest.json"), "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, indent=2)
+
+
+def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict | None:
+    """
+    Рисует отдельные графики periodic actor DET-eval:
+    - win_rate + trend
+    - reward_mean + trend
+    Возвращает словарь путей или None, если данных нет.
+    """
+    jsonl_path = os.path.join(metrics_dir, f"actor_det_eval_{run_id}.jsonl")
+    if not os.path.exists(jsonl_path):
+        return None
+
+    points: list[dict] = []
+    try:
+        with open(jsonl_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                ep = int(payload.get("episode", 0) or 0)
+                if ep <= 0:
+                    continue
+                points.append(
+                    {
+                        "episode": ep,
+                        "win_rate": float(payload.get("win_rate", 0.0) or 0.0),
+                        "draw_rate": float(payload.get("draw_rate", 0.0) or 0.0),
+                        "turn_limit_rate": float(payload.get("turn_limit_rate", 0.0) or 0.0),
+                        "reward_mean": float(payload.get("reward_mean", 0.0) or 0.0),
+                    }
+                )
+    except OSError:
+        return None
+
+    if not points:
+        return None
+
+    points.sort(key=lambda x: int(x["episode"]))
+    episodes = [int(p["episode"]) for p in points]
+    win_rates = [float(p["win_rate"]) for p in points]
+    reward_mean = [float(p["reward_mean"]) for p in points]
+
+    os.makedirs(metrics_dir, exist_ok=True)
+    os.makedirs("gui/img", exist_ok=True)
+    out_metrics_win = os.path.join(metrics_dir, f"actor_det_eval_win_{run_id}.png")
+    out_gui_win_run = os.path.join("gui/img", f"actor_det_eval_win_{run_id}.png")
+    out_gui_win_latest = os.path.join("gui/img", "actor_det_eval_win.png")
+
+    out_metrics_reward = os.path.join(metrics_dir, f"actor_det_eval_reward_{run_id}.png")
+    out_gui_reward_run = os.path.join("gui/img", f"actor_det_eval_reward_{run_id}.png")
+    out_gui_reward_latest = os.path.join("gui/img", "actor_det_eval_reward.png")
+
+    fig, ax1 = plt.subplots(1, 1, figsize=(8, 4))
+    ax1.plot(episodes, win_rates, color="#1f77b4", linewidth=1.6, label="win_rate")
+    if len(episodes) >= 2:
+        x = np.asarray(episodes, dtype=np.float64)
+        y = np.asarray(win_rates, dtype=np.float64)
+        try:
+            a, b = np.polyfit(x, y, 1)
+            ax1.plot(episodes, (a * x + b).tolist(), color="#ff7f0e", linewidth=2.0, label="trend")
+        except Exception:
+            pass
+    ax1.set_ylim(-0.05, 1.05)
+    ax1.set_ylabel("Win rate")
+    ax1.set_title("Actor DET-eval: win rate + trend")
+    ax1.legend()
+    ax1.set_xlabel("Episode")
+    plt.tight_layout()
+    plt.savefig(out_metrics_win)
+    plt.savefig(out_gui_win_run)
+    plt.savefig(out_gui_win_latest)
+    plt.close()
+
+    fig, ax2 = plt.subplots(1, 1, figsize=(8, 4))
+    ax2.plot(episodes, reward_mean, color="#1f77b4", linewidth=1.6, label="reward_mean")
+    if len(episodes) >= 2:
+        x2 = np.asarray(episodes, dtype=np.float64)
+        y2 = np.asarray(reward_mean, dtype=np.float64)
+        try:
+            a2, b2 = np.polyfit(x2, y2, 1)
+            ax2.plot(episodes, (a2 * x2 + b2).tolist(), color="#ff7f0e", linewidth=2.0, label="trend")
+        except Exception:
+            pass
+    ax2.set_xlabel("Episode")
+    ax2.set_ylabel("Reward")
+    ax2.set_title("Actor DET-eval: reward mean + trend")
+    ax2.legend()
+    plt.tight_layout()
+    plt.savefig(out_metrics_reward)
+    plt.savefig(out_gui_reward_run)
+    plt.savefig(out_gui_reward_latest)
+    plt.close()
+    return {
+        "win": out_metrics_win,
+        "reward": out_metrics_reward,
+        "gui_win": out_gui_win_run,
+        "gui_reward": out_gui_reward_run,
+    }
+
+
+def _run_actor_det_eval(
+    *,
+    policy_net,
+    roster_config: dict,
+    b_len: int,
+    b_hei: int,
+    n_eval: int,
+    opponent_epsilon: float,
+) -> dict:
+    policy_net.eval()
+    wins = 0
+    draws = 0
+    vp_diff_sum = 0.0
+    wipeout_enemy = 0
+    wipeout_model = 0
+    turn_limit = 0
+    reward_sum_total = 0.0
+
+    for _ in range(max(1, int(n_eval))):
+        enemy_e, model_e = _build_units_from_config(roster_config, b_len, b_hei)
+        env_e = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy_e, model=model_e, b_len=b_len, b_hei=b_hei)
+        state_e, info_e = env_e.reset(options={"m": model_e, "e": enemy_e, "Type": "small", "trunc": True})
+        done_e = False
+        while not done_e:
+            shoot_mask_e = build_shoot_action_mask(env_e, log_fn=None, debug=False)
+            action_e = select_action_with_epsilon(env_e, state_e, policy_net, 0.0, len(model_e), shoot_mask=shoot_mask_e)
+            action_e_dict = convertToDict(action_e)
+            env_unwrapped_e = unwrap_env(env_e)
+            # NOTE: enemyTurn в текущем env принимает только (trunc, policy_fn).
+            # Параметр opponent_epsilon оставляем в payload для будущих расширений,
+            # но сейчас используем стандартный путь enemyTurn (эвристика / configured policy).
+            env_unwrapped_e.enemyTurn(trunc=True)
+            next_state_e, _reward_e, done_e, _res_e, info_e = env_e.step(action_e_dict)
+            reward_sum_total += float(_reward_e or 0.0)
+            state_e = next_state_e
+        end_reason_e = info_e.get("end reason", "")
+        vp_diff_e = int(info_e.get("model VP", 0)) - int(info_e.get("player VP", 0))
+        vp_diff_sum += float(vp_diff_e)
+
+        if end_reason_e == "wipeout_enemy":
+            wins += 1
+            wipeout_enemy += 1
+        elif end_reason_e == "wipeout_model":
+            wipeout_model += 1
+        elif str(end_reason_e).startswith("turn_limit"):
+            turn_limit += 1
+            if vp_diff_e > 0:
+                wins += 1
+            elif vp_diff_e == 0:
+                draws += 1
+        else:
+            if vp_diff_e > 0:
+                wins += 1
+            elif vp_diff_e == 0:
+                draws += 1
+        try:
+            env_e.close()
+        except Exception:
+            pass
+
+    n = max(1, int(n_eval))
+    return {
+        "eval_episodes": int(n),
+        "win_rate": float(wins / n),
+        "draw_rate": float(draws / n),
+        "turn_limit_rate": float(turn_limit / n),
+        "wipeout_enemy_rate": float(wipeout_enemy / n),
+        "wipeout_model_rate": float(wipeout_model / n),
+        "vp_diff_mean": float(vp_diff_sum / n),
+        "reward_mean": float(reward_sum_total / n),
+        "opponent_epsilon": float(opponent_epsilon),
+    }
 
 
 def _safe_div(n: float, d: float) -> float:
@@ -1127,6 +1364,9 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                 "end reason": info.get("end reason", ""),
                 "winner": info.get("winner", None),
                 "turn": info.get("turn", 0),
+                "battle round": info.get("battle round", 0),
+                "model controlled objectives": info.get("model controlled objectives", []),
+                "player controlled objectives": info.get("player controlled objectives", []),
             }
 
         enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
@@ -2555,6 +2795,49 @@ def main():
                     memory.push(head_state, head_action, n_step_next_state, reward_sum_t, n_step_count, n_step_next_mask)
                     ctx["n_step_buffer"].popleft()
             ctx["state"] = next_observation
+
+            # ---- timeline по battle round (для анализа draw) ----
+            # Сохраняем 1 снапшот на battle round (последний увиденный в раунде).
+            try:
+                if isinstance(info, dict):
+                    if ctx.get("ep_model_hp_start") is None:
+                        mh0 = info.get("model health", [])
+                        ph0 = info.get("player health", [])
+                        ctx["ep_model_hp_start"] = float(sum(mh0)) if isinstance(mh0, (list, tuple, np.ndarray)) else float(mh0 or 0.0)
+                        ctx["ep_enemy_hp_start"] = float(sum(ph0)) if isinstance(ph0, (list, tuple, np.ndarray)) else float(ph0 or 0.0)
+
+                    if os.getenv("METRICS_SAVE_ROUND_TIMELINE", "1") == "1":
+                        br = int(info.get("battle round", 0) or 0)
+                        if br > 0:
+                            mh_now = info.get("model health", [])
+                            ph_now = info.get("player health", [])
+                            mh_sum = float(sum(mh_now)) if isinstance(mh_now, (list, tuple, np.ndarray)) else float(mh_now or 0.0)
+                            ph_sum = float(sum(ph_now)) if isinstance(ph_now, (list, tuple, np.ndarray)) else float(ph_now or 0.0)
+                            snap = {
+                                "battle_round": br,
+                                "turn": int(info.get("turn", 0) or 0),
+                                "model_vp": int(info.get("model VP", 0) or 0),
+                                "enemy_vp": int(info.get("player VP", 0) or 0),
+                                "model_hp": mh_sum,
+                                "enemy_hp": ph_sum,
+                                "model_ctrl_n": int(len(info.get("model controlled objectives", []) or [])),
+                                "enemy_ctrl_n": int(len(info.get("player controlled objectives", []) or [])),
+                            }
+                            # Перезаписываем снапшот данного BR (чтобы был "последний" за раунд).
+                            timeline = ctx.get("round_timeline")
+                            if not isinstance(timeline, list):
+                                timeline = []
+                            replaced = False
+                            for i in range(len(timeline)):
+                                if int(timeline[i].get("battle_round", -1)) == br:
+                                    timeline[i] = snap
+                                    replaced = True
+                                    break
+                            if not replaced:
+                                timeline.append(snap)
+                            ctx["round_timeline"] = timeline
+            except Exception:
+                pass
     
             if done is True:
                 logging_start = time.perf_counter()
@@ -2602,6 +2885,26 @@ def main():
     
                 mh = _sum_health(mh_list)
                 ph = _sum_health(ph_list)
+
+                # ---- расширенные диагностические метрики (для анализа draw) ----
+                battle_round = int(info.get("battle round", 0) or 0)
+                model_ctrl = info.get("model controlled objectives", []) if isinstance(info, dict) else []
+                enemy_ctrl = info.get("player controlled objectives", []) if isinstance(info, dict) else []
+                try:
+                    model_ctrl_n = int(len(model_ctrl)) if isinstance(model_ctrl, (list, tuple)) else 0
+                except Exception:
+                    model_ctrl_n = 0
+                try:
+                    enemy_ctrl_n = int(len(enemy_ctrl)) if isinstance(enemy_ctrl, (list, tuple)) else 0
+                except Exception:
+                    enemy_ctrl_n = 0
+
+                # damage_dealt/taken по эпизоду считаем по суммарным HP
+                # (без детализации по оружию/фазам, зато дешево и всегда доступно).
+                ep_model_hp_start = float(ctx.get("ep_model_hp_start", mh))
+                ep_enemy_hp_start = float(ctx.get("ep_enemy_hp_start", ph))
+                damage_taken_total = max(0.0, ep_model_hp_start - float(mh))
+                damage_dealt_total = max(0.0, ep_enemy_hp_start - float(ph))
     
                 end_code = res  # то, что возвращает env (1..3 миссия или 4)
                 end_reason_env = info.get("end reason", "")
@@ -2882,6 +3185,37 @@ def main():
                         "end_code": end_code,
                     }
                 )
+
+                # Пишем "супер-подробную" диагностику по эпизоду (JSONL).
+                try:
+                    # Последняя строка ep_rows — это row текущего эпизода.
+                    episode_row = ep_rows[-1] if ep_rows else {}
+                    timeline_enabled = os.getenv("METRICS_SAVE_ROUND_TIMELINE", "1") == "1"
+                    timeline = ctx.get("round_timeline", []) if timeline_enabled else []
+                    append_episode_diagnostics(
+                        run_id=str(randNum),
+                        episode_row=episode_row,
+                        diagnostics={
+                            "battle_round": battle_round,
+                            "model_hp_total": mh,
+                            "enemy_hp_total": ph,
+                            "damage_dealt_total": float(damage_dealt_total),
+                            "damage_taken_total": float(damage_taken_total),
+                            "model_ctrl": list(model_ctrl) if isinstance(model_ctrl, (list, tuple)) else [],
+                            "enemy_ctrl": list(enemy_ctrl) if isinstance(enemy_ctrl, (list, tuple)) else [],
+                            "model_ctrl_n": int(model_ctrl_n),
+                            "enemy_ctrl_n": int(enemy_ctrl_n),
+                            "timeline": timeline,
+                            "winner_env": winner_env,
+                            "end_reason_env": end_reason_env,
+                        },
+                        metrics_dir="metrics",
+                    )
+                except Exception as exc:
+                    if TRAIN_LOG_TO_FILE:
+                        append_agent_log(f"[METRICS][WARN] append_episode_diagnostics failed: {exc}")
+                    if TRAIN_LOG_TO_CONSOLE:
+                        print(f"[METRICS][WARN] append_episode_diagnostics failed: {exc}")
                 # ==========================================================
     
                 if res == 4:
@@ -2900,6 +3234,10 @@ def main():
                 numLifeT += 1
                 total_episode = resume_episode_base + numLifeT
                 _apply_reward_schedule(total_episode)
+                # сброс накопителей таймлайна/стартовых HP для следующего эпизода
+                ctx["round_timeline"] = []
+                ctx["ep_model_hp_start"] = None
+                ctx["ep_enemy_hp_start"] = None
                 if SAVE_EVERY > 0 and total_episode % SAVE_EVERY == 0:
                     checkpoint_path = f"models/{safe_name}/checkpoint_ep{total_episode}.pth"
                     os.makedirs(f"models/{safe_name}", exist_ok=True)
@@ -3477,6 +3815,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     optimize_steps = 0
     global_step = 0
     episodes_finished = 0
+    last_actor_det_eval_ep = 0
     last_loss = None
     ep_rows: list[dict] = []
     randNum = random.randint(1000000, 9999999)
@@ -3505,6 +3844,87 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                 if episodes_finished:
                     pbar.n = min(int(totLifeT), int(episodes_finished))
                     pbar.refresh()
+
+                # Periodic DET-like eval для Actor-Learner (аналог DET_EVAL в основном loop).
+                if (
+                    ACTOR_DET_EVAL_ENABLED
+                    and episodes_finished > 0
+                    and (episodes_finished % ACTOR_DET_EVAL_EVERY_EPISODES == 0)
+                    and episodes_finished != last_actor_det_eval_ep
+                ):
+                    try:
+                        det_payload = _run_actor_det_eval(
+                            policy_net=policy_net,
+                            roster_config=roster_config,
+                            b_len=b_len,
+                            b_hei=b_hei,
+                            n_eval=ACTOR_DET_EVAL_EPISODES,
+                            opponent_epsilon=ACTOR_DET_EVAL_OPPONENT_EPSILON,
+                        )
+                        det_payload["episode"] = int(episodes_finished)
+                        _save_actor_det_eval_snapshot(run_id=str(randNum), payload=det_payload, metrics_dir="metrics")
+                        det_line = (
+                            "[ACTOR_LEARNER][DET_EVAL] "
+                            f"ep={episodes_finished} "
+                            f"eval_episodes={det_payload['eval_episodes']} "
+                            f"win_rate={det_payload['win_rate']:.3f} "
+                            f"draw_rate={det_payload['draw_rate']:.3f} "
+                            f"turn_limit_rate={det_payload['turn_limit_rate']:.3f} "
+                            f"wipeout_enemy_rate={det_payload['wipeout_enemy_rate']:.3f} "
+                            f"wipeout_model_rate={det_payload['wipeout_model_rate']:.3f} "
+                            f"vp_diff_mean={det_payload['vp_diff_mean']:.3f} "
+                            f"opp_eps={det_payload['opponent_epsilon']:.3f}"
+                        )
+                        append_agent_log(det_line)
+                        if TRAIN_LOG_TO_CONSOLE:
+                            print(det_line)
+                        last_actor_det_eval_ep = int(episodes_finished)
+                    except Exception as exc:
+                        warn_line = f"[ACTOR_LEARNER][DET_EVAL][WARN] eval пропущен: {exc}"
+                        append_agent_log(warn_line)
+                        if TRAIN_LOG_TO_CONSOLE:
+                            print(warn_line)
+
+                # Пер-эпизодная "супер-подробная" диагностика (JSONL).
+                try:
+                    # В actor-learner payload уже включает нужные поля; просто продублируем в JSONL,
+                    # чтобы потом анализировать draw без парсинга огромных логов.
+                    append_episode_diagnostics(
+                        run_id=str(randNum),
+                        episode_row={
+                            k: payload.get(k)
+                            for k in (
+                                "episode",
+                                "actor_idx",
+                                "actor_ep",
+                                "ep_reward",
+                                "ep_len",
+                                "turn",
+                                "battle_round",
+                                "model_vp",
+                                "player_vp",
+                                "vp_diff",
+                                "result",
+                                "end_reason",
+                                "end_code",
+                            )
+                        },
+                        diagnostics={
+                            "model_hp_total": payload.get("model_hp_total"),
+                            "enemy_hp_total": payload.get("enemy_hp_total"),
+                            "damage_dealt_total": payload.get("damage_dealt_total"),
+                            "damage_taken_total": payload.get("damage_taken_total"),
+                            "model_ctrl": payload.get("model_ctrl", []),
+                            "enemy_ctrl": payload.get("enemy_ctrl", []),
+                            "model_ctrl_n": payload.get("model_ctrl_n", 0),
+                            "enemy_ctrl_n": payload.get("enemy_ctrl_n", 0),
+                            "timeline": payload.get("timeline", []),
+                        },
+                        metrics_dir="metrics",
+                    )
+                except Exception as exc:
+                    if TRAIN_LOG_TO_CONSOLE:
+                        print(f"[METRICS][WARN] actor-learner append_episode_diagnostics failed: {exc}")
 
                 # Пишем подробную аналитику действий (из actor-процесса) в общий лог.
                 try:
@@ -3691,6 +4111,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             )
 
         # --- metrics json for GUI ---
+        actor_det_eval_png = save_actor_det_eval_plot(run_id=run_id, metrics_dir="metrics")
         data_json_path = os.path.join("models", f"data_{run_id}.json")
         payload = {
             "run_id": run_id,
@@ -3701,6 +4122,16 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             "winrate": os.path.join("gui/img", f"winrate_{run_id}.png"),
             "vpdiff": os.path.join("gui/img", f"vpdiff_{run_id}.png"),
             "endreasons": os.path.join("gui/img", f"endreasons_{run_id}.png"),
+            "actor_det_eval": (
+                os.path.join("gui/img", f"actor_det_eval_win_{run_id}.png")
+                if actor_det_eval_png
+                else os.path.join("gui/img", "actor_det_eval_win.png")
+            ),
+            "actor_det_eval_reward": (
+                os.path.join("gui/img", f"actor_det_eval_reward_{run_id}.png")
+                if actor_det_eval_png
+                else os.path.join("gui/img", "actor_det_eval_reward.png")
+            ),
             "model_path": model_path,
             "mode": "actor_learner",
         }
@@ -3736,62 +4167,23 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     eval_eps = int(os.getenv("ACTOR_EVAL_EPISODES", "20") or "20")
     if eval_eps > 0:
         try:
-            policy_net.eval()
-            wins = 0
-            draws = 0
-            vp_diff_sum = 0.0
-            wipeout_enemy = 0
-            wipeout_model = 0
-            turn_limit = 0
-
-            for _ in range(eval_eps):
-                enemy_e, model_e = _build_units_from_config(roster_config, b_len, b_hei)
-                env_e = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy_e, model=model_e, b_len=b_len, b_hei=b_hei)
-                state_e, info_e = env_e.reset(options={"m": model_e, "e": enemy_e, "Type": "small", "trunc": True})
-                done_e = False
-                while not done_e:
-                    shoot_mask_e = build_shoot_action_mask(env_e, log_fn=None, debug=False)
-                    action_e = select_action_with_epsilon(env_e, state_e, policy_net, 0.0, len(model_e), shoot_mask=shoot_mask_e)
-                    action_e_dict = convertToDict(action_e)
-                    env_unwrapped_e = unwrap_env(env_e)
-                    env_unwrapped_e.enemyTurn(trunc=True)
-                    next_state_e, _reward_e, done_e, _res_e, info_e = env_e.step(action_e_dict)
-                    state_e = next_state_e
-                end_reason_e = info_e.get("end reason", "")
-                vp_diff_e = int(info_e.get("model VP", 0)) - int(info_e.get("player VP", 0))
-                vp_diff_sum += float(vp_diff_e)
-
-                if end_reason_e == "wipeout_enemy":
-                    wins += 1
-                    wipeout_enemy += 1
-                elif end_reason_e == "wipeout_model":
-                    wipeout_model += 1
-                elif str(end_reason_e).startswith("turn_limit"):
-                    turn_limit += 1
-                    if vp_diff_e > 0:
-                        wins += 1
-                    elif vp_diff_e == 0:
-                        draws += 1
-                else:
-                    if vp_diff_e > 0:
-                        wins += 1
-                    elif vp_diff_e == 0:
-                        draws += 1
-                try:
-                    env_e.close()
-                except Exception:
-                    pass
-
-            n_eval = max(1, int(eval_eps))
+            payload = _run_actor_det_eval(
+                policy_net=policy_net,
+                roster_config=roster_config,
+                b_len=b_len,
+                b_hei=b_hei,
+                n_eval=eval_eps,
+                opponent_epsilon=0.0,
+            )
             print(
                 "[ACTOR_LEARNER][EVAL] "
-                f"eval_episodes={n_eval} "
-                f"win_rate={wins/n_eval:.3f} "
-                f"draw_rate={draws/n_eval:.3f} "
-                f"turn_limit_rate={turn_limit/n_eval:.3f} "
-                f"wipeout_enemy_rate={wipeout_enemy/n_eval:.3f} "
-                f"wipeout_model_rate={wipeout_model/n_eval:.3f} "
-                f"vp_diff_mean={vp_diff_sum/n_eval:.3f}"
+                f"eval_episodes={payload['eval_episodes']} "
+                f"win_rate={payload['win_rate']:.3f} "
+                f"draw_rate={payload['draw_rate']:.3f} "
+                f"turn_limit_rate={payload['turn_limit_rate']:.3f} "
+                f"wipeout_enemy_rate={payload['wipeout_enemy_rate']:.3f} "
+                f"wipeout_model_rate={payload['wipeout_model_rate']:.3f} "
+                f"vp_diff_mean={payload['vp_diff_mean']:.3f}"
             )
         except Exception as exc:
             if TRAIN_LOG_TO_CONSOLE:
@@ -3857,6 +4249,7 @@ def _actor_learner_actor_entry(
         for _ep in range(int(episodes)):
             ep_idx_1based = int(_ep) + 1
             trace_lines: list[str] = []
+            round_timeline: list[dict] = []
             step_idx = 0
             action_head_total = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
             action_head_skip = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
@@ -3905,6 +4298,19 @@ def _actor_learner_actor_entry(
             ep_len = 0
             last_info = {}
             last_res = 0
+            # Стартовые HP — для грубой оценки damage_dealt/taken по эпизоду.
+            try:
+                if isinstance(_info, dict):
+                    mh0 = _info.get("model health", [])
+                    ph0 = _info.get("player health", [])
+                    ep_model_hp_start = float(sum(mh0)) if isinstance(mh0, (list, tuple, np.ndarray)) else float(mh0 or 0.0)
+                    ep_enemy_hp_start = float(sum(ph0)) if isinstance(ph0, (list, tuple, np.ndarray)) else float(ph0 or 0.0)
+                else:
+                    ep_model_hp_start = 0.0
+                    ep_enemy_hp_start = 0.0
+            except Exception:
+                ep_model_hp_start = 0.0
+                ep_enemy_hp_start = 0.0
             while not done:
                 step_idx += 1
                 shoot_mask = build_shoot_action_mask(env, log_fn=None, debug=False)
@@ -3977,6 +4383,36 @@ def _actor_learner_actor_entry(
                 ep_reward += float(reward)
                 ep_len += 1
 
+                # Таймлайн по battle round (1 снапшот на BR).
+                try:
+                    if os.getenv("METRICS_SAVE_ROUND_TIMELINE", "1") == "1" and isinstance(last_info, dict):
+                        br = int(last_info.get("battle round", 0) or 0)
+                        if br > 0:
+                            mh_now = last_info.get("model health", [])
+                            ph_now = last_info.get("player health", [])
+                            mh_sum = float(sum(mh_now)) if isinstance(mh_now, (list, tuple, np.ndarray)) else float(mh_now or 0.0)
+                            ph_sum = float(sum(ph_now)) if isinstance(ph_now, (list, tuple, np.ndarray)) else float(ph_now or 0.0)
+                            snap = {
+                                "battle_round": br,
+                                "turn": int(last_info.get("turn", 0) or 0),
+                                "model_vp": int(last_info.get("model VP", 0) or 0),
+                                "enemy_vp": int(last_info.get("player VP", 0) or 0),
+                                "model_hp": mh_sum,
+                                "enemy_hp": ph_sum,
+                                "model_ctrl_n": int(len(last_info.get("model controlled objectives", []) or [])),
+                                "enemy_ctrl_n": int(len(last_info.get("player controlled objectives", []) or [])),
+                            }
+                            replaced = False
+                            for i in range(len(round_timeline)):
+                                if int(round_timeline[i].get("battle_round", -1)) == br:
+                                    round_timeline[i] = snap
+                                    replaced = True
+                                    break
+                            if not replaced:
+                                round_timeline.append(snap)
+                except Exception:
+                    pass
+
                 r_clipped, _clipped = maybe_clip_reward(
                     float(reward), bool(clip_reward_enabled), float(clip_reward_min), float(clip_reward_max)
                 )
@@ -4035,6 +4471,20 @@ def _actor_learner_actor_entry(
                 player_vp = int(last_info.get("player VP", 0) or 0)
                 vp_diff = int(model_vp) - int(player_vp)
                 turn = int(last_info.get("turn", 0) or 0)
+                battle_round = int(last_info.get("battle round", 0) or 0)
+
+                # Итоговые HP/урон
+                mh_end = last_info.get("model health", [])
+                ph_end = last_info.get("player health", [])
+                mh_sum = float(sum(mh_end)) if isinstance(mh_end, (list, tuple, np.ndarray)) else float(mh_end or 0.0)
+                ph_sum = float(sum(ph_end)) if isinstance(ph_end, (list, tuple, np.ndarray)) else float(ph_end or 0.0)
+                damage_taken_total = max(0.0, float(ep_model_hp_start) - float(mh_sum))
+                damage_dealt_total = max(0.0, float(ep_enemy_hp_start) - float(ph_sum))
+
+                model_ctrl = last_info.get("model controlled objectives", []) if isinstance(last_info, dict) else []
+                enemy_ctrl = last_info.get("player controlled objectives", []) if isinstance(last_info, dict) else []
+                model_ctrl = list(model_ctrl) if isinstance(model_ctrl, (list, tuple)) else []
+                enemy_ctrl = list(enemy_ctrl) if isinstance(enemy_ctrl, (list, tuple)) else []
 
                 result = "loss"
                 if end_reason == "wipeout_enemy":
@@ -4073,6 +4523,16 @@ def _actor_learner_actor_entry(
                             "result": str(result),
                             "end_reason": str(end_reason),
                             "end_code": int(last_res),
+                            "battle_round": int(battle_round),
+                            "model_hp_total": float(mh_sum),
+                            "enemy_hp_total": float(ph_sum),
+                            "damage_dealt_total": float(damage_dealt_total),
+                            "damage_taken_total": float(damage_taken_total),
+                            "model_ctrl": list(model_ctrl),
+                            "enemy_ctrl": list(enemy_ctrl),
+                            "model_ctrl_n": int(len(model_ctrl)),
+                            "enemy_ctrl_n": int(len(enemy_ctrl)),
+                            "timeline": list(round_timeline) if os.getenv("METRICS_SAVE_ROUND_TIMELINE", "1") == "1" else [],
                             "trace_steps": list(trace_lines) if (_trace_ep_enabled(ep_idx_1based) and trace_lines) else None,
                             "trace_actions": {
                                 "steps": int(max(1, int(ep_len))),

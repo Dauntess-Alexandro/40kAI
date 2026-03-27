@@ -1085,6 +1085,17 @@ class Warhammer40kEnv(gym.Env):
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obsSpace,), dtype=np.float32)
 
     def get_info(self):
+        # Важно: info используется и в GUI, и в train IPC.
+        # Стараемся держать значения простыми (числа/списки), чтобы их было легко сериализовать.
+        try:
+            _, model_ctrl = controlled_objectives(self, "model")
+            _, enemy_ctrl = controlled_objectives(self, "enemy")
+            model_ctrl = list(model_ctrl) if model_ctrl is not None else []
+            enemy_ctrl = list(enemy_ctrl) if enemy_ctrl is not None else []
+        except Exception:
+            model_ctrl = []
+            enemy_ctrl = []
+
         return {
             "model health": self.unit_health,
             "player health": self.enemy_health,
@@ -1103,6 +1114,8 @@ class Warhammer40kEnv(gym.Env):
             "game over": self.game_over,
             "end reason": getattr(self, "last_end_reason", ""),
             "winner": getattr(self, "last_winner", None),
+            "model controlled objectives": model_ctrl,
+            "player controlled objectives": enemy_ctrl,
         }
 
 
@@ -6616,6 +6629,31 @@ class Warhammer40kEnv(gym.Env):
                     f"kills={kills_dealt}, moved_closer={int(moved_closer)}, "
                     f"min_dist={min_obj_dist_start}->{min_obj_dist_end}"
                 )
+
+        # Mission pressure: если после старта скоринга никто не contest'ит objectives,
+        # добавляем небольшой штраф (анти-draw, заставляет играть миссию).
+        try:
+            start_round = int(getattr(reward_cfg, "MISSION_NO_CONTEST_START_ROUND", getattr(reward_cfg, "VP_START_SCORING_ROUND", 2)))
+            penalty = float(getattr(reward_cfg, "MISSION_NO_CONTEST_PENALTY", 0.0))
+            late_round = int(getattr(reward_cfg, "MISSION_NO_CONTEST_LATE_ROUND", 10))
+            late_mult = float(getattr(reward_cfg, "MISSION_NO_CONTEST_LATE_MULT", 1.0))
+            if penalty > 0 and int(getattr(self, "battle_round", 1)) >= start_round and len(getattr(self, "coordsOfOM", []) or []) > 0:
+                br_now = int(getattr(self, "battle_round", 1))
+                effective_penalty = penalty
+                if br_now >= late_round and late_mult > 0:
+                    effective_penalty *= late_mult
+                # После refresh_objective_control() model_obj_oc/enemy_obj_oc уже актуальны.
+                model_any = int(np.sum(getattr(self, "model_obj_oc", np.array([], dtype=int))) > 0)
+                enemy_any = int(np.sum(getattr(self, "enemy_obj_oc", np.array([], dtype=int))) > 0)
+                if model_any == 0 and enemy_any == 0:
+                    reward -= effective_penalty
+                    self._log_reward(
+                        "Reward (mission pressure): "
+                        f"no_contest_penalty=-{effective_penalty:.3f} "
+                        f"(base={penalty:.3f}, BR={br_now}, start={start_round}, late_round={late_round}, late_mult={late_mult:.3f})"
+                    )
+        except Exception:
+            pass
 
         terrain_snapshot_after = self._terrain_potential_snapshot(start_obj_dists)
         terrain_gamma = float(getattr(reward_cfg, "TERRAIN_POTENTIAL_GAMMA", 0.99))

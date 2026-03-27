@@ -123,6 +123,7 @@ class GUIController(QtCore.QObject):
             "epLen": "Текущее: — | Среднее: — | Мин: — | Макс: —",
             "winrate": "Текущее: — | Среднее: — | Мин: — | Макс: —",
             "vpdiff": "Текущее: — | Среднее: — | Мин: — | Макс: —",
+            "actor_det_eval": "Win DET: — | Draw DET: —",
         }
         self._model_state_text = "Нет данных о состоянии модели."
 
@@ -293,6 +294,14 @@ class GUIController(QtCore.QObject):
     def metricsEndReasonPath(self) -> str:
         return self._metrics_paths["endreasons"]
 
+    @QtCore.Property(str, notify=metricsChanged)
+    def metricsActorDetEvalPath(self) -> str:
+        return self._metrics_paths["actor_det_eval"]
+
+    @QtCore.Property(str, notify=metricsChanged)
+    def metricsActorDetEvalRewardPath(self) -> str:
+        return self._metrics_paths["actor_det_eval_reward"]
+
     @QtCore.Property(str, notify=metricsLabelChanged)
     def metricsLabel(self) -> str:
         return self._metrics_label
@@ -316,6 +325,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=metricsSummaryChanged)
     def vpDiffSummary(self) -> str:
         return self._metric_summary_texts["vpdiff"]
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def actorDetEvalSummary(self) -> str:
+        return self._metric_summary_texts["actor_det_eval"]
 
     @QtCore.Property(str, notify=metricsSummaryChanged)
     def modelStateText(self) -> str:
@@ -2036,6 +2049,8 @@ class GUIController(QtCore.QObject):
             "winrate": os.path.join(base_dir, "winrate.png"),
             "vpdiff": os.path.join(base_dir, "vpdiff.png"),
             "endreasons": os.path.join(base_dir, "endreasons.png"),
+            "actor_det_eval": os.path.join(base_dir, "actor_det_eval_win.png"),
+            "actor_det_eval_reward": os.path.join(base_dir, "actor_det_eval_reward.png"),
         }
 
     def _set_metrics_files(self, paths: dict[str, str]) -> None:
@@ -2228,6 +2243,8 @@ class GUIController(QtCore.QObject):
             "winrate": self._resolve_metric_path(payload.get("winrate"), self._metrics_defaults["winrate"]),
             "vpdiff": self._resolve_metric_path(payload.get("vpdiff"), self._metrics_defaults["vpdiff"]),
             "endreasons": self._resolve_metric_path(payload.get("endreasons"), self._metrics_defaults["endreasons"]),
+            "actor_det_eval": self._resolve_metric_path(payload.get("actor_det_eval"), self._metrics_defaults["actor_det_eval"]),
+            "actor_det_eval_reward": self._resolve_metric_path(payload.get("actor_det_eval_reward"), self._metrics_defaults["actor_det_eval_reward"]),
         }
         self._metrics_run_id = self._extract_run_id_from_path(json_path)
         self._set_metrics_files(updated)
@@ -2400,6 +2417,7 @@ class GUIController(QtCore.QObject):
             "epLen": "Текущее: — | Среднее: — | Мин: — | Макс: —",
             "winrate": "Текущее: — | Среднее: — | Мин: — | Макс: —",
             "vpdiff": "Текущее: — | Среднее: — | Мин: — | Макс: —",
+            "actor_det_eval": "Win DET: — | Draw DET: — | Reward DET: —",
         }
         summaries = dict(defaults)
         csv_path = self._find_stats_csv_for_run()
@@ -2429,6 +2447,36 @@ class GUIController(QtCore.QObject):
             summaries["winrate"] = self._format_metric_summary(wins, percent=True)
             if losses:
                 summaries["loss"] = self._format_metric_summary(losses)
+
+        # Actor DET-eval summary (периодические точки проверки в actor-learner).
+        run_id = str(self._metrics_run_id or "").strip()
+        det_jsonl_path = os.path.join(self._repo_root, "metrics", f"actor_det_eval_{run_id}.jsonl") if run_id else ""
+        det_points: list[dict] = []
+        if det_jsonl_path and os.path.exists(det_jsonl_path):
+            try:
+                with open(det_jsonl_path, "r", encoding="utf-8", errors="replace") as handle:
+                    for line in handle:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            payload = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if isinstance(payload, dict):
+                            det_points.append(payload)
+            except OSError:
+                det_points = []
+        if det_points:
+            win_vals = [float(p.get("win_rate", 0.0) or 0.0) for p in det_points]
+            draw_vals = [float(p.get("draw_rate", 0.0) or 0.0) for p in det_points]
+            reward_vals = [float(p.get("reward_mean", 0.0) or 0.0) for p in det_points]
+            if win_vals and draw_vals:
+                summaries["actor_det_eval"] = (
+                    f"Win DET — {self._format_metric_summary(win_vals, percent=True)} | "
+                    f"Draw DET — {self._format_metric_summary(draw_vals, percent=True)} | "
+                    f"Reward DET — {self._format_metric_summary(reward_vals)}"
+                )
 
         total, heuristic, snapshot, fixed = self._parse_training_counters()
         resume = self._extract_latest_resume_meta()

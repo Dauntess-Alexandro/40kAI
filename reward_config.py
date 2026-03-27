@@ -91,9 +91,9 @@ DAMAGE_TAKEN_SCALE = 0.38
 # Штраф за бездействие вне целей (idle out of objective).
 IDLE_OUT_OF_OBJECTIVE_PENALTY = 0.02
 # Масштаб пошагового бонуса за прогресс к objective.
-OBJECTIVE_PROGRESS_STEP_SCALE = 0.05
+OBJECTIVE_PROGRESS_STEP_SCALE = 0.12
 # Верхняя граница бонуса за прогресс к objective за шаг.
-OBJECTIVE_PROGRESS_STEP_CAP = 0.10
+OBJECTIVE_PROGRESS_STEP_CAP = 0.22
 # Бонус за убийство цели, находящейся на objective.
 KILL_ON_OBJECTIVE_BONUS = 0.2
 # Масштаб бонуса за нанесение урона цели на objective.
@@ -182,6 +182,20 @@ TERRAIN_TEAM_COVER_BONUS = 0.02
 
 # Анти-абьюз: clamp суммарного terrain-shaping за шаг.
 TERRAIN_SHAPING_STEP_RCAP = 0.12
+
+
+# ==========================================
+# Anti-draw / mission pressure (Only War)
+# ==========================================
+# Доп. штраф, если после старта скоринга никто не contest'ит objectives
+# (обе стороны имеют 0 OC на всех objectives). Это ломает "вечные" бои в стороне от миссии.
+MISSION_NO_CONTEST_PENALTY = 0.07
+# С какого battle round включать этот штраф (обычно совпадает со START_SCORING_ROUND).
+MISSION_NO_CONTEST_START_ROUND = VP_START_SCORING_ROUND
+# После этого раунда штраф мягко усиливается (динамика late-game anti-draw).
+MISSION_NO_CONTEST_LATE_ROUND = 10
+# +15% к базовому штрафу после LATE_ROUND (0.10..0.15 обычно достаточно).
+MISSION_NO_CONTEST_LATE_MULT = 1.15
 
 
 # =========================
