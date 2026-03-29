@@ -58,7 +58,6 @@ class GUIController(QtCore.QObject):
     selfPlayFromCheckpointChanged = QtCore.Signal(bool)
     resumeFromCheckpointChanged = QtCore.Signal(bool)
     disableTrainLoggingChanged = QtCore.Signal(bool)
-    actorLearnerChanged = QtCore.Signal(bool)
     actionTraceChanged = QtCore.Signal(bool)
     autoClearLogsChanged = QtCore.Signal(bool)
     factionIconSizeChanged = QtCore.Signal(int)
@@ -74,6 +73,7 @@ class GUIController(QtCore.QObject):
     trainingHyperparamsChanged = QtCore.Signal()
     settingsDirtyChanged = QtCore.Signal(bool)
     settingsSaveStateChanged = QtCore.Signal(str)
+    trainingAlgoChanged = QtCore.Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -141,7 +141,6 @@ class GUIController(QtCore.QObject):
         self._self_play_from_checkpoint = False
         self._resume_from_checkpoint = False
         self._disable_train_logging = False
-        self._actor_learner = str(os.getenv("ACTOR_LEARNER", "0")).strip() == "1"
         self._action_trace = str(os.getenv("ACTION_TRACE_ENABLED", "0")).strip() == "1"
         self._auto_clear_logs = True
         self._unit_faction_by_name: dict[str, str] = {}
@@ -167,8 +166,14 @@ class GUIController(QtCore.QObject):
             self._opponent_source = "heuristic"
         self._specific_opponent_agent_ids: list[str] = []
         self._specific_opponent_agent_labels: list[str] = []
+        self._specific_opponent_algo_by_id: dict[str, str] = {}
         self._selected_specific_opponent_id = ""
         self._opponent_preview_text = "Сейчас будет: —"
+
+        self._training_algo_options = ["dqn", "ppo"]
+        self._training_algo = str(os.getenv("TRAIN_ALGO", "dqn")).strip().lower() or "dqn"
+        if self._training_algo not in self._training_algo_options:
+            self._training_algo = "dqn"
 
         self._hyperparams_path = os.path.join(self._repo_root, "hyperparams.json")
         self._default_hyperparams = {
@@ -390,10 +395,6 @@ class GUIController(QtCore.QObject):
     def disableTrainLogging(self) -> bool:
         return self._disable_train_logging
 
-    @QtCore.Property(bool, notify=actorLearnerChanged)
-    def actorLearner(self) -> bool:
-        return self._actor_learner
-
     @QtCore.Property(bool, notify=actionTraceChanged)
     def actionTrace(self) -> bool:
         return self._action_trace
@@ -466,6 +467,14 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=opponentPreviewTextChanged)
     def opponentPreviewText(self) -> str:
         return self._opponent_preview_text
+
+    @QtCore.Property("QStringList", constant=True)
+    def trainingAlgoOptions(self):
+        return self._training_algo_options
+
+    @QtCore.Property(str, notify=trainingAlgoChanged)
+    def trainingAlgo(self) -> str:
+        return self._training_algo
 
     @QtCore.Property(float, notify=trainingHyperparamsChanged)
     def hpLr(self) -> float:
@@ -776,13 +785,6 @@ class GUIController(QtCore.QObject):
         self.disableTrainLoggingChanged.emit(flag)
 
     @QtCore.Slot(bool)
-    def set_actor_learner(self, value: bool) -> None:
-        flag = bool(value)
-        if self._actor_learner == flag:
-            return
-        self._actor_learner = flag
-        self.actorLearnerChanged.emit(flag)
-
     @QtCore.Slot(bool)
     def set_action_trace(self, value: bool) -> None:
         flag = bool(value)
@@ -895,6 +897,22 @@ class GUIController(QtCore.QObject):
         if 0 <= idx < len(self._specific_opponent_agent_ids):
             self.set_specific_opponent_agent(self._specific_opponent_agent_ids[idx])
 
+    @QtCore.Slot(str)
+    def set_training_algo(self, value: str) -> None:
+        algo = str(value or "").strip().lower()
+        if algo not in self._training_algo_options:
+            algo = "dqn"
+        if algo == self._training_algo:
+            return
+        self._training_algo = algo
+        self.trainingAlgoChanged.emit(algo)
+        self._emit_log(f"[GUI] TRAIN_ALGO={algo}", level="INFO")
+        self._emit_status(f"Алгоритм обучения: {algo}")
+        # Превью матча зависит от TRAIN_ALGO (PPO/DQN), поэтому обновляем сразу.
+        self._refresh_specific_opponent_options()
+        self._update_opponent_preview_text()
+        self.mark_settings_dirty()
+
     def _deployment_mode_label(self, mode: str) -> str:
         labels = {
             "manual_player": "Ручной игрок (клик в Viewer)",
@@ -929,6 +947,9 @@ class GUIController(QtCore.QObject):
             side = str(payload.get("side", "")).strip().upper()
             faction = str(payload.get("faction", "")).strip()
             created_at = str(payload.get("created_at", "")).strip()
+            algo = str(payload.get("algo", "")).strip().lower()
+            if algo not in {"dqn", "ppo"}:
+                algo = "unknown"
             if not agent_id or side not in {"P1", "P2"}:
                 continue
             records.append(
@@ -937,6 +958,7 @@ class GUIController(QtCore.QObject):
                     "side": side,
                     "faction": faction or "Unknown",
                     "created_at": created_at,
+                    "algo": algo,
                 }
             )
         records.sort(key=lambda item: (item.get("created_at", ""), item["agent_id"]), reverse=True)
@@ -945,15 +967,30 @@ class GUIController(QtCore.QObject):
     def _refresh_specific_opponent_options(self) -> None:
         opposite_side = "P2" if self._learner_side == "P1" else "P1"
         records = [rec for rec in self._collect_registered_agents_meta() if rec.get("side") == opposite_side]
+        self._specific_opponent_algo_by_id = {str(rec.get("agent_id")): str(rec.get("algo", "unknown")) for rec in records}
         self._specific_opponent_agent_ids = [str(rec["agent_id"]) for rec in records]
         self._specific_opponent_agent_labels = [
-            f"{rec['agent_id']} ({rec.get('faction', 'Unknown')})" for rec in records
+            self._format_agent_label(rec) for rec in records
         ]
         if self._selected_specific_opponent_id not in self._specific_opponent_agent_ids:
             self._selected_specific_opponent_id = self._specific_opponent_agent_ids[0] if self._specific_opponent_agent_ids else ""
             self.selectedSpecificOpponentIdChanged.emit(self._selected_specific_opponent_id)
         self.specificOpponentOptionsChanged.emit()
         self._update_opponent_preview_text()
+
+    def _format_agent_label(self, rec: dict[str, str]) -> str:
+        agent_id = str(rec.get("agent_id", "")).strip()
+        faction = str(rec.get("faction", "Unknown")).strip() or "Unknown"
+        algo = str(rec.get("algo", "unknown")).strip().lower() or "unknown"
+        side = str(rec.get("side", "")).strip().upper()
+        if side in {"P1", "P2"} and agent_id.startswith(side + "_"):
+            rest = agent_id[len(side) + 1:]
+            pretty = f"{side}_{algo}_{rest}"
+        else:
+            pretty = f"{agent_id}"
+            if side in {"P1", "P2"}:
+                pretty = f"{side}_{algo}_{agent_id}"
+        return f"{pretty} ({faction})"
 
     def _display_faction_for_side(self, side: str) -> str:
         normalized_side = str(side or "").strip().upper()
@@ -968,6 +1005,16 @@ class GUIController(QtCore.QObject):
         opponent_side = "P2" if learner_side == "P1" else "P1"
         learner_faction = self._display_faction_for_side(learner_side)
         opponent_faction = self._display_faction_for_side(opponent_side)
+        learner_algo = (self._training_algo or "dqn").strip().lower()
+        if learner_algo not in {"dqn", "ppo"}:
+            learner_algo = "dqn"
+
+        opponent_algo = "unknown"
+        if self._opponent_source == "heuristic":
+            opponent_algo = "heuristic"
+        elif self._selected_specific_opponent_id:
+            lookup = getattr(self, "_specific_opponent_algo_by_id", {})
+            opponent_algo = str(lookup.get(self._selected_specific_opponent_id, "unknown"))
 
         if self._opponent_source == "heuristic":
             suffix = "эвристика"
@@ -983,8 +1030,8 @@ class GUIController(QtCore.QObject):
                 suffix = "конкретный агент не выбран"
 
         text = (
-            f"Сейчас будет: {learner_side} {learner_faction} vs "
-            f"{opponent_side} {opponent_faction} ({suffix})."
+            f"Сейчас будет: {learner_side} {learner_algo.upper()} {learner_faction} vs "
+            f"{opponent_side} {str(opponent_algo).upper()} {opponent_faction} ({suffix})."
         )
         if text != self._opponent_preview_text:
             self._opponent_preview_text = text
@@ -1038,8 +1085,21 @@ class GUIController(QtCore.QObject):
             )
             return
         try:
+            # Не затираем дополнительные секции (например, ppo), которые
+            # не редактируются текущей формой DQN-гиперпараметров.
+            existing_payload: dict[str, object] = {}
+            if os.path.exists(self._hyperparams_path):
+                try:
+                    with open(self._hyperparams_path, "r", encoding="utf-8") as read_handle:
+                        loaded = json.load(read_handle)
+                    if isinstance(loaded, dict):
+                        existing_payload = dict(loaded)
+                except (OSError, json.JSONDecodeError):
+                    existing_payload = {}
+            merged_payload = dict(existing_payload)
+            merged_payload.update(self._hyperparams)
             with open(self._hyperparams_path, "w", encoding="utf-8") as handle:
-                json.dump(self._hyperparams, handle, indent=4, ensure_ascii=False)
+                json.dump(merged_payload, handle, indent=4, ensure_ascii=False)
                 handle.write("\n")
         except OSError as exc:
             self._emit_status(
@@ -1049,7 +1109,7 @@ class GUIController(QtCore.QObject):
             self._emit_log(f"[GUI] Ошибка записи {self._hyperparams_path}: {exc}", level="ERROR")
             return
 
-        self._emit_log(f"[GUI] hyperparams.json сохранён: {self._hyperparams}", level="INFO")
+        self._emit_log(f"[GUI] hyperparams.json сохранён: {merged_payload}", level="INFO")
         self.mark_settings_saved("✓ Сохранено")
         self._emit_status("Параметры тренировки сохранены в hyperparams.json.")
 
@@ -1561,15 +1621,6 @@ class GUIController(QtCore.QObject):
             status_prefix = "Обучение"
             env_overrides["NUM_ENVS"] = "12"
             env_overrides["USE_SUBPROC_ENVS"] = "1"
-            if self._actor_learner:
-                # Preset Actor-Learner для train8x: CPU акторы генерят transitions, GPU learner учится.
-                env_overrides["ACTOR_LEARNER"] = "1"
-                env_overrides["USE_SUBPROC_ENVS"] = "0"
-                env_overrides.setdefault("NUM_ACTORS", "8")
-                env_overrides.setdefault("ACTOR_BATCH_SEND", "64")
-                env_overrides.setdefault("UPDATES_PER_BATCH", "8")
-                env_overrides.setdefault("ACTOR_QUEUE_MAX", "256")
-                env_overrides.setdefault("ACTOR_EVAL_EPISODES", "20")
         elif mode == "selfplay":
             train_label = "SELFPLAY"
             status_prefix = "Самообучение"
@@ -1617,16 +1668,12 @@ class GUIController(QtCore.QObject):
             env_overrides["OPPONENT_AGENT_ID"] = self._selected_specific_opponent_id
             env_overrides.pop("SELF_PLAY_FIXED_PATH", None)
 
-        # Actor-Learner preset для self-play тоже (ускоряет генерацию данных при snapshot-opponent).
-        if mode == "selfplay" and self._actor_learner:
-            env_overrides["ACTOR_LEARNER"] = "1"
-            # в actor-learner мы не используем vec-env пайплайн
-            env_overrides["USE_SUBPROC_ENVS"] = "0"
-            env_overrides.setdefault("NUM_ACTORS", "8")
-            env_overrides.setdefault("ACTOR_BATCH_SEND", "64")
-            env_overrides.setdefault("UPDATES_PER_BATCH", "8")
-            env_overrides.setdefault("ACTOR_QUEUE_MAX", "256")
-            env_overrides.setdefault("ACTOR_EVAL_EPISODES", "20")
+        # PRO actor-learner теперь режим по умолчанию (без галочки).
+        # Для отката на старый pipeline: PRO_ACTOR_LEARNER=0 (ручной запуск/advanced).
+        env_overrides.setdefault("PRO_ACTOR_LEARNER", "1")
+        env_overrides.setdefault("NUM_ACTORS", "8")
+        env_overrides.setdefault("ACTOR_BATCH_SEND", "32")
+        env_overrides.setdefault("ACTOR_QUEUE_MAX", "256")
 
         if self._resume_from_checkpoint:
             resume_path = self._find_latest_resume_file()
@@ -1647,12 +1694,41 @@ class GUIController(QtCore.QObject):
             f"mode={mode}, self_play_from_checkpoint={int(self._self_play_from_checkpoint)}, "
             f"resume={int(self._resume_from_checkpoint)}, auto_clear_logs={int(self._auto_clear_logs)}, "
             f"disable_train_logging={int(self._disable_train_logging)}, "
-            f"actor_learner={int(self._actor_learner)}, "
             f"action_trace={int(self._action_trace)}, "
+            f"train_algo={self._training_algo}, "
             f"opponent_source={selected_opponent_source}, "
             f"opponent_agent_id={self._selected_specific_opponent_id or '-'}",
             level="INFO",
         )
+        # Доп. лог матчапа: кто против кого, включая algo (dqn/ppo/heuristic).
+        opp_algo = "heuristic" if selected_opponent_source == "heuristic" else "unknown"
+        if selected_opponent_source in {"latest_snapshot", "specific_agent"} and self._selected_specific_opponent_id:
+            opp_algo = str(self._specific_opponent_algo_by_id.get(self._selected_specific_opponent_id, "unknown"))
+        learner_algo = str(self._training_algo or "dqn").strip().lower()
+        self._emit_log(
+            f"[GUI] [MATCHUP] learner_algo={learner_algo} opponent_algo={opp_algo} opponent_agent_id={self._selected_specific_opponent_id or '-'}",
+            level="INFO",
+        )
+        self._emit_log(
+            "[GUI] [PRO_ACTOR_LEARNER] "
+            f"enabled={env_overrides.get('PRO_ACTOR_LEARNER','1')} "
+            f"actors={env_overrides.get('NUM_ACTORS','8')} "
+            f"batch_send={env_overrides.get('ACTOR_BATCH_SEND','32')} "
+            f"queue_max={env_overrides.get('ACTOR_QUEUE_MAX','256')}",
+            level="INFO",
+        )
+        if self._training_algo == "ppo":
+            vec_count = env_overrides.get("NUM_ENVS", env_overrides.get("VEC_ENV_COUNT", "1"))
+            use_subproc = env_overrides.get("USE_SUBPROC_ENVS", "0")
+            self._emit_log(f"[GUI] [PPO][CONFIG] vec_env_count={vec_count} use_subproc={use_subproc}", level="INFO")
+            sp_enabled = env_overrides.get("SELF_PLAY_ENABLED", "0")
+            opp_mode = env_overrides.get("SELF_PLAY_OPPONENT_MODE", "-")
+            opp_id = env_overrides.get("OPPONENT_AGENT_ID", "-")
+            if str(sp_enabled).strip() == "1":
+                self._emit_log(
+                    f"[GUI] [PPO][SELFPLAY] enabled=1 mode={opp_mode} opponent_agent_id={opp_id}",
+                    level="INFO",
+                )
 
         self._emit_log(f"[GUI] Запуск {status_prefix.lower()}...", level="INFO")
         self._emit_status(f"{status_prefix}...")
@@ -1676,6 +1752,7 @@ class GUIController(QtCore.QObject):
             env.insert("LOG_EVERY", "500")
         env.insert("HEURISTIC_MODE", "v2")
         env.insert("HEURISTIC_DEBUG", "1")
+        env.insert("TRAIN_ALGO", self._training_algo)
         env.insert("PER_ENABLED", "1")
         env.insert("N_STEP", "3")
         env.insert("SAVE_EVERY", "500")
@@ -1852,6 +1929,7 @@ class GUIController(QtCore.QObject):
             "[TRAIN8] Старт",
             "[TRAIN] Старт",
             "[SELFPLAY] Старт",
+            "[PPO]",
             "[TRAIN][START]",
             "[TRAIN][BOOT]",
             "[TRAIN][CONFIG]",

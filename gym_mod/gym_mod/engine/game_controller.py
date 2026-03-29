@@ -14,7 +14,9 @@ from gym_mod.engine.agent_registry import compatible_contracts, load_agent_by_id
 from gym_mod.engine.game_io import GuiIO, set_active_io
 from gym_mod.engine.state_export import DEFAULT_STATE_PATH
 from model.DQN import DQN
+from model.PPO import ActorCriticMultiHead
 from model.utils import select_action, convertToDict, build_shoot_action_mask, normalize_state_dict
+from model.utils import build_action_masks_by_head
 from gym_mod.envs.warhamEnv import roll_off_attacker_defender
 
 
@@ -192,6 +194,7 @@ class GameController:
                 "net_type": "dueling"
                 if any(str(k).startswith("value_heads.") for k in (payload.get("policy_state") or {}).keys())
                 else "basic",
+                "algo": "dqn",
             }
             self._io.log(f"[LEAGUE] Viewer использует agent-id={agent_id_override}")
         return env, model, enemy, checkpoint
@@ -278,27 +281,32 @@ class GameController:
             n_observations = len(state)
             self._io.log(f"[MODEL] n_actions (из env): {n_actions}")
 
-            net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
-            dueling = net_type == "dueling"
-            if not dueling and isinstance(checkpoint, dict):
-                policy_state = normalize_state_dict(checkpoint.get("policy_net", {}))
-                if any(key.startswith("advantage_heads.") for key in policy_state.keys()):
-                    dueling = True
-
-            net_label = "dueling" if dueling else "basic"
-            net_source = "net_type" if net_type else "state_dict"
-            self._io.log(f"[MODEL] Архитектура сети: {net_label} (источник: {net_source})")
-
-            policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
-            target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
-            optimizer = torch.optim.Adam(policy_net.parameters())
-
-            policy_net.load_state_dict(normalize_state_dict(checkpoint["policy_net"]))
-            target_net.load_state_dict(normalize_state_dict(checkpoint["target_net"]))
-            optimizer.load_state_dict(checkpoint["optimizer"])
-
-            policy_net.eval()
-            target_net.eval()
+            algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
+            if algo == "ppo":
+                self._io.log("[MODEL] Архитектура сети: ppo_actor_critic")
+                ppo_state = checkpoint.get("actor_critic", checkpoint.get("policy_net", {}))
+                policy_net = ActorCriticMultiHead(n_observations, n_actions).to(device)
+                policy_net.load_state_dict(normalize_state_dict(ppo_state))
+                policy_net.eval()
+                target_net = None
+            else:
+                net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
+                dueling = net_type == "dueling"
+                if not dueling and isinstance(checkpoint, dict):
+                    policy_state = normalize_state_dict(checkpoint.get("policy_net", {}))
+                    if any(key.startswith("advantage_heads.") for key in policy_state.keys()):
+                        dueling = True
+                net_label = "dueling" if dueling else "basic"
+                net_source = "net_type" if net_type else "state_dict"
+                self._io.log(f"[MODEL] Архитектура сети: {net_label} (источник: {net_source})")
+                policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+                target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+                optimizer = torch.optim.Adam(policy_net.parameters())
+                policy_net.load_state_dict(normalize_state_dict(checkpoint["policy_net"]))
+                target_net.load_state_dict(normalize_state_dict(checkpoint["target_net"]))
+                optimizer.load_state_dict(checkpoint["optimizer"])
+                policy_net.eval()
+                target_net.eval()
 
             self._io.log(
                 "\nИнструкции:\nИгрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).\n"
@@ -321,7 +329,14 @@ class GameController:
                 update_board(env)
                 state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
                 shoot_mask = build_shoot_action_mask(env)
-                action = select_action(env, state_tensor, i, policy_net, len(model), shoot_mask=shoot_mask)
+                if algo == "ppo":
+                    masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
+                    masks_b = [m.to(state_tensor.device).unsqueeze(0) for m in masks]
+                    with torch.no_grad():
+                        action, _, _ = policy_net.act(state_tensor, masks_by_head=masks_b, deterministic=True)
+                    action = action.to("cpu")
+                else:
+                    action = select_action(env, state_tensor, i, policy_net, len(model), shoot_mask=shoot_mask)
                 action_dict = convertToDict(action)
                 if done is not True:
                     next_observation, reward, done, _, info = env.step(action_dict)

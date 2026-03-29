@@ -171,6 +171,44 @@ def build_shoot_action_mask(env, log_fn=None, debug=False):
         log_fn(f"[MASK][SHOOT][DEBUG] Полная маска: {mask.tolist()}")
     return mask
 
+
+def build_action_masks_by_head(env, len_model, log_fn=None, debug=False):
+    """
+    Унифицированный контракт масок для всех голов действия.
+    Сейчас строгая маска есть только для shoot; остальные головы = all_true.
+    """
+    env_unwrapped = unwrap_env(env)
+    ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
+    for i_u in range(int(len_model)):
+        ordered_keys.append(f"move_num_{i_u}")
+
+    masks = []
+    shoot_mask = build_shoot_action_mask(env_unwrapped, log_fn=log_fn, debug=debug)
+    fallback_count = 0
+    for key in ordered_keys:
+        sp = env_unwrapped.action_space.spaces[key]
+        if hasattr(sp, "n"):
+            size = int(sp.n)
+        elif hasattr(sp, "nvec"):
+            # В текущем проекте головы nvec не используются, но на всякий.
+            size = int(sp.nvec[0])
+        else:
+            size = 1
+        if key == "shoot" and shoot_mask is not None and len(shoot_mask) == size:
+            mask = torch.as_tensor(shoot_mask, dtype=torch.bool).clone()
+        else:
+            mask = torch.ones(size, dtype=torch.bool)
+        if not bool(mask.any()):
+            mask[:] = True
+            fallback_count += 1
+        masks.append(mask)
+    if fallback_count > 0 and log_fn is not None:
+        log_fn(
+            f"[MASK][ALL_HEADS] Пустые маски заменены на all_true: {fallback_count}. "
+            "Где: model/utils.py build_action_masks_by_head."
+        )
+    return masks
+
 def convertToDict(action):
     naction = action.numpy()[0]
     action_dict = {

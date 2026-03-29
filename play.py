@@ -14,6 +14,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from model.DQN import *
+from model.PPO import ActorCriticMultiHead
 from model.utils import normalize_state_dict
 from model.utils import *
 from gym_mod.engine.game_io import ConsoleIO, set_active_io
@@ -21,6 +22,7 @@ from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
 from gym_mod.envs.warhamEnv import roll_off_attacker_defender
 from gym_mod.engine.agent_registry import compatible_contracts, load_agent_by_id, make_env_contract
 from gym_mod.engine.game_controller import n_actions_from_env
+from model.opponent_adapter import build_policy_fn, load_agent_opponent
 
 
 def load_trusted_checkpoint(path: str):
@@ -37,6 +39,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("model", nargs="?", default="None")
 parser.add_argument("play_in_gui", nargs="?", default="False")
 parser.add_argument("--agent-id", default=os.getenv("PLAY_AGENT_ID", "").strip())
+parser.add_argument("--opponent-agent-id", default=os.getenv("PLAY_OPPONENT_AGENT_ID", "").strip())
 args = parser.parse_args()
 
 if args.model == "None":
@@ -68,6 +71,7 @@ else:
     checkpoint = load_trusted_checkpoint(modelpth)
 
 playInGUI = str(args.play_in_gui).strip().lower() == "true"
+opponent_agent_id = str(getattr(args, "opponent_agent_id", "") or "").strip()
 
 io = ConsoleIO()
 set_active_io(io)
@@ -161,27 +165,33 @@ if args.agent_id:
         "target_net": agent_payload.get("target_state") or agent_payload.get("policy_state"),
         "optimizer": agent_payload.get("optimizer_state") or {},
         "net_type": "dueling" if any(str(k).startswith("value_heads.") for k in (agent_payload.get("policy_state") or {}).keys()) else "basic",
+        "algo": "dqn",
     }
     _log(f"[LEAGUE] Используется agent-id={args.agent_id} из registry.")
 
-net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
-dueling = net_type == "dueling"
-if not dueling and isinstance(checkpoint, dict):
-    policy_state = checkpoint.get("policy_net", {})
-    if any(key.startswith("value_heads.") for key in policy_state):
-        dueling = True
-
-policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
-target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
-optimizer = torch.optim.Adam(policy_net.parameters())
-
-policy_net.load_state_dict(normalize_state_dict(checkpoint['policy_net']))
-target_net.load_state_dict(normalize_state_dict(checkpoint['target_net']))
-if isinstance(checkpoint.get("optimizer"), dict) and checkpoint["optimizer"]:
-    optimizer.load_state_dict(checkpoint["optimizer"])
-
-policy_net.eval()
-target_net.eval()
+algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
+if algo == "ppo":
+    ppo_state = checkpoint.get("actor_critic", checkpoint.get("policy_net", {}))
+    policy_net = ActorCriticMultiHead(n_observations, n_actions).to(device)
+    policy_net.load_state_dict(normalize_state_dict(ppo_state))
+    policy_net.eval()
+    target_net = None
+else:
+    net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
+    dueling = net_type == "dueling"
+    if not dueling and isinstance(checkpoint, dict):
+        policy_state = checkpoint.get("policy_net", {})
+        if any(key.startswith("value_heads.") for key in policy_state):
+            dueling = True
+    policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+    target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+    optimizer = torch.optim.Adam(policy_net.parameters())
+    policy_net.load_state_dict(normalize_state_dict(checkpoint['policy_net']))
+    target_net.load_state_dict(normalize_state_dict(checkpoint['target_net']))
+    if isinstance(checkpoint.get("optimizer"), dict) and checkpoint["optimizer"]:
+        optimizer.load_state_dict(checkpoint["optimizer"])
+    policy_net.eval()
+    target_net.eval()
 
 isdone = False
 i = 0
@@ -199,10 +209,48 @@ io.log("Игрок управляет юнитами, начинающимися
 io.log("Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.)\n")
 
 while isdone == False:
-    done, info = env.unwrapped.player()
+    if opponent_agent_id:
+        # AI vs AI (opponent agent controls enemyTurn; model controls step)
+        done = False
+        info = {}
+        if i == 0:
+            try:
+                # Verify contract once and build policy_fn once (cached inside adapter closure).
+                mission_name = normalize_mission_name(getattr(env.unwrapped, "mission_name", None))
+                n_actions = n_actions_from_env(env, len(model))
+                n_observations = len(to_np_state(state))
+                play_contract = make_env_contract(
+                    n_observations=n_observations,
+                    n_actions=n_actions,
+                    mission_name=mission_name,
+                    ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v1")),
+                )
+                opp = load_agent_opponent(agent_id=opponent_agent_id, expected_contract=play_contract)
+                opponent_policy_fn = build_policy_fn(env=env, len_model=len(enemy), opponent=opp, deterministic=True)
+                _log(f"[PLAY] opponent-agent-id={opponent_agent_id} algo={opp.algo} (deterministic)")
+            except Exception as exc:
+                _log(f"[PLAY][WARN] opponent-agent-id invalid, fallback to human player. exc={exc}")
+                opponent_agent_id = ""
+                opponent_policy_fn = None
+        if opponent_agent_id and opponent_policy_fn is not None:
+            env.unwrapped.enemyTurn(trunc=True, policy_fn=opponent_policy_fn)
+            if bool(getattr(env.unwrapped, "game_over", False)):
+                done = True
+                info = env.unwrapped.get_info() if hasattr(env.unwrapped, "get_info") else {}
+        else:
+            done, info = env.unwrapped.player()
+    else:
+        done, info = env.unwrapped.player()
     state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
     shoot_mask = build_shoot_action_mask(env)
-    if PLAY_EPS is not None:
+    if algo == "ppo":
+        masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
+        masks_b = [m.to(state.device).unsqueeze(0) for m in masks]
+        with torch.no_grad():
+            deterministic = (PLAY_EPS is None) or float(PLAY_EPS) <= 0.0
+            action, _, _ = policy_net.act(state, masks_by_head=masks_b, deterministic=deterministic)
+        action = action.to("cpu")
+    elif PLAY_EPS is not None:
         action = select_action_with_epsilon(
             env,
             state,

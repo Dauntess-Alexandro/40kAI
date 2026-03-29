@@ -19,11 +19,16 @@ from gym_mod.engine.mission import (
 )
 from gym_mod.envs.warhamEnv import roll_off_attacker_defender
 from model.DQN import DQN
+from model.PPO import ActorCriticMultiHead
 from model.utils import normalize_state_dict
+from model.opponent_adapter import build_policy_fn, load_agent_opponent
+
+import gymnasium as gym
+import gym_mod  # noqa: F401 (регистрация '40kAI-v0')
 
 AGENT_TRAIN_LOG_FILE = "LOGS_FOR_AGENTS_TRAIN.md"
 os.environ.setdefault("AGENT_LOG_FILE", AGENT_TRAIN_LOG_FILE)
-from model.utils import build_shoot_action_mask, convertToDict, unwrap_env
+from model.utils import build_shoot_action_mask, build_action_masks_by_head, convertToDict, unwrap_env
 
 
 def _append_eval_log(message: str) -> None:
@@ -124,6 +129,33 @@ def load_latest_model(model_path: Optional[str] = None):
     return env, model, enemy, checkpoint, pickle_path, checkpoint_path
 
 
+def _build_env_from_train_roster():
+    """
+    Fallback для eval без legacy .pickle:
+    создаём env и юнитов из текущего roster_config (как в train.py).
+    """
+    try:
+        from train import _build_units_from_config, _load_roster_config
+    except Exception as exc:
+        return None, None, None, str(exc)
+    try:
+        roster_config = _load_roster_config()
+        b_len = int(roster_config.get("b_len", 40))
+        b_hei = int(roster_config.get("b_hei", 60))
+        enemy_units, model_units = _build_units_from_config(roster_config, b_len, b_hei)
+        env = gym.make(
+            "40kAI-v0",
+            disable_env_checker=True,
+            enemy=enemy_units,
+            model=model_units,
+            b_len=b_len,
+            b_hei=b_hei,
+        )
+        return env, model_units, enemy_units, None
+    except Exception as exc:
+        return None, None, None, str(exc)
+
+
 def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, shoot_mask=None):
     if epsilon <= 0:
         with torch.no_grad():
@@ -162,7 +194,16 @@ def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, shoot
     return torch.tensor([action_list], device="cpu")
 
 
-def run_episode(env, model_units, enemy_units, policy_net, epsilon, device):
+def select_action_with_epsilon_ppo(env, state, policy_net, epsilon, len_model):
+    masks_cpu = build_action_masks_by_head(env, len_model, log_fn=None, debug=False)
+    masks = [m.to(state.device).unsqueeze(0) for m in masks_cpu]
+    deterministic = epsilon <= 0
+    with torch.no_grad():
+        actions, _, _ = policy_net.act(state, masks_by_head=masks, deterministic=deterministic)
+    return actions.to("cpu")
+
+
+def run_episode(env, model_units, enemy_units, policy_net, epsilon, device, algo: str, opponent_policy_fn=None):
     env_unwrapped = unwrap_env(env)
     attacker_side, defender_side = roll_off_attacker_defender(
         manual_roll_allowed=False,
@@ -190,21 +231,33 @@ def run_episode(env, model_units, enemy_units, policy_net, epsilon, device):
 
     done = False
     while not done:
-        env_unwrapped.enemyTurn(trunc=True)
+        if opponent_policy_fn is not None:
+            env_unwrapped.enemyTurn(trunc=True, policy_fn=opponent_policy_fn)
+        else:
+            env_unwrapped.enemyTurn(trunc=True)
         if env_unwrapped.game_over:
             info = env_unwrapped.get_info()
             break
 
         state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-        shoot_mask = build_shoot_action_mask(env)
-        action = select_action_with_epsilon(
-            env,
-            state_tensor,
-            policy_net,
-            epsilon,
-            len(model_units),
-            shoot_mask=shoot_mask,
-        )
+        if algo == "ppo":
+            action = select_action_with_epsilon_ppo(
+                env,
+                state_tensor,
+                policy_net,
+                epsilon,
+                len(model_units),
+            )
+        else:
+            shoot_mask = build_shoot_action_mask(env)
+            action = select_action_with_epsilon(
+                env,
+                state_tensor,
+                policy_net,
+                epsilon,
+                len(model_units),
+                shoot_mask=shoot_mask,
+            )
         action_dict = convertToDict(action)
         next_observation, _, done, _, info = env.step(action_dict)
         state = next_observation
@@ -247,15 +300,30 @@ def main():
 
     env, model_units, enemy_units, checkpoint, pickle_path, checkpoint_path = load_latest_model(args.model)
     if env is None:
-        if pickle_path and checkpoint_path is None:
-            log(
-                "[ERROR] Не найден checkpoint для выбранной модели. "
-                "Где: eval.py (load_latest_model/_find_checkpoint_for_pickle). "
-                f"Что делать: проверьте .pth рядом с .pickle. model={pickle_path}"
-            )
+        # Fallback: если указаны agent-id, можем построить env без legacy pickle.
+        if (args.learner_agent_id or "").strip():
+            env, model_units, enemy_units, err = _build_env_from_train_roster()
+            if env is None:
+                log(
+                    "[ERROR] Не удалось собрать окружение без .pickle. "
+                    "Где: eval.py (_build_env_from_train_roster). "
+                    f"Детали: {err}"
+                )
+                return 0
+            checkpoint = {}
+            pickle_path = "generated_from_roster"
+            checkpoint_path = "registry_only"
+            log("[EVAL] legacy .pickle не найден: использую roster_config из train.py.")
         else:
-            log("[ERROR] Модель не найдена. Проверьте папку models/ и наличие файлов .pickle/.pth.")
-        return 0
+            if pickle_path and checkpoint_path is None:
+                log(
+                    "[ERROR] Не найден checkpoint для выбранной модели. "
+                    "Где: eval.py (load_latest_model/_find_checkpoint_for_pickle). "
+                    f"Что делать: проверьте .pth рядом с .pickle. model={pickle_path}"
+                )
+            else:
+                log("[ERROR] Модель не найдена. Проверьте папку models/ и наличие файлов .pickle/.pth.")
+            return 0
 
     attacker_side, defender_side = roll_off_attacker_defender(
         manual_roll_allowed=False,
@@ -306,20 +374,20 @@ def main():
         policy_state = _extract_policy_state_dict(checkpoint)
 
     opponent_agent_id = (args.opponent_agent_id or "").strip()
+    opponent_policy_fn = None
     if opponent_agent_id:
-        payload = load_agent_by_id(opponent_agent_id)
-        ok, reason = compatible_contracts(eval_contract, payload.get("contract", {}))
-        if not ok:
+        try:
+            opp = load_agent_opponent(agent_id=opponent_agent_id, expected_contract=eval_contract)
+            opponent_policy_fn = build_policy_fn(env=env, len_model=len(enemy_units), opponent=opp, deterministic=True)
             log(
-                f"[ERROR] Несовместимый opponent-agent-id={opponent_agent_id}: {reason}. "
-                "Где: eval.py (compatible_contracts). Что делать: выберите оппонента с тем же контрактом."
+                f"Оппонент через registry: opponent-agent-id={opponent_agent_id}, algo={opp.algo} (deterministic)."
+            )
+        except Exception as exc:
+            log(
+                f"[ERROR] Не удалось загрузить opponent-agent-id={opponent_agent_id}: {exc}. "
+                "Что делать: выберите оппонента с тем же контрактом."
             )
             return 1
-        log(
-            f"Проверка оппонента пройдена: opponent-agent-id={opponent_agent_id}, "
-            f"policy={args.opponent_policy}. "
-            "Примечание: в текущем eval оппонент остаётся эвристикой."
-        )
 
     if not isinstance(policy_state, dict):
         log(
@@ -329,28 +397,35 @@ def main():
         )
         return 0
 
-    net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
-    dueling = net_type == "dueling"
-    if not dueling:
-        if any(key.startswith("value_heads.") for key in policy_state):
-            dueling = True
-
-    policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
-    target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
-    policy_net.load_state_dict(normalize_state_dict(policy_state))
-    target_state = checkpoint.get("target_net") if isinstance(checkpoint, dict) else None
-    if isinstance(target_state, dict):
-        target_net.load_state_dict(normalize_state_dict(target_state))
+    algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
+    if algo == "ppo":
+        ppo_state = checkpoint.get("actor_critic") if isinstance(checkpoint, dict) else None
+        if not isinstance(ppo_state, dict):
+            ppo_state = policy_state
+        policy_net = ActorCriticMultiHead(n_observations, n_actions).to(device)
+        policy_net.load_state_dict(normalize_state_dict(ppo_state))
+        policy_net.eval()
     else:
-        target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
-
-    policy_net.eval()
-    target_net.eval()
+        net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
+        dueling = net_type == "dueling"
+        if not dueling:
+            if any(key.startswith("value_heads.") for key in policy_state):
+                dueling = True
+        policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+        target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+        policy_net.load_state_dict(normalize_state_dict(policy_state))
+        target_state = checkpoint.get("target_net") if isinstance(checkpoint, dict) else None
+        if isinstance(target_state, dict):
+            target_net.load_state_dict(normalize_state_dict(target_state))
+        else:
+            target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
+        policy_net.eval()
+        target_net.eval()
 
     log(
         f"Старт оценки: игр={games}, epsilon={epsilon:.3f}, "
         f"модель={os.path.basename(pickle_path)}, checkpoint={os.path.basename(checkpoint_path)}, "
-        f"heuristic_mode={str(os.getenv('HEURISTIC_MODE', 'v2')).strip().lower() or 'v2'}."
+            f"heuristic_mode={str(os.getenv('HEURISTIC_MODE', 'v2')).strip().lower() or 'v2'}, algo={algo}."
     )
 
     wins = 0
@@ -361,7 +436,7 @@ def main():
 
     for idx in range(1, games + 1):
         winner, end_reason, vp_diff, model_vp, enemy_vp = run_episode(
-            env, model_units, enemy_units, policy_net, epsilon, device
+            env, model_units, enemy_units, policy_net, epsilon, device, algo, opponent_policy_fn=opponent_policy_fn
         )
         vp_diffs.append(vp_diff)
         end_reasons[end_reason] += 1

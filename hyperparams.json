@@ -7,5 +7,18 @@
     "batch_size": 384,
     "gamma": 0.99,
     "updates_per_step": 6,
-    "warmup_steps": 5000
+    "warmup_steps": 5000,
+    "ppo": {
+        "learning_rate": 0.0003,
+        "gamma": 0.99,
+        "gae_lambda": 0.95,
+        "clip_ratio": 0.2,
+        "value_coef": 0.5,
+        "entropy_coef": 0.01,
+        "rollout_steps": 1024,
+        "update_epochs": 4,
+        "minibatch_size": 256,
+        "max_grad_norm": 0.5,
+        "target_kl": 0.03
+    }
 }

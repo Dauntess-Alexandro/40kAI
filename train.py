@@ -44,6 +44,9 @@ os.environ.setdefault("AGENT_LOG_FILE", AGENT_TRAIN_LOG_FILE)
 from model.DQN import *
 from model.memory import *
 from model.utils import *
+from model.PPO import ActorCriticMultiHead
+from model.ppo_buffer import PPORolloutBuffer
+from model.opponent_adapter import OpponentSpec, build_policy_fn, load_agent_opponent
 
 # Workaround: на некоторых окружениях torch._dynamo падает из-за несовместимого triton.
 # Важно: используем setdefault, чтобы пользователь мог включить dynamo вручную.
@@ -126,6 +129,9 @@ DOUBLE_DQN_ENABLED = os.getenv("DOUBLE_DQN_ENABLED", "1") == "1"
 DUELING_ENABLED = os.getenv("DUELING_ENABLED", "1") == "1"
 REWARD_DEBUG = os.getenv("REWARD_DEBUG", "0") == "1"
 REWARD_DEBUG_EVERY = int(os.getenv("REWARD_DEBUG_EVERY", "200"))
+TRAIN_ALGO = str(os.getenv("TRAIN_ALGO", "dqn")).strip().lower() or "dqn"
+if TRAIN_ALGO not in {"dqn", "ppo"}:
+    TRAIN_ALGO = "dqn"
 # ===== train logging =====
 TRAIN_LOG_ENABLED = os.getenv("TRAIN_LOG_ENABLED", "1") == "1"
 TRAIN_LOG_EVERY_UPDATES = int(os.getenv("TRAIN_LOG_EVERY_UPDATES", "200"))
@@ -635,23 +641,30 @@ def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
     vp_diff = [r["vp_diff"] for r in ep_rows]
     ep_idx = list(range(1, len(ep_rows) + 1))
 
-    # --- Winrate plot (raw + linear trend) ---
+    # --- Winrate plot (raw + moving avg + trend) ---
     plt.figure()
-    plt.plot(ep_idx, wins01, color="#1f77b4", linewidth=1.0, label="win")
-    if len(ep_idx) >= 2:
-        x = np.asarray(ep_idx, dtype=np.float64)
-        y = np.asarray(wins01, dtype=np.float64)
-        try:
-            a, b = np.polyfit(x, y, 1)
-            y_fit = a * x + b
-            plt.plot(ep_idx, y_fit.tolist(), color="#ff7f0e", linewidth=2.0, label="trend")
-        except Exception:
-            pass
+    if len(ep_idx) > 0:
+        # Сырые 0/1 точки слишком плотные (плохо читаются на 300+ эпизодов),
+        # поэтому рисуем их как полупрозрачный scatter + скользящую среднюю.
+        plt.scatter(ep_idx, wins01, color="#1f77b4", s=8, alpha=0.18, label="raw (0/1)")
+        win_window = int(max(10, min(100, len(wins01) // 20 or 10)))
+        wins_ma = moving_avg(wins01, window=win_window)
+        plt.plot(ep_idx, wins_ma, color="#1f77b4", linewidth=2.0, label=f"MA {win_window}")
+
+        if len(ep_idx) >= 2:
+            x = np.asarray(ep_idx, dtype=np.float64)
+            y = np.asarray(wins_ma, dtype=np.float64)
+            try:
+                a, b = np.polyfit(x, y, 1)
+                y_fit = a * x + b
+                plt.plot(ep_idx, y_fit.tolist(), color="#ff7f0e", linewidth=2.0, label="trend")
+            except Exception:
+                pass
     plt.xlabel("Episodes")
-    plt.ylabel("Win (0/1)")
-    plt.title("Winrate (raw + trend)")
+    plt.ylabel("Winrate")
+    plt.title("Winrate (raw + MA + trend)")
     plt.ylim(-0.05, 1.05)
-    plt.legend()
+    plt.legend(loc="lower right")
 
     plt.savefig(os.path.join(metrics_dir, f"winrate_{run_id}.png"))
     plt.savefig(os.path.join("gui/img", f"winrate_{run_id}.png"))
@@ -1694,12 +1707,533 @@ GAMMA = data["gamma"]
 NET_TYPE = "dueling" if DUELING_ENABLED else "basic"
 CLIP_REWARD = os.getenv("CLIP_REWARD", "off")
 GRAD_CLIP_VALUE = 100.0
+PPO_CFG = data.get("ppo", {}) if isinstance(data, dict) else {}
+PPO_LR = float(PPO_CFG.get("learning_rate", LR))
+PPO_GAMMA = float(PPO_CFG.get("gamma", GAMMA))
+PPO_GAE_LAMBDA = float(PPO_CFG.get("gae_lambda", 0.95))
+PPO_CLIP_RATIO = float(PPO_CFG.get("clip_ratio", 0.2))
+PPO_VALUE_COEF = float(PPO_CFG.get("value_coef", 0.5))
+PPO_ENTROPY_COEF = float(PPO_CFG.get("entropy_coef", 0.01))
+PPO_ROLLOUT_STEPS = int(PPO_CFG.get("rollout_steps", 1024))
+PPO_UPDATE_EPOCHS = int(PPO_CFG.get("update_epochs", 4))
+PPO_MINIBATCH_SIZE = int(PPO_CFG.get("minibatch_size", 256))
+PPO_MAX_GRAD_NORM = float(PPO_CFG.get("max_grad_norm", 0.5))
+PPO_TARGET_KL = float(PPO_CFG.get("target_kl", 0.03))
 
 # ============================================================
 # (C) Несколько обучающих апдейтов на один шаг среды
 # ============================================================
 UPDATES_PER_STEP = int(data.get("updates_per_step", 1))  # 1 = как было раньше
 WARMUP_STEPS     = int(data.get("warmup_steps", 0))      # 0 = без прогрева
+
+
+def _cleanup_train_envs(env_contexts, subproc_envs, use_subproc: bool) -> None:
+    if use_subproc:
+        for ctx in env_contexts:
+            try:
+                ctx["conn"].send(("close", None))
+                ctx["conn"].recv()
+            except Exception:
+                pass
+        for proc in subproc_envs:
+            try:
+                proc.join(timeout=1.0)
+            except Exception:
+                pass
+    else:
+        for ctx in env_contexts:
+            try:
+                ctx["env"].close()
+            except Exception:
+                pass
+
+
+def _save_ppo_checkpoint(actor_critic, optimizer, episode, n_actions, n_observations, model, enemy, env_contract):
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_dir = os.path.join("models", f"ppo-run-{timestamp}")
+    os.makedirs(run_dir, exist_ok=True)
+    checkpoint_path = os.path.join(run_dir, f"checkpoint_ep{int(episode)}.pth")
+    payload = {
+        "algo": "ppo",
+        "net_type": "ppo_actor_critic",
+        "policy_net": actor_critic.state_dict(),
+        "actor_critic": actor_critic.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "episode": int(episode),
+        "n_actions": [int(x) for x in n_actions],
+        "n_observations": int(n_observations),
+        "env_contract": env_contract,
+    }
+    torch.save(payload, checkpoint_path)
+    pickle_path = os.path.join(run_dir, f"model-{timestamp}.pickle")
+    with open(pickle_path, "wb") as handle:
+        pickle.dump((None, model, enemy), handle)
+    append_agent_log(f"[PPO][SAVE] checkpoint={checkpoint_path}")
+    append_agent_log(f"[PPO][SAVE] pickle={pickle_path}")
+    return checkpoint_path
+
+
+def run_ppo_training(env_contexts, totLifeT, n_actions, n_observations, env_contract, model, enemy):
+    if not env_contexts:
+        raise RuntimeError("PPO: пустой список env_contexts.")
+    ctx = env_contexts[0]
+    env = ctx["env"]
+    len_model = int(ctx["len_model"])
+    actor_critic = ActorCriticMultiHead(n_observations, n_actions).to(device)
+    optimizer = optim.AdamW(actor_critic.parameters(), lr=PPO_LR, amsgrad=True)
+    buffer = PPORolloutBuffer()
+    global_step = 0
+    ppo_update_step = 0
+    last_checkpoint = ""
+    run_id = str(random.randint(1000000, 9999999))
+    model_name = datetime.datetime.now().strftime("%d-%H%M%S")
+    metrics_obj = metrics("models", run_id, model_name)
+    ep_rows = []
+
+    for episode in range(1, int(totLifeT) + 1):
+        state, info0 = env.reset(options={"m": model, "e": enemy, "trunc": True})
+        obs = to_np_state(state)
+        done = False
+        ep_reward = 0.0
+        ep_len = 0
+        buffer.clear()
+        # GUI прогресс читает stdout и парсит шаблон ep=X/Y.
+        print(f"[PPO] ep={episode}/{totLifeT} rollout_start", flush=True)
+        append_agent_log(f"[PPO][EP] ep={episode}/{totLifeT} сбор rollout...")
+        final_info = {}
+        while not done:
+            env_unwrapped = unwrap_env(env)
+            env_unwrapped.enemyTurn(trunc=True)
+            if bool(getattr(env_unwrapped, "game_over", False)):
+                done = True
+                final_info = env_unwrapped.get_info() if hasattr(env_unwrapped, "get_info") else {}
+                break
+            obs_t = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
+            masks_cpu = build_action_masks_by_head(env, len_model, log_fn=None, debug=False)
+            masks_batch = [m.to(device).unsqueeze(0) for m in masks_cpu]
+            action_t, logprob_t, value_t = actor_critic.act(obs_t, masks_by_head=masks_batch, deterministic=False)
+            action_np = action_t.squeeze(0).detach().cpu().numpy()
+            action_dict = convertToDict(torch.tensor([action_np], device="cpu"))
+            next_obs, reward, done, _, info = env.step(action_dict)
+            final_info = info or {}
+            buffer.add(
+                obs=obs,
+                action=action_np,
+                logprob=float(logprob_t.item()),
+                reward=float(reward),
+                done=bool(done),
+                value=float(value_t.item()),
+                masks_by_head=[m.detach().cpu().numpy() for m in masks_cpu],
+            )
+            obs = to_np_state(next_obs) if not done else obs
+            ep_reward += float(reward)
+            ep_len += 1
+            global_step += 1
+
+        batch = buffer.to_tensors(device=device, gamma=PPO_GAMMA, gae_lambda=PPO_GAE_LAMBDA, normalize_adv=True)
+        num_samples = batch.obs.shape[0]
+        if num_samples == 0:
+            continue
+        idx_all = np.arange(num_samples)
+        ppo_metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clip_fraction": 0.0}
+        updates = 0
+        for _ in range(max(1, PPO_UPDATE_EPOCHS)):
+            np.random.shuffle(idx_all)
+            epoch_kl = 0.0
+            epoch_kl_steps = 0
+            for start in range(0, num_samples, max(1, PPO_MINIBATCH_SIZE)):
+                mb_idx = idx_all[start:start + max(1, PPO_MINIBATCH_SIZE)]
+                mb_obs = batch.obs[mb_idx]
+                mb_actions = batch.actions[mb_idx]
+                mb_old_logp = batch.logprobs[mb_idx]
+                mb_adv = batch.advantages[mb_idx]
+                mb_returns = batch.returns[mb_idx]
+                mb_masks = [m[mb_idx] for m in batch.masks_by_head]
+                new_logp, entropy, values = actor_critic.evaluate_actions(mb_obs, mb_actions, masks_by_head=mb_masks)
+                ratio = torch.exp(new_logp - mb_old_logp)
+                clipped_ratio = torch.clamp(ratio, 1.0 - PPO_CLIP_RATIO, 1.0 + PPO_CLIP_RATIO)
+                policy_loss = -torch.min(ratio * mb_adv, clipped_ratio * mb_adv).mean()
+                value_loss = F.mse_loss(values, mb_returns)
+                entropy_loss = entropy.mean()
+                loss = policy_loss + PPO_VALUE_COEF * value_loss - PPO_ENTROPY_COEF * entropy_loss
+                optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(actor_critic.parameters(), PPO_MAX_GRAD_NORM)
+                optimizer.step()
+                approx_kl = (mb_old_logp - new_logp).mean().detach()
+                clip_frac = ((ratio - 1.0).abs() > PPO_CLIP_RATIO).float().mean().detach()
+                ppo_metrics["policy_loss"] += float(policy_loss.detach().item())
+                ppo_metrics["value_loss"] += float(value_loss.detach().item())
+                ppo_metrics["entropy"] += float(entropy_loss.detach().item())
+                ppo_metrics["approx_kl"] += float(approx_kl.item())
+                ppo_metrics["clip_fraction"] += float(clip_frac.item())
+                updates += 1
+                ppo_update_step += 1
+                epoch_kl += float(approx_kl.item())
+                epoch_kl_steps += 1
+            mean_epoch_kl = epoch_kl / max(1, epoch_kl_steps)
+            if mean_epoch_kl > PPO_TARGET_KL:
+                append_agent_log(
+                    f"[PPO] Ранний stop эпохи по KL: epoch_kl={mean_epoch_kl:.6f} > target_kl={PPO_TARGET_KL:.6f}."
+                )
+                break
+        if updates > 0:
+            for key in ppo_metrics:
+                ppo_metrics[key] /= updates
+        metrics_obj.updateRew(ep_reward)
+        metrics_obj.updateEpLen(ep_len)
+        metrics_obj.updateLoss(ppo_metrics["policy_loss"] + PPO_VALUE_COEF * ppo_metrics["value_loss"])
+
+        winner_raw = str(final_info.get("winner", "draw")).strip().lower()
+        if winner_raw in {"model", "learner", "ai"}:
+            result = "win"
+        elif winner_raw in {"enemy", "player", "opponent"}:
+            result = "loss"
+        else:
+            result = "draw"
+        model_vp = float(final_info.get("model VP", 0.0) or 0.0)
+        player_vp = float(final_info.get("player VP", 0.0) or 0.0)
+        vp_diff = model_vp - player_vp
+        end_reason = str(final_info.get("end reason", "unknown") or "unknown")
+        episode_row = {
+            "episode": int(episode),
+            "ep_reward": float(ep_reward),
+            "ep_len": int(ep_len),
+            "turn": int(final_info.get("turn", ep_len) or ep_len),
+            "model_vp": float(model_vp),
+            "player_vp": float(player_vp),
+            "vp_diff": float(vp_diff),
+            "result": result,
+            "end_reason": end_reason,
+            "end_code": str(final_info.get("end code", end_reason)),
+        }
+        ep_rows.append(episode_row)
+        append_episode_diagnostics(
+            run_id=run_id,
+            episode_row=episode_row,
+            diagnostics={
+                "algo": "ppo",
+                "policy_loss": float(ppo_metrics["policy_loss"]),
+                "value_loss": float(ppo_metrics["value_loss"]),
+                "entropy": float(ppo_metrics["entropy"]),
+                "approx_kl": float(ppo_metrics["approx_kl"]),
+                "clip_fraction": float(ppo_metrics["clip_fraction"]),
+                "global_step": int(global_step),
+                "update_step": int(ppo_update_step),
+            },
+            metrics_dir="metrics",
+        )
+        append_agent_log(
+            f"[PPO][METRICS] ep={episode}/{totLifeT} reward={ep_reward:.4f} "
+            f"policy_loss={ppo_metrics['policy_loss']:.6f} value_loss={ppo_metrics['value_loss']:.6f} "
+            f"entropy={ppo_metrics['entropy']:.6f} approx_kl={ppo_metrics['approx_kl']:.6f} "
+            f"clip_fraction={ppo_metrics['clip_fraction']:.6f} global_step={global_step} update_step={ppo_update_step}"
+        )
+        if SAVE_EVERY > 0 and (episode % SAVE_EVERY == 0):
+            last_checkpoint = _save_ppo_checkpoint(
+                actor_critic=actor_critic,
+                optimizer=optimizer,
+                episode=episode,
+                n_actions=n_actions,
+                n_observations=n_observations,
+                model=model,
+                enemy=enemy,
+                env_contract=env_contract,
+            )
+
+    if not last_checkpoint:
+        last_checkpoint = _save_ppo_checkpoint(
+            actor_critic=actor_critic,
+            optimizer=optimizer,
+            episode=totLifeT,
+            n_actions=n_actions,
+            n_observations=n_observations,
+            model=model,
+            enemy=enemy,
+            env_contract=env_contract,
+        )
+    if ep_rows:
+        try:
+            metrics_obj.lossCurve()
+            metrics_obj.showRew()
+            metrics_obj.showEpLen()
+            save_extra_metrics(run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics")
+            save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics")
+            metrics_obj.createJson()
+            print("Generated metrics", flush=True)
+        except Exception as exc:
+            append_agent_log(
+                "[PPO][METRICS][WARN] Не удалось сохранить метрики/графики. "
+                f"Где: train.py run_ppo_training. Ошибка: {exc}"
+            )
+    append_agent_log(f"[PPO] Training завершён. Последний checkpoint: {last_checkpoint}")
+
+
+def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, env_contract, ordered_keys):
+    if not env_contexts:
+        raise RuntimeError("PPO(subproc): пустой список env_contexts.")
+    vec_env_count = len(env_contexts)
+    len_model = int(env_contexts[0].get("len_model", 0))
+    if len_model <= 0:
+        raise RuntimeError("PPO(subproc): len_model <= 0 (не удалось определить количество юнитов).")
+
+    actor_critic = ActorCriticMultiHead(n_observations, n_actions).to(device)
+    optimizer = optim.AdamW(actor_critic.parameters(), lr=PPO_LR, amsgrad=True)
+    buffer = PPORolloutBuffer()
+
+    global_step = 0
+    ppo_update_step = 0
+    last_checkpoint = ""
+    run_id = str(random.randint(1000000, 9999999))
+    model_name = datetime.datetime.now().strftime("%d-%H%M%S")
+    metrics_obj = metrics("models", run_id, model_name)
+    ep_rows = []
+    last_update_metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clip_fraction": 0.0}
+
+    episodes_finished = 0
+    env_ep_reward = [0.0 for _ in range(vec_env_count)]
+    env_ep_len = [0 for _ in range(vec_env_count)]
+
+    append_agent_log(f"[PPO][CONFIG] vec_env_count={vec_env_count} use_subproc=1 rollout_steps={PPO_ROLLOUT_STEPS}")
+    print(f"[PPO][CONFIG] vec_env_count={vec_env_count} use_subproc=1", flush=True)
+
+    # В subproc у нас нет доступа к env.action_space, поэтому делаем "быстрый" контракт масок:
+    # - shoot_mask приходит по IPC (если включено TRAIN_IPC_INCLUDE_MASKS=1)
+    # - остальные головы = all_true.
+    while episodes_finished < int(totLifeT):
+        obs_batch = []
+        shoot_masks = []
+        for ctx in env_contexts:
+            obs_batch.append(np.asarray(ctx["state"], dtype=np.float32))
+            shoot_masks.append(ctx.get("shoot_mask"))
+
+        obs_t = torch.tensor(np.stack(obs_batch, axis=0), dtype=torch.float32, device=device)
+
+        masks_by_head = []
+        for head_idx, head_size in enumerate(n_actions):
+            mask = torch.ones((vec_env_count, int(head_size)), dtype=torch.bool, device=device)
+            if head_idx == 2:
+                for i in range(vec_env_count):
+                    sm = shoot_masks[i]
+                    if sm is None:
+                        continue
+                    sm_t = torch.as_tensor(sm, dtype=torch.bool, device=device).view(-1)
+                    if sm_t.numel() == mask.shape[1] and bool(sm_t.any()):
+                        mask[i] = sm_t
+            masks_by_head.append(mask)
+
+        # enemy_turn синхронно (до model step)
+        for ctx in env_contexts:
+            ctx["conn"].send(("enemy_turn", None))
+        for ctx in env_contexts:
+            _ = ctx["conn"].recv()
+
+        action_t, logprob_t, value_t = actor_critic.act(obs_t, masks_by_head=masks_by_head, deterministic=False)
+        action_np = action_t.detach().cpu().numpy()
+        logprob_np = logprob_t.detach().cpu().numpy()
+        value_np = value_t.detach().cpu().numpy()
+
+        # step синхронно
+        for env_idx, ctx in enumerate(env_contexts):
+            action_row = action_np[env_idx]
+            action_dict = convertToDict(torch.tensor([action_row], device="cpu"))
+            for i_u in range(int(ctx["len_model"])):
+                key = f"move_num_{i_u}"
+                action_dict[key] = int(action_row[6 + i_u])
+            ctx["conn"].send(("step", action_dict))
+
+        for env_idx, ctx in enumerate(env_contexts):
+            next_obs, reward, done, _, info, next_mask = ctx["conn"].recv()
+
+            # сохраняем transition
+            masks_cpu = []
+            for head_idx, head_size in enumerate(n_actions):
+                if head_idx == 2 and ctx.get("shoot_mask") is not None:
+                    masks_cpu.append(np.asarray(ctx["shoot_mask"], dtype=np.bool_))
+                else:
+                    masks_cpu.append(np.ones(int(head_size), dtype=np.bool_))
+            buffer.add(
+                obs=np.asarray(ctx["state"], dtype=np.float32),
+                action=action_np[env_idx],
+                logprob=float(logprob_np[env_idx]),
+                reward=float(reward),
+                done=bool(done),
+                value=float(value_np[env_idx]),
+                masks_by_head=masks_cpu,
+                env_id=int(env_idx),
+            )
+
+            ctx["state"] = next_obs
+            ctx["info"] = info
+            ctx["shoot_mask"] = next_mask
+            env_ep_reward[env_idx] += float(reward)
+            env_ep_len[env_idx] += 1
+            global_step += 1
+
+            if bool(done):
+                episodes_finished += 1
+                ep_reward = float(env_ep_reward[env_idx])
+                ep_len = int(env_ep_len[env_idx])
+                final_info = info or {}
+
+                # GUI прогресс читает stdout и парсит шаблон ep=X/Y.
+                print(f"[PPO] ep={episodes_finished}/{totLifeT} done", flush=True)
+
+                winner_raw = str(final_info.get("winner", "draw")).strip().lower()
+                if winner_raw in {"model", "learner", "ai"}:
+                    result = "win"
+                elif winner_raw in {"enemy", "player", "opponent"}:
+                    result = "loss"
+                else:
+                    result = "draw"
+                model_vp = float(final_info.get("model VP", 0.0) or 0.0)
+                player_vp = float(final_info.get("player VP", 0.0) or 0.0)
+                vp_diff = model_vp - player_vp
+                end_reason = str(final_info.get("end reason", "unknown") or "unknown")
+                episode_row = {
+                    "episode": int(episodes_finished),
+                    "ep_reward": float(ep_reward),
+                    "ep_len": int(ep_len),
+                    "turn": int(final_info.get("turn", ep_len) or ep_len),
+                    "model_vp": float(model_vp),
+                    "player_vp": float(player_vp),
+                    "vp_diff": float(vp_diff),
+                    "result": result,
+                    "end_reason": end_reason,
+                    "end_code": str(final_info.get("end code", end_reason)),
+                }
+                ep_rows.append(episode_row)
+                metrics_obj.updateRew(ep_reward)
+                metrics_obj.updateEpLen(ep_len)
+
+                # сброс счётчиков эпизода этого env
+                env_ep_reward[env_idx] = 0.0
+                env_ep_len[env_idx] = 0
+
+                append_episode_diagnostics(
+                    run_id=run_id,
+                    episode_row=episode_row,
+                    diagnostics={
+                        "algo": "ppo",
+                        "policy_loss": float(last_update_metrics.get("policy_loss", 0.0)),
+                        "value_loss": float(last_update_metrics.get("value_loss", 0.0)),
+                        "entropy": float(last_update_metrics.get("entropy", 0.0)),
+                        "approx_kl": float(last_update_metrics.get("approx_kl", 0.0)),
+                        "clip_fraction": float(last_update_metrics.get("clip_fraction", 0.0)),
+                        "global_step": int(global_step),
+                        "update_step": int(ppo_update_step),
+                    },
+                    metrics_dir="metrics",
+                )
+
+                # reset env сразу после done
+                ctx["conn"].send(("reset", None))
+                state, info0, mask0 = ctx["conn"].recv()
+                ctx["state"] = state
+                ctx["info"] = info0
+                ctx["shoot_mask"] = mask0
+
+                if SAVE_EVERY > 0 and (episodes_finished % SAVE_EVERY == 0):
+                    last_checkpoint = _save_ppo_checkpoint(
+                        actor_critic=actor_critic,
+                        optimizer=optimizer,
+                        episode=episodes_finished,
+                        n_actions=n_actions,
+                        n_observations=n_observations,
+                        model=None,
+                        enemy=None,
+                        env_contract=env_contract,
+                    )
+
+        # Обновляем PPO по порогу шагов роллаута.
+        if len(buffer) >= max(1, int(PPO_ROLLOUT_STEPS)):
+            batch = buffer.to_tensors(device=device, gamma=PPO_GAMMA, gae_lambda=PPO_GAE_LAMBDA, normalize_adv=True)
+            num_samples = int(batch.obs.shape[0])
+            if num_samples > 0:
+                idx_all = np.arange(num_samples)
+                ppo_metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clip_fraction": 0.0}
+                updates = 0
+                for _ in range(max(1, PPO_UPDATE_EPOCHS)):
+                    np.random.shuffle(idx_all)
+                    epoch_kl = 0.0
+                    epoch_kl_steps = 0
+                    for start in range(0, num_samples, max(1, PPO_MINIBATCH_SIZE)):
+                        mb_idx = idx_all[start:start + max(1, PPO_MINIBATCH_SIZE)]
+                        mb_obs = batch.obs[mb_idx]
+                        mb_actions = batch.actions[mb_idx]
+                        mb_old_logp = batch.logprobs[mb_idx]
+                        mb_adv = batch.advantages[mb_idx]
+                        mb_returns = batch.returns[mb_idx]
+                        mb_masks = [m[mb_idx] for m in batch.masks_by_head]
+                        new_logp, entropy, values = actor_critic.evaluate_actions(mb_obs, mb_actions, masks_by_head=mb_masks)
+                        ratio = torch.exp(new_logp - mb_old_logp)
+                        clipped_ratio = torch.clamp(ratio, 1.0 - PPO_CLIP_RATIO, 1.0 + PPO_CLIP_RATIO)
+                        policy_loss = -torch.min(ratio * mb_adv, clipped_ratio * mb_adv).mean()
+                        value_loss = F.mse_loss(values, mb_returns)
+                        entropy_loss = entropy.mean()
+                        loss = policy_loss + PPO_VALUE_COEF * value_loss - PPO_ENTROPY_COEF * entropy_loss
+                        optimizer.zero_grad()
+                        loss.backward()
+                        torch.nn.utils.clip_grad_norm_(actor_critic.parameters(), PPO_MAX_GRAD_NORM)
+                        optimizer.step()
+                        approx_kl = (mb_old_logp - new_logp).mean().detach()
+                        clip_frac = ((ratio - 1.0).abs() > PPO_CLIP_RATIO).float().mean().detach()
+                        ppo_metrics["policy_loss"] += float(policy_loss.detach().item())
+                        ppo_metrics["value_loss"] += float(value_loss.detach().item())
+                        ppo_metrics["entropy"] += float(entropy_loss.detach().item())
+                        ppo_metrics["approx_kl"] += float(approx_kl.item())
+                        ppo_metrics["clip_fraction"] += float(clip_frac.item())
+                        updates += 1
+                        ppo_update_step += 1
+                        epoch_kl += float(approx_kl.item())
+                        epoch_kl_steps += 1
+                    mean_epoch_kl = epoch_kl / max(1, epoch_kl_steps)
+                    if mean_epoch_kl > PPO_TARGET_KL:
+                        append_agent_log(
+                            f"[PPO] Ранний stop эпохи по KL: epoch_kl={mean_epoch_kl:.6f} > target_kl={PPO_TARGET_KL:.6f}."
+                        )
+                        break
+                if updates > 0:
+                    for key in ppo_metrics:
+                        ppo_metrics[key] /= updates
+                last_update_metrics = dict(ppo_metrics)
+                append_agent_log(
+                    f"[PPO][UPDATE] policy_loss={ppo_metrics['policy_loss']:.6f} value_loss={ppo_metrics['value_loss']:.6f} "
+                    f"entropy={ppo_metrics['entropy']:.6f} approx_kl={ppo_metrics['approx_kl']:.6f} "
+                    f"clip_fraction={ppo_metrics['clip_fraction']:.6f} global_step={global_step} update_step={ppo_update_step}"
+                )
+                metrics_obj.updateLoss(ppo_metrics["policy_loss"] + PPO_VALUE_COEF * ppo_metrics["value_loss"])
+            buffer.clear()
+
+    # Финальный чекпойнт
+    if not last_checkpoint:
+        last_checkpoint = _save_ppo_checkpoint(
+            actor_critic=actor_critic,
+            optimizer=optimizer,
+            episode=episodes_finished,
+            n_actions=n_actions,
+            n_observations=n_observations,
+            model=None,
+            enemy=None,
+            env_contract=env_contract,
+        )
+
+    if ep_rows:
+        try:
+            metrics_obj.lossCurve()
+            metrics_obj.showRew()
+            metrics_obj.showEpLen()
+            save_extra_metrics(run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics")
+            save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics")
+            metrics_obj.createJson()
+            print("Generated metrics", flush=True)
+        except Exception as exc:
+            append_agent_log(
+                "[PPO][METRICS][WARN] Не удалось сохранить метрики/графики. "
+                f"Где: train.py run_ppo_training_subproc. Ошибка: {exc}"
+            )
+    append_agent_log(f"[PPO] Training(subproc) завершён. Последний checkpoint: {last_checkpoint}")
+
 
 def main():
     global USE_SUBPROC_ENVS
@@ -1733,19 +2267,36 @@ def main():
     if vec_env_count < 1:
         vec_env_count = 1
 
+    use_pro_actor_learner = os.getenv("PRO_ACTOR_LEARNER", "1").strip() == "1"
     if TRAIN_LOG_TO_CONSOLE:
-        print(f"[TRAIN][MODE] ACTOR_LEARNER={os.getenv('ACTOR_LEARNER', '')!r}")
-    if str(os.getenv("ACTOR_LEARNER", "0")).strip() == "1":
-        if TRAIN_LOG_TO_CONSOLE:
-            print("[TRAIN][MODE] ACTOR_LEARNER=1 (actors CPU + learner GPU)")
-        _main_actor_learner(
-            roster_config=roster_config,
-            totLifeT=totLifeT,
-            clip_reward_enabled=clip_reward_enabled,
-            clip_reward_min=clip_reward_min,
-            clip_reward_max=clip_reward_max,
-        )
-        return
+        print(f"[TRAIN][MODE] PRO_ACTOR_LEARNER={int(use_pro_actor_learner)}")
+        print(f"[TRAIN][MODE] TRAIN_ALGO={TRAIN_ALGO}")
+
+    # PRO actor-learner по умолчанию (для DQN и PPO).
+    # Для отката на старый pipeline: PRO_ACTOR_LEARNER=0.
+    if use_pro_actor_learner:
+        if TRAIN_ALGO == "ppo":
+            if TRAIN_LOG_TO_CONSOLE:
+                print("[TRAIN][MODE] PRO_ACTOR_LEARNER=1 (PPO actors CPU + learner GPU)")
+            _main_actor_learner_ppo(
+                roster_config=roster_config,
+                totLifeT=totLifeT,
+                clip_reward_enabled=clip_reward_enabled,
+                clip_reward_min=clip_reward_min,
+                clip_reward_max=clip_reward_max,
+            )
+            return
+        if TRAIN_ALGO == "dqn":
+            if TRAIN_LOG_TO_CONSOLE:
+                print("[TRAIN][MODE] PRO_ACTOR_LEARNER=1 (DQN actors CPU + learner GPU)")
+            _main_actor_learner(
+                roster_config=roster_config,
+                totLifeT=totLifeT,
+                clip_reward_enabled=clip_reward_enabled,
+                clip_reward_min=clip_reward_min,
+                clip_reward_max=clip_reward_max,
+            )
+            return
     deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "auto")).strip().lower() or "auto"
     manual_in_rl_phase = os.getenv("DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE", "1").strip().lower() not in {"0", "false", "no"}
     stdin_is_tty = bool(getattr(sys.stdin, "isatty", lambda: False)())
@@ -1771,6 +2322,7 @@ def main():
             os.environ["DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE"] = "0"
             manual_in_rl_phase = False
     
+    # PPO теперь поддерживает subprocess env (USE_SUBPROC_ENVS=1).
     if USE_SUBPROC_ENVS and vec_env_count < 2:
         USE_SUBPROC_ENVS = False
     if USE_SUBPROC_ENVS and SELF_PLAY_ENABLED:
@@ -2004,6 +2556,38 @@ def main():
             "self_play_enabled": int(SELF_PLAY_ENABLED),
         },
     )
+
+    if TRAIN_ALGO == "ppo":
+        append_agent_log(
+            f"[PPO] Запуск PPO ветки. episodes={totLifeT} vec_env_count={vec_env_count} "
+            f"rollout_steps={PPO_ROLLOUT_STEPS} update_epochs={PPO_UPDATE_EPOCHS} minibatch={PPO_MINIBATCH_SIZE}"
+        )
+        if USE_SUBPROC_ENVS:
+            run_ppo_training_subproc(
+                env_contexts=env_contexts,
+                totLifeT=totLifeT,
+                n_actions=n_actions,
+                n_observations=n_observations,
+                env_contract=env_contract,
+                ordered_keys=ordered_keys,
+            )
+        else:
+            run_ppo_training(
+                env_contexts=env_contexts,
+                totLifeT=totLifeT,
+                n_actions=n_actions,
+                n_observations=n_observations,
+                env_contract=env_contract,
+                model=model,
+                enemy=enemy,
+            )
+        _cleanup_train_envs(env_contexts=env_contexts, subproc_envs=subproc_envs, use_subproc=USE_SUBPROC_ENVS)
+        with IO_PROFILER.timed("metrics save"):
+            IO_PROFILER.write_snapshot()
+        _flush_agent_log_buffer(force=True)
+        if os.path.isfile("gui/data.json"):
+            initFile.delFile()
+        return
     
     if USE_COMPILE and torch.cuda.is_available():
         torch.backends.cudnn.benchmark = True
@@ -2193,6 +2777,9 @@ def main():
             "reason": f"side={desired_side_norm}, faction={desired_faction_norm}",
         }
     if SELF_PLAY_ENABLED:
+        # PPO vs PPO / DQN vs DQN: периодические snapshot-обновления оппонента с learner.
+        # PPO vs DQN / DQN vs PPO: веса оппонента фиксированы (без подмены state_dict другого algo).
+        opponent_snapshot_sync_enabled = True
         opponent_policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
         opponent_policy_net.eval()
         league_pick = None
@@ -2242,6 +2829,11 @@ def main():
             opponent_source_state["source"] = str(league_pick.get("source", "registry"))
             opponent_source_state["id"] = selected_id
             opponent_source_state["score"] = league_pick.get("reason")
+            try:
+                _opp_sp = load_agent_opponent(agent_id=selected_id, expected_contract=env_contract)
+                opponent_snapshot_sync_enabled = str(_opp_sp.algo).lower() == str(TRAIN_ALGO).lower()
+            except Exception:
+                pass
             append_agent_log(
                 f"[LEAGUE] выбран оппонент agent_id={selected_id} source={opponent_source_state['source']} mode=roster_fixed"
             )
@@ -2366,6 +2958,7 @@ def main():
         _log_train(
             "[SELFPLAY][CONFIG] "
             f"enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
+            f"learner_algo={TRAIN_ALGO} opponent_snapshot_sync={int(opponent_snapshot_sync_enabled)} "
             f"opponent_source={opp_source} opponent_id={opp_id} "
             f"opponent_type={opp_type} opponent_agent_id={opp_agent_id_text} "
             f"enemy_policy_mode={enemy_policy_mode}"
@@ -3080,6 +3673,7 @@ def main():
                                     "policy_net": policy_net.state_dict(),
                                     "target_net": target_net.state_dict(),
                                     "net_type": NET_TYPE,
+                                    "algo": "dqn",
                                     "optimizer": optimizer.state_dict(),
                                     "global_step": int(global_step),
                                     "optimize_steps": int(optimize_steps),
@@ -3247,6 +3841,7 @@ def main():
                                 "policy_net": policy_net.state_dict(),
                                 "target_net": target_net.state_dict(),
                                 "net_type": NET_TYPE,
+                                "algo": "dqn",
                                 "optimizer": optimizer.state_dict(),
                                 "global_step": int(global_step),
                                 "optimize_steps": int(optimize_steps),
@@ -3306,7 +3901,11 @@ def main():
                                 f"from={prev_update} to={current_selfplay_update_every}"
                             )
 
-                if SELF_PLAY_ENABLED and SELF_PLAY_OPPONENT_MODE == "snapshot":
+                if (
+                    SELF_PLAY_ENABLED
+                    and SELF_PLAY_OPPONENT_MODE == "snapshot"
+                    and opponent_snapshot_sync_enabled
+                ):
                     if total_episode % max(1, int(current_selfplay_update_every)) == 0:
                         latest_policy_state = normalize_state_dict(policy_net.state_dict())
                         if SELF_PLAY_POOL_ENABLED:
@@ -3538,6 +4137,7 @@ def main():
                 "policy_net": policy_net.state_dict(),
                 "target_net": target_net.state_dict(),
                 "net_type": NET_TYPE,
+                "algo": "dqn",
                 "optimizer": optimizer.state_dict(),
                 "global_step": int(global_step),
                 "optimize_steps": int(optimize_steps),
@@ -3713,33 +4313,40 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     )
 
     # Self-play opponent snapshot (optional): загружаем один раз в learner и раздаём акторам.
-    opponent_state_dict_cpu = None
+    opponent_spec: OpponentSpec | None = None
     opponent_eps = float(SELF_PLAY_OPPONENT_EPSILON)
     if SELF_PLAY_ENABLED:
         try:
             if SELF_PLAY_OPPONENT_MODE == "fixed_checkpoint" and SELF_PLAY_FIXED_PATH:
                 checkpoint = torch.load(SELF_PLAY_FIXED_PATH, map_location="cpu", weights_only=False)
+                checkpoint_algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
+                if checkpoint_algo not in {"dqn", "ppo"}:
+                    checkpoint_algo = "dqn"
                 if isinstance(checkpoint, dict) and "policy_net" in checkpoint:
-                    opponent_state_dict_cpu = normalize_state_dict(checkpoint["policy_net"])
+                    policy_state = normalize_state_dict(checkpoint["policy_net"])
+                elif isinstance(checkpoint, dict) and "actor_critic" in checkpoint:
+                    policy_state = normalize_state_dict(checkpoint["actor_critic"])
                 elif isinstance(checkpoint, dict):
-                    opponent_state_dict_cpu = normalize_state_dict(checkpoint)
+                    policy_state = normalize_state_dict(checkpoint)
                 else:
-                    opponent_state_dict_cpu = normalize_state_dict(checkpoint)
+                    policy_state = normalize_state_dict(checkpoint)
+                opponent_spec = OpponentSpec(
+                    agent_id=str(SELF_PLAY_FIXED_PATH),
+                    algo=str(checkpoint_algo),
+                    contract=dict(env_contract),
+                    policy_state=policy_state,
+                )
             else:
                 if not OPPONENT_AGENT_ID:
                     raise ValueError("SELF_PLAY: нужен OPPONENT_AGENT_ID (GUI должен подставить последний снапшот).")
-                payload = load_agent_by_id(OPPONENT_AGENT_ID)
-                ok_contract, mismatch_reason = compatible_contracts(env_contract, payload.get("contract", {}))
-                if not ok_contract:
-                    raise ValueError(f"Несовместимый агент-оппонент '{OPPONENT_AGENT_ID}': {mismatch_reason}")
-                opponent_state_dict_cpu = normalize_state_dict(payload["policy_state"])
+                opponent_spec = load_agent_opponent(agent_id=OPPONENT_AGENT_ID, expected_contract=env_contract)
         except Exception as exc:
             warn = f"[SELFPLAY][WARN] Actor-Learner: не удалось загрузить снапшот оппонента, откатываюсь на эвристику. exc={exc}"
             append_agent_log(warn)
             if TRAIN_LOG_TO_CONSOLE:
                 print(warn)
-            opponent_state_dict_cpu = None
-        enemy_policy_mode = "snapshot_policy_fn" if opponent_state_dict_cpu is not None else "heuristic_auto"
+            opponent_spec = None
+        enemy_policy_mode = "snapshot_policy_fn" if opponent_spec is not None else "heuristic_auto"
         _log_train(
             "[SELFPLAY][CONFIG] "
             f"enabled=1 mode={SELF_PLAY_OPPONENT_MODE} "
@@ -3779,11 +4386,11 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     ctx = mp.get_context("spawn")
     data_q: mp.Queue = ctx.Queue(maxsize=queue_max)
 
-    per_actor = int(math.ceil(float(totLifeT) / float(num_actors)))
-
     procs = []
     for a_idx in range(num_actors):
-        episodes = per_actor if a_idx < (num_actors - 1) else max(0, totLifeT - per_actor * (num_actors - 1))
+        base = int(totLifeT) // int(num_actors)
+        rem = int(totLifeT) % int(num_actors)
+        episodes = int(base + (1 if a_idx < rem else 0))
         cr_min = 0.0 if clip_reward_min is None else float(clip_reward_min)
         cr_max = 0.0 if clip_reward_max is None else float(clip_reward_max)
         p = ctx.Process(
@@ -3802,7 +4409,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                 cr_max,
                 bool(clip_reward_enabled),
                 data_q,
-                opponent_state_dict_cpu,
+                opponent_spec,
                 float(opponent_eps),
                 int(1 if SELF_PLAY_ENABLED else 0),
             ),
@@ -3841,6 +4448,11 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                     payload["episode"] = len(ep_rows) + 1
                 ep_rows.append(payload)
                 episodes_finished = len(ep_rows)
+                # GUI прогресс читает stdout и парсит шаблон ep=X/Y.
+                try:
+                    print(f"ep={episodes_finished}/{totLifeT}", flush=True)
+                except Exception:
+                    pass
                 if episodes_finished:
                     pbar.n = min(int(totLifeT), int(episodes_finished))
                     pbar.refresh()
@@ -4101,6 +4713,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                     "policy_net": policy_net.state_dict(),
                     "target_net": target_net.state_dict(),
                     "net_type": NET_TYPE,
+                    "algo": "dqn",
                     "optimizer": optimizer.state_dict(),
                     "global_step": int(global_step),
                     "optimize_steps": int(optimize_steps),
@@ -4148,6 +4761,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             target_state_dict=normalize_state_dict(target_net.state_dict()),
             optimizer_state_dict=optimizer.state_dict(),
             extra_meta={
+                "algo": "dqn",
                 "episode": int(len(ep_rows)),
                 "legacy_model_tag": model_path.replace("\\", "/"),
                 "mode": "actor_learner",
@@ -4196,6 +4810,437 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             pass
 
 
+def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, clip_reward_min, clip_reward_max) -> None:
+    """
+    PRO Actor-Learner для PPO (on-policy):
+    - Actors (CPU) собирают шаги (obs, action, reward, done, logprob, value, masks) и шлют пачками.
+    - Learner (GPU) агрегирует роллауты, считает GAE и делает PPO update.
+    """
+    num_actors = max(1, int(os.getenv("NUM_ACTORS", "8")))
+    batch_send = max(8, int(os.getenv("ACTOR_BATCH_SEND", "32")))
+    queue_max = max(64, int(os.getenv("ACTOR_QUEUE_MAX", "256")))
+
+    b_len = roster_config["b_len"]
+    b_hei = roster_config["b_hei"]
+    trunc = True
+
+    # 1) Определяем размеры наблюдения и action-space (как в DQN actor-learner)
+    enemy0, model0 = _build_units_from_config(roster_config, b_len, b_hei)
+    env0 = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy0, model=model0, b_len=b_len, b_hei=b_hei)
+    state0, _info0 = env0.reset(options={"m": model0, "e": enemy0, "Type": "big", "trunc": True})
+    if isinstance(state0, dict) or "OrderedDict" in str(type(state0)):
+        n_observations = len(list(state0.values()))
+    else:
+        n_observations = int(np.array(state0).shape[0])
+
+    ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
+    for i_u in range(len(model0)):
+        ordered_keys.append(f"move_num_{i_u}")
+    n_actions = []
+    for k in ordered_keys:
+        sp = env0.action_space.spaces[k]
+        if hasattr(sp, "n"):
+            n_actions.append(int(sp.n))
+        elif hasattr(sp, "nvec"):
+            n_actions.extend([int(x) for x in sp.nvec])
+        else:
+            raise TypeError(f"Unsupported action space for {k}: {type(sp)}")
+    try:
+        env0.close()
+    except Exception:
+        pass
+
+    # 2) Learner (GPU)
+    learner_side_cfg = LEARNER_SIDE if LEARNER_SIDE in {"P1", "P2"} else "P1"
+    learner_identity = AgentIdentity(
+        side=learner_side_cfg,
+        faction=LEARNER_FACTION,
+        ruleset_version=RULESET_VERSION,
+    ).normalized()
+    env_contract = make_env_contract(
+        n_observations=n_observations,
+        n_actions=n_actions,
+        mission_name=normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME)),
+        ruleset_version=learner_identity.ruleset_version,
+        extras={
+            "actor_learner": 1,
+            "train_algo": "ppo",
+            "num_actors": int(num_actors),
+        },
+    )
+
+    actor_critic = ActorCriticMultiHead(n_observations, n_actions).to(device)
+    optimizer = optim.AdamW(actor_critic.parameters(), lr=PPO_LR, amsgrad=True)
+    buffer = PPORolloutBuffer()
+
+    # Self-play opponent snapshot (optional): загружаем один раз в learner и раздаём акторам.
+    opponent_state_dict_cpu = None
+    opponent_source_label = "heuristic_auto"
+    opponent_agent_id = None
+    # algo загруженного оппонента (для решения: обновлять ли снапшоты с PPO-learner)
+    checkpoint_meta_algo: str | None = None
+    if SELF_PLAY_ENABLED:
+        try:
+            if SELF_PLAY_OPPONENT_MODE == "fixed_checkpoint" and SELF_PLAY_FIXED_PATH:
+                checkpoint = torch.load(SELF_PLAY_FIXED_PATH, map_location="cpu", weights_only=False)
+                if isinstance(checkpoint, dict) and "actor_critic" in checkpoint:
+                    opponent_state_dict_cpu = normalize_state_dict(checkpoint["actor_critic"])
+                elif isinstance(checkpoint, dict) and "policy_net" in checkpoint:
+                    opponent_state_dict_cpu = normalize_state_dict(checkpoint["policy_net"])
+                elif isinstance(checkpoint, dict):
+                    opponent_state_dict_cpu = normalize_state_dict(checkpoint)
+                else:
+                    opponent_state_dict_cpu = normalize_state_dict(checkpoint)
+                opponent_source_label = "fixed_checkpoint"
+                if isinstance(checkpoint, dict):
+                    checkpoint_meta_algo = str(checkpoint.get("algo", "") or "").strip().lower()
+                    if checkpoint_meta_algo not in ("dqn", "ppo"):
+                        if "actor_critic" in checkpoint:
+                            checkpoint_meta_algo = "ppo"
+                        elif "policy_net" in checkpoint:
+                            checkpoint_meta_algo = "dqn"
+            else:
+                if not OPPONENT_AGENT_ID:
+                    raise ValueError("SELF_PLAY snapshot: нужен OPPONENT_AGENT_ID (GUI должен подставить latest_snapshot).")
+                _opp_spec_ppo = load_agent_opponent(agent_id=OPPONENT_AGENT_ID, expected_contract=env_contract)
+                opponent_state_dict_cpu = normalize_state_dict(_opp_spec_ppo.policy_state)
+                checkpoint_meta_algo = str(_opp_spec_ppo.algo).lower()
+                opponent_source_label = "snapshot_policy_fn"
+                opponent_agent_id = str(OPPONENT_AGENT_ID)
+        except Exception as exc:
+            warn = f"[SELFPLAY][WARN] PPO actor-learner: не удалось загрузить оппонента, откатываюсь на эвристику. exc={exc}"
+            append_agent_log(warn)
+            if TRAIN_LOG_TO_CONSOLE:
+                print(warn)
+            opponent_state_dict_cpu = None
+            opponent_source_label = "heuristic_auto"
+            checkpoint_meta_algo = None
+
+    # PPO vs PPO: learner периодически пишет снапшот в latest_ppo_opp. PPO vs DQN: оппонент фиксирован.
+    opponent_snapshot_sync_enabled = True
+    if SELF_PLAY_ENABLED and opponent_state_dict_cpu is not None and checkpoint_meta_algo in ("dqn", "ppo"):
+        opponent_snapshot_sync_enabled = checkpoint_meta_algo == "ppo"
+
+    # Sync learner -> actors (через файл, Windows-friendly)
+    sync_enabled = os.getenv("ACTOR_SYNC_ENABLED", "1") == "1"
+    sync_every_updates = max(1, int(os.getenv("ACTOR_SYNC_EVERY_UPDATES", "1")))
+    sync_path = os.path.join("models", "actor_sync", "latest_ppo.pth")
+    os.makedirs(os.path.dirname(sync_path), exist_ok=True)
+    last_sync_update_step = 0
+
+    # Sync opponent -> actors
+    opp_sync_path = os.path.join("models", "actor_sync", "latest_ppo_opp.pth")
+    os.makedirs(os.path.dirname(opp_sync_path), exist_ok=True)
+    last_opp_sync_episode = 0
+    snapshot_update_every = max(1, int(SELF_PLAY_UPDATE_EVERY_EPISODES))
+
+    init_weights = {
+        k: v.detach().cpu().clone()
+        for k, v in normalize_state_dict(actor_critic.state_dict()).items()
+    }
+
+    ctx = mp.get_context("spawn")
+    data_q: mp.Queue = ctx.Queue(maxsize=queue_max)
+
+    procs = []
+    for a_idx in range(num_actors):
+        base = int(totLifeT) // int(num_actors)
+        rem = int(totLifeT) % int(num_actors)
+        episodes = int(base + (1 if a_idx < rem else 0))
+        cr_min = 0.0 if clip_reward_min is None else float(clip_reward_min)
+        cr_max = 0.0 if clip_reward_max is None else float(clip_reward_max)
+        p = ctx.Process(
+            target=_actor_learner_actor_entry_ppo,
+            args=(
+                a_idx,
+                int(episodes),
+                roster_config,
+                int(b_len),
+                int(b_hei),
+                int(n_observations),
+                list(n_actions),
+                init_weights,
+                int(batch_send),
+                float(cr_min),
+                float(cr_max),
+                bool(clip_reward_enabled),
+                data_q,
+            ),
+            daemon=True,
+        )
+        p.start()
+        procs.append(p)
+
+    done_actors = 0
+    episodes_finished = 0
+    global_step = 0
+    ppo_update_step = 0
+    last_checkpoint = ""
+
+    run_id = str(random.randint(1000000, 9999999))
+    model_name = datetime.datetime.now().strftime("%d-%H%M%S")
+    metrics_obj = metrics("models", run_id, model_name)
+    ep_rows: list[dict] = []
+    last_update_metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clip_fraction": 0.0}
+
+    append_agent_log(f"[PPO][ACTOR_LEARNER][CONFIG] actors={num_actors} batch_send={batch_send} queue_max={queue_max}")
+    print(f"[PPO][ACTOR_LEARNER][CONFIG] actors={num_actors} batch_send={batch_send}", flush=True)
+    if SELF_PLAY_ENABLED:
+        append_agent_log(
+            "[SELFPLAY][CONFIG] "
+            f"enabled=1 mode={SELF_PLAY_OPPONENT_MODE} learner_algo=ppo opponent_algo={checkpoint_meta_algo or '-'} "
+            f"opponent_snapshot_sync={int(opponent_snapshot_sync_enabled)} "
+            f"opponent_agent_id={OPPONENT_AGENT_ID or '-'} "
+            f"enemy_policy_mode={opponent_source_label} snapshot_update_every={snapshot_update_every}"
+        )
+
+    while done_actors < num_actors:
+        try:
+            kind, payload = data_q.get(timeout=1.0)
+        except mp_queue.Empty:
+            continue
+
+        if kind == "error":
+            raise RuntimeError(payload)
+        if kind == "done":
+            done_actors += 1
+            continue
+
+        if kind == "ep":
+            if isinstance(payload, dict):
+                # learner-side нумерация по порядку
+                if len(ep_rows) >= int(totLifeT):
+                    continue
+                if payload.get("episode") is None:
+                    payload["episode"] = len(ep_rows) + 1
+                ep_rows.append(payload)
+                episodes_finished = len(ep_rows)
+                # GUI прогресс читает stdout и парсит шаблон ep=X/Y.
+                print(f"[PPO] ep={episodes_finished}/{totLifeT} done", flush=True)
+                metrics_obj.updateRew(float(payload.get("ep_reward", 0.0) or 0.0))
+                metrics_obj.updateEpLen(int(payload.get("ep_len", 0) or 0))
+                append_episode_diagnostics(
+                    run_id=run_id,
+                    episode_row={k: payload.get(k) for k in ("episode","ep_reward","ep_len","turn","model_vp","player_vp","vp_diff","result","end_reason","end_code")},
+                    diagnostics={
+                        "algo": "ppo",
+                        "self_play_enabled": int(1 if SELF_PLAY_ENABLED else 0),
+                        "opponent_source": str(opponent_source_label),
+                        "opponent_agent_id": str(opponent_agent_id or ""),
+                        "snapshot_update_every": int(snapshot_update_every),
+                        "policy_loss": float(last_update_metrics.get("policy_loss", 0.0)),
+                        "value_loss": float(last_update_metrics.get("value_loss", 0.0)),
+                        "entropy": float(last_update_metrics.get("entropy", 0.0)),
+                        "approx_kl": float(last_update_metrics.get("approx_kl", 0.0)),
+                        "clip_fraction": float(last_update_metrics.get("clip_fraction", 0.0)),
+                        "global_step": int(global_step),
+                        "update_step": int(ppo_update_step),
+                    },
+                    metrics_dir="metrics",
+                )
+
+                # Periodic opponent snapshot update (learner -> actors + registry)
+                if (
+                    SELF_PLAY_ENABLED
+                    and opponent_snapshot_sync_enabled
+                    and (episodes_finished - last_opp_sync_episode) >= snapshot_update_every
+                ):
+                    try:
+                        opponent_state_dict_cpu = {
+                            k: v.detach().cpu()
+                            for k, v in normalize_state_dict(actor_critic.state_dict()).items()
+                        }
+                        agent_id = build_agent_id(learner_identity, f"ep{episodes_finished}")
+                        artifact_dir = save_agent_artifact(
+                            identity=learner_identity,
+                            agent_id=agent_id,
+                            env_contract=env_contract,
+                            policy_state_dict=opponent_state_dict_cpu,
+                            target_state_dict=None,
+                            optimizer_state_dict=None,
+                            extra_meta={
+                                "algo": "ppo",
+                                "episode": int(episodes_finished),
+                                "mode": "actor_learner",
+                                "num_actors": int(num_actors),
+                            },
+                        )
+                        append_agent_log(f"[LEAGUE][SAVE][PPO] agent_id={agent_id} artifact_dir={artifact_dir}")
+                        torch.save(
+                            {
+                                "episode": int(episodes_finished),
+                                "agent_id": str(agent_id),
+                                "state_dict": opponent_state_dict_cpu,
+                            },
+                            opp_sync_path,
+                        )
+                        opponent_source_label = "snapshot_policy_fn"
+                        opponent_agent_id = str(agent_id)
+                        last_opp_sync_episode = int(episodes_finished)
+                    except Exception as exc:
+                        append_agent_log(f"[SELFPLAY][WARN] PPO snapshot update failed: {exc}")
+
+                if SAVE_EVERY > 0 and (episodes_finished % SAVE_EVERY == 0):
+                    last_checkpoint = _save_ppo_checkpoint(
+                        actor_critic=actor_critic,
+                        optimizer=optimizer,
+                        episode=episodes_finished,
+                        n_actions=n_actions,
+                        n_observations=n_observations,
+                        model=None,
+                        enemy=None,
+                        env_contract=env_contract,
+                    )
+            continue
+
+        if kind != "rollout":
+            continue
+
+        # rollout payload: dict(actor_idx, steps=[...])
+        if not isinstance(payload, dict):
+            continue
+        actor_idx = int(payload.get("actor_idx", -1))
+        steps = payload.get("steps")
+        if actor_idx < 0 or not isinstance(steps, list) or not steps:
+            continue
+
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            buffer.add(
+                obs=np.asarray(step.get("obs"), dtype=np.float32),
+                action=np.asarray(step.get("action"), dtype=np.int64),
+                logprob=float(step.get("logprob", 0.0) or 0.0),
+                reward=float(step.get("reward", 0.0) or 0.0),
+                done=bool(step.get("done", False)),
+                value=float(step.get("value", 0.0) or 0.0),
+                masks_by_head=step.get("masks_by_head") or [],
+                env_id=int(actor_idx),
+            )
+            global_step += 1
+
+        # Update PPO по порогу шагов
+        if len(buffer) >= max(1, int(PPO_ROLLOUT_STEPS)):
+            batch = buffer.to_tensors(device=device, gamma=PPO_GAMMA, gae_lambda=PPO_GAE_LAMBDA, normalize_adv=True)
+            num_samples = int(batch.obs.shape[0])
+            if num_samples > 0:
+                idx_all = np.arange(num_samples)
+                ppo_metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clip_fraction": 0.0}
+                updates = 0
+                for _ in range(max(1, PPO_UPDATE_EPOCHS)):
+                    np.random.shuffle(idx_all)
+                    epoch_kl = 0.0
+                    epoch_kl_steps = 0
+                    for start in range(0, num_samples, max(1, PPO_MINIBATCH_SIZE)):
+                        mb_idx = idx_all[start:start + max(1, PPO_MINIBATCH_SIZE)]
+                        mb_obs = batch.obs[mb_idx]
+                        mb_actions = batch.actions[mb_idx]
+                        mb_old_logp = batch.logprobs[mb_idx]
+                        mb_adv = batch.advantages[mb_idx]
+                        mb_returns = batch.returns[mb_idx]
+                        mb_masks = [m[mb_idx] for m in batch.masks_by_head]
+                        new_logp, entropy, values = actor_critic.evaluate_actions(mb_obs, mb_actions, masks_by_head=mb_masks)
+                        ratio = torch.exp(new_logp - mb_old_logp)
+                        clipped_ratio = torch.clamp(ratio, 1.0 - PPO_CLIP_RATIO, 1.0 + PPO_CLIP_RATIO)
+                        policy_loss = -torch.min(ratio * mb_adv, clipped_ratio * mb_adv).mean()
+                        value_loss = F.mse_loss(values, mb_returns)
+                        entropy_loss = entropy.mean()
+                        loss = policy_loss + PPO_VALUE_COEF * value_loss - PPO_ENTROPY_COEF * entropy_loss
+                        optimizer.zero_grad()
+                        loss.backward()
+                        torch.nn.utils.clip_grad_norm_(actor_critic.parameters(), PPO_MAX_GRAD_NORM)
+                        optimizer.step()
+                        approx_kl = (mb_old_logp - new_logp).mean().detach()
+                        clip_frac = ((ratio - 1.0).abs() > PPO_CLIP_RATIO).float().mean().detach()
+                        ppo_metrics["policy_loss"] += float(policy_loss.detach().item())
+                        ppo_metrics["value_loss"] += float(value_loss.detach().item())
+                        ppo_metrics["entropy"] += float(entropy_loss.detach().item())
+                        ppo_metrics["approx_kl"] += float(approx_kl.item())
+                        ppo_metrics["clip_fraction"] += float(clip_frac.item())
+                        updates += 1
+                        ppo_update_step += 1
+                        epoch_kl += float(approx_kl.item())
+                        epoch_kl_steps += 1
+                    mean_epoch_kl = epoch_kl / max(1, epoch_kl_steps)
+                    if mean_epoch_kl > PPO_TARGET_KL:
+                        append_agent_log(
+                            f"[PPO] Ранний stop эпохи по KL: epoch_kl={mean_epoch_kl:.6f} > target_kl={PPO_TARGET_KL:.6f}."
+                        )
+                        break
+                if updates > 0:
+                    for key in ppo_metrics:
+                        ppo_metrics[key] /= updates
+                last_update_metrics = dict(ppo_metrics)
+                metrics_obj.updateLoss(ppo_metrics["policy_loss"] + PPO_VALUE_COEF * ppo_metrics["value_loss"])
+                append_agent_log(
+                    f"[PPO][ACTOR_LEARNER][UPDATE] policy_loss={ppo_metrics['policy_loss']:.6f} value_loss={ppo_metrics['value_loss']:.6f} "
+                    f"entropy={ppo_metrics['entropy']:.6f} approx_kl={ppo_metrics['approx_kl']:.6f} "
+                    f"clip_fraction={ppo_metrics['clip_fraction']:.6f} global_step={global_step} update_step={ppo_update_step}"
+                )
+
+                # sync weights
+                if sync_enabled and (ppo_update_step - last_sync_update_step) >= sync_every_updates:
+                    try:
+                        cpu_sd = {k: v.detach().cpu() for k, v in normalize_state_dict(actor_critic.state_dict()).items()}
+                        torch.save({"update_step": int(ppo_update_step), "state_dict": cpu_sd}, sync_path)
+                        last_sync_update_step = int(ppo_update_step)
+                    except Exception:
+                        pass
+
+            buffer.clear()
+
+    # Финальный чекпойнт + метрики
+    if not last_checkpoint:
+        last_checkpoint = _save_ppo_checkpoint(
+            actor_critic=actor_critic,
+            optimizer=optimizer,
+            episode=int(episodes_finished or totLifeT),
+            n_actions=n_actions,
+            n_observations=n_observations,
+            model=None,
+            enemy=None,
+            env_contract=env_contract,
+        )
+
+    if ep_rows:
+        try:
+            metrics_obj.lossCurve()
+            metrics_obj.showRew()
+            metrics_obj.showEpLen()
+            save_extra_metrics(run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics")
+            save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics")
+            metrics_obj.createJson()
+            print("Generated metrics", flush=True)
+        except Exception as exc:
+            append_agent_log(
+                "[PPO][ACTOR_LEARNER][METRICS][WARN] Не удалось сохранить метрики/графики. "
+                f"Где: train.py _main_actor_learner_ppo. Ошибка: {exc}"
+            )
+    append_agent_log(f"[PPO][ACTOR_LEARNER] done: episodes={totLifeT} steps={global_step} updates={ppo_update_step} checkpoint={last_checkpoint}")
+
+    # Финальный self-play снапшот в registry (чтобы GUI мог взять latest_snapshot)
+    if SELF_PLAY_ENABLED:
+        try:
+            final_agent_id = build_agent_id(learner_identity, f"final_ep{int(episodes_finished or len(ep_rows))}")
+            artifact_dir = save_agent_artifact(
+                identity=learner_identity,
+                agent_id=final_agent_id,
+                env_contract=env_contract,
+                policy_state_dict=normalize_state_dict(actor_critic.state_dict()),
+                target_state_dict=None,
+                optimizer_state_dict=optimizer.state_dict(),
+                extra_meta={
+                    "algo": "ppo",
+                    "episode": int(episodes_finished or len(ep_rows)),
+                    "mode": "actor_learner",
+                    "num_actors": int(num_actors),
+                },
+            )
+            append_agent_log(f"[LEAGUE][SAVE][PPO] agent_id={final_agent_id} artifact_dir={artifact_dir}")
+        except Exception as exc:
+            append_agent_log(f"[SELFPLAY][WARN] PPO final agent snapshot failed: {exc}")
+
+
 def _actor_learner_actor_entry(
     actor_idx: int,
     episodes: int,
@@ -4210,7 +5255,7 @@ def _actor_learner_actor_entry(
     clip_reward_max: float,
     clip_reward_enabled: bool,
     data_q,
-    opponent_state_dict_cpu,
+    opponent_spec,
     opponent_eps: float,
     self_play_enabled: int,
 ):
@@ -4230,16 +5275,22 @@ def _actor_learner_actor_entry(
         sync_check_every_ep = max(1, int(os.getenv("ACTOR_SYNC_CHECK_EVERY_EP", "10")))
         last_sync_mtime = -1.0
 
-        opponent_net = None
-        if int(self_play_enabled) == 1 and opponent_state_dict_cpu is not None:
-            opponent_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(torch.device("cpu"))
-            opponent_net.load_state_dict(normalize_state_dict(opponent_state_dict_cpu))
-            opponent_net.eval()
+        opponent_policy_fn = None
+        if int(self_play_enabled) == 1 and opponent_spec is not None:
+            try:
+                opponent_policy_fn = build_policy_fn(
+                    env=env,
+                    len_model=len(model),
+                    opponent=opponent_spec,
+                    deterministic=True,
+                )
+            except Exception:
+                opponent_policy_fn = None
         if int(self_play_enabled) == 1:
             append_agent_log(
                 "[SELFPLAY][ACTOR] "
                 f"actor_idx={actor_idx} "
-                f"enemy_policy_mode={'snapshot_policy_fn' if opponent_net is not None else 'heuristic_auto'}"
+                f"enemy_policy_mode={'snapshot_policy_fn' if opponent_policy_fn is not None else 'heuristic_auto'}"
             )
 
         steps_done = 0
@@ -4370,11 +5421,8 @@ def _actor_learner_actor_entry(
 
                 # ВАЖНО: как в основном train-loop — сначала ход противника, потом env.step (ход модели).
                 env_unwrapped = unwrap_env(env)
-                if opponent_net is not None:
-                    def _opp_policy_fn(obs, env=env, lm=len(model), net=opponent_net, eps=float(opponent_eps)):
-                        action = select_action_with_epsilon(env, obs, net, eps, lm)
-                        return convertToDict(action)
-                    env_unwrapped.enemyTurn(trunc=trunc, policy_fn=_opp_policy_fn)
+                if opponent_policy_fn is not None:
+                    env_unwrapped.enemyTurn(trunc=trunc, policy_fn=opponent_policy_fn)
                 else:
                     env_unwrapped.enemyTurn(trunc=trunc)
                 next_obs, reward, done, res, info2 = env.step(action_dict)
@@ -4556,6 +5604,262 @@ def _actor_learner_actor_entry(
     except Exception as exc:
         try:
             data_q.put(("error", f"actor[{actor_idx}] {exc}"))
+        except Exception:
+            pass
+
+
+def _actor_learner_actor_entry_ppo(
+    actor_idx: int,
+    episodes: int,
+    roster_config: dict,
+    b_len: int,
+    b_hei: int,
+    n_observations: int,
+    n_actions: list,
+    init_weights: dict,
+    batch_send: int,
+    clip_reward_min: float,
+    clip_reward_max: float,
+    clip_reward_enabled: bool,
+    data_q,
+):
+    """Top-level entrypoint for Windows spawn pickling (PPO actor)."""
+    try:
+        cpu_net = ActorCriticMultiHead(n_observations, n_actions).to(torch.device("cpu"))
+        cpu_net.load_state_dict(init_weights)
+        cpu_net.eval()
+
+        trunc = True
+        enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+        mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+        env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
+
+        sync_enabled = os.getenv("ACTOR_SYNC_ENABLED", "1") == "1"
+        sync_path = os.path.join("models", "actor_sync", "latest_ppo.pth")
+        sync_check_every_ep = max(1, int(os.getenv("ACTOR_SYNC_CHECK_EVERY_EP", "5")))
+        last_sync_mtime = -1.0
+
+        opponent_policy_fn = None
+        # 1) Explicit opponent via registry (supports cross-algo)
+        if int(SELF_PLAY_ENABLED) == 1 and OPPONENT_AGENT_ID:
+            try:
+                opp_spec = load_agent_opponent(agent_id=OPPONENT_AGENT_ID)
+                opponent_policy_fn = build_policy_fn(env=env, len_model=len(model), opponent=opp_spec, deterministic=True)
+            except Exception:
+                opponent_policy_fn = None
+        # 2) Fallback: PPO snapshot sync file (PPO vs PPO), if explicit not set
+        opp_sync_path = os.path.join("models", "actor_sync", "latest_ppo_opp.pth")
+        last_opp_sync_mtime = -1.0
+        opponent_net = ActorCriticMultiHead(n_observations, n_actions).to(torch.device("cpu"))
+        opponent_net.eval()
+        opponent_loaded = False
+
+        # ordered_keys локально (для action_dict)
+        ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
+        for i_u in range(len(model)):
+            ordered_keys.append(f"move_num_{i_u}")
+
+        steps_buf: list[dict] = []
+
+        for _ep in range(int(episodes)):
+            ep_idx_1based = int(_ep) + 1
+            if sync_enabled and (_ep % sync_check_every_ep == 0):
+                try:
+                    if os.path.isfile(sync_path):
+                        mtime = os.path.getmtime(sync_path)
+                        if mtime > last_sync_mtime:
+                            payload = torch.load(sync_path, map_location="cpu", weights_only=False)
+                            sd = payload.get("state_dict") if isinstance(payload, dict) else None
+                            if isinstance(sd, dict):
+                                cpu_net.load_state_dict(normalize_state_dict(sd))
+                                cpu_net.eval()
+                                last_sync_mtime = float(mtime)
+                except Exception:
+                    pass
+
+            # Обновление оппонента для self-play через sync-файл (если снапшот появился)
+            if opponent_policy_fn is None and int(SELF_PLAY_ENABLED) == 1 and (_ep % sync_check_every_ep == 0):
+                try:
+                    if os.path.isfile(opp_sync_path):
+                        mtime = os.path.getmtime(opp_sync_path)
+                        if mtime > last_opp_sync_mtime:
+                            payload = torch.load(opp_sync_path, map_location="cpu", weights_only=False)
+                            sd = payload.get("state_dict") if isinstance(payload, dict) else None
+                            if isinstance(sd, dict):
+                                opponent_net.load_state_dict(normalize_state_dict(sd))
+                                opponent_net.eval()
+                                opponent_loaded = True
+                                last_opp_sync_mtime = float(mtime)
+                except Exception:
+                    pass
+
+            # roll-off + deploy как в остальных пайплайнах
+            attacker_side, defender_side = roll_off_attacker_defender(
+                manual_roll_allowed=False,
+                log_fn=None,
+            )
+            deploy_for_mission(
+                mission_name,
+                model_units=model,
+                enemy_units=enemy,
+                b_len=b_len,
+                b_hei=b_hei,
+                attacker_side=attacker_side,
+                log_fn=None,
+            )
+            post_deploy_setup(log_fn=None)
+            env.attacker_side = attacker_side
+            env.defender_side = defender_side
+
+            obs, info0 = env.reset(options={"m": model, "e": enemy, "Type": "small", "trunc": trunc})
+            done = False
+            ep_reward = 0.0
+            ep_len = 0
+            last_info = info0 if isinstance(info0, dict) else {}
+            last_res = 0
+
+            while not done:
+                env_unwrapped = unwrap_env(env)
+                if opponent_policy_fn is not None:
+                    env_unwrapped.enemyTurn(trunc=trunc, policy_fn=opponent_policy_fn)
+                elif int(SELF_PLAY_ENABLED) == 1 and opponent_loaded:
+                    # PPO-vs-PPO fallback (sync-file), deterministic
+                    def _ppo_opp_policy_fn(obs_opp, env=env, net=opponent_net, lm=len(model), n_actions=n_actions):
+                        obs_np_local = to_np_state(obs_opp)
+                        obs_t_local = torch.tensor(obs_np_local, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
+                        shoot_mask_local = build_shoot_action_mask(env, log_fn=None, debug=False)
+                        masks_local = []
+                        for head_idx, head_size in enumerate(n_actions):
+                            if head_idx == 2 and shoot_mask_local is not None:
+                                mask_arr = np.asarray(shoot_mask_local, dtype=np.bool_).reshape(-1)
+                                if mask_arr.size == int(head_size) and bool(mask_arr.any()):
+                                    masks_local.append(mask_arr)
+                                    continue
+                            masks_local.append(np.ones(int(head_size), dtype=np.bool_))
+                        masks_batch_local = [torch.tensor(m, dtype=torch.bool, device=torch.device("cpu")).unsqueeze(0) for m in masks_local]
+                        with torch.no_grad():
+                            act_t, _logp_t, _val_t = net.act(obs_t_local, masks_by_head=masks_batch_local, deterministic=True)
+                        act_np = act_t.squeeze(0).detach().cpu().numpy()
+                        act_dict = convertToDict(torch.tensor([act_np], device="cpu"))
+                        for i_u in range(int(lm)):
+                            act_dict[f"move_num_{i_u}"] = int(act_np[6 + i_u])
+                        return act_dict
+
+                    env_unwrapped.enemyTurn(trunc=trunc, policy_fn=_ppo_opp_policy_fn)
+                else:
+                    env_unwrapped.enemyTurn(trunc=trunc)
+
+                if bool(getattr(env_unwrapped, "game_over", False)):
+                    done = True
+                    if hasattr(env_unwrapped, "get_info"):
+                        last_info = env_unwrapped.get_info() or last_info
+                    break
+
+                obs_np = to_np_state(obs)
+                obs_t = torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
+
+                # маски: strict для shoot, остальные all_true
+                shoot_mask = build_shoot_action_mask(env, log_fn=None, debug=False)
+                masks_cpu = []
+                for head_idx, head_size in enumerate(n_actions):
+                    if head_idx == 2 and shoot_mask is not None:
+                        mask_arr = np.asarray(shoot_mask, dtype=np.bool_).reshape(-1)
+                        if mask_arr.size == int(head_size) and bool(mask_arr.any()):
+                            masks_cpu.append(mask_arr)
+                            continue
+                    masks_cpu.append(np.ones(int(head_size), dtype=np.bool_))
+                masks_batch = [torch.tensor(m, dtype=torch.bool, device=torch.device("cpu")).unsqueeze(0) for m in masks_cpu]
+
+                with torch.no_grad():
+                    action_t, logprob_t, value_t = cpu_net.act(obs_t, masks_by_head=masks_batch, deterministic=False)
+                action_np = action_t.squeeze(0).detach().cpu().numpy()
+
+                action_dict = convertToDict(torch.tensor([action_np], device="cpu"))
+                for i_u in range(len(model)):
+                    action_dict[f"move_num_{i_u}"] = int(action_np[6 + i_u])
+
+                next_obs, reward, done, res, info2 = env.step(action_dict)
+                last_info = info2 if isinstance(info2, dict) else last_info
+                last_res = res
+
+                r_clipped, _clipped = maybe_clip_reward(
+                    float(reward), bool(clip_reward_enabled), float(clip_reward_min), float(clip_reward_max)
+                )
+                steps_buf.append(
+                    {
+                        "obs": obs_np,
+                        "action": action_np.tolist(),
+                        "logprob": float(logprob_t.squeeze(0).item()),
+                        "value": float(value_t.squeeze(0).item()),
+                        "reward": float(r_clipped),
+                        "done": bool(done),
+                        "masks_by_head": masks_cpu,
+                    }
+                )
+
+                ep_reward += float(reward)
+                ep_len += 1
+                obs = next_obs
+
+                if len(steps_buf) >= int(batch_send):
+                    data_q.put(("rollout", {"actor_idx": int(actor_idx), "steps": steps_buf}))
+                    steps_buf = []
+
+            # flush remaining steps at episode end
+            if steps_buf:
+                data_q.put(("rollout", {"actor_idx": int(actor_idx), "steps": steps_buf}))
+                steps_buf = []
+
+            # episode row
+            try:
+                end_reason = str(last_info.get("end reason", "") or "")
+                model_vp = int(last_info.get("model VP", 0) or 0)
+                player_vp = int(last_info.get("player VP", 0) or 0)
+                vp_diff = int(model_vp) - int(player_vp)
+                turn = int(last_info.get("turn", 0) or 0)
+
+                result = "loss"
+                if end_reason == "wipeout_enemy":
+                    result = "win"
+                elif end_reason == "wipeout_model":
+                    result = "loss"
+                elif str(end_reason).startswith("turn_limit"):
+                    if vp_diff > 0:
+                        result = "win"
+                    elif vp_diff == 0:
+                        result = "draw"
+                else:
+                    if vp_diff > 0:
+                        result = "win"
+                    elif vp_diff == 0:
+                        result = "draw"
+
+                data_q.put(
+                    (
+                        "ep",
+                        {
+                            "episode": None,
+                            "actor_idx": int(actor_idx),
+                            "actor_ep": int(ep_idx_1based),
+                            "ep_reward": float(ep_reward),
+                            "ep_len": int(ep_len),
+                            "turn": int(turn),
+                            "model_vp": int(model_vp),
+                            "player_vp": int(player_vp),
+                            "vp_diff": int(vp_diff),
+                            "result": str(result),
+                            "end_reason": str(end_reason),
+                            "end_code": int(last_res),
+                        },
+                    )
+                )
+            except Exception:
+                pass
+
+        data_q.put(("done", int(actor_idx)))
+    except Exception as exc:
+        try:
+            data_q.put(("error", f"ppo_actor[{actor_idx}] {exc}"))
         except Exception:
             pass
 

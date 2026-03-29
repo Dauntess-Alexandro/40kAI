@@ -154,6 +154,33 @@ ApplicationWindow {
                                         }
                                     }
 
+                                    RowLayout {
+                                        spacing: root.spacingSm
+                                        Label { text: "Модель обучения:" }
+                                        ComboBox {
+                                            id: trainingAlgoComboMain
+                                            Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(300 * root.uiScale))
+                                            model: [
+                                                { value: "dqn", label: "DQN (текущая модель)" },
+                                                { value: "ppo", label: "PPO (новый алгоритм)" }
+                                            ]
+                                            textRole: "label"
+                                            valueRole: "value"
+                                            currentIndex: {
+                                                for (var i = 0; i < model.length; i++) {
+                                                    if (model[i].value === controller.trainingAlgo)
+                                                        return i
+                                                }
+                                                return 0
+                                            }
+                                            enabled: !controller.running
+                                            onActivated: {
+                                                if (currentIndex >= 0 && currentIndex < model.length)
+                                                    controller.set_training_algo(model[currentIndex].value)
+                                            }
+                                        }
+                                    }
+
                                 }
                             }
                         }
@@ -194,14 +221,6 @@ ApplicationWindow {
                                         enabled: !controller.running
                                         Layout.columnSpan: 2
                                         onToggled: controller.set_disable_train_logging(checked)
-                                    }
-
-                                    CheckBox {
-                                        text: "Actor-Learner (нагрузить CPU+GPU) — только для Тренировки 8х"
-                                        checked: controller.actorLearner
-                                        enabled: !controller.running
-                                        Layout.columnSpan: 2
-                                        onToggled: controller.set_actor_learner(checked)
                                     }
 
                                     CheckBox {
