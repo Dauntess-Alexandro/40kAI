@@ -623,7 +623,13 @@ def _resume_from_checkpoint(policy_net, target_net, optimizer, memory, checkpoin
         "epsilon": float(eps_at_resume),
     }
 
-def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
+def save_extra_metrics(
+    run_id: str,
+    ep_rows: list[dict],
+    metrics_dir="metrics",
+    *,
+    write_legacy_gui_plots: bool = True,
+):
     os.makedirs(metrics_dir, exist_ok=True)
     os.makedirs("gui/img", exist_ok=True)
 
@@ -636,6 +642,10 @@ def save_extra_metrics(run_id: str, ep_rows: list[dict], metrics_dir="metrics"):
             w.writeheader()
             for r in ep_rows:
                 w.writerow({k: r.get(k, "") for k in cols})
+
+    if not write_legacy_gui_plots:
+        print(f"[metrics] saved (csv only): {csv_path}")
+        return
 
     wins01 = [1 if r["result"] == "win" else 0 for r in ep_rows]
     vp_diff = [r["vp_diff"] for r in ep_rows]
@@ -745,18 +755,38 @@ def _save_actor_det_eval_snapshot(run_id: str, payload: dict, metrics_dir: str =
         json.dump(out, f, ensure_ascii=False, indent=2)
 
 
-def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict | None:
+def _write_det_eval_data_json(
+    *,
+    run_id: str,
+    det_plot_gui_paths: dict[str, str],
+    model_path: str,
+    metrics_mode: str = "det_eval",
+    extra: dict | None = None,
+) -> str:
     """
-    Рисует отдельные графики periodic actor DET-eval:
-    - win_rate + trend
-    - reward_mean + trend
-    Возвращает словарь путей или None, если данных нет.
+    GUI читает models/data_<run_id>.json: только det_* пути (относительно каталога gui/).
     """
+    data_json_path = os.path.join("models", f"data_{run_id}.json")
+    os.makedirs("models", exist_ok=True)
+    payload = {
+        "run_id": str(run_id),
+        "metrics_mode": metrics_mode,
+        "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "model_path": model_path,
+        **{k: v for k, v in (det_plot_gui_paths or {}).items()},
+    }
+    if extra:
+        payload.update(extra)
+    with open(data_json_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+    return data_json_path
+
+
+def _det_eval_read_jsonl_points(run_id: str, metrics_dir: str = "metrics") -> list[dict]:
     jsonl_path = os.path.join(metrics_dir, f"actor_det_eval_{run_id}.jsonl")
     if not os.path.exists(jsonl_path):
-        return None
-
-    points: list[dict] = []
+        return []
+    by_ep: dict[int, dict] = {}
     try:
         with open(jsonl_path, "r", encoding="utf-8") as f:
             for line in f:
@@ -772,81 +802,209 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
                 ep = int(payload.get("episode", 0) or 0)
                 if ep <= 0:
                     continue
-                points.append(
-                    {
-                        "episode": ep,
-                        "win_rate": float(payload.get("win_rate", 0.0) or 0.0),
-                        "draw_rate": float(payload.get("draw_rate", 0.0) or 0.0),
-                        "turn_limit_rate": float(payload.get("turn_limit_rate", 0.0) or 0.0),
-                        "reward_mean": float(payload.get("reward_mean", 0.0) or 0.0),
-                    }
-                )
+                by_ep[ep] = payload
     except OSError:
-        return None
+        return []
+    return [by_ep[k] for k in sorted(by_ep.keys())]
 
+
+def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict | None:
+    """
+    Графики только из actor_det_eval_<run_id>.jsonl (DET-eval чекпоинты).
+    PNG: winrate, reward, loss (на момент обучения), ep_len, hp_diff, kill_diff, причины завершения.
+    Возвращает словарь относительных путей для gui (ключи det_winrate, …) или None.
+    """
+    points = _det_eval_read_jsonl_points(run_id, metrics_dir=metrics_dir)
     if not points:
         return None
 
-    points.sort(key=lambda x: int(x["episode"]))
-    episodes = [int(p["episode"]) for p in points]
-    win_rates = [float(p["win_rate"]) for p in points]
-    reward_mean = [float(p["reward_mean"]) for p in points]
+    episodes = [int(p.get("episode", 0) or 0) for p in points]
+    win_rates = [float(p.get("win_rate", 0.0) or 0.0) for p in points]
+    reward_mean = [float(p.get("reward_mean", 0.0) or 0.0) for p in points]
+    model_vp_m = [float(p.get("model_vp_mean", 0.0) or 0.0) for p in points]
+    enemy_vp_m = [float(p.get("enemy_vp_mean", 0.0) or 0.0) for p in points]
+    hp_diff_m = [float(p.get("hp_diff_mean", 0.0) or 0.0) for p in points]
+    kill_diff_m = [float(p.get("kill_diff_mean", 0.0) or 0.0) for p in points]
+    ep_len_m = [float(p.get("ep_len_mean", 0.0) or 0.0) for p in points]
+    wo_e = [float(p.get("wipeout_enemy_rate", 0.0) or 0.0) for p in points]
+    wo_m = [float(p.get("wipeout_model_rate", 0.0) or 0.0) for p in points]
+    tl_r = [float(p.get("turn_limit_rate", 0.0) or 0.0) for p in points]
+
+    loss_ep: list[int] = []
+    loss_vals: list[float] = []
+    for p in points:
+        raw = p.get("training_loss", None)
+        if raw is None:
+            continue
+        try:
+            v = float(raw)
+        except (TypeError, ValueError):
+            continue
+        loss_ep.append(int(p.get("episode", 0) or 0))
+        loss_vals.append(v)
 
     os.makedirs(metrics_dir, exist_ok=True)
     os.makedirs("gui/img", exist_ok=True)
-    out_metrics_win = os.path.join(metrics_dir, f"actor_det_eval_win_{run_id}.png")
-    out_gui_win_run = os.path.join("gui/img", f"actor_det_eval_win_{run_id}.png")
-    out_gui_win_latest = os.path.join("gui/img", "actor_det_eval_win.png")
 
-    out_metrics_reward = os.path.join(metrics_dir, f"actor_det_eval_reward_{run_id}.png")
-    out_gui_reward_run = os.path.join("gui/img", f"actor_det_eval_reward_{run_id}.png")
-    out_gui_reward_latest = os.path.join("gui/img", "actor_det_eval_reward.png")
+    def _save_fig(path_metrics: str, path_gui_run: str, path_gui_latest: str) -> None:
+        plt.savefig(path_metrics)
+        plt.savefig(path_gui_run)
+        plt.savefig(path_gui_latest)
 
-    fig, ax1 = plt.subplots(1, 1, figsize=(8, 4))
-    ax1.plot(episodes, win_rates, color="#1f77b4", linewidth=1.6, label="win_rate")
-    if len(episodes) >= 2:
-        x = np.asarray(episodes, dtype=np.float64)
-        y = np.asarray(win_rates, dtype=np.float64)
-        try:
-            a, b = np.polyfit(x, y, 1)
-            ax1.plot(episodes, (a * x + b).tolist(), color="#ff7f0e", linewidth=2.0, label="trend")
-        except Exception:
-            pass
-    ax1.set_ylim(-0.05, 1.05)
-    ax1.set_ylabel("Win rate")
-    ax1.set_title("Actor DET-eval: win rate + trend")
-    ax1.legend()
-    ax1.set_xlabel("Episode")
+    def _trend_line(ax, xs: list, ys: list) -> None:
+        if len(xs) >= 2:
+            x = np.asarray(xs, dtype=np.float64)
+            y = np.asarray(ys, dtype=np.float64)
+            try:
+                a, b = np.polyfit(x, y, 1)
+                ax.plot(xs, (a * x + b).tolist(), color="#ff7f0e", linewidth=2.0, label="trend")
+            except Exception:
+                pass
+
+    # --- winrate ---
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+    ax.plot(episodes, win_rates, color="#1f77b4", linewidth=1.6, label="win_rate")
+    _trend_line(ax, episodes, win_rates)
+    ax.set_ylim(-0.05, 1.05)
+    ax.set_ylabel("Win rate")
+    ax.set_title("DET-eval: win rate (по чекпоинтам)")
+    ax.set_xlabel("Эпизод обучения (якорь)")
+    ax.legend(loc="lower right")
     plt.tight_layout()
-    plt.savefig(out_metrics_win)
-    plt.savefig(out_gui_win_run)
-    plt.savefig(out_gui_win_latest)
+    _save_fig(
+        os.path.join(metrics_dir, f"det_winrate_{run_id}.png"),
+        os.path.join("gui/img", f"det_winrate_{run_id}.png"),
+        os.path.join("gui/img", "det_winrate.png"),
+    )
     plt.close()
 
-    fig, ax2 = plt.subplots(1, 1, figsize=(8, 4))
-    ax2.plot(episodes, reward_mean, color="#1f77b4", linewidth=1.6, label="reward_mean")
-    if len(episodes) >= 2:
-        x2 = np.asarray(episodes, dtype=np.float64)
-        y2 = np.asarray(reward_mean, dtype=np.float64)
-        try:
-            a2, b2 = np.polyfit(x2, y2, 1)
-            ax2.plot(episodes, (a2 * x2 + b2).tolist(), color="#ff7f0e", linewidth=2.0, label="trend")
-        except Exception:
-            pass
-    ax2.set_xlabel("Episode")
-    ax2.set_ylabel("Reward")
-    ax2.set_title("Actor DET-eval: reward mean + trend")
-    ax2.legend()
+    # --- reward ---
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+    ax.plot(episodes, reward_mean, color="#1f77b4", linewidth=1.6, label="reward_mean")
+    _trend_line(ax, episodes, reward_mean)
+    ax.set_ylabel("Суммарная награда за eval-игру / N")
+    ax.set_title("DET-eval: средняя награда")
+    ax.set_xlabel("Эпизод обучения (якорь)")
+    ax.legend()
     plt.tight_layout()
-    plt.savefig(out_metrics_reward)
-    plt.savefig(out_gui_reward_run)
-    plt.savefig(out_gui_reward_latest)
+    _save_fig(
+        os.path.join(metrics_dir, f"det_reward_{run_id}.png"),
+        os.path.join("gui/img", f"det_reward_{run_id}.png"),
+        os.path.join("gui/img", "det_reward.png"),
+    )
     plt.close()
+
+    # --- avg VP (model/enemy) ---
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+    ax.plot(episodes, model_vp_m, color="#1f77b4", linewidth=1.6, label="model_vp_mean")
+    ax.plot(episodes, enemy_vp_m, color="#d62728", linewidth=1.6, label="enemy_vp_mean")
+    ax.set_ylabel("VP")
+    ax.set_title("DET-eval: Avg VP (model vs enemy)")
+    ax.set_xlabel("Эпизод обучения (якорь)")
+    ax.legend(loc="best")
+    plt.tight_layout()
+    _save_fig(
+        os.path.join(metrics_dir, f"det_avg_vp_{run_id}.png"),
+        os.path.join("gui/img", f"det_avg_vp_{run_id}.png"),
+        os.path.join("gui/img", "det_avg_vp.png"),
+    )
+    plt.close()
+
+    # --- loss (training checkpoint) ---
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+    if loss_ep:
+        ax.plot(loss_ep, loss_vals, color="#2ca02c", linewidth=1.6, marker="o", markersize=3, label="training_loss")
+        if len(loss_ep) >= 2:
+            _trend_line(ax, loss_ep, loss_vals)
+    else:
+        ax.text(0.5, 0.5, "Нет training_loss в JSONL", ha="center", va="center", transform=ax.transAxes)
+    ax.set_ylabel("Loss")
+    ax.set_title("Loss на момент чекпоинта обучения (не loss игры)")
+    ax.set_xlabel("Эпизод обучения (якорь)")
+    ax.legend()
+    plt.tight_layout()
+    _save_fig(
+        os.path.join(metrics_dir, f"det_loss_{run_id}.png"),
+        os.path.join("gui/img", f"det_loss_{run_id}.png"),
+        os.path.join("gui/img", "det_loss.png"),
+    )
+    plt.close()
+
+    # --- ep_len ---
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+    ax.plot(episodes, ep_len_m, color="#9467bd", linewidth=1.6, label="ep_len_mean")
+    _trend_line(ax, episodes, ep_len_m)
+    ax.set_ylabel("Средняя длина eval-эпизода (шаги)")
+    ax.set_title("DET-eval: длина эпизода")
+    ax.set_xlabel("Эпизод обучения (якорь)")
+    ax.legend()
+    plt.tight_layout()
+    _save_fig(
+        os.path.join(metrics_dir, f"det_ep_len_{run_id}.png"),
+        os.path.join("gui/img", f"det_ep_len_{run_id}.png"),
+        os.path.join("gui/img", "det_ep_len.png"),
+    )
+    plt.close()
+
+    # --- hp_diff ---
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+    ax.plot(episodes, hp_diff_m, color="#d62728", linewidth=1.6, label="hp_diff_mean")
+    _trend_line(ax, episodes, hp_diff_m)
+    ax.set_ylabel("HP diff (model − enemy)")
+    ax.set_title("DET-eval: HP diff (конец игры)")
+    ax.set_xlabel("Эпизод обучения (якорь)")
+    ax.legend()
+    plt.tight_layout()
+    _save_fig(
+        os.path.join(metrics_dir, f"det_hp_diff_{run_id}.png"),
+        os.path.join("gui/img", f"det_hp_diff_{run_id}.png"),
+        os.path.join("gui/img", "det_hp_diff.png"),
+    )
+    plt.close()
+
+    # --- kill_diff ---
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+    ax.plot(episodes, kill_diff_m, color="#8c564b", linewidth=1.6, label="kill_diff_mean")
+    _trend_line(ax, episodes, kill_diff_m)
+    ax.set_ylabel("Kill diff (model − enemy)")
+    ax.set_title("DET-eval: Kill diff (по моделям)")
+    ax.set_xlabel("Эпизод обучения (якорь)")
+    ax.legend()
+    plt.tight_layout()
+    _save_fig(
+        os.path.join(metrics_dir, f"det_kill_diff_{run_id}.png"),
+        os.path.join("gui/img", f"det_kill_diff_{run_id}.png"),
+        os.path.join("gui/img", "det_kill_diff.png"),
+    )
+    plt.close()
+
+    # --- end reasons (доли) ---
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+    ax.plot(episodes, wo_e, color="#1f77b4", linewidth=1.4, label="wipeout_enemy")
+    ax.plot(episodes, wo_m, color="#ff7f0e", linewidth=1.4, label="wipeout_model")
+    ax.plot(episodes, tl_r, color="#2ca02c", linewidth=1.4, label="turn_limit")
+    ax.set_ylim(-0.05, 1.05)
+    ax.set_ylabel("Доля игр")
+    ax.set_title("DET-eval: причины завершения (доли)")
+    ax.set_xlabel("Эпизод обучения (якорь)")
+    ax.legend(loc="best")
+    plt.tight_layout()
+    _save_fig(
+        os.path.join(metrics_dir, f"det_endreasons_{run_id}.png"),
+        os.path.join("gui/img", f"det_endreasons_{run_id}.png"),
+        os.path.join("gui/img", "det_endreasons.png"),
+    )
+    plt.close()
+
     return {
-        "win": out_metrics_win,
-        "reward": out_metrics_reward,
-        "gui_win": out_gui_win_run,
-        "gui_reward": out_gui_reward_run,
+        "det_winrate": f"img/det_winrate_{run_id}.png",
+        "det_reward": f"img/det_reward_{run_id}.png",
+        "det_avg_vp": f"img/det_avg_vp_{run_id}.png",
+        "det_loss": f"img/det_loss_{run_id}.png",
+        "det_ep_len": f"img/det_ep_len_{run_id}.png",
+        "det_hp_diff": f"img/det_hp_diff_{run_id}.png",
+        "det_kill_diff": f"img/det_kill_diff_{run_id}.png",
+        "det_endreasons": f"img/det_endreasons_{run_id}.png",
     }
 
 
@@ -863,17 +1021,43 @@ def _run_actor_det_eval(
     wins = 0
     draws = 0
     vp_diff_sum = 0.0
+    model_vp_sum = 0.0
+    enemy_vp_sum = 0.0
+    hp_diff_sum = 0.0
+    kill_diff_sum = 0.0
     wipeout_enemy = 0
     wipeout_model = 0
     turn_limit = 0
     reward_sum_total = 0.0
+    steps_sum_total = 0.0
 
-    for _ in range(max(1, int(n_eval))):
+    def _sum_health(value) -> float:
+        try:
+            if isinstance(value, (list, tuple, np.ndarray)):
+                return float(sum(float(x) for x in value))
+            return float(value or 0.0)
+        except Exception:
+            return 0.0
+
+    def _sum_alive_models(value) -> int:
+        try:
+            if isinstance(value, (list, tuple, np.ndarray)):
+                return int(sum(int(x) for x in value))
+            return int(value or 0)
+        except Exception:
+            return 0
+
+    for eval_idx in range(max(1, int(n_eval))):
         enemy_e, model_e = _build_units_from_config(roster_config, b_len, b_hei)
         env_e = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy_e, model=model_e, b_len=b_len, b_hei=b_hei)
         state_e, info_e = env_e.reset(options={"m": model_e, "e": enemy_e, "Type": "small", "trunc": True})
+        # Стартовые totals для kill diff
+        model_alive_start = _sum_alive_models((info_e or {}).get("model alive models", []))
+        enemy_alive_start = _sum_alive_models((info_e or {}).get("player alive models", []))
         done_e = False
+        step_count = 0
         while not done_e:
+            step_count += 1
             shoot_mask_e = build_shoot_action_mask(env_e, log_fn=None, debug=False)
             action_e = select_action_with_epsilon(env_e, state_e, policy_net, 0.0, len(model_e), shoot_mask=shoot_mask_e)
             action_e_dict = convertToDict(action_e)
@@ -885,9 +1069,37 @@ def _run_actor_det_eval(
             next_state_e, _reward_e, done_e, _res_e, info_e = env_e.step(action_e_dict)
             reward_sum_total += float(_reward_e or 0.0)
             state_e = next_state_e
+        steps_sum_total += float(step_count)
         end_reason_e = info_e.get("end reason", "")
-        vp_diff_e = int(info_e.get("model VP", 0)) - int(info_e.get("player VP", 0))
+        model_vp_e = int(info_e.get("model VP", 0))
+        enemy_vp_e = int(info_e.get("player VP", 0))
+        vp_diff_e = model_vp_e - enemy_vp_e
         vp_diff_sum += float(vp_diff_e)
+        model_vp_sum += float(model_vp_e)
+        enemy_vp_sum += float(enemy_vp_e)
+
+        # HP diff / Kill diff на конец игры
+        model_hp_end = _sum_health((info_e or {}).get("model health", []))
+        enemy_hp_end = _sum_health((info_e or {}).get("player health", []))
+        hp_diff_sum += float(model_hp_end - enemy_hp_end)
+        model_alive_end = _sum_alive_models((info_e or {}).get("model alive models", []))
+        enemy_alive_end = _sum_alive_models((info_e or {}).get("player alive models", []))
+        kills_by_model = enemy_alive_start - enemy_alive_end
+        kills_by_enemy = model_alive_start - model_alive_end
+        kill_diff_sum += float(kills_by_model - kills_by_enemy)
+
+        try:
+            append_agent_log(
+                "[DET][DEBUG] "
+                f"kind=dqn_det_eval "
+                f"idx={eval_idx+1}/{n_eval} "
+                f"end_reason={end_reason_e} "
+                f"model_vp={model_vp_e} "
+                f"player_vp={enemy_vp_e} "
+                f"vp_diff={vp_diff_e}"
+            )
+        except Exception:
+            pass
 
         if end_reason_e == "wipeout_enemy":
             wins += 1
@@ -919,7 +1131,164 @@ def _run_actor_det_eval(
         "wipeout_enemy_rate": float(wipeout_enemy / n),
         "wipeout_model_rate": float(wipeout_model / n),
         "vp_diff_mean": float(vp_diff_sum / n),
+        "model_vp_mean": float(model_vp_sum / n),
+        "enemy_vp_mean": float(enemy_vp_sum / n),
+        "hp_diff_mean": float(hp_diff_sum / n),
+        "kill_diff_mean": float(kill_diff_sum / n),
         "reward_mean": float(reward_sum_total / n),
+        "ep_len_mean": float(steps_sum_total / n),
+        "opponent_epsilon": float(opponent_epsilon),
+    }
+
+
+def _run_actor_det_eval_ppo(
+    *,
+    actor_critic,
+    roster_config: dict,
+    b_len: int,
+    b_hei: int,
+    n_actions: list[int],
+    n_eval: int,
+    opponent_epsilon: float,
+) -> dict:
+    """
+    DET-eval для PPO: детерминированная политика (argmax) против стандартного enemyTurn().
+    Возвращаем те же агрегаты, что и для DQN DET-eval.
+    """
+    actor_critic.eval()
+    wins = 0
+    draws = 0
+    vp_diff_sum = 0.0
+    model_vp_sum = 0.0
+    enemy_vp_sum = 0.0
+    hp_diff_sum = 0.0
+    kill_diff_sum = 0.0
+    wipeout_enemy = 0
+    wipeout_model = 0
+    turn_limit = 0
+    reward_sum_total = 0.0
+    steps_sum_total = 0.0
+
+    def _sum_health(value) -> float:
+        try:
+            if isinstance(value, (list, tuple, np.ndarray)):
+                return float(sum(float(x) for x in value))
+            return float(value or 0.0)
+        except Exception:
+            return 0.0
+
+    def _sum_alive_models(value) -> int:
+        try:
+            if isinstance(value, (list, tuple, np.ndarray)):
+                return int(sum(int(x) for x in value))
+            return int(value or 0)
+        except Exception:
+            return 0
+
+    for eval_idx in range(max(1, int(n_eval))):
+        enemy_e, model_e = _build_units_from_config(roster_config, b_len, b_hei)
+        env_e = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy_e, model=model_e, b_len=b_len, b_hei=b_hei)
+        obs_e, info_e = env_e.reset(options={"m": model_e, "e": enemy_e, "Type": "small", "trunc": True})
+        model_alive_start = _sum_alive_models((info_e or {}).get("model alive models", []))
+        enemy_alive_start = _sum_alive_models((info_e or {}).get("player alive models", []))
+        done_e = False
+        step_count = 0
+        while not done_e:
+            step_count += 1
+            # маски: strict для shoot, остальные all_true
+            shoot_mask_e = build_shoot_action_mask(env_e, log_fn=None, debug=False)
+            masks_cpu = []
+            for head_idx, head_size in enumerate(n_actions):
+                if head_idx == 2 and shoot_mask_e is not None:
+                    mask_arr = np.asarray(shoot_mask_e, dtype=np.bool_).reshape(-1)
+                    if mask_arr.size == int(head_size) and bool(mask_arr.any()):
+                        masks_cpu.append(mask_arr)
+                        continue
+                masks_cpu.append(np.ones(int(head_size), dtype=np.bool_))
+            masks_batch = [torch.tensor(m, dtype=torch.bool, device=next(actor_critic.parameters()).device).unsqueeze(0) for m in masks_cpu]
+
+            obs_np = to_np_state(obs_e)
+            obs_t = torch.tensor(obs_np, dtype=torch.float32, device=next(actor_critic.parameters()).device).unsqueeze(0)
+            with torch.no_grad():
+                action_t, _logp_t, _value_t = actor_critic.act(obs_t, masks_by_head=masks_batch, deterministic=True)
+            action_np = action_t.squeeze(0).detach().cpu().numpy()
+            action_dict = convertToDict(torch.tensor([action_np], device="cpu"))
+            for i_u in range(len(model_e)):
+                action_dict[f"move_num_{i_u}"] = int(action_np[6 + i_u])
+
+            env_unwrapped_e = unwrap_env(env_e)
+            env_unwrapped_e.enemyTurn(trunc=True)
+            next_obs_e, reward_e, done_e, _res_e, info_e = env_e.step(action_dict)
+            reward_sum_total += float(reward_e or 0.0)
+            obs_e = next_obs_e
+
+        steps_sum_total += float(step_count)
+        end_reason_e = (info_e or {}).get("end reason", "")
+        model_vp_e = int((info_e or {}).get("model VP", 0))
+        enemy_vp_e = int((info_e or {}).get("player VP", 0))
+        vp_diff_e = model_vp_e - enemy_vp_e
+        vp_diff_sum += float(vp_diff_e)
+        model_vp_sum += float(model_vp_e)
+        enemy_vp_sum += float(enemy_vp_e)
+
+        model_hp_end = _sum_health((info_e or {}).get("model health", []))
+        enemy_hp_end = _sum_health((info_e or {}).get("player health", []))
+        hp_diff_sum += float(model_hp_end - enemy_hp_end)
+        model_alive_end = _sum_alive_models((info_e or {}).get("model alive models", []))
+        enemy_alive_end = _sum_alive_models((info_e or {}).get("player alive models", []))
+        kills_by_model = enemy_alive_start - enemy_alive_end
+        kills_by_enemy = model_alive_start - model_alive_end
+        kill_diff_sum += float(kills_by_model - kills_by_enemy)
+
+        try:
+            append_agent_log(
+                "[DET][DEBUG] "
+                f"kind=ppo_det_eval "
+                f"idx={eval_idx+1}/{n_eval} "
+                f"end_reason={end_reason_e} "
+                f"model_vp={model_vp_e} "
+                f"player_vp={enemy_vp_e} "
+                f"vp_diff={vp_diff_e}"
+            )
+        except Exception:
+            pass
+
+        if end_reason_e == "wipeout_enemy":
+            wins += 1
+            wipeout_enemy += 1
+        elif end_reason_e == "wipeout_model":
+            wipeout_model += 1
+        elif str(end_reason_e).startswith("turn_limit"):
+            turn_limit += 1
+            if vp_diff_e > 0:
+                wins += 1
+            elif vp_diff_e == 0:
+                draws += 1
+        else:
+            if vp_diff_e > 0:
+                wins += 1
+            elif vp_diff_e == 0:
+                draws += 1
+        try:
+            env_e.close()
+        except Exception:
+            pass
+
+    n = max(1, int(n_eval))
+    return {
+        "eval_episodes": int(n),
+        "win_rate": float(wins / n),
+        "draw_rate": float(draws / n),
+        "turn_limit_rate": float(turn_limit / n),
+        "wipeout_enemy_rate": float(wipeout_enemy / n),
+        "wipeout_model_rate": float(wipeout_model / n),
+        "vp_diff_mean": float(vp_diff_sum / n),
+        "model_vp_mean": float(model_vp_sum / n),
+        "enemy_vp_mean": float(enemy_vp_sum / n),
+        "hp_diff_mean": float(hp_diff_sum / n),
+        "kill_diff_mean": float(kill_diff_sum / n),
+        "reward_mean": float(reward_sum_total / n),
+        "ep_len_mean": float(steps_sum_total / n),
         "opponent_epsilon": float(opponent_epsilon),
     }
 
@@ -1773,12 +2142,14 @@ def _save_ppo_checkpoint(actor_critic, optimizer, episode, n_actions, n_observat
     return checkpoint_path
 
 
-def run_ppo_training(env_contexts, totLifeT, n_actions, n_observations, env_contract, model, enemy):
+def run_ppo_training(env_contexts, totLifeT, n_actions, n_observations, env_contract, model, enemy, roster_config: dict):
     if not env_contexts:
         raise RuntimeError("PPO: пустой список env_contexts.")
     ctx = env_contexts[0]
     env = ctx["env"]
     len_model = int(ctx["len_model"])
+    b_len = int(roster_config.get("b_len", 0))
+    b_hei = int(roster_config.get("b_hei", 0))
     actor_critic = ActorCriticMultiHead(n_observations, n_actions).to(device)
     optimizer = optim.AdamW(actor_critic.parameters(), lr=PPO_LR, amsgrad=True)
     buffer = PPORolloutBuffer()
@@ -1789,6 +2160,7 @@ def run_ppo_training(env_contexts, totLifeT, n_actions, n_observations, env_cont
     model_name = datetime.datetime.now().strftime("%d-%H%M%S")
     metrics_obj = metrics("models", run_id, model_name)
     ep_rows = []
+    last_det_eval_ep = 0
 
     for episode in range(1, int(totLifeT) + 1):
         state, info0 = env.reset(options={"m": model, "e": enemy, "trunc": True})
@@ -1929,6 +2301,34 @@ def run_ppo_training(env_contexts, totLifeT, n_actions, n_observations, env_cont
             f"entropy={ppo_metrics['entropy']:.6f} approx_kl={ppo_metrics['approx_kl']:.6f} "
             f"clip_fraction={ppo_metrics['clip_fraction']:.6f} global_step={global_step} update_step={ppo_update_step}"
         )
+        if (
+            DET_EVAL_ENABLED
+            and b_len > 0
+            and b_hei > 0
+            and episode > 0
+            and (episode % DET_EVAL_EVERY_EPISODES == 0)
+            and episode != last_det_eval_ep
+        ):
+            try:
+                det_payload = _run_actor_det_eval_ppo(
+                    actor_critic=actor_critic,
+                    roster_config=roster_config,
+                    b_len=b_len,
+                    b_hei=b_hei,
+                    n_actions=[int(x) for x in n_actions],
+                    n_eval=DET_EVAL_EPISODES,
+                    opponent_epsilon=DET_EVAL_OPPONENT_EPSILON,
+                )
+                det_payload["episode"] = int(episode)
+                det_payload["algo"] = "ppo"
+                det_payload["eval_tag"] = "train_loop_det"
+                det_payload["training_loss"] = float(
+                    ppo_metrics["policy_loss"] + PPO_VALUE_COEF * ppo_metrics["value_loss"]
+                )
+                _save_actor_det_eval_snapshot(run_id=str(run_id), payload=det_payload, metrics_dir="metrics")
+                last_det_eval_ep = int(episode)
+            except Exception as exc:
+                append_agent_log(f"[PPO][DET_EVAL][WARN] eval пропущен: {exc}")
         if SAVE_EVERY > 0 and (episode % SAVE_EVERY == 0):
             last_checkpoint = _save_ppo_checkpoint(
                 actor_critic=actor_critic,
@@ -1954,12 +2354,28 @@ def run_ppo_training(env_contexts, totLifeT, n_actions, n_observations, env_cont
         )
     if ep_rows:
         try:
-            metrics_obj.lossCurve()
-            metrics_obj.showRew()
-            metrics_obj.showEpLen()
-            save_extra_metrics(run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics")
+            save_extra_metrics(
+                run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics", write_legacy_gui_plots=False
+            )
             save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics")
-            metrics_obj.createJson()
+            det_gui = save_actor_det_eval_plot(run_id=run_id, metrics_dir="metrics")
+            ckpt_path_for_json = str(last_checkpoint).replace("\\", "/") if last_checkpoint else ""
+            if det_gui:
+                _write_det_eval_data_json(
+                    run_id=run_id,
+                    det_plot_gui_paths=det_gui,
+                    model_path=ckpt_path_for_json,
+                    metrics_mode="det_eval",
+                    extra={"algo": "ppo", "mode": "train_loop"},
+                )
+            elif ckpt_path_for_json:
+                _write_det_eval_data_json(
+                    run_id=run_id,
+                    det_plot_gui_paths={},
+                    model_path=ckpt_path_for_json,
+                    metrics_mode="det_eval",
+                    extra={"algo": "ppo", "mode": "train_loop", "det_eval_note": "нет точек DET-eval"},
+                )
             print("Generated metrics", flush=True)
         except Exception as exc:
             append_agent_log(
@@ -2220,12 +2636,28 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
 
     if ep_rows:
         try:
-            metrics_obj.lossCurve()
-            metrics_obj.showRew()
-            metrics_obj.showEpLen()
-            save_extra_metrics(run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics")
+            save_extra_metrics(
+                run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics", write_legacy_gui_plots=False
+            )
             save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics")
-            metrics_obj.createJson()
+            det_gui = save_actor_det_eval_plot(run_id=run_id, metrics_dir="metrics")
+            ckpt_path_for_json = str(last_checkpoint).replace("\\", "/") if last_checkpoint else ""
+            if det_gui:
+                _write_det_eval_data_json(
+                    run_id=run_id,
+                    det_plot_gui_paths=det_gui,
+                    model_path=ckpt_path_for_json,
+                    metrics_mode="det_eval",
+                    extra={"algo": "ppo", "mode": "train_loop_subproc"},
+                )
+            elif ckpt_path_for_json:
+                _write_det_eval_data_json(
+                    run_id=run_id,
+                    det_plot_gui_paths={},
+                    model_path=ckpt_path_for_json,
+                    metrics_mode="det_eval",
+                    extra={"algo": "ppo", "mode": "train_loop_subproc", "det_eval_note": "нет точек DET-eval"},
+                )
             print("Generated metrics", flush=True)
         except Exception as exc:
             append_agent_log(
@@ -2580,6 +3012,7 @@ def main():
                 env_contract=env_contract,
                 model=model,
                 enemy=enemy,
+                roster_config=roster_config,
             )
         _cleanup_train_envs(env_contexts=env_contexts, subproc_envs=subproc_envs, use_subproc=USE_SUBPROC_ENVS)
         with IO_PROFILER.timed("metrics save"):
@@ -3020,7 +3453,9 @@ def main():
     fileName = fold+"/model-"+date+".pickle"
     randNum = np.random.randint(0, 10000000)
     metrics_obj = metrics(fold, randNum, date)
-    ep_rows = [] 
+    ep_rows = []
+    # Последний известный train loss (для DET-eval снимка; optimize идёт после шага env).
+    last_known_training_loss: float | None = None
     eval_window = collections.deque(maxlen=EVAL_WINDOW_EPISODES)
     draw_pit_alert_streak = 0
     best_eval_score = float("-inf")
@@ -3115,6 +3550,27 @@ def main():
         wipeout_model = 0
         turn_limit = 0
         vp_diff_sum = 0.0
+        model_vp_sum = 0.0
+        enemy_vp_sum = 0.0
+        hp_diff_sum = 0.0
+        kill_diff_sum = 0.0
+        reward_sum_total = 0.0
+        steps_sum_total = 0.0
+        def _sum_health(value) -> float:
+            try:
+                if isinstance(value, (list, tuple, np.ndarray)):
+                    return float(sum(float(x) for x in value))
+                return float(value or 0.0)
+            except Exception:
+                return 0.0
+
+        def _sum_alive_models(value) -> int:
+            try:
+                if isinstance(value, (list, tuple, np.ndarray)):
+                    return int(sum(int(x) for x in value))
+                return int(value or 0)
+            except Exception:
+                return 0
         for eval_i in range(DET_EVAL_EPISODES):
             eval_enemy, eval_model = _build_units_from_config(roster_config, b_len, b_hei)
             mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
@@ -3133,9 +3589,12 @@ def main():
             eval_env.attacker_side = attacker_side
             eval_env.defender_side = defender_side
             state_eval, info_eval = eval_env.reset(options={"m": eval_model, "e": eval_enemy, "trunc": True})
+            model_alive_start = _sum_alive_models((info_eval or {}).get("model alive models", []))
+            enemy_alive_start = _sum_alive_models((info_eval or {}).get("player alive models", []))
             done_eval = False
             step_guard = 0
-            while not done_eval and step_guard < 256:
+            ep_reward_sum = 0.0
+            while not done_eval and step_guard < 10000:
                 step_guard += 1
                 shoot_mask_eval = build_shoot_action_mask(eval_env, log_fn=None, debug=False)
                 action_eval = select_action_with_epsilon(
@@ -3164,10 +3623,38 @@ def main():
                 else:
                     eval_unwrapped.enemyTurn(trunc=trunc)
                 next_state_eval, _reward_eval, done_eval, _res_eval, info_eval = eval_env.step(action_eval_dict)
+                ep_reward_sum += float(_reward_eval or 0.0)
                 state_eval = next_state_eval
+            reward_sum_total += ep_reward_sum
+            steps_sum_total += float(step_guard)
             end_reason_eval = info_eval.get("end reason", "")
-            vp_diff_eval = int(info_eval.get("model VP", 0)) - int(info_eval.get("player VP", 0))
+            model_vp_eval = int(info_eval.get("model VP", 0))
+            enemy_vp_eval = int(info_eval.get("player VP", 0))
+            vp_diff_eval = model_vp_eval - enemy_vp_eval
             vp_diff_sum += float(vp_diff_eval)
+            model_vp_sum += float(model_vp_eval)
+            enemy_vp_sum += float(enemy_vp_eval)
+            model_hp_end = _sum_health((info_eval or {}).get("model health", []))
+            enemy_hp_end = _sum_health((info_eval or {}).get("player health", []))
+            hp_diff_sum += float(model_hp_end - enemy_hp_end)
+            model_alive_end = _sum_alive_models((info_eval or {}).get("model alive models", []))
+            enemy_alive_end = _sum_alive_models((info_eval or {}).get("player alive models", []))
+            kills_by_model = enemy_alive_start - enemy_alive_end
+            kills_by_enemy = model_alive_start - model_alive_end
+            kill_diff_sum += float(kills_by_model - kills_by_enemy)
+
+            try:
+                append_agent_log(
+                    "[DET][DEBUG] "
+                    f"kind=dqn_train_loop_det "
+                    f"idx={eval_i+1}/{DET_EVAL_EPISODES} "
+                    f"end_reason={end_reason_eval} "
+                    f"model_vp={model_vp_eval} "
+                    f"player_vp={enemy_vp_eval} "
+                    f"vp_diff={vp_diff_eval}"
+                )
+            except Exception:
+                pass
 
             if end_reason_eval == "wipeout_enemy":
                 wins += 1
@@ -3190,6 +3677,8 @@ def main():
             except Exception:
                 pass
         n_eval = max(1, DET_EVAL_EPISODES)
+        reward_mean = float(reward_sum_total / n_eval)
+        ep_len_mean = float(steps_sum_total / n_eval)
         eval_det_line = (
             "[EVAL][DET] "
             f"episode={total_episode} "
@@ -3199,9 +3688,35 @@ def main():
             f"turn_limit_rate={turn_limit/n_eval:.3f} "
             f"wipeout_enemy_rate={wipeout_enemy/n_eval:.3f} "
             f"wipeout_model_rate={wipeout_model/n_eval:.3f} "
-            f"vp_diff_mean={vp_diff_sum/n_eval:.3f}"
+            f"vp_diff_mean={vp_diff_sum/n_eval:.3f} "
+            f"reward_mean={reward_mean:.3f} "
+            f"ep_len_mean={ep_len_mean:.3f}"
         )
         append_agent_log(eval_det_line)
+        det_payload = {
+            "episode": int(total_episode),
+            "algo": "dqn",
+            "eval_episodes": int(n_eval),
+            "win_rate": float(wins / n_eval),
+            "draw_rate": float(draws / n_eval),
+            "turn_limit_rate": float(turn_limit / n_eval),
+            "wipeout_enemy_rate": float(wipeout_enemy / n_eval),
+            "wipeout_model_rate": float(wipeout_model / n_eval),
+            "vp_diff_mean": float(vp_diff_sum / n_eval),
+            "model_vp_mean": float(model_vp_sum / n_eval),
+            "enemy_vp_mean": float(enemy_vp_sum / n_eval),
+            "hp_diff_mean": float(hp_diff_sum / n_eval),
+            "kill_diff_mean": float(kill_diff_sum / n_eval),
+            "reward_mean": reward_mean,
+            "ep_len_mean": ep_len_mean,
+            "eval_tag": ("train_loop_det_selfplay" if (SELF_PLAY_ENABLED and opponent_policy_net is not None) else "train_loop_det"),
+        }
+        if last_known_training_loss is not None:
+            det_payload["training_loss"] = float(last_known_training_loss)
+        try:
+            _save_actor_det_eval_snapshot(run_id=str(randNum), payload=det_payload, metrics_dir="metrics")
+        except Exception as exc:
+            append_agent_log(f"[EVAL][DET][WARN] не удалось записать JSONL: {exc}")
 
     _apply_reward_schedule(resume_episode_base + numLifeT)
     
@@ -4007,6 +4522,7 @@ def main():
                     last_td_stats = result
                     last_per_beta = per_beta
                     last_loss_value = result["loss"]
+                    last_known_training_loss = float(last_loss_value)
                     optimize_steps += 1
                     perf_counts["updates"] += 1
                     timing = result.get("timing", {})
@@ -4117,20 +4633,16 @@ def main():
     else:
         print("[render] RENDER_EVERY=0 -> gif skipped")
 
-    metrics_obj.lossCurve()
-    metrics_obj.showRew()
-    metrics_obj.showEpLen()
-
-    save_extra_metrics(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
+    save_extra_metrics(
+        run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics", write_legacy_gui_plots=False
+    )
     heur_metrics_path = save_heuristic_metrics_snapshot(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
     if heur_metrics_path:
         _log_train(f"[HEUR][METRICS] saved={heur_metrics_path}")
-    with IO_PROFILER.timed("metrics save"):
-        metrics_obj.createJson()
-    print("Generated metrics")
 
     os.makedirs(fold, exist_ok=True)
 
+    model_rel_path = "models/{}/model-{}.pth".format(safe_name, date)
     with IO_PROFILER.timed("checkpoint save"):
         torch.save(
             {
@@ -4144,8 +4656,27 @@ def main():
                 "episode": int(resume_episode_base + numLifeT),
                 "replay_memory": memory.state_dict(),
             },
-            ("models/{}/model-{}.pth".format(safe_name, date)),
+            model_rel_path,
         )
+    with IO_PROFILER.timed("metrics save"):
+        det_gui = save_actor_det_eval_plot(run_id=str(randNum), metrics_dir="metrics")
+        if det_gui:
+            _write_det_eval_data_json(
+                run_id=str(randNum),
+                det_plot_gui_paths=det_gui,
+                model_path=model_rel_path.replace("\\", "/"),
+                metrics_mode="det_eval",
+                extra={"algo": "dqn", "mode": "train_loop"},
+            )
+        else:
+            _write_det_eval_data_json(
+                run_id=str(randNum),
+                det_plot_gui_paths={},
+                model_path=model_rel_path.replace("\\", "/"),
+                metrics_mode="det_eval",
+                extra={"algo": "dqn", "mode": "train_loop", "det_eval_note": "нет точек DET-eval (DET_EVAL выкл. или ещё не было)"},
+            )
+    print("Generated metrics")
     final_agent_id = build_agent_id(learner_identity, f"final_ep{resume_episode_base + numLifeT}")
     artifact_dir = save_agent_artifact(
         identity=learner_identity,
@@ -4474,7 +5005,25 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                             opponent_epsilon=ACTOR_DET_EVAL_OPPONENT_EPSILON,
                         )
                         det_payload["episode"] = int(episodes_finished)
+                        det_payload["algo"] = "dqn"
+                        det_payload["eval_tag"] = "actor_learner_heuristic"
+                        if last_loss is not None:
+                            det_payload["training_loss"] = float(last_loss)
                         _save_actor_det_eval_snapshot(run_id=str(randNum), payload=det_payload, metrics_dir="metrics")
+                        # Обновляем графики + data_*.json сразу после DET-eval,
+                        # чтобы GUI мог показывать прогресс без ожидания завершения тренировки.
+                        try:
+                            det_gui = save_actor_det_eval_plot(run_id=str(randNum), metrics_dir="metrics")
+                            if det_gui:
+                                _write_det_eval_data_json(
+                                    run_id=str(randNum),
+                                    det_plot_gui_paths=det_gui,
+                                    model_path="",
+                                    metrics_mode="det_eval",
+                                    extra={"algo": "dqn", "mode": "actor_learner"},
+                                )
+                        except Exception:
+                            pass
                         det_line = (
                             "[ACTOR_LEARNER][DET_EVAL] "
                             f"ep={episodes_finished} "
@@ -4485,6 +5034,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                             f"wipeout_enemy_rate={det_payload['wipeout_enemy_rate']:.3f} "
                             f"wipeout_model_rate={det_payload['wipeout_model_rate']:.3f} "
                             f"vp_diff_mean={det_payload['vp_diff_mean']:.3f} "
+                            f"ep_len_mean={det_payload['ep_len_mean']:.3f} "
                             f"opp_eps={det_payload['opponent_epsilon']:.3f}"
                         )
                         append_agent_log(det_line)
@@ -4647,60 +5197,8 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
         except Exception:
             pass
 
-        # --- plots + csv ---
-        save_extra_metrics(run_id=run_id, ep_rows=ep_rows)
-
-        # reward / epLen plots (GUI expects these)
-        os.makedirs("gui/img", exist_ok=True)
-        os.makedirs("metrics", exist_ok=True)
-        ep_idx = list(range(1, len(ep_rows) + 1))
-        rewards = [float(r.get("ep_reward", 0.0)) for r in ep_rows]
-        ep_lens = [int(r.get("ep_len", 0)) for r in ep_rows]
-
-        plt.figure()
-        plt.plot(ep_idx, rewards, color="#1f77b4", linewidth=1.0)
-        # Прямая trend-line (линейная регрессия), чтобы было визуально видно рост/падение.
-        if len(ep_idx) >= 2:
-            x = np.asarray(ep_idx, dtype=np.float64)
-            y = np.asarray(rewards, dtype=np.float64)
-            try:
-                a, b = np.polyfit(x, y, 1)  # y ~= a*x + b
-                y_fit = a * x + b
-                plt.plot(ep_idx, y_fit.tolist(), color="#ff7f0e", linewidth=2.5)
-            except Exception:
-                pass
-        plt.xlabel("Episodes")
-        plt.ylabel("Reward")
-        plt.title("Avg. Reward per Episode")
-        plt.savefig(os.path.join("metrics", f"reward_{run_id}.png"))
-        plt.savefig(os.path.join("gui/img", f"reward_{run_id}.png"))
-        plt.savefig(os.path.join("gui/img", "reward.png"))
-        plt.close()
-
-        plt.figure()
-        plt.plot(ep_idx, ep_lens)
-        plt.xlabel("Episodes")
-        plt.ylabel("Episode length")
-        plt.title("Episode Length")
-        plt.savefig(os.path.join("metrics", f"epLen_{run_id}.png"))
-        plt.savefig(os.path.join("gui/img", f"epLen_{run_id}.png"))
-        plt.savefig(os.path.join("gui/img", "epLen.png"))
-        plt.close()
-
-        # loss plot (если есть апдейты)
-        if loss_trace:
-            loss_ma = moving_avg(loss_trace, window=50)
-            lx = list(range(1, len(loss_trace) + 1))
-            plt.figure()
-            plt.plot(lx, loss_trace)
-            plt.plot(lx, loss_ma)
-            plt.xlabel("Updates")
-            plt.ylabel("Loss")
-            plt.title("Loss Curve")
-            plt.savefig(os.path.join("metrics", f"loss_{run_id}.png"))
-            plt.savefig(os.path.join("gui/img", f"loss_{run_id}.png"))
-            plt.savefig(os.path.join("gui/img", "loss.png"))
-            plt.close()
+        # CSV для отладки; legacy PNG в gui/img не пишем (GUI на DET-eval).
+        save_extra_metrics(run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics", write_legacy_gui_plots=False)
 
         # --- save model (so GUI can find latest model) ---
         safe_name = "ACTOR_LEARNER"
@@ -4723,33 +5221,49 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                 model_path,
             )
 
-        # --- metrics json for GUI ---
-        actor_det_eval_png = save_actor_det_eval_plot(run_id=run_id, metrics_dir="metrics")
-        data_json_path = os.path.join("models", f"data_{run_id}.json")
-        payload = {
-            "run_id": run_id,
-            "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
-            "reward": os.path.join("gui/img", f"reward_{run_id}.png"),
-            "loss": os.path.join("gui/img", f"loss_{run_id}.png") if loss_trace else os.path.join("gui/img", "loss.png"),
-            "epLen": os.path.join("gui/img", f"epLen_{run_id}.png"),
-            "winrate": os.path.join("gui/img", f"winrate_{run_id}.png"),
-            "vpdiff": os.path.join("gui/img", f"vpdiff_{run_id}.png"),
-            "endreasons": os.path.join("gui/img", f"endreasons_{run_id}.png"),
-            "actor_det_eval": (
-                os.path.join("gui/img", f"actor_det_eval_win_{run_id}.png")
-                if actor_det_eval_png
-                else os.path.join("gui/img", "actor_det_eval_win.png")
-            ),
-            "actor_det_eval_reward": (
-                os.path.join("gui/img", f"actor_det_eval_reward_{run_id}.png")
-                if actor_det_eval_png
-                else os.path.join("gui/img", "actor_det_eval_reward.png")
-            ),
-            "model_path": model_path,
-            "mode": "actor_learner",
-        }
-        with open(data_json_path, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        det_gui = save_actor_det_eval_plot(run_id=run_id, metrics_dir="metrics")
+        if det_gui:
+            try:
+                learner_side = str(learner_identity.side or "P1").strip().upper() or "P1"
+            except Exception:
+                learner_side = "P1"
+            opponent_side = "P2" if learner_side == "P1" else "P1"
+            opponent_faction = str(roster_config.get("enemy_faction", "Unknown")).strip()
+            opponent_source = str(opponent_source_state.get("source", "unknown"))
+            opponent_id = opponent_source_state.get("id")
+            _write_det_eval_data_json(
+                run_id=run_id,
+                det_plot_gui_paths=det_gui,
+                model_path=model_path.replace("\\", "/"),
+                metrics_mode="det_eval",
+                extra={
+                    "mode": "actor_learner",
+                    "algo": "dqn",
+                    "learner_side": learner_side,
+                    "learner_faction": str(learner_identity.faction or "Unknown"),
+                    "opponent_side": opponent_side,
+                    "opponent_faction": opponent_faction,
+                    "opponent_algo": "dqn" if (SELF_PLAY_ENABLED and opponent_policy_net is not None) else "heuristic",
+                    "opponent_source": opponent_source,
+                    "opponent_id": str(opponent_id) if opponent_id is not None else "",
+                },
+            )
+        else:
+            _write_det_eval_data_json(
+                run_id=run_id,
+                det_plot_gui_paths={},
+                model_path=model_path.replace("\\", "/"),
+                metrics_mode="det_eval",
+                extra={
+                    "mode": "actor_learner",
+                    "algo": "dqn",
+                    "det_eval_note": "нет точек actor_det_eval_*.jsonl",
+                    "learner_side": str(getattr(learner_identity, "side", "P1") or "P1"),
+                    "learner_faction": str(getattr(learner_identity, "faction", "Unknown") or "Unknown"),
+                    "opponent_side": "P2" if str(getattr(learner_identity, "side", "P1") or "P1").strip().upper() == "P1" else "P1",
+                    "opponent_faction": str(roster_config.get("enemy_faction", "Unknown")).strip(),
+                },
+            )
 
         # --- agent snapshot for GUI self-play "latest_snapshot" ---
         final_agent_id = build_agent_id(learner_identity, f"final_ep{len(ep_rows)}")
@@ -4976,6 +5490,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
     global_step = 0
     ppo_update_step = 0
     last_checkpoint = ""
+    last_actor_det_eval_ep = 0
 
     run_id = str(random.randint(1000000, 9999999))
     model_name = datetime.datetime.now().strftime("%d-%H%M%S")
@@ -5038,6 +5553,66 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                     },
                     metrics_dir="metrics",
                 )
+
+                # Periodic DET-like eval для PPO Actor-Learner (как в DQN actor-learner).
+                if (
+                    ACTOR_DET_EVAL_ENABLED
+                    and episodes_finished > 0
+                    and (episodes_finished % ACTOR_DET_EVAL_EVERY_EPISODES == 0)
+                    and episodes_finished != last_actor_det_eval_ep
+                ):
+                    try:
+                        det_payload = _run_actor_det_eval_ppo(
+                            actor_critic=actor_critic,
+                            roster_config=roster_config,
+                            b_len=b_len,
+                            b_hei=b_hei,
+                            n_actions=[int(x) for x in n_actions],
+                            n_eval=ACTOR_DET_EVAL_EPISODES,
+                            opponent_epsilon=ACTOR_DET_EVAL_OPPONENT_EPSILON,
+                        )
+                        det_payload["episode"] = int(episodes_finished)
+                        det_payload["algo"] = "ppo"
+                        det_payload["eval_tag"] = "actor_learner_heuristic"
+                        det_payload["training_loss"] = float(
+                            last_update_metrics.get("policy_loss", 0.0)
+                            + PPO_VALUE_COEF * last_update_metrics.get("value_loss", 0.0)
+                        )
+                        _save_actor_det_eval_snapshot(run_id=str(run_id), payload=det_payload, metrics_dir="metrics")
+                        # Обновляем графики + data_*.json сразу после DET-eval, чтобы GUI видел прогресс.
+                        try:
+                            det_gui = save_actor_det_eval_plot(run_id=str(run_id), metrics_dir="metrics")
+                            if det_gui:
+                                _write_det_eval_data_json(
+                                    run_id=str(run_id),
+                                    det_plot_gui_paths=det_gui,
+                                    model_path=str(last_checkpoint).replace("\\", "/") if last_checkpoint else "",
+                                    metrics_mode="det_eval",
+                                    extra={"algo": "ppo", "mode": "actor_learner"},
+                                )
+                        except Exception:
+                            pass
+                        det_line = (
+                            "[ACTOR_LEARNER][DET_EVAL] "
+                            f"ep={episodes_finished} "
+                            f"eval_episodes={det_payload['eval_episodes']} "
+                            f"win_rate={det_payload['win_rate']:.3f} "
+                            f"draw_rate={det_payload['draw_rate']:.3f} "
+                            f"turn_limit_rate={det_payload['turn_limit_rate']:.3f} "
+                            f"wipeout_enemy_rate={det_payload['wipeout_enemy_rate']:.3f} "
+                            f"wipeout_model_rate={det_payload['wipeout_model_rate']:.3f} "
+                            f"vp_diff_mean={det_payload['vp_diff_mean']:.3f} "
+                            f"ep_len_mean={det_payload['ep_len_mean']:.3f}"
+                        )
+                        append_agent_log(det_line)
+                        if TRAIN_LOG_TO_CONSOLE:
+                            print(det_line)
+                        last_actor_det_eval_ep = int(episodes_finished)
+                    except Exception as exc:
+                        warn_line = f"[ACTOR_LEARNER][DET_EVAL][WARN] eval пропущен: {exc}"
+                        append_agent_log(warn_line)
+                        if TRAIN_LOG_TO_CONSOLE:
+                            print(warn_line)
 
                 # Periodic opponent snapshot update (learner -> actors + registry)
                 if (
@@ -5204,12 +5779,49 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
 
     if ep_rows:
         try:
-            metrics_obj.lossCurve()
-            metrics_obj.showRew()
-            metrics_obj.showEpLen()
-            save_extra_metrics(run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics")
+            save_extra_metrics(
+                run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics", write_legacy_gui_plots=False
+            )
             save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics")
-            metrics_obj.createJson()
+            det_gui = save_actor_det_eval_plot(run_id=run_id, metrics_dir="metrics")
+            ckpt_path_for_json = str(last_checkpoint).replace("\\", "/") if last_checkpoint else ""
+            if det_gui:
+                _write_det_eval_data_json(
+                    run_id=run_id,
+                    det_plot_gui_paths=det_gui,
+                    model_path=ckpt_path_for_json,
+                    metrics_mode="det_eval",
+                    extra={
+                        "algo": "ppo",
+                        "mode": "actor_learner",
+                        "learner_side": str(getattr(learner_identity, "side", "P1") or "P1"),
+                        "learner_faction": str(getattr(learner_identity, "faction", "Unknown") or "Unknown"),
+                        "opponent_side": "P2" if str(getattr(learner_identity, "side", "P1") or "P1").strip().upper() == "P1" else "P1",
+                        "opponent_faction": str(roster_config.get("enemy_faction", "Unknown")).strip(),
+                        "opponent_algo": str(checkpoint_meta_algo or "heuristic"),
+                        "opponent_source": str(opponent_source_label),
+                        "opponent_id": str(opponent_agent_id or ""),
+                    },
+                )
+            elif ckpt_path_for_json:
+                _write_det_eval_data_json(
+                    run_id=run_id,
+                    det_plot_gui_paths={},
+                    model_path=ckpt_path_for_json,
+                    metrics_mode="det_eval",
+                    extra={
+                        "algo": "ppo",
+                        "mode": "actor_learner",
+                        "det_eval_note": "нет точек DET-eval",
+                        "learner_side": str(getattr(learner_identity, "side", "P1") or "P1"),
+                        "learner_faction": str(getattr(learner_identity, "faction", "Unknown") or "Unknown"),
+                        "opponent_side": "P2" if str(getattr(learner_identity, "side", "P1") or "P1").strip().upper() == "P1" else "P1",
+                        "opponent_faction": str(roster_config.get("enemy_faction", "Unknown")).strip(),
+                        "opponent_algo": str(checkpoint_meta_algo or "heuristic"),
+                        "opponent_source": str(opponent_source_label),
+                        "opponent_id": str(opponent_agent_id or ""),
+                    },
+                )
             print("Generated metrics", flush=True)
         except Exception as exc:
             append_agent_log(

@@ -115,6 +115,15 @@ class GUIController(QtCore.QObject):
         self._metrics_mtimes: dict[str, Optional[float]] = {}
         self._metrics_label = "По умолчанию"
         self._metrics_run_id = ""
+        self._metrics_meta: dict[str, str] = {}
+        # Быстрые значения для верхней summary-панели (последняя точка DET-eval).
+        self._det_last = {
+            "episode": "—",
+            "winrate": "—",
+            "reward": "—",
+            "ep_len": "—",
+            "train_loss": "—",
+        }
         self._heuristic_metrics: dict[str, object] = {}
         self._heuristic_metrics_text = "Нет данных метрик эвристики."
         self._metric_summary_texts = {
@@ -122,8 +131,8 @@ class GUIController(QtCore.QObject):
             "loss": "Текущее: — | Среднее: — | Мин: — | Макс: —",
             "epLen": "Текущее: — | Среднее: — | Мин: — | Макс: —",
             "winrate": "Текущее: — | Среднее: — | Мин: — | Макс: —",
-            "vpdiff": "Текущее: — | Среднее: — | Мин: — | Макс: —",
-            "actor_det_eval": "Win DET: — | Draw DET: —",
+            "avgvp": "Модель: — | Противник: —",
+            "endreasons": "Последняя точка: —",
         }
         self._model_state_text = "Нет данных о состоянии модели."
 
@@ -187,7 +196,22 @@ class GUIController(QtCore.QObject):
             "updates_per_step": 6,
             "warmup_steps": 5000,
         }
+        # Секция hyperparams.json["ppo"] — читает train.py (PPO_LR, PPO_GAMMA, …).
+        self._default_ppo_hyperparams: dict[str, int | float] = {
+            "learning_rate": 0.0003,
+            "gamma": 0.99,
+            "gae_lambda": 0.95,
+            "clip_ratio": 0.2,
+            "value_coef": 0.5,
+            "entropy_coef": 0.01,
+            "rollout_steps": 1024,
+            "update_epochs": 4,
+            "minibatch_size": 256,
+            "max_grad_norm": 0.5,
+            "target_kl": 0.03,
+        }
         self._hyperparams = dict(self._default_hyperparams)
+        self._ppo_hyperparams = dict(self._default_ppo_hyperparams)
         self._settings_dirty = False
         self._settings_save_state = "✓ Сохранено"
         self._load_hyperparams_from_disk(log_errors=True)
@@ -292,24 +316,108 @@ class GUIController(QtCore.QObject):
         return self._metrics_paths["winrate"]
 
     @QtCore.Property(str, notify=metricsChanged)
-    def metricsVpDiffPath(self) -> str:
-        return self._metrics_paths["vpdiff"]
+    def metricsAvgVpPath(self) -> str:
+        return self._metrics_paths["avgvp"]
+
+    @QtCore.Property(str, notify=metricsChanged)
+    def metricsHpDiffPath(self) -> str:
+        return self._metrics_paths["hpdiff"]
+
+    @QtCore.Property(str, notify=metricsChanged)
+    def metricsKillDiffPath(self) -> str:
+        return self._metrics_paths["killdiff"]
 
     @QtCore.Property(str, notify=metricsChanged)
     def metricsEndReasonPath(self) -> str:
         return self._metrics_paths["endreasons"]
 
-    @QtCore.Property(str, notify=metricsChanged)
-    def metricsActorDetEvalPath(self) -> str:
-        return self._metrics_paths["actor_det_eval"]
-
-    @QtCore.Property(str, notify=metricsChanged)
-    def metricsActorDetEvalRewardPath(self) -> str:
-        return self._metrics_paths["actor_det_eval_reward"]
-
     @QtCore.Property(str, notify=metricsLabelChanged)
     def metricsLabel(self) -> str:
         return self._metrics_label
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def metricsRunId(self) -> str:
+        return str(self._metrics_run_id or "")
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def detEpisodeLast(self) -> str:
+        return str(self._det_last.get("episode", "—"))
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def detWinrateLast(self) -> str:
+        return str(self._det_last.get("winrate", "—"))
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def detRewardLast(self) -> str:
+        return str(self._det_last.get("reward", "—"))
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def detEpLenLast(self) -> str:
+        return str(self._det_last.get("ep_len", "—"))
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def detTrainLossLast(self) -> str:
+        return str(self._det_last.get("train_loss", "—"))
+
+    @QtCore.Property(int, constant=True)
+    def detEvalEpisodes(self) -> int:
+        # Параметры DET-eval для actor-learner (по умолчанию).
+        try:
+            return max(1, int(os.getenv("ACTOR_DET_EVAL_EPISODES", "12")))
+        except ValueError:
+            return 12
+
+    @QtCore.Property(int, constant=True)
+    def detEvalEvery(self) -> int:
+        try:
+            return max(1, int(os.getenv("ACTOR_DET_EVAL_EVERY_EPISODES", "100")))
+        except ValueError:
+            return 100
+
+    @QtCore.Property(bool, constant=True)
+    def selfPlayEnabled(self) -> bool:
+        return str(os.getenv("SELF_PLAY_ENABLED", "0") or "0").strip() == "1"
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def opponentInfoLine(self) -> str:
+        side = str(self._metrics_meta.get("opponent_side", "")).strip()
+        faction = str(self._metrics_meta.get("opponent_faction", "")).strip()
+        algo = str(self._metrics_meta.get("opponent_algo", "")).strip()
+        source = str(self._metrics_meta.get("opponent_source", "")).strip()
+        if not (side or faction or algo or source):
+            return "Оппонент: —"
+        parts = []
+        if side or faction:
+            parts.append(f"{side or '?'} ({faction or '?'})")
+        if algo:
+            parts.append(f"algo={algo}")
+        if source:
+            parts.append(f"source={source}")
+        return "Оппонент: " + " | ".join(parts)
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def opponentSource(self) -> str:
+        # Предпочитаем meta из data_*.json; иначе — текущая настройка GUI.
+        v = str(self._metrics_meta.get("opponent_source", "")).strip()
+        if v:
+            return self._opponent_source_label(v)
+        return self._opponent_source_label(str(self._opponent_source or ""))
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def opponentAlgo(self) -> str:
+        v = str(self._metrics_meta.get("opponent_algo", "")).strip()
+        if v:
+            return str(v).upper()
+        # Фолбэк: если self-play выключен — это эвристика.
+        if str(os.getenv("SELF_PLAY_ENABLED", "0") or "0").strip() != "1":
+            return "ЭВРИСТИКА"
+        # Если self-play включён, но algo неизвестен, пусть будет "policy".
+        return "POLICY"
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def opponentId(self) -> str:
+        v = str(self._metrics_meta.get("opponent_id", "")).strip()
+        return v
 
     @QtCore.Property(str, notify=metricsSummaryChanged)
     def rewardSummary(self) -> str:
@@ -329,11 +437,24 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Property(str, notify=metricsSummaryChanged)
     def vpDiffSummary(self) -> str:
-        return self._metric_summary_texts["vpdiff"]
+        # legacy accessor: оставляем имя для совместимости, но теперь это HP diff
+        return self._metric_summary_texts["hpdiff"]
 
     @QtCore.Property(str, notify=metricsSummaryChanged)
-    def actorDetEvalSummary(self) -> str:
-        return self._metric_summary_texts["actor_det_eval"]
+    def avgVpSummary(self) -> str:
+        return self._metric_summary_texts["avgvp"]
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def hpDiffSummary(self) -> str:
+        return self._metric_summary_texts["hpdiff"]
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def killDiffSummary(self) -> str:
+        return self._metric_summary_texts["killdiff"]
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def endReasonSummary(self) -> str:
+        return self._metric_summary_texts["endreasons"]
 
     @QtCore.Property(str, notify=metricsSummaryChanged)
     def modelStateText(self) -> str:
@@ -511,6 +632,50 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(int, notify=trainingHyperparamsChanged)
     def hpWarmupSteps(self) -> int:
         return int(self._hyperparams.get("warmup_steps", self._default_hyperparams["warmup_steps"]))
+
+    @QtCore.Property(float, notify=trainingHyperparamsChanged)
+    def hpPpoLearningRate(self) -> float:
+        return float(self._ppo_hyperparams.get("learning_rate", self._default_ppo_hyperparams["learning_rate"]))
+
+    @QtCore.Property(float, notify=trainingHyperparamsChanged)
+    def hpPpoGamma(self) -> float:
+        return float(self._ppo_hyperparams.get("gamma", self._default_ppo_hyperparams["gamma"]))
+
+    @QtCore.Property(float, notify=trainingHyperparamsChanged)
+    def hpPpoGaeLambda(self) -> float:
+        return float(self._ppo_hyperparams.get("gae_lambda", self._default_ppo_hyperparams["gae_lambda"]))
+
+    @QtCore.Property(float, notify=trainingHyperparamsChanged)
+    def hpPpoClipRatio(self) -> float:
+        return float(self._ppo_hyperparams.get("clip_ratio", self._default_ppo_hyperparams["clip_ratio"]))
+
+    @QtCore.Property(float, notify=trainingHyperparamsChanged)
+    def hpPpoValueCoef(self) -> float:
+        return float(self._ppo_hyperparams.get("value_coef", self._default_ppo_hyperparams["value_coef"]))
+
+    @QtCore.Property(float, notify=trainingHyperparamsChanged)
+    def hpPpoEntropyCoef(self) -> float:
+        return float(self._ppo_hyperparams.get("entropy_coef", self._default_ppo_hyperparams["entropy_coef"]))
+
+    @QtCore.Property(int, notify=trainingHyperparamsChanged)
+    def hpPpoRolloutSteps(self) -> int:
+        return int(self._ppo_hyperparams.get("rollout_steps", self._default_ppo_hyperparams["rollout_steps"]))
+
+    @QtCore.Property(int, notify=trainingHyperparamsChanged)
+    def hpPpoUpdateEpochs(self) -> int:
+        return int(self._ppo_hyperparams.get("update_epochs", self._default_ppo_hyperparams["update_epochs"]))
+
+    @QtCore.Property(int, notify=trainingHyperparamsChanged)
+    def hpPpoMinibatchSize(self) -> int:
+        return int(self._ppo_hyperparams.get("minibatch_size", self._default_ppo_hyperparams["minibatch_size"]))
+
+    @QtCore.Property(float, notify=trainingHyperparamsChanged)
+    def hpPpoMaxGradNorm(self) -> float:
+        return float(self._ppo_hyperparams.get("max_grad_norm", self._default_ppo_hyperparams["max_grad_norm"]))
+
+    @QtCore.Property(float, notify=trainingHyperparamsChanged)
+    def hpPpoTargetKl(self) -> float:
+        return float(self._ppo_hyperparams.get("target_kl", self._default_ppo_hyperparams["target_kl"]))
 
     @QtCore.Property(bool, notify=settingsDirtyChanged)
     def settingsDirty(self) -> bool:
@@ -1062,6 +1227,31 @@ class GUIController(QtCore.QObject):
         self.trainingHyperparamsChanged.emit()
         self.mark_settings_dirty()
 
+    @QtCore.Slot(str, str)
+    def set_ppo_hyperparam(self, key: str, value: str) -> None:
+        normalized_key = str(key or "").strip()
+        if normalized_key not in self._default_ppo_hyperparams:
+            return
+
+        current = self._ppo_hyperparams.get(normalized_key, self._default_ppo_hyperparams[normalized_key])
+        try:
+            if isinstance(self._default_ppo_hyperparams[normalized_key], int):
+                parsed: int | float = int(float(str(value).strip()))
+            else:
+                parsed = float(str(value).strip())
+        except (TypeError, ValueError):
+            self._emit_status(
+                f"Некорректное значение PPO-параметра '{normalized_key}' в Настройках. "
+                "Проверьте формат и попробуйте снова."
+            )
+            return
+
+        if current == parsed:
+            return
+        self._ppo_hyperparams[normalized_key] = parsed
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+
     @QtCore.Slot()
     def reload_training_hyperparams(self) -> None:
         if self._load_hyperparams_from_disk(log_errors=True):
@@ -1071,6 +1261,7 @@ class GUIController(QtCore.QObject):
     @QtCore.Slot()
     def reset_training_hyperparams(self) -> None:
         self._hyperparams = dict(self._default_hyperparams)
+        self._ppo_hyperparams = dict(self._default_ppo_hyperparams)
         self.trainingHyperparamsChanged.emit()
         self.mark_settings_dirty()
         self._emit_status("Параметры тренировки сброшены к значениям по умолчанию.")
@@ -1084,9 +1275,15 @@ class GUIController(QtCore.QObject):
                 "Исправьте значения и повторите сохранение."
             )
             return
+        ppo_error = self._validate_ppo_hyperparams(self._ppo_hyperparams)
+        if ppo_error:
+            self._emit_status(
+                f"Не удалось сохранить hyperparams.json в Настройках: {ppo_error}. "
+                "Исправьте значения PPO и повторите сохранение."
+            )
+            return
         try:
-            # Не затираем дополнительные секции (например, ppo), которые
-            # не редактируются текущей формой DQN-гиперпараметров.
+            # Сохраняем прочие ключи из файла; DQN-поля — merge сверху, секция ppo — целиком из формы.
             existing_payload: dict[str, object] = {}
             if os.path.exists(self._hyperparams_path):
                 try:
@@ -1098,6 +1295,7 @@ class GUIController(QtCore.QObject):
                     existing_payload = {}
             merged_payload = dict(existing_payload)
             merged_payload.update(self._hyperparams)
+            merged_payload["ppo"] = dict(self._ppo_hyperparams)
             with open(self._hyperparams_path, "w", encoding="utf-8") as handle:
                 json.dump(merged_payload, handle, indent=4, ensure_ascii=False)
                 handle.write("\n")
@@ -1157,12 +1355,50 @@ class GUIController(QtCore.QObject):
             return "warmup_steps должен быть целым числом >= 0"
         return None
 
+    def _validate_ppo_hyperparams(self, payload: dict[str, int | float]) -> str | None:
+        lr = float(payload["learning_rate"])
+        gamma = float(payload["gamma"])
+        gae_lambda = float(payload["gae_lambda"])
+        clip_ratio = float(payload["clip_ratio"])
+        value_coef = float(payload["value_coef"])
+        entropy_coef = float(payload["entropy_coef"])
+        rollout_steps = int(payload["rollout_steps"])
+        update_epochs = int(payload["update_epochs"])
+        minibatch_size = int(payload["minibatch_size"])
+        max_grad_norm = float(payload["max_grad_norm"])
+        target_kl = float(payload["target_kl"])
+
+        if not (0.0 < lr <= 1.0):
+            return "ppo.learning_rate должен быть в диапазоне (0, 1]"
+        if not (0.0 < gamma <= 1.0):
+            return "ppo.gamma должен быть в диапазоне (0, 1]"
+        if not (0.0 <= gae_lambda <= 1.0):
+            return "ppo.gae_lambda должен быть в диапазоне [0, 1]"
+        if not (0.0 < clip_ratio <= 1.0):
+            return "ppo.clip_ratio должен быть в диапазоне (0, 1]"
+        if value_coef < 0.0:
+            return "ppo.value_coef должен быть >= 0"
+        if entropy_coef < 0.0:
+            return "ppo.entropy_coef должен быть >= 0"
+        if rollout_steps < 1:
+            return "ppo.rollout_steps должен быть целым числом >= 1"
+        if update_epochs < 1:
+            return "ppo.update_epochs должен быть целым числом >= 1"
+        if minibatch_size < 1:
+            return "ppo.minibatch_size должен быть целым числом >= 1"
+        if max_grad_norm <= 0.0:
+            return "ppo.max_grad_norm должен быть > 0"
+        if target_kl <= 0.0:
+            return "ppo.target_kl должен быть > 0"
+        return None
+
     def _load_hyperparams_from_disk(self, log_errors: bool = False) -> bool:
         try:
             with open(self._hyperparams_path, "r", encoding="utf-8") as handle:
                 payload = json.load(handle)
         except (OSError, json.JSONDecodeError) as exc:
             self._hyperparams = dict(self._default_hyperparams)
+            self._ppo_hyperparams = dict(self._default_ppo_hyperparams)
             self.trainingHyperparamsChanged.emit()
             if log_errors:
                 self._emit_status(
@@ -1184,6 +1420,22 @@ class GUIController(QtCore.QObject):
                 updated[key] = default_value
 
         self._hyperparams = updated
+
+        ppo_raw = payload.get("ppo", {})
+        if not isinstance(ppo_raw, dict):
+            ppo_raw = {}
+        ppo_updated = dict(self._default_ppo_hyperparams)
+        for key, default_value in self._default_ppo_hyperparams.items():
+            raw = ppo_raw.get(key, default_value)
+            try:
+                if isinstance(default_value, int):
+                    ppo_updated[key] = int(raw)
+                else:
+                    ppo_updated[key] = float(raw)
+            except (TypeError, ValueError):
+                ppo_updated[key] = default_value
+
+        self._ppo_hyperparams = ppo_updated
         self.trainingHyperparamsChanged.emit()
         return True
 
@@ -2121,14 +2373,14 @@ class GUIController(QtCore.QObject):
     def _build_default_metrics(self) -> dict[str, str]:
         base_dir = os.path.join(self._repo_root, "gui", "img")
         return {
-            "reward": os.path.join(base_dir, "reward.png"),
-            "loss": os.path.join(base_dir, "loss.png"),
-            "epLen": os.path.join(base_dir, "epLen.png"),
-            "winrate": os.path.join(base_dir, "winrate.png"),
-            "vpdiff": os.path.join(base_dir, "vpdiff.png"),
-            "endreasons": os.path.join(base_dir, "endreasons.png"),
-            "actor_det_eval": os.path.join(base_dir, "actor_det_eval_win.png"),
-            "actor_det_eval_reward": os.path.join(base_dir, "actor_det_eval_reward.png"),
+            "reward": os.path.join(base_dir, "det_reward.png"),
+            "loss": os.path.join(base_dir, "det_loss.png"),
+            "epLen": os.path.join(base_dir, "det_ep_len.png"),
+            "winrate": os.path.join(base_dir, "det_winrate.png"),
+            "avgvp": os.path.join(base_dir, "det_avg_vp.png"),
+            "hpdiff": os.path.join(base_dir, "det_hp_diff.png"),
+            "killdiff": os.path.join(base_dir, "det_kill_diff.png"),
+            "endreasons": os.path.join(base_dir, "det_endreasons.png"),
         }
 
     def _set_metrics_files(self, paths: dict[str, str]) -> None:
@@ -2314,16 +2566,45 @@ class GUIController(QtCore.QObject):
             self._emit_log(f"[GUI] Ошибка чтения метрик: {exc}", level="ERROR")
             return False
 
-        updated = {
-            "reward": self._resolve_metric_path(payload.get("reward"), self._metrics_defaults["reward"]),
-            "loss": self._resolve_metric_path(payload.get("loss"), self._metrics_defaults["loss"]),
-            "epLen": self._resolve_metric_path(payload.get("epLen"), self._metrics_defaults["epLen"]),
-            "winrate": self._resolve_metric_path(payload.get("winrate"), self._metrics_defaults["winrate"]),
-            "vpdiff": self._resolve_metric_path(payload.get("vpdiff"), self._metrics_defaults["vpdiff"]),
-            "endreasons": self._resolve_metric_path(payload.get("endreasons"), self._metrics_defaults["endreasons"]),
-            "actor_det_eval": self._resolve_metric_path(payload.get("actor_det_eval"), self._metrics_defaults["actor_det_eval"]),
-            "actor_det_eval_reward": self._resolve_metric_path(payload.get("actor_det_eval_reward"), self._metrics_defaults["actor_det_eval_reward"]),
-        }
+        # meta для Model Info (опционально присутствует в новых data_*.json)
+        try:
+            self._metrics_meta = {
+                "algo": str(payload.get("algo", "") or ""),
+                "mode": str(payload.get("mode", "") or ""),
+                "learner_side": str(payload.get("learner_side", "") or ""),
+                "learner_faction": str(payload.get("learner_faction", "") or ""),
+                "opponent_side": str(payload.get("opponent_side", "") or ""),
+                "opponent_faction": str(payload.get("opponent_faction", "") or ""),
+                "opponent_algo": str(payload.get("opponent_algo", "") or ""),
+                "opponent_source": str(payload.get("opponent_source", "") or ""),
+                "opponent_id": str(payload.get("opponent_id", "") or ""),
+            }
+        except Exception:
+            self._metrics_meta = {}
+
+        if str(payload.get("metrics_mode", "") or "") == "det_eval" or payload.get("det_winrate"):
+            updated = {
+                "reward": self._resolve_metric_path(payload.get("det_reward"), self._metrics_defaults["reward"]),
+                "loss": self._resolve_metric_path(payload.get("det_loss"), self._metrics_defaults["loss"]),
+                "epLen": self._resolve_metric_path(payload.get("det_ep_len"), self._metrics_defaults["epLen"]),
+                "winrate": self._resolve_metric_path(payload.get("det_winrate"), self._metrics_defaults["winrate"]),
+                "avgvp": self._resolve_metric_path(payload.get("det_avg_vp"), self._metrics_defaults["avgvp"]),
+                "hpdiff": self._resolve_metric_path(payload.get("det_hp_diff"), self._metrics_defaults["hpdiff"]),
+                "killdiff": self._resolve_metric_path(payload.get("det_kill_diff"), self._metrics_defaults["killdiff"]),
+                "endreasons": self._resolve_metric_path(payload.get("det_endreasons"), self._metrics_defaults["endreasons"]),
+            }
+        else:
+            # Старые data_*.json: тренировочные графики + опционально actor_det_eval.
+            updated = {
+                "reward": self._resolve_metric_path(payload.get("reward"), self._metrics_defaults["reward"]),
+                "loss": self._resolve_metric_path(payload.get("loss"), self._metrics_defaults["loss"]),
+                "epLen": self._resolve_metric_path(payload.get("epLen"), self._metrics_defaults["epLen"]),
+                "winrate": self._resolve_metric_path(payload.get("winrate"), self._metrics_defaults["winrate"]),
+                "avgvp": self._metrics_defaults["avgvp"],
+                "hpdiff": self._resolve_metric_path(payload.get("vpdiff"), self._metrics_defaults["hpdiff"]),
+                "killdiff": self._metrics_defaults["killdiff"],
+                "endreasons": self._resolve_metric_path(payload.get("endreasons"), self._metrics_defaults["endreasons"]),
+            }
         self._metrics_run_id = self._extract_run_id_from_path(json_path)
         self._set_metrics_files(updated)
         self._refresh_metrics_summaries()
@@ -2494,43 +2775,18 @@ class GUIController(QtCore.QObject):
             "loss": "Текущее: — | Среднее: — | Мин: — | Макс: —",
             "epLen": "Текущее: — | Среднее: — | Мин: — | Макс: —",
             "winrate": "Текущее: — | Среднее: — | Мин: — | Макс: —",
-            "vpdiff": "Текущее: — | Среднее: — | Мин: — | Макс: —",
-            "actor_det_eval": "Win DET: — | Draw DET: — | Reward DET: —",
+            "avgvp": "Модель: — | Противник: —",
+            "hpdiff": "Текущее: — | Среднее: — | Мин: — | Макс: —",
+            "killdiff": "Текущее: — | Среднее: — | Мин: — | Макс: —",
+            "endreasons": "Последняя точка: —",
         }
         summaries = dict(defaults)
-        csv_path = self._find_stats_csv_for_run()
-        rows: list[dict[str, str]] = []
-        if csv_path and os.path.exists(csv_path):
-            try:
-                with open(csv_path, "r", encoding="utf-8", errors="replace") as handle:
-                    reader = csv.DictReader(handle)
-                    rows = list(reader)
-            except (OSError, csv.Error):
-                rows = []
 
-        if rows:
-            rewards = [float(r.get("ep_reward", 0.0) or 0.0) for r in rows]
-            ep_len = [float(r.get("ep_len", 0.0) or 0.0) for r in rows]
-            vp_diff = [float(r.get("vp_diff", 0.0) or 0.0) for r in rows]
-            wins = [1.0 if (r.get("result") or "").strip() == "win" else 0.0 for r in rows]
-            losses = []
-            for idx in range(1, len(rows) + 1):
-                loss_match = re.search(r"loss=([\d\.eE+-]+)", rows[idx - 1].get("loss", ""))
-                if loss_match:
-                    losses.append(float(loss_match.group(1)))
-
-            summaries["reward"] = self._format_metric_summary(rewards)
-            summaries["epLen"] = self._format_metric_summary(ep_len)
-            summaries["vpdiff"] = self._format_metric_summary(vp_diff)
-            summaries["winrate"] = self._format_metric_summary(wins, percent=True)
-            if losses:
-                summaries["loss"] = self._format_metric_summary(losses)
-
-        # Actor DET-eval summary (периодические точки проверки в actor-learner).
         run_id = str(self._metrics_run_id or "").strip()
         det_jsonl_path = os.path.join(self._repo_root, "metrics", f"actor_det_eval_{run_id}.jsonl") if run_id else ""
         det_points: list[dict] = []
         if det_jsonl_path and os.path.exists(det_jsonl_path):
+            by_ep: dict[int, dict] = {}
             try:
                 with open(det_jsonl_path, "r", encoding="utf-8", errors="replace") as handle:
                     for line in handle:
@@ -2541,20 +2797,122 @@ class GUIController(QtCore.QObject):
                             payload = json.loads(line)
                         except json.JSONDecodeError:
                             continue
-                        if isinstance(payload, dict):
-                            det_points.append(payload)
+                        if not isinstance(payload, dict):
+                            continue
+                        ep = int(payload.get("episode", 0) or 0)
+                        if ep <= 0:
+                            continue
+                        by_ep[ep] = payload
             except OSError:
-                det_points = []
+                by_ep = {}
+            det_points = [by_ep[k] for k in sorted(by_ep.keys())]
+
         if det_points:
-            win_vals = [float(p.get("win_rate", 0.0) or 0.0) for p in det_points]
-            draw_vals = [float(p.get("draw_rate", 0.0) or 0.0) for p in det_points]
             reward_vals = [float(p.get("reward_mean", 0.0) or 0.0) for p in det_points]
-            if win_vals and draw_vals:
-                summaries["actor_det_eval"] = (
-                    f"Win DET — {self._format_metric_summary(win_vals, percent=True)} | "
-                    f"Draw DET — {self._format_metric_summary(draw_vals, percent=True)} | "
-                    f"Reward DET — {self._format_metric_summary(reward_vals)}"
-                )
+            ep_len_vals = [float(p.get("ep_len_mean", 0.0) or 0.0) for p in det_points]
+            model_vp_vals = [float(p.get("model_vp_mean", 0.0) or 0.0) for p in det_points]
+            enemy_vp_vals = [float(p.get("enemy_vp_mean", 0.0) or 0.0) for p in det_points]
+            hp_vals = [float(p.get("hp_diff_mean", 0.0) or 0.0) for p in det_points]
+            kill_vals = [float(p.get("kill_diff_mean", 0.0) or 0.0) for p in det_points]
+            win_vals = [float(p.get("win_rate", 0.0) or 0.0) for p in det_points]
+            loss_vals: list[float] = []
+            for p in det_points:
+                raw = p.get("training_loss", None)
+                if raw is None:
+                    continue
+                try:
+                    loss_vals.append(float(raw))
+                except (TypeError, ValueError):
+                    continue
+            summaries["reward"] = self._format_metric_summary(reward_vals)
+            summaries["epLen"] = self._format_metric_summary(ep_len_vals)
+            if model_vp_vals or enemy_vp_vals:
+                summaries["avgvp"] = f"Модель: {model_vp_vals[-1]:.2f} | Противник: {enemy_vp_vals[-1]:.2f}"
+            summaries["hpdiff"] = self._format_metric_summary(hp_vals)
+            summaries["killdiff"] = self._format_metric_summary(kill_vals)
+            summaries["winrate"] = self._format_metric_summary(win_vals, percent=True)
+            if loss_vals:
+                summaries["loss"] = self._format_metric_summary(loss_vals)
+            else:
+                summaries["loss"] = "Нет training_loss в JSONL (старый ран или точки без loss)."
+            last = det_points[-1]
+            summaries["endreasons"] = (
+                f"Последняя точка ep≈{last.get('episode', '?')}: "
+                f"wipeout_enemy={float(last.get('wipeout_enemy_rate', 0.0)):.2f}, "
+                f"wipeout_model={float(last.get('wipeout_model_rate', 0.0)):.2f}, "
+                f"turn_limit={float(last.get('turn_limit_rate', 0.0)):.2f}"
+            )
+            # Summary для верхней панели: берём последнюю точку DET-eval.
+            try:
+                last_ep = int(last.get("episode", 0) or 0)
+            except (TypeError, ValueError):
+                last_ep = 0
+            try:
+                last_win = float(last.get("win_rate", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                last_win = 0.0
+            try:
+                last_reward = float(last.get("reward_mean", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                last_reward = 0.0
+            try:
+                last_len = float(last.get("ep_len_mean", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                last_len = 0.0
+            last_loss_raw = last.get("training_loss", None)
+            last_loss_str = "—"
+            if last_loss_raw is not None:
+                try:
+                    last_loss_str = f"{float(last_loss_raw):.4f}"
+                except (TypeError, ValueError):
+                    last_loss_str = "—"
+
+            self._det_last = {
+                "episode": str(last_ep) if last_ep > 0 else "—",
+                "winrate": f"{last_win * 100:.2f}%",
+                "reward": f"{last_reward:.4f}",
+                "ep_len": f"{last_len:.2f}",
+                "train_loss": last_loss_str,
+            }
+        else:
+            self._det_last = {
+                "episode": "—",
+                "winrate": "—",
+                "reward": "—",
+                "ep_len": "—",
+                "train_loss": "—",
+            }
+            csv_path = self._find_stats_csv_for_run()
+            rows: list[dict[str, str]] = []
+            if csv_path and os.path.exists(csv_path):
+                try:
+                    with open(csv_path, "r", encoding="utf-8", errors="replace") as handle:
+                        reader = csv.DictReader(handle)
+                        rows = list(reader)
+                except (OSError, csv.Error):
+                    rows = []
+
+            if rows:
+                rewards = [float(r.get("ep_reward", 0.0) or 0.0) for r in rows]
+                ep_len = [float(r.get("ep_len", 0.0) or 0.0) for r in rows]
+                vp_diff = [float(r.get("vp_diff", 0.0) or 0.0) for r in rows]
+                wins = [1.0 if (r.get("result") or "").strip() == "win" else 0.0 for r in rows]
+                losses = []
+                for idx in range(1, len(rows) + 1):
+                    loss_match = re.search(r"loss=([\d\.eE+-]+)", rows[idx - 1].get("loss", ""))
+                    if loss_match:
+                        losses.append(float(loss_match.group(1)))
+
+                summaries["reward"] = self._format_metric_summary(rewards)
+                summaries["epLen"] = self._format_metric_summary(ep_len)
+                summaries["hpdiff"] = self._format_metric_summary(vp_diff)
+                summaries["killdiff"] = "Нет DET kill diff (нужен actor_det_eval_*.jsonl)."
+                summaries["winrate"] = self._format_metric_summary(wins, percent=True)
+                if losses:
+                    summaries["loss"] = self._format_metric_summary(losses)
+                summaries["endreasons"] = "Нет actor_det_eval_*.jsonl — сводка по старым train-данным (CSV)."
+            elif run_id:
+                summaries["endreasons"] = f"Нет файла actor_det_eval_{run_id}.jsonl (DET-eval не писался)."
 
         total, heuristic, snapshot, fixed = self._parse_training_counters()
         resume = self._extract_latest_resume_meta()

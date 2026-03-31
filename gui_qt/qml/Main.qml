@@ -829,6 +829,13 @@ ApplicationWindow {
                             font.bold: true
                         }
 
+                        Label {
+                            text: "Оценка DET: детерминированные прогоны против эвристики/настроенного оппонента. Не сырые тренировочные партии."
+                            width: parent.width
+                            wrapMode: Text.WordWrap
+                            color: "#666666"
+                        }
+
                         RowLayout {
                             spacing: root.spacingMd
                             width: parent.width
@@ -845,6 +852,72 @@ ApplicationWindow {
                             }
                         }
 
+                        // Верхняя summary-панель
+                        RowLayout {
+                            spacing: root.spacingMd
+                            width: parent.width
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                radius: 6
+                                color: "#f5f5f5"
+                                border.color: "#dddddd"
+                                border.width: 1
+                                implicitHeight: Math.round(92 * root.uiScale)
+
+                                Column {
+                                    anchors.fill: parent
+                                    anchors.margins: root.spacingSm
+                                    spacing: 4
+
+                                    Text { text: "Модель"; font.bold: true; color: "#333333" }
+                                    Text { text: "Алгоритм: " + controller.trainingAlgo.toUpperCase(); color: "#555555" }
+                                    Text { text: "Режим: actor-learner"; color: "#555555" }
+                                    Text { text: "Run ID: " + controller.metricsRunId; color: "#777777"; elide: Text.ElideRight }
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                radius: 6
+                                color: "#f5f9ff"
+                                border.color: "#d0e3ff"
+                                border.width: 1
+                                implicitHeight: Math.round(92 * root.uiScale)
+
+                                Column {
+                                    anchors.fill: parent
+                                    anchors.margins: root.spacingSm
+                                    spacing: 4
+
+                                    Text { text: "Последний DET-eval"; font.bold: true; color: "#333333" }
+                                    Text { text: "Эпизод: " + controller.detEpisodeLast; color: "#555555" }
+                                    Text { text: "Winrate: " + controller.detWinrateLast; color: "#555555" }
+                                    Text { text: "Reward: " + controller.detRewardLast + " | Ep_len: " + controller.detEpLenLast; color: "#555555" }
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                radius: 6
+                                color: "#fff9f5"
+                                border.color: "#ffe0c2"
+                                border.width: 1
+                                implicitHeight: Math.round(92 * root.uiScale)
+
+                                Column {
+                                    anchors.fill: parent
+                                    anchors.margins: root.spacingSm
+                                    spacing: 4
+
+                                    Text { text: "Оппонент"; font.bold: true; color: "#333333" }
+                                    Text { text: "Self-play: " + (controller.selfPlayEnabled ? "включён" : "выключен"); color: "#555555" }
+                                    Text { text: "Источник оппонента: " + controller.opponentSource; color: "#555555" }
+                                    Text { text: "Алгоритм оппонента: " + controller.opponentAlgo + (controller.opponentId.length > 0 ? (" (id=" + controller.opponentId + ")") : ""); color: "#555555" }
+                                }
+                            }
+                        }
+
                         GridLayout {
                             columns: 2
                             columnSpacing: root.spacingMd
@@ -852,7 +925,7 @@ ApplicationWindow {
                             width: parent.width
 
                             GroupBox {
-                                title: "Награда за эпизод"
+                                title: "DET: награда"
                                 Layout.fillWidth: true
 
                                 ColumnLayout {
@@ -873,14 +946,14 @@ ApplicationWindow {
 
                                         Text {
                                             anchors.centerIn: parent
-                                            text: "Нет данных по наградам."
+                                            text: "Нет графика det_reward."
                                             color: "#777777"
                                             visible: rewardChart.status !== Image.Ready
                                         }
                                     }
 
                                     Label {
-                                        text: "Средняя награда по ходу обучения."
+                                        text: "Средняя награда за eval-игру (агрегат по батчу DET)."
                                         wrapMode: Text.WordWrap
                                     }
 
@@ -893,7 +966,7 @@ ApplicationWindow {
                             }
 
                             GroupBox {
-                                title: "Потери (loss)"
+                                title: "DET: loss обучения"
                                 Layout.fillWidth: true
 
                                 ColumnLayout {
@@ -914,14 +987,14 @@ ApplicationWindow {
 
                                         Text {
                                             anchors.centerIn: parent
-                                            text: "Нет данных по loss."
+                                            text: "Нет графика det_loss."
                                             color: "#777777"
                                             visible: lossChart.status !== Image.Ready
                                         }
                                     }
 
                                     Label {
-                                        text: "Динамика функции потерь."
+                                        text: "Loss на момент чекпоинта обучения (не supervised-loss на игре)."
                                         wrapMode: Text.WordWrap
                                     }
 
@@ -934,7 +1007,7 @@ ApplicationWindow {
                             }
 
                             GroupBox {
-                                title: "Длина эпизода"
+                                title: "DET: длина эпизода"
                                 Layout.fillWidth: true
 
                                 ColumnLayout {
@@ -955,14 +1028,14 @@ ApplicationWindow {
 
                                         Text {
                                             anchors.centerIn: parent
-                                            text: "Нет данных по длине эпизода."
+                                            text: "Нет графика det_ep_len."
                                             color: "#777777"
                                             visible: epLenChart.status !== Image.Ready
                                         }
                                     }
 
                                     Label {
-                                        text: "Сколько ходов длится партия."
+                                        text: "Среднее число шагов в eval-эпизодах."
                                         wrapMode: Text.WordWrap
                                     }
 
@@ -975,7 +1048,7 @@ ApplicationWindow {
                             }
 
                             GroupBox {
-                                title: "Winrate"
+                                title: "DET: winrate"
                                 Layout.fillWidth: true
 
                                 ColumnLayout {
@@ -996,14 +1069,14 @@ ApplicationWindow {
 
                                         Text {
                                             anchors.centerIn: parent
-                                            text: "Нет данных по winrate."
+                                            text: "Нет графика det_winrate."
                                             color: "#777777"
                                             visible: winrateChart.status !== Image.Ready
                                         }
                                     }
 
                                     Label {
-                                        text: "Доля побед модели по играм."
+                                        text: "Доля побед по eval-играм."
                                         wrapMode: Text.WordWrap
                                     }
 
@@ -1016,7 +1089,7 @@ ApplicationWindow {
                             }
 
                             GroupBox {
-                                title: "Разница VP"
+                                title: "DET: Avg VP"
                                 Layout.fillWidth: true
 
                                 ColumnLayout {
@@ -1028,28 +1101,28 @@ ApplicationWindow {
                                         Layout.preferredHeight: Math.round(230 * root.uiScale)
 
                                         Image {
-                                            id: vpDiffChart
+                                            id: avgVpChart
                                             anchors.fill: parent
-                                            source: controller.metricsVpDiffPath
+                                            source: controller.metricsAvgVpPath
                                             fillMode: Image.PreserveAspectFit
                                             smooth: true
                                         }
 
                                         Text {
                                             anchors.centerIn: parent
-                                            text: "Нет данных по VP."
+                                            text: "Нет графика det_avg_vp."
                                             color: "#777777"
-                                            visible: vpDiffChart.status !== Image.Ready
+                                            visible: avgVpChart.status !== Image.Ready
                                         }
                                     }
 
                                     Label {
-                                        text: "Разница очков победы между сторонами."
+                                        text: "Средние Victory Points по DET-eval (модель и противник)."
                                         wrapMode: Text.WordWrap
                                     }
 
                                     Label {
-                                        text: controller.vpDiffSummary
+                                        text: controller.avgVpSummary
                                         wrapMode: Text.WordWrap
                                         color: "#666666"
                                     }
@@ -1057,7 +1130,89 @@ ApplicationWindow {
                             }
 
                             GroupBox {
-                                title: "Причины завершения"
+                                title: "DET: HP diff"
+                                Layout.fillWidth: true
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    spacing: root.spacingXs
+
+                                    Item {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
+
+                                        Image {
+                                            id: hpDiffChart
+                                            anchors.fill: parent
+                                            source: controller.metricsHpDiffPath
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "Нет графика det_hp_diff."
+                                            color: "#777777"
+                                            visible: hpDiffChart.status !== Image.Ready
+                                        }
+                                    }
+
+                                    Label {
+                                        text: "Разница HP на конец DET-игры (model − enemy)."
+                                        wrapMode: Text.WordWrap
+                                    }
+
+                                    Label {
+                                        text: controller.hpDiffSummary
+                                        wrapMode: Text.WordWrap
+                                        color: "#666666"
+                                    }
+                                }
+                            }
+
+                            GroupBox {
+                                title: "DET: Kill diff"
+                                Layout.fillWidth: true
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    spacing: root.spacingXs
+
+                                    Item {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
+
+                                        Image {
+                                            id: killDiffChart
+                                            anchors.fill: parent
+                                            source: controller.metricsKillDiffPath
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "Нет графика det_kill_diff."
+                                            color: "#777777"
+                                            visible: killDiffChart.status !== Image.Ready
+                                        }
+                                    }
+
+                                    Label {
+                                        text: "Kill diff на конец DET-игры (по моделям): model − enemy."
+                                        wrapMode: Text.WordWrap
+                                    }
+
+                                    Label {
+                                        text: controller.killDiffSummary
+                                        wrapMode: Text.WordWrap
+                                        color: "#666666"
+                                    }
+                                }
+                            }
+
+                            GroupBox {
+                                title: "DET: причины завершения"
                                 Layout.fillWidth: true
 
                                 ColumnLayout {
@@ -1078,113 +1233,27 @@ ApplicationWindow {
 
                                         Text {
                                             anchors.centerIn: parent
-                                            text: "Нет данных по причинам завершения."
+                                            text: "Нет графика det_endreasons."
                                             color: "#777777"
                                             visible: endReasonChart.status !== Image.Ready
                                         }
                                     }
 
                                     Label {
-                                        text: "Почему эпизоды завершались."
-                                        wrapMode: Text.WordWrap
-                                    }
-                                }
-                            }
-
-                            GroupBox {
-                                title: "Actor DET-eval: Win rate"
-                                Layout.fillWidth: true
-
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    spacing: root.spacingXs
-
-                                    Item {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
-
-                                        Image {
-                                            id: actorDetEvalChart
-                                            anchors.fill: parent
-                                            source: controller.metricsActorDetEvalPath
-                                            fillMode: Image.PreserveAspectFit
-                                            smooth: true
-                                        }
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "Нет данных по Actor DET-eval."
-                                            color: "#777777"
-                                            visible: actorDetEvalChart.status !== Image.Ready
-                                        }
-                                    }
-
-                                    Label {
-                                        text: "Периодическая детерминированная оценка в Actor-Learner."
+                                        text: "Доли wipeout / turn limit по eval-играм."
                                         wrapMode: Text.WordWrap
                                     }
 
                                     Label {
-                                        text: controller.actorDetEvalSummary
+                                        text: controller.endReasonSummary
                                         wrapMode: Text.WordWrap
                                         color: "#666666"
                                     }
                                 }
                             }
-
-                            GroupBox {
-                                title: "Actor DET-eval: Reward"
-                                Layout.fillWidth: true
-
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    spacing: root.spacingXs
-
-                                    Item {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
-
-                                        Image {
-                                            id: actorDetEvalRewardChart
-                                            anchors.fill: parent
-                                            source: controller.metricsActorDetEvalRewardPath
-                                            fillMode: Image.PreserveAspectFit
-                                            smooth: true
-                                        }
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "Нет данных по Reward DET-eval."
-                                            color: "#777777"
-                                            visible: actorDetEvalRewardChart.status !== Image.Ready
-                                        }
-                                    }
-
-                                    Label {
-                                        text: "Средняя награда на периодическом DET-eval."
-                                        wrapMode: Text.WordWrap
-                                    }
-                                }
-                            }
                         }
 
-                        GroupBox {
-                            title: "Состояние модели"
-                            width: parent.width
-
-                            ScrollView {
-                                width: parent.width
-                                height: Math.round(230 * root.uiScale)
-
-                                TextArea {
-                                    width: parent.width
-                                    text: controller.modelStateText
-                                    readOnly: true
-                                    wrapMode: Text.WordWrap
-                                    selectByMouse: true
-                                }
-                            }
-                        }
+                        // Model Info убрали: эта информация уже есть в верхней панели и карточке "Оппонент".
                     }
                 }
             }
@@ -1375,6 +1444,21 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                 }
 
+                                RowLayout {
+                                    spacing: root.spacingLg
+                                    Layout.fillWidth: true
+
+                                    ColumnLayout {
+                                        spacing: root.spacingXs
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: Math.round(280 * root.uiScale)
+
+                                        Label {
+                                            text: "DQN"
+                                            font.bold: true
+                                            Layout.fillWidth: true
+                                        }
+
                                 GridLayout {
                                     columns: 2
                                     columnSpacing: root.spacingMd
@@ -1511,6 +1595,194 @@ ApplicationWindow {
                                         onValueModified: controller.set_training_hyperparam("warmup_steps", value.toString())
                                         ToolTip.visible: hovered
                                         ToolTip.text: "Шаги прогрева буфера до полноценного обучения."
+                                    }
+                                }
+                                    }
+
+                                    ColumnLayout {
+                                        spacing: root.spacingXs
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: Math.round(280 * root.uiScale)
+
+                                        Label {
+                                            text: "PPO"
+                                            font.bold: true
+                                            Layout.fillWidth: true
+                                        }
+
+                                        GridLayout {
+                                            columns: 2
+                                            columnSpacing: root.spacingMd
+                                            rowSpacing: root.spacingSm
+                                            Layout.fillWidth: true
+
+                                            Label { text: "learning_rate" }
+                                            SpinBox {
+                                                from: 0
+                                                to: 1000000
+                                                stepSize: 1
+                                                editable: true
+                                                property real factor: 1000000
+                                                value: Math.round(controller.hpPpoLearningRate * factor)
+                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 6) }
+                                                valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
+                                                onValueModified: controller.set_ppo_hyperparam("learning_rate", (value / factor).toString())
+                                                ToolTip.visible: hovered
+                                                ToolTip.text: "Скорость обучения PPO (как в train.py: PPO_LR)."
+                                            }
+
+                                            Label { text: "gamma" }
+                                            SpinBox {
+                                                from: 0
+                                                to: 1000
+                                                stepSize: 1
+                                                editable: true
+                                                property real factor: 1000
+                                                value: Math.round(controller.hpPpoGamma * factor)
+                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
+                                                valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
+                                                onValueModified: controller.set_ppo_hyperparam("gamma", (value / factor).toString())
+                                                ToolTip.visible: hovered
+                                                ToolTip.text: "Дисконтирование для PPO (отдельно от DQN gamma в секции ppo)."
+                                            }
+
+                                            Label { text: "gae_lambda" }
+                                            SpinBox {
+                                                from: 0
+                                                to: 1000
+                                                stepSize: 1
+                                                editable: true
+                                                property real factor: 1000
+                                                value: Math.round(controller.hpPpoGaeLambda * factor)
+                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
+                                                valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
+                                                onValueModified: controller.set_ppo_hyperparam("gae_lambda", (value / factor).toString())
+                                                ToolTip.visible: hovered
+                                                ToolTip.text: "GAE λ для advantage."
+                                            }
+
+                                            Label { text: "clip_ratio" }
+                                            SpinBox {
+                                                from: 0
+                                                to: 1000
+                                                stepSize: 1
+                                                editable: true
+                                                property real factor: 1000
+                                                value: Math.round(controller.hpPpoClipRatio * factor)
+                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
+                                                valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
+                                                onValueModified: controller.set_ppo_hyperparam("clip_ratio", (value / factor).toString())
+                                                ToolTip.visible: hovered
+                                                ToolTip.text: "PPO clip (ε)."
+                                            }
+
+                                            Label { text: "value_coef" }
+                                            SpinBox {
+                                                from: 0
+                                                to: 100000
+                                                stepSize: 1
+                                                editable: true
+                                                property real factor: 1000
+                                                value: Math.round(controller.hpPpoValueCoef * factor)
+                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
+                                                valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
+                                                onValueModified: controller.set_ppo_hyperparam("value_coef", (value / factor).toString())
+                                                ToolTip.visible: hovered
+                                                ToolTip.text: "Вес value loss."
+                                            }
+
+                                            Label { text: "entropy_coef" }
+                                            SpinBox {
+                                                from: 0
+                                                to: 100000
+                                                stepSize: 1
+                                                editable: true
+                                                property real factor: 1000
+                                                value: Math.round(controller.hpPpoEntropyCoef * factor)
+                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
+                                                valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
+                                                onValueModified: controller.set_ppo_hyperparam("entropy_coef", (value / factor).toString())
+                                                ToolTip.visible: hovered
+                                                ToolTip.text: "Вес энтропийного бонуса."
+                                            }
+
+                                            Label { text: "rollout_steps" }
+                                            SpinBox {
+                                                from: 1
+                                                to: 1000000
+                                                stepSize: 64
+                                                editable: true
+                                                value: controller.hpPpoRolloutSteps
+                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                onValueModified: controller.set_ppo_hyperparam("rollout_steps", value.toString())
+                                                ToolTip.visible: hovered
+                                                ToolTip.text: "Длина rollout перед обновлением."
+                                            }
+
+                                            Label { text: "update_epochs" }
+                                            SpinBox {
+                                                from: 1
+                                                to: 256
+                                                stepSize: 1
+                                                editable: true
+                                                value: controller.hpPpoUpdateEpochs
+                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                onValueModified: controller.set_ppo_hyperparam("update_epochs", value.toString())
+                                                ToolTip.visible: hovered
+                                                ToolTip.text: "Эпохи обновления на одном батче rollout."
+                                            }
+
+                                            Label { text: "minibatch_size" }
+                                            SpinBox {
+                                                from: 1
+                                                to: 8192
+                                                stepSize: 32
+                                                editable: true
+                                                value: controller.hpPpoMinibatchSize
+                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                onValueModified: controller.set_ppo_hyperparam("minibatch_size", value.toString())
+                                                ToolTip.visible: hovered
+                                                ToolTip.text: "Размер минибатча внутри эпохи."
+                                            }
+
+                                            Label { text: "max_grad_norm" }
+                                            SpinBox {
+                                                from: 0
+                                                to: 100000
+                                                stepSize: 1
+                                                editable: true
+                                                property real factor: 1000
+                                                value: Math.round(controller.hpPpoMaxGradNorm * factor)
+                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
+                                                valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
+                                                onValueModified: controller.set_ppo_hyperparam("max_grad_norm", (value / factor).toString())
+                                                ToolTip.visible: hovered
+                                                ToolTip.text: "Клип градиента (norm)."
+                                            }
+
+                                            Label { text: "target_kl" }
+                                            SpinBox {
+                                                from: 0
+                                                to: 100000
+                                                stepSize: 1
+                                                editable: true
+                                                property real factor: 1000
+                                                value: Math.round(controller.hpPpoTargetKl * factor)
+                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
+                                                valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
+                                                onValueModified: controller.set_ppo_hyperparam("target_kl", (value / factor).toString())
+                                                ToolTip.visible: hovered
+                                                ToolTip.text: "Порог ранней остановки по приближённому KL."
+                                            }
+                                        }
                                     }
                                 }
                             }
