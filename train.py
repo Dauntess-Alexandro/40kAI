@@ -2117,7 +2117,20 @@ def _cleanup_train_envs(env_contexts, subproc_envs, use_subproc: bool) -> None:
                 pass
 
 
-def _save_ppo_checkpoint(actor_critic, optimizer, episode, n_actions, n_observations, model, enemy, env_contract):
+def _save_ppo_checkpoint(
+    actor_critic,
+    optimizer,
+    episode,
+    n_actions,
+    n_observations,
+    model,
+    enemy,
+    env_contract,
+    *,
+    roster_config: dict | None = None,
+    b_len: int | None = None,
+    b_hei: int | None = None,
+):
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     run_dir = os.path.join("models", f"ppo-run-{timestamp}")
     os.makedirs(run_dir, exist_ok=True)
@@ -2135,6 +2148,21 @@ def _save_ppo_checkpoint(actor_critic, optimizer, episode, n_actions, n_observat
     }
     torch.save(payload, checkpoint_path)
     pickle_path = os.path.join(run_dir, f"model-{timestamp}.pickle")
+    if model is None or enemy is None:
+        # Actor-learner PPO не держит готовые roster'ы в этом месте.
+        # Но Viewer требует (env=None, model=list[Unit], enemy=list[Unit]) в pickle.
+        try:
+            cfg = dict(roster_config or {})
+            if b_len is not None:
+                cfg["b_len"] = int(b_len)
+            if b_hei is not None:
+                cfg["b_hei"] = int(b_hei)
+            bb_len = int(cfg.get("b_len", 0) or 0)
+            bb_hei = int(cfg.get("b_hei", 0) or 0)
+            if bb_len > 0 and bb_hei > 0:
+                enemy, model = _build_units_from_config(cfg, bb_len, bb_hei)
+        except Exception:
+            pass
     with open(pickle_path, "wb") as handle:
         pickle.dump((None, model, enemy), handle)
     append_agent_log(f"[PPO][SAVE] checkpoint={checkpoint_path}")
@@ -2559,6 +2587,9 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
                         model=None,
                         enemy=None,
                         env_contract=env_contract,
+                        roster_config=roster_config,
+                        b_len=b_len,
+                        b_hei=b_hei,
                     )
 
         # Обновляем PPO по порогу шагов роллаута.
@@ -2632,6 +2663,9 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
             model=None,
             enemy=None,
             env_contract=env_contract,
+            roster_config=roster_config,
+            b_len=b_len,
+            b_hei=b_hei,
         )
 
     if ep_rows:
@@ -5665,6 +5699,9 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                         model=None,
                         enemy=None,
                         env_contract=env_contract,
+                        roster_config=roster_config,
+                        b_len=b_len,
+                        b_hei=b_hei,
                     )
             continue
 
@@ -5775,6 +5812,9 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
             model=None,
             enemy=None,
             env_contract=env_contract,
+            roster_config=roster_config,
+            b_len=b_len,
+            b_hei=b_hei,
         )
 
     if ep_rows:

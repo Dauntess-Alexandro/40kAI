@@ -1347,6 +1347,18 @@ ApplicationWindow {
                                 }
 
                                 Label {
+                                    text: controller.playModelAlgoLabel
+                                    wrapMode: Text.WordWrap
+                                    color: "#555555"
+                                }
+
+                                Label {
+                                    text: controller.playModelCheckpointLabel
+                                    wrapMode: Text.WordWrap
+                                    color: "#555555"
+                                }
+
+                                Label {
                                     text: "Кто за кого:"
                                     font.bold: true
                                     wrapMode: Text.WordWrap

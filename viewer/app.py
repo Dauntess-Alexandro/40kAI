@@ -25,6 +25,12 @@ def load_viewer_config() -> dict:
         "unit_icon_scale": 2.75,
         "model_icon_scale": 0.75,
         "terrain_barrel_cell_scale": 0.92,
+        "move_base_ms": 155,
+        "move_per_cell_ms": 88,
+        "move_cap_ms": 920,
+        "move_seq_floor_new_step_ms": 260,
+        "move_seq_floor_default_ms": 180,
+        "move_ease": "smoothstep",
     }
     try:
         with open(VIEWER_CONFIG_PATH, "r", encoding="utf-8") as handle:
@@ -273,6 +279,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             model_icon_scale=max(0.2, model_icon_scale),
             terrain_barrel_cell_scale=max(0.1, min(1.0, terrain_barrel_cell_scale)),
         )
+        self.map_scene.set_move_animation_config(self._viewer_config)
         self.map_scene.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding,
             QtWidgets.QSizePolicy.Expanding,
@@ -1872,8 +1879,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 "Что делать дальше: запустите игру и дождитесь генерации state.json."
             )
             return
-        if self.state_watcher.load_if_changed():
-            self._apply_state(self.state_watcher.state)
+        if not self.state_watcher.load_if_changed():
+            return
+        for _ in range(64):
+            if not self.state_watcher.load_if_changed():
+                break
+        self._apply_state(self.state_watcher.state)
 
     def _pace_activation_summary_ru(self, state: dict) -> Tuple[str, str]:
         """Краткое RU-описание viewer.activation (ожидающий шаг или уже показанное для legacy)."""

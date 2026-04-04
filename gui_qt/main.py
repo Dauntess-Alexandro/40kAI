@@ -47,6 +47,7 @@ class GUIController(QtCore.QObject):
     heuristicMetricsChanged = QtCore.Signal()
     playModelPathChanged = QtCore.Signal(str)
     playModelLabelChanged = QtCore.Signal(str)
+    playModelMetaChanged = QtCore.Signal(str)
     playViewerPlayerRoleLabelChanged = QtCore.Signal(str)
     playViewerModelRoleLabelChanged = QtCore.Signal(str)
     evalModelPathChanged = QtCore.Signal(str)
@@ -138,6 +139,8 @@ class GUIController(QtCore.QObject):
 
         self._play_model_path = ""
         self._play_model_label = "Модель не выбрана"
+        self._play_model_algo_label = "Алгоритм: —"
+        self._play_model_checkpoint_label = "Checkpoint: —"
         self._play_viewer_player_role_label = "Ты: —"
         self._play_viewer_model_role_label = "ИИ: —"
         self._eval_model_path = ""
@@ -471,6 +474,14 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=playModelLabelChanged)
     def playModelLabel(self) -> str:
         return self._play_model_label
+
+    @QtCore.Property(str, notify=playModelMetaChanged)
+    def playModelAlgoLabel(self) -> str:
+        return self._play_model_algo_label
+
+    @QtCore.Property(str, notify=playModelMetaChanged)
+    def playModelCheckpointLabel(self) -> str:
+        return self._play_model_checkpoint_label
 
     @QtCore.Property(str, notify=playViewerPlayerRoleLabelChanged)
     def playViewerPlayerRoleLabel(self) -> str:
@@ -1750,7 +1761,15 @@ class GUIController(QtCore.QObject):
             folder = os.path.basename(os.path.dirname(pickle_path))
             ai_match = re.search(r"__learner_(P[12])_([^_].+?)$", folder)
             if not ai_match:
-                return default_player, default_model
+                # Фолбэк: если имя папки не содержит метаданных, берём текущие настройки GUI.
+                # Это лучше, чем пустые/непонятные подписи для ppo-run-*.
+                ai_side = str(getattr(self, "_learner_side", "P1") or "P1").strip().upper()
+                if ai_side not in {"P1", "P2"}:
+                    ai_side = "P1"
+                human_side = "P2" if ai_side == "P1" else "P1"
+                human_faction = self._display_faction_for_side(human_side)
+                ai_faction = self._display_faction_for_side(ai_side)
+                return f"Ты: {human_side} ({human_faction})", f"ИИ: {ai_side} ({ai_faction})"
             ai_side = ai_match.group(1)
             ai_faction = ai_match.group(2)
 
@@ -2394,12 +2413,85 @@ class GUIController(QtCore.QObject):
         self.playModelPathChanged.emit(self._play_model_path)
         self.playModelLabelChanged.emit(self._play_model_label)
 
+        checkpoint_path = self._resolve_checkpoint_for_pickle(path)
+        algo = self._infer_algo_from_checkpoint_or_path(checkpoint_path, path)
+        self._play_model_checkpoint_label = (
+            f"Checkpoint: {os.path.basename(checkpoint_path)}" if checkpoint_path else "Checkpoint: —"
+        )
+        self._play_model_algo_label = f"Алгоритм: {algo}" if algo else "Алгоритм: —"
+        self.playModelMetaChanged.emit(self._play_model_algo_label)
+
         # Подсказки для вкладки "Игра" (кто за кого играет).
         player_label, model_label = self._infer_viewer_role_labels_from_model_pickle(path)
         self._play_viewer_player_role_label = player_label
         self._play_viewer_model_role_label = model_label
         self.playViewerPlayerRoleLabelChanged.emit(player_label)
         self.playViewerModelRoleLabelChanged.emit(model_label)
+
+    def _resolve_checkpoint_for_pickle(self, pickle_path: str) -> str:
+        if not pickle_path or not os.path.isfile(pickle_path):
+            return ""
+        directory = os.path.dirname(os.path.abspath(pickle_path))
+        base = os.path.splitext(os.path.basename(pickle_path))[0]
+
+        primary = os.path.join(directory, base + ".pth")
+        if os.path.isfile(primary):
+            return primary
+
+        m = re.match(r"^(model-\d+-\d+)", base)
+        if m:
+            fallback = os.path.join(directory, m.group(1) + ".pth")
+            if os.path.isfile(fallback):
+                return fallback
+
+        best = os.path.join(directory, "best_eval_checkpoint.pth")
+        if os.path.isfile(best):
+            return best
+
+        # PPO: checkpoint_ep{episode}.pth
+        try:
+            candidates: list[tuple[int, str]] = []
+            for fn in os.listdir(directory):
+                m_ep = re.match(r"^checkpoint_ep(\d+)\.pth$", str(fn))
+                if not m_ep:
+                    continue
+                ep = int(m_ep.group(1))
+                full = os.path.join(directory, fn)
+                if os.path.isfile(full):
+                    candidates.append((ep, full))
+            if candidates:
+                candidates.sort(key=lambda x: x[0])
+                return candidates[-1][1]
+        except Exception:
+            pass
+        return ""
+
+    def _infer_algo_from_checkpoint_or_path(self, checkpoint_path: str, pickle_path: str) -> str:
+        # 1) Самый надёжный вариант: поле algo в checkpoint.
+        if checkpoint_path and os.path.isfile(checkpoint_path):
+            try:
+                import torch  # локальный импорт, чтобы GUI не падал при отсутствии torch
+
+                payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+                if isinstance(payload, dict):
+                    algo = str(payload.get("algo", "") or "").strip().lower()
+                    if algo in {"ppo", "dqn"}:
+                        return algo.upper()
+                    net_type = str(payload.get("net_type", "") or "").strip().lower()
+                    if "ppo" in net_type:
+                        return "PPO"
+                    if "dueling" in net_type or "basic" in net_type:
+                        return "DQN"
+            except Exception:
+                pass
+
+        # 2) Фолбэк по имени файла/папки.
+        joined = (str(pickle_path or "") + " " + str(checkpoint_path or "")).lower()
+        if "ppo-run-" in joined or "checkpoint_ep" in joined:
+            return "PPO"
+        if "actor_learner" in joined or re.search(r"model-\d+-\d+.*\.pth", joined):
+            return "DQN"
+        return ""
 
     def _set_eval_model(self, path: str, source: str) -> None:
         self._eval_model_path = path
@@ -2419,8 +2511,11 @@ class GUIController(QtCore.QObject):
             if initial:
                 self._play_model_path = ""
                 self._play_model_label = "Модель не найдена"
+                self._play_model_algo_label = "Алгоритм: —"
+                self._play_model_checkpoint_label = "Checkpoint: —"
                 self.playModelPathChanged.emit(self._play_model_path)
                 self.playModelLabelChanged.emit(self._play_model_label)
+                self.playModelMetaChanged.emit(self._play_model_algo_label)
             return False
         self._set_play_model(latest_model, source="latest")
         return True

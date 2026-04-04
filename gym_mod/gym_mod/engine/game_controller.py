@@ -8,11 +8,13 @@ import threading
 import traceback
 from typing import Optional
 
+import gymnasium as gym
 import torch
 
 from gym_mod.engine.agent_registry import compatible_contracts, load_agent_by_id, make_env_contract
 from gym_mod.engine.game_io import GuiIO, set_active_io
 from gym_mod.engine.state_export import DEFAULT_STATE_PATH
+from gym_mod.engine.mission import board_dims_for_mission
 from model.DQN import DQN
 from model.PPO import ActorCriticMultiHead
 from model.utils import select_action, convertToDict, build_shoot_action_mask, normalize_state_dict
@@ -49,6 +51,7 @@ def resolve_checkpoint_for_pickle(pickle_path: str) -> Optional[str]:
     """
     Находит .pth для .pickle: обычно тот же stem; если нет — базовый run
     (model-<run>-<iter>.pth) или best_eval_checkpoint.pth в той же папке.
+    Для PPO также поддерживаем checkpoint_ep*.pth (train.py сохраняет checkpoint_ep{episode}.pth).
     """
     if not pickle_path or not os.path.isfile(pickle_path):
         return None
@@ -68,6 +71,23 @@ def resolve_checkpoint_for_pickle(pickle_path: str) -> Optional[str]:
     best = os.path.join(directory, "best_eval_checkpoint.pth")
     if os.path.isfile(best):
         return best
+
+    # PPO: checkpoint_ep{episode}.pth
+    try:
+        candidates: list[tuple[int, str]] = []
+        for fn in os.listdir(directory):
+            m_ep = re.match(r"^checkpoint_ep(\d+)\.pth$", str(fn))
+            if not m_ep:
+                continue
+            ep = int(m_ep.group(1))
+            full = os.path.join(directory, fn)
+            if os.path.isfile(full):
+                candidates.append((ep, full))
+        if candidates:
+            candidates.sort(key=lambda x: x[0])
+            return candidates[-1][1]
+    except Exception:
+        pass
 
     return None
 
@@ -158,7 +178,8 @@ class GameController:
             if not checkpoint_path:
                 raise FileNotFoundError(
                     f"Не найден checkpoint для модели. Ожидался файл рядом с pickle: {expected}. "
-                    "Допустимы также базовый model-<run>-<iter>.pth или best_eval_checkpoint.pth в той же папке. "
+                    "Допустимы также базовый model-<run>-<iter>.pth, best_eval_checkpoint.pth, "
+                    "а для PPO — checkpoint_ep<episode>.pth в той же папке. "
                     f"Папка: {os.path.dirname(os.path.abspath(model_path))}"
                 )
             if os.path.normpath(checkpoint_path) != os.path.normpath(expected):
@@ -168,7 +189,38 @@ class GameController:
         self._io.log(f"[MODEL] checkpoint={checkpoint_path}")
 
         with open(model_path, "rb") as handle:
-            env, model, enemy = pickle.load(handle)
+            loaded = pickle.load(handle)
+        # Исторически сохранялось как (env, model, enemy).
+        # Для PPO часто: (None, model, enemy).
+        if isinstance(loaded, (list, tuple)) and len(loaded) >= 3:
+            env, model, enemy = loaded[0], loaded[1], loaded[2]
+        else:
+            raise ValueError(
+                "Неожиданный формат pickle модели. Ожидалось (env, model, enemy). "
+                f"Фактически: {type(loaded)}."
+            )
+
+        # PPO pickles могут хранить env=None (мы сохраняем только roster'ы).
+        # В этом случае создаём env заново из текущей миссии.
+        if env is None:
+            mission_name = str(os.getenv("MISSION_NAME", "") or "").strip() or "only_war"
+            try:
+                b_len, b_hei = board_dims_for_mission(mission_name)
+            except Exception:
+                b_len, b_hei = (30, 44)
+            env = gym.make(
+                "40kAI-v0",
+                disable_env_checker=True,
+                enemy=enemy,
+                model=model,
+                b_len=int(b_len),
+                b_hei=int(b_hei),
+            )
+            self._io.log(f"[MODEL] env отсутствовал в pickle: пересоздан (mission={mission_name}, b_len={int(b_len)}, b_hei={int(b_hei)})")
+            try:
+                env.unwrapped.mission_name = mission_name
+            except Exception:
+                pass
 
         checkpoint = load_trusted_checkpoint(checkpoint_path)
         if agent_id_override:

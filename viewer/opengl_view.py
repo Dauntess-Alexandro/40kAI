@@ -10,6 +10,7 @@ Viewer tech findings ("Играть в GUI"):
 from __future__ import annotations
 
 from dataclasses import dataclass
+import copy
 import json
 import math
 import os
@@ -242,11 +243,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._unit_state_by_key: Dict[Tuple[str, int], dict] = {}
         self._prev_unit_positions: Dict[Tuple[str, int], QtCore.QPointF] = {}
         self._curr_unit_positions: Dict[Tuple[str, int], QtCore.QPointF] = {}
+        self._prev_model_cells_by_key: Dict[Tuple[str, int], List[Tuple[float, float]]] = {}
+        self._curr_model_cells_by_key: Dict[Tuple[str, int], List[Tuple[float, float]]] = {}
         self._unit_anim_timer = QtCore.QTimer(self)
         self._unit_anim_timer.setInterval(16)
         self._unit_anim_timer.timeout.connect(self._animate_unit_step)
         self._unit_anim_clock = QtCore.QElapsedTimer()
         self._unit_anim_duration_ms = 180
+        self._move_base_ms = 155.0
+        self._move_per_cell_ms = 88.0
+        self._move_cap_ms = 920.0
+        self._move_seq_floor_new_step_ms = 260.0
+        self._move_seq_floor_default_ms = 180.0
+        self._move_ease = "smoothstep"
         self._status_prev: Dict[Tuple[str, int], SquadStatusSnapshot] = {}
         self._status_curr: Dict[Tuple[str, int], SquadStatusSnapshot] = {}
         self._status_anim_t0: float = monotonic()
@@ -499,6 +508,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._unit_hitboxes_screen = {}
             self._prev_unit_positions = {}
             self._curr_unit_positions = {}
+            self._prev_model_cells_by_key = {}
+            self._curr_model_cells_by_key = {}
             self._status_prev = {}
             self._status_curr = {}
             self._selected_unit_key = None
@@ -609,29 +620,49 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._refresh_hp_loss_anim(now)
         self._status_anim_t0 = now
 
-        live_keys = {
-            (u.get("side"), u.get("id"))
-            for u in self._units_state
-            if u.get("side") is not None and u.get("id") is not None
-        }
+        live_keys = set()
+        for u in self._units_state:
+            nk = self._norm_unit_key(u.get("side"), u.get("id"))
+            if nk is not None:
+                live_keys.add(nk)
         if self._deploy_preview_units:
             self._deploy_preview_units = [
                 render for render in self._deploy_preview_units
                 if render.key not in live_keys
             ]
             self._deploy_preview_unit_keys = {render.key for render in self._deploy_preview_units}
-        self._prev_unit_positions = dict(self._curr_unit_positions)
-        self._curr_unit_positions = {}
+
+        self._curr_unit_positions = self._normalize_unit_key_dict(self._curr_unit_positions)
+        self._prev_unit_positions = self._normalize_unit_key_dict(self._prev_unit_positions)
+        self._curr_model_cells_by_key = self._normalize_unit_key_dict(self._curr_model_cells_by_key)
+        self._prev_model_cells_by_key = self._normalize_unit_key_dict(self._prev_model_cells_by_key)
+
+        next_curr_positions: Dict[Tuple[str, int], QtCore.QPointF] = {}
         for unit in self._units_state:
-            key = (unit.get("side"), unit.get("id"))
+            key = self._norm_unit_key(unit.get("side"), unit.get("id"))
+            if key is None:
+                continue
             view_cell = self._unit_anchor_view_cell(unit)
-            if key[0] is None or key[1] is None or view_cell is None:
+            if view_cell is None:
                 continue
             view_x, view_y = view_cell
-            self._curr_unit_positions[key] = QtCore.QPointF(float(view_x), float(view_y))
+            next_curr_positions[key] = QtCore.QPointF(float(view_x), float(view_y))
 
-        for key, point in self._curr_unit_positions.items():
-            self._prev_unit_positions.setdefault(key, QtCore.QPointF(point))
+        next_model_cells: Dict[Tuple[str, int], List[Tuple[float, float]]] = {}
+        for unit in self._units_state:
+            key = self._norm_unit_key(unit.get("side"), unit.get("id"))
+            if key is None:
+                continue
+            raw_cells = self._unit_model_view_cells(unit)
+            if raw_cells:
+                next_model_cells[key] = [(float(x), float(y)) for x, y in raw_cells]
+            else:
+                anchor = self._unit_anchor_view_cell(unit)
+                if anchor is not None:
+                    next_model_cells[key] = [(float(anchor[0]), float(anchor[1]))]
+
+        prior_curr_positions = dict(self._curr_unit_positions)
+        movement_requires_anim = self._movement_requires_walk_anim(next_curr_positions, prior_curr_positions)
 
         vinfo = state.get("viewer") if isinstance(state.get("viewer"), dict) else {}
         self._parse_viewer_activation_vinfo(vinfo)
@@ -642,14 +673,59 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._ai_ring_anim_timer.stop()
         seq = vinfo.get("step_seq")
         prev_seq = getattr(self, "_last_viewer_step_seq", None)
-        if isinstance(seq, int) and (prev_seq is None or seq > prev_seq):
-            self._unit_anim_duration_ms = max(180, 260)
-        else:
-            self._unit_anim_duration_ms = 180
         if isinstance(seq, int):
             self._last_viewer_step_seq = seq
 
-        self._start_unit_animation()
+        if movement_requires_anim:
+            self._prev_unit_positions = dict(prior_curr_positions)
+            self._curr_unit_positions = dict(next_curr_positions)
+            for key, point in self._curr_unit_positions.items():
+                if key not in prior_curr_positions:
+                    sx, sy = float(point.x()), float(point.y())
+                    if sx >= 0.75:
+                        self._prev_unit_positions[key] = QtCore.QPointF(sx - 1.0, sy)
+                    elif sy >= 0.75:
+                        self._prev_unit_positions[key] = QtCore.QPointF(sx, sy - 1.0)
+                    else:
+                        self._prev_unit_positions[key] = QtCore.QPointF(
+                            min(sx + 1.0, float(max(0, self._board_width - 1))), sy
+                        )
+                else:
+                    self._prev_unit_positions.setdefault(key, QtCore.QPointF(point))
+
+            self._prev_model_cells_by_key = copy.deepcopy(self._curr_model_cells_by_key)
+            self._curr_model_cells_by_key = {}
+            for key, cells in next_model_cells.items():
+                self._curr_model_cells_by_key[key] = list(cells)
+            for key in list(self._curr_model_cells_by_key.keys()):
+                self._prev_model_cells_by_key.setdefault(key, list(self._curr_model_cells_by_key[key]))
+
+            max_m = 0
+            for key, curr_pt in self._curr_unit_positions.items():
+                prev_pt = self._prev_unit_positions.get(key)
+                if prev_pt is None:
+                    continue
+                dm = abs(curr_pt.x() - prev_pt.x()) + abs(curr_pt.y() - prev_pt.y())
+                max_m = max(max_m, int(round(dm)))
+            base_ms = float(self._move_base_ms)
+            per_cell_ms = float(self._move_per_cell_ms)
+            cap_ms = float(self._move_cap_ms)
+            dist_ms = min(cap_ms, base_ms + per_cell_ms * max(0, max_m - 1)) if max_m > 0 else 0
+            seq_floor = (
+                float(self._move_seq_floor_new_step_ms)
+                if (isinstance(seq, int) and (prev_seq is None or seq > prev_seq))
+                else float(self._move_seq_floor_default_ms)
+            )
+            if max_m <= 0:
+                self._unit_anim_duration_ms = 0
+            else:
+                self._unit_anim_duration_ms = max(dist_ms, seq_floor)
+            self._start_unit_animation()
+        else:
+            self._curr_unit_positions = dict(next_curr_positions)
+            self._curr_model_cells_by_key = {k: list(v) for k, v in next_model_cells.items()}
+            if not self._unit_anim_timer.isActive():
+                self._rebuild_units(1.0)
 
         self._objectives = []
         self._objective_labels = []
@@ -706,6 +782,42 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return int(value)
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _norm_unit_key(side: object, uid: object) -> Optional[Tuple[str, int]]:
+        if side is None or uid is None:
+            return None
+        try:
+            iid = int(uid)
+        except (TypeError, ValueError):
+            return None
+        return (str(side), iid)
+
+    def _normalize_unit_key_dict(self, data: Optional[Dict[Tuple, Any]]) -> Dict[Tuple[str, int], Any]:
+        out: Dict[Tuple[str, int], Any] = {}
+        for k, v in (data or {}).items():
+            if not isinstance(k, tuple) or len(k) != 2:
+                continue
+            nk = self._norm_unit_key(k[0], k[1])
+            if nk is not None:
+                out[nk] = v
+        return out
+
+    def _movement_requires_walk_anim(
+        self,
+        next_pos: Dict[Tuple[str, int], QtCore.QPointF],
+        prior_curr: Dict[Tuple[str, int], QtCore.QPointF],
+    ) -> bool:
+        """Новый кадр перемещения по полю: сменилась клетка якоря или впервые появился юнит. Без эвристик овервотча."""
+        for k, p in next_pos.items():
+            old = prior_curr.get(k)
+            if old is None:
+                return True
+            ox, oy = int(round(old.x())), int(round(old.y()))
+            nx, ny = int(round(p.x())), int(round(p.y()))
+            if ox != nx or oy != ny:
+                return True
+        return False
 
     def state_pos_to_xy(self, pos: object) -> Optional[Tuple[int, int]]:
         """Map env/grid position (row, col) to view (x, y)."""
@@ -1563,6 +1675,44 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 return name
         return next(iter(self._fx_particle_textures.keys()), None)
 
+    def set_move_animation_config(self, cfg: Optional[Dict[str, Any]] = None) -> None:
+        """Параметры из viewer_config.json: move_base_ms, move_per_cell_ms, move_cap_ms, …"""
+        if not isinstance(cfg, dict):
+            return
+
+        def _clamp_f(key: str, current: float, lo: float, hi: float) -> float:
+            if key not in cfg:
+                return current
+            try:
+                v = float(cfg[key])
+            except (TypeError, ValueError):
+                return current
+            return max(lo, min(hi, v))
+
+        self._move_base_ms = _clamp_f("move_base_ms", self._move_base_ms, 0.0, 8000.0)
+        self._move_per_cell_ms = _clamp_f("move_per_cell_ms", self._move_per_cell_ms, 0.0, 2000.0)
+        self._move_cap_ms = _clamp_f("move_cap_ms", self._move_cap_ms, 1.0, 20000.0)
+        self._move_seq_floor_new_step_ms = _clamp_f(
+            "move_seq_floor_new_step_ms", self._move_seq_floor_new_step_ms, 0.0, 8000.0
+        )
+        self._move_seq_floor_default_ms = _clamp_f(
+            "move_seq_floor_default_ms", self._move_seq_floor_default_ms, 0.0, 8000.0
+        )
+        raw_ease = cfg.get("move_ease", self._move_ease)
+        if isinstance(raw_ease, str):
+            e = raw_ease.strip().lower()
+            if e in {"linear", "smoothstep", "cubic_out"}:
+                self._move_ease = e
+
+    def _apply_move_ease(self, t: float) -> float:
+        t = max(0.0, min(1.0, float(t)))
+        kind = str(self._move_ease or "smoothstep").strip().lower()
+        if kind == "linear":
+            return t
+        if kind == "cubic_out":
+            return 1.0 - (1.0 - t) ** 3
+        return t * t * (3.0 - 2.0 * t)
+
     def _start_unit_animation(self) -> None:
         self._unit_anim_clock.restart()
         if self._unit_anim_duration_ms <= 0:
@@ -1590,6 +1740,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._unit_anim_timer.stop()
 
     def _rebuild_units(self, factor: float) -> None:
+        f = self._apply_move_ease(factor)
         self._units = []
         self._unit_by_key = {}
         self._unit_labels = []
@@ -1597,7 +1748,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
         occupied: Dict[Tuple[int, int], List[dict]] = {}
         for unit in self._units_state:
-            key = (unit.get("side"), unit.get("id"))
+            key = self._norm_unit_key(unit.get("side"), unit.get("id"))
+            if key is None:
+                continue
             curr_pos = self._curr_unit_positions.get(key)
             if curr_pos is None:
                 continue
@@ -1605,13 +1758,15 @@ class OpenGLBoardWidget(QOpenGLWidget):
             occupied.setdefault(cell_key, []).append(unit)
 
         for unit in self._units_state:
-            key = (unit.get("side"), unit.get("id"))
+            key = self._norm_unit_key(unit.get("side"), unit.get("id"))
+            if key is None:
+                continue
             curr_pos = self._curr_unit_positions.get(key)
             if curr_pos is None:
                 continue
             prev_pos = self._prev_unit_positions.get(key, curr_pos)
-            interp_x = prev_pos.x() + (curr_pos.x() - prev_pos.x()) * factor
-            interp_y = prev_pos.y() + (curr_pos.y() - prev_pos.y()) * factor
+            interp_x = prev_pos.x() + (curr_pos.x() - prev_pos.x()) * f
+            interp_y = prev_pos.y() + (curr_pos.y() - prev_pos.y()) * f
 
             stack = occupied.get((int(curr_pos.x()), int(curr_pos.y())), [])
             offset = 0.0
@@ -1621,14 +1776,44 @@ class OpenGLBoardWidget(QOpenGLWidget):
             center_y = interp_y * self.cell_size + self.cell_size / 2 - offset
             color = Theme.player if unit.get("side") == "player" else Theme.model
             radius = self.cell_size * 0.35
-            model_cells = self._unit_model_view_cells(unit)
-            model_centers = [
-                QtCore.QPointF(
-                    model_x * self.cell_size + self.cell_size / 2,
-                    model_y * self.cell_size + self.cell_size / 2,
-                )
-                for model_x, model_y in model_cells
-            ]
+            prev_m = self._prev_model_cells_by_key.get(key)
+            curr_m = self._curr_model_cells_by_key.get(key)
+            model_centers: List[QtCore.QPointF] = []
+            if prev_m and curr_m and len(prev_m) == len(curr_m):
+                for (px, py), (cx, cy) in zip(prev_m, curr_m):
+                    mx = px + (cx - px) * f
+                    my = py + (cy - py) * f
+                    model_centers.append(
+                        QtCore.QPointF(
+                            mx * self.cell_size + self.cell_size / 2,
+                            my * self.cell_size + self.cell_size / 2,
+                        )
+                    )
+            elif prev_m and curr_m and len(prev_m) != len(curr_m) and len(prev_m) > 0 and len(curr_m) > 0:
+                pcx = sum(p[0] for p in prev_m) / float(len(prev_m))
+                pcy = sum(p[1] for p in prev_m) / float(len(prev_m))
+                ccx = sum(c[0] for c in curr_m) / float(len(curr_m))
+                ccy = sum(c[1] for c in curr_m) / float(len(curr_m))
+                ox = (pcx - ccx) * (1.0 - f)
+                oy = (pcy - ccy) * (1.0 - f)
+                for cx, cy in curr_m:
+                    mx = cx + ox
+                    my = cy + oy
+                    model_centers.append(
+                        QtCore.QPointF(
+                            mx * self.cell_size + self.cell_size / 2,
+                            my * self.cell_size + self.cell_size / 2,
+                        )
+                    )
+            else:
+                model_cells = self._unit_model_view_cells(unit)
+                model_centers = [
+                    QtCore.QPointF(
+                        model_x * self.cell_size + self.cell_size / 2,
+                        model_y * self.cell_size + self.cell_size / 2,
+                    )
+                    for model_x, model_y in model_cells
+                ]
             unit_name = str(unit.get("name") or "")
             alive_models = self._safe_int(unit.get("alive_models"))
             total_models = self._safe_int(unit.get("models"))
@@ -1648,8 +1833,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 facing=self._resolve_render_facing(unit),
             )
             self._units.append(render)
-            if key[0] is not None and key[1] is not None:
-                self._unit_by_key[key] = render
+            self._unit_by_key[key] = render
             self._unit_labels.append(
                 (render.label, QtCore.QPointF(center_x - radius, center_y - radius - 8))
             )
@@ -1657,7 +1841,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def _state_unit(self, unit_key: Tuple[str, int]) -> Optional[dict]:
         units = self._state.get("units", []) or []
         for unit in units:
-            if (unit.get("side"), unit.get("id")) == unit_key:
+            nk = self._norm_unit_key(unit.get("side"), unit.get("id"))
+            if nk == unit_key:
                 return unit
         return None
 
@@ -3594,7 +3779,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def _unit_render_for_unit(self, unit: Optional[dict]) -> Optional[UnitRender]:
         if not unit:
             return None
-        key = (unit.get("side"), unit.get("id"))
+        key = self._norm_unit_key(unit.get("side"), unit.get("id"))
+        if key is None:
+            return None
         return self._unit_by_key.get(key)
 
     def _is_necron(self, unit: Optional[dict]) -> bool:
@@ -4748,7 +4935,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         closest_key = None
         closest_dist = None
         for unit in candidates:
-            key = (unit.get("side"), unit.get("id"))
+            key = self._norm_unit_key(unit.get("side"), unit.get("id"))
+            if key is None:
+                continue
             render = self._unit_by_key.get(key)
             if render is None:
                 continue
