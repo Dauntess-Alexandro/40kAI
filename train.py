@@ -5357,7 +5357,21 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                 },
             )
 
-        # --- agent snapshot for GUI self-play "latest_snapshot" ---
+        print("Generated metrics")
+        save_training_summary(run_id=run_id, model_tag=model_path.replace("\\", "/"), ep_rows=ep_rows, elapsed_s=elapsed)
+        save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows)
+    except Exception as exc:
+        if TRAIN_LOG_TO_CONSOLE:
+            print(f"[ACTOR_LEARNER][WARN] не удалось сохранить метрики: {exc}")
+
+    # --- agent snapshot for GUI ("Конкретный агент" / latest_snapshot) ---
+    # Делаем независимо от блока метрик: если метрики/плоты упали, агент всё равно должен сохраниться.
+    try:
+        safe_model_tag = ""
+        try:
+            safe_model_tag = model_path.replace("\\", "/")  # type: ignore[name-defined]
+        except Exception:
+            safe_model_tag = ""
         final_agent_id = build_agent_id(learner_identity, f"final_ep{len(ep_rows)}")
         artifact_dir = save_agent_artifact(
             identity=learner_identity,
@@ -5369,19 +5383,19 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             extra_meta={
                 "algo": "dqn",
                 "episode": int(len(ep_rows)),
-                "legacy_model_tag": model_path.replace("\\", "/"),
+                "legacy_model_tag": safe_model_tag,
                 "mode": "actor_learner",
                 "num_actors": int(num_actors),
+                "self_play_enabled": int(1 if SELF_PLAY_ENABLED else 0),
+                "opponent_agent_id": str(OPPONENT_AGENT_ID or ""),
             },
         )
         append_agent_log(f"[LEAGUE][SAVE] agent_id={final_agent_id} artifact_dir={artifact_dir}")
-
-        print("Generated metrics")
-        save_training_summary(run_id=run_id, model_tag=model_path.replace("\\", "/"), ep_rows=ep_rows, elapsed_s=elapsed)
-        save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows)
     except Exception as exc:
+        warn = f"[LEAGUE][WARN] DQN agent snapshot не сохранён: {exc}"
+        append_agent_log(warn)
         if TRAIN_LOG_TO_CONSOLE:
-            print(f"[ACTOR_LEARNER][WARN] не удалось сохранить метрики: {exc}")
+            print(warn)
 
     # Быстрый sanity-check качества (по желанию).
     eval_eps = int(os.getenv("ACTOR_EVAL_EPISODES", "20") or "20")
