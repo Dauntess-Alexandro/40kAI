@@ -1125,7 +1125,14 @@ class GUIController(QtCore.QObject):
             created_at = str(payload.get("created_at", "")).strip()
             algo = str(payload.get("algo", "")).strip().lower()
             if algo not in {"dqn", "ppo"}:
-                algo = "unknown"
+                # Backward-compat: старые снапшоты могли не писать "algo" в meta.json.
+                # Инферим по наличию target.pth: у DQN он есть, у PPO обычно отсутствует.
+                paths = payload.get("paths") if isinstance(payload, dict) else None
+                if isinstance(paths, dict):
+                    target_path = paths.get("target")
+                    algo = "ppo" if (target_path is None or str(target_path).strip() == "") else "dqn"
+                else:
+                    algo = "unknown"
             if not agent_id or side not in {"P1", "P2"}:
                 continue
             records.append(
@@ -2026,7 +2033,12 @@ class GUIController(QtCore.QObject):
         env.insert("TRAIN_ALGO", self._training_algo)
         env.insert("PER_ENABLED", "1")
         env.insert("N_STEP", "3")
-        env.insert("SAVE_EVERY", "500")
+        # Для GUI критично, чтобы снапшоты появлялись и на коротких прогонах (300-1000 эпизодов),
+        # иначе список "Конкретный агент" пустой, и в превью будет UNKNOWN.
+        # train.py по умолчанию поднимает SAVE_EVERY до SAVE_EVERY_MIN=50, если не разрешить low.
+        env.insert("SAVE_EVERY_ALLOW_LOW", "1")
+        env.insert("SAVE_EVERY_MIN", "1")
+        env.insert("SAVE_EVERY", "50")
         env.insert("CLIP_REWARD", "1")
         env.insert("MISSION_NAME", self._selected_mission)
         env.insert("LEARNER_SIDE", self._learner_side)
@@ -3378,6 +3390,7 @@ class GUIController(QtCore.QObject):
         models_path = os.path.join(self._repo_root, "models")
         metrics_path = os.path.join(self._repo_root, "metrics")
         gui_img_path = os.path.join(self._repo_root, "gui", "img")
+        # Полная очистка моделей/кеша (включая agents/registry).
         self._remove_contents(models_path)
         self._remove_contents(metrics_path)
         if os.path.isdir(gui_img_path):
@@ -3392,10 +3405,20 @@ class GUIController(QtCore.QObject):
                     os.remove(target)
         self._clear_runtime_logs()
 
-    def _remove_contents(self, path: str) -> None:
+    def _remove_contents(
+        self,
+        path: str,
+        *,
+        keep_dirs: set[str] | None = None,
+        keep_files: set[str] | None = None,
+    ) -> None:
         if not os.path.isdir(path):
             return
+        keep_dirs = keep_dirs or set()
+        keep_files = keep_files or set()
         for name in os.listdir(path):
+            if name in keep_dirs or name in keep_files:
+                continue
             target = os.path.join(path, name)
             if os.path.isdir(target):
                 shutil.rmtree(target)

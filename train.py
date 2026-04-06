@@ -2132,7 +2132,7 @@ def _save_ppo_checkpoint(
     b_hei: int | None = None,
 ):
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_dir = os.path.join("models", f"ppo-run-{timestamp}")
+    run_dir = os.path.join("models", "ppo", f"ppo-run-{timestamp}")
     os.makedirs(run_dir, exist_ok=True)
     checkpoint_path = os.path.join(run_dir, f"checkpoint_ep{int(episode)}.pth")
     payload = {
@@ -2170,7 +2170,18 @@ def _save_ppo_checkpoint(
     return checkpoint_path
 
 
-def run_ppo_training(env_contexts, totLifeT, n_actions, n_observations, env_contract, model, enemy, roster_config: dict):
+def run_ppo_training(
+    env_contexts,
+    totLifeT,
+    n_actions,
+    n_observations,
+    env_contract,
+    model,
+    enemy,
+    roster_config: dict,
+    *,
+    learner_identity: AgentIdentity,
+):
     if not env_contexts:
         raise RuntimeError("PPO: пустой список env_contexts.")
     ctx = env_contexts[0]
@@ -2186,7 +2197,7 @@ def run_ppo_training(env_contexts, totLifeT, n_actions, n_observations, env_cont
     last_checkpoint = ""
     run_id = str(random.randint(1000000, 9999999))
     model_name = datetime.datetime.now().strftime("%d-%H%M%S")
-    metrics_obj = metrics("models", run_id, model_name)
+    metrics_obj = metrics(os.path.join("models", "ppo"), run_id, model_name)
     ep_rows = []
     last_det_eval_ep = 0
 
@@ -2368,6 +2379,26 @@ def run_ppo_training(env_contexts, totLifeT, n_actions, n_observations, env_cont
                 enemy=enemy,
                 env_contract=env_contract,
             )
+            # Снапшот в registry для GUI ("Конкретный агент" / "Последний снапшот").
+            try:
+                periodic_agent_id = build_agent_id(learner_identity, f"ep{int(episode)}")
+                artifact_dir = save_agent_artifact(
+                    identity=learner_identity,
+                    agent_id=periodic_agent_id,
+                    env_contract=env_contract,
+                    policy_state_dict=normalize_state_dict(actor_critic.state_dict()),
+                    target_state_dict=None,
+                    optimizer_state_dict=optimizer.state_dict(),
+                    extra_meta={
+                        "algo": "ppo",
+                        "episode": int(episode),
+                        "mode": "train_loop",
+                        "legacy_checkpoint_path": str(last_checkpoint).replace("\\", "/") if last_checkpoint else "",
+                    },
+                )
+                append_agent_log(f"[LEAGUE][SAVE][PPO] agent_id={periodic_agent_id} artifact_dir={artifact_dir}")
+            except Exception as exc:
+                append_agent_log(f"[PPO][SAVE][WARN] не удалось сохранить agent snapshot: {exc}")
 
     if not last_checkpoint:
         last_checkpoint = _save_ppo_checkpoint(
@@ -2380,6 +2411,26 @@ def run_ppo_training(env_contexts, totLifeT, n_actions, n_observations, env_cont
             enemy=enemy,
             env_contract=env_contract,
         )
+    # Финальный снапшот в registry (чтобы GUI мог взять latest_snapshot)
+    try:
+        final_agent_id = build_agent_id(learner_identity, f"final_ep{int(totLifeT)}")
+        artifact_dir = save_agent_artifact(
+            identity=learner_identity,
+            agent_id=final_agent_id,
+            env_contract=env_contract,
+            policy_state_dict=normalize_state_dict(actor_critic.state_dict()),
+            target_state_dict=None,
+            optimizer_state_dict=optimizer.state_dict(),
+            extra_meta={
+                "algo": "ppo",
+                "episode": int(totLifeT),
+                "mode": "train_loop",
+                "legacy_checkpoint_path": str(last_checkpoint).replace("\\", "/") if last_checkpoint else "",
+            },
+        )
+        append_agent_log(f"[LEAGUE][SAVE][PPO] agent_id={final_agent_id} artifact_dir={artifact_dir}")
+    except Exception as exc:
+        append_agent_log(f"[PPO][SAVE][WARN] финальный agent snapshot не сохранён: {exc}")
     if ep_rows:
         try:
             save_extra_metrics(
@@ -3047,6 +3098,7 @@ def main():
                 model=model,
                 enemy=enemy,
                 roster_config=roster_config,
+                learner_identity=learner_identity,
             )
         _cleanup_train_envs(env_contexts=env_contexts, subproc_envs=subproc_envs, use_subproc=USE_SUBPROC_ENVS)
         with IO_PROFILER.timed("metrics save"):
@@ -3483,8 +3535,12 @@ def main():
     
     side_tag = f"{learner_identity.side}_{learner_identity.faction}"
     safe_name = _sanitize_fs_name(f"{name}__learner_{side_tag}")
-    fold = "models/" + safe_name
-    fileName = fold+"/model-"+date+".pickle"
+    algo_tag = str(TRAIN_ALGO or "dqn").strip().lower()
+    if algo_tag not in {"dqn", "ppo"}:
+        algo_tag = "dqn"
+    models_root = os.path.join("models", algo_tag)
+    fold = os.path.join(models_root, safe_name)
+    fileName = os.path.join(fold, "model-" + date + ".pickle")
     randNum = np.random.randint(0, 10000000)
     metrics_obj = metrics(fold, randNum, date)
     ep_rows = []
@@ -4214,8 +4270,8 @@ def main():
                         prev_best = best_eval_score
                         best_eval_score = float(eval_score)
                         best_eval_episode = int(numLifeT + 1)
-                        best_path = f"models/{safe_name}/best_eval_checkpoint.pth"
-                        os.makedirs(f"models/{safe_name}", exist_ok=True)
+                        best_path = os.path.join(models_root, safe_name, "best_eval_checkpoint.pth")
+                        os.makedirs(os.path.join(models_root, safe_name), exist_ok=True)
                         with IO_PROFILER.timed("checkpoint save"):
                             torch.save(
                                 {
@@ -4382,8 +4438,8 @@ def main():
                 ctx["ep_model_hp_start"] = None
                 ctx["ep_enemy_hp_start"] = None
                 if SAVE_EVERY > 0 and total_episode % SAVE_EVERY == 0:
-                    checkpoint_path = f"models/{safe_name}/checkpoint_ep{total_episode}.pth"
-                    os.makedirs(f"models/{safe_name}", exist_ok=True)
+                    checkpoint_path = os.path.join(models_root, safe_name, f"checkpoint_ep{total_episode}.pth")
+                    os.makedirs(os.path.join(models_root, safe_name), exist_ok=True)
                     with IO_PROFILER.timed("checkpoint save"):
                         torch.save(
                             {
@@ -4408,6 +4464,7 @@ def main():
                         target_state_dict=normalize_state_dict(target_net.state_dict()),
                         optimizer_state_dict=optimizer.state_dict(),
                         extra_meta={
+                            "algo": "dqn",
                             "episode": int(total_episode),
                             "legacy_checkpoint_path": checkpoint_path,
                             "opponent_source": opponent_source_state.get("source"),
@@ -4676,7 +4733,7 @@ def main():
 
     os.makedirs(fold, exist_ok=True)
 
-    model_rel_path = "models/{}/model-{}.pth".format(safe_name, date)
+    model_rel_path = os.path.join(models_root, safe_name, f"model-{date}.pth")
     with IO_PROFILER.timed("checkpoint save"):
         torch.save(
             {
@@ -4720,6 +4777,7 @@ def main():
         target_state_dict=normalize_state_dict(target_net.state_dict()),
         optimizer_state_dict=optimizer.state_dict(),
         extra_meta={
+            "algo": "dqn",
             "episode": int(resume_episode_base + numLifeT),
             "legacy_model_tag": f"{safe_name}/model-{date}",
             "opponent_policy": "roster_fixed",
@@ -4731,7 +4789,7 @@ def main():
     )
     append_agent_log(f"[LEAGUE][SAVE] agent_id={final_agent_id} artifact_dir={artifact_dir}")
     train_elapsed_s = time.perf_counter() - train_start_time
-    model_tag = f"{safe_name}/model-{date}"
+    model_tag = f"{algo_tag}/{safe_name}/model-{date}"
     save_training_summary(
         run_id=str(randNum),
         model_tag=model_tag,
@@ -5870,27 +5928,29 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
             )
     append_agent_log(f"[PPO][ACTOR_LEARNER] done: episodes={totLifeT} steps={global_step} updates={ppo_update_step} checkpoint={last_checkpoint}")
 
-    # Финальный self-play снапшот в registry (чтобы GUI мог взять latest_snapshot)
-    if SELF_PLAY_ENABLED:
-        try:
-            final_agent_id = build_agent_id(learner_identity, f"final_ep{int(episodes_finished or len(ep_rows))}")
-            artifact_dir = save_agent_artifact(
-                identity=learner_identity,
-                agent_id=final_agent_id,
-                env_contract=env_contract,
-                policy_state_dict=normalize_state_dict(actor_critic.state_dict()),
-                target_state_dict=None,
-                optimizer_state_dict=optimizer.state_dict(),
-                extra_meta={
-                    "algo": "ppo",
-                    "episode": int(episodes_finished or len(ep_rows)),
-                    "mode": "actor_learner",
-                    "num_actors": int(num_actors),
-                },
-            )
-            append_agent_log(f"[LEAGUE][SAVE][PPO] agent_id={final_agent_id} artifact_dir={artifact_dir}")
-        except Exception as exc:
-            append_agent_log(f"[SELFPLAY][WARN] PPO final agent snapshot failed: {exc}")
+    # Финальный снапшот в registry (чтобы GUI мог выбрать PPO как оппонента).
+    # Важно: сохраняем даже при SELF_PLAY_ENABLED=0 (PPO vs эвристика), иначе агент не появляется в GUI.
+    try:
+        final_agent_id = build_agent_id(learner_identity, f"final_ep{int(episodes_finished or len(ep_rows))}")
+        artifact_dir = save_agent_artifact(
+            identity=learner_identity,
+            agent_id=final_agent_id,
+            env_contract=env_contract,
+            policy_state_dict=normalize_state_dict(actor_critic.state_dict()),
+            target_state_dict=None,
+            optimizer_state_dict=optimizer.state_dict(),
+            extra_meta={
+                "algo": "ppo",
+                "episode": int(episodes_finished or len(ep_rows)),
+                "mode": "actor_learner",
+                "num_actors": int(num_actors),
+                "self_play_enabled": int(1 if SELF_PLAY_ENABLED else 0),
+                "opponent_agent_id": str(OPPONENT_AGENT_ID or ""),
+            },
+        )
+        append_agent_log(f"[LEAGUE][SAVE][PPO] agent_id={final_agent_id} artifact_dir={artifact_dir}")
+    except Exception as exc:
+        append_agent_log(f"[PPO][ACTOR_LEARNER][WARN] PPO final agent snapshot failed: {exc}")
 
 
 def _actor_learner_actor_entry(
