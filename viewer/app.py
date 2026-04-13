@@ -8,7 +8,7 @@ import sys
 import time
 from collections import OrderedDict, deque
 from dataclasses import dataclass
-from typing import Callable, Deque, Optional, Tuple
+from typing import Callable, Deque, Optional, Tuple, Dict
 from datetime import datetime
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -62,6 +62,8 @@ class PendingReport:
     target_id: Optional[int] = None
     weapon_name: Optional[str] = None
     damage: Optional[float] = None
+    failed_saves: Optional[int] = None
+    has_save_rolls: bool = False
 
 
 @dataclass
@@ -72,6 +74,12 @@ class FxShotEvent:
     target_id: int
     weapon_name: str
     damage: float
+    outcome_type: str
+    failed_saves: Optional[int] = None
+    hp_before: Optional[float] = None
+    hp_after: Optional[float] = None
+    hp_max: Optional[float] = None
+    popup_key: str = ""
 
 
 class FxLogParser:
@@ -135,6 +143,14 @@ class FxLogParser:
             self._debug(f"FX: найден итог урона = {current.damage}.")
             self._finalize_report(current, reason="damage")
             return
+        save_match = re.search(r"Save rolls:.*failed saves:\s*(\d+)", text, re.IGNORECASE)
+        if save_match:
+            current.failed_saves = int(save_match.group(1))
+            current.has_save_rolls = True
+            self._debug(f"FX: найден failed saves = {current.failed_saves}.")
+            return
+        if re.search(r"Save rolls:", text, re.IGNORECASE):
+            current.has_save_rolls = True
 
         if "📌 -------------------------" in text:
             if current.damage is None:
@@ -153,6 +169,12 @@ class FxLogParser:
             self._pending.pop()
             return
         damage = report.damage if report.damage is not None else 0.0
+        outcome_type = "damage"
+        if damage <= 0:
+            if report.has_save_rolls and report.failed_saves == 0:
+                outcome_type = "save"
+            else:
+                outcome_type = "miss"
         event = FxShotEvent(
             ts=report.ts,
             report_type=report.report_type,
@@ -160,6 +182,8 @@ class FxLogParser:
             target_id=report.target_id,
             weapon_name=report.weapon_name,
             damage=damage,
+            outcome_type=outcome_type,
+            failed_saves=report.failed_saves,
         )
         key = (
             event.ts,
@@ -168,6 +192,7 @@ class FxLogParser:
             event.target_id,
             event.weapon_name,
             event.damage,
+            event.outcome_type,
         )
         if key in self._seen:
             self._debug("FX: дубликат отчёта, эффект не создаём.")
@@ -179,7 +204,7 @@ class FxLogParser:
         self._debug(
             "FX: создан FxShotEvent "
             f"(attacker={event.attacker_id}, target={event.target_id}, "
-            f"weapon={event.weapon_name}, damage={event.damage})."
+            f"weapon={event.weapon_name}, damage={event.damage}, outcome={event.outcome_type})."
         )
         self._on_event(event)
         self._pending.pop()
@@ -333,6 +358,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_status_label = None
         self._fx_shot_queue: Deque[FxShotEvent] = deque()
         self._fx_parser = FxLogParser(self._enqueue_fx_event, self._fx_debug, seen_max=400)
+        self._hp_snapshot_by_unit: Dict[Tuple[str, int], Tuple[Optional[float], Optional[float]]] = {}
+        self._popup_seen: OrderedDict[str, float] = OrderedDict()
+        self._popup_seen_ttl_s = 3.0
+        self._popup_seen_max = 1500
         self._max_log_lines = 5000
         self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS_PLAY.md")
         self._log_file_max_bytes = 5 * 1024 * 1024
@@ -1726,6 +1755,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._deploy_status_text = ""
         self._rolloff_attacker_side = None
         self._rolloff_defender_side = None
+        self._hp_snapshot_by_unit = {}
+        self._popup_seen = OrderedDict()
 
     def _submit_text(self):
         text = self.command_input.text().strip()
@@ -1981,6 +2012,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._units_by_key = {}
         for unit in state.get("units", []) or []:
             self._units_by_key[(unit.get("side"), unit.get("id"))] = unit
+        self._refresh_hp_snapshot()
 
         self.status_round.setText(f"Раунд: {state.get('round', '—')}")
         self.status_turn.setText(f"Ход: {state.get('turn', '—')}")
@@ -3101,6 +3133,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._spawn_fx_for_event(event)
 
     def _spawn_fx_for_event(self, event: FxShotEvent) -> None:
+        self._emit_damage_popup(event)
         if "gauss flayer" not in event.weapon_name.lower():
             self._fx_debug("FX: оружие не gauss, эффект пропущен.")
             return
@@ -3184,6 +3217,93 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if not message:
             return
         self._append_log_to_file(message)
+
+    def _coerce_float(self, value: object) -> Optional[float]:
+        try:
+            if value is None:
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _refresh_hp_snapshot(self) -> None:
+        snap: Dict[Tuple[str, int], Tuple[Optional[float], Optional[float]]] = {}
+        for (side, unit_id), unit in self._units_by_key.items():
+            if side is None or unit_id is None or not isinstance(unit, dict):
+                continue
+            hp = self._coerce_float(unit.get("wounds", unit.get("hp")))
+            hp_max = self._coerce_float(
+                unit.get("max_wounds", unit.get("wounds_max", unit.get("max_hp", unit.get("hp"))))
+            )
+            snap[(str(side), int(unit_id))] = (hp, hp_max)
+        self._hp_snapshot_by_unit = snap
+
+    def _make_popup_key(self, event: FxShotEvent) -> str:
+        return (
+            f"{event.ts}|{event.report_type}|{event.attacker_id}|{event.target_id}|"
+            f"{event.weapon_name}|{event.damage:.3f}|{event.outcome_type}|{event.failed_saves}"
+        )
+
+    def _popup_seen_recently(self, key: str, now_ts: float) -> bool:
+        stale = []
+        for known_key, ts in self._popup_seen.items():
+            if (now_ts - ts) > self._popup_seen_ttl_s:
+                stale.append(known_key)
+        for stale_key in stale:
+            self._popup_seen.pop(stale_key, None)
+        if key in self._popup_seen:
+            return True
+        self._popup_seen[key] = now_ts
+        if len(self._popup_seen) > self._popup_seen_max:
+            self._popup_seen.popitem(last=False)
+        return False
+
+    def _emit_damage_popup(self, event: FxShotEvent) -> None:
+        target_side = self._side_from_unit_id(event.target_id)
+        if target_side is None:
+            return
+        popup_key = self._make_popup_key(event)
+        now_ts = time.monotonic()
+        if self._popup_seen_recently(popup_key, now_ts):
+            return
+        target_key = (target_side, int(event.target_id))
+        hp_after = None
+        hp_max = None
+        unit = self._units_by_key.get(target_key)
+        if isinstance(unit, dict):
+            hp_after = self._coerce_float(unit.get("wounds", unit.get("hp")))
+            hp_max = self._coerce_float(
+                unit.get("max_wounds", unit.get("wounds_max", unit.get("max_hp", unit.get("hp"))))
+            )
+        prev_hp, prev_hp_max = self._hp_snapshot_by_unit.get(target_key, (None, None))
+        if hp_max is None:
+            hp_max = prev_hp_max
+
+        hp_before = None
+        if hp_after is not None and event.damage > 0:
+            hp_before = hp_after + float(event.damage)
+            if hp_max is not None:
+                hp_before = min(hp_before, hp_max)
+        elif prev_hp is not None and hp_after is not None and prev_hp >= hp_after:
+            hp_before = prev_hp
+        elif hp_after is not None:
+            hp_before = hp_after
+
+        event.hp_before = hp_before
+        event.hp_after = hp_after
+        event.hp_max = hp_max
+        event.popup_key = popup_key
+        self.map_scene.add_damage_popup(
+            kind=event.outcome_type,
+            target_side=target_side,
+            target_id=int(event.target_id),
+            damage_value=float(event.damage),
+            hp_before=hp_before,
+            hp_after=hp_after,
+            hp_max=hp_max,
+            dedup_key=popup_key,
+            created_ts=now_ts,
+        )
 
     def _is_movement_phase(self, phase):
         phase_text = str(phase or "").lower()

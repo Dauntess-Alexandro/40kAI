@@ -176,6 +176,24 @@ class SquadStatusSnapshot:
 
 
 @dataclass
+class DamagePopup:
+    kind: str
+    target_key: Tuple[str, int]
+    text_main: str
+    created_t: float
+    ttl_s: float
+    rise_px: float
+    dedup_key: str
+    stack_index: int = 0
+    amount: float = 0.0
+    damage_hits: int = 1
+    hp_before: Optional[float] = None
+    hp_after: Optional[float] = None
+    hp_max: Optional[float] = None
+    seed: int = 0
+
+
+@dataclass
 class _StatusLayout:
     center_x: float
     top_y: float
@@ -339,6 +357,34 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._ai_ring_anim_timer.setInterval(33)
         self._ai_ring_anim_timer.timeout.connect(self.update)
         self._fx_active: List[GaussTracerEffect] = []
+        self._damage_popups_active: List[DamagePopup] = []
+        self._damage_popup_dedup_seen: Dict[str, float] = {}
+        self._damage_popup_ttl_s = 0.95
+        self._damage_popup_rise_min_px = 14.0
+        self._damage_popup_rise_max_px = 36.0
+        # Зазор над верхним краем спрайта (якорь уже на «линии макушки»: центр модели минус половина иконки).
+        self._damage_popup_anchor_lift_cells = 0.34
+        self._damage_popup_font_size = 11
+        self._damage_popup_outline_px = 2.2
+        self._damage_popup_coalesce_window_s = 0.16
+        self._damage_popup_max_active = 96
+        self._damage_popup_hit_stop_s = 0.032
+        self._damage_popup_hit_stop_until: float = 0.0
+        self._damage_popup_lod_font_shrink_scale = 0.55
+        self._damage_popup_sfx_warned = False
+        self._damage_popup_sfx_cache: Dict[str, Any] = {}
+        self._damage_grad_damage_a = QtGui.QColor(255, 210, 130, 255)
+        self._damage_grad_damage_b = QtGui.QColor(220, 72, 68, 255)
+        self._damage_grad_save_a = QtGui.QColor(120, 235, 220, 255)
+        self._damage_grad_save_b = QtGui.QColor(38, 88, 190, 255)
+        self._damage_grad_miss_a = QtGui.QColor(188, 192, 206, 255)
+        self._damage_grad_miss_b = QtGui.QColor(168, 150, 198, 255)
+        self._damage_popup_badge_border = QtGui.QColor(255, 255, 255, 55)
+        self._damage_popup_text_shadow = QtGui.QColor(6, 8, 10, 230)
+        # Оттенок многослойного свечения вокруг глифов (не чистый чёрный — меньше «жирного» контура).
+        self._damage_popup_glow_damage = QtGui.QColor(52, 16, 12)
+        self._damage_popup_glow_save = QtGui.QColor(10, 28, 40)
+        self._damage_popup_glow_miss = QtGui.QColor(28, 22, 38)
 
         self._scale = 1.0
         self._min_scale = 0.2
@@ -536,6 +582,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._objectives = []
         self._objective_labels = []
         self._fx_active = []
+        self._damage_popups_active = []
+        self._damage_popup_dedup_seen = {}
+        self._damage_popup_hit_stop_until = 0.0
         self._particles = []
         self._particles_last_ts = None
         self._unit_anim_timer.stop()
@@ -987,6 +1036,339 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return
         self._fx_active.append(effect)
         self.update()
+
+    def add_damage_popup(
+        self,
+        *,
+        kind: str,
+        target_side: str,
+        target_id: int,
+        damage_value: float = 0.0,
+        hp_before: Optional[float] = None,
+        hp_after: Optional[float] = None,
+        hp_max: Optional[float] = None,
+        dedup_key: str = "",
+        created_ts: Optional[float] = None,
+    ) -> None:
+        key = self._norm_unit_key(target_side, target_id)
+        if key is None:
+            return
+        now_ts = monotonic() if created_ts is None else float(created_ts)
+        dedup_key = str(dedup_key or f"{kind}:{key[0]}:{key[1]}:{int(now_ts * 1000)}")
+        dedup_seen_ts = self._damage_popup_dedup_seen.get(dedup_key)
+        if dedup_seen_ts is not None and (now_ts - dedup_seen_ts) <= max(0.2, self._damage_popup_ttl_s):
+            return
+        self._damage_popup_dedup_seen[dedup_key] = now_ts
+
+        kind_norm = str(kind or "damage").strip().lower()
+        damage = max(0.0, float(damage_value or 0.0))
+        if kind_norm == "damage":
+            main_text = f"-{int(round(damage)) if damage > 0 else 0}"
+        elif kind_norm == "save":
+            main_text = "СЕЙВ"
+        else:
+            main_text = "ПРОМАХ"
+
+        seed = (hash(dedup_key) ^ int(now_ts * 1000)) & 0xFFFFFFFF
+
+        reused = False
+        for popup in reversed(self._damage_popups_active):
+            if popup.target_key != key:
+                continue
+            if popup.kind != kind_norm:
+                continue
+            if (now_ts - popup.created_t) > self._damage_popup_coalesce_window_s:
+                continue
+            if kind_norm == "damage":
+                popup.amount += damage
+                popup.damage_hits += 1
+                popup.created_t = now_ts
+                popup.ttl_s = max(popup.ttl_s, self._damage_popup_ttl_s)
+                popup.text_main = f"-{int(round(popup.amount))}"
+                if hp_after is not None:
+                    popup.hp_after = hp_after
+                if hp_max is not None:
+                    popup.hp_max = hp_max
+                if hp_before is not None and popup.hp_before is None:
+                    popup.hp_before = hp_before
+                popup.dedup_key = dedup_key
+                popup.seed = seed
+                reused = True
+                anchor = self._popup_world_anchor_for_key(key)
+                if anchor is not None:
+                    self._spawn_popup_burst(anchor, kind_norm, seed + 17)
+                self._maybe_trigger_popup_hit_stop(popup.amount, hp_max, now_ts)
+            break
+        if reused:
+            self.update()
+            return
+
+        same_target = [p for p in self._damage_popups_active if p.target_key == key]
+        stack_index = min(3, len(same_target))
+        rise_px = max(
+            self._damage_popup_rise_min_px,
+            min(self._damage_popup_rise_max_px, float(self.cell_size) * (0.55 + 0.15 * stack_index)),
+        )
+        popup = DamagePopup(
+            kind=kind_norm,
+            target_key=key,
+            text_main=main_text,
+            created_t=now_ts,
+            ttl_s=self._damage_popup_ttl_s,
+            rise_px=rise_px,
+            dedup_key=dedup_key,
+            stack_index=stack_index,
+            amount=damage,
+            damage_hits=1,
+            hp_before=hp_before,
+            hp_after=hp_after,
+            hp_max=hp_max,
+            seed=seed,
+        )
+        self._damage_popups_active.append(popup)
+        if len(self._damage_popups_active) > self._damage_popup_max_active:
+            self._damage_popups_active = self._damage_popups_active[-self._damage_popup_max_active :]
+        anchor = self._popup_world_anchor_for_key(key)
+        if anchor is not None:
+            self._spawn_popup_burst(anchor, kind_norm, seed)
+        if kind_norm == "damage":
+            self._maybe_trigger_popup_hit_stop(damage, hp_max, now_ts)
+        self._play_popup_sfx(kind_norm)
+        self.update()
+
+    def _model_icon_world_size(self) -> float:
+        """Сторона квадрата спрайта модели в координатах доски (как в _draw_units_layer)."""
+        return max(6.0, float(self.cell_size) * float(self._model_icon_scale))
+
+    def _popup_world_anchor_for_key(self, key: Tuple[str, int]) -> Optional[QtCore.QPointF]:
+        render = self._unit_by_key.get(key)
+        if render is None:
+            return None
+        raw_mc = render.model_centers
+        centers: List[QtCore.QPointF] = list(raw_mc) if raw_mc else [render.center]
+        half = self._model_icon_world_size() * 0.5
+        unit = self._state_unit(key)
+        n_models = 1
+        if isinstance(unit, dict):
+            am = self._safe_int(unit.get("alive_models"))
+            tm = self._safe_int(unit.get("models"))
+            n_models = max(1, am or tm or 1)
+        # Нет model_positions в стейте → model_centers пустой, в рендере только render.center (середина отряда).
+        squad_center_only = not bool(raw_mc)
+
+        if len(centers) == 1:
+            c = centers[0]
+            y = float(c.y()) - half
+            if squad_center_only and n_models > 1:
+                spread = math.sqrt(float(min(n_models, 20)))
+                y -= float(self.cell_size) * (0.26 + 0.085 * spread)
+            return QtCore.QPointF(float(c.x()), y)
+
+        # Иконка центрирована на model_center; «линия макушек» верхнего ряда: min(Y) − half (как опора для HUD сверху).
+        top = min(centers, key=lambda p: p.y())
+        cx = sum(float(p.x()) for p in centers) / float(len(centers))
+        return QtCore.QPointF(cx, float(top.y()) - half)
+
+    def _spawn_popup_burst(self, center: QtCore.QPointF, kind: str, seed: int) -> None:
+        if not self._fx_particle_textures:
+            return
+        rng = random.Random(int(seed) & 0xFFFFFFFF)
+        kind_l = str(kind or "damage").lower()
+
+        def _emit(texture_hint: str, count: int, speed_lo: float, speed_hi: float, life_lo: float, life_hi: float, spread: float, bias_up: float) -> None:
+            tex = self._resolve_fx_key(texture_hint)
+            if tex is None:
+                return
+            for _ in range(count):
+                ang = rng.uniform(-spread, spread) - math.pi / 2.0 + bias_up
+                spd = rng.uniform(speed_lo, speed_hi)
+                vx = math.cos(ang) * spd
+                vy = math.sin(ang) * spd
+                life = rng.uniform(life_lo, life_hi)
+                size = rng.uniform(8.0, 22.0) if kind_l != "miss" else rng.uniform(14.0, 28.0)
+                alpha = rng.uniform(0.45, 0.85)
+                mode = "additive" if kind_l == "damage" or kind_l == "save" else "normal"
+                self._particles.append(
+                    ParticleInstance(
+                        texture_key=tex,
+                        position=QtCore.QPointF(center),
+                        velocity=QtCore.QPointF(vx, vy),
+                        life=life,
+                        age=0.0,
+                        size_px=size,
+                        alpha=alpha,
+                        mode=mode,
+                    )
+                )
+
+        if kind_l == "damage":
+            _emit("spark", rng.randint(8, 12), 55.0, 140.0, 0.18, 0.42, 0.55, 0.0)
+        elif kind_l == "save":
+            _emit("spark", rng.randint(3, 5), 35.0, 85.0, 0.28, 0.55, 0.9, 0.25)
+        else:
+            _emit("smoke", rng.randint(6, 9), 12.0, 48.0, 0.35, 0.65, math.pi * 0.85, 0.0)
+
+    def _maybe_trigger_popup_hit_stop(self, damage_amount: float, hp_max: Optional[float], now_ts: float) -> None:
+        big = damage_amount >= 3.0
+        if hp_max is not None and float(hp_max) > 1e-6:
+            big = big or (float(damage_amount) / float(hp_max)) >= 0.30
+        if big:
+            self._damage_popup_hit_stop_until = max(
+                self._damage_popup_hit_stop_until,
+                now_ts + float(self._damage_popup_hit_stop_s),
+            )
+
+    def _play_popup_sfx(self, kind: str) -> None:
+        raw = str(os.getenv("VIEWER_POPUP_SFX", "0")).strip().lower()
+        if raw not in {"1", "true", "yes", "on"}:
+            return
+        try:
+            from PySide6.QtMultimedia import QSoundEffect
+            from PySide6.QtCore import QUrl
+        except Exception:
+            if not self._damage_popup_sfx_warned:
+                self._damage_popup_sfx_warned = True
+                print(
+                    "Звук pop-up недоступен (QtMultimedia). Где: viewer/opengl_view.py (_play_popup_sfx). "
+                    "Что делать дальше: установите PySide6 с QtMultimedia или отключите VIEWER_POPUP_SFX."
+                )
+            return
+        name_map = {"damage": "popup_damage.wav", "save": "popup_save.wav", "miss": "popup_miss.wav"}
+        fname = name_map.get(str(kind).lower(), "popup_damage.wav")
+        path = Path(__file__).resolve().parent / "assets" / "sfx" / fname
+        if not path.is_file():
+            if not self._damage_popup_sfx_warned:
+                self._damage_popup_sfx_warned = True
+                print(
+                    f"Файл SFX не найден: {path}. Где: viewer/opengl_view.py (_play_popup_sfx). "
+                    "Что делать дальше: добавьте .wav в viewer/assets/sfx/ или выключите VIEWER_POPUP_SFX."
+                )
+            return
+        cache_key = str(path)
+        effect = self._damage_popup_sfx_cache.get(cache_key)
+        if effect is None:
+            effect = QSoundEffect(self)
+            effect.setSource(QUrl.fromLocalFile(str(path)))
+            effect.setVolume(0.35)
+            self._damage_popup_sfx_cache[cache_key] = effect
+        try:
+            effect.play()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _popup_motion_rise(life_t: float, rise_px: float) -> Tuple[float, float, float]:
+        """Возвращает (rise_text_px, rise_badge_px, anticipation_px)."""
+        t = max(0.0, min(1.0, float(life_t)))
+        anticip = 0.0
+        if t < 0.10:
+            anticip = 5.0 * (1.0 - t / 0.10)
+        u = max(0.0, min(1.0, (t - 0.02) / 0.58))
+        rise = rise_px * (1.0 - math.exp(-5.0 * u))
+        overshoot = 0.12 * rise_px * math.sin(math.pi * u * 1.85) * math.exp(-4.2 * u)
+        rise_text = max(0.0, rise + overshoot - anticip)
+        rise_badge = max(0.0, rise * 0.88 + overshoot * 0.65 - anticip * 0.9)
+        return rise_text, rise_badge, anticip
+
+    @staticmethod
+    def _popup_spiral_offset(stack_index: int) -> Tuple[float, float]:
+        if stack_index <= 0:
+            return 0.0, 0.0
+        ang = stack_index * 0.92
+        r = 10.0 + stack_index * 7.5
+        return math.cos(ang) * r, math.sin(ang) * r * 0.65
+
+    def _popup_gradient_for_kind(self, kind: str) -> Tuple[QtGui.QColor, QtGui.QColor]:
+        k = str(kind or "").lower()
+        if k == "save":
+            return self._damage_grad_save_a, self._damage_grad_save_b
+        if k == "miss":
+            return self._damage_grad_miss_a, self._damage_grad_miss_b
+        return self._damage_grad_damage_a, self._damage_grad_damage_b
+
+    def _popup_text_outline_for_kind(self, kind: str) -> Tuple[QtGui.QColor, QtGui.QColor]:
+        """База для многослойного свечения и финальный «ободок» глифа по типу pop-up."""
+        k = str(kind or "").lower()
+        if k == "save":
+            return self._damage_popup_glow_save, QtGui.QColor(18, 52, 72)
+        if k == "miss":
+            return self._damage_popup_glow_miss, QtGui.QColor(48, 44, 62)
+        return self._damage_popup_glow_damage, QtGui.QColor(72, 28, 24)
+
+    def _build_damage_popup_badge_path(self, kind: str, rect: QtCore.QRectF) -> QtGui.QPainterPath:
+        k = str(kind or "").lower()
+        x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
+        path = QtGui.QPainterPath()
+        if k == "miss":
+            ry = min(h * 0.5, w * 0.5)
+            path.addRoundedRect(rect, ry, ry)
+            return path
+        if k == "save":
+            pad = max(2.0, min(6.0, w * 0.04))
+            path.moveTo(x + w * 0.5, y + pad)
+            path.arcTo(x + pad, y + pad, w - 2 * pad, h * 0.62, 180.0, -180.0)
+            path.lineTo(x + w - pad * 0.5, y + h - pad * 1.2)
+            path.quadTo(x + w * 0.5, y + h + pad * 0.35, x + pad * 0.5, y + h - pad * 1.2)
+            path.closeSubpath()
+            return path
+        skew = w * 0.07
+        notch = h * 0.22
+        path.moveTo(x + skew * 0.35, y + notch)
+        path.lineTo(x + w * 0.12, y + h * 0.08)
+        path.lineTo(x + w - skew, y)
+        path.lineTo(x + w - skew * 0.2, y + h - notch * 0.4)
+        path.lineTo(x + w * 0.55, y + h)
+        path.lineTo(x + skew * 0.15, y + h - h * 0.12)
+        path.closeSubpath()
+        return path
+
+    def _draw_popup_gradient_label(
+        self,
+        painter: QtGui.QPainter,
+        center: QtCore.QPointF,
+        text: str,
+        font: QtGui.QFont,
+        grad_a: QtGui.QColor,
+        grad_b: QtGui.QColor,
+        fade: float,
+        outer_glow_base: QtGui.QColor,
+        rim_color: QtGui.QColor,
+    ) -> None:
+        path = QtGui.QPainterPath()
+        path.addText(0.0, 0.0, font, text)
+        tb = path.boundingRect()
+        if tb.width() <= 0.0 or tb.height() <= 0.0:
+            return
+        path.translate(-tb.center().x(), -tb.center().y())
+        painter.save()
+        painter.translate(center)
+        grad = QtGui.QLinearGradient(-tb.width() * 0.5, -tb.height() * 0.5, tb.width() * 0.5, tb.height() * 0.5)
+        ga = QtGui.QColor(grad_a)
+        gb = QtGui.QColor(grad_b)
+        ga.setAlpha(int(ga.alpha() * fade))
+        gb.setAlpha(int(gb.alpha() * fade))
+        grad.setColorAt(0.0, ga)
+        grad.setColorAt(1.0, gb)
+        for i in range(7, 0, -1):
+            glow = QtGui.QColor(outer_glow_base)
+            glow.setAlpha(int(22 * i * fade))
+            pen = QtGui.QPen(glow, float(i) * 0.85)
+            pen.setJoinStyle(QtCore.Qt.RoundJoin)
+            painter.setPen(pen)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawPath(path)
+        inner = QtGui.QColor(255, 255, 255)
+        inner.setAlpha(int(55 * fade))
+        painter.setPen(QtGui.QPen(inner, 1.1))
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.drawPath(path)
+        painter.fillPath(path, QtGui.QBrush(grad))
+        edge = QtGui.QColor(rim_color)
+        edge.setAlpha(int(200 * fade))
+        painter.setPen(QtGui.QPen(edge, 0.85))
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.drawPath(path)
+        painter.restore()
 
     def set_active_unit(self, unit_id: Optional[int]) -> None:
         self._active_unit_id = unit_id
@@ -2586,6 +2968,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if self.render_fx:
             self._draw_fx_layer(painter)
         self._draw_squad_status_layer(painter)
+        self._draw_damage_popups_layer(painter)
         self._draw_ai_phase_badge_layer(painter)
         self._draw_labels_layer(painter)
 
@@ -2643,6 +3026,78 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.setBrush(QtGui.QBrush(advance_fill))
         for rect in self._advance_reachable_highlights:
             painter.drawRect(rect)
+
+    def _draw_damage_popups_layer(self, painter: QtGui.QPainter) -> None:
+        if not self._damage_popups_active:
+            return
+        now_ts = monotonic()
+        painter.save()
+        painter.setClipping(False)
+        lod_big_font = self._scale >= self._damage_popup_lod_font_shrink_scale
+        font_px = self._damage_popup_font_size if lod_big_font else max(7, self._damage_popup_font_size - 2)
+        for popup in self._damage_popups_active:
+            render = self._unit_by_key.get(popup.target_key)
+            if render is None:
+                continue
+            life_t = max(0.0, min(1.0, (now_ts - popup.created_t) / max(0.001, popup.ttl_s)))
+            if life_t >= 1.0:
+                continue
+            rise_text, rise_badge, _anticip = self._popup_motion_rise(life_t, popup.rise_px)
+            fade = 1.0
+            if life_t > 0.62:
+                fade = max(0.0, 1.0 - (life_t - 0.62) / 0.38)
+            pop_boost = 1.0 + 0.14 * (1.0 - min(1.0, life_t / 0.18))
+            sx, sy = self._popup_spiral_offset(popup.stack_index)
+            anchor = self._popup_world_anchor_for_key(popup.target_key) or render.center
+            lift = float(self.cell_size) * float(getattr(self, "_damage_popup_anchor_lift_cells", 0.34))
+            base = QtCore.QPointF(
+                anchor.x() + sx,
+                anchor.y() - lift + sy,
+            )
+            badge_center = QtCore.QPointF(base.x(), base.y() - rise_badge)
+            parallax_y = (rise_text - rise_badge) * 0.28
+
+            main_font = Theme.font(size=font_px, bold=True)
+            fm = QtGui.QFontMetricsF(main_font)
+            tw = fm.horizontalAdvance(popup.text_main)
+            th = fm.height()
+            pad_x = 12.0
+            pad_y = 7.0
+            inner_w = max(tw + pad_x * 2, 52.0)
+            inner_h = th + pad_y * 2
+            rect = QtCore.QRectF(-inner_w * 0.5, -inner_h * 0.5, inner_w, inner_h)
+
+            grad_a, grad_b = self._popup_gradient_for_kind(popup.kind)
+            glow_base, rim_c = self._popup_text_outline_for_kind(popup.kind)
+            badge_path = self._build_damage_popup_badge_path(popup.kind, rect)
+
+            painter.save()
+            painter.translate(badge_center)
+            painter.scale(pop_boost, pop_boost)
+            bg = QtGui.QColor(10, 12, 15, int(168 * fade))
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.setBrush(bg)
+            painter.drawPath(badge_path)
+            border = QtGui.QColor(self._damage_popup_badge_border)
+            border.setAlpha(int(border.alpha() * fade))
+            painter.setPen(QtGui.QPen(border, 1.0))
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawPath(badge_path)
+
+            text_local = QtCore.QPointF(0.0, -parallax_y)
+            self._draw_popup_gradient_label(
+                painter,
+                text_local,
+                popup.text_main,
+                main_font,
+                grad_a,
+                grad_b,
+                fade,
+                glow_base,
+                rim_c,
+            )
+            painter.restore()
+        painter.restore()
     def _draw_objective_layer(self, painter: QtGui.QPainter) -> None:
         for objective in self._objectives:
             painter.setBrush(Theme.brush(objective.color))
@@ -3714,6 +4169,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def _tick_fx(self) -> None:
         now = monotonic()
+        if now < float(getattr(self, "_damage_popup_hit_stop_until", 0.0) or 0.0):
+            self._particles_last_ts = now
+            if self.isVisible():
+                self.update()
+            return
         if self._particles_last_ts is None:
             self._particles_last_ts = now
         dt = now - self._particles_last_ts
@@ -3735,6 +4195,16 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 fx for fx in self._deploy_placement_fx
                 if (now - fx.t0) < fx.duration
             ]
+        if self._damage_popups_active:
+            self._damage_popups_active = [
+                popup for popup in self._damage_popups_active
+                if (now - popup.created_t) < popup.ttl_s
+            ]
+        if self._damage_popup_dedup_seen:
+            self._damage_popup_dedup_seen = {
+                key: ts for key, ts in self._damage_popup_dedup_seen.items()
+                if (now - ts) <= max(self._damage_popup_ttl_s * 2.0, 2.0)
+            }
         if self.isVisible():
             self.update()
 
