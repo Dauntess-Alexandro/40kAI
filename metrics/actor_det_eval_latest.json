@@ -1,0 +1,22 @@
+{
+  "run_id": "4127444",
+  "updated_at": "2026-04-10T20:09:49",
+  "eval_episodes": 12,
+  "win_rate": 1.0,
+  "draw_rate": 0.0,
+  "turn_limit_rate": 0.0,
+  "wipeout_enemy_rate": 1.0,
+  "wipeout_model_rate": 0.0,
+  "vp_diff_mean": 0.0,
+  "model_vp_mean": 0.0,
+  "enemy_vp_mean": 0.0,
+  "hp_diff_mean": 17.916666666666668,
+  "kill_diff_mean": 17.916666666666668,
+  "reward_mean": 5.8148360110289845,
+  "ep_len_mean": 7.25,
+  "opponent_epsilon": 0.0,
+  "episode": 300,
+  "algo": "ppo",
+  "eval_tag": "actor_learner_heuristic",
+  "training_loss": 0.8653030663728714
+}
