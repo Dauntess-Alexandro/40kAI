@@ -1063,12 +1063,12 @@ class OpenGLBoardWidget(QOpenGLWidget):
         kind_norm = str(kind or "damage").strip().lower()
         damage = max(0.0, float(damage_value or 0.0))
         if kind_norm == "damage":
-            main_text = f"-{int(round(damage)) if damage > 0 else 0}"
+            n = int(round(damage)) if damage > 0 else 0
+            main_text = f"-{n} ХП"
         elif kind_norm == "save":
             main_text = "СЕЙВ"
         else:
             main_text = "ПРОМАХ"
-
         seed = (hash(dedup_key) ^ int(now_ts * 1000)) & 0xFFFFFFFF
 
         reused = False
@@ -1084,7 +1084,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 popup.damage_hits += 1
                 popup.created_t = now_ts
                 popup.ttl_s = max(popup.ttl_s, self._damage_popup_ttl_s)
-                popup.text_main = f"-{int(round(popup.amount))}"
+                popup.text_main = f"-{int(round(popup.amount))} ХП"
                 if hp_after is not None:
                     popup.hp_after = hp_after
                 if hp_max is not None:
@@ -1098,7 +1098,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 if anchor is not None:
                     self._spawn_popup_burst(anchor, kind_norm, seed + 17)
                 self._maybe_trigger_popup_hit_stop(popup.amount, hp_max, now_ts)
-            break
+                break
         if reused:
             self.update()
             return
@@ -3046,7 +3046,6 @@ class OpenGLBoardWidget(QOpenGLWidget):
             fade = 1.0
             if life_t > 0.62:
                 fade = max(0.0, 1.0 - (life_t - 0.62) / 0.38)
-            pop_boost = 1.0 + 0.14 * (1.0 - min(1.0, life_t / 0.18))
             sx, sy = self._popup_spiral_offset(popup.stack_index)
             anchor = self._popup_world_anchor_for_key(popup.target_key) or render.center
             lift = float(self.cell_size) * float(getattr(self, "_damage_popup_anchor_lift_cells", 0.34))
@@ -3073,6 +3072,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
             painter.save()
             painter.translate(badge_center)
+            pop_boost = 1.0 + 0.14 * (1.0 - min(1.0, life_t / 0.18))
             painter.scale(pop_boost, pop_boost)
             bg = QtGui.QColor(10, 12, 15, int(168 * fade))
             painter.setPen(QtCore.Qt.NoPen)
