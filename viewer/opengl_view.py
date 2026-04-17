@@ -377,6 +377,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._damage_grad_damage_b = QtGui.QColor(220, 72, 68, 255)
         self._damage_grad_save_a = QtGui.QColor(120, 235, 220, 255)
         self._damage_grad_save_b = QtGui.QColor(38, 88, 190, 255)
+        self._damage_grad_heal_a = QtGui.QColor(186, 255, 205, 255)
+        self._damage_grad_heal_b = QtGui.QColor(58, 200, 118, 255)
         self._damage_grad_miss_a = QtGui.QColor(188, 192, 206, 255)
         self._damage_grad_miss_b = QtGui.QColor(168, 150, 198, 255)
         self._damage_popup_badge_border = QtGui.QColor(255, 255, 255, 55)
@@ -384,6 +386,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         # Оттенок многослойного свечения вокруг глифов (не чистый чёрный — меньше «жирного» контура).
         self._damage_popup_glow_damage = QtGui.QColor(52, 16, 12)
         self._damage_popup_glow_save = QtGui.QColor(10, 28, 40)
+        self._damage_popup_glow_heal = QtGui.QColor(14, 48, 26)
         self._damage_popup_glow_miss = QtGui.QColor(28, 22, 38)
 
         self._scale = 1.0
@@ -1065,6 +1068,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if kind_norm == "damage":
             n = int(round(damage)) if damage > 0 else 0
             main_text = f"-{n} ХП"
+        elif kind_norm == "heal":
+            n = int(round(damage)) if damage > 0 else 0
+            main_text = f"+{n} ХП"
         elif kind_norm == "save":
             main_text = "СЕЙВ"
         else:
@@ -1098,6 +1104,25 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 if anchor is not None:
                     self._spawn_popup_burst(anchor, kind_norm, seed + 17)
                 self._maybe_trigger_popup_hit_stop(popup.amount, hp_max, now_ts)
+                break
+            if kind_norm == "heal":
+                popup.amount += damage
+                popup.damage_hits += 1
+                popup.created_t = now_ts
+                popup.ttl_s = max(popup.ttl_s, self._damage_popup_ttl_s)
+                popup.text_main = f"+{int(round(popup.amount))} ХП"
+                if hp_after is not None:
+                    popup.hp_after = hp_after
+                if hp_max is not None:
+                    popup.hp_max = hp_max
+                if hp_before is not None and popup.hp_before is None:
+                    popup.hp_before = hp_before
+                popup.dedup_key = dedup_key
+                popup.seed = seed
+                reused = True
+                anchor = self._popup_world_anchor_for_key(key)
+                if anchor is not None:
+                    self._spawn_popup_burst(anchor, kind_norm, seed + 19)
                 break
         if reused:
             self.update()
@@ -1133,7 +1158,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._spawn_popup_burst(anchor, kind_norm, seed)
         if kind_norm == "damage":
             self._maybe_trigger_popup_hit_stop(damage, hp_max, now_ts)
-        self._play_popup_sfx(kind_norm)
+        self._play_popup_sfx("save" if kind_norm == "heal" else kind_norm)
         self.update()
 
     def _model_icon_world_size(self) -> float:
@@ -1187,7 +1212,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 life = rng.uniform(life_lo, life_hi)
                 size = rng.uniform(8.0, 22.0) if kind_l != "miss" else rng.uniform(14.0, 28.0)
                 alpha = rng.uniform(0.45, 0.85)
-                mode = "additive" if kind_l == "damage" or kind_l == "save" else "normal"
+                mode = (
+                    "additive"
+                    if kind_l == "damage" or kind_l == "save" or kind_l == "heal"
+                    else "normal"
+                )
                 self._particles.append(
                     ParticleInstance(
                         texture_key=tex,
@@ -1205,6 +1234,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
             _emit("spark", rng.randint(8, 12), 55.0, 140.0, 0.18, 0.42, 0.55, 0.0)
         elif kind_l == "save":
             _emit("spark", rng.randint(3, 5), 35.0, 85.0, 0.28, 0.55, 0.9, 0.25)
+        elif kind_l == "heal":
+            _emit("spark", rng.randint(5, 9), 42.0, 105.0, 0.20, 0.46, 0.62, -0.12)
         else:
             _emit("smoke", rng.randint(6, 9), 12.0, 48.0, 0.35, 0.65, math.pi * 0.85, 0.0)
 
@@ -1233,7 +1264,12 @@ class OpenGLBoardWidget(QOpenGLWidget):
                     "Что делать дальше: установите PySide6 с QtMultimedia или отключите VIEWER_POPUP_SFX."
                 )
             return
-        name_map = {"damage": "popup_damage.wav", "save": "popup_save.wav", "miss": "popup_miss.wav"}
+        name_map = {
+            "damage": "popup_damage.wav",
+            "save": "popup_save.wav",
+            "heal": "popup_save.wav",
+            "miss": "popup_miss.wav",
+        }
         fname = name_map.get(str(kind).lower(), "popup_damage.wav")
         path = Path(__file__).resolve().parent / "assets" / "sfx" / fname
         if not path.is_file():
@@ -1282,6 +1318,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         k = str(kind or "").lower()
         if k == "save":
             return self._damage_grad_save_a, self._damage_grad_save_b
+        if k == "heal":
+            return self._damage_grad_heal_a, self._damage_grad_heal_b
         if k == "miss":
             return self._damage_grad_miss_a, self._damage_grad_miss_b
         return self._damage_grad_damage_a, self._damage_grad_damage_b
@@ -1291,6 +1329,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         k = str(kind or "").lower()
         if k == "save":
             return self._damage_popup_glow_save, QtGui.QColor(18, 52, 72)
+        if k == "heal":
+            return self._damage_popup_glow_heal, QtGui.QColor(26, 92, 52)
         if k == "miss":
             return self._damage_popup_glow_miss, QtGui.QColor(48, 44, 62)
         return self._damage_popup_glow_damage, QtGui.QColor(72, 28, 24)
@@ -1299,6 +1339,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
         k = str(kind or "").lower()
         x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
         path = QtGui.QPainterPath()
+        if k == "heal":
+            ry = min(h * 0.45, w * 0.38)
+            path.addRoundedRect(rect, ry, ry)
+            return path
         if k == "miss":
             ry = min(h * 0.5, w * 0.5)
             path.addRoundedRect(rect, ry, ry)
@@ -1497,6 +1541,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return
 
         if self._should_show_movement():
+            if not self._viewer_human_turn_active():
+                return
             move_cells, advance_cells = self._active_unit_movement_cells_statexy(unit)
             cells = list(move_cells) + list(advance_cells)
             if cells:
@@ -1551,7 +1597,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return
 
         if self._should_show_shooting():
-            self._build_shooting_overlay(unit)
+            if self._viewer_human_turn_active():
+                self._build_shooting_overlay(unit)
 
     def select_unit(self, side, unit_id) -> None:
         self.set_selected_unit(side, unit_id)
@@ -2276,6 +2323,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def _should_show_shooting(self) -> bool:
         phase = str(self._phase or "").lower()
         return "shoot" in phase or "стрел" in phase or "shooting" in phase
+
+    def _viewer_human_turn_active(self) -> bool:
+        """state_export: active player = ход человека, model = ход ИИ. Оверлей клеток — только для человека."""
+        active = str(self._state.get("active") or self._state.get("active_side") or "").strip().lower()
+        if active == "model":
+            return False
+        return True
 
     def shooting_overlay_mode_label(self) -> str:
         if self._show_shoot_range_cells:

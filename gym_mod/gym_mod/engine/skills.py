@@ -81,9 +81,12 @@ def reanimation_protocols_one_unit(
     dice_fn: DiceFn,
     log_fn: LogFn,
     unit_label: str,
+    *,
+    unit_id: int,
 ) -> float:
     max_wounds = int(unit_data["W"])
     starting_models = int(unit_data["#OfModels"])
+    old_total = int(round(float(unit_health)))
     wounds = _build_wounds_per_model(unit_health, unit_data)
     if not _can_reanimate(wounds, unit_data):
         return float(unit_health)
@@ -116,6 +119,13 @@ def reanimation_protocols_one_unit(
         log_fn,
         f"{unit_label}После:  моделей={len(wounds)}, раны={wounds} всего={new_total}",
     )
+    gained = max(0, int(new_total) - old_total)
+    if gained > 0 and log_fn is not None:
+        # Одна строка для Viewer (FX pop-up лечения); другие хилы могут логировать тот же префикс [HEAL].
+        log_fn(
+            f"📌 [HEAL] Unit {int(unit_id)} • {ABILITY_REANIMATION}: +{float(gained)} HP "
+            f"(всего {old_total} → {int(new_total)})"
+        )
     return float(new_total)
 
 
@@ -147,6 +157,7 @@ def apply_end_of_command_phase(env, side: str, dice_fn: DiceFn, log_fn: LogFn) -
             dice_fn,
             log_fn,
             unit_label,
+            unit_id=unit_id,
         )
 
     if hasattr(env, "_sync_after_command_phase_reanimation"):
@@ -164,12 +175,12 @@ def _self_check_fixed_roll(roll: int) -> DiceFn:
 
 def run_self_checks() -> None:
     data = {"W": 3, "#OfModels": 3}
-    result = reanimation_protocols_one_unit(5, data, _self_check_fixed_roll(3), None, "[TEST] ")
+    result = reanimation_protocols_one_unit(5, data, _self_check_fixed_roll(3), None, "[TEST] ", unit_id=999)
     if result != 8:
         raise AssertionError(f"Expected 8, got {result}")
 
     data = {"W": 1, "#OfModels": 10}
-    result = reanimation_protocols_one_unit(7, data, _self_check_fixed_roll(3), None, "[TEST] ")
+    result = reanimation_protocols_one_unit(7, data, _self_check_fixed_roll(3), None, "[TEST] ", unit_id=998)
     if result != 10:
         raise AssertionError(f"Expected 10, got {result}")
 

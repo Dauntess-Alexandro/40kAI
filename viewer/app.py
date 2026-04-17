@@ -49,7 +49,7 @@ from viewer.state import StateWatcher
 from viewer.styles import Theme
 
 from gym_mod.engine.game_controller import GameController
-from gym_mod.engine.game_io import DICE_CANCEL_TOKEN, parse_dice_values
+from gym_mod.engine.game_io import DICE_CANCEL_TOKEN, dice_values_from_user_text, parse_dice_values
 from gym_mod.engine.event_bus import get_event_bus
 from gym_mod.engine.mission import validate_deploy_coord
 
@@ -111,6 +111,14 @@ class FxLogParser:
         if not line:
             return
         ts, text = self._split_timestamp(line)
+        heal_match = re.search(
+            r"\[HEAL\]\s*Unit\s+(\d+)\s*•\s*([^:]+):\s*\+([\d.]+)\s*HP",
+            text,
+            re.IGNORECASE,
+        )
+        if heal_match:
+            self._finalize_heal_report(ts, heal_match)
+            return
         if "📌 --- ОТЧЁТ ПО" in text:
             report_type = "overwatch" if "OVERWATCH" in text.upper() else "shooting"
             self._pending.append(PendingReport(ts=ts, report_type=report_type))
@@ -208,6 +216,31 @@ class FxLogParser:
         )
         self._on_event(event)
         self._pending.pop()
+
+    def _finalize_heal_report(self, ts: str, heal_match: re.Match) -> None:
+        unit_id = int(heal_match.group(1))
+        ability = str(heal_match.group(2)).strip()
+        amount = float(heal_match.group(3))
+        key = (ts, "heal", unit_id, ability, round(amount, 4))
+        if key in self._seen:
+            self._debug("FX: дубликат [HEAL], pop-up пропущен.")
+            return
+        self._seen[key] = None
+        if len(self._seen) > self._seen_max:
+            self._seen.popitem(last=False)
+        event = FxShotEvent(
+            ts=ts,
+            report_type="heal",
+            attacker_id=unit_id,
+            target_id=unit_id,
+            weapon_name=ability or "Heal",
+            damage=max(0.0, amount),
+            outcome_type="heal",
+        )
+        self._debug(
+            f"FX: [HEAL] Unit {unit_id} • {ability}: +{amount} HP → FxShotEvent (report_type=heal)."
+        )
+        self._on_event(event)
 
 
 class HoverLogListWidget(QtWidgets.QListWidget):
@@ -668,7 +701,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         input_row = QtWidgets.QHBoxLayout()
         input_row.setSpacing(8)
         self.shoot_popover_dice_input = QtWidgets.QLineEdit()
-        self.shoot_popover_dice_input.setPlaceholderText("например: 4 1 6 2 3 5 2 6")
+        self.shoot_popover_dice_input.setPlaceholderText("например: 4 1 6 или слитно 416213…")
         self.shoot_popover_dice_input.textChanged.connect(self._on_shoot_dice_input_changed)
         self.shoot_popover_dice_counter = QtWidgets.QLabel("0/0")
         self.shoot_popover_dice_counter.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()}; min-width: 42px;")
@@ -819,18 +852,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
             )
         return fallback
 
-    def _count_dice_tokens(self, raw: str) -> tuple[int, bool, bool]:
+    def _count_dice_tokens(self, raw: str, *, min_value: int = 1, max_value: int = 6) -> tuple[int, bool, bool]:
         cleaned = str(raw or "").strip()
         if not cleaned:
             return 0, False, False
-        if re.search(r"[^0-9,\s]", cleaned):
-            return 0, True, False
-        normalized = re.sub(r"[\s,]+", " ", cleaned).strip()
-        if not normalized:
-            return 0, False, False
-        tokens = [tok for tok in normalized.split(" ") if tok]
-        invalid_value = any((not tok.isdigit()) or int(tok) < 1 or int(tok) > 6 for tok in tokens)
-        return len(tokens), invalid_value, True
+        try:
+            values = dice_values_from_user_text(cleaned, min_value=min_value, max_value=max_value)
+        except ValueError:
+            return 0, True, True
+        return len(values), False, len(values) > 0
 
     def _on_shoot_dice_input_changed(self, _text: str) -> None:
         self._update_shoot_input_feedback()
@@ -848,13 +878,19 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
 
         count = int(getattr(req, "count", 0) or 0)
+        min_v = int(getattr(req, "min_value", 1) or 1)
+        max_v = int(getattr(req, "max_value", 6) or 6)
         lock_suffix = ""
         if self._is_shooting_dice_request(req) and self._shoot_locked_target_id is not None:
             lock_suffix = f" • Цель Unit {int(self._shoot_locked_target_id)} зафиксирована"
-        entered, has_error, has_tokens = self._count_dice_tokens(self.shoot_popover_dice_input.text())
+        entered, has_error, has_tokens = self._count_dice_tokens(
+            self.shoot_popover_dice_input.text(), min_value=min_v, max_value=max_v
+        )
         self.shoot_popover_dice_counter.setText(f"{entered}/{count}")
         if has_error:
-            self.shoot_popover_info.setText("⚠ Допустимы только значения 1..6 через пробел или запятую")
+            self.shoot_popover_info.setText(
+                f"⚠ Только цифры {min_v}–{max_v}: «1 2 3» или слитно «123» (без пробела — по одной цифре на куб)"
+            )
             self.shoot_popover_info.setStyleSheet("font-size: 12px; color: #e06c75;")
             return
 
@@ -868,7 +904,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if has_tokens:
                 self.shoot_popover_info.setText(f"ℹ Нужно: {count} значений d6 • Осталось: {rest}{lock_suffix}")
             else:
-                self.shoot_popover_info.setText(f"ℹ Нужно: {count} значений d6. Пример: 4 1 6 2 3 5 2 6{lock_suffix}")
+                self.shoot_popover_info.setText(
+                    f"ℹ Нужно: {count} значений d6. Пример: «4 1 6…» или слитно «416…»{lock_suffix}"
+                )
             self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
         elif entered > count:
             extra = entered - count
@@ -951,7 +989,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.shoot_popover_dice_input.setVisible(needs_input)
         self.shoot_popover_dice_counter.setVisible(needs_input)
         if needs_input and count > 0:
-            self.shoot_popover_dice_input.setPlaceholderText("например: 4 1 6 2 3 5 2 6")
+            self.shoot_popover_dice_input.setPlaceholderText("например: 4 1 6 или слитно 416213…")
 
         if stage == "target":
             self.shoot_popover_step_title.setText("STEP 1/5: Hit Roll")
@@ -1812,7 +1850,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             try:
                 values = parse_dice_values(text, count=count, min_value=min_value, max_value=max_value)
             except ValueError as exc:
-                entered = self._count_dice_entries(text)
+                entered = self._count_dice_entries(text, min_value=min_value, max_value=max_value)
                 self.command_prompt.setText(
                     "Ошибка ввода кубов в панели «Команды»: "
                     f"{exc}. Нужно {count}, введено {entered}. "
@@ -2932,14 +2970,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
         except OSError:
             pass
 
-    def _count_dice_entries(self, text: str) -> int:
-        stripped = text.strip()
-        if not stripped:
-            return 0
-        if stripped.isdigit():
-            return len(stripped)
-        parts = [part for part in re.split(r"[,\s]+", stripped) if part]
-        return len(parts)
+    def _count_dice_entries(self, text: str, min_value: int = 1, max_value: int = 6) -> int:
+        try:
+            return len(dice_values_from_user_text(text, min_value=min_value, max_value=max_value))
+        except ValueError:
+            stripped = str(text or "").strip()
+            if not stripped:
+                return 0
+            if max_value <= 9 and not re.search(r"[\s,]", stripped) and stripped.isdigit():
+                return len(stripped)
+            return len([p for p in re.split(r"[,\s]+", stripped) if p])
 
     def _rebuild_unit_row_mapping(self):
         self._unit_row_by_key = {}
@@ -3134,6 +3174,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _spawn_fx_for_event(self, event: FxShotEvent) -> None:
         self._emit_damage_popup(event)
+        if event.report_type == "heal" or event.outcome_type == "heal":
+            return
         if "gauss flayer" not in event.weapon_name.lower():
             self._fx_debug("FX: оружие не gauss, эффект пропущен.")
             return
@@ -3239,6 +3281,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._hp_snapshot_by_unit = snap
 
     def _make_popup_key(self, event: FxShotEvent) -> str:
+        if event.report_type == "heal" or event.outcome_type == "heal":
+            return (
+                f"heal|{event.ts}|{event.target_id}|{event.weapon_name}|{event.damage:.4f}"
+            )
         return (
             f"{event.ts}|{event.report_type}|{event.attacker_id}|{event.target_id}|"
             f"{event.weapon_name}|{event.damage:.3f}|{event.outcome_type}|{event.failed_saves}"
@@ -3280,7 +3326,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
             hp_max = prev_hp_max
 
         hp_before = None
-        if hp_after is not None and event.damage > 0:
+        is_heal = event.report_type == "heal" or event.outcome_type == "heal"
+        if is_heal:
+            if hp_after is not None and event.damage > 0:
+                hp_before = hp_after - float(event.damage)
+                if hp_max is not None:
+                    hp_before = max(hp_before, 0.0)
+            elif prev_hp is not None and hp_after is not None and hp_after > prev_hp:
+                hp_before = prev_hp
+            elif hp_after is not None:
+                hp_before = max(0.0, hp_after - float(event.damage))
+        elif hp_after is not None and event.damage > 0:
             hp_before = hp_after + float(event.damage)
             if hp_max is not None:
                 hp_before = min(hp_before, hp_max)

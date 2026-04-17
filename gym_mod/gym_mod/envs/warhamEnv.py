@@ -2048,7 +2048,9 @@ class Warhammer40kEnv(gym.Env):
             self._sync_model_positions_to_anchors()
             if killed > 0:
                 self._auto_fix_unit_coherency(side, idx, reason="потери моделей")
-            self._flush_state_snapshot(reason=f"health_update:{side}:{idx}")
+            # Всегда force: иначе throttle сбрасывает flush, а _state_flush_pending нигде не дочитывается —
+            # Viewer остаётся на старом state.json при том что движок уже обновил HP.
+            self._flush_state_snapshot(reason=f"health_update:{side}:{idx}", force=True)
 
     def _sync_model_positions_to_anchors(self) -> None:
         self.unit_anchor_coords = [list(coords) for coords in self.unit_coords]

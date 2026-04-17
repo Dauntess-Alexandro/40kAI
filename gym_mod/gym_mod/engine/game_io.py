@@ -125,13 +125,24 @@ class BaseIO:
         return True
 
 
-def parse_dice_values(text: str, count: int, min_value: int = 1, max_value: int = 6) -> list[int]:
+def dice_values_from_user_text(
+    text: str,
+    *,
+    min_value: int = 1,
+    max_value: int = 6,
+) -> list[int]:
+    """Разбор ввода кубов: «1 2 3», «1,2,3» или подряд «123» (каждая цифра = один куб), если max_value <= 9."""
     if text is None:
         raise ValueError("пустой ввод")
-    stripped = text.strip()
+    stripped = str(text).strip()
     if not stripped:
-        raise ValueError("пустой ввод")
-    if stripped.isdigit() and len(stripped) == count:
+        return []
+    if re.search(r"[^0-9,\s]", stripped):
+        raise ValueError("недопустимые символы: нужны цифры и разделители пробел или запятая")
+    compact_ok = max_value <= 9
+    if compact_ok and not re.search(r"[\s,]", stripped):
+        if not stripped.isdigit():
+            raise ValueError("есть нечисловые значения")
         values = [int(ch) for ch in stripped]
     else:
         parts = [part for part in re.split(r"[,\s]+", stripped) if part]
@@ -139,11 +150,21 @@ def parse_dice_values(text: str, count: int, min_value: int = 1, max_value: int 
             values = [int(part) for part in parts]
         except ValueError as exc:
             raise ValueError("есть нечисловые значения") from exc
-    if len(values) != count:
-        raise ValueError(f"ожидалось {count}, получено {len(values)}")
     for value in values:
         if value < min_value or value > max_value:
             raise ValueError(f"значение вне диапазона {min_value}..{max_value}")
+    return values
+
+
+def parse_dice_values(text: str, count: int, min_value: int = 1, max_value: int = 6) -> list[int]:
+    if text is None:
+        raise ValueError("пустой ввод")
+    stripped = text.strip()
+    if not stripped:
+        raise ValueError("пустой ввод")
+    values = dice_values_from_user_text(stripped, min_value=min_value, max_value=max_value)
+    if len(values) != count:
+        raise ValueError(f"ожидалось {count}, получено {len(values)}")
     return values
 
 

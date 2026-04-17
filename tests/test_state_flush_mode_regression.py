@@ -14,6 +14,13 @@ class TestStateFlushModeRegression(unittest.TestCase):
         source = Path("gym_mod/gym_mod/envs/warhamEnv.py").read_text(encoding="utf-8")
         self.assertIn('self._flush_state_snapshot(reason="updateBoard", force=True)', source)
 
+    def test_health_update_forces_state_flush(self):
+        source = Path("gym_mod/gym_mod/envs/warhamEnv.py").read_text(encoding="utf-8")
+        self.assertIn(
+            'self._flush_state_snapshot(reason=f"health_update:{side}:{idx}", force=True)',
+            source,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
