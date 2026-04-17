@@ -391,6 +391,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._log_status_label = None
         self._fx_shot_queue: Deque[FxShotEvent] = deque()
         self._fx_parser = FxLogParser(self._enqueue_fx_event, self._fx_debug, seen_max=400)
+        self._model_shot_target_flash_gen = 0
         self._hp_snapshot_by_unit: Dict[Tuple[str, int], Tuple[Optional[float], Optional[float]]] = {}
         self._popup_seen: OrderedDict[str, float] = OrderedDict()
         self._popup_seen_ttl_s = 3.0
@@ -1977,12 +1978,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 unit_tail = ""
 
         phase_ru = {
-            "command": "приказ",
+            "command": "командование",
             "movement": "движение",
             "shooting": "стрельба",
             "charge": "заряд",
             "fight": "бой",
         }.get(phase, phase or "шаг")
+
+        if step_kind == "command_resolve":
+            detail = f"{phase_ru} · завершение фазы"
+            short = detail[:72] + ("…" if len(detail) > 72 else "")
+            return detail, short
 
         if step_kind == "phase_end":
             detail = f"конец фазы · {phase_ru}"
@@ -2019,6 +2025,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return (
                 "Продолжить сценарий ИИ (Viewer pacing). "
                 "Кнопка снимает паузу: для микрошага по юниту движок применит его к полю после нажатия."
+            )
+        if step_kind == "command_resolve":
+            return (
+                f"Следующий шаг: {detail}. "
+                f"После «Далее» применится конец фазы командования (эффекты на конец фазы, при наличии — в т.ч. восстановление моделей) и обновится поле."
             )
         if step_kind == "before_unit":
             return (
@@ -2129,6 +2140,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         # Move overlay на карте только при наведении на строку лога (hover), не после «Далее»/state.
         self.map_scene.set_log_movement_overlay(None, persistent=True)
         self._update_model_events(state.get("model_events", []))
+        self._clear_stale_target_marker_during_model_turn(state)
         self._drain_event_queue()
         self._refresh_active_context()
         if not (self._is_shooting_target_request(self._pending_request) or self._is_shooting_dice_request(self._pending_request)):
@@ -3092,6 +3104,64 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 return unit_id, side
         return unit_id, None
 
+    @staticmethod
+    def _state_active_is_model(state: Optional[dict]) -> bool:
+        if not isinstance(state, dict):
+            return False
+        return str(state.get("active") or state.get("active_side") or "").strip().lower() == "model"
+
+    @staticmethod
+    def _viewer_activation_model_unit(state: Optional[dict]) -> Tuple[Optional[int], Optional[str]]:
+        """Активный юнит ИИ из state.viewer.activation (после экспорта движка)."""
+        if not isinstance(state, dict):
+            return None, None
+        vinfo = state.get("viewer")
+        if not isinstance(vinfo, dict):
+            return None, None
+        act = vinfo.get("activation")
+        if not isinstance(act, dict):
+            return None, None
+        if str(act.get("side") or "").strip().lower() != "model":
+            return None, None
+        uid = act.get("unit_id")
+        if uid is None:
+            return None, None
+        try:
+            return int(uid), "model"
+        except (TypeError, ValueError):
+            return None, None
+
+    def _clear_stale_target_marker_during_model_turn(self, state: dict) -> None:
+        """Сбрасываем маркер цели с хода игрока до обработки FX (иначе «залипает» на отряде игрока)."""
+        if not self._state_active_is_model(state):
+            return
+        if self._is_shooting_target_request(self._pending_request) or self._is_shooting_dice_request(
+            self._pending_request
+        ):
+            return
+        if self._is_target_request(self._pending_request):
+            return
+        self.map_scene.clear_target_selection()
+
+    def _flash_model_shot_target_overlay(self, target_id: int) -> None:
+        """Коротко показывает кольцо «цель» на отряде игрока при выстреле ИИ."""
+        self._model_shot_target_flash_gen += 1
+        gen = self._model_shot_target_flash_gen
+        self.map_scene.set_target_unit(int(target_id))
+
+        def _clear() -> None:
+            if gen != self._model_shot_target_flash_gen:
+                return
+            if self._is_shooting_target_request(self._pending_request) or self._is_shooting_dice_request(
+                self._pending_request
+            ):
+                return
+            if self._is_target_request(self._pending_request):
+                return
+            self.map_scene.clear_target_selection()
+
+        QtCore.QTimer.singleShot(1500, _clear)
+
     def _select_row_for_unit_id(self, unit_id, side=None):
         if unit_id is None:
             return
@@ -3115,15 +3185,26 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._syncing_table_selection = False
 
     def _refresh_active_context(self):
+        state = self.state_watcher.state if self.state_watcher else None
+        model_turn = self._state_active_is_model(state)
+
         unit_id, side = self._resolve_active_unit()
-        if unit_id is None:
-            unit_id = self._shoot_resolver_attacker_id or self._last_shooter_id or self._selected_unit_id
-            if unit_id is not None:
-                side = self._side_from_unit_id(int(unit_id)) or self._selected_unit_side
+        if model_turn:
+            # Ход ИИ: подсветка «активного отряда» только из viewer.activation, не из выбора игрока в таблице.
+            a_uid, a_side = self._viewer_activation_model_unit(state)
+            if a_uid is not None:
+                unit_id, side = a_uid, a_side
+            elif unit_id is None:
+                unit_id, side = None, None
+        else:
+            if unit_id is None:
+                unit_id = self._shoot_resolver_attacker_id or self._last_shooter_id or self._selected_unit_id
+                if unit_id is not None:
+                    side = self._side_from_unit_id(int(unit_id)) or self._selected_unit_side
 
         self._active_unit_id = unit_id
         self._active_unit_side = side
-        if self._selected_unit_id is None and unit_id is not None:
+        if not model_turn and self._selected_unit_id is None and unit_id is not None:
             self._set_selected_unit(side, unit_id, source="auto", select_row=True)
 
         active_unit = self._units_by_key.get((side, unit_id)) if unit_id is not None and side is not None else None
@@ -3176,11 +3257,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._emit_damage_popup(event)
         if event.report_type == "heal" or event.outcome_type == "heal":
             return
+        attacker_side = self._side_from_unit_id(event.attacker_id)
+        target_side = self._side_from_unit_id(event.target_id)
+        if attacker_side == "model" and target_side == "player":
+            self._flash_model_shot_target_overlay(int(event.target_id))
         if "gauss flayer" not in event.weapon_name.lower():
             self._fx_debug("FX: оружие не gauss, эффект пропущен.")
             return
-        attacker_side = self._side_from_unit_id(event.attacker_id)
-        target_side = self._side_from_unit_id(event.target_id)
         start = self._unit_world_center_by_key(attacker_side, event.attacker_id)
         end = self._unit_world_center_by_key(target_side, event.target_id)
         if start is None or end is None:

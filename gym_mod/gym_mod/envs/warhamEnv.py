@@ -1993,7 +1993,7 @@ class Warhammer40kEnv(gym.Env):
             "step_seq": seq,
             "step_kind": step_kind,
         }
-        tag = "до применения" if step_kind == "before_unit" else "ход"
+        tag = "до применения" if step_kind in ("before_unit", "command_resolve") else "ход"
         prompt = f"[PACE] Ход ИИ ({tag}): фаза={phase_slug}, seq={seq}"
         if uid is not None:
             prompt += f", юнит={uid}"
@@ -3695,6 +3695,8 @@ class Warhammer40kEnv(gym.Env):
                                     "(нет CP)",
                                 )
             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
+            # Pacing: один ack до реанимации / конца командования модели, чтобы [HEAL] не шёл вперемешку со стрельбой игрока.
+            self._viewer_do_pace("command", None, "command_resolve")
             apply_end_of_command_phase(self, side="model", dice_fn=dice_fn, log_fn=self._log)
             score_end_of_command_phase(self, "model", log_fn=self._log)
             self._emit_event(
@@ -3708,7 +3710,6 @@ class Warhammer40kEnv(gym.Env):
                     "data": {"vp": self.modelVP, "cp": self.modelCP},
                 }
             )
-            self._viewer_model_pacing_after_model_phase("command")
             return battle_shock, reward_delta
 
         if side == "enemy" and action is not None and not manual:

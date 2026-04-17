@@ -1699,7 +1699,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         phase = meta.get("phase")
         step_kind = meta.get("step_kind")
         phase_map = {
-            "command": "Приказ",
+            "command": "Командование",
             "movement": "Движение",
             "shooting": "Стрельба",
             "charge": "Заряд",
@@ -1707,6 +1707,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         }
         raw_phase = str(phase or "").strip()
         phase_ru = phase_map.get(raw_phase, raw_phase or "—")
+        # Завершение фазы командования (внутренний шаг command_resolve) — как у «Действие: движение · юнит N».
+        if step_kind == "command_resolve":
+            return "Действие: командование · завершение фазы"
         if step_kind == "phase_end":
             return f"{phase_ru} · конец фазы"
         if step_kind == "before_unit":
@@ -1723,7 +1726,12 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if step_kind == "unit":
             return f"{phase_ru} · ход"
         sk = str(step_kind or "").strip()
-        return f"{phase_ru} · {sk}" if sk else phase_ru
+        if not sk:
+            return phase_ru
+        # Не выводим внутренние snake_case-идентификаторы в оверлей.
+        if "_" in sk and sk.isascii():
+            return f"{phase_ru} · шаг"
+        return f"{phase_ru} · {sk}"
 
     def _note_user_camera_interaction(self) -> None:
         self._last_user_camera_ts = monotonic()
@@ -3408,10 +3416,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
             cx = (self._board_width * self.cell_size) * 0.5
             badge_bottom = 24.0
 
-        font = Theme.font(9, bold=True)
+        font = Theme.font(10, bold=True)
         painter.setFont(font)
         fm = QtGui.QFontMetrics(font)
-        pad_x, pad_y = 10.0, 5.0
+        pad_x, pad_y = 11.0, 6.0
         text_w = fm.horizontalAdvance(badge_text)
         text_h = fm.height()
         bg_w = text_w + pad_x * 2
@@ -3445,8 +3453,12 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.setBrush(QtCore.Qt.NoBrush)
         painter.drawPath(path)
 
+        align = int(QtCore.Qt.AlignCenter)
+        shadow = QtGui.QPen(QtGui.QColor(0, 0, 0, 165))
+        painter.setPen(shadow)
+        painter.drawText(bg_rect.translated(0.6, 1.0), align, badge_text)
         painter.setPen(QtGui.QPen(QtGui.QColor(244, 240, 232, 252)))
-        painter.drawText(bg_rect, int(QtCore.Qt.AlignCenter), badge_text)
+        painter.drawText(bg_rect, align, badge_text)
         painter.restore()
 
     def _draw_log_movement_overlay_layer(self, painter: QtGui.QPainter) -> None:
@@ -4440,7 +4452,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if target_render is not None and target_render.key == self._selected_unit_key:
                 target_center = None
             else:
-                color, strength = self._fx_color_for_unit(target_unit)
+                # Цвет «цели» из легенды, не фракции: иначе отряд некронов игрока подсвечивается
+                # тем же зелёным, что и «Ты», во время хода ИИ (стрельба/заряд и т.д.).
+                color = QtGui.QColor(Theme.objective)
+                strength = 1.0
                 ring_pixmap = self._tinted_pixmap("ring_soft", color)
                 seg_pixmap = self._tinted_pixmap("tesseract_segments", color)
                 ring_alpha = 0.5 * (0.7 + 0.3 * pulse) * strength
@@ -4498,6 +4513,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
             and self._selected_unit_side == self._active_unit_side
         )
         if self._selected_unit_id is None or selected_matches_active:
+            return
+        # Во время хода ИИ не дублируем «выбранный» отряд игрока второй платформой.
+        if not self._viewer_human_turn_active():
             return
         selected_unit, selected_render = self._resolve_unit_by_key_or_id(
             self._selected_unit_side,
