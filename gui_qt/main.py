@@ -141,6 +141,7 @@ class GUIController(QtCore.QObject):
         self._play_model_label = "Модель не выбрана"
         self._play_model_algo_label = "Алгоритм: —"
         self._play_model_checkpoint_label = "Checkpoint: —"
+        self._play_agent_override_id = ""
         self._play_viewer_player_role_label = "Ты: —"
         self._play_viewer_model_role_label = "ИИ: —"
         self._eval_model_path = ""
@@ -1543,14 +1544,48 @@ class GUIController(QtCore.QObject):
             self._emit_status("Выберите файл модели .pickle.")
             return
         self._set_play_model(path, source="manual")
+        self._sync_metrics_with_model(path)
         self._emit_status("Модель для игры обновлена.")
 
     @QtCore.Slot()
     def select_latest_play_model(self) -> None:
-        if self._select_latest_play_model(initial=False):
+        selected_pickle = self._select_latest_play_model(initial=False)
+        latest_agent_id = self._find_latest_registered_agent_id()
+        if latest_agent_id:
+            self._play_agent_override_id = latest_agent_id
+            agent_algo = self._find_agent_algo_by_id(latest_agent_id)
+            self._play_model_algo_label = (
+                f"Алгоритм: {agent_algo.upper()}" if agent_algo in {"dqn", "ppo"} else "Алгоритм: —"
+            )
+            self._play_model_checkpoint_label = f"Agent: {latest_agent_id}"
+            self.playModelMetaChanged.emit(self._play_model_algo_label)
+            self._sync_play_role_labels_with_agent(latest_agent_id)
+            if selected_pickle:
+                if self._play_model_path:
+                    self._sync_metrics_with_model(self._play_model_path)
+                self._emit_status(
+                    "Выбрана последняя сохранённая модель (для игры применится последний agent)."
+                )
+            else:
+                self._sync_metrics_with_agent(latest_agent_id)
+                self._emit_status("Для игры выбран последний agent из registry.")
+            return
+
+        self._play_agent_override_id = ""
+        if selected_pickle:
+            if self._play_model_path:
+                self._sync_metrics_with_model(self._play_model_path)
             self._emit_status("Выбрана последняя сохранённая модель.")
+            return
+        if self._select_latest_metrics():
+            self._emit_status(
+                "Последняя .pickle модель не найдена, но метрики последнего прогона загружены."
+            )
         else:
-            self._emit_status("Сохранённые модели не найдены.")
+            self._emit_status(
+                "Сохранённые модели/агенты не найдены. "
+                "Что делать: запустите обучение или выберите модель вручную."
+            )
 
     @QtCore.Slot(str)
     def select_eval_model(self, file_url: str) -> None:
@@ -1705,7 +1740,13 @@ class GUIController(QtCore.QObject):
         env["MISSION_NAME"] = self._selected_mission
         env["DEPLOYMENT_MODE"] = self._deployment_mode
         env["AGENT_LOG_FILE"] = "LOGS_FOR_AGENTS_PLAY.md"
-        player_label, model_label = self._infer_viewer_role_labels_from_model_pickle(model_path)
+        if self._play_agent_override_id:
+            env["VIEWER_AGENT_ID"] = self._play_agent_override_id
+            player_label, model_label = self._infer_viewer_role_labels_from_agent_id(
+                self._play_agent_override_id
+            )
+        else:
+            player_label, model_label = self._infer_viewer_role_labels_from_model_pickle(model_path)
         env["VIEWER_PLAYER_ROLE_LABEL"] = player_label
         env["VIEWER_MODEL_ROLE_LABEL"] = model_label
         subprocess.Popen(
@@ -1738,7 +1779,13 @@ class GUIController(QtCore.QObject):
         env["MISSION_NAME"] = self._selected_mission
         env["DEPLOYMENT_MODE"] = self._deployment_mode
         env["AGENT_LOG_FILE"] = "LOGS_FOR_AGENTS_PLAY.md"
-        player_label, model_label = self._infer_viewer_role_labels_from_model_pickle(model_path)
+        if self._play_agent_override_id:
+            env["VIEWER_AGENT_ID"] = self._play_agent_override_id
+            player_label, model_label = self._infer_viewer_role_labels_from_agent_id(
+                self._play_agent_override_id
+            )
+        else:
+            player_label, model_label = self._infer_viewer_role_labels_from_model_pickle(model_path)
         env["VIEWER_PLAYER_ROLE_LABEL"] = player_label
         env["VIEWER_MODEL_ROLE_LABEL"] = model_label
         command = self._build_script_command(script, [])
@@ -1787,6 +1834,19 @@ class GUIController(QtCore.QObject):
             return f"Ты: {human_side} ({human_faction})", f"ИИ: {ai_side} ({ai_faction})"
         except Exception:
             return default_player, default_model
+
+    def _infer_viewer_role_labels_from_agent_id(self, agent_id: str) -> tuple[str, str]:
+        default_player = "Игрок"
+        default_model = "Модель"
+        raw = str(agent_id or "").strip()
+        match = re.match(r"^(P[12])_([^_]+)", raw)
+        if not match:
+            return default_player, default_model
+        ai_side = match.group(1)
+        ai_faction = match.group(2)
+        human_side = "P2" if ai_side == "P1" else "P1"
+        human_faction = self._display_faction_for_side(human_side)
+        return f"Ты: {human_side} ({human_faction})", f"ИИ: {ai_side} ({ai_faction})"
 
     def _check_torch_import(self) -> bool:
         command = [
@@ -2520,15 +2580,23 @@ class GUIController(QtCore.QObject):
     def _select_latest_play_model(self, initial: bool) -> bool:
         latest_model = self._find_latest_model_file()
         if not latest_model:
+            self._play_model_path = ""
+            self._play_agent_override_id = ""
             if initial:
-                self._play_model_path = ""
                 self._play_model_label = "Модель не найдена"
-                self._play_model_algo_label = "Алгоритм: —"
-                self._play_model_checkpoint_label = "Checkpoint: —"
-                self.playModelPathChanged.emit(self._play_model_path)
-                self.playModelLabelChanged.emit(self._play_model_label)
-                self.playModelMetaChanged.emit(self._play_model_algo_label)
+            else:
+                self._play_model_label = "Последняя .pickle модель не найдена"
+            self._play_model_algo_label = "Алгоритм: —"
+            self._play_model_checkpoint_label = "Checkpoint: —"
+            self._play_viewer_player_role_label = "Ты: —"
+            self._play_viewer_model_role_label = "ИИ: —"
+            self.playModelPathChanged.emit(self._play_model_path)
+            self.playModelLabelChanged.emit(self._play_model_label)
+            self.playModelMetaChanged.emit(self._play_model_algo_label)
+            self.playViewerPlayerRoleLabelChanged.emit(self._play_viewer_player_role_label)
+            self.playViewerModelRoleLabelChanged.emit(self._play_viewer_model_role_label)
             return False
+        self._play_agent_override_id = ""
         self._set_play_model(latest_model, source="latest")
         return True
 
@@ -3122,7 +3190,53 @@ class GUIController(QtCore.QObject):
                         latest_legacy_mtime = mtime
                         latest_legacy_path = path
 
+        if latest_human_path and latest_legacy_path:
+            return latest_human_path if latest_human_mtime >= latest_legacy_mtime else latest_legacy_path
         return latest_human_path or latest_legacy_path
+
+    def _sync_metrics_with_model(self, model_path: str) -> bool:
+        metrics_id = self._extract_metrics_id(model_path)
+        if metrics_id:
+            json_path = os.path.join(self._repo_root, "models", f"data_{metrics_id}.json")
+            if os.path.exists(json_path) and self._load_metrics_from_json(json_path):
+                self._metrics_label = f"Файл: {os.path.basename(json_path)}"
+                self.metricsLabelChanged.emit(self._metrics_label)
+                return True
+        return self._select_latest_metrics()
+
+    def _sync_metrics_with_agent(self, agent_id: str) -> bool:
+        raw = str(agent_id or "").strip()
+        match = re.search(r"_(\d{7})$", raw)
+        if match:
+            run_id = match.group(1)
+            json_path = os.path.join(self._repo_root, "models", f"data_{run_id}.json")
+            if os.path.exists(json_path) and self._load_metrics_from_json(json_path):
+                self._metrics_label = f"Файл: {os.path.basename(json_path)}"
+                self.metricsLabelChanged.emit(self._metrics_label)
+                return True
+        return self._select_latest_metrics()
+
+    def _find_latest_registered_agent_id(self) -> str:
+        records = self._collect_registered_agents_meta()
+        if not records:
+            return ""
+        return str(records[0].get("agent_id", "")).strip()
+
+    def _find_agent_algo_by_id(self, agent_id: str) -> str:
+        target = str(agent_id or "").strip()
+        if not target:
+            return ""
+        for rec in self._collect_registered_agents_meta():
+            if str(rec.get("agent_id", "")).strip() == target:
+                return str(rec.get("algo", "")).strip().lower()
+        return ""
+
+    def _sync_play_role_labels_with_agent(self, agent_id: str) -> None:
+        player_label, model_label = self._infer_viewer_role_labels_from_agent_id(agent_id)
+        self._play_viewer_player_role_label = player_label
+        self._play_viewer_model_role_label = model_label
+        self.playViewerPlayerRoleLabelChanged.emit(player_label)
+        self.playViewerModelRoleLabelChanged.emit(model_label)
 
     def _find_latest_checkpoint_file(self) -> Optional[str]:
         models_path = os.path.join(self._repo_root, "models")
