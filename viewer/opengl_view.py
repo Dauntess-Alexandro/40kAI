@@ -3346,7 +3346,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
         unit_disc = QtCore.QRectF(-1.0, -1.0, 2.0, 2.0)
         painter.save()
-        painter.setClipRect(self._board_rect)
+        # Запас за пределы доски, чтобы градиент успевал уйти в ноль, а не «ломался» о clip.
+        clip_pad = max(rx * 1.45, ry * 1.45, cell * 3.0)
+        painter.setClipRect(self._board_rect.adjusted(-clip_pad, -clip_pad, clip_pad, clip_pad))
         painter.setPen(QtCore.Qt.NoPen)
 
         # Широкий мягкий сине-голубой ореол (типичный «плазменный» rim, но тише скрина с зелёным)
@@ -3357,7 +3359,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         outer = QtGui.QRadialGradient(0.0, 0.0, 1.0)
         outer.setColorAt(0.0, QtGui.QColor(130, 205, 255, int(16 + 7 * breath)))
         outer.setColorAt(0.45, QtGui.QColor(85, 165, 235, int(9 + 4 * breath)))
-        outer.setColorAt(0.78, QtGui.QColor(55, 120, 205, int(4 + 2 * breath)))
+        outer.setColorAt(0.72, QtGui.QColor(55, 120, 205, int(5 + 2 * breath)))
+        outer.setColorAt(0.88, QtGui.QColor(40, 95, 175, int(2 + breath)))
         outer.setColorAt(1.0, QtGui.QColor(30, 85, 160, 0))
         painter.setBrush(QtGui.QBrush(outer))
         painter.drawEllipse(unit_disc)
@@ -3371,7 +3374,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         core = QtGui.QRadialGradient(0.0, 0.0, 1.0)
         core.setColorAt(0.0, QtGui.QColor(200, 235, 255, int(14 + 9 * breath)))
         core.setColorAt(0.42, QtGui.QColor(120, 195, 255, int(8 + 5 * breath)))
-        core.setColorAt(0.75, QtGui.QColor(70, 150, 230, int(3 + 2 * breath)))
+        core.setColorAt(0.68, QtGui.QColor(90, 170, 240, int(4 + 2 * breath)))
+        core.setColorAt(0.86, QtGui.QColor(60, 130, 210, int(2 + breath)))
         core.setColorAt(1.0, QtGui.QColor(0, 0, 0, 0))
         painter.setBrush(QtGui.QBrush(core))
         painter.drawEllipse(unit_disc)
@@ -4462,6 +4466,18 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 seg_alpha = 0.55 * (0.8 + 0.2 * pulse) * strength
                 ring_size = target_radius * 4.4 * (0.95 + 0.08 * pulse)
                 seg_size = target_radius * 5.0 * (0.98 + 0.05 * pulse)
+                tr_base = max(target_radius * 2.75, self.cell_size * 1.05)
+                self._draw_soft_radial_glow_ellipse(
+                    painter,
+                    float(target_center.x()),
+                    float(target_center.y()),
+                    tr_base * 1.12,
+                    tr_base * 0.92,
+                    color,
+                    strength,
+                    composition=QtGui.QPainter.CompositionMode_SourceOver,
+                    peak_alpha=40,
+                )
                 painter.save()
                 painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
                 self._draw_fx_sprite(painter, ring_pixmap, target_center, ring_size, ring_alpha)
@@ -4617,6 +4633,38 @@ class OpenGLBoardWidget(QOpenGLWidget):
             height,
         )
 
+    def _draw_soft_radial_glow_ellipse(
+        self,
+        painter: QtGui.QPainter,
+        cx: float,
+        cy: float,
+        rx: float,
+        ry: float,
+        color: QtGui.QColor,
+        strength: float,
+        *,
+        composition: QtGui.QPainter.CompositionMode,
+        peak_alpha: int,
+        mid_stop: float = 0.55,
+    ) -> None:
+        """Плавный ореол без прямоугольных краёв спрайта (градиент в нормализованном эллипсе)."""
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        painter.setCompositionMode(composition)
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.translate(cx, cy)
+        painter.scale(max(rx, 1e-6), max(ry, 1e-6))
+        grad = QtGui.QRadialGradient(0.0, 0.0, 1.0)
+        a0 = int(max(0, min(255, int(peak_alpha * strength))))
+        grad.setColorAt(0.0, QtGui.QColor(color.red(), color.green(), color.blue(), a0))
+        grad.setColorAt(mid_stop, QtGui.QColor(color.red(), color.green(), color.blue(), int(a0 * 0.38)))
+        grad.setColorAt(0.78, QtGui.QColor(color.red(), color.green(), color.blue(), int(a0 * 0.14)))
+        grad.setColorAt(0.92, QtGui.QColor(color.red(), color.green(), color.blue(), int(a0 * 0.04)))
+        grad.setColorAt(1.0, QtGui.QColor(color.red(), color.green(), color.blue(), 0))
+        painter.setBrush(QtGui.QBrush(grad))
+        painter.drawEllipse(QtCore.QRectF(-1.0, -1.0, 2.0, 2.0))
+        painter.restore()
+
     def _draw_platform_highlight(
         self,
         painter: QtGui.QPainter,
@@ -4648,11 +4696,38 @@ class OpenGLBoardWidget(QOpenGLWidget):
         fx_pulse = 1.0 + (pulse - 0.5) * pulse_strength
         glow_margin = rect.height() * (0.34 + 0.06 * pulse * pulse_strength)
         glow_rect = rect.adjusted(-glow_margin, -glow_margin, glow_margin, glow_margin)
+        pcx = float(rect.center().x())
+        pcy = float(rect.center().y())
+        feather_rx = max(glow_rect.width() * 0.51, self.cell_size * 0.35)
+        feather_ry = max(glow_rect.height() * 0.48, self.cell_size * 0.30)
+        self._draw_soft_radial_glow_ellipse(
+            painter,
+            pcx,
+            pcy,
+            feather_rx * 1.08 * glow_scale,
+            feather_ry * 1.06 * glow_scale,
+            color,
+            strength,
+            composition=QtGui.QPainter.CompositionMode_SourceOver,
+            peak_alpha=48,
+        )
+        self._draw_soft_radial_glow_ellipse(
+            painter,
+            pcx,
+            pcy,
+            feather_rx * 0.78 * glow_scale,
+            feather_ry * 0.74 * glow_scale,
+            color,
+            strength,
+            composition=QtGui.QPainter.CompositionMode_Plus,
+            peak_alpha=26,
+            mid_stop=0.5,
+        )
         self._draw_fx_sprite_rect(
             painter,
             glow_pixmap,
             glow_rect,
-            opacity=0.46 * strength * (0.82 + 0.18 * pulse * pulse_strength) * glow_scale,
+            opacity=0.20 * strength * (0.82 + 0.18 * pulse * pulse_strength) * glow_scale,
         )
         inner_rect = QtCore.QRectF(rect)
         inner_rect.setWidth(rect.width() * 0.85)
