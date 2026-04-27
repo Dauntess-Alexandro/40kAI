@@ -631,7 +631,7 @@ def save_extra_metrics(
     write_legacy_gui_plots: bool = True,
 ):
     os.makedirs(metrics_dir, exist_ok=True)
-    os.makedirs("gui/img", exist_ok=True)
+    os.makedirs("runtime_data/img", exist_ok=True)
 
     # --- CSV ---
     csv_path = os.path.join(metrics_dir, f"stats_{run_id}.csv")
@@ -677,8 +677,8 @@ def save_extra_metrics(
     plt.legend(loc="lower right")
 
     plt.savefig(os.path.join(metrics_dir, f"winrate_{run_id}.png"))
-    plt.savefig(os.path.join("gui/img", f"winrate_{run_id}.png"))
-    plt.savefig(os.path.join("gui/img", "winrate.png"))
+    plt.savefig(os.path.join("runtime_data/img", f"winrate_{run_id}.png"))
+    plt.savefig(os.path.join("runtime_data/img", "winrate.png"))
     plt.close()
 
     # --- VP diff plot ---
@@ -691,8 +691,8 @@ def save_extra_metrics(
     plt.title("VP diff (per episode + MA 50)")
 
     plt.savefig(os.path.join(metrics_dir, f"vpdiff_{run_id}.png"))
-    plt.savefig(os.path.join("gui/img", f"vpdiff_{run_id}.png"))
-    plt.savefig(os.path.join("gui/img", "vpdiff.png"))
+    plt.savefig(os.path.join("runtime_data/img", f"vpdiff_{run_id}.png"))
+    plt.savefig(os.path.join("runtime_data/img", "vpdiff.png"))
     plt.close()
 
     # --- End reasons bar ---
@@ -709,8 +709,8 @@ def save_extra_metrics(
     plt.tight_layout()
 
     plt.savefig(os.path.join(metrics_dir, f"endreasons_{run_id}.png"))
-    plt.savefig(os.path.join("gui/img", f"endreasons_{run_id}.png"))
-    plt.savefig(os.path.join("gui/img", "endreasons.png"))
+    plt.savefig(os.path.join("runtime_data/img", f"endreasons_{run_id}.png"))
+    plt.savefig(os.path.join("runtime_data/img", "endreasons.png"))
     plt.close()
 
     print(f"[metrics] saved: {csv_path}")
@@ -764,7 +764,7 @@ def _write_det_eval_data_json(
     extra: dict | None = None,
 ) -> str:
     """
-    GUI читает models/data_<run_id>.json: только det_* пути (относительно каталога gui/).
+    GUI читает models/data_<run_id>.json: только det_* пути (относительно каталога runtime_data/).
     """
     data_json_path = os.path.join("models", f"data_{run_id}.json")
     os.makedirs("models", exist_ok=True)
@@ -844,7 +844,7 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
         loss_vals.append(v)
 
     os.makedirs(metrics_dir, exist_ok=True)
-    os.makedirs("gui/img", exist_ok=True)
+    os.makedirs("runtime_data/img", exist_ok=True)
 
     def _save_fig(path_metrics: str, path_gui_run: str, path_gui_latest: str) -> None:
         plt.savefig(path_metrics)
@@ -873,8 +873,8 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
     plt.tight_layout()
     _save_fig(
         os.path.join(metrics_dir, f"det_winrate_{run_id}.png"),
-        os.path.join("gui/img", f"det_winrate_{run_id}.png"),
-        os.path.join("gui/img", "det_winrate.png"),
+        os.path.join("runtime_data/img", f"det_winrate_{run_id}.png"),
+        os.path.join("runtime_data/img", "det_winrate.png"),
     )
     plt.close()
 
@@ -889,8 +889,8 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
     plt.tight_layout()
     _save_fig(
         os.path.join(metrics_dir, f"det_reward_{run_id}.png"),
-        os.path.join("gui/img", f"det_reward_{run_id}.png"),
-        os.path.join("gui/img", "det_reward.png"),
+        os.path.join("runtime_data/img", f"det_reward_{run_id}.png"),
+        os.path.join("runtime_data/img", "det_reward.png"),
     )
     plt.close()
 
@@ -905,8 +905,8 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
     plt.tight_layout()
     _save_fig(
         os.path.join(metrics_dir, f"det_avg_vp_{run_id}.png"),
-        os.path.join("gui/img", f"det_avg_vp_{run_id}.png"),
-        os.path.join("gui/img", "det_avg_vp.png"),
+        os.path.join("runtime_data/img", f"det_avg_vp_{run_id}.png"),
+        os.path.join("runtime_data/img", "det_avg_vp.png"),
     )
     plt.close()
 
@@ -925,8 +925,8 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
     plt.tight_layout()
     _save_fig(
         os.path.join(metrics_dir, f"det_loss_{run_id}.png"),
-        os.path.join("gui/img", f"det_loss_{run_id}.png"),
-        os.path.join("gui/img", "det_loss.png"),
+        os.path.join("runtime_data/img", f"det_loss_{run_id}.png"),
+        os.path.join("runtime_data/img", "det_loss.png"),
     )
     plt.close()
 
@@ -941,8 +941,8 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
     plt.tight_layout()
     _save_fig(
         os.path.join(metrics_dir, f"det_ep_len_{run_id}.png"),
-        os.path.join("gui/img", f"det_ep_len_{run_id}.png"),
-        os.path.join("gui/img", "det_ep_len.png"),
+        os.path.join("runtime_data/img", f"det_ep_len_{run_id}.png"),
+        os.path.join("runtime_data/img", "det_ep_len.png"),
     )
     plt.close()
 
@@ -957,8 +957,8 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
     plt.tight_layout()
     _save_fig(
         os.path.join(metrics_dir, f"det_hp_diff_{run_id}.png"),
-        os.path.join("gui/img", f"det_hp_diff_{run_id}.png"),
-        os.path.join("gui/img", "det_hp_diff.png"),
+        os.path.join("runtime_data/img", f"det_hp_diff_{run_id}.png"),
+        os.path.join("runtime_data/img", "det_hp_diff.png"),
     )
     plt.close()
 
@@ -973,8 +973,8 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
     plt.tight_layout()
     _save_fig(
         os.path.join(metrics_dir, f"det_kill_diff_{run_id}.png"),
-        os.path.join("gui/img", f"det_kill_diff_{run_id}.png"),
-        os.path.join("gui/img", "det_kill_diff.png"),
+        os.path.join("runtime_data/img", f"det_kill_diff_{run_id}.png"),
+        os.path.join("runtime_data/img", "det_kill_diff.png"),
     )
     plt.close()
 
@@ -991,8 +991,8 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
     plt.tight_layout()
     _save_fig(
         os.path.join(metrics_dir, f"det_endreasons_{run_id}.png"),
-        os.path.join("gui/img", f"det_endreasons_{run_id}.png"),
-        os.path.join("gui/img", "det_endreasons.png"),
+        os.path.join("runtime_data/img", f"det_endreasons_{run_id}.png"),
+        os.path.join("runtime_data/img", "det_endreasons.png"),
     )
     plt.close()
 
@@ -1918,7 +1918,7 @@ def _load_roster_config():
         ],
     }
 
-    if os.path.isfile("gui/data.json"):
+    if os.path.isfile("runtime_data/data.json"):
         config["totLifeT"] = initFile.getNumLife()
         config["b_len"] = initFile.getBoardX()
         config["b_hei"] = initFile.getBoardY()
@@ -3104,7 +3104,7 @@ def main():
         with IO_PROFILER.timed("metrics save"):
             IO_PROFILER.write_snapshot()
         _flush_agent_log_buffer(force=True)
-        if os.path.isfile("gui/data.json"):
+        if os.path.isfile("runtime_data/data.json"):
             initFile.delFile()
         return
     
@@ -4871,7 +4871,7 @@ def main():
 
     _flush_agent_log_buffer(force=True)
     
-    if os.path.isfile("gui/data.json"):
+    if os.path.isfile("runtime_data/data.json"):
         initFile.delFile()
 
 
@@ -5289,7 +5289,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
         except Exception:
             pass
 
-        # CSV для отладки; legacy PNG в gui/img не пишем (GUI на DET-eval).
+        # CSV для отладки; legacy PNG в runtime_data/img не пишем (GUI на DET-eval).
         save_extra_metrics(run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics", write_legacy_gui_plots=False)
 
         # --- save model (so GUI can find latest model) ---

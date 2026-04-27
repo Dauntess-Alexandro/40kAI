@@ -16,4 +16,4 @@ export PYTHONPATH="$PWD/gym_mod:$PYTHONPATH"
 export MANUAL_DICE=1
 
 # запускаем GUI
-exec "$PWD/gui/build/Application"
+exec "$PWD/runtime_data/build/Application"

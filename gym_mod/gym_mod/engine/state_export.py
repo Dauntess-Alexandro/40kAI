@@ -10,7 +10,7 @@ from gym_mod.engine.event_bus import get_event_recorder
 from gym_mod.engine.io_profiler import get_io_profiler
 
 
-DEFAULT_STATE_PATH = os.path.join(os.getcwd(), "gui", "state.json")
+DEFAULT_STATE_PATH = os.path.join(os.getcwd(), "runtime_data", "state.json")
 
 
 def _safe_int(value, fallback=None):
@@ -71,7 +71,7 @@ def _resolve_unit_facing(unit_data, coords, board_width):
 
 def _read_log_tail(max_lines=30, max_bytes=65536):
     candidates = [
-        os.path.join(os.getcwd(), "gui", "response.txt"),
+        os.path.join(os.getcwd(), "runtime_data", "response.txt"),
         os.path.join(os.getcwd(), "response.txt"),
     ]
     for path in candidates:

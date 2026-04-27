@@ -35,7 +35,7 @@ int parseInput(char *comm) {
     char buffer[50];
     int running = 0;
     if (strcmp(comm, "install") == 0) {
-		system("cd .. ; cd ../gui/build ; cmake --build . --config Debug");
+		system("cd .. ; cd ../runtime_data/build ; cmake --build . --config Debug");
         char buffer2[50];
         printf("\nStarting installation...\n");
         printf("Installing Application...\n");
@@ -43,7 +43,7 @@ int parseInput(char *comm) {
         char path_actual[PATH_MAX + strlen(path) + 1]; 
         const char *iconPath = "img/icon.png";
         const char *execPath = "build/Application";
-        const char *symlinkpath = "gui/";
+        const char *symlinkpath = "runtime_data/";
         char user[50];
         char actualpath[PATH_MAX];
         if (realpath("../../40kAI/", actualpath) != NULL) {
@@ -95,9 +95,9 @@ int parseInput(char *comm) {
         fprintf(fptr, "Terminal=true\n");
         fprintf(fptr, "%s\n", path_actual);      
 
-        fprintf(fptr, "Icon=%sgui/img/icon.png\n", actualpath);
+        fprintf(fptr, "Icon=%sruntime_data/img/icon.png\n", actualpath);
 
-        fprintf(fptr, "Exec=%sgui/build/Application\n", actualpath);
+        fprintf(fptr, "Exec=%sruntime_data/build/Application\n", actualpath);
         fclose(fptr);
 
         int resp = 0;
@@ -120,9 +120,9 @@ int parseInput(char *comm) {
                 fprintf(fptr, "Terminal=true\n");
                 fprintf(fptr, "%s\n", path_actual);      
 
-                fprintf(fptr, "Icon=%sgui/img/icon.png\n", actualpath);
+                fprintf(fptr, "Icon=%sruntime_data/img/icon.png\n", actualpath);
 
-                fprintf(fptr, "Exec=%sgui/build/Application\n", actualpath);
+                fprintf(fptr, "Exec=%sruntime_data/build/Application\n", actualpath);
 
                 fclose(fptr);
 
@@ -166,7 +166,7 @@ int parseInput(char *comm) {
 				ans = true;
 				printf("Sad to see you go\n");
         		printf("Starting uninstallation...");
-        		system("cd .. ; cd ../gui/build ; rm Application");
+        		system("cd .. ; cd ../runtime_data/build ; rm Application");
         		char actualpath[PATH_MAX];
         		char user[50];
         		if (realpath("../../40kAI/", actualpath) != NULL) {
@@ -218,7 +218,7 @@ int parseInput(char *comm) {
     } else if (strcmp(comm, "update") == 0) {
 		system("cd .. ; git fetch origin ; git pull");   // most recent from main
 		printf("Reinstallation starting...\n");
-		system("cd .. ; cd ../gui/build ; cmake --build . --config Debug");
+		system("cd .. ; cd ../runtime_data/build ; cmake --build . --config Debug");
 		printf("GUI Updated\n");
 		system("cd .. ; source .venv/bin/activate ; cd gym_mod ; pip install .");
         printf("Packages Installed!\n");

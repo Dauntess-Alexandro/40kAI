@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-cd ~/40kAI/gui
+cd ~/40kAI/runtime_data
 mkdir -p build
 cd build
 

@@ -12,7 +12,7 @@ import time
 from gym_mod.engine.io_profiler import get_io_profiler
 
 
-LOG_DEFAULT_PATH = os.path.join(os.getcwd(), "gui", "response.txt")
+LOG_DEFAULT_PATH = os.path.join(os.getcwd(), "runtime_data", "response.txt")
 DICE_CANCEL_TOKEN = "__cancel_shoot__"
 
 

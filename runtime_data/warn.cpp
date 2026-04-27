@@ -80,7 +80,7 @@ Warn :: Warn(std::string message, int comm) {
         if (comm == 0) {
             system("cd .. ; rm -r models/*");
             system("cd .. ; rm -r metrics/*");
-            system("cd .. ; find gui/img/ -type f ! -name 'epLen.png' ! -name 'reward.png' ! -name 'loss.png' ! -name 'icon.png' -delete");
+            system("cd .. ; find runtime_data/img/ -type f ! -name 'epLen.png' ! -name 'reward.png' ! -name 'loss.png' ! -name 'icon.png' -delete");
             std::string error_message;
             fs::path log_path;
             bool cleared = truncateAgentLogs(&error_message, &log_path);

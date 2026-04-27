@@ -2,13 +2,13 @@ import time
 import os
 
 def sendToGUI(message):
-    f = open(os.path.abspath("gui/")+"/response.txt", "w")
+    f = open(os.path.abspath("runtime_data/")+"/response.txt", "w")
     f.write(message)
     f.close()
 
 def recieveGUI():
     time.sleep(1)
-    file_path = os.path.abspath("gui/")+"/response.txt"
+    file_path = os.path.abspath("runtime_data/")+"/response.txt"
     if os.path.exists(file_path):
         os.remove(file_path)
 

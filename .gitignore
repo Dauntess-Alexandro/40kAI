@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 models/
 display/
-gui/build/
+runtime_data/build/
 gym_mod/build/
 board.txt
 *.png

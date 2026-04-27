@@ -28,7 +28,7 @@ The "Settings" page shown above does not show much at the moment, but currently 
 ## Compile
 
 ```bash
-$ cd gui/build
+$ cd runtime_data/build
 $ cmake ..
 $ cmake --build . --config Debug
 ```

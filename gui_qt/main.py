@@ -2101,7 +2101,7 @@ class GUIController(QtCore.QObject):
         try:
             self._persist_rosters()
             script = self._script_path("data")
-            # initFile.py получает modelFaction/enemyFaction, а unit-списки берутся из gui/units.txt.
+            # initFile.py получает modelFaction/enemyFaction, а unit-списки берутся из runtime_data/units.txt.
             # Поэтому faction для model/enemy берём из тех ростеров, которые мы записали в эти секции.
             if self._learner_side == "P1":
                 model_faction = self._infer_faction_from_roster(self._player_roster)
@@ -2402,7 +2402,7 @@ class GUIController(QtCore.QObject):
         return f"{minutes:02d}:{secs:02d}"
 
     def _build_default_metrics(self) -> dict[str, str]:
-        base_dir = os.path.join(self._repo_root, "gui", "img")
+        base_dir = os.path.join(self._repo_root, "runtime_data", "img")
         return {
             "reward": os.path.join(base_dir, "det_reward.png"),
             "loss": os.path.join(base_dir, "det_loss.png"),
@@ -2633,7 +2633,7 @@ class GUIController(QtCore.QObject):
         if os.path.isabs(raw_path):
             candidate = raw_path
         else:
-            candidate = os.path.join(self._repo_root, "gui", raw_path)
+            candidate = os.path.join(self._repo_root, "runtime_data", raw_path)
         if os.path.exists(candidate):
             return candidate
         return fallback
@@ -3308,7 +3308,7 @@ class GUIController(QtCore.QObject):
             self._available_units.append(UnitInfo(name=name, faction=faction, default_count=default_count))
 
     def _load_rosters_from_file(self) -> None:
-        units_path = os.path.join(self._repo_root, "gui", "units.txt")
+        units_path = os.path.join(self._repo_root, "runtime_data", "units.txt")
         if not os.path.exists(units_path):
             return
         section = None
@@ -3328,7 +3328,7 @@ class GUIController(QtCore.QObject):
                 entry = self._parse_roster_line(line)
                 if entry is None:
                     continue
-                # Маппим секции файла gui/units.txt в P1/P2 в зависимости от learner_side.
+                # Маппим секции файла runtime_data/units.txt в P1/P2 в зависимости от learner_side.
                 # Это обратное действие к логике _persist_rosters().
                 if self._learner_side == "P1":
                     # В момент сохранения при learner_side=P1:
@@ -3364,8 +3364,8 @@ class GUIController(QtCore.QObject):
         return RosterEntry(name=name, count=count, instance_id=instance_id)
 
     def _persist_rosters(self) -> None:
-        units_path = os.path.join(self._repo_root, "gui", "units.txt")
-        # В файле gui/units.txt:
+        units_path = os.path.join(self._repo_root, "runtime_data", "units.txt")
+        # В файле runtime_data/units.txt:
         # - "Player Units" попадает как enemy в initFile.py
         # - "Model Units" попадает как model в initFile.py
         # Поэтому записываем в эти секции так, чтобы learner-сторона стала model-стороной.
@@ -3389,7 +3389,7 @@ class GUIController(QtCore.QObject):
     def _clear_cache_files(self) -> None:
         models_path = os.path.join(self._repo_root, "models")
         metrics_path = os.path.join(self._repo_root, "metrics")
-        gui_img_path = os.path.join(self._repo_root, "gui", "img")
+        gui_img_path = os.path.join(self._repo_root, "runtime_data", "img")
         # Полная очистка моделей/кеша (включая agents/registry).
         self._remove_contents(models_path)
         self._remove_contents(metrics_path)

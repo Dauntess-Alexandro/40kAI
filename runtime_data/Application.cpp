@@ -1221,7 +1221,7 @@ void Form :: update_metrics() {
   const int IMG_H = 160;
 
   auto load_scaled = [&](const std::string& rel) -> Glib::RefPtr<Gdk::Pixbuf> {
-    std::string path = "../gui/" + rel;
+    std::string path = "../runtime_data/" + rel;
     if (!fs::exists(path)) {
       return Glib::RefPtr<Gdk::Pixbuf>();
     }

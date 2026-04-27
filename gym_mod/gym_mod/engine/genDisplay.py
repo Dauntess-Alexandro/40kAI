@@ -57,13 +57,13 @@ def makeGif(numOfLife, name="", Type = "train", trunc = False):
         return
     if Type == "train":
         os.makedirs("metrics", exist_ok=True)
-        os.makedirs("gui/img", exist_ok=True)
-        os.makedirs("gui/build/img", exist_ok=True)
-        os.makedirs("gui/build/Debug/img", exist_ok=True)
+        os.makedirs("runtime_data/img", exist_ok=True)
+        os.makedirs("runtime_data/build/img", exist_ok=True)
+        os.makedirs("runtime_data/build/Debug/img", exist_ok=True)
         imageio.mimsave('metrics/model_train{}.gif'.format(name), images)
-        imageio.mimsave('gui/img/model_train{}.gif'.format(name), images)
-        imageio.mimsave('gui/build/img/model_train{}.gif'.format(name), images)
-        imageio.mimsave('gui/build/Debug/img/model_train{}.gif'.format(name), images)
+        imageio.mimsave('runtime_data/img/model_train{}.gif'.format(name), images)
+        imageio.mimsave('runtime_data/build/img/model_train{}.gif'.format(name), images)
+        imageio.mimsave('runtime_data/build/Debug/img/model_train{}.gif'.format(name), images)
     elif Type == "val":
         os.makedirs("val", exist_ok=True)
         imageio.mimsave('val/model_val.gif', images)

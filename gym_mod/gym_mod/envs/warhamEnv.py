@@ -6922,8 +6922,8 @@ class Warhammer40kEnv(gym.Env):
             os.makedirs(output_dir, exist_ok=True)
             fileName = os.path.join(output_dir, f"{self.restarts}_{self.iter}.png")
         else:
-            output_dir = os.path.join("gui", "build", "img")
-            legacy_dir = os.path.join("gui", "img")
+            output_dir = os.path.join("runtime_data", "build", "img")
+            legacy_dir = os.path.join("runtime_data", "img")
             os.makedirs(output_dir, exist_ok=True)
             os.makedirs(legacy_dir, exist_ok=True)
             fileName = os.path.join(output_dir, "board.png")

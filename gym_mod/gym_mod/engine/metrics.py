@@ -13,7 +13,7 @@ class metrics(object):
         self.randNum = randNum
         self.modelName = modelName
         os.makedirs("metrics", exist_ok=True)
-        os.makedirs("gui/img", exist_ok=True)
+        os.makedirs("runtime_data/img", exist_ok=True)
         os.makedirs("models", exist_ok=True)
 
     def updateRew(self, add):
@@ -33,8 +33,8 @@ class metrics(object):
         plt.plot(self.loss)
 
         plt.savefig("metrics/loss_{}.png".format(self.randNum))
-        plt.savefig("gui/img/loss.png")
-        plt.savefig("gui/img/loss_{}.png".format(self.randNum))
+        plt.savefig("runtime_data/img/loss.png")
+        plt.savefig("runtime_data/img/loss_{}.png".format(self.randNum))
         plt.close()
 
     def showRew(self):
@@ -50,8 +50,8 @@ class metrics(object):
         plt.plot(x, y(x, a, b))
 
         plt.savefig("metrics/reward_{}.png".format(self.randNum))
-        plt.savefig("gui/img/reward.png")
-        plt.savefig("gui/img/reward_{}.png".format(self.randNum))
+        plt.savefig("runtime_data/img/reward.png")
+        plt.savefig("runtime_data/img/reward_{}.png".format(self.randNum))
         plt.close()
 
     def showEpLen(self):
@@ -61,8 +61,8 @@ class metrics(object):
         plt.bar(self.episodeLen["labels"], self.episodeLen["vals"])
 
         plt.savefig("metrics/epLen_{}.png".format(self.randNum))
-        plt.savefig("gui/img/epLen.png")
-        plt.savefig("gui/img/epLen_{}.png".format(self.randNum))
+        plt.savefig("runtime_data/img/epLen.png")
+        plt.savefig("runtime_data/img/epLen_{}.png".format(self.randNum))
         plt.close()
 
     def createJson(self):

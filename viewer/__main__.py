@@ -8,7 +8,7 @@ def main():
     parser = argparse.ArgumentParser(description="40kAI PySide6 Viewer")
     parser.add_argument(
         "--state",
-        default=os.path.join(os.getcwd(), "gui", "state.json"),
+        default=os.path.join(os.getcwd(), "runtime_data", "state.json"),
         help="Path to state.json",
     )
     parser.add_argument(

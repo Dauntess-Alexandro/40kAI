@@ -31,7 +31,7 @@ def makeFile(numIters, modelFaction, enemyFaction, modelUnits, enemyUnits, model
         "mission": mission
     }
 
-    with open('gui/data.json', 'w') as f:
+    with open('runtime_data/data.json', 'w') as f:
         json.dump(data, f)
     
 def addingUnits():
@@ -41,7 +41,7 @@ def addingUnits():
     enemy_counts = []
     model_instance_ids = []
     enemy_instance_ids = []
-    file = open("gui/units.txt", "r")
+    file = open("runtime_data/units.txt", "r")
     content = file.readlines()
     flip = 0
     for i in content[1:len(content)]:
@@ -126,97 +126,97 @@ def addingWeapons(m, e):
 
 def getNumLife():
 
-    with open(os.path.abspath("gui/data.json")) as j:
+    with open(os.path.abspath("runtime_data/data.json")) as j:
         data = json.loads(j.read())
 
     return data["numLife"]
 
 def getModelFaction():
-    with open(os.path.abspath("gui/data.json")) as j:
+    with open(os.path.abspath("runtime_data/data.json")) as j:
         data = json.loads(j.read())
 
     return data["Army1"]
 
 def getEnemyFaction():
-    with open(os.path.abspath("gui/data.json")) as j:
+    with open(os.path.abspath("runtime_data/data.json")) as j:
         data = json.loads(j.read())
 
     return data["Army2"]
 
 def getBoardX():
-    with open(os.path.abspath("gui/data.json")) as j:
+    with open(os.path.abspath("runtime_data/data.json")) as j:
         data = json.loads(j.read())
 
     return data["x"]
 
 def getBoardY():
-    with open(os.path.abspath("gui/data.json")) as j:
+    with open(os.path.abspath("runtime_data/data.json")) as j:
         data = json.loads(j.read())
 
     return data["y"]
 
 def getModelUnits():
-    with open(os.path.abspath("gui/data.json")) as j:
+    with open(os.path.abspath("runtime_data/data.json")) as j:
         data = json.loads(j.read())
 
     return data["modelUnits"]
 
 def getEnemyUnits():
-    with open(os.path.abspath("gui/data.json")) as j:
+    with open(os.path.abspath("runtime_data/data.json")) as j:
         data = json.loads(j.read())
 
     return data["enemyUnits"]
 
 def getModelUnitCounts():
-    with open(os.path.abspath("gui/data.json")) as j:
+    with open(os.path.abspath("runtime_data/data.json")) as j:
         data = json.loads(j.read())
 
     return data.get("modelUnitCounts", [])
 
 def getEnemyUnitCounts():
-    with open(os.path.abspath("gui/data.json")) as j:
+    with open(os.path.abspath("runtime_data/data.json")) as j:
         data = json.loads(j.read())
 
     return data.get("enemyUnitCounts", [])
 
 def getModelUnitInstanceIds():
-    with open(os.path.abspath("gui/data.json")) as j:
+    with open(os.path.abspath("runtime_data/data.json")) as j:
         data = json.loads(j.read())
 
     return data.get("modelUnitInstanceIds", [])
 
 def getEnemyUnitInstanceIds():
-    with open(os.path.abspath("gui/data.json")) as j:
+    with open(os.path.abspath("runtime_data/data.json")) as j:
         data = json.loads(j.read())
 
     return data.get("enemyUnitInstanceIds", [])
 
 def getModelW():
-    with open(os.path.abspath("gui/data.json")) as j:
+    with open(os.path.abspath("runtime_data/data.json")) as j:
         data = json.loads(j.read())
 
     return data["modelWeapons"]
 
 def getEnemyW():
-    with open(os.path.abspath("gui/data.json")) as j:
+    with open(os.path.abspath("runtime_data/data.json")) as j:
         data = json.loads(j.read())
 
     return data["enemyWeapons"]
 
 def getMission():
-    with open(os.path.abspath("gui/data.json")) as j:
+    with open(os.path.abspath("runtime_data/data.json")) as j:
         data = json.loads(j.read())
 
     return data.get("mission", "only_war")
 
 def delFile():
-    data_path = os.path.abspath("gui/data.json")
+    data_path = os.path.abspath("runtime_data/data.json")
     try:
         if os.path.isfile(data_path):
             os.remove(data_path)
     except OSError as exc:
         print(
-            f"[ERROR] Не удалось удалить gui/data.json: {exc}. "
+            f"[ERROR] Не удалось удалить runtime_data/data.json: {exc}. "
             "Что делать: закройте приложения, которые держат файл, и попробуйте снова."
         )
 
