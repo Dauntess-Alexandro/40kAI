@@ -1,28 +1,28 @@
 {
-  "run_id": "4127444",
-  "updated_at": "2026-04-10T20:09:50",
+  "run_id": "6966353",
+  "updated_at": "2026-04-27T20:58:25",
   "winrate": 0.0,
   "draw_rate": 0.0,
   "turn_limit_rate": 0.0,
-  "train_total_games": 300,
-  "train_heur_winrate": 0.24333333333333335,
-  "train_model_winrate": 0.6866666666666666,
-  "train_draw_rate": 0.07,
+  "train_total_games": 2000,
+  "train_heur_winrate": 0.226,
+  "train_model_winrate": 0.651,
+  "train_draw_rate": 0.123,
   "invalid_rate_total": 0.0,
   "mode_usage": {
     "kite": 0,
-    "hold": 3792,
+    "hold": 23512,
     "commit": 0
   },
   "role_usage": {
     "ranged": 0,
-    "hybrid": 3788,
+    "hybrid": 23470,
     "melee": 0
   },
-  "avg_risk": 0.41307956648162836,
-  "avg_cover": 0.0,
-  "charge_attempt_rate": 0.36373248744382763,
-  "charge_success_rate": 0.24563953488372092,
+  "avg_risk": 0.3901590676229508,
+  "avg_cover": 8.537522410996328e-05,
+  "charge_attempt_rate": 0.39976092896174864,
+  "charge_success_rate": 0.2758436565570269,
   "shoot_overkill_rate": 1.0,
   "fallback_rate": 0.0
 }
