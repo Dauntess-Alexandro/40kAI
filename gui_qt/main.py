@@ -226,7 +226,7 @@ class GUIController(QtCore.QObject):
         self._refresh_models()
         self._select_latest_metrics()
         self._load_latest_heuristic_metrics()
-        self._select_latest_play_model(initial=True)
+        self._apply_latest_play_selection(initial=True, emit_status=False)
         self._select_latest_eval_model(initial=True)
         self._update_roster_summary()
         self._refresh_specific_opponent_options()
@@ -1549,43 +1549,7 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Slot()
     def select_latest_play_model(self) -> None:
-        selected_pickle = self._select_latest_play_model(initial=False)
-        latest_agent_id = self._find_latest_registered_agent_id()
-        if latest_agent_id:
-            self._play_agent_override_id = latest_agent_id
-            agent_algo = self._find_agent_algo_by_id(latest_agent_id)
-            self._play_model_algo_label = (
-                f"Алгоритм: {agent_algo.upper()}" if agent_algo in {"dqn", "ppo"} else "Алгоритм: —"
-            )
-            self._play_model_checkpoint_label = f"Agent: {latest_agent_id}"
-            self.playModelMetaChanged.emit(self._play_model_algo_label)
-            self._sync_play_role_labels_with_agent(latest_agent_id)
-            if selected_pickle:
-                if self._play_model_path:
-                    self._sync_metrics_with_model(self._play_model_path)
-                self._emit_status(
-                    "Выбрана последняя сохранённая модель (для игры применится последний agent)."
-                )
-            else:
-                self._sync_metrics_with_agent(latest_agent_id)
-                self._emit_status("Для игры выбран последний agent из registry.")
-            return
-
-        self._play_agent_override_id = ""
-        if selected_pickle:
-            if self._play_model_path:
-                self._sync_metrics_with_model(self._play_model_path)
-            self._emit_status("Выбрана последняя сохранённая модель.")
-            return
-        if self._select_latest_metrics():
-            self._emit_status(
-                "Последняя .pickle модель не найдена, но метрики последнего прогона загружены."
-            )
-        else:
-            self._emit_status(
-                "Сохранённые модели/агенты не найдены. "
-                "Что делать: запустите обучение или выберите модель вручную."
-            )
+        self._apply_latest_play_selection(initial=False, emit_status=True)
 
     @QtCore.Slot(str)
     def select_eval_model(self, file_url: str) -> None:
@@ -3221,6 +3185,50 @@ class GUIController(QtCore.QObject):
         if not records:
             return ""
         return str(records[0].get("agent_id", "")).strip()
+
+    def _apply_latest_play_selection(self, *, initial: bool, emit_status: bool) -> bool:
+        selected_pickle = self._select_latest_play_model(initial=initial)
+        latest_agent_id = self._find_latest_registered_agent_id()
+        if latest_agent_id:
+            self._play_agent_override_id = latest_agent_id
+            agent_algo = self._find_agent_algo_by_id(latest_agent_id)
+            self._play_model_algo_label = (
+                f"Алгоритм: {agent_algo.upper()}" if agent_algo in {"dqn", "ppo"} else "Алгоритм: —"
+            )
+            self._play_model_checkpoint_label = f"Agent: {latest_agent_id}"
+            self.playModelMetaChanged.emit(self._play_model_algo_label)
+            self._sync_play_role_labels_with_agent(latest_agent_id)
+            if selected_pickle and self._play_model_path:
+                self._sync_metrics_with_model(self._play_model_path)
+            else:
+                self._sync_metrics_with_agent(latest_agent_id)
+            if emit_status:
+                if selected_pickle:
+                    self._emit_status(
+                        "Выбрана последняя сохранённая модель (для игры применится последний agent)."
+                    )
+                else:
+                    self._emit_status("Для игры выбран последний agent из registry.")
+            return True
+
+        self._play_agent_override_id = ""
+        if selected_pickle:
+            if self._play_model_path:
+                self._sync_metrics_with_model(self._play_model_path)
+            if emit_status:
+                self._emit_status("Выбрана последняя сохранённая модель.")
+            return True
+        if emit_status:
+            if self._select_latest_metrics():
+                self._emit_status(
+                    "Последняя .pickle модель не найдена, но метрики последнего прогона загружены."
+                )
+            else:
+                self._emit_status(
+                    "Сохранённые модели/агенты не найдены. "
+                    "Что делать: запустите обучение или выберите модель вручную."
+                )
+        return False
 
     def _find_agent_algo_by_id(self, agent_id: str) -> str:
         target = str(agent_id or "").strip()

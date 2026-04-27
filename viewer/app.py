@@ -323,6 +323,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._movement_skip_sent = False
         self._rolloff_attacker_side: Optional[str] = None
         self._rolloff_defender_side: Optional[str] = None
+        # При старте можем прочитать state.json от прошлой сессии.
+        # Чтобы не мигали старые юниты, скрываем их до первого запроса текущего матча.
+        self._hide_stale_units_on_bootstrap = True
 
         self._viewer_config = load_viewer_config()
         cell_size = int(self._viewer_config.get("cell_size", 24))
@@ -1174,6 +1177,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._pending_request = request
         self._awaiting_player_action = request is not None
         self._movement_skip_sent = False
+        if request is not None:
+            self._hide_stale_units_on_bootstrap = False
         if request is None:
             self._deploy_visual_reset_done = False
             self._deploy_context = None
@@ -2053,13 +2058,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.pace_next_button.setToolTip(self._pace_action_tooltip_from_state(state))
 
     def _apply_state(self, state):
-        self.map_scene.update_state(state)
+        state_for_view = state
+        if self._hide_stale_units_on_bootstrap:
+            state_for_view = dict(state or {})
+            state_for_view["units"] = []
+        self.map_scene.update_state(state_for_view)
         if not self._did_initial_fit:
             self._did_initial_fit = True
             QtCore.QTimer.singleShot(0, self._fit_view)
 
         self._units_by_key = {}
-        for unit in state.get("units", []) or []:
+        for unit in state_for_view.get("units", []) or []:
             self._units_by_key[(unit.get("side"), unit.get("id"))] = unit
         self._refresh_hp_snapshot()
 
@@ -2134,7 +2143,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.points_cp_player.setText(f"Player CP: {cp.get('player', '—')}")
         self.points_cp_model.setText(f"Model CP: {cp.get('model', '—')}")
 
-        self._populate_units_table(state.get("units", []))
+        self._populate_units_table(state_for_view.get("units", []))
         self._update_log(state.get("log_tail", []))
         self._update_pace_next_button_from_state(state)
         # Move overlay на карте только при наведении на строку лога (hover), не после «Далее»/state.

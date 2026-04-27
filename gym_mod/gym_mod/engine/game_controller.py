@@ -239,15 +239,33 @@ class GameController:
                     f"Несовместимый VIEWER_AGENT_ID={agent_id_override}: {reason}. "
                     "Что делать дальше: выберите агента с тем же контрактом."
                 )
-            checkpoint = {
-                "policy_net": payload.get("policy_state"),
-                "target_net": payload.get("target_state") or payload.get("policy_state"),
-                "optimizer": payload.get("optimizer_state") or {},
-                "net_type": "dueling"
-                if any(str(k).startswith("value_heads.") for k in (payload.get("policy_state") or {}).keys())
-                else "basic",
-                "algo": "dqn",
-            }
+            policy_state = payload.get("policy_state") or {}
+            target_state = payload.get("target_state")
+            optimizer_state = payload.get("optimizer_state") or {}
+            meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+            agent_algo = str(meta.get("algo", "")).strip().lower()
+            if agent_algo not in {"dqn", "ppo"}:
+                # Backward-compat: для старых снапшотов infer по структуре state_dict.
+                if any(str(k).startswith("policy_heads.") for k in policy_state.keys()):
+                    agent_algo = "ppo"
+                else:
+                    agent_algo = "dqn"
+
+            if agent_algo == "ppo":
+                checkpoint = {
+                    "actor_critic": policy_state,
+                    "algo": "ppo",
+                }
+            else:
+                checkpoint = {
+                    "policy_net": policy_state,
+                    "target_net": target_state or policy_state,
+                    "optimizer": optimizer_state,
+                    "net_type": "dueling"
+                    if any(str(k).startswith("value_heads.") for k in policy_state.keys())
+                    else "basic",
+                    "algo": "dqn",
+                }
             self._io.log(f"[LEAGUE] Viewer использует agent-id={agent_id_override}")
         return env, model, enemy, checkpoint
 
