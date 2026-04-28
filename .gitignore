@@ -12,5 +12,6 @@ runtime/img/
 app/gui_qt/.icon_cache/
 gym_mod/build/
 runtime/state/img/*.png
+trainRes.txt
 *.log
 *.core
