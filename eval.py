@@ -230,6 +230,8 @@ def run_episode(env, model_units, enemy_units, policy_net, epsilon, device, algo
     )
 
     done = False
+    episode_len = 0
+    total_reward = 0.0
     while not done:
         if opponent_policy_fn is not None:
             env_unwrapped.enemyTurn(trunc=True, policy_fn=opponent_policy_fn)
@@ -259,7 +261,12 @@ def run_episode(env, model_units, enemy_units, policy_net, epsilon, device, algo
                 shoot_mask=shoot_mask,
             )
         action_dict = convertToDict(action)
-        next_observation, _, done, _, info = env.step(action_dict)
+        next_observation, reward, done, _, info = env.step(action_dict)
+        try:
+            total_reward += float(reward)
+        except (TypeError, ValueError):
+            pass
+        episode_len += 1
         state = next_observation
 
     end_reason = info.get("end reason", "")
@@ -273,7 +280,39 @@ def run_episode(env, model_units, enemy_units, policy_net, epsilon, device, algo
     model_vp = info.get("model VP", 0)
     enemy_vp = info.get("player VP", 0)
     vp_diff = model_vp - enemy_vp
-    return winner, end_reason or "unknown", vp_diff, model_vp, enemy_vp
+
+    model_health = info.get("model health", []) if isinstance(info, dict) else []
+    enemy_health = info.get("player health", []) if isinstance(info, dict) else []
+    model_alive = info.get("model alive models", []) if isinstance(info, dict) else []
+    enemy_alive = info.get("player alive models", []) if isinstance(info, dict) else []
+
+    def _safe_sum(value):
+        if isinstance(value, (list, tuple)):
+            out = 0.0
+            for item in value:
+                try:
+                    out += float(item)
+                except (TypeError, ValueError):
+                    continue
+            return out
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    hp_diff_model_minus_enemy = _safe_sum(model_health) - _safe_sum(enemy_health)
+    kill_diff_model_minus_enemy = _safe_sum(model_alive) - _safe_sum(enemy_alive)
+    return (
+        winner,
+        end_reason or "unknown",
+        vp_diff,
+        model_vp,
+        enemy_vp,
+        episode_len,
+        total_reward,
+        hp_diff_model_minus_enemy,
+        kill_diff_model_minus_enemy,
+    )
 
 
 def main():
@@ -449,26 +488,46 @@ def main():
     vp_diffs = []
     p1_vps = []
     p2_vps = []
-    end_reasons = Counter()
+    ep_lens = []
+    hp_diffs_p1_minus_p2 = []
+    kill_diffs_p1_minus_p2 = []
+    rewards_learner = []
     end_reasons_v2 = Counter()
 
     for idx in range(1, games + 1):
-        winner, end_reason, vp_diff, model_vp, enemy_vp = run_episode(
+        (
+            winner,
+            end_reason,
+            vp_diff,
+            model_vp,
+            enemy_vp,
+            episode_len,
+            total_reward,
+            hp_diff_model_minus_enemy,
+            kill_diff_model_minus_enemy,
+        ) = run_episode(
             env, model_units, enemy_units, policy_net, epsilon, device, algo, opponent_policy_fn=opponent_policy_fn
         )
         if learner_side == "P1":
             p1_vp = model_vp
             p2_vp = enemy_vp
             vp_diff_p1_minus_p2 = vp_diff
+            hp_diff_p1_minus_p2 = hp_diff_model_minus_enemy
+            kill_diff_p1_minus_p2 = kill_diff_model_minus_enemy
         else:
             p1_vp = enemy_vp
             p2_vp = model_vp
             vp_diff_p1_minus_p2 = -vp_diff
+            hp_diff_p1_minus_p2 = -hp_diff_model_minus_enemy
+            kill_diff_p1_minus_p2 = -kill_diff_model_minus_enemy
 
         vp_diffs.append(vp_diff)
         p1_vps.append(p1_vp)
         p2_vps.append(p2_vp)
-        end_reasons[end_reason] += 1
+        ep_lens.append(int(episode_len))
+        hp_diffs_p1_minus_p2.append(float(hp_diff_p1_minus_p2))
+        kill_diffs_p1_minus_p2.append(float(kill_diff_p1_minus_p2))
+        rewards_learner.append(float(total_reward))
         if winner == "model":
             wins += 1
             winner_side = learner_side
@@ -501,35 +560,29 @@ def main():
             f"p1_vp={p1_vp} "
             f"p2_vp={p2_vp} "
             f"vp_diff_p1_minus_p2={vp_diff_p1_minus_p2} "
+            f"episode_len={episode_len} "
+            f"reward_learner={total_reward:.3f} "
+            f"hp_diff_p1_minus_p2={hp_diff_p1_minus_p2:.3f} "
+            f"kill_diff_p1_minus_p2={kill_diff_p1_minus_p2:.3f} "
             f"end_reason={end_reason}"
         )
 
-    winrate_all = wins / games if games else 0.0
-    winrate_no_draw = wins / (wins + losses) if (wins + losses) else 0.0
     winrate_p1_all = p1_wins / games if games else 0.0
     winrate_p2_all = p2_wins / games if games else 0.0
     winrate_p1_decisive = p1_wins / (p1_wins + p2_wins) if (p1_wins + p2_wins) else 0.0
     winrate_p2_decisive = p2_wins / (p1_wins + p2_wins) if (p1_wins + p2_wins) else 0.0
     avg_vp_diff = sum(vp_diffs) / len(vp_diffs) if vp_diffs else 0.0
-    median_vp_diff = median(vp_diffs) if vp_diffs else 0.0
     avg_vp_p1 = sum(p1_vps) / len(p1_vps) if p1_vps else 0.0
     avg_vp_p2 = sum(p2_vps) / len(p2_vps) if p2_vps else 0.0
     avg_vp_diff_p1_minus_p2 = avg_vp_p1 - avg_vp_p2
-    min_vp_diff = min(vp_diffs) if vp_diffs else 0.0
-    max_vp_diff = max(vp_diffs) if vp_diffs else 0.0
-    positive_vp_games = sum(1 for value in vp_diffs if value > 0)
-    negative_vp_games = sum(1 for value in vp_diffs if value < 0)
-    neutral_vp_games = sum(1 for value in vp_diffs if value == 0)
-    sorted_reasons = sorted(end_reasons.items(), key=lambda item: (-item[1], item[0]))
-    reason_labels = {
-        "turn_limit": "Лимит ходов",
-        "wipeout_enemy": "Уничтожение армии противника",
-        "wipeout_model": "Уничтожение армии модели",
-        "auto": "Авто-завершение",
-        "unknown": "Неизвестно",
-    }
+    avg_ep_len = sum(ep_lens) / len(ep_lens) if ep_lens else 0.0
+    avg_reward_learner = sum(rewards_learner) / len(rewards_learner) if rewards_learner else 0.0
+    avg_hp_diff_p1_minus_p2 = sum(hp_diffs_p1_minus_p2) / len(hp_diffs_p1_minus_p2) if hp_diffs_p1_minus_p2 else 0.0
+    avg_kill_diff_p1_minus_p2 = (
+        sum(kill_diffs_p1_minus_p2) / len(kill_diffs_p1_minus_p2) if kill_diffs_p1_minus_p2 else 0.0
+    )
 
-    turn_limit_count = int(end_reasons.get("turn_limit", 0))
+    turn_limit_count = int(end_reasons_v2.get("turn_limit", 0))
     wipeout_p1_count = int(end_reasons_v2.get("wipeout_p1", 0))
     wipeout_p2_count = int(end_reasons_v2.get("wipeout_p2", 0))
 
@@ -540,46 +593,30 @@ def main():
         f"winrate_p1_decisive={winrate_p1_decisive:.3f} winrate_p2_decisive={winrate_p2_decisive:.3f} "
         f"avg_vp_p1={avg_vp_p1:.3f} avg_vp_p2={avg_vp_p2:.3f} "
         f"avg_vp_diff_p1_minus_p2={avg_vp_diff_p1_minus_p2:.3f} "
+        f"avg_reward_learner={avg_reward_learner:.3f} "
+        f"avg_ep_len={avg_ep_len:.3f} "
+        f"avg_hp_diff_p1_minus_p2={avg_hp_diff_p1_minus_p2:.3f} "
+        f"avg_kill_diff_p1_minus_p2={avg_kill_diff_p1_minus_p2:.3f} "
         f"turn_limit_count={turn_limit_count} wipeout_p1_count={wipeout_p1_count} wipeout_p2_count={wipeout_p2_count} "
         f"end_reasons={dict(end_reasons_v2)}"
     )
 
-    log(
-        "[SUMMARY] "
-        f"wins={wins} losses={losses} draws={draws} "
-        f"winrate_all={winrate_all:.3f} "
-        f"winrate_no_draw={winrate_no_draw:.3f} "
-        f"avg_vp_diff={avg_vp_diff:.3f} "
-        f"median_vp_diff={median_vp_diff:.3f} "
-        f"end_reasons={dict(end_reasons)}"
-    )
-
     log("[DETAIL] ---------- Подробный итог оценки ----------")
-    log(f"[DETAIL] Стороны матча: P1 vs P2 (learner_side={learner_side})")
+    log(f"[DETAIL] Стороны матча: P1 vs P2")
     log(f"[DETAIL] Итог серии P1/P2/Draw: {p1_wins}/{p2_wins}/{draws}")
     log(f"[DETAIL] Winrate P1 (все/решающие): {winrate_p1_all:.3f}/{winrate_p1_decisive:.3f}")
     log(f"[DETAIL] Winrate P2 (все/решающие): {winrate_p2_all:.3f}/{winrate_p2_decisive:.3f}")
+    log(f"[DETAIL] Avg награда learner ({learner_side}): {avg_reward_learner:.3f}")
     log(f"[DETAIL] VP P1/P2 (avg): {avg_vp_p1:.3f}/{avg_vp_p2:.3f}")
+    log(f"[DETAIL] Avg VP diff (P1-P2): {avg_vp_diff_p1_minus_p2:.3f}")
+    log(f"[DETAIL] Avg HP diff (P1-P2): {avg_hp_diff_p1_minus_p2:.3f}")
+    log(f"[DETAIL] Avg Kill diff (P1-P2): {avg_kill_diff_p1_minus_p2:.3f}")
+    log(f"[DETAIL] Avg длина эпизода: {avg_ep_len:.3f}")
     log(
-        "[DETAIL] Причины завершения V2: "
-        f"turn_limit={turn_limit_count}, wipeout_p1={wipeout_p1_count}, wipeout_p2={wipeout_p2_count}"
+        "[DETAIL] Причины завершения: "
+        f"turn_limit={turn_limit_count}, wipeout_p1={wipeout_p1_count}, wipeout_p2={wipeout_p2_count}, "
+        f"raw={dict(end_reasons_v2)}"
     )
-    log(f"[DETAIL] Всего игр: {games}")
-    log(f"[DETAIL] Победы/Поражения/Ничьи: {wins}/{losses}/{draws}")
-    log(f"[DETAIL] Winrate (все игры): {winrate_all:.3f}")
-    log(f"[DETAIL] Winrate (без ничьих): {winrate_no_draw:.3f}")
-    log(f"[DETAIL] VP diff (avg/median/min/max): {avg_vp_diff:.3f}/{median_vp_diff:.3f}/{min_vp_diff:.3f}/{max_vp_diff:.3f}")
-    log(
-        "[DETAIL] VP diff по знаку: "
-        f"положительных={positive_vp_games}, отрицательных={negative_vp_games}, нулевых={neutral_vp_games}"
-    )
-    if sorted_reasons:
-        log("[DETAIL] Причины завершения (по частоте):")
-        for reason, count in sorted_reasons:
-            reason_ru = reason_labels.get(reason, reason)
-            log(f"[DETAIL]   - {reason_ru} ({reason}): {count}")
-    else:
-        log("[DETAIL] Причины завершения: данных нет")
     log("[DETAIL] ------------------------------------------------")
     return 0
 

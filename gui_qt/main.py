@@ -2839,6 +2839,10 @@ class GUIController(QtCore.QObject):
         wr_p1_dec = float(pairs.get("winrate_p1_decisive", "0") or "0")
         wr_p2_dec = float(pairs.get("winrate_p2_decisive", "0") or "0")
         avg_vp_diff = float(pairs.get("avg_vp_diff_p1_minus_p2", "0") or "0")
+        avg_reward_learner = float(pairs.get("avg_reward_learner", "0") or "0")
+        avg_hp_diff = float(pairs.get("avg_hp_diff_p1_minus_p2", "0") or "0")
+        avg_kill_diff = float(pairs.get("avg_kill_diff_p1_minus_p2", "0") or "0")
+        avg_ep_len = float(pairs.get("avg_ep_len", "0") or "0")
         turn_limit_count = int(float(pairs.get("turn_limit_count", "0") or "0"))
         turn_limit_rate = turn_limit_count / total_games
 
@@ -2868,7 +2872,11 @@ class GUIController(QtCore.QObject):
         lines.append(f"- Итог серии: P1 {p1_wins} • P2 {p2_wins} • Ничьи {draws}")
         lines.append(f"- Winrate P1/P2 (все): {wr_p1_all:.3f}/{wr_p2_all:.3f}")
         lines.append(f"- Winrate P1/P2 (решающие): {wr_p1_dec:.3f}/{wr_p2_dec:.3f}")
+        lines.append(f"- Avg награда (learner): {avg_reward_learner:.3f}")
         lines.append(f"- Средний VP diff (P1-P2): {avg_vp_diff:.3f}")
+        lines.append(f"- Avg HP diff (P1-P2): {avg_hp_diff:.3f}")
+        lines.append(f"- Avg Kill diff (P1-P2): {avg_kill_diff:.3f}")
+        lines.append(f"- Avg длина эпизода: {avg_ep_len:.3f}")
         lines.append(f"- Turn-limit: {turn_limit_count}/{total_games} ({turn_limit_rate:.3f})")
         lines.append(f"- Причины завершения: {reason_text}")
         lines.append("- Контекст: матч детерминированный, epsilon=0.")
@@ -2909,23 +2917,22 @@ class GUIController(QtCore.QObject):
         except (ValueError, SyntaxError):
             pass
         turn_limit_rate = turn_limit_count / total_games
-        self._eval_result_headline = f"P1 vs P2 (legacy): {wins}-{losses}-{draws}"
-        self._eval_result_winrate_p1 = f"P1 (legacy winner) winrate all: {pairs.get('winrate_all', '?')}"
-        self._eval_result_winrate_p2 = f"P2 (legacy opponent) winrate all: —"
-        self._eval_result_avg_vp_diff = f"Avg VP diff (legacy model-enemy): {pairs.get('avg_vp_diff', '?')}"
+        self._eval_result_headline = f"P1 vs P2: {wins}-{losses}-{draws}"
+        self._eval_result_winrate_p1 = f"P1 winrate all: {pairs.get('winrate_all', '?')}"
+        self._eval_result_winrate_p2 = "P2 winrate all: —"
+        self._eval_result_avg_vp_diff = f"Avg VP diff: {pairs.get('avg_vp_diff', '?')}"
         self._eval_result_turn_limit_rate = f"Turn-limit rate: {turn_limit_rate:.1%} ({turn_limit_count}/{total_games})"
-        self._eval_result_quality_hint = "Качество серии: legacy summary (желательно V2)."
+        self._eval_result_quality_hint = "Качество серии: используется базовый summary."
         self.evalSetupChanged.emit()
 
-        lines = ["Подробный результат оценки (legacy):"]
-        lines.append(f"- Победы (legacy): {pairs.get('wins', '?')}")
-        lines.append(f"- Поражения (legacy): {pairs.get('losses', '?')}")
+        lines = ["Подробный результат оценки:"]
+        lines.append(f"- Победы: {pairs.get('wins', '?')}")
+        lines.append(f"- Поражения: {pairs.get('losses', '?')}")
         lines.append(f"- Ничьи: {pairs.get('draws', '?')}")
         lines.append(f"- Winrate (все игры): {pairs.get('winrate_all', '?')}")
         lines.append(f"- Winrate (без ничьих): {pairs.get('winrate_no_draw', '?')}")
-        lines.append(f"- Средний VP diff (legacy model-enemy): {pairs.get('avg_vp_diff', '?')}")
-        lines.append(f"- Медианный VP diff (legacy model-enemy): {pairs.get('median_vp_diff', '?')}")
-        lines.append("- Рекомендация: используйте SUMMARY_V2 (P1/P2) для корректной интерпретации.")
+        lines.append(f"- Средний VP diff: {pairs.get('avg_vp_diff', '?')}")
+        lines.append(f"- Медианный VP diff: {pairs.get('median_vp_diff', '?')}")
         lines.append(f"- Причины завершения: {reason_text}")
         return "\n".join(lines)
 
