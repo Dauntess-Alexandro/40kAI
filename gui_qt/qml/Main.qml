@@ -1963,6 +1963,36 @@ ApplicationWindow {
 
                                 RowLayout {
                                     Layout.fillWidth: true
+                                    spacing: root.spacingSm
+                                    Label {
+                                        text: "Количество игр:"
+                                        font.bold: true
+                                    }
+                                    TextField {
+                                        id: evalGamesField
+                                        text: controller.evalGames.toString()
+                                        validator: IntValidator { bottom: 1 }
+                                        Layout.preferredWidth: Math.round(110 * root.uiScale)
+                                        enabled: !controller.running
+                                        onEditingFinished: {
+                                            var value = parseInt(text)
+                                            if (!isNaN(value)) {
+                                                controller.set_eval_games(value)
+                                                text = controller.evalGames.toString()
+                                            } else {
+                                                text = controller.evalGames.toString()
+                                            }
+                                        }
+                                    }
+                                    Text {
+                                        text: "deterministic, epsilon=0"
+                                        color: "#5b6472"
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
                                     spacing: root.spacingMd
 
                                     Rectangle {
@@ -2485,6 +2515,11 @@ ApplicationWindow {
         }
         function onNumGamesChanged(value) {
             numGamesField.text = value.toString()
+        }
+        function onEvalGamesChanged(value) {
+            if (typeof evalGamesField !== "undefined" && evalGamesField) {
+                evalGamesField.text = value.toString()
+            }
         }
     }
 
