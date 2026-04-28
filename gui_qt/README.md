@@ -8,18 +8,8 @@
 python -m venv .venv
 \.venv\Scripts\activate
 python -m pip install -U pip
-pip install -r requirements.txt
+pip install -r requirements_windows.txt
 python gui_qt\main.py
-```
-
-## Быстрый старт (Linux)
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -U pip
-pip install -r requirements.txt
-python gui_qt/main.py
 ```
 
 ## Как это работает
@@ -28,7 +18,7 @@ python gui_qt/main.py
 - Статусная строка показывает состояние процесса.
 
 ## Примечания
-- Если процесс не стартует, проверьте зависимости Python и наличие всех пакетов из `requirements.txt`.
+- Если процесс не стартует, проверьте зависимости Python и наличие всех пакетов из `requirements_windows.txt`.
 - Для вывода логов в консоль используются переменные окружения:
   - `TRAIN_LOG_ENABLED=1`
   - `TRAIN_LOG_TO_CONSOLE=1`

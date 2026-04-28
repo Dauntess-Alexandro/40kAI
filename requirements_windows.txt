@@ -1,0 +1,19 @@
+# 40kAI dependencies (Windows, Python 3.12)
+# How to use:
+#   1) python -m venv .venv
+#   2) .\.venv\Scripts\activate
+#   3) pip install -r requirements_windows.txt
+#
+# This is the single source of truth for Python dependencies in this repository.
+
+gym==0.26.0
+gymnasium==0.29.1
+matplotlib==3.8.4
+numpy==1.26.4
+imageio==2.34.1
+tqdm==4.66.4
+pandas==2.2.2
+scipy==1.14.0
+torch==2.10.0
+PySide6==6.7.2
+numba==0.59.1

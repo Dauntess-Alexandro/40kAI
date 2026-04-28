@@ -2151,10 +2151,10 @@ class GUIController(QtCore.QObject):
             self._emit_status("Сохранённые модели не найдены. Запускаю базовый режим.")
         if not self._check_torch_import():
             return
-        if self._is_windows:
-            script = os.path.join(self._repo_root, "scripts", "viewer.bat")
-        else:
-            script = os.path.join(self._repo_root, "scripts", "viewer.sh")
+        if not self._is_windows:
+            self._emit_status("Linux/macOS скрипты удалены. Используйте Windows .bat запуск.")
+            return
+        script = os.path.join(self._repo_root, "scripts", "viewer.bat")
         if not os.path.exists(script):
             self._emit_status("Не найден скрипт Viewer. Проверьте репозиторий.")
             return
