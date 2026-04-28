@@ -38,7 +38,7 @@ from gym_mod.engine.agent_registry import (
 from gym_mod.engine.matchmaker import choose_opponent, record_matchup
 from gymnasium import spaces
 
-AGENT_TRAIN_LOG_FILE = "LOGS_FOR_AGENTS_TRAIN.md"
+AGENT_TRAIN_LOG_FILE = os.path.join("logs", "LOGS_FOR_AGENTS_TRAIN.md")
 os.environ.setdefault("AGENT_LOG_FILE", AGENT_TRAIN_LOG_FILE)
 
 from model.DQN import *
@@ -1505,7 +1505,7 @@ def _trace_write_lines(ep_idx_1based: int, lines: list[str], *, actor_idx: int |
 
 def _format_action_trace_summary(ep_idx_1based: int, actor_idx: int | None, payload: dict) -> str:
     """
-    Компактный, но подробный блок для LOGS_FOR_AGENTS_TRAIN.md.
+    Компактный, но подробный блок для logs/LOGS_FOR_AGENTS_TRAIN.md.
     payload ожидает структуру вида:
       {
         "steps": int,
@@ -1580,7 +1580,7 @@ def _format_action_trace_summary(ep_idx_1based: int, actor_idx: int | None, payl
 
 
 def _log_train(line: str) -> None:
-    """Лог в `LOGS_FOR_AGENTS_TRAIN.md` + (опционально) в консоль."""
+    """Лог в `logs/LOGS_FOR_AGENTS_TRAIN.md` + (опционально) в консоль."""
     if TRAIN_LOG_TO_CONSOLE:
         # Печатаем без timestamp, чтобы консоль не была слишком шумной.
         print(line)
@@ -1714,10 +1714,11 @@ def _flush_agent_log_buffer(force: bool = False) -> None:
     script_path = globals().get("__file__") or sys.argv[0] or "train.py"
     log_path = os.path.join(os.path.dirname(os.path.abspath(script_path)), AGENT_TRAIN_LOG_FILE)
     try:
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
         with open(log_path, "a", encoding="utf-8") as log_file:
             log_file.writelines(lines)
     except Exception as exc:
-        print(f"[LOG][WARN] Не удалось записать LOGS_FOR_AGENTS_TRAIN.md: {exc}")
+        print(f"[LOG][WARN] Не удалось записать logs/LOGS_FOR_AGENTS_TRAIN.md: {exc}")
 
 
 atexit.register(lambda: _flush_agent_log_buffer(force=True))

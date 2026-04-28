@@ -1812,7 +1812,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
             return
         try:
             import datetime
-            log_path = Path(__file__).resolve().parent.parent / "LOGS_FOR_AGENTS_PLAY.md"
+            log_path = Path(__file__).resolve().parent.parent / "logs" / "LOGS_FOR_AGENTS_PLAY.md"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with open(log_path, "a", encoding="utf-8") as handle:
                 handle.write(f"{timestamp} | {msg}\n")

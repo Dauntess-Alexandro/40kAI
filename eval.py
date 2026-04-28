@@ -26,7 +26,7 @@ from model.opponent_adapter import build_policy_fn, load_agent_opponent
 import gymnasium as gym
 import gym_mod  # noqa: F401 (регистрация '40kAI-v0')
 
-AGENT_TRAIN_LOG_FILE = "LOGS_FOR_AGENTS_TRAIN.md"
+AGENT_TRAIN_LOG_FILE = os.path.join("logs", "LOGS_FOR_AGENTS_TRAIN.md")
 os.environ.setdefault("AGENT_LOG_FILE", AGENT_TRAIN_LOG_FILE)
 from model.utils import build_shoot_action_mask, build_action_masks_by_head, convertToDict, unwrap_env
 
@@ -36,6 +36,7 @@ def _append_eval_log(message: str) -> None:
     script_path = globals().get("__file__") or sys.argv[0] or "eval.py"
     log_path = os.path.join(os.path.dirname(os.path.abspath(script_path)), AGENT_TRAIN_LOG_FILE)
     try:
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
         with open(log_path, "a", encoding="utf-8") as log_file:
             log_file.write(f"{timestamp} | [EVAL] {message}\n")
     except Exception:

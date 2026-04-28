@@ -400,7 +400,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._popup_seen_ttl_s = 3.0
         self._popup_seen_max = 1500
         self._max_log_lines = 5000
-        self._log_file_path = os.path.join(ROOT_DIR, "LOGS_FOR_AGENTS_PLAY.md")
+        self._log_file_path = os.path.join(ROOT_DIR, "logs", "LOGS_FOR_AGENTS_PLAY.md")
+        os.makedirs(os.path.dirname(self._log_file_path), exist_ok=True)
         self._log_file_max_bytes = 5 * 1024 * 1024
         self._last_active_side = None
         self._init_log_viewer()

@@ -1872,13 +1872,13 @@ class GUIController(QtCore.QObject):
     def clear_model_cache(self) -> None:
         try:
             self._clear_cache_files()
-            self._emit_status("Кэш моделей, LOGS_FOR_AGENTS_TRAIN.md, LOGS_FOR_AGENTS_PLAY.md и results.txt очищены.")
-            self._emit_log("[GUI] Кэш моделей, LOGS_FOR_AGENTS_TRAIN.md, LOGS_FOR_AGENTS_PLAY.md и results.txt очищены.")
+            self._emit_status("Кэш моделей, logs/LOGS_FOR_AGENTS_TRAIN.md, logs/LOGS_FOR_AGENTS_PLAY.md и results.txt очищены.")
+            self._emit_log("[GUI] Кэш моделей, logs/LOGS_FOR_AGENTS_TRAIN.md, logs/LOGS_FOR_AGENTS_PLAY.md и results.txt очищены.")
         except OSError as exc:
             message = (
                 "Не удалось очистить кэш и логи. "
                 "Где: gui_qt/main.py (clear_model_cache). "
-                "Что делать: проверьте права доступа к models/, metrics/, LOGS_FOR_AGENTS_TRAIN.md, LOGS_FOR_AGENTS_PLAY.md и results.txt, затем повторите."
+                "Что делать: проверьте права доступа к models/, metrics/, logs/LOGS_FOR_AGENTS_TRAIN.md, logs/LOGS_FOR_AGENTS_PLAY.md и results.txt, затем повторите."
             )
             self._emit_status(message)
             self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
@@ -1887,13 +1887,13 @@ class GUIController(QtCore.QObject):
     def clear_agent_logs(self) -> None:
         try:
             self._clear_runtime_logs()
-            self._emit_status("LOGS_FOR_AGENTS_TRAIN.md, LOGS_FOR_AGENTS_PLAY.md и results.txt очищены.")
-            self._emit_log("[GUI] LOGS_FOR_AGENTS_TRAIN.md, LOGS_FOR_AGENTS_PLAY.md и results.txt очищены.")
+            self._emit_status("logs/LOGS_FOR_AGENTS_TRAIN.md, logs/LOGS_FOR_AGENTS_PLAY.md и results.txt очищены.")
+            self._emit_log("[GUI] logs/LOGS_FOR_AGENTS_TRAIN.md, logs/LOGS_FOR_AGENTS_PLAY.md и results.txt очищены.")
         except OSError as exc:
             message = (
                 "Не удалось очистить логи. "
                 "Где: gui_qt/main.py (clear_agent_logs). "
-                "Что делать: проверьте путь и права доступа к LOGS_FOR_AGENTS_TRAIN.md, LOGS_FOR_AGENTS_PLAY.md и results.txt, затем повторите."
+                "Что делать: проверьте путь и права доступа к logs/LOGS_FOR_AGENTS_TRAIN.md, logs/LOGS_FOR_AGENTS_PLAY.md и results.txt, затем повторите."
             )
             self._emit_status(message)
             self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
@@ -2065,7 +2065,7 @@ class GUIController(QtCore.QObject):
         env.insert("LEARNER_SIDE", learner_side)
         env.insert("LEARNER_FACTION", self._display_faction_for_side(learner_side))
         env.insert("LEAGUE_ENABLE", "1")
-        env.insert("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_TRAIN.md")
+        env.insert("AGENT_LOG_FILE", os.path.join("logs", "LOGS_FOR_AGENTS_TRAIN.md"))
         self._process.setProcessEnvironment(env)
 
         self._process.readyReadStandardOutput.connect(self._read_stdout)
@@ -2126,7 +2126,7 @@ class GUIController(QtCore.QObject):
         env = os.environ.copy()
         env["MISSION_NAME"] = self._selected_mission
         env["DEPLOYMENT_MODE"] = self._deployment_mode
-        env["AGENT_LOG_FILE"] = "LOGS_FOR_AGENTS_PLAY.md"
+        env["AGENT_LOG_FILE"] = os.path.join("logs", "LOGS_FOR_AGENTS_PLAY.md")
         if self._play_agent_override_id:
             env["VIEWER_AGENT_ID"] = self._play_agent_override_id
             player_label, model_label = self._infer_viewer_role_labels_from_agent_id(
@@ -2165,7 +2165,7 @@ class GUIController(QtCore.QObject):
         env["PLAY_NO_EXPLORATION"] = "1"
         env["MISSION_NAME"] = self._selected_mission
         env["DEPLOYMENT_MODE"] = self._deployment_mode
-        env["AGENT_LOG_FILE"] = "LOGS_FOR_AGENTS_PLAY.md"
+        env["AGENT_LOG_FILE"] = os.path.join("logs", "LOGS_FOR_AGENTS_PLAY.md")
         if self._play_agent_override_id:
             env["VIEWER_AGENT_ID"] = self._play_agent_override_id
             player_label, model_label = self._infer_viewer_role_labels_from_agent_id(
@@ -2324,12 +2324,12 @@ class GUIController(QtCore.QObject):
         if self._auto_clear_logs:
             try:
                 self._clear_runtime_logs(clear_play=False, clear_results=False)
-                self._emit_log("[GUI] Автоочистка: LOGS_FOR_AGENTS_TRAIN.md очищен.", level="INFO")
+                self._emit_log("[GUI] Автоочистка: logs/LOGS_FOR_AGENTS_TRAIN.md очищен.", level="INFO")
             except OSError as exc:
                 message = (
                     "Не удалось автоматически очистить логи перед тренировкой. "
                     "Где: gui_qt/main.py (_start_training). "
-                    "Что делать: проверьте доступ к LOGS_FOR_AGENTS_TRAIN.md или снимите галочку автоочистки."
+                    "Что делать: проверьте доступ к logs/LOGS_FOR_AGENTS_TRAIN.md или снимите галочку автоочистки."
                 )
                 self._emit_status(message)
                 self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
@@ -2502,7 +2502,7 @@ class GUIController(QtCore.QObject):
             env.insert("DEPLOYMENT_MODE", "auto")
         if self._deployment_mode == "rl_phase":
             env.insert("DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE", "0")
-        env.insert("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_TRAIN.md")
+        env.insert("AGENT_LOG_FILE", os.path.join("logs", "LOGS_FOR_AGENTS_TRAIN.md"))
         for key, value in env_overrides.items():
             env.insert(key, value)
         self._process.setProcessEnvironment(env)
@@ -3356,7 +3356,7 @@ class GUIController(QtCore.QObject):
 
         snapshot_episodes = 0
         fixed_episodes = 0
-        logs_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS_TRAIN.md")
+        logs_path = os.path.join(self._repo_root, "logs", "LOGS_FOR_AGENTS_TRAIN.md")
         if os.path.exists(logs_path):
             try:
                 with open(logs_path, "r", encoding="utf-8", errors="replace") as handle:
@@ -3380,7 +3380,7 @@ class GUIController(QtCore.QObject):
             "replay_size": "—",
             "eps": "—",
         }
-        logs_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS_TRAIN.md")
+        logs_path = os.path.join(self._repo_root, "logs", "LOGS_FOR_AGENTS_TRAIN.md")
         if not os.path.exists(logs_path):
             return values
         try:
@@ -4072,12 +4072,14 @@ class GUIController(QtCore.QObject):
         clear_results: bool = True,
         clear_train: bool = True,
     ) -> None:
+        logs_dir = os.path.join(self._repo_root, "logs")
+        os.makedirs(logs_dir, exist_ok=True)
         if clear_train:
-            train_log_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS_TRAIN.md")
+            train_log_path = os.path.join(self._repo_root, "logs", "LOGS_FOR_AGENTS_TRAIN.md")
             with open(train_log_path, "w", encoding="utf-8"):
                 pass
         if clear_play:
-            play_log_path = os.path.join(self._repo_root, "LOGS_FOR_AGENTS_PLAY.md")
+            play_log_path = os.path.join(self._repo_root, "logs", "LOGS_FOR_AGENTS_PLAY.md")
             with open(play_log_path, "w", encoding="utf-8"):
                 pass
         if clear_results:

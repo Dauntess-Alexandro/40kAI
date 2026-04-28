@@ -1029,7 +1029,10 @@ class Warhammer40kEnv(gym.Env):
         self.terrain_obscuring_cells: set[tuple[int, int]] = self.get_terrain_obscuring_cells_set()
         self.visibility_mode = str(os.getenv("VISIBILITY_MODE", "multi_ray_5") or "multi_ray_5").strip().lower()
         self._terrain_shaping_shot_bonus_units: set[int] = set()
-        log_name = str(os.getenv("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_PLAY.md") or "LOGS_FOR_AGENTS_PLAY.md")
+        log_name = str(
+            os.getenv("AGENT_LOG_FILE", os.path.join("logs", "LOGS_FOR_AGENTS_PLAY.md"))
+            or os.path.join("logs", "LOGS_FOR_AGENTS_PLAY.md")
+        )
         self._agent_log_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "..", log_name)
         )
