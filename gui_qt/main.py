@@ -55,6 +55,7 @@ class GUIController(QtCore.QObject):
     evalGamesChanged = QtCore.Signal(int)
     evalLogTextChanged = QtCore.Signal(str)
     evalSummaryTextChanged = QtCore.Signal(str)
+    evalSetupChanged = QtCore.Signal()
     boardTextChanged = QtCore.Signal(str)
     selfPlayFromCheckpointChanged = QtCore.Signal(bool)
     resumeFromCheckpointChanged = QtCore.Signal(bool)
@@ -149,6 +150,37 @@ class GUIController(QtCore.QObject):
         self._eval_games = 50
         self._eval_log_text = ""
         self._eval_summary_text = "Итог оценки появится после завершения eval.py."
+        self._eval_policy_options = ["heuristic", "agent"]
+        self._eval_p1_policy = "agent"
+        self._eval_p2_policy = "heuristic"
+        self._eval_p1_agent_ids: list[str] = []
+        self._eval_p1_agent_labels: list[str] = []
+        self._eval_p2_agent_ids: list[str] = []
+        self._eval_p2_agent_labels: list[str] = []
+        self._eval_selected_p1_agent_id = ""
+        self._eval_selected_p2_agent_id = ""
+        self._eval_matchup_text = "Выберите политику P1 и P2 для оценки."
+        self._eval_duel_title = "— vs —"
+        self._eval_duel_subtitle = "Выберите состав матча."
+        self._eval_p1_display_name = "P1: —"
+        self._eval_p2_display_name = "P2: —"
+        self._eval_p1_full_agent_id = ""
+        self._eval_p2_full_agent_id = ""
+        self._eval_p1_badges: list[str] = []
+        self._eval_p2_badges: list[str] = []
+        self._eval_p1_icon_text = "AI"
+        self._eval_p2_icon_text = "HR"
+        self._eval_scenario_text = "Сценарий: выберите политики P1/P2."
+        self._eval_launch_ready = False
+        self._eval_launch_status_text = "Нужно выбрать хотя бы одного агента."
+        self._eval_mini_summary = "Игр: 50 • deterministic • epsilon=0"
+        self._eval_agent_meta_by_id: dict[str, dict[str, str]] = {}
+        self._eval_result_headline = "P1 vs P2: —"
+        self._eval_result_winrate_p1 = "P1 winrate: —"
+        self._eval_result_winrate_p2 = "P2 winrate: —"
+        self._eval_result_avg_vp_diff = "Avg VP diff (P1-P2): —"
+        self._eval_result_turn_limit_rate = "Turn-limit rate: —"
+        self._eval_result_quality_hint = "Качество серии: нет данных."
         self._active_process_kind = ""
         self._board_text = "ASCII карта будет доступна после запуска игры."
         self._self_play_from_checkpoint = False
@@ -230,6 +262,7 @@ class GUIController(QtCore.QObject):
         self._select_latest_eval_model(initial=True)
         self._update_roster_summary()
         self._refresh_specific_opponent_options()
+        self._refresh_eval_agent_options()
 
         self._emit_status("Нажмите «Тренировка 8х», чтобы запустить обучение.")
 
@@ -511,6 +544,130 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=evalSummaryTextChanged)
     def evalSummaryText(self) -> str:
         return self._eval_summary_text
+
+    @QtCore.Property("QStringList", constant=True)
+    def evalPolicyOptions(self):
+        return self._eval_policy_options
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP1Policy(self) -> str:
+        return self._eval_p1_policy
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP2Policy(self) -> str:
+        return self._eval_p2_policy
+
+    @QtCore.Property("QStringList", notify=evalSetupChanged)
+    def evalP1AgentOptions(self):
+        return self._eval_p1_agent_labels
+
+    @QtCore.Property("QStringList", notify=evalSetupChanged)
+    def evalP2AgentOptions(self):
+        return self._eval_p2_agent_labels
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP1SelectedAgentLabel(self) -> str:
+        if not self._eval_selected_p1_agent_id:
+            return ""
+        try:
+            idx = self._eval_p1_agent_ids.index(self._eval_selected_p1_agent_id)
+        except ValueError:
+            return ""
+        return self._eval_p1_agent_labels[idx] if 0 <= idx < len(self._eval_p1_agent_labels) else ""
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP2SelectedAgentLabel(self) -> str:
+        if not self._eval_selected_p2_agent_id:
+            return ""
+        try:
+            idx = self._eval_p2_agent_ids.index(self._eval_selected_p2_agent_id)
+        except ValueError:
+            return ""
+        return self._eval_p2_agent_labels[idx] if 0 <= idx < len(self._eval_p2_agent_labels) else ""
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalMatchupText(self) -> str:
+        return self._eval_matchup_text
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalDuelTitle(self) -> str:
+        return self._eval_duel_title
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalDuelSubtitle(self) -> str:
+        return self._eval_duel_subtitle
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP1DisplayName(self) -> str:
+        return self._eval_p1_display_name
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP2DisplayName(self) -> str:
+        return self._eval_p2_display_name
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP1FullAgentId(self) -> str:
+        return self._eval_p1_full_agent_id
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP2FullAgentId(self) -> str:
+        return self._eval_p2_full_agent_id
+
+    @QtCore.Property("QStringList", notify=evalSetupChanged)
+    def evalP1Badges(self):
+        return self._eval_p1_badges
+
+    @QtCore.Property("QStringList", notify=evalSetupChanged)
+    def evalP2Badges(self):
+        return self._eval_p2_badges
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP1IconText(self) -> str:
+        return self._eval_p1_icon_text
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP2IconText(self) -> str:
+        return self._eval_p2_icon_text
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalScenarioText(self) -> str:
+        return self._eval_scenario_text
+
+    @QtCore.Property(bool, notify=evalSetupChanged)
+    def evalLaunchReady(self) -> bool:
+        return self._eval_launch_ready
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalLaunchStatusText(self) -> str:
+        return self._eval_launch_status_text
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalMiniSummary(self) -> str:
+        return self._eval_mini_summary
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalResultHeadline(self) -> str:
+        return self._eval_result_headline
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalResultWinrateP1(self) -> str:
+        return self._eval_result_winrate_p1
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalResultWinrateP2(self) -> str:
+        return self._eval_result_winrate_p2
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalResultAvgVpDiff(self) -> str:
+        return self._eval_result_avg_vp_diff
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalResultTurnLimitRate(self) -> str:
+        return self._eval_result_turn_limit_rate
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalResultQualityHint(self) -> str:
+        return self._eval_result_quality_hint
 
     @QtCore.Property(str, notify=boardTextChanged)
     def boardText(self) -> str:
@@ -851,6 +1008,89 @@ class GUIController(QtCore.QObject):
         if self._eval_games != value:
             self._eval_games = value
             self.evalGamesChanged.emit(value)
+            self._update_eval_matchup_text()
+            self.evalSetupChanged.emit()
+
+    @QtCore.Slot(str)
+    def set_eval_p1_policy(self, value: str) -> None:
+        policy = str(value or "").strip().lower()
+        if policy not in self._eval_policy_options:
+            policy = "heuristic"
+        if policy == self._eval_p1_policy:
+            return
+        self._eval_p1_policy = policy
+        self._update_eval_matchup_text()
+        self.evalSetupChanged.emit()
+
+    @QtCore.Slot(str)
+    def set_eval_p2_policy(self, value: str) -> None:
+        policy = str(value or "").strip().lower()
+        if policy not in self._eval_policy_options:
+            policy = "heuristic"
+        if policy == self._eval_p2_policy:
+            return
+        self._eval_p2_policy = policy
+        self._update_eval_matchup_text()
+        self.evalSetupChanged.emit()
+
+    @QtCore.Slot(str)
+    def set_eval_p1_agent_by_label(self, label: str) -> None:
+        text = str(label or "").strip()
+        if not text:
+            self._eval_selected_p1_agent_id = ""
+            self._update_eval_matchup_text()
+            self.evalSetupChanged.emit()
+            return
+        try:
+            idx = self._eval_p1_agent_labels.index(text)
+        except ValueError:
+            return
+        if 0 <= idx < len(self._eval_p1_agent_ids):
+            selected = self._eval_p1_agent_ids[idx]
+            if selected != self._eval_selected_p1_agent_id:
+                self._eval_selected_p1_agent_id = selected
+                self._update_eval_matchup_text()
+                self.evalSetupChanged.emit()
+
+    @QtCore.Slot(str)
+    def set_eval_p2_agent_by_label(self, label: str) -> None:
+        text = str(label or "").strip()
+        if not text:
+            self._eval_selected_p2_agent_id = ""
+            self._update_eval_matchup_text()
+            self.evalSetupChanged.emit()
+            return
+        try:
+            idx = self._eval_p2_agent_labels.index(text)
+        except ValueError:
+            return
+        if 0 <= idx < len(self._eval_p2_agent_ids):
+            selected = self._eval_p2_agent_ids[idx]
+            if selected != self._eval_selected_p2_agent_id:
+                self._eval_selected_p2_agent_id = selected
+                self._update_eval_matchup_text()
+                self.evalSetupChanged.emit()
+
+    @QtCore.Slot()
+    def refresh_eval_agents(self) -> None:
+        self._refresh_eval_agent_options()
+        self._emit_status("Список доступных агентов для оценки обновлён.")
+
+    @QtCore.Slot(str)
+    def copy_eval_agent_id(self, side: str) -> None:
+        normalized_side = str(side or "").strip().upper()
+        if normalized_side == "P1":
+            agent_id = str(self._eval_p1_full_agent_id or "").strip()
+        elif normalized_side == "P2":
+            agent_id = str(self._eval_p2_full_agent_id or "").strip()
+        else:
+            agent_id = ""
+        if not agent_id:
+            self._emit_status(f"Для {normalized_side or 'стороны'} нет agent_id для копирования.")
+            return
+        clipboard = QtGui.QGuiApplication.clipboard()
+        clipboard.setText(agent_id)
+        self._emit_status(f"Скопирован agent_id для {normalized_side}: {agent_id}")
 
     @QtCore.Slot(int)
     def add_unit_to_player(self, index: int) -> None:
@@ -1161,6 +1401,164 @@ class GUIController(QtCore.QObject):
             self.selectedSpecificOpponentIdChanged.emit(self._selected_specific_opponent_id)
         self.specificOpponentOptionsChanged.emit()
         self._update_opponent_preview_text()
+
+    def _refresh_eval_agent_options(self) -> None:
+        records = self._collect_registered_agents_meta()
+        p1_records = [rec for rec in records if str(rec.get("side")) == "P1"]
+        p2_records = [rec for rec in records if str(rec.get("side")) == "P2"]
+        self._eval_agent_meta_by_id = {
+            str(rec.get("agent_id")): {
+                "agent_id": str(rec.get("agent_id", "")).strip(),
+                "side": str(rec.get("side", "")).strip().upper(),
+                "faction": str(rec.get("faction", "Unknown")).strip() or "Unknown",
+                "algo": str(rec.get("algo", "unknown")).strip().lower() or "unknown",
+            }
+            for rec in records
+        }
+        self._eval_p1_agent_ids = [str(rec.get("agent_id")) for rec in p1_records]
+        self._eval_p1_agent_labels = [self._format_eval_agent_option_label(rec) for rec in p1_records]
+        self._eval_p2_agent_ids = [str(rec.get("agent_id")) for rec in p2_records]
+        self._eval_p2_agent_labels = [self._format_eval_agent_option_label(rec) for rec in p2_records]
+
+        if self._eval_selected_p1_agent_id not in self._eval_p1_agent_ids:
+            self._eval_selected_p1_agent_id = self._eval_p1_agent_ids[0] if self._eval_p1_agent_ids else ""
+        if self._eval_selected_p2_agent_id not in self._eval_p2_agent_ids:
+            self._eval_selected_p2_agent_id = self._eval_p2_agent_ids[0] if self._eval_p2_agent_ids else ""
+
+        if self._eval_p1_policy == "agent" and not self._eval_selected_p1_agent_id:
+            self._eval_p1_policy = "heuristic"
+        if self._eval_p2_policy == "agent" and not self._eval_selected_p2_agent_id:
+            self._eval_p2_policy = "heuristic"
+
+        self._update_eval_matchup_text()
+        self.evalSetupChanged.emit()
+
+    def _extract_epoch_tag(self, agent_id: str) -> str:
+        text = str(agent_id or "")
+        match = re.search(r"ep(\d+)", text, flags=re.IGNORECASE)
+        if match:
+            return f"ep{match.group(1)}"
+        return "ep?"
+
+    def _friendly_agent_name(self, rec: dict[str, str]) -> str:
+        faction = str(rec.get("faction", "Unknown")).strip() or "Unknown"
+        algo = str(rec.get("algo", "unknown")).strip().upper() or "UNKNOWN"
+        agent_id = str(rec.get("agent_id", "")).strip()
+        return f"{faction} {algo} ({self._extract_epoch_tag(agent_id)})"
+
+    def _format_eval_agent_option_label(self, rec: dict[str, str]) -> str:
+        side = str(rec.get("side", "")).strip().upper() or "P?"
+        agent_id = str(rec.get("agent_id", "")).strip()
+        suffix = agent_id[-6:] if len(agent_id) >= 6 else agent_id
+        return f"{self._friendly_agent_name(rec)} [{side}] · {suffix}"
+
+    def _eval_side_presentation(self, side: str, mode: str, agent_id: str) -> dict[str, object]:
+        normalized_side = str(side or "").strip().upper()
+        normalized_mode = str(mode or "").strip().lower()
+        if normalized_mode == "heuristic":
+            return {
+                "title": f"{normalized_side}: Эвристика",
+                "algo": "HEURISTIC",
+                "faction": self._display_faction_for_side(normalized_side),
+                "full_id": "",
+                "icon": "HR",
+                "badges": ["HEURISTIC", self._display_faction_for_side(normalized_side), normalized_side],
+                "short": "Эвристика",
+                "subtitle": "Правила и приоритеты без нейросети.",
+            }
+        rec = dict(self._eval_agent_meta_by_id.get(str(agent_id).strip(), {}))
+        if not rec:
+            return {
+                "title": f"{normalized_side}: Агент не выбран",
+                "algo": "UNKNOWN",
+                "faction": self._display_faction_for_side(normalized_side),
+                "full_id": "",
+                "icon": "AI",
+                "badges": ["AGENT", "UNKNOWN", normalized_side],
+                "short": "Агент",
+                "subtitle": "Нужно выбрать agent_id.",
+            }
+        friendly = self._friendly_agent_name(rec)
+        algo = str(rec.get("algo", "unknown")).strip().upper() or "UNKNOWN"
+        faction = str(rec.get("faction", "Unknown")).strip() or "Unknown"
+        return {
+            "title": f"{normalized_side}: {friendly}",
+            "algo": algo,
+            "faction": faction,
+            "full_id": str(rec.get("agent_id", "")).strip(),
+            "icon": "AI",
+            "badges": [algo, faction, normalized_side],
+            "short": algo,
+            "subtitle": "Нейросетевой агент из registry.",
+        }
+
+    def _update_eval_matchup_text(self) -> None:
+        p1 = self._eval_side_presentation("P1", self._eval_p1_policy, self._eval_selected_p1_agent_id)
+        p2 = self._eval_side_presentation("P2", self._eval_p2_policy, self._eval_selected_p2_agent_id)
+        left = str(p1.get("short", "—"))
+        right = str(p2.get("short", "—"))
+        self._eval_duel_title = f"{left} vs {right}"
+        self._eval_duel_subtitle = f"{p1.get('faction', 'Unknown')} vs {p2.get('faction', 'Unknown')}"
+
+        self._eval_p1_display_name = str(p1.get("title", "P1: —"))
+        self._eval_p2_display_name = str(p2.get("title", "P2: —"))
+        self._eval_p1_full_agent_id = str(p1.get("full_id", ""))
+        self._eval_p2_full_agent_id = str(p2.get("full_id", ""))
+        self._eval_p1_badges = [str(x) for x in list(p1.get("badges", []))]
+        self._eval_p2_badges = [str(x) for x in list(p2.get("badges", []))]
+        self._eval_p1_icon_text = str(p1.get("icon", "AI"))
+        self._eval_p2_icon_text = str(p2.get("icon", "AI"))
+
+        ok_cfg, _, err = self._build_eval_launch_config()
+        self._eval_launch_ready = bool(ok_cfg)
+        self._eval_launch_status_text = "Готово к запуску." if ok_cfg else err
+
+        if self._eval_p1_policy == "agent" and self._eval_p2_policy == "agent":
+            self._eval_scenario_text = "Сценарий: честный AI vs AI (лучше для ppo vs dqn)."
+        elif self._eval_p1_policy == "heuristic" and self._eval_p2_policy == "agent":
+            self._eval_scenario_text = "Сценарий: эвристика тестирует силу агента P2."
+        elif self._eval_p1_policy == "agent" and self._eval_p2_policy == "heuristic":
+            self._eval_scenario_text = "Сценарий: агент P1 против правил эвристики."
+        else:
+            self._eval_scenario_text = "Сценарий: обе стороны эвристика (недоступно для запуска)."
+
+        self._eval_mini_summary = f"Игр: {self._eval_games} • deterministic • epsilon=0"
+        self._eval_matchup_text = (
+            f"{self._eval_p1_display_name}\n"
+            f"{self._eval_p2_display_name}\n"
+            f"{self._eval_scenario_text}\n"
+            f"Статус: {self._eval_launch_status_text}"
+        )
+
+    def _build_eval_launch_config(self) -> tuple[bool, dict[str, str], str]:
+        p1_mode = str(self._eval_p1_policy).strip().lower()
+        p2_mode = str(self._eval_p2_policy).strip().lower()
+        p1_agent = str(self._eval_selected_p1_agent_id).strip()
+        p2_agent = str(self._eval_selected_p2_agent_id).strip()
+
+        if p1_mode == "heuristic" and p2_mode == "heuristic":
+            return False, {}, "Нужно выбрать хотя бы одного агента: обе стороны не могут быть эвристикой."
+
+        if p1_mode == "agent" and not p1_agent:
+            return False, {}, "Нужно выбрать агента для P1."
+        if p2_mode == "agent" and not p2_agent:
+            return False, {}, "Нужно выбрать агента для P2."
+
+        if p1_mode == "agent":
+            learner_side = "P1"
+            learner_agent_id = p1_agent
+            opponent_agent_id = p2_agent if p2_mode == "agent" else ""
+        else:
+            learner_side = "P2"
+            learner_agent_id = p2_agent
+            opponent_agent_id = ""
+
+        launch = {
+            "learner_side": learner_side,
+            "learner_agent_id": learner_agent_id,
+            "opponent_agent_id": opponent_agent_id,
+        }
+        return True, launch, ""
 
     def _format_agent_label(self, rec: dict[str, str]) -> str:
         agent_id = str(rec.get("agent_id", "")).strip()
@@ -1617,12 +2015,19 @@ class GUIController(QtCore.QObject):
         if not self._check_torch_import():
             return
 
+        ok_cfg, cfg, err = self._build_eval_launch_config()
+        if not ok_cfg:
+            self._emit_status(err)
+            return
+        learner_agent_id = str(cfg.get("learner_agent_id", "")).strip()
+        opponent_agent_id = str(cfg.get("opponent_agent_id", "")).strip()
+        learner_side = str(cfg.get("learner_side", "P1")).strip().upper() or "P1"
+
         model_path = self._resolve_eval_model_path()
-        if model_path == "None":
+        if not learner_agent_id and model_path == "None":
             self._emit_status(
-                "Не удалось запустить оценку: модель не найдена. "
-                "Где: gui_qt/main.py (start_eval). "
-                "Что делать: выберите .pickle вручную или обучите новую модель."
+                "Не удалось запустить оценку: не выбрана модель и не выбран агент learner. "
+                "Что делать: выберите хотя бы одного агента в P1/P2 либо укажите .pickle."
             )
             return
 
@@ -1640,6 +2045,7 @@ class GUIController(QtCore.QObject):
 
         self._set_eval_log_text("")
         self._set_eval_summary_text("Идёт оценка... Итог будет показан после завершения.")
+        self._reset_eval_kpi_state()
 
         env = QtCore.QProcessEnvironment.systemEnvironment()
         env.insert("FORCE_GREEDY", "1")
@@ -1647,8 +2053,17 @@ class GUIController(QtCore.QObject):
         env.insert("PYTHONPATH", self._pythonpath_with_gym_mod())
         env.insert("MISSION_NAME", self._selected_mission)
         env.insert("DEPLOYMENT_MODE", self._deployment_mode)
-        env.insert("LEARNER_SIDE", self._learner_side)
-        env.insert("LEARNER_FACTION", self._learner_faction)
+        if self._deployment_mode == "manual_player":
+            self._emit_log(
+                "[GUI] [EVAL] DEPLOYMENT_MODE=manual_player не поддерживается для неинтерактивного eval.py; "
+                "переключаю DEPLOYMENT_MODE=auto.",
+                level="WARN",
+            )
+            env.insert("DEPLOYMENT_MODE", "auto")
+        if self._deployment_mode == "rl_phase":
+            env.insert("DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE", "0")
+        env.insert("LEARNER_SIDE", learner_side)
+        env.insert("LEARNER_FACTION", self._display_faction_for_side(learner_side))
         env.insert("LEAGUE_ENABLE", "1")
         env.insert("AGENT_LOG_FILE", "LOGS_FOR_AGENTS_TRAIN.md")
         self._process.setProcessEnvironment(env)
@@ -1665,15 +2080,23 @@ class GUIController(QtCore.QObject):
         self._progress_stats = "— it/s • elapsed 00:00"
         self.progressStatsChanged.emit(self._progress_stats)
 
-        args = ["-u", "eval.py", "--games", str(self._eval_games), "--model", model_path]
+        args = ["-u", "eval.py", "--games", str(self._eval_games)]
+        if model_path != "None":
+            args.extend(["--model", model_path])
+        if learner_agent_id:
+            args.extend(["--learner-agent-id", learner_agent_id])
+        if opponent_agent_id:
+            args.extend(["--opponent-agent-id", opponent_agent_id])
         self._emit_log(
-            f"[EVAL] Старт оценки: игр={self._eval_games}, модель={os.path.basename(model_path)}, "
-            "противник=эвристика, exploration=off.",
+            f"[EVAL] Старт оценки: игр={self._eval_games}, learner_side={learner_side}, "
+            f"learner_agent_id={learner_agent_id or '-'}, opponent_agent_id={opponent_agent_id or 'heuristic'}, "
+            f"модель={os.path.basename(model_path) if model_path != 'None' else 'registry/roster'}, exploration=off.",
             level="INFO",
         )
         self._append_eval_log_line(
-            f"Старт оценки: игр={self._eval_games}, модель={os.path.basename(model_path)}, "
-            "противник=эвристика, exploration=off."
+            f"Старт оценки: игр={self._eval_games}, learner_side={learner_side}, "
+            f"learner_agent_id={learner_agent_id or '-'}, opponent_agent_id={opponent_agent_id or 'heuristic'}, "
+            f"модель={os.path.basename(model_path) if model_path != 'None' else 'registry/roster'}, exploration=off."
         )
         self._emit_status("Оценка запущена...")
         self._process.start(sys.executable, args)
@@ -2337,6 +2760,7 @@ class GUIController(QtCore.QObject):
             self._select_latest_metrics()
             self._load_latest_heuristic_metrics()
             self._refresh_specific_opponent_options()
+            self._refresh_eval_agent_options()
         self._cleanup_process()
 
     def _cleanup_process(self) -> None:
@@ -2375,17 +2799,83 @@ class GUIController(QtCore.QObject):
 
     def _maybe_update_eval_summary(self, line: str) -> None:
         normalized = line.strip()
-        summary_prefix = "[EVAL][SUMMARY] "
-        if normalized.startswith(summary_prefix):
-            payload = normalized[len(summary_prefix):]
-            details = self._format_eval_summary(payload)
-            self._set_eval_summary_text(details)
+        for summary_prefix in ("[EVAL][SUMMARY_V2] ", "[SUMMARY_V2] "):
+            if normalized.startswith(summary_prefix):
+                payload = normalized[len(summary_prefix):]
+                details = self._format_eval_summary_v2(payload)
+                self._set_eval_summary_text(details)
+                return
+        for summary_prefix in ("[EVAL][SUMMARY] ", "[SUMMARY] "):
+            if normalized.startswith(summary_prefix):
+                payload = normalized[len(summary_prefix):]
+                details = self._format_eval_summary(payload)
+                self._set_eval_summary_text(details)
+                return
+
+    def _parse_eval_pairs(self, payload: str) -> dict[str, str]:
+        return {
+            key: value
+            for key, value in re.findall(r"([a-zA-Z0-9_]+)=([^=]+?)(?=\s+[a-zA-Z0-9_]+=|$)", payload)
+        }
+
+    def _reset_eval_kpi_state(self) -> None:
+        self._eval_result_headline = "P1 vs P2: —"
+        self._eval_result_winrate_p1 = "P1 winrate: —"
+        self._eval_result_winrate_p2 = "P2 winrate: —"
+        self._eval_result_avg_vp_diff = "Avg VP diff (P1-P2): —"
+        self._eval_result_turn_limit_rate = "Turn-limit rate: —"
+        self._eval_result_quality_hint = "Качество серии: нет данных."
+        self.evalSetupChanged.emit()
+
+    def _format_eval_summary_v2(self, payload: str) -> str:
+        pairs = self._parse_eval_pairs(payload)
+        p1_wins = int(float(pairs.get("p1_wins", "0") or "0"))
+        p2_wins = int(float(pairs.get("p2_wins", "0") or "0"))
+        draws = int(float(pairs.get("draws", "0") or "0"))
+        total_games = max(1, p1_wins + p2_wins + draws)
+
+        wr_p1_all = float(pairs.get("winrate_p1_all", "0") or "0")
+        wr_p2_all = float(pairs.get("winrate_p2_all", "0") or "0")
+        wr_p1_dec = float(pairs.get("winrate_p1_decisive", "0") or "0")
+        wr_p2_dec = float(pairs.get("winrate_p2_decisive", "0") or "0")
+        avg_vp_diff = float(pairs.get("avg_vp_diff_p1_minus_p2", "0") or "0")
+        turn_limit_count = int(float(pairs.get("turn_limit_count", "0") or "0"))
+        turn_limit_rate = turn_limit_count / total_games
+
+        if turn_limit_rate > 0.60:
+            quality_hint = "Качество серии: много игр упёрлось в лимит ходов."
+        elif turn_limit_rate > 0.35:
+            quality_hint = "Качество серии: заметная доля игр дошла до лимита."
+        else:
+            quality_hint = "Качество серии: серия достаточно решающая."
+
+        self._eval_result_headline = f"P1 vs P2: {p1_wins}-{p2_wins}-{draws}"
+        self._eval_result_winrate_p1 = f"P1 winrate: {wr_p1_all:.1%} (решающие: {wr_p1_dec:.1%})"
+        self._eval_result_winrate_p2 = f"P2 winrate: {wr_p2_all:.1%} (решающие: {wr_p2_dec:.1%})"
+        self._eval_result_avg_vp_diff = f"Avg VP diff (P1-P2): {avg_vp_diff:+.3f}"
+        self._eval_result_turn_limit_rate = f"Turn-limit rate: {turn_limit_rate:.1%} ({turn_limit_count}/{total_games})"
+        self._eval_result_quality_hint = quality_hint
+        self.evalSetupChanged.emit()
+
+        reason_text = pairs.get("end_reasons", "{}")
+        try:
+            reason_dict = ast.literal_eval(reason_text)
+            reason_text = str(reason_dict) if isinstance(reason_dict, dict) else reason_text
+        except (ValueError, SyntaxError):
+            pass
+
+        lines = ["Подробный результат оценки (P1 vs P2):"]
+        lines.append(f"- Итог серии: P1 {p1_wins} • P2 {p2_wins} • Ничьи {draws}")
+        lines.append(f"- Winrate P1/P2 (все): {wr_p1_all:.3f}/{wr_p2_all:.3f}")
+        lines.append(f"- Winrate P1/P2 (решающие): {wr_p1_dec:.3f}/{wr_p2_dec:.3f}")
+        lines.append(f"- Средний VP diff (P1-P2): {avg_vp_diff:.3f}")
+        lines.append(f"- Turn-limit: {turn_limit_count}/{total_games} ({turn_limit_rate:.3f})")
+        lines.append(f"- Причины завершения: {reason_text}")
+        lines.append("- Контекст: матч детерминированный, epsilon=0.")
+        return "\n".join(lines)
 
     def _format_eval_summary(self, payload: str) -> str:
-        pairs = {
-            key: value
-            for key, value in re.findall(r"([a-zA-Z_]+)=([^=]+?)(?=\s+[a-zA-Z_]+=|$)", payload)
-        }
+        pairs = self._parse_eval_pairs(payload)
 
         reason_labels = {
             "turn_limit": "Лимит ходов",
@@ -2407,14 +2897,35 @@ class GUIController(QtCore.QObject):
         except (ValueError, SyntaxError):
             pass
 
-        lines = ["Подробный результат оценки:"]
-        lines.append(f"- Победы: {pairs.get('wins', '?')}")
-        lines.append(f"- Поражения: {pairs.get('losses', '?')}")
+        wins = int(float(pairs.get("wins", "0") or "0"))
+        losses = int(float(pairs.get("losses", "0") or "0"))
+        draws = int(float(pairs.get("draws", "0") or "0"))
+        total_games = max(1, wins + losses + draws)
+        turn_limit_count = 0
+        try:
+            reasons = ast.literal_eval(pairs.get("end_reasons", "{}"))
+            if isinstance(reasons, dict):
+                turn_limit_count = int(reasons.get("turn_limit", 0) or 0)
+        except (ValueError, SyntaxError):
+            pass
+        turn_limit_rate = turn_limit_count / total_games
+        self._eval_result_headline = f"P1 vs P2 (legacy): {wins}-{losses}-{draws}"
+        self._eval_result_winrate_p1 = f"P1 (legacy winner) winrate all: {pairs.get('winrate_all', '?')}"
+        self._eval_result_winrate_p2 = f"P2 (legacy opponent) winrate all: —"
+        self._eval_result_avg_vp_diff = f"Avg VP diff (legacy model-enemy): {pairs.get('avg_vp_diff', '?')}"
+        self._eval_result_turn_limit_rate = f"Turn-limit rate: {turn_limit_rate:.1%} ({turn_limit_count}/{total_games})"
+        self._eval_result_quality_hint = "Качество серии: legacy summary (желательно V2)."
+        self.evalSetupChanged.emit()
+
+        lines = ["Подробный результат оценки (legacy):"]
+        lines.append(f"- Победы (legacy): {pairs.get('wins', '?')}")
+        lines.append(f"- Поражения (legacy): {pairs.get('losses', '?')}")
         lines.append(f"- Ничьи: {pairs.get('draws', '?')}")
         lines.append(f"- Winrate (все игры): {pairs.get('winrate_all', '?')}")
         lines.append(f"- Winrate (без ничьих): {pairs.get('winrate_no_draw', '?')}")
-        lines.append(f"- Средний VP diff: {pairs.get('avg_vp_diff', '?')}")
-        lines.append(f"- Медианный VP diff: {pairs.get('median_vp_diff', '?')}")
+        lines.append(f"- Средний VP diff (legacy model-enemy): {pairs.get('avg_vp_diff', '?')}")
+        lines.append(f"- Медианный VP diff (legacy model-enemy): {pairs.get('median_vp_diff', '?')}")
+        lines.append("- Рекомендация: используйте SUMMARY_V2 (P1/P2) для корректной интерпретации.")
         lines.append(f"- Причины завершения: {reason_text}")
         return "\n".join(lines)
 

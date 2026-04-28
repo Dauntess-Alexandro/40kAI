@@ -701,3 +701,113 @@ VP MODEL: 0, VP PLAYER: 0
 2026-04-27 21:30:14 | --- ФАЗА ЧАРДЖА ---
 2026-04-27 21:30:15 | [PACE] ack phase=charge unit_id=21 seq=6 step=before_unit ok=True
 2026-04-27 21:30:15 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+2026-04-28 16:44:40 | [VIEWER] Рендер: OpenGL (QOpenGLWidget).
+2026-04-28 16:44:40 | [VIEWER] Фоллбэк-рендер не активирован.
+2026-04-28 16:44:40 | [VIEWER][TERRAIN] features=4 first=<barricade,barrel.png,3>
+2026-04-28 16:44:40 | [VIEWER][TERRAIN] load sprite=barrel.png path=C:\40kAI\viewer\assets\props\terrain\barrel.png exists=True
+2026-04-28 16:44:41 | [VIEWER][RESET] reason=new_game_start. Где: viewer/app.py. Что делаем: очищаем visual state прошлой сессии.
+2026-04-28 16:44:41 | [MODEL] checkpoint: используется C:\40kAI\models\ppo\ppo-run-20260427-205825\checkpoint_ep2000.pth (рядом нет C:\40kAI\models\ppo\ppo-run-20260427-205825\model-20260427-205825.pth)
+2026-04-28 16:44:41 | [MODEL] pickle=C:\40kAI\models\ppo\ppo-run-20260427-205825\model-20260427-205825.pickle
+2026-04-28 16:44:41 | [MODEL] checkpoint=C:\40kAI\models\ppo\ppo-run-20260427-205825\checkpoint_ep2000.pth
+2026-04-28 16:44:41 | Action keys: dict_keys(['attack', 'charge', 'cp_on', 'move', 'move_num_0', 'move_num_1', 'shoot', 'use_cp'])
+2026-04-28 16:44:41 | [MODEL] env отсутствовал в pickle: пересоздан (mission=only_war, b_len=40, b_hei=60)
+2026-04-28 16:44:41 | [LEAGUE] Viewer использует agent-id=P2_Necrons_only_war_v1_final_ep2000_20260427_205826
+2026-04-28 16:44:41 | [MODEL] Viewer запущен в greedy-режиме: exploration отключен (epsilon=0).
+2026-04-28 16:44:41 | FX: перепроигрываю 30 строк(и) лога.
+2026-04-28 16:45:47 | Roll-off Attacker/Defender: enemy=1 model=6 -> attacker=model
+2026-04-28 16:45:47 | Юниты: [('Necron Warriors', '2', 10), ('Necron Warriors', 'unit-281', 10)]
+2026-04-28 16:45:47 | [DEPLOY] mode=rl_phase, strategy=template_jitter, seed=none
+2026-04-28 16:45:47 | [DEPLOY][Only War] attacker=model -> LEFT x=0..14; defender=enemy -> RIGHT x=45..59
+2026-04-28 16:45:47 | [DEPLOY][AUTO] mode=rl_phase strategy=template_jitter seed=none
+2026-04-28 16:45:47 | [DEPLOY] Order: model first, alternating
+2026-04-28 16:45:47 | [DEPLOY][RL] score_config scale=0.050 w_forward=1.000 w_spread=0.600 w_edge=0.200 w_cover=0.350
+2026-04-28 16:45:47 | [DEPLOY][RL] accepted Unit 21 — Necrons Necron Warriors (x10 моделей): flat=2225, coord=(37,5), attempt=1, reward=+0.018, score_before=0.000, score_after=0.367, reward_delta=+0.018, forward=0.088, spread=1.000, edge=0.500, cover=0.000, cover_near=0.000, congestion=0.000, final_cover=0.000
+2026-04-28 16:45:47 | [DEPLOY][MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей) -> (37,5)
+2026-04-28 16:45:47 | [VIEWER][RESET] reason=manual_deploy_start. Где: viewer/app.py. Что делаем: очищаем visual state прошлой сессии.
+2026-04-28 16:45:48 | REQ: deploy cell accepted x=47, y=23
+2026-04-28 16:45:48 | [DEPLOY][MANUAL] accepted Unit 11 — Necrons Necron Warriors (x10 моделей) -> (23,47)
+2026-04-28 16:45:48 | [DEPLOY][ENEMY] Unit 11 — Necrons Necron Warriors (x10 моделей) -> (23,47)
+2026-04-28 16:45:48 | [DEPLOY][RL] score_config scale=0.050 w_forward=1.000 w_spread=0.600 w_edge=0.200 w_cover=0.350
+2026-04-28 16:45:48 | [DEPLOY][RL] accepted Unit 22 — Necrons Necron Warriors (x10 моделей): flat=246, coord=(4,6), attempt=1, reward=+0.001, score_before=0.367, score_after=0.394, reward_delta=+0.001, forward=0.097, spread=1.000, edge=0.750, cover=0.000, cover_near=0.000, congestion=0.000, final_cover=0.000
+2026-04-28 16:45:48 | [DEPLOY][MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей) -> (4,6)
+2026-04-28 16:45:48 | REQ: deploy cell accepted x=49, y=17
+2026-04-28 16:45:48 | [DEPLOY][MANUAL] accepted Unit 12 — Necrons Necron Warriors (x10 моделей) -> (17,49)
+2026-04-28 16:45:48 | [DEPLOY][ENEMY] Unit 12 — Necrons Necron Warriors (x10 моделей) -> (17,49)
+2026-04-28 16:45:48 | [DEPLOY][RL][SUMMARY] units=2 attempts=2 invalid=0 fallback=0 reward=+0.020 total_deploy_reward=+0.020 avg_forward=0.092 avg_spread=1.000 avg_edge=0.625 avg_cover=0.000
+2026-04-28 16:45:48 | [DEPLOY] rl_phase stats: {'attempts': 2, 'invalid': 0, 'fallback': 0, 'reward': 0.019688608592826173, 'units': 2, 'total_deploy_reward': 0.019688608592826173, 'forward_sum': 0.1847457627118644, 'spread_sum': 2.0, 'edge_sum': 1.25, 'cover_sum': 0.0, 'avg_forward': 0.0923728813559322, 'avg_spread': 1.0, 'avg_edge': 0.625, 'avg_cover': 0.0}
+2026-04-28 16:45:48 | [MISSION Only War] Post-deploy: currently no post-deploy units supported
+2026-04-28 16:45:48 | [MODEL] n_actions (из env): [5, 2, 2, 2, 5, 2, 24, 24]
+2026-04-28 16:45:48 | [MODEL] Архитектура сети: ppo_actor_critic
+2026-04-28 16:45:48 | 
+Инструкции:
+Игрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).
+Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).
+
+2026-04-28 16:45:48 | {'model health': [10, 10], 'player health': [10, 10], 'model alive models': [10, 10], 'player alive models': [10, 10], 'modelCP': 0, 'playerCP': 0, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 1, 'battle round': 1, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None, 'model controlled objectives': [], 'player controlled objectives': []}
+2026-04-28 16:45:48 | Здоровье MODEL: [10, 10], здоровье PLAYER: [10, 10]
+CP MODEL: 0, CP PLAYER: 0
+VP MODEL: 0, VP PLAYER: 0
+
+2026-04-28 16:45:48 | FX: перепроигрываю 30 строк(и) лога.
+2026-04-28 16:45:49 | === БОЕВОЙ РАУНД 1 ===
+2026-04-28 16:45:49 | [FIGHT][ENV] file=C:\40kAI\gym_mod\gym_mod\envs\warhamEnv.py exe=C:\40kAI\.venv\Scripts\python.exe cwd=C:\40kAI FIGHT_REPORT=1 VERBOSE_LOGS=1 MANUAL_DICE=1 PLAY_NO_EXPLORATION=1 TRAIN_DEBUG=0
+2026-04-28 16:45:49 | --- ХОД PLAYER ---
+2026-04-28 16:45:49 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-04-28 16:45:49 | [ENEMY] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0; objectives=[1], center=(30,20), controlled_by=none
+2026-04-28 16:45:49 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-04-28 16:45:50 | REQ: move cell accepted (RMB) x=36, y=27, mode=advance
+2026-04-28 16:45:50 | [MOVE] unit=11 advance to=(36,27) dist=11 M=5 adv=6
+2026-04-28 16:45:51 | [MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+2026-04-28 16:45:51 | REQ: move cell accepted (RMB) x=38, y=18, mode=advance
+2026-04-28 16:45:51 | [MOVE] unit=12 advance to=(38,18) dist=11 M=5 adv=6
+2026-04-28 16:45:52 | [MODEL][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+2026-04-28 16:45:52 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-04-28 16:45:52 | Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+2026-04-28 16:45:52 | Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance без Assault — стрельба пропущена.
+2026-04-28 16:45:52 | --- ФАЗА ЧАРДЖА ---
+2026-04-28 16:45:52 | Unit 11 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+2026-04-28 16:45:52 | Unit 12 — Necrons Necron Warriors (x10 моделей): был Advance — чардж невозможен.
+2026-04-28 16:45:52 | Нет доступных целей для чарджа.
+2026-04-28 16:45:52 | --- ФАЗА БОЯ ---
+2026-04-28 16:45:52 | [TARGET][SHOOT] Unit 21 — Necrons Necron Warriors (x10 моделей) -> Unit 11 — Necrons Necron Warriors (x10 моделей): цель вне дальности (distance=28.00, range=24.00, delta=+4.00, eps=0.10). Где: warhamEnv.get_shoot_targets_for_unit. Что делать дальше: проверить range/LOS/engagement и обновить выбор цели.
+2026-04-28 16:45:52 | [TARGET][SHOOT] Unit 21 — Necrons Necron Warriors (x10 моделей) -> Unit 12 — Necrons Necron Warriors (x10 моделей): цель вне дальности (distance=30.00, range=24.00, delta=+6.00, eps=0.10). Где: warhamEnv.get_shoot_targets_for_unit. Что делать дальше: проверить range/LOS/engagement и обновить выбор цели.
+2026-04-28 16:45:52 | [TARGET][SHOOT] Unit 22 — Necrons Necron Warriors (x10 моделей) -> Unit 11 — Necrons Necron Warriors (x10 моделей): цель вне дальности (distance=27.00, range=24.00, delta=+3.00, eps=0.10). Где: warhamEnv.get_shoot_targets_for_unit. Что делать дальше: проверить range/LOS/engagement и обновить выбор цели.
+2026-04-28 16:45:52 | [TARGET][SHOOT] Unit 22 — Necrons Necron Warriors (x10 моделей) -> Unit 12 — Necrons Necron Warriors (x10 моделей): цель вне дальности (distance=29.00, range=24.00, delta=+5.00, eps=0.10). Где: warhamEnv.get_shoot_targets_for_unit. Что делать дальше: проверить range/LOS/engagement и обновить выбор цели.
+2026-04-28 16:45:52 | --- ХОД MODEL ---
+2026-04-28 16:45:52 | --- ФАЗА КОМАНДОВАНИЯ ---
+2026-04-28 16:45:53 | [PACE] ack phase=command unit_id=None seq=1 step=command_resolve ok=True
+2026-04-28 16:45:53 | [MODEL] Only War: end of Command phase -> controlled=0, gained=0, VP: 0 -> 0; objectives=[1], center=(30,20), controlled_by=none
+2026-04-28 16:45:53 | --- ФАЗА ДВИЖЕНИЯ ---
+2026-04-28 16:45:54 | [PACE] ack phase=movement unit_id=21 seq=2 step=before_unit ok=True
+2026-04-28 16:45:54 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция до: (37, 5). Выбор reachable_idx=13/237, mode=normal, advance=нет, distance=4
+2026-04-28 16:45:54 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Позиция после: (33, 1)
+2026-04-28 16:45:54 | [PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+2026-04-28 16:45:54 | [PACE] ack phase=movement unit_id=22 seq=3 step=before_unit ok=True
+2026-04-28 16:45:54 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция до: (4, 6). Выбор reachable_idx=1/287, mode=normal, advance=нет, distance=5
+2026-04-28 16:45:54 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Позиция после: (0, 1)
+2026-04-28 16:45:54 | [PLAYER][MOVEMENT] Overwatch невозможен: нет доступных стреляющих юнитов.
+2026-04-28 16:45:54 | --- ФАЗА СТРЕЛЬБЫ ---
+2026-04-28 16:45:55 | [PACE] ack phase=shooting unit_id=21 seq=4 step=before_unit ok=True
+2026-04-28 16:45:55 | [TARGET][SHOOT] Unit 21 — Necrons Necron Warriors (x10 моделей) -> Unit 11 — Necrons Necron Warriors (x10 моделей): цель вне дальности (distance=32.00, range=24.00, delta=+8.00, eps=0.10). Где: warhamEnv.get_shoot_targets_for_unit. Что делать дальше: проверить range/LOS/engagement и обновить выбор цели.
+2026-04-28 16:45:55 | [TARGET][SHOOT] Unit 21 — Necrons Necron Warriors (x10 моделей) -> Unit 12 — Necrons Necron Warriors (x10 моделей): цель вне дальности (distance=34.00, range=24.00, delta=+10.00, eps=0.10). Где: warhamEnv.get_shoot_targets_for_unit. Что делать дальше: проверить range/LOS/engagement и обновить выбор цели.
+2026-04-28 16:45:55 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.
+2026-04-28 16:45:56 | [PACE] ack phase=shooting unit_id=22 seq=5 step=before_unit ok=True
+2026-04-28 16:45:56 | [TARGET][SHOOT] Unit 22 — Necrons Necron Warriors (x10 моделей) -> Unit 11 — Necrons Necron Warriors (x10 моделей): цель вне дальности (distance=32.00, range=24.00, delta=+8.00, eps=0.10). Где: warhamEnv.get_shoot_targets_for_unit. Что делать дальше: проверить range/LOS/engagement и обновить выбор цели.
+2026-04-28 16:45:56 | [TARGET][SHOOT] Unit 22 — Necrons Necron Warriors (x10 моделей) -> Unit 12 — Necrons Necron Warriors (x10 моделей): цель вне дальности (distance=34.00, range=24.00, delta=+10.00, eps=0.10). Где: warhamEnv.get_shoot_targets_for_unit. Что делать дальше: проверить range/LOS/engagement и обновить выбор цели.
+2026-04-28 16:45:56 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в дальности, стрельба пропущена.
+2026-04-28 16:45:56 | --- ФАЗА ЧАРДЖА ---
+2026-04-28 16:45:57 | [PACE] ack phase=charge unit_id=21 seq=6 step=before_unit ok=True
+2026-04-28 16:45:57 | [MODEL] Unit 21 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+2026-04-28 16:45:57 | FX: перепроигрываю 30 строк(и) лога.
+2026-04-28 16:45:57 | [PACE] ack phase=charge unit_id=22 seq=7 step=before_unit ok=True
+2026-04-28 16:45:57 | [MODEL] Unit 22 — Necrons Necron Warriors (x10 моделей): Нет целей в 12", чардж пропущен.
+2026-04-28 16:45:57 | [MODEL] Чардж: нет доступных целей
+2026-04-28 16:45:57 | --- ФАЗА БОЯ ---
+2026-04-28 16:45:57 | [MODEL] Ближний бой: нет доступных атак
+2026-04-28 16:45:57 | === КОНЕЦ БОЕВОГО РАУНДА 1 ===
+2026-04-28 16:45:57 | Итерация 0 завершена с наградой tensor([-0.0200], device='cuda:0'), здоровье игрока [10.0, 10.0], здоровье модели [10.0, 10.0]
+2026-04-28 16:45:57 | {'model health': [10.0, 10.0], 'player health': [10.0, 10.0], 'model alive models': [10, 10], 'player alive models': [10, 10], 'modelCP': 2, 'playerCP': 2, 'in attack': [[0, 0], [0, 0]], 'model VP': 0, 'player VP': 0, 'mission': 'Only War', 'turn': 2, 'battle round': 2, 'active side': 'enemy', 'phase': 'command', 'game over': False, 'end reason': '', 'winner': None, 'model controlled objectives': [], 'player controlled objectives': []}
+2026-04-28 16:45:57 | Здоровье MODEL: [10.0, 10.0], здоровье PLAYER: [10.0, 10.0]
+CP MODEL: 2, CP PLAYER: 2
+VP MODEL: 0, VP PLAYER: 0
+

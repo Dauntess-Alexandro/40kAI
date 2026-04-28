@@ -1920,72 +1920,305 @@ ApplicationWindow {
                         spacing: root.spacingLg
 
                         Text {
-                            text: "Оценка модели"
+                            text: "Оценка: P1 vs P2"
                             font.pixelSize: Math.round(20 * root.uiScale)
                             font.bold: true
                         }
 
                         GroupBox {
-                            title: "Параметры оценки"
+                            title: "Состав матча"
                             Layout.fillWidth: true
 
                             ColumnLayout {
                                 anchors.fill: parent
-                                spacing: root.spacingSm
+                                spacing: root.spacingMd
 
-                                RowLayout {
-                                    spacing: root.spacingSm
-                                    Label { text: "Количество игр:" }
-                                    TextField {
-                                        id: evalGamesField
-                                        text: controller.evalGames.toString()
-                                        validator: IntValidator { bottom: 1 }
-                                        Layout.preferredWidth: root.inputWidthMd
-                                        onEditingFinished: {
-                                            var value = parseInt(text)
-                                            if (!isNaN(value)) {
-                                                controller.set_eval_games(value)
-                                                text = controller.evalGames.toString()
-                                            }
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    color: "#f7f9fd"
+                                    radius: Math.round(10 * root.uiScale)
+                                    border.width: 1
+                                    border.color: "#d7deea"
+                                    implicitHeight: matchupHeadLayout.implicitHeight + root.spacingMd * 2
+
+                                    ColumnLayout {
+                                        id: matchupHeadLayout
+                                        anchors.fill: parent
+                                        anchors.margins: root.spacingMd
+                                        spacing: Math.round(4 * root.uiScale)
+
+                                        Text {
+                                            text: controller.evalDuelTitle
+                                            font.bold: true
+                                            font.pixelSize: Math.round(22 * root.uiScale)
+                                            color: "#1f2937"
+                                        }
+                                        Text {
+                                            text: controller.evalDuelSubtitle
+                                            font.pixelSize: Math.round(13 * root.uiScale)
+                                            color: "#5b6472"
                                         }
                                     }
                                 }
 
                                 RowLayout {
-                                    spacing: root.spacingSm
-                                    Label { text: "Модель:" }
-                                    Button {
-                                        text: "Выбрать"
-                                        enabled: !controller.running
-                                        onClicked: evalModelDialog.open()
-                                    }
-                                    Button {
-                                        text: "Последняя"
-                                        enabled: !controller.running
-                                        onClicked: controller.select_latest_eval_model()
-                                    }
-                                    Button {
-                                        text: "Лучшая"
-                                        enabled: !controller.running
-                                        onClicked: controller.select_best_eval_model()
-                                    }
-                                }
+                                    Layout.fillWidth: true
+                                    spacing: root.spacingMd
 
-                                Label {
-                                    text: controller.evalModelLabel
-                                    wrapMode: Text.WordWrap
-                                }
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        color: "#eef4ff"
+                                        border.color: "#2f6ed8"
+                                        border.width: 1
+                                        radius: Math.round(10 * root.uiScale)
+                                        implicitHeight: p1CardLayout.implicitHeight + root.spacingMd * 2
 
-                                Label {
-                                    text: "Запуск: модель против эвристики, без исследования (epsilon=0)."
-                                    wrapMode: Text.WordWrap
-                                    color: "#555555"
+                                        ColumnLayout {
+                                            id: p1CardLayout
+                                            anchors.fill: parent
+                                            anchors.margins: root.spacingMd
+                                            spacing: root.spacingSm
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: root.spacingSm
+                                                Rectangle {
+                                                    width: Math.round(30 * root.uiScale)
+                                                    height: width
+                                                    radius: width / 2
+                                                    color: "#2f6ed8"
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: controller.evalP1IconText
+                                                        color: "white"
+                                                        font.bold: true
+                                                    }
+                                                }
+                                                Text {
+                                                    text: "P1"
+                                                    color: "#2f6ed8"
+                                                    font.bold: true
+                                                    font.pixelSize: Math.round(16 * root.uiScale)
+                                                }
+                                                Item { Layout.fillWidth: true }
+                                            }
+
+                                            ComboBox {
+                                                Layout.fillWidth: true
+                                                enabled: !controller.running
+                                                model: [
+                                                    { value: "agent", label: "Агент" },
+                                                    { value: "heuristic", label: "Эвристика" }
+                                                ]
+                                                textRole: "label"
+                                                currentIndex: {
+                                                    for (var i = 0; i < model.length; i++) {
+                                                        if (model[i].value === controller.evalP1Policy) return i
+                                                    }
+                                                    return 0
+                                                }
+                                                onActivated: controller.set_eval_p1_policy(model[currentIndex].value)
+                                            }
+                                            ComboBox {
+                                                Layout.fillWidth: true
+                                                enabled: !controller.running && controller.evalP1Policy === "agent"
+                                                opacity: controller.evalP1Policy === "agent" ? 1.0 : 0.55
+                                                model: controller.evalP1AgentOptions
+                                                currentIndex: controller.evalP1AgentOptions.length > 0
+                                                    ? Math.max(0, controller.evalP1AgentOptions.indexOf(controller.evalP1SelectedAgentLabel))
+                                                    : -1
+                                                onActivated: controller.set_eval_p1_agent_by_label(currentText)
+                                            }
+
+                                            Text {
+                                                text: controller.evalP1DisplayName
+                                                wrapMode: Text.WordWrap
+                                                color: "#1f2937"
+                                                font.bold: true
+                                            }
+
+                                            Flow {
+                                                Layout.fillWidth: true
+                                                spacing: Math.round(6 * root.uiScale)
+                                                Repeater {
+                                                    model: controller.evalP1Badges
+                                                    delegate: Rectangle {
+                                                        radius: Math.round(8 * root.uiScale)
+                                                        color: "#dce8ff"
+                                                        border.width: 1
+                                                        border.color: "#b8cdf6"
+                                                        implicitWidth: badgeP1Text.implicitWidth + Math.round(12 * root.uiScale)
+                                                        implicitHeight: badgeP1Text.implicitHeight + Math.round(6 * root.uiScale)
+                                                        Text {
+                                                            id: badgeP1Text
+                                                            anchors.centerIn: parent
+                                                            text: modelData
+                                                            color: "#214f9f"
+                                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                                            font.bold: true
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: root.spacingSm
+                                                Button {
+                                                    text: "Копировать ID"
+                                                    enabled: controller.evalP1FullAgentId.length > 0
+                                                    onClicked: controller.copy_eval_agent_id("P1")
+                                                    ToolTip.visible: hovered && controller.evalP1FullAgentId.length > 0
+                                                    ToolTip.text: controller.evalP1FullAgentId
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: controller.evalP1FullAgentId.length > 0 ? "ID в tooltip" : "ID: —"
+                                                    color: "#5b6472"
+                                                    font.pixelSize: Math.round(11 * root.uiScale)
+                                                    horizontalAlignment: Text.AlignRight
+                                                    elide: Text.ElideRight
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        Layout.preferredWidth: Math.round(70 * root.uiScale)
+                                        Layout.fillHeight: true
+                                        color: "transparent"
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "VS"
+                                            font.bold: true
+                                            font.pixelSize: Math.round(24 * root.uiScale)
+                                            color: "#5b6472"
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        color: "#fff1f1"
+                                        border.color: "#cf3f3f"
+                                        border.width: 1
+                                        radius: Math.round(10 * root.uiScale)
+                                        implicitHeight: p2CardLayout.implicitHeight + root.spacingMd * 2
+
+                                        ColumnLayout {
+                                            id: p2CardLayout
+                                            anchors.fill: parent
+                                            anchors.margins: root.spacingMd
+                                            spacing: root.spacingSm
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: root.spacingSm
+                                                Rectangle {
+                                                    width: Math.round(30 * root.uiScale)
+                                                    height: width
+                                                    radius: width / 2
+                                                    color: "#cf3f3f"
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: controller.evalP2IconText
+                                                        color: "white"
+                                                        font.bold: true
+                                                    }
+                                                }
+                                                Text {
+                                                    text: "P2"
+                                                    color: "#cf3f3f"
+                                                    font.bold: true
+                                                    font.pixelSize: Math.round(16 * root.uiScale)
+                                                }
+                                                Item { Layout.fillWidth: true }
+                                            }
+
+                                            ComboBox {
+                                                Layout.fillWidth: true
+                                                enabled: !controller.running
+                                                model: [
+                                                    { value: "agent", label: "Агент" },
+                                                    { value: "heuristic", label: "Эвристика" }
+                                                ]
+                                                textRole: "label"
+                                                currentIndex: {
+                                                    for (var i = 0; i < model.length; i++) {
+                                                        if (model[i].value === controller.evalP2Policy) return i
+                                                    }
+                                                    return 0
+                                                }
+                                                onActivated: controller.set_eval_p2_policy(model[currentIndex].value)
+                                            }
+                                            ComboBox {
+                                                Layout.fillWidth: true
+                                                enabled: !controller.running && controller.evalP2Policy === "agent"
+                                                opacity: controller.evalP2Policy === "agent" ? 1.0 : 0.55
+                                                model: controller.evalP2AgentOptions
+                                                currentIndex: controller.evalP2AgentOptions.length > 0
+                                                    ? Math.max(0, controller.evalP2AgentOptions.indexOf(controller.evalP2SelectedAgentLabel))
+                                                    : -1
+                                                onActivated: controller.set_eval_p2_agent_by_label(currentText)
+                                            }
+
+                                            Text {
+                                                text: controller.evalP2DisplayName
+                                                wrapMode: Text.WordWrap
+                                                color: "#1f2937"
+                                                font.bold: true
+                                            }
+
+                                            Flow {
+                                                Layout.fillWidth: true
+                                                spacing: Math.round(6 * root.uiScale)
+                                                Repeater {
+                                                    model: controller.evalP2Badges
+                                                    delegate: Rectangle {
+                                                        radius: Math.round(8 * root.uiScale)
+                                                        color: "#ffe0e0"
+                                                        border.width: 1
+                                                        border.color: "#f0b6b6"
+                                                        implicitWidth: badgeP2Text.implicitWidth + Math.round(12 * root.uiScale)
+                                                        implicitHeight: badgeP2Text.implicitHeight + Math.round(6 * root.uiScale)
+                                                        Text {
+                                                            id: badgeP2Text
+                                                            anchors.centerIn: parent
+                                                            text: modelData
+                                                            color: "#993434"
+                                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                                            font.bold: true
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: root.spacingSm
+                                                Button {
+                                                    text: "Копировать ID"
+                                                    enabled: controller.evalP2FullAgentId.length > 0
+                                                    onClicked: controller.copy_eval_agent_id("P2")
+                                                    ToolTip.visible: hovered && controller.evalP2FullAgentId.length > 0
+                                                    ToolTip.text: controller.evalP2FullAgentId
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: controller.evalP2FullAgentId.length > 0 ? "ID в tooltip" : "ID: —"
+                                                    color: "#5b6472"
+                                                    font.pixelSize: Math.round(11 * root.uiScale)
+                                                    horizontalAlignment: Text.AlignRight
+                                                    elide: Text.ElideRight
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
 
                         GroupBox {
-                            title: "Действия"
+                            title: "Действия и запуск"
                             Layout.fillWidth: true
 
                             RowLayout {
@@ -1993,8 +2226,14 @@ ApplicationWindow {
                                 spacing: root.spacingMd
 
                                 Button {
-                                    text: "Запустить оценку"
+                                    text: "Обновить список агентов"
                                     enabled: !controller.running
+                                    onClicked: controller.refresh_eval_agents()
+                                }
+
+                                Button {
+                                    text: "Запустить оценку"
+                                    enabled: !controller.running && controller.evalLaunchReady
                                     onClicked: controller.start_eval()
                                 }
 
@@ -2007,15 +2246,145 @@ ApplicationWindow {
                         }
 
                         GroupBox {
+                            title: "Конфигурация матча"
+                            Layout.fillWidth: true
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: root.spacingXs
+
+                                Text {
+                                    text: controller.evalScenarioText
+                                    wrapMode: Text.WordWrap
+                                    color: "#2f3b52"
+                                    font.bold: true
+                                }
+                                Text {
+                                    text: controller.evalLaunchStatusText
+                                    wrapMode: Text.WordWrap
+                                    color: controller.evalLaunchReady ? "#2d7d33" : "#b24a00"
+                                    font.bold: true
+                                }
+                                Text {
+                                    text: controller.evalMiniSummary
+                                    color: "#5b6472"
+                                }
+                            }
+                        }
+
+                        GroupBox {
                             title: "Подробный результат"
                             Layout.fillWidth: true
 
-                            TextArea {
-                                text: controller.evalSummaryText
-                                readOnly: true
-                                wrapMode: TextArea.Wrap
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: Math.round(190 * root.uiScale)
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: root.spacingSm
+
+                                Text {
+                                    text: controller.evalResultHeadline
+                                    font.bold: true
+                                    font.pixelSize: Math.round(17 * root.uiScale)
+                                    color: "#1f2937"
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: root.spacingSm
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        radius: Math.round(8 * root.uiScale)
+                                        color: "#eef4ff"
+                                        border.color: "#bcd0f8"
+                                        border.width: 1
+                                        implicitHeight: p1ResultText.implicitHeight + root.spacingSm * 2
+                                        Text {
+                                            id: p1ResultText
+                                            anchors.centerIn: parent
+                                            text: controller.evalResultWinrateP1
+                                            color: "#2f6ed8"
+                                            font.bold: true
+                                            wrapMode: Text.WordWrap
+                                            horizontalAlignment: Text.AlignHCenter
+                                            width: parent.width - root.spacingMd * 2
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        radius: Math.round(8 * root.uiScale)
+                                        color: "#fff1f1"
+                                        border.color: "#f0b6b6"
+                                        border.width: 1
+                                        implicitHeight: p2ResultText.implicitHeight + root.spacingSm * 2
+                                        Text {
+                                            id: p2ResultText
+                                            anchors.centerIn: parent
+                                            text: controller.evalResultWinrateP2
+                                            color: "#c74343"
+                                            font.bold: true
+                                            wrapMode: Text.WordWrap
+                                            horizontalAlignment: Text.AlignHCenter
+                                            width: parent.width - root.spacingMd * 2
+                                        }
+                                    }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: root.spacingSm
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        radius: Math.round(8 * root.uiScale)
+                                        color: "#f7f9fd"
+                                        border.color: "#d7deea"
+                                        border.width: 1
+                                        implicitHeight: avgVpText.implicitHeight + root.spacingSm * 2
+                                        Text {
+                                            id: avgVpText
+                                            anchors.centerIn: parent
+                                            text: controller.evalResultAvgVpDiff
+                                            color: "#374151"
+                                            wrapMode: Text.WordWrap
+                                            horizontalAlignment: Text.AlignHCenter
+                                            width: parent.width - root.spacingMd * 2
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        radius: Math.round(8 * root.uiScale)
+                                        color: "#f7f9fd"
+                                        border.color: "#d7deea"
+                                        border.width: 1
+                                        implicitHeight: turnLimitText.implicitHeight + root.spacingSm * 2
+                                        Text {
+                                            id: turnLimitText
+                                            anchors.centerIn: parent
+                                            text: controller.evalResultTurnLimitRate
+                                            color: "#374151"
+                                            wrapMode: Text.WordWrap
+                                            horizontalAlignment: Text.AlignHCenter
+                                            width: parent.width - root.spacingMd * 2
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    text: controller.evalResultQualityHint
+                                    color: "#5b6472"
+                                    font.bold: true
+                                    wrapMode: Text.WordWrap
+                                }
+
+                                TextArea {
+                                    text: controller.evalSummaryText
+                                    readOnly: true
+                                    wrapMode: TextArea.Wrap
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: Math.round(140 * root.uiScale)
+                                }
                             }
                         }
 

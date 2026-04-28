@@ -358,6 +358,7 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     policy_state = None
+    learner_algo_override = ""
     selected_agent_id = (args.learner_agent_id or "").strip()
     if selected_agent_id:
         payload = load_agent_by_id(selected_agent_id)
@@ -369,6 +370,11 @@ def main():
             )
             return 1
         policy_state = payload.get("policy_state")
+        meta = payload.get("meta") if isinstance(payload, dict) else {}
+        learner_algo_override = str((meta or {}).get("algo", "")).strip().lower()
+        if learner_algo_override not in {"dqn", "ppo"}:
+            target_state_guess = payload.get("target_state") if isinstance(payload, dict) else None
+            learner_algo_override = "dqn" if isinstance(target_state_guess, dict) else "ppo"
         log(f"Используется learner-agent-id={selected_agent_id} (policy из registry).")
     else:
         policy_state = _extract_policy_state_dict(checkpoint)
@@ -397,7 +403,9 @@ def main():
         )
         return 0
 
-    algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
+    algo = learner_algo_override or (
+        str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
+    )
     if algo == "ppo":
         ppo_state = checkpoint.get("actor_critic") if isinstance(checkpoint, dict) else None
         if not isinstance(ppo_state, dict):
@@ -428,38 +436,85 @@ def main():
             f"heuristic_mode={str(os.getenv('HEURISTIC_MODE', 'v2')).strip().lower() or 'v2'}, algo={algo}."
     )
 
+    learner_side = str(os.getenv("LEARNER_SIDE", "P1")).strip().upper() or "P1"
+    if learner_side not in {"P1", "P2"}:
+        learner_side = "P1"
+    opponent_side = "P2" if learner_side == "P1" else "P1"
+
     wins = 0
     losses = 0
     draws = 0
+    p1_wins = 0
+    p2_wins = 0
     vp_diffs = []
+    p1_vps = []
+    p2_vps = []
     end_reasons = Counter()
+    end_reasons_v2 = Counter()
 
     for idx in range(1, games + 1):
         winner, end_reason, vp_diff, model_vp, enemy_vp = run_episode(
             env, model_units, enemy_units, policy_net, epsilon, device, algo, opponent_policy_fn=opponent_policy_fn
         )
+        if learner_side == "P1":
+            p1_vp = model_vp
+            p2_vp = enemy_vp
+            vp_diff_p1_minus_p2 = vp_diff
+        else:
+            p1_vp = enemy_vp
+            p2_vp = model_vp
+            vp_diff_p1_minus_p2 = -vp_diff
+
         vp_diffs.append(vp_diff)
+        p1_vps.append(p1_vp)
+        p2_vps.append(p2_vp)
         end_reasons[end_reason] += 1
         if winner == "model":
             wins += 1
+            winner_side = learner_side
         elif winner == "enemy":
             losses += 1
+            winner_side = opponent_side
         else:
             draws += 1
+            winner_side = "draw"
+
+        if winner_side == "P1":
+            p1_wins += 1
+        elif winner_side == "P2":
+            p2_wins += 1
+
+        if end_reason == "wipeout_enemy":
+            end_reasons_v2["wipeout_" + learner_side.lower()] += 1
+        elif end_reason == "wipeout_model":
+            end_reasons_v2["wipeout_" + opponent_side.lower()] += 1
+        else:
+            end_reasons_v2[end_reason] += 1
         log(
             "Игра "
             f"{idx}/{games}: "
             f"winner={winner} "
+            f"winner_side={winner_side} "
             f"model_vp={model_vp} "
             f"enemy_vp={enemy_vp} "
             f"vp_diff_model_minus_enemy={vp_diff} "
+            f"p1_vp={p1_vp} "
+            f"p2_vp={p2_vp} "
+            f"vp_diff_p1_minus_p2={vp_diff_p1_minus_p2} "
             f"end_reason={end_reason}"
         )
 
     winrate_all = wins / games if games else 0.0
     winrate_no_draw = wins / (wins + losses) if (wins + losses) else 0.0
+    winrate_p1_all = p1_wins / games if games else 0.0
+    winrate_p2_all = p2_wins / games if games else 0.0
+    winrate_p1_decisive = p1_wins / (p1_wins + p2_wins) if (p1_wins + p2_wins) else 0.0
+    winrate_p2_decisive = p2_wins / (p1_wins + p2_wins) if (p1_wins + p2_wins) else 0.0
     avg_vp_diff = sum(vp_diffs) / len(vp_diffs) if vp_diffs else 0.0
     median_vp_diff = median(vp_diffs) if vp_diffs else 0.0
+    avg_vp_p1 = sum(p1_vps) / len(p1_vps) if p1_vps else 0.0
+    avg_vp_p2 = sum(p2_vps) / len(p2_vps) if p2_vps else 0.0
+    avg_vp_diff_p1_minus_p2 = avg_vp_p1 - avg_vp_p2
     min_vp_diff = min(vp_diffs) if vp_diffs else 0.0
     max_vp_diff = max(vp_diffs) if vp_diffs else 0.0
     positive_vp_games = sum(1 for value in vp_diffs if value > 0)
@@ -474,6 +529,21 @@ def main():
         "unknown": "Неизвестно",
     }
 
+    turn_limit_count = int(end_reasons.get("turn_limit", 0))
+    wipeout_p1_count = int(end_reasons_v2.get("wipeout_p1", 0))
+    wipeout_p2_count = int(end_reasons_v2.get("wipeout_p2", 0))
+
+    log(
+        "[SUMMARY_V2] "
+        f"p1_wins={p1_wins} p2_wins={p2_wins} draws={draws} "
+        f"winrate_p1_all={winrate_p1_all:.3f} winrate_p2_all={winrate_p2_all:.3f} "
+        f"winrate_p1_decisive={winrate_p1_decisive:.3f} winrate_p2_decisive={winrate_p2_decisive:.3f} "
+        f"avg_vp_p1={avg_vp_p1:.3f} avg_vp_p2={avg_vp_p2:.3f} "
+        f"avg_vp_diff_p1_minus_p2={avg_vp_diff_p1_minus_p2:.3f} "
+        f"turn_limit_count={turn_limit_count} wipeout_p1_count={wipeout_p1_count} wipeout_p2_count={wipeout_p2_count} "
+        f"end_reasons={dict(end_reasons_v2)}"
+    )
+
     log(
         "[SUMMARY] "
         f"wins={wins} losses={losses} draws={draws} "
@@ -485,6 +555,15 @@ def main():
     )
 
     log("[DETAIL] ---------- Подробный итог оценки ----------")
+    log(f"[DETAIL] Стороны матча: P1 vs P2 (learner_side={learner_side})")
+    log(f"[DETAIL] Итог серии P1/P2/Draw: {p1_wins}/{p2_wins}/{draws}")
+    log(f"[DETAIL] Winrate P1 (все/решающие): {winrate_p1_all:.3f}/{winrate_p1_decisive:.3f}")
+    log(f"[DETAIL] Winrate P2 (все/решающие): {winrate_p2_all:.3f}/{winrate_p2_decisive:.3f}")
+    log(f"[DETAIL] VP P1/P2 (avg): {avg_vp_p1:.3f}/{avg_vp_p2:.3f}")
+    log(
+        "[DETAIL] Причины завершения V2: "
+        f"turn_limit={turn_limit_count}, wipeout_p1={wipeout_p1_count}, wipeout_p2={wipeout_p2_count}"
+    )
     log(f"[DETAIL] Всего игр: {games}")
     log(f"[DETAIL] Победы/Поражения/Ничьи: {wins}/{losses}/{draws}")
     log(f"[DETAIL] Winrate (все игры): {winrate_all:.3f}")

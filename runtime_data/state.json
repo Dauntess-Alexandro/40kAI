@@ -7,10 +7,10 @@
     "cols": 60,
     "rows": 40
   },
-  "turn": 1,
-  "round": 1,
-  "phase": "charge",
-  "active": "model",
+  "turn": 2,
+  "round": 2,
+  "phase": "command",
+  "active": "player",
   "movement_overlay": null,
   "vp": {
     "player": 0,
@@ -31,59 +31,59 @@
       "max_hp": 10.0,
       "max_wounds": 10.0,
       "wounds_max": 10.0,
-      "x": 43,
-      "y": 30,
-      "anchor_x": 43,
-      "anchor_y": 30,
+      "x": 36,
+      "y": 27,
+      "anchor_x": 36,
+      "anchor_y": 27,
       "model_positions": [
         {
-          "x": 43,
-          "y": 30,
+          "x": 36,
+          "y": 27,
           "z": 0
         },
         {
-          "x": 44,
-          "y": 30,
+          "x": 37,
+          "y": 27,
           "z": 0
         },
         {
-          "x": 42,
-          "y": 30,
+          "x": 35,
+          "y": 27,
           "z": 0
         },
         {
-          "x": 43,
-          "y": 31,
+          "x": 36,
+          "y": 28,
           "z": 0
         },
         {
-          "x": 43,
-          "y": 29,
+          "x": 36,
+          "y": 26,
           "z": 0
         },
         {
-          "x": 44,
-          "y": 31,
+          "x": 37,
+          "y": 28,
           "z": 0
         },
         {
-          "x": 42,
-          "y": 31,
+          "x": 35,
+          "y": 28,
           "z": 0
         },
         {
-          "x": 44,
-          "y": 29,
+          "x": 37,
+          "y": 26,
           "z": 0
         },
         {
-          "x": 42,
-          "y": 29,
+          "x": 35,
+          "y": 26,
           "z": 0
         },
         {
-          "x": 45,
-          "y": 30,
+          "x": 38,
+          "y": 27,
           "z": 0
         }
       ],
@@ -95,14 +95,14 @@
       "weapon_name": "Gauss flayer",
       "weapon_range": 24,
       "unit_status": {
-        "in_cover": false,
+        "in_cover": true,
         "obscured": false,
         "fully_visible": false,
         "objective_state": null,
         "used_advance": true,
-        "advance_roll": 5,
-        "dist_cover": 9.0,
-        "cover_source_terrain_id": null,
+        "advance_roll": 6,
+        "dist_cover": 3.0,
+        "cover_source_terrain_id": "T2",
         "obscured_vs": [],
         "exposed_to": [],
         "engagement_with": [],
@@ -131,58 +131,58 @@
       "max_hp": 10.0,
       "max_wounds": 10.0,
       "wounds_max": 10.0,
-      "x": 42,
+      "x": 38,
       "y": 18,
-      "anchor_x": 42,
+      "anchor_x": 38,
       "anchor_y": 18,
       "model_positions": [
         {
-          "x": 42,
+          "x": 38,
           "y": 18,
           "z": 0
         },
         {
-          "x": 43,
+          "x": 39,
           "y": 18,
           "z": 0
         },
         {
-          "x": 41,
+          "x": 37,
           "y": 18,
           "z": 0
         },
         {
-          "x": 42,
+          "x": 38,
           "y": 19,
           "z": 0
         },
         {
-          "x": 42,
+          "x": 38,
           "y": 17,
           "z": 0
         },
         {
-          "x": 43,
+          "x": 39,
           "y": 19,
           "z": 0
         },
         {
-          "x": 41,
+          "x": 37,
           "y": 19,
           "z": 0
         },
         {
-          "x": 43,
+          "x": 39,
           "y": 17,
           "z": 0
         },
         {
-          "x": 41,
+          "x": 37,
           "y": 17,
           "z": 0
         },
         {
-          "x": 44,
+          "x": 40,
           "y": 18,
           "z": 0
         }
@@ -231,59 +231,59 @@
       "max_hp": 10.0,
       "max_wounds": 10.0,
       "wounds_max": 10.0,
-      "x": 6,
-      "y": 12,
-      "anchor_x": 6,
-      "anchor_y": 12,
+      "x": 1,
+      "y": 33,
+      "anchor_x": 1,
+      "anchor_y": 33,
       "model_positions": [
         {
-          "x": 6,
-          "y": 12,
+          "x": 1,
+          "y": 33,
           "z": 0
         },
         {
-          "x": 7,
-          "y": 12,
+          "x": 2,
+          "y": 33,
           "z": 0
         },
         {
-          "x": 5,
-          "y": 12,
+          "x": 0,
+          "y": 33,
           "z": 0
         },
         {
-          "x": 6,
-          "y": 13,
+          "x": 1,
+          "y": 34,
           "z": 0
         },
         {
-          "x": 6,
-          "y": 11,
+          "x": 1,
+          "y": 32,
           "z": 0
         },
         {
-          "x": 7,
-          "y": 13,
+          "x": 2,
+          "y": 34,
           "z": 0
         },
         {
-          "x": 5,
-          "y": 13,
+          "x": 0,
+          "y": 34,
           "z": 0
         },
         {
-          "x": 7,
-          "y": 11,
+          "x": 2,
+          "y": 32,
           "z": 0
         },
         {
-          "x": 5,
-          "y": 11,
+          "x": 0,
+          "y": 32,
           "z": 0
         },
         {
-          "x": 8,
-          "y": 12,
+          "x": 3,
+          "y": 33,
           "z": 0
         }
       ],
@@ -301,7 +301,7 @@
         "objective_state": null,
         "used_advance": false,
         "advance_roll": null,
-        "dist_cover": 16.0,
+        "dist_cover": 21.0,
         "cover_source_terrain_id": null,
         "obscured_vs": [],
         "exposed_to": [],
@@ -332,58 +332,58 @@
       "max_wounds": 10.0,
       "wounds_max": 10.0,
       "x": 1,
-      "y": 31,
+      "y": 1,
       "anchor_x": 1,
-      "anchor_y": 31,
+      "anchor_y": 1,
       "model_positions": [
         {
           "x": 1,
-          "y": 31,
+          "y": 1,
           "z": 0
         },
         {
           "x": 2,
-          "y": 31,
+          "y": 1,
           "z": 0
         },
         {
           "x": 0,
-          "y": 31,
+          "y": 1,
           "z": 0
         },
         {
           "x": 1,
-          "y": 32,
+          "y": 2,
           "z": 0
         },
         {
           "x": 1,
-          "y": 30,
+          "y": 0,
           "z": 0
         },
         {
           "x": 2,
-          "y": 32,
+          "y": 2,
           "z": 0
         },
         {
           "x": 0,
-          "y": 32,
+          "y": 2,
           "z": 0
         },
         {
           "x": 2,
-          "y": 30,
+          "y": 0,
           "z": 0
         },
         {
           "x": 0,
-          "y": 30,
+          "y": 0,
           "z": 0
         },
         {
           "x": 3,
-          "y": 31,
+          "y": 1,
           "z": 0
         }
       ],
@@ -498,7 +498,9 @@
       ],
       "opacity": "obscuring",
       "sprite": "barrel.png",
-      "covering_unit_ids": []
+      "covering_unit_ids": [
+        11
+      ]
     },
     {
       "id": "T3",
@@ -581,7 +583,7 @@
   },
   "viewer": {
     "pacing_mode": "per_unit",
-    "awaiting_ack": true,
+    "awaiting_ack": false,
     "activation": {
       "side": "model",
       "phase": "charge",
@@ -592,5 +594,5 @@
     "step_seq": 7
   },
   "payload_kind": "light",
-  "generated_at": "2026-04-27T18:30:15.679316Z"
+  "generated_at": "2026-04-28T13:45:57.706386Z"
 }
