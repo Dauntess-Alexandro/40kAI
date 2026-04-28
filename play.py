@@ -9,20 +9,21 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 import pickle
 import os
 import sys
-from gym_mod.envs.warhamEnv import *
+from core.envs.warhamEnv import *
 import warnings
 warnings.filterwarnings("ignore")
 
-from model.DQN import *
-from model.PPO import ActorCriticMultiHead
-from model.utils import normalize_state_dict
-from model.utils import *
-from gym_mod.engine.game_io import ConsoleIO, set_active_io
-from gym_mod.engine.deployment import deploy_only_war, post_deploy_setup
-from gym_mod.envs.warhamEnv import roll_off_attacker_defender
-from gym_mod.engine.agent_registry import compatible_contracts, load_agent_by_id, make_env_contract
-from gym_mod.engine.game_controller import n_actions_from_env
-from model.opponent_adapter import build_policy_fn, load_agent_opponent
+from core.models.DQN import *
+from core.models.PPO import ActorCriticMultiHead
+from core.models.utils import normalize_state_dict
+from core.models.utils import *
+from core.engine.game_io import ConsoleIO, set_active_io
+from core.engine.deployment import deploy_only_war, post_deploy_setup
+from core.envs.warhamEnv import roll_off_attacker_defender
+from core.engine.agent_registry import compatible_contracts, load_agent_by_id, make_env_contract
+from core.engine.game_controller import n_actions_from_env
+from core.models.opponent_adapter import build_policy_fn, load_agent_opponent
+from project_paths import ARTIFACTS_MODELS_DIR
 
 
 def load_trusted_checkpoint(path: str):
@@ -43,7 +44,7 @@ parser.add_argument("--opponent-agent-id", default=os.getenv("PLAY_OPPONENT_AGEN
 args = parser.parse_args()
 
 if args.model == "None":
-    savePath = "models/"
+    savePath = str(ARTIFACTS_MODELS_DIR) + os.sep
     folders = os.listdir(savePath) if os.path.isdir(savePath) else []
     envs = []
     modelpth = []
@@ -58,7 +59,7 @@ if args.model == "None":
                 elif j.endswith(".pth"):
                     modelpth.append(full_path)
     if not envs or not modelpth:
-        raise FileNotFoundError("Не найдены legacy модели в models/. Что делать: укажите --agent-id или путь к .pickle.")
+        raise FileNotFoundError("Не найдены legacy модели в artifacts/models/. Что делать: укажите --agent-id или путь к .pickle.")
     envs.sort(key=lambda x: os.path.getmtime(x))
     modelpth.sort()
     checkpoint = load_trusted_checkpoint(modelpth[-1])

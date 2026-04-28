@@ -1,46 +1,72 @@
 import argparse
 import datetime
+import importlib
 import os
 import pickle
 import sys
+import types
 from collections import Counter
 from statistics import median
 from typing import Optional
 
 import torch
 
-from gym_mod.engine.agent_registry import compatible_contracts, load_agent_by_id, make_env_contract
-from gym_mod.engine.game_controller import n_actions_from_env
-from gym_mod.engine.mission import (
+from core.engine.agent_registry import compatible_contracts, load_agent_by_id, make_env_contract
+from core.engine.game_controller import n_actions_from_env
+from core.engine.mission import (
     check_end_of_battle,
     normalize_mission_name,
     deploy_for_mission,
     post_deploy_setup,
 )
-from gym_mod.envs.warhamEnv import roll_off_attacker_defender
-from model.DQN import DQN
-from model.PPO import ActorCriticMultiHead
-from model.utils import normalize_state_dict
-from model.opponent_adapter import build_policy_fn, load_agent_opponent
+from core.envs.warhamEnv import roll_off_attacker_defender
+from core.models.DQN import DQN
+from core.models.PPO import ActorCriticMultiHead
+from core.models.utils import normalize_state_dict
+from core.models.opponent_adapter import build_policy_fn, load_agent_opponent
 
 import gymnasium as gym
-import gym_mod  # noqa: F401 (регистрация '40kAI-v0')
+import core.envs  # noqa: F401 (регистрация '40kAI-v0')
+from project_paths import AGENT_TRAIN_LOG_PATH, ARTIFACTS_MODELS_DIR, ensure_runtime_dirs
 
-AGENT_TRAIN_LOG_FILE = os.path.join("logs", "LOGS_FOR_AGENTS_TRAIN.md")
+AGENT_TRAIN_LOG_FILE = str(AGENT_TRAIN_LOG_PATH.relative_to(AGENT_TRAIN_LOG_PATH.parent.parent))
 os.environ.setdefault("AGENT_LOG_FILE", AGENT_TRAIN_LOG_FILE)
-from model.utils import build_shoot_action_mask, build_action_masks_by_head, convertToDict, unwrap_env
+from core.models.utils import build_shoot_action_mask, build_action_masks_by_head, convertToDict, unwrap_env
 
 
 def _append_eval_log(message: str) -> None:
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    script_path = globals().get("__file__") or sys.argv[0] or "eval.py"
-    log_path = os.path.join(os.path.dirname(os.path.abspath(script_path)), AGENT_TRAIN_LOG_FILE)
+    ensure_runtime_dirs()
+    log_path = str(AGENT_TRAIN_LOG_PATH)
     try:
-        os.makedirs(os.path.dirname(log_path), exist_ok=True)
         with open(log_path, "a", encoding="utf-8") as log_file:
             log_file.write(f"{timestamp} | [EVAL] {message}\n")
     except Exception:
         return
+
+
+def _install_pickle_compat_aliases() -> None:
+    aliases = {
+        "gym_mod": "core",
+        "gym_mod.engine": "core.engine",
+        "gym_mod.envs": "core.envs",
+        "model": "core.models",
+        "model.DQN": "core.models.DQN",
+        "model.PPO": "core.models.PPO",
+        "model.memory": "core.models.memory",
+        "model.utils": "core.models.utils",
+        "model.ppo_buffer": "core.models.ppo_buffer",
+        "model.opponent_adapter": "core.models.opponent_adapter",
+    }
+    for old_name, new_name in aliases.items():
+        if old_name in sys.modules:
+            continue
+        try:
+            sys.modules[old_name] = importlib.import_module(new_name)
+        except Exception:
+            pass
+    sys.modules.setdefault("gym_mod", types.ModuleType("gym_mod"))
+    sys.modules.setdefault("model", types.ModuleType("model"))
 
 
 def log(message: str) -> None:
@@ -101,7 +127,7 @@ def load_latest_model(model_path: Optional[str] = None):
     if model_path and model_path != "None":
         pickle_path = model_path
     else:
-        save_path = "models/"
+        save_path = str(ARTIFACTS_MODELS_DIR) + os.sep
         folders = os.listdir(save_path) if os.path.isdir(save_path) else []
         envs = []
 
@@ -123,6 +149,7 @@ def load_latest_model(model_path: Optional[str] = None):
     if checkpoint_path is None:
         return None, None, None, None, pickle_path, None
 
+    _install_pickle_compat_aliases()
     with open(pickle_path, "rb") as handle:
         env, model, enemy = pickle.load(handle)
 
@@ -362,7 +389,7 @@ def main():
                     f"Что делать: проверьте .pth рядом с .pickle. model={pickle_path}"
                 )
             else:
-                log("[ERROR] Модель не найдена. Проверьте папку models/ и наличие файлов .pickle/.pth.")
+                log("[ERROR] Модель не найдена. Проверьте папку artifacts/models/ и наличие файлов .pickle/.pth.")
             return 0
 
     attacker_side, defender_side = roll_off_attacker_defender(
@@ -401,7 +428,14 @@ def main():
     learner_algo_override = ""
     selected_agent_id = (args.learner_agent_id or "").strip()
     if selected_agent_id:
-        payload = load_agent_by_id(selected_agent_id)
+        try:
+            payload = load_agent_by_id(selected_agent_id)
+        except Exception as exc:
+            log(
+                f"[ERROR] Не удалось загрузить learner-agent-id={selected_agent_id}: {exc}. "
+                "Что делать: обновите список агентов в GUI или выберите существующий agent_id из artifacts/models/agents."
+            )
+            return 0
         ok, reason = compatible_contracts(eval_contract, payload.get("contract", {}))
         if not ok:
             log(

@@ -17,16 +17,16 @@ import threading
 import atexit
 import queue as mp_queue
 from tqdm import tqdm
-from gym_mod.envs.warhamEnv import *
-from gym_mod.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
-from gym_mod.engine.io_profiler import get_io_profiler
-from gym_mod.engine.mission import (
+from core.envs.warhamEnv import *
+from core.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
+from core.engine.io_profiler import get_io_profiler
+from core.engine.mission import (
     normalize_mission_name,
     board_dims_for_mission,
     deploy_for_mission,
     post_deploy_setup,
 )
-from gym_mod.engine.agent_registry import (
+from core.engine.agent_registry import (
     AgentIdentity,
     build_agent_id,
     compatible_contracts,
@@ -35,18 +35,30 @@ from gym_mod.engine.agent_registry import (
     list_agents,
     save_agent_artifact,
 )
-from gym_mod.engine.matchmaker import choose_opponent, record_matchup
+from core.engine.matchmaker import choose_opponent, record_matchup
 from gymnasium import spaces
+from project_paths import (
+    AGENT_TRAIN_LOG_PATH,
+    ARTIFACTS_METRICS_DIR,
+    ARTIFACTS_MODELS_DIR,
+    RESULTS_PATH,
+    RUNTIME_STATE_DIR,
+    TRAIN_DATA_PATH,
+    ensure_runtime_dirs,
+)
 
-AGENT_TRAIN_LOG_FILE = os.path.join("logs", "LOGS_FOR_AGENTS_TRAIN.md")
+AGENT_TRAIN_LOG_FILE = str(AGENT_TRAIN_LOG_PATH.relative_to(AGENT_TRAIN_LOG_PATH.parent.parent))
 os.environ.setdefault("AGENT_LOG_FILE", AGENT_TRAIN_LOG_FILE)
 
-from model.DQN import *
-from model.memory import *
-from model.utils import *
-from model.PPO import ActorCriticMultiHead
-from model.ppo_buffer import PPORolloutBuffer
-from model.opponent_adapter import OpponentSpec, build_policy_fn, load_agent_opponent
+from core.models.DQN import *
+from core.models.memory import *
+from core.models.utils import *
+from core.models.PPO import ActorCriticMultiHead
+from core.models.ppo_buffer import PPORolloutBuffer
+from core.models.opponent_adapter import OpponentSpec, build_policy_fn, load_agent_opponent
+MODELS_DIR = str(ARTIFACTS_MODELS_DIR)
+METRICS_DIR = str(ARTIFACTS_METRICS_DIR)
+RUNTIME_IMG_DIR = os.path.join(str(RUNTIME_STATE_DIR), "img")
 
 # Workaround: на некоторых окружениях torch._dynamo падает из-за несовместимого triton.
 # Важно: используем setdefault, чтобы пользователь мог включить dynamo вручную.
@@ -626,12 +638,12 @@ def _resume_from_checkpoint(policy_net, target_net, optimizer, memory, checkpoin
 def save_extra_metrics(
     run_id: str,
     ep_rows: list[dict],
-    metrics_dir="metrics",
+    metrics_dir=METRICS_DIR,
     *,
     write_legacy_gui_plots: bool = True,
 ):
     os.makedirs(metrics_dir, exist_ok=True)
-    os.makedirs("runtime_data/img", exist_ok=True)
+    os.makedirs(RUNTIME_IMG_DIR, exist_ok=True)
 
     # --- CSV ---
     csv_path = os.path.join(metrics_dir, f"stats_{run_id}.csv")
@@ -677,8 +689,8 @@ def save_extra_metrics(
     plt.legend(loc="lower right")
 
     plt.savefig(os.path.join(metrics_dir, f"winrate_{run_id}.png"))
-    plt.savefig(os.path.join("runtime_data/img", f"winrate_{run_id}.png"))
-    plt.savefig(os.path.join("runtime_data/img", "winrate.png"))
+    plt.savefig(os.path.join(RUNTIME_IMG_DIR, f"winrate_{run_id}.png"))
+    plt.savefig(os.path.join(RUNTIME_IMG_DIR, "winrate.png"))
     plt.close()
 
     # --- VP diff plot ---
@@ -691,8 +703,8 @@ def save_extra_metrics(
     plt.title("VP diff (per episode + MA 50)")
 
     plt.savefig(os.path.join(metrics_dir, f"vpdiff_{run_id}.png"))
-    plt.savefig(os.path.join("runtime_data/img", f"vpdiff_{run_id}.png"))
-    plt.savefig(os.path.join("runtime_data/img", "vpdiff.png"))
+    plt.savefig(os.path.join(RUNTIME_IMG_DIR, f"vpdiff_{run_id}.png"))
+    plt.savefig(os.path.join(RUNTIME_IMG_DIR, "vpdiff.png"))
     plt.close()
 
     # --- End reasons bar ---
@@ -709,8 +721,8 @@ def save_extra_metrics(
     plt.tight_layout()
 
     plt.savefig(os.path.join(metrics_dir, f"endreasons_{run_id}.png"))
-    plt.savefig(os.path.join("runtime_data/img", f"endreasons_{run_id}.png"))
-    plt.savefig(os.path.join("runtime_data/img", "endreasons.png"))
+    plt.savefig(os.path.join(RUNTIME_IMG_DIR, f"endreasons_{run_id}.png"))
+    plt.savefig(os.path.join(RUNTIME_IMG_DIR, "endreasons.png"))
     plt.close()
 
     print(f"[metrics] saved: {csv_path}")
@@ -728,13 +740,13 @@ def append_episode_diagnostics(
     run_id: str,
     episode_row: dict,
     diagnostics: dict,
-    metrics_dir: str = "metrics",
+    metrics_dir: str = METRICS_DIR,
 ) -> None:
     """
     Пишем "супер-подробные" данные по эпизодам в JSONL, чтобы потом можно было
     строить разбор draw-матчей без ручного ковыряния логов.
-    - metrics/episodes_<run_id>.jsonl
-    - metrics/episodes_latest.jsonl
+    - artifacts/metrics/episodes_<run_id>.jsonl
+    - artifacts/metrics/episodes_latest.jsonl
     """
     os.makedirs(metrics_dir, exist_ok=True)
     payload = {
@@ -747,7 +759,7 @@ def append_episode_diagnostics(
     _append_jsonl(os.path.join(metrics_dir, "episodes_latest.jsonl"), payload)
 
 
-def _save_actor_det_eval_snapshot(run_id: str, payload: dict, metrics_dir: str = "metrics") -> None:
+def _save_actor_det_eval_snapshot(run_id: str, payload: dict, metrics_dir: str = METRICS_DIR) -> None:
     os.makedirs(metrics_dir, exist_ok=True)
     out = {"run_id": str(run_id), "updated_at": datetime.datetime.now().isoformat(timespec="seconds"), **(payload or {})}
     _append_jsonl(os.path.join(metrics_dir, f"actor_det_eval_{run_id}.jsonl"), out)
@@ -764,10 +776,10 @@ def _write_det_eval_data_json(
     extra: dict | None = None,
 ) -> str:
     """
-    GUI читает models/data_<run_id>.json: только det_* пути (относительно каталога runtime_data/).
+    GUI читает artifacts/models/data_<run_id>.json: только det_* пути.
     """
-    data_json_path = os.path.join("models", f"data_{run_id}.json")
-    os.makedirs("models", exist_ok=True)
+    data_json_path = os.path.join(MODELS_DIR, f"data_{run_id}.json")
+    os.makedirs(MODELS_DIR, exist_ok=True)
     payload = {
         "run_id": str(run_id),
         "metrics_mode": metrics_mode,
@@ -782,7 +794,7 @@ def _write_det_eval_data_json(
     return data_json_path
 
 
-def _det_eval_read_jsonl_points(run_id: str, metrics_dir: str = "metrics") -> list[dict]:
+def _det_eval_read_jsonl_points(run_id: str, metrics_dir: str = METRICS_DIR) -> list[dict]:
     jsonl_path = os.path.join(metrics_dir, f"actor_det_eval_{run_id}.jsonl")
     if not os.path.exists(jsonl_path):
         return []
@@ -808,7 +820,7 @@ def _det_eval_read_jsonl_points(run_id: str, metrics_dir: str = "metrics") -> li
     return [by_ep[k] for k in sorted(by_ep.keys())]
 
 
-def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict | None:
+def save_actor_det_eval_plot(run_id: str, metrics_dir: str = METRICS_DIR) -> dict | None:
     """
     Графики только из actor_det_eval_<run_id>.jsonl (DET-eval чекпоинты).
     PNG: winrate, reward, loss (на момент обучения), ep_len, hp_diff, kill_diff, причины завершения.
@@ -844,7 +856,7 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
         loss_vals.append(v)
 
     os.makedirs(metrics_dir, exist_ok=True)
-    os.makedirs("runtime_data/img", exist_ok=True)
+    os.makedirs(RUNTIME_IMG_DIR, exist_ok=True)
 
     def _save_fig(path_metrics: str, path_gui_run: str, path_gui_latest: str) -> None:
         plt.savefig(path_metrics)
@@ -873,8 +885,8 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
     plt.tight_layout()
     _save_fig(
         os.path.join(metrics_dir, f"det_winrate_{run_id}.png"),
-        os.path.join("runtime_data/img", f"det_winrate_{run_id}.png"),
-        os.path.join("runtime_data/img", "det_winrate.png"),
+        os.path.join(RUNTIME_IMG_DIR, f"det_winrate_{run_id}.png"),
+        os.path.join(RUNTIME_IMG_DIR, "det_winrate.png"),
     )
     plt.close()
 
@@ -889,8 +901,8 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
     plt.tight_layout()
     _save_fig(
         os.path.join(metrics_dir, f"det_reward_{run_id}.png"),
-        os.path.join("runtime_data/img", f"det_reward_{run_id}.png"),
-        os.path.join("runtime_data/img", "det_reward.png"),
+        os.path.join(RUNTIME_IMG_DIR, f"det_reward_{run_id}.png"),
+        os.path.join(RUNTIME_IMG_DIR, "det_reward.png"),
     )
     plt.close()
 
@@ -905,8 +917,8 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
     plt.tight_layout()
     _save_fig(
         os.path.join(metrics_dir, f"det_avg_vp_{run_id}.png"),
-        os.path.join("runtime_data/img", f"det_avg_vp_{run_id}.png"),
-        os.path.join("runtime_data/img", "det_avg_vp.png"),
+        os.path.join(RUNTIME_IMG_DIR, f"det_avg_vp_{run_id}.png"),
+        os.path.join(RUNTIME_IMG_DIR, "det_avg_vp.png"),
     )
     plt.close()
 
@@ -925,8 +937,8 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
     plt.tight_layout()
     _save_fig(
         os.path.join(metrics_dir, f"det_loss_{run_id}.png"),
-        os.path.join("runtime_data/img", f"det_loss_{run_id}.png"),
-        os.path.join("runtime_data/img", "det_loss.png"),
+        os.path.join(RUNTIME_IMG_DIR, f"det_loss_{run_id}.png"),
+        os.path.join(RUNTIME_IMG_DIR, "det_loss.png"),
     )
     plt.close()
 
@@ -941,8 +953,8 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
     plt.tight_layout()
     _save_fig(
         os.path.join(metrics_dir, f"det_ep_len_{run_id}.png"),
-        os.path.join("runtime_data/img", f"det_ep_len_{run_id}.png"),
-        os.path.join("runtime_data/img", "det_ep_len.png"),
+        os.path.join(RUNTIME_IMG_DIR, f"det_ep_len_{run_id}.png"),
+        os.path.join(RUNTIME_IMG_DIR, "det_ep_len.png"),
     )
     plt.close()
 
@@ -957,8 +969,8 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
     plt.tight_layout()
     _save_fig(
         os.path.join(metrics_dir, f"det_hp_diff_{run_id}.png"),
-        os.path.join("runtime_data/img", f"det_hp_diff_{run_id}.png"),
-        os.path.join("runtime_data/img", "det_hp_diff.png"),
+        os.path.join(RUNTIME_IMG_DIR, f"det_hp_diff_{run_id}.png"),
+        os.path.join(RUNTIME_IMG_DIR, "det_hp_diff.png"),
     )
     plt.close()
 
@@ -973,8 +985,8 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
     plt.tight_layout()
     _save_fig(
         os.path.join(metrics_dir, f"det_kill_diff_{run_id}.png"),
-        os.path.join("runtime_data/img", f"det_kill_diff_{run_id}.png"),
-        os.path.join("runtime_data/img", "det_kill_diff.png"),
+        os.path.join(RUNTIME_IMG_DIR, f"det_kill_diff_{run_id}.png"),
+        os.path.join(RUNTIME_IMG_DIR, "det_kill_diff.png"),
     )
     plt.close()
 
@@ -991,8 +1003,8 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = "metrics") -> dict 
     plt.tight_layout()
     _save_fig(
         os.path.join(metrics_dir, f"det_endreasons_{run_id}.png"),
-        os.path.join("runtime_data/img", f"det_endreasons_{run_id}.png"),
-        os.path.join("runtime_data/img", "det_endreasons.png"),
+        os.path.join(RUNTIME_IMG_DIR, f"det_endreasons_{run_id}.png"),
+        os.path.join(RUNTIME_IMG_DIR, "det_endreasons.png"),
     )
     plt.close()
 
@@ -1297,13 +1309,14 @@ def _safe_div(n: float, d: float) -> float:
     return float(n) / float(d) if float(d) > 0 else 0.0
 
 
-def save_heuristic_metrics_snapshot(run_id: str, ep_rows: list[dict] | None = None, metrics_dir: str = "metrics") -> str | None:
+def save_heuristic_metrics_snapshot(run_id: str, ep_rows: list[dict] | None = None, metrics_dir: str = METRICS_DIR) -> str | None:
     """
     Агрегирует ключевые метрики эвристики из train-логов и сохраняет JSON:
-    - metrics/heur_metrics_<run_id>.json
-    - metrics/heur_metrics_latest.json
+    - artifacts/metrics/heur_metrics_<run_id>.json
+    - artifacts/metrics/heur_metrics_latest.json
     """
-    log_path = os.path.abspath(AGENT_TRAIN_LOG_FILE)
+    ensure_runtime_dirs()
+    log_path = str(AGENT_TRAIN_LOG_PATH)
     if not os.path.exists(log_path):
         return None
 
@@ -1435,7 +1448,7 @@ def save_heuristic_metrics_snapshot(run_id: str, ep_rows: list[dict] | None = No
         return None
     return out_path
 
-def save_training_summary(run_id: str, model_tag: str, ep_rows: list[dict], elapsed_s: float, results_path: str = "results.txt") -> None:
+def save_training_summary(run_id: str, model_tag: str, ep_rows: list[dict], elapsed_s: float, results_path: str = str(RESULTS_PATH)) -> None:
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ep_count = len(ep_rows)
     if ep_count > 0:
@@ -1505,7 +1518,7 @@ def _trace_write_lines(ep_idx_1based: int, lines: list[str], *, actor_idx: int |
 
 def _format_action_trace_summary(ep_idx_1based: int, actor_idx: int | None, payload: dict) -> str:
     """
-    Компактный, но подробный блок для logs/LOGS_FOR_AGENTS_TRAIN.md.
+    Компактный, но подробный блок для runtime/logs/LOGS_FOR_AGENTS_TRAIN.md.
     payload ожидает структуру вида:
       {
         "steps": int,
@@ -1580,7 +1593,7 @@ def _format_action_trace_summary(ep_idx_1based: int, actor_idx: int | None, payl
 
 
 def _log_train(line: str) -> None:
-    """Лог в `logs/LOGS_FOR_AGENTS_TRAIN.md` + (опционально) в консоль."""
+    """Лог в `runtime/logs/LOGS_FOR_AGENTS_TRAIN.md` + (опционально) в консоль."""
     if TRAIN_LOG_TO_CONSOLE:
         # Печатаем без timestamp, чтобы консоль не была слишком шумной.
         print(line)
@@ -1711,14 +1724,13 @@ def _flush_agent_log_buffer(force: bool = False) -> None:
     if not lines:
         return
 
-    script_path = globals().get("__file__") or sys.argv[0] or "train.py"
-    log_path = os.path.join(os.path.dirname(os.path.abspath(script_path)), AGENT_TRAIN_LOG_FILE)
+    ensure_runtime_dirs()
+    log_path = str(AGENT_TRAIN_LOG_PATH)
     try:
-        os.makedirs(os.path.dirname(log_path), exist_ok=True)
         with open(log_path, "a", encoding="utf-8") as log_file:
             log_file.writelines(lines)
     except Exception as exc:
-        print(f"[LOG][WARN] Не удалось записать logs/LOGS_FOR_AGENTS_TRAIN.md: {exc}")
+        print(f"[LOG][WARN] Не удалось записать runtime/logs/LOGS_FOR_AGENTS_TRAIN.md: {exc}")
 
 
 atexit.register(lambda: _flush_agent_log_buffer(force=True))
@@ -1919,7 +1931,7 @@ def _load_roster_config():
         ],
     }
 
-    if os.path.isfile("runtime_data/data.json"):
+    if os.path.isfile(str(TRAIN_DATA_PATH)):
         config["totLifeT"] = initFile.getNumLife()
         config["b_len"] = initFile.getBoardX()
         config["b_hei"] = initFile.getBoardY()
@@ -2133,7 +2145,7 @@ def _save_ppo_checkpoint(
     b_hei: int | None = None,
 ):
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_dir = os.path.join("models", "ppo", f"ppo-run-{timestamp}")
+    run_dir = os.path.join(MODELS_DIR, "ppo", f"ppo-run-{timestamp}")
     os.makedirs(run_dir, exist_ok=True)
     checkpoint_path = os.path.join(run_dir, f"checkpoint_ep{int(episode)}.pth")
     payload = {
@@ -2198,7 +2210,7 @@ def run_ppo_training(
     last_checkpoint = ""
     run_id = str(random.randint(1000000, 9999999))
     model_name = datetime.datetime.now().strftime("%d-%H%M%S")
-    metrics_obj = metrics(os.path.join("models", "ppo"), run_id, model_name)
+    metrics_obj = metrics(os.path.join(MODELS_DIR, "ppo"), run_id, model_name)
     ep_rows = []
     last_det_eval_ep = 0
 
@@ -2333,7 +2345,7 @@ def run_ppo_training(
                 "global_step": int(global_step),
                 "update_step": int(ppo_update_step),
             },
-            metrics_dir="metrics",
+            metrics_dir=METRICS_DIR,
         )
         append_agent_log(
             f"[PPO][METRICS] ep={episode}/{totLifeT} reward={ep_reward:.4f} "
@@ -2365,7 +2377,7 @@ def run_ppo_training(
                 det_payload["training_loss"] = float(
                     ppo_metrics["policy_loss"] + PPO_VALUE_COEF * ppo_metrics["value_loss"]
                 )
-                _save_actor_det_eval_snapshot(run_id=str(run_id), payload=det_payload, metrics_dir="metrics")
+                _save_actor_det_eval_snapshot(run_id=str(run_id), payload=det_payload, metrics_dir=METRICS_DIR)
                 last_det_eval_ep = int(episode)
             except Exception as exc:
                 append_agent_log(f"[PPO][DET_EVAL][WARN] eval пропущен: {exc}")
@@ -2435,10 +2447,10 @@ def run_ppo_training(
     if ep_rows:
         try:
             save_extra_metrics(
-                run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics", write_legacy_gui_plots=False
+                run_id=run_id, ep_rows=ep_rows, metrics_dir=METRICS_DIR, write_legacy_gui_plots=False
             )
-            save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics")
-            det_gui = save_actor_det_eval_plot(run_id=run_id, metrics_dir="metrics")
+            save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows, metrics_dir=METRICS_DIR)
+            det_gui = save_actor_det_eval_plot(run_id=run_id, metrics_dir=METRICS_DIR)
             ckpt_path_for_json = str(last_checkpoint).replace("\\", "/") if last_checkpoint else ""
             if det_gui:
                 _write_det_eval_data_json(
@@ -2482,7 +2494,7 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
     last_checkpoint = ""
     run_id = str(random.randint(1000000, 9999999))
     model_name = datetime.datetime.now().strftime("%d-%H%M%S")
-    metrics_obj = metrics("models", run_id, model_name)
+    metrics_obj = metrics(MODELS_DIR, run_id, model_name)
     ep_rows = []
     last_update_metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clip_fraction": 0.0}
 
@@ -2619,7 +2631,7 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
                         "global_step": int(global_step),
                         "update_step": int(ppo_update_step),
                     },
-                    metrics_dir="metrics",
+                    metrics_dir=METRICS_DIR,
                 )
 
                 # reset env сразу после done
@@ -2723,10 +2735,10 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
     if ep_rows:
         try:
             save_extra_metrics(
-                run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics", write_legacy_gui_plots=False
+                run_id=run_id, ep_rows=ep_rows, metrics_dir=METRICS_DIR, write_legacy_gui_plots=False
             )
-            save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics")
-            det_gui = save_actor_det_eval_plot(run_id=run_id, metrics_dir="metrics")
+            save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows, metrics_dir=METRICS_DIR)
+            det_gui = save_actor_det_eval_plot(run_id=run_id, metrics_dir=METRICS_DIR)
             ckpt_path_for_json = str(last_checkpoint).replace("\\", "/") if last_checkpoint else ""
             if det_gui:
                 _write_det_eval_data_json(
@@ -3105,7 +3117,7 @@ def main():
         with IO_PROFILER.timed("metrics save"):
             IO_PROFILER.write_snapshot()
         _flush_agent_log_buffer(force=True)
-        if os.path.isfile("runtime_data/data.json"):
+        if os.path.isfile(str(TRAIN_DATA_PATH)):
             initFile.delFile()
         return
     
@@ -3539,7 +3551,7 @@ def main():
     algo_tag = str(TRAIN_ALGO or "dqn").strip().lower()
     if algo_tag not in {"dqn", "ppo"}:
         algo_tag = "dqn"
-    models_root = os.path.join("models", algo_tag)
+    models_root = os.path.join(MODELS_DIR, algo_tag)
     fold = os.path.join(models_root, safe_name)
     fileName = os.path.join(fold, "model-" + date + ".pickle")
     randNum = np.random.randint(0, 10000000)
@@ -3805,7 +3817,7 @@ def main():
         if last_known_training_loss is not None:
             det_payload["training_loss"] = float(last_known_training_loss)
         try:
-            _save_actor_det_eval_snapshot(run_id=str(randNum), payload=det_payload, metrics_dir="metrics")
+            _save_actor_det_eval_snapshot(run_id=str(randNum), payload=det_payload, metrics_dir=METRICS_DIR)
         except Exception as exc:
             append_agent_log(f"[EVAL][DET][WARN] не удалось записать JSONL: {exc}")
 
@@ -4409,7 +4421,7 @@ def main():
                             "winner_env": winner_env,
                             "end_reason_env": end_reason_env,
                         },
-                        metrics_dir="metrics",
+                        metrics_dir=METRICS_DIR,
                     )
                 except Exception as exc:
                     if TRAIN_LOG_TO_FILE:
@@ -4726,9 +4738,9 @@ def main():
         print("[render] RENDER_EVERY=0 -> gif skipped")
 
     save_extra_metrics(
-        run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics", write_legacy_gui_plots=False
+        run_id=str(randNum), ep_rows=ep_rows, metrics_dir=METRICS_DIR, write_legacy_gui_plots=False
     )
-    heur_metrics_path = save_heuristic_metrics_snapshot(run_id=str(randNum), ep_rows=ep_rows, metrics_dir="metrics")
+    heur_metrics_path = save_heuristic_metrics_snapshot(run_id=str(randNum), ep_rows=ep_rows, metrics_dir=METRICS_DIR)
     if heur_metrics_path:
         _log_train(f"[HEUR][METRICS] saved={heur_metrics_path}")
 
@@ -4751,7 +4763,7 @@ def main():
             model_rel_path,
         )
     with IO_PROFILER.timed("metrics save"):
-        det_gui = save_actor_det_eval_plot(run_id=str(randNum), metrics_dir="metrics")
+        det_gui = save_actor_det_eval_plot(run_id=str(randNum), metrics_dir=METRICS_DIR)
         if det_gui:
             _write_det_eval_data_json(
                 run_id=str(randNum),
@@ -4872,7 +4884,7 @@ def main():
 
     _flush_agent_log_buffer(force=True)
     
-    if os.path.isfile("runtime_data/data.json"):
+    if os.path.isfile(str(TRAIN_DATA_PATH)):
         initFile.delFile()
 
 
@@ -5003,7 +5015,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     # Online sync (learner -> actors) через файл: Windows-friendly.
     sync_enabled = os.getenv("ACTOR_SYNC_ENABLED", "1") == "1"
     sync_every_updates = max(1, int(os.getenv("ACTOR_SYNC_EVERY_UPDATES", "200")))
-    sync_path = os.path.join("models", "actor_sync", "latest_policy.pth")
+    sync_path = os.path.join(MODELS_DIR, "actor_sync", "latest_policy.pth")
     os.makedirs(os.path.dirname(sync_path), exist_ok=True)
     last_sync_opt_steps = 0
 
@@ -5102,11 +5114,11 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                         det_payload["eval_tag"] = "actor_learner_heuristic"
                         if last_loss is not None:
                             det_payload["training_loss"] = float(last_loss)
-                        _save_actor_det_eval_snapshot(run_id=str(randNum), payload=det_payload, metrics_dir="metrics")
+                        _save_actor_det_eval_snapshot(run_id=str(randNum), payload=det_payload, metrics_dir=METRICS_DIR)
                         # Обновляем графики + data_*.json сразу после DET-eval,
                         # чтобы GUI мог показывать прогресс без ожидания завершения тренировки.
                         try:
-                            det_gui = save_actor_det_eval_plot(run_id=str(randNum), metrics_dir="metrics")
+                            det_gui = save_actor_det_eval_plot(run_id=str(randNum), metrics_dir=METRICS_DIR)
                             if det_gui:
                                 _write_det_eval_data_json(
                                     run_id=str(randNum),
@@ -5175,7 +5187,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                             "enemy_ctrl_n": payload.get("enemy_ctrl_n", 0),
                             "timeline": payload.get("timeline", []),
                         },
-                        metrics_dir="metrics",
+                        metrics_dir=METRICS_DIR,
                     )
                 except Exception as exc:
                     if TRAIN_LOG_TO_CONSOLE:
@@ -5290,14 +5302,14 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
         except Exception:
             pass
 
-        # CSV для отладки; legacy PNG в runtime_data/img не пишем (GUI на DET-eval).
-        save_extra_metrics(run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics", write_legacy_gui_plots=False)
+        # CSV для отладки; legacy PNG в runtime/state/img не пишем (GUI на DET-eval).
+        save_extra_metrics(run_id=run_id, ep_rows=ep_rows, metrics_dir=METRICS_DIR, write_legacy_gui_plots=False)
 
         # --- save model (so GUI can find latest model) ---
         safe_name = "ACTOR_LEARNER"
         date = datetime.datetime.now().strftime("%d-%H%M%S")
-        os.makedirs(os.path.join("models", safe_name), exist_ok=True)
-        model_path = os.path.join("models", safe_name, f"model-{date}-{run_id}.pth")
+        os.makedirs(os.path.join(MODELS_DIR, safe_name), exist_ok=True)
+        model_path = os.path.join(MODELS_DIR, safe_name, f"model-{date}-{run_id}.pth")
         with IO_PROFILER.timed("checkpoint save"):
             torch.save(
                 {
@@ -5314,7 +5326,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                 model_path,
             )
 
-        det_gui = save_actor_det_eval_plot(run_id=run_id, metrics_dir="metrics")
+        det_gui = save_actor_det_eval_plot(run_id=run_id, metrics_dir=METRICS_DIR)
         if det_gui:
             try:
                 learner_side = str(learner_identity.side or "P1").strip().upper() or "P1"
@@ -5545,12 +5557,12 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
     # Sync learner -> actors (через файл, Windows-friendly)
     sync_enabled = os.getenv("ACTOR_SYNC_ENABLED", "1") == "1"
     sync_every_updates = max(1, int(os.getenv("ACTOR_SYNC_EVERY_UPDATES", "1")))
-    sync_path = os.path.join("models", "actor_sync", "latest_ppo.pth")
+    sync_path = os.path.join(MODELS_DIR, "actor_sync", "latest_ppo.pth")
     os.makedirs(os.path.dirname(sync_path), exist_ok=True)
     last_sync_update_step = 0
 
     # Sync opponent -> actors
-    opp_sync_path = os.path.join("models", "actor_sync", "latest_ppo_opp.pth")
+    opp_sync_path = os.path.join(MODELS_DIR, "actor_sync", "latest_ppo_opp.pth")
     os.makedirs(os.path.dirname(opp_sync_path), exist_ok=True)
     last_opp_sync_episode = 0
     snapshot_update_every = max(1, int(SELF_PLAY_UPDATE_EVERY_EPISODES))
@@ -5601,7 +5613,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
 
     run_id = str(random.randint(1000000, 9999999))
     model_name = datetime.datetime.now().strftime("%d-%H%M%S")
-    metrics_obj = metrics("models", run_id, model_name)
+    metrics_obj = metrics(MODELS_DIR, run_id, model_name)
     ep_rows: list[dict] = []
     last_update_metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clip_fraction": 0.0}
 
@@ -5658,7 +5670,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                         "global_step": int(global_step),
                         "update_step": int(ppo_update_step),
                     },
-                    metrics_dir="metrics",
+                    metrics_dir=METRICS_DIR,
                 )
 
                 # Periodic DET-like eval для PPO Actor-Learner (как в DQN actor-learner).
@@ -5685,10 +5697,10 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                             last_update_metrics.get("policy_loss", 0.0)
                             + PPO_VALUE_COEF * last_update_metrics.get("value_loss", 0.0)
                         )
-                        _save_actor_det_eval_snapshot(run_id=str(run_id), payload=det_payload, metrics_dir="metrics")
+                        _save_actor_det_eval_snapshot(run_id=str(run_id), payload=det_payload, metrics_dir=METRICS_DIR)
                         # Обновляем графики + data_*.json сразу после DET-eval, чтобы GUI видел прогресс.
                         try:
-                            det_gui = save_actor_det_eval_plot(run_id=str(run_id), metrics_dir="metrics")
+                            det_gui = save_actor_det_eval_plot(run_id=str(run_id), metrics_dir=METRICS_DIR)
                             if det_gui:
                                 _write_det_eval_data_json(
                                     run_id=str(run_id),
@@ -5893,10 +5905,10 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
     if ep_rows:
         try:
             save_extra_metrics(
-                run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics", write_legacy_gui_plots=False
+                run_id=run_id, ep_rows=ep_rows, metrics_dir=METRICS_DIR, write_legacy_gui_plots=False
             )
-            save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows, metrics_dir="metrics")
-            det_gui = save_actor_det_eval_plot(run_id=run_id, metrics_dir="metrics")
+            save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows, metrics_dir=METRICS_DIR)
+            det_gui = save_actor_det_eval_plot(run_id=run_id, metrics_dir=METRICS_DIR)
             ckpt_path_for_json = str(last_checkpoint).replace("\\", "/") if last_checkpoint else ""
             if det_gui:
                 _write_det_eval_data_json(
@@ -5998,7 +6010,7 @@ def _actor_learner_actor_entry(
         env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
 
         sync_enabled = os.getenv("ACTOR_SYNC_ENABLED", "1") == "1"
-        sync_path = os.path.join("models", "actor_sync", "latest_policy.pth")
+        sync_path = os.path.join(MODELS_DIR, "actor_sync", "latest_policy.pth")
         sync_check_every_ep = max(1, int(os.getenv("ACTOR_SYNC_CHECK_EVERY_EP", "10")))
         last_sync_mtime = -1.0
 
@@ -6362,7 +6374,7 @@ def _actor_learner_actor_entry_ppo(
         env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
 
         sync_enabled = os.getenv("ACTOR_SYNC_ENABLED", "1") == "1"
-        sync_path = os.path.join("models", "actor_sync", "latest_ppo.pth")
+        sync_path = os.path.join(MODELS_DIR, "actor_sync", "latest_ppo.pth")
         sync_check_every_ep = max(1, int(os.getenv("ACTOR_SYNC_CHECK_EVERY_EP", "5")))
         last_sync_mtime = -1.0
 
@@ -6375,7 +6387,7 @@ def _actor_learner_actor_entry_ppo(
             except Exception:
                 opponent_policy_fn = None
         # 2) Fallback: PPO snapshot sync file (PPO vs PPO), if explicit not set
-        opp_sync_path = os.path.join("models", "actor_sync", "latest_ppo_opp.pth")
+        opp_sync_path = os.path.join(MODELS_DIR, "actor_sync", "latest_ppo_opp.pth")
         last_opp_sync_mtime = -1.0
         opponent_net = ActorCriticMultiHead(n_observations, n_actions).to(torch.device("cpu"))
         opponent_net.eval()

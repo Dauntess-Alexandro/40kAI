@@ -2,7 +2,7 @@
 setlocal
 cd /d %~dp0
 if exist ".venv\Scripts\activate.bat" call ".venv\Scripts\activate.bat"
-set PYTHONPATH=%cd%\gym_mod;%PYTHONPATH%
+set PYTHONPATH=%cd%\core;%PYTHONPATH%
 REM Дефолты для ускорения обучения/чекпойнтов (не переопределяем, если заданы в окружении)
 if not defined NUM_ENVS set NUM_ENVS=16
 if not defined BATCH_ACT set BATCH_ACT=1

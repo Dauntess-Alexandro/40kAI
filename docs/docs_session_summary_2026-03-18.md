@@ -22,7 +22,7 @@
 - `TURN_LIMIT_VP_MARGIN_PENALTY_SCALE`
 - `TURN_LIMIT_VP_MARGIN_CLAMP`
 
-В `gym_mod/gym_mod/envs/warhamEnv.py` добавлена логика награды для `end_reason == "turn_limit"`.
+В `core/envs/warhamEnv.py` добавлена логика награды для `end_reason == "turn_limit"`.
 
 ### Зачем
 

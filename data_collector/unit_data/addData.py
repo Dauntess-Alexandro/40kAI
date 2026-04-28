@@ -19,7 +19,7 @@ def inFile(f, info):
 with open(os.path.abspath("links.json")) as j:
     data = json.loads(j.read())
 
-with open(os.path.abspath("../../gym_mod/gym_mod/engine/unitDataInit.json")) as j:
+with open(os.path.abspath("../../core/engine/unitDataInit.json")) as j:
     dataFile = json.loads(j.read())
 
 for i in range(len(data)):
@@ -31,5 +31,5 @@ for i in range(len(data)):
         if inFile(dataFile, data[i]["WeaponData"][j]) == False:
             dataFile["WeaponData"].append(data[i]["WeaponData"][j])
 
-with open('../../gym_mod/gym_mod/engine/unitData.json', 'w') as f:
+with open('../../core/engine/unitData.json', 'w') as f:
     json.dump(dataFile, f)
