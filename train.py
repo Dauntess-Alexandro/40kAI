@@ -139,10 +139,12 @@ with open(os.path.abspath("hyperparams.json")) as j:
 # ===== algo flags =====
 DOUBLE_DQN_ENABLED = os.getenv("DOUBLE_DQN_ENABLED", "1") == "1"
 DUELING_ENABLED = os.getenv("DUELING_ENABLED", "1") == "1"
-DIST_TYPE = str(os.getenv("DIST_TYPE", "c51")).strip().lower() or "c51"
-C51_ATOMS = int(os.getenv("C51_ATOMS", "51"))
-C51_V_MIN = float(os.getenv("C51_V_MIN", "-10"))
-C51_V_MAX = float(os.getenv("C51_V_MAX", "10"))
+DIST_TYPE = str(os.getenv("DIST_TYPE", "iqn")).strip().lower() or "iqn"
+IQN_N_QUANTILES = int(os.getenv("IQN_N_QUANTILES", "32"))
+IQN_N_TARGET_QUANTILES = int(os.getenv("IQN_N_TARGET_QUANTILES", "32"))
+IQN_N_TAU_SAMPLES = int(os.getenv("IQN_N_TAU_SAMPLES", "32"))
+IQN_EMBED_DIM = int(os.getenv("IQN_EMBED_DIM", "64"))
+IQN_KAPPA = float(os.getenv("IQN_KAPPA", "1.0"))
 NOISY_SIGMA0 = float(os.getenv("NOISY_SIGMA0", "0.5"))
 NOISY_DISABLE_EPS = os.getenv("NOISY_DISABLE_EPS", "1") == "1"
 REWARD_DEBUG = os.getenv("REWARD_DEBUG", "0") == "1"
@@ -176,15 +178,15 @@ N_STEP = int(os.getenv("N_STEP", "3"))
 if N_STEP < 1:
     N_STEP = 1
 # ======================
-if DIST_TYPE != "c51":
+if DIST_TYPE != "iqn":
     raise ValueError(
-        "[CONFIG][ERROR] Поддерживается только DIST_TYPE=c51. "
-        "Где: train.py (algo flags). Что делать: установите DIST_TYPE=c51."
+        "[CONFIG][ERROR] Поддерживается только DIST_TYPE=iqn. "
+        "Где: train.py (algo flags). Что делать: установите DIST_TYPE=iqn."
     )
-if C51_ATOMS < 2 or C51_V_MIN >= C51_V_MAX:
+if IQN_N_QUANTILES < 1 or IQN_N_TARGET_QUANTILES < 1 or IQN_N_TAU_SAMPLES < 1 or IQN_EMBED_DIM < 1 or IQN_KAPPA <= 0:
     raise ValueError(
-        "[CONFIG][ERROR] Некорректные C51 параметры. "
-        "Где: train.py (algo flags). Что делать: проверьте C51_ATOMS>=2 и C51_V_MIN<C51_V_MAX."
+        "[CONFIG][ERROR] Некорректные IQN параметры. "
+        "Где: train.py (algo flags). Что делать: проверьте IQN_N_QUANTILES/IQN_N_TARGET_QUANTILES/IQN_N_TAU_SAMPLES/IQN_EMBED_DIM>=1 и IQN_KAPPA>0."
     )
 
 # ===== perf knobs =====
@@ -1066,6 +1068,8 @@ def _run_actor_det_eval(
     b_hei: int,
     n_eval: int,
     opponent_epsilon: float,
+    self_play_enabled: bool = False,
+    opponent_spec: OpponentSpec | None = None,
 ) -> dict:
     policy_net.eval()
     wins = 0
@@ -1097,10 +1101,35 @@ def _run_actor_det_eval(
         except Exception:
             return 0
 
+    mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
     for eval_idx in range(max(1, int(n_eval))):
         enemy_e, model_e = _build_units_from_config(roster_config, b_len, b_hei)
+        attacker_side, defender_side = roll_off_attacker_defender(manual_roll_allowed=False, log_fn=None)
+        deploy_for_mission(
+            mission_name,
+            model_units=model_e,
+            enemy_units=enemy_e,
+            b_len=b_len,
+            b_hei=b_hei,
+            attacker_side=attacker_side,
+            log_fn=None,
+        )
+        post_deploy_setup(log_fn=None)
         env_e = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy_e, model=model_e, b_len=b_len, b_hei=b_hei)
-        state_e, info_e = env_e.reset(options={"m": model_e, "e": enemy_e, "Type": "small", "trunc": True})
+        env_e.attacker_side = attacker_side
+        env_e.defender_side = defender_side
+        state_e, info_e = env_e.reset(options={"m": model_e, "e": enemy_e, "trunc": True})
+        opponent_policy_fn = None
+        if bool(self_play_enabled) and opponent_spec is not None:
+            try:
+                opponent_policy_fn = build_policy_fn(
+                    env=env_e,
+                    len_model=len(model_e),
+                    opponent=opponent_spec,
+                    deterministic=True,
+                )
+            except Exception:
+                opponent_policy_fn = None
         # Стартовые totals для kill diff
         model_alive_start = _sum_alive_models((info_e or {}).get("model alive models", []))
         enemy_alive_start = _sum_alive_models((info_e or {}).get("player alive models", []))
@@ -1112,10 +1141,10 @@ def _run_actor_det_eval(
             action_e = select_action_with_epsilon(env_e, state_e, policy_net, 0.0, len(model_e), shoot_mask=shoot_mask_e)
             action_e_dict = convertToDict(action_e)
             env_unwrapped_e = unwrap_env(env_e)
-            # NOTE: enemyTurn в текущем env принимает только (trunc, policy_fn).
-            # Параметр opponent_epsilon оставляем в payload для будущих расширений,
-            # но сейчас используем стандартный путь enemyTurn (эвристика / configured policy).
-            env_unwrapped_e.enemyTurn(trunc=True)
+            if opponent_policy_fn is not None:
+                env_unwrapped_e.enemyTurn(trunc=True, policy_fn=opponent_policy_fn)
+            else:
+                env_unwrapped_e.enemyTurn(trunc=True)
             next_state_e, _reward_e, done_e, _res_e, info_e = env_e.step(action_e_dict)
             reward_sum_total += float(_reward_e or 0.0)
             state_e = next_state_e
@@ -1200,9 +1229,11 @@ def _run_actor_det_eval_ppo(
     n_actions: list[int],
     n_eval: int,
     opponent_epsilon: float,
+    self_play_enabled: bool = False,
+    opponent_spec: OpponentSpec | None = None,
 ) -> dict:
     """
-    DET-eval для PPO: детерминированная политика (argmax) против стандартного enemyTurn().
+    DET-eval для PPO: детерминированная политика (argmax) против enemyTurn(policy_fn) при self-play.
     Возвращаем те же агрегаты, что и для DQN DET-eval.
     """
     actor_critic.eval()
@@ -1235,10 +1266,35 @@ def _run_actor_det_eval_ppo(
         except Exception:
             return 0
 
+    mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
     for eval_idx in range(max(1, int(n_eval))):
         enemy_e, model_e = _build_units_from_config(roster_config, b_len, b_hei)
+        attacker_side, defender_side = roll_off_attacker_defender(manual_roll_allowed=False, log_fn=None)
+        deploy_for_mission(
+            mission_name,
+            model_units=model_e,
+            enemy_units=enemy_e,
+            b_len=b_len,
+            b_hei=b_hei,
+            attacker_side=attacker_side,
+            log_fn=None,
+        )
+        post_deploy_setup(log_fn=None)
         env_e = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy_e, model=model_e, b_len=b_len, b_hei=b_hei)
-        obs_e, info_e = env_e.reset(options={"m": model_e, "e": enemy_e, "Type": "small", "trunc": True})
+        env_e.attacker_side = attacker_side
+        env_e.defender_side = defender_side
+        obs_e, info_e = env_e.reset(options={"m": model_e, "e": enemy_e, "trunc": True})
+        opponent_policy_fn = None
+        if bool(self_play_enabled) and opponent_spec is not None:
+            try:
+                opponent_policy_fn = build_policy_fn(
+                    env=env_e,
+                    len_model=len(model_e),
+                    opponent=opponent_spec,
+                    deterministic=True,
+                )
+            except Exception:
+                opponent_policy_fn = None
         model_alive_start = _sum_alive_models((info_e or {}).get("model alive models", []))
         enemy_alive_start = _sum_alive_models((info_e or {}).get("player alive models", []))
         done_e = False
@@ -1267,7 +1323,10 @@ def _run_actor_det_eval_ppo(
                 action_dict[f"move_num_{i_u}"] = int(action_np[6 + i_u])
 
             env_unwrapped_e = unwrap_env(env_e)
-            env_unwrapped_e.enemyTurn(trunc=True)
+            if opponent_policy_fn is not None:
+                env_unwrapped_e.enemyTurn(trunc=True, policy_fn=opponent_policy_fn)
+            else:
+                env_unwrapped_e.enemyTurn(trunc=True)
             next_obs_e, reward_e, done_e, _res_e, info_e = env_e.step(action_dict)
             reward_sum_total += float(reward_e or 0.0)
             obs_e = next_obs_e
@@ -2912,7 +2971,7 @@ def main():
             f"PER={int(PER_ENABLED)} "
             f"N_STEP={N_STEP} "
             f"Noisy=1 sigma0={NOISY_SIGMA0:.3f} "
-            f"C51=1 atoms={C51_ATOMS} vmin={C51_V_MIN:.3f} vmax={C51_V_MAX:.3f} "
+            f"IQN=1 n_quant={IQN_N_QUANTILES} n_tgt={IQN_N_TARGET_QUANTILES} n_tau={IQN_N_TAU_SAMPLES} embed={IQN_EMBED_DIM} kappa={IQN_KAPPA:.3f} "
             f"NOISY_DISABLE_EPS={int(NOISY_DISABLE_EPS)} "
             f"LR={LR} "
             f"clip_reward={clip_reward_mode} "
@@ -3174,11 +3233,15 @@ def main():
     
     policy_net = DQN(
         n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
-        noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE, num_atoms=C51_ATOMS, v_min=C51_V_MIN, v_max=C51_V_MAX
+        noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE,
+        iqn_num_quantiles=IQN_N_QUANTILES, iqn_num_target_quantiles=IQN_N_TARGET_QUANTILES,
+        iqn_num_tau_samples=IQN_N_TAU_SAMPLES, iqn_embed_dim=IQN_EMBED_DIM
     ).to(device)
     target_net = DQN(
         n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
-        noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE, num_atoms=C51_ATOMS, v_min=C51_V_MIN, v_max=C51_V_MAX
+        noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE,
+        iqn_num_quantiles=IQN_N_QUANTILES, iqn_num_target_quantiles=IQN_N_TARGET_QUANTILES,
+        iqn_num_tau_samples=IQN_N_TAU_SAMPLES, iqn_embed_dim=IQN_EMBED_DIM
     ).to(device)
     optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
     if os.getenv("TORCH_OPTIMIZER_NO_DYNAMO", "1") == "1":
@@ -3361,7 +3424,9 @@ def main():
         opponent_snapshot_sync_enabled = True
         opponent_policy_net = DQN(
             n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
-            noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE, num_atoms=C51_ATOMS, v_min=C51_V_MIN, v_max=C51_V_MAX
+            noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE,
+            iqn_num_quantiles=IQN_N_QUANTILES, iqn_num_target_quantiles=IQN_N_TARGET_QUANTILES,
+            iqn_num_tau_samples=IQN_N_TAU_SAMPLES, iqn_embed_dim=IQN_EMBED_DIM
         ).to(device)
         opponent_policy_net.eval()
         league_pick = None
@@ -4698,7 +4763,7 @@ def main():
                             f"beta={last_per_beta:.4g} "
                             f"N_STEP={N_STEP} "
                             f"Noisy=1 sigma0={NOISY_SIGMA0:.3f} "
-                            f"C51=1 atoms={C51_ATOMS} vmin={C51_V_MIN:.3f} vmax={C51_V_MAX:.3f}"
+                            f"IQN=1 n_quant={IQN_N_QUANTILES} n_tgt={IQN_N_TARGET_QUANTILES} n_tau={IQN_N_TAU_SAMPLES} embed={IQN_EMBED_DIM} kappa={IQN_KAPPA:.3f}"
                         )
                         if N_STEP > 1:
                             effective_gamma = GAMMA ** N_STEP
@@ -4707,10 +4772,18 @@ def main():
                             per_stats = last_td_stats["per_stats"]
                         if last_td_stats.get("dist_stats"):
                             dist_stats = last_td_stats["dist_stats"]
-                            train_line += (
-                                f" ce_mean={dist_stats['ce_mean']:.6f}"
-                                f" ce_max={dist_stats['ce_max']:.6f}"
-                            )
+                            if "quantile_loss_mean" in dist_stats:
+                                train_line += (
+                                    f" qloss_mean={dist_stats['quantile_loss_mean']:.6f}"
+                                    f" qloss_max={dist_stats['quantile_loss_max']:.6f}"
+                                    f" tdq_mean={dist_stats['td_quantile_mean']:.6f}"
+                                    f" tdq_max={dist_stats['td_quantile_max']:.6f}"
+                                )
+                            else:
+                                train_line += (
+                                    f" ce_mean={dist_stats.get('ce_mean', 0.0):.6f}"
+                                    f" ce_max={dist_stats.get('ce_max', 0.0):.6f}"
+                                )
                             train_line += (
                                 f" td_abs_mean={per_stats['td_error_mean']:.6f}"
                                 f" td_abs_max={per_stats['td_error_max']:.6f}"
@@ -5079,11 +5152,15 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
 
     policy_net = DQN(
         n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
-        noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE, num_atoms=C51_ATOMS, v_min=C51_V_MIN, v_max=C51_V_MAX
+        noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE,
+        iqn_num_quantiles=IQN_N_QUANTILES, iqn_num_target_quantiles=IQN_N_TARGET_QUANTILES,
+        iqn_num_tau_samples=IQN_N_TAU_SAMPLES, iqn_embed_dim=IQN_EMBED_DIM
     ).to(device)
     target_net = DQN(
         n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
-        noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE, num_atoms=C51_ATOMS, v_min=C51_V_MIN, v_max=C51_V_MAX
+        noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE,
+        iqn_num_quantiles=IQN_N_QUANTILES, iqn_num_target_quantiles=IQN_N_TARGET_QUANTILES,
+        iqn_num_tau_samples=IQN_N_TAU_SAMPLES, iqn_embed_dim=IQN_EMBED_DIM
     ).to(device)
     optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
     if os.getenv("TORCH_OPTIMIZER_NO_DYNAMO", "1") == "1":
@@ -5201,10 +5278,16 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                             b_hei=b_hei,
                             n_eval=ACTOR_DET_EVAL_EPISODES,
                             opponent_epsilon=ACTOR_DET_EVAL_OPPONENT_EPSILON,
+                            self_play_enabled=bool(SELF_PLAY_ENABLED),
+                            opponent_spec=opponent_spec,
                         )
                         det_payload["episode"] = int(episodes_finished)
                         det_payload["algo"] = "dqn"
-                        det_payload["eval_tag"] = "actor_learner_heuristic"
+                        det_payload["eval_tag"] = (
+                            "actor_learner_policy_fn"
+                            if bool(SELF_PLAY_ENABLED) and (opponent_spec is not None)
+                            else "actor_learner_heuristic"
+                        )
                         if last_loss is not None:
                             det_payload["training_loss"] = float(last_loss)
                         _save_actor_det_eval_snapshot(run_id=str(randNum), payload=det_payload, metrics_dir=METRICS_DIR)
@@ -5517,6 +5600,8 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                 b_hei=b_hei,
                 n_eval=eval_eps,
                 opponent_epsilon=0.0,
+                self_play_enabled=bool(SELF_PLAY_ENABLED),
+                opponent_spec=opponent_spec,
             )
             print(
                 "[ACTOR_LEARNER][EVAL] "
@@ -5606,6 +5691,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
     opponent_state_dict_cpu = None
     opponent_source_label = "heuristic_auto"
     opponent_agent_id = None
+    opponent_spec_det: OpponentSpec | None = None
     # algo загруженного оппонента (для решения: обновлять ли снапшоты с PPO-learner)
     checkpoint_meta_algo: str | None = None
     if SELF_PLAY_ENABLED:
@@ -5628,12 +5714,20 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                             checkpoint_meta_algo = "ppo"
                         elif "policy_net" in checkpoint:
                             checkpoint_meta_algo = "dqn"
+                if opponent_state_dict_cpu is not None:
+                    opponent_spec_det = OpponentSpec(
+                        agent_id=str(SELF_PLAY_FIXED_PATH),
+                        algo=str(checkpoint_meta_algo or "ppo"),
+                        contract=dict(env_contract),
+                        policy_state=dict(opponent_state_dict_cpu),
+                    )
             else:
                 if not OPPONENT_AGENT_ID:
                     raise ValueError("SELF_PLAY snapshot: нужен OPPONENT_AGENT_ID (GUI должен подставить latest_snapshot).")
                 _opp_spec_ppo = load_agent_opponent(agent_id=OPPONENT_AGENT_ID, expected_contract=env_contract)
                 opponent_state_dict_cpu = normalize_state_dict(_opp_spec_ppo.policy_state)
                 checkpoint_meta_algo = str(_opp_spec_ppo.algo).lower()
+                opponent_spec_det = _opp_spec_ppo
                 opponent_source_label = "snapshot_policy_fn"
                 opponent_agent_id = str(OPPONENT_AGENT_ID)
         except Exception as exc:
@@ -5644,6 +5738,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
             opponent_state_dict_cpu = None
             opponent_source_label = "heuristic_auto"
             checkpoint_meta_algo = None
+            opponent_spec_det = None
 
     # PPO vs PPO: learner периодически пишет снапшот в latest_ppo_opp. PPO vs DQN: оппонент фиксирован.
     opponent_snapshot_sync_enabled = True
@@ -5785,10 +5880,16 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                             n_actions=[int(x) for x in n_actions],
                             n_eval=ACTOR_DET_EVAL_EPISODES,
                             opponent_epsilon=ACTOR_DET_EVAL_OPPONENT_EPSILON,
+                            self_play_enabled=bool(SELF_PLAY_ENABLED),
+                            opponent_spec=opponent_spec_det,
                         )
                         det_payload["episode"] = int(episodes_finished)
                         det_payload["algo"] = "ppo"
-                        det_payload["eval_tag"] = "actor_learner_heuristic"
+                        det_payload["eval_tag"] = (
+                            "actor_learner_policy_fn"
+                            if bool(SELF_PLAY_ENABLED) and (opponent_spec_det is not None)
+                            else "actor_learner_heuristic"
+                        )
                         det_payload["training_loss"] = float(
                             last_update_metrics.get("policy_loss", 0.0)
                             + PPO_VALUE_COEF * last_update_metrics.get("value_loss", 0.0)
@@ -5866,6 +5967,12 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                         )
                         opponent_source_label = "snapshot_policy_fn"
                         opponent_agent_id = str(agent_id)
+                        opponent_spec_det = OpponentSpec(
+                            agent_id=str(agent_id),
+                            algo="ppo",
+                            contract=dict(env_contract),
+                            policy_state=dict(opponent_state_dict_cpu),
+                        )
                         last_opp_sync_episode = int(episodes_finished)
                     except Exception as exc:
                         append_agent_log(f"[SELFPLAY][WARN] PPO snapshot update failed: {exc}")
@@ -6098,7 +6205,9 @@ def _actor_learner_actor_entry(
     try:
         cpu_net = DQN(
             n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
-            noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE, num_atoms=C51_ATOMS, v_min=C51_V_MIN, v_max=C51_V_MAX
+            noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE,
+            iqn_num_quantiles=IQN_N_QUANTILES, iqn_num_target_quantiles=IQN_N_TARGET_QUANTILES,
+            iqn_num_tau_samples=IQN_N_TAU_SAMPLES, iqn_embed_dim=IQN_EMBED_DIM
         ).to(torch.device("cpu"))
         cpu_net.load_state_dict(init_weights)
         cpu_net.eval()

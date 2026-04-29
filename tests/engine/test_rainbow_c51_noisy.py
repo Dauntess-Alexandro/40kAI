@@ -2,7 +2,7 @@ import torch
 
 from core.models.DQN import DQN, NoisyLinear
 from core.models.memory import ReplayMemory
-from core.models.utils import c51_project_distribution, optimize_model
+from core.models.utils import optimize_model, quantile_huber_loss
 
 
 def test_noisy_linear_changes_output_after_noise_reset():
@@ -15,18 +15,18 @@ def test_noisy_linear_changes_output_after_noise_reset():
     assert not torch.allclose(y1, y2)
 
 
-def test_c51_projection_distribution_is_normalized():
-    support = torch.linspace(-10.0, 10.0, 51)
-    next_dist = torch.full((3, 51), 1.0 / 51.0)
-    rewards = torch.tensor([0.0, 1.0, -1.0], dtype=torch.float32)
-    gammas = torch.tensor([0.99, 0.95, 0.90], dtype=torch.float32)
-    projected = c51_project_distribution(rewards, gammas, next_dist, support)
-    sums = projected.sum(dim=1)
-    assert torch.allclose(sums, torch.ones_like(sums), atol=1e-4)
-    assert torch.isfinite(projected).all()
+def test_iqn_quantile_huber_loss_is_finite_and_shaped():
+    pred = torch.randn(3, 8)
+    tgt = torch.randn(3, 12)
+    taus = torch.rand(3, 8, 1)
+    loss, td = quantile_huber_loss(pred, tgt, taus, kappa=1.0)
+    assert loss.shape == (3,)
+    assert td.shape == (3, 8, 12)
+    assert torch.isfinite(loss).all()
+    assert torch.isfinite(td).all()
 
 
-def test_optimize_model_smoke_with_c51_and_per():
+def test_optimize_model_smoke_with_iqn_and_per_toggle():
     import core.models.utils as model_utils
 
     old_batch = model_utils.BATCH_SIZE
@@ -34,8 +34,14 @@ def test_optimize_model_smoke_with_c51_and_per():
     try:
         n_obs = 10
         n_actions = [3, 2, 4, 2, 2, 2]
-        policy = DQN(n_obs, n_actions, dueling=True, noisy=True, distributional="c51", num_atoms=51, v_min=-10, v_max=10)
-        target = DQN(n_obs, n_actions, dueling=True, noisy=True, distributional="c51", num_atoms=51, v_min=-10, v_max=10)
+        policy = DQN(
+            n_obs, n_actions, dueling=True, noisy=True, distributional="iqn",
+            iqn_num_quantiles=16, iqn_num_target_quantiles=16, iqn_num_tau_samples=16, iqn_embed_dim=32
+        )
+        target = DQN(
+            n_obs, n_actions, dueling=True, noisy=True, distributional="iqn",
+            iqn_num_quantiles=16, iqn_num_target_quantiles=16, iqn_num_tau_samples=16, iqn_embed_dim=32
+        )
         target.load_state_dict(policy.state_dict())
         optimizer = torch.optim.Adam(policy.parameters(), lr=1e-4)
         memory = ReplayMemory(16)
@@ -64,5 +70,18 @@ def test_optimize_model_smoke_with_c51_and_per():
         assert result is not None
         assert "loss" in result and result["loss"] >= 0.0
         assert result.get("dist_stats") is not None
+        result_per = optimize_model(
+            policy,
+            target,
+            optimizer,
+            memory,
+            n_obs,
+            double_dqn_enabled=True,
+            per_enabled=False,
+            per_beta=0.4,
+            per_eps=1e-6,
+            use_amp=False,
+        )
+        assert result_per is not None
     finally:
         model_utils.BATCH_SIZE = old_batch

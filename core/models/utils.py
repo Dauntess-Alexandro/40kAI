@@ -53,6 +53,20 @@ def c51_project_distribution(reward_vec, gamma_pow_vec, next_dist, support):
         m_flat.index_add_(0, same_idx, same_mass)
     return m.clamp_min(1e-8)
 
+
+def quantile_huber_loss(pred_quantiles, target_quantiles, taus, kappa=1.0):
+    # pred_quantiles: [B, Nq], target_quantiles: [B, Nt], taus: [B, Nq, 1]
+    td = target_quantiles.unsqueeze(1) - pred_quantiles.unsqueeze(2)  # [B, Nq, Nt]
+    abs_td = td.abs()
+    huber = torch.where(
+        abs_td <= float(kappa),
+        0.5 * td.pow(2),
+        float(kappa) * (abs_td - 0.5 * float(kappa)),
+    )
+    quantile_weight = (taus - (td.detach() < 0).float()).abs()
+    loss = (quantile_weight * huber / float(kappa)).mean(dim=(1, 2))
+    return loss, td
+
 def normalize_state_dict(state_dict):
     if not isinstance(state_dict, dict):
         return state_dict
@@ -363,9 +377,88 @@ def optimize_model(
     if hasattr(target_net, "reset_noise"):
         target_net.reset_noise()
 
-    use_c51 = str(getattr(policy_net, "distributional", "")).lower() == "c51"
+    dist_type = str(getattr(policy_net, "distributional", "")).lower()
+    use_iqn = dist_type == "iqn"
+    use_c51 = dist_type == "c51"
 
-    if use_c51:
+    if use_iqn:
+        iqn_n = int(getattr(policy_net, "iqn_num_quantiles", 32))
+        iqn_n_tgt = int(getattr(policy_net, "iqn_num_target_quantiles", 32))
+        iqn_kappa = float(os.getenv("IQN_KAPPA", "1.0"))
+        with torch.autocast(device_type=dev.type, dtype=torch.float16, enabled=amp_enabled):
+            online_quantiles, taus = policy_net.iqn(state_batch, num_quantiles=iqn_n, return_taus=True)
+        selected_quantiles = []
+        for head_idx, head_q in enumerate(online_quantiles):
+            idx = action_batch[:, head_idx].view(-1, 1, 1).expand(-1, 1, head_q.shape[2])
+            selected_quantiles.append(head_q.gather(1, idx).squeeze(1))
+
+        num_heads = len(selected_quantiles)
+        target_quantiles = torch.zeros((BATCH_SIZE, num_heads, iqn_n_tgt), device=dev, dtype=torch.float32)
+        next_state_values = torch.zeros((BATCH_SIZE, num_heads), device=dev, dtype=torch.float32)
+        with torch.no_grad():
+            if non_final_next_states is not None:
+                if double_dqn_enabled:
+                    policy_next_q = policy_net(non_final_next_states)
+                    next_actions = _select_next_actions_from_q(policy_next_q, non_final_next_shoot_masks)
+                else:
+                    target_next_q = target_net(non_final_next_states)
+                    next_actions = _select_next_actions_from_q(target_next_q, non_final_next_shoot_masks)
+                target_next_quantiles = target_net.iqn(non_final_next_states, num_quantiles=iqn_n_tgt, return_taus=False)
+                gamma_n_nf = (GAMMA ** n_step_batch[non_final_mask]).float()
+                reward_nf = reward_batch[non_final_mask]
+                for head_idx, head_q in enumerate(target_next_quantiles):
+                    act = next_actions[head_idx].view(-1, 1, 1).expand(-1, 1, head_q.shape[2])
+                    chosen = head_q.gather(1, act).squeeze(1).float()
+                    target_quantiles[non_final_mask, head_idx, :] = (
+                        reward_nf.unsqueeze(1) + gamma_n_nf.unsqueeze(1) * chosen
+                    )
+                    next_state_values[non_final_mask, head_idx] = chosen.mean(dim=1)
+        if (~non_final_mask).any():
+            terminal_idx = torch.where(~non_final_mask)[0]
+            terminal_reward = reward_batch[terminal_idx].float()
+            target_quantiles[terminal_idx, :, :] = terminal_reward.view(-1, 1, 1)
+
+        per_head_losses = []
+        per_head_td = []
+        for head_idx in range(num_heads):
+            loss_i, td_i = quantile_huber_loss(
+                selected_quantiles[head_idx].float(),
+                target_quantiles[:, head_idx, :],
+                taus.float(),
+                kappa=iqn_kappa,
+            )
+            per_head_losses.append(loss_i)
+            per_head_td.append(td_i.abs().mean(dim=(1, 2)))
+        stacked_loss = torch.stack(per_head_losses, dim=1)
+        per_sample_loss = stacked_loss.mean(dim=1)
+        td_errors = torch.stack(per_head_td, dim=1).mean(dim=1)
+
+        if per_enabled:
+            weight_t = torch.tensor(weights, device=dev, dtype=torch.float32)
+            loss = (per_sample_loss * weight_t).mean()
+            new_priorities = td_errors.detach().cpu().numpy() + per_eps
+            memory.update_priorities(indices, new_priorities)
+            per_stats = {
+                "priority_mean": float(new_priorities.mean()),
+                "priority_max": float(new_priorities.max()),
+                "is_weight_mean": float(weight_t.mean().item()),
+                "is_weight_max": float(weight_t.max().item()),
+                "td_error_mean": float(td_errors.mean().item()),
+                "td_error_max": float(td_errors.max().item()),
+            }
+        else:
+            loss = per_sample_loss.mean()
+            per_stats = None
+        expected_state_action_values = reward_batch.unsqueeze(1) + ((GAMMA ** n_step_batch).unsqueeze(1) * next_state_values)
+        dist_stats = {
+            "quantile_loss_mean": float(per_sample_loss.mean().item()),
+            "quantile_loss_max": float(per_sample_loss.max().item()),
+            "td_quantile_mean": float(td_errors.mean().item()),
+            "td_quantile_max": float(td_errors.max().item()),
+            "n_quantiles": int(iqn_n),
+            "n_target_quantiles": int(iqn_n_tgt),
+        }
+    elif use_c51:
         with torch.autocast(device_type=dev.type, dtype=torch.float16, enabled=amp_enabled):
             dist_outputs = policy_net.dist(state_batch)
         selected_log_probs = []

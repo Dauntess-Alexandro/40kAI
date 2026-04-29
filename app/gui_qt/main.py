@@ -2508,10 +2508,12 @@ class GUIController(QtCore.QObject):
         env.insert("N_STEP", "3")
         env.insert("NOISY_DISABLE_EPS", "1")
         env.insert("NOISY_SIGMA0", "0.5")
-        env.insert("DIST_TYPE", "c51")
-        env.insert("C51_ATOMS", "51")
-        env.insert("C51_V_MIN", "-10")
-        env.insert("C51_V_MAX", "10")
+        env.insert("DIST_TYPE", "iqn")
+        env.insert("IQN_N_QUANTILES", "32")
+        env.insert("IQN_N_TARGET_QUANTILES", "32")
+        env.insert("IQN_N_TAU_SAMPLES", "32")
+        env.insert("IQN_EMBED_DIM", "64")
+        env.insert("IQN_KAPPA", "1.0")
         # Для GUI критично, чтобы снапшоты появлялись и на коротких прогонах (300-1000 эпизодов),
         # иначе список "Конкретный агент" пустой, и в превью будет UNKNOWN.
         # train.py по умолчанию поднимает SAVE_EVERY до SAVE_EVERY_MIN=50, если не разрешить low.
@@ -2553,10 +2555,16 @@ class GUIController(QtCore.QObject):
         self._progress_stats = "— it/s • elapsed 00:00"
         self.progressStatsChanged.emit(self._progress_stats)
 
-        start_message = (
-            f"Старт {status_prefix.lower()}: PER=1, N_STEP=3, "
-            "NoisyNet=on(sigma0=0.5), C51=on(atoms=51,vmin=-10,vmax=10)."
-        )
+        if self._training_algo == "ppo":
+            start_message = (
+                f"Старт {status_prefix.lower()}: PPO="
+                "on(lr=3e-4,gamma=0.99,gae=0.95,clip=0.2,rollout=1024,epochs=4,minibatch=256)."
+            )
+        else:
+            start_message = (
+                f"Старт {status_prefix.lower()}: PER=1, N_STEP=3, "
+                "NoisyNet=on(sigma0=0.5), IQN=on(nq=32,nt=32,tau=32,embed=64,kappa=1.0)."
+            )
         self._emit_log(f"[{train_label}] {start_message}")
         if self._disable_train_logging:
             self._emit_log(

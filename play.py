@@ -184,18 +184,23 @@ else:
         policy_state = checkpoint.get("policy_net", {})
         if any(key.startswith("value_heads.") for key in policy_state):
             dueling = True
-    dist_type = str(os.getenv("DIST_TYPE", "c51")).strip().lower() or "c51"
-    c51_atoms = int(os.getenv("C51_ATOMS", "51"))
-    c51_v_min = float(os.getenv("C51_V_MIN", "-10"))
-    c51_v_max = float(os.getenv("C51_V_MAX", "10"))
+    dist_type = str(os.getenv("DIST_TYPE", "iqn")).strip().lower() or "iqn"
+    iqn_n_quant = int(os.getenv("IQN_N_QUANTILES", "32"))
+    iqn_n_target = int(os.getenv("IQN_N_TARGET_QUANTILES", "32"))
+    iqn_n_tau = int(os.getenv("IQN_N_TAU_SAMPLES", "32"))
+    iqn_embed = int(os.getenv("IQN_EMBED_DIM", "64"))
     noisy_sigma0 = float(os.getenv("NOISY_SIGMA0", "0.5"))
     policy_net = DQN(
         n_observations, n_actions, dueling=dueling, noisy=True,
-        noisy_sigma0=noisy_sigma0, distributional=dist_type, num_atoms=c51_atoms, v_min=c51_v_min, v_max=c51_v_max
+        noisy_sigma0=noisy_sigma0, distributional=dist_type,
+        iqn_num_quantiles=iqn_n_quant, iqn_num_target_quantiles=iqn_n_target,
+        iqn_num_tau_samples=iqn_n_tau, iqn_embed_dim=iqn_embed
     ).to(device)
     target_net = DQN(
         n_observations, n_actions, dueling=dueling, noisy=True,
-        noisy_sigma0=noisy_sigma0, distributional=dist_type, num_atoms=c51_atoms, v_min=c51_v_min, v_max=c51_v_max
+        noisy_sigma0=noisy_sigma0, distributional=dist_type,
+        iqn_num_quantiles=iqn_n_quant, iqn_num_target_quantiles=iqn_n_target,
+        iqn_num_tau_samples=iqn_n_tau, iqn_embed_dim=iqn_embed
     ).to(device)
     optimizer = torch.optim.Adam(policy_net.parameters())
     policy_net.load_state_dict(normalize_state_dict(checkpoint['policy_net']))
