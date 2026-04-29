@@ -416,16 +416,16 @@ class GUIController(QtCore.QObject):
     def detEvalEpisodes(self) -> int:
         # Параметры DET-eval для actor-learner (по умолчанию).
         try:
-            return max(1, int(os.getenv("ACTOR_DET_EVAL_EPISODES", "12")))
+            return max(1, int(os.getenv("ACTOR_DET_EVAL_EPISODES", "50")))
         except ValueError:
-            return 12
+            return 50
 
     @QtCore.Property(int, constant=True)
     def detEvalEvery(self) -> int:
         try:
-            return max(1, int(os.getenv("ACTOR_DET_EVAL_EVERY_EPISODES", "100")))
+            return max(1, int(os.getenv("ACTOR_DET_EVAL_EVERY_EPISODES", "200")))
         except ValueError:
-            return 100
+            return 200
 
     @QtCore.Property(bool, constant=True)
     def selfPlayEnabled(self) -> bool:
@@ -461,10 +461,20 @@ class GUIController(QtCore.QObject):
         v = str(self._metrics_meta.get("opponent_algo", "")).strip()
         if v:
             return str(v).upper()
-        # Фолбэк: если self-play выключен — это эвристика.
-        if str(os.getenv("SELF_PLAY_ENABLED", "0") or "0").strip() != "1":
+        # Фолбэк строим от реального source, а не только от SELF_PLAY_ENABLED.
+        source = str(self._metrics_meta.get("opponent_source", "") or self._opponent_source or "").strip().lower()
+        if source in {"heuristic", "heuristic_auto"}:
             return "ЭВРИСТИКА"
-        # Если self-play включён, но algo неизвестен, пусть будет "policy".
+        if source in {"specific_agent", "latest_snapshot", "snapshot_policy_fn", "fixed_checkpoint"}:
+            try:
+                lookup = getattr(self, "_specific_opponent_algo_by_id", {})
+                selected_id = str(self._metrics_meta.get("opponent_id", "") or self._selected_specific_opponent_id or "").strip()
+                resolved = str(lookup.get(selected_id, "")).strip()
+                if resolved:
+                    return resolved.upper()
+            except Exception:
+                pass
+            return "POLICY"
         return "POLICY"
 
     @QtCore.Property(str, notify=metricsSummaryChanged)
@@ -2496,6 +2506,12 @@ class GUIController(QtCore.QObject):
         env.insert("TRAIN_ALGO", self._training_algo)
         env.insert("PER_ENABLED", "1")
         env.insert("N_STEP", "3")
+        env.insert("NOISY_DISABLE_EPS", "1")
+        env.insert("NOISY_SIGMA0", "0.5")
+        env.insert("DIST_TYPE", "c51")
+        env.insert("C51_ATOMS", "51")
+        env.insert("C51_V_MIN", "-10")
+        env.insert("C51_V_MAX", "10")
         # Для GUI критично, чтобы снапшоты появлялись и на коротких прогонах (300-1000 эпизодов),
         # иначе список "Конкретный агент" пустой, и в превью будет UNKNOWN.
         # train.py по умолчанию поднимает SAVE_EVERY до SAVE_EVERY_MIN=50, если не разрешить low.
@@ -2537,7 +2553,10 @@ class GUIController(QtCore.QObject):
         self._progress_stats = "— it/s • elapsed 00:00"
         self.progressStatsChanged.emit(self._progress_stats)
 
-        start_message = f"Старт {status_prefix.lower()}: PER=1, N_STEP=3."
+        start_message = (
+            f"Старт {status_prefix.lower()}: PER=1, N_STEP=3, "
+            "NoisyNet=on(sigma0=0.5), C51=on(atoms=51,vmin=-10,vmax=10)."
+        )
         self._emit_log(f"[{train_label}] {start_message}")
         if self._disable_train_logging:
             self._emit_log(
@@ -2889,7 +2908,7 @@ class GUIController(QtCore.QObject):
         else:
             quality_hint = "Качество серии: серия достаточно решающая."
 
-        self._eval_result_headline = f"P1 vs P2: {p1_wins}-{p2_wins}-{draws}"
+        self._eval_result_headline = f"P1 win: {p1_wins}, P2 win: {p2_wins}, Draw: {draws}"
         self._eval_result_winrate_p1 = f"P1 winrate: {wr_p1_all:.1%} (решающие: {wr_p1_dec:.1%})"
         self._eval_result_winrate_p2 = f"P2 winrate: {wr_p2_all:.1%} (решающие: {wr_p2_dec:.1%})"
         self._eval_result_avg_vp_diff = f"Avg VP diff (P1-P2): {avg_vp_diff:+.3f}"
@@ -2953,7 +2972,7 @@ class GUIController(QtCore.QObject):
         except (ValueError, SyntaxError):
             pass
         turn_limit_rate = turn_limit_count / total_games
-        self._eval_result_headline = f"P1 vs P2: {wins}-{losses}-{draws}"
+        self._eval_result_headline = f"P1 win: {wins}, P2 win: {losses}, Draw: {draws}"
         self._eval_result_winrate_p1 = f"P1 winrate all: {pairs.get('winrate_all', '?')}"
         self._eval_result_winrate_p2 = "P2 winrate all: —"
         self._eval_result_avg_vp_diff = f"Avg VP diff: {pairs.get('avg_vp_diff', '?')}"

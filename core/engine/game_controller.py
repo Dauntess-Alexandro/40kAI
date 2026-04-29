@@ -404,8 +404,19 @@ class GameController:
                 net_label = "dueling" if dueling else "basic"
                 net_source = "net_type" if net_type else "state_dict"
                 self._io.log(f"[MODEL] Архитектура сети: {net_label} (источник: {net_source})")
-                policy_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
-                target_net = DQN(n_observations, n_actions, dueling=dueling).to(device)
+                dist_type = str(os.getenv("DIST_TYPE", "c51")).strip().lower() or "c51"
+                c51_atoms = int(os.getenv("C51_ATOMS", "51"))
+                c51_v_min = float(os.getenv("C51_V_MIN", "-10"))
+                c51_v_max = float(os.getenv("C51_V_MAX", "10"))
+                noisy_sigma0 = float(os.getenv("NOISY_SIGMA0", "0.5"))
+                policy_net = DQN(
+                    n_observations, n_actions, dueling=dueling, noisy=True,
+                    noisy_sigma0=noisy_sigma0, distributional=dist_type, num_atoms=c51_atoms, v_min=c51_v_min, v_max=c51_v_max
+                ).to(device)
+                target_net = DQN(
+                    n_observations, n_actions, dueling=dueling, noisy=True,
+                    noisy_sigma0=noisy_sigma0, distributional=dist_type, num_atoms=c51_atoms, v_min=c51_v_min, v_max=c51_v_max
+                ).to(device)
                 optimizer = torch.optim.Adam(policy_net.parameters())
                 policy_net.load_state_dict(normalize_state_dict(checkpoint["policy_net"]))
                 target_net.load_state_dict(normalize_state_dict(checkpoint["target_net"]))

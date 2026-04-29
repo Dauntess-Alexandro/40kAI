@@ -139,6 +139,12 @@ with open(os.path.abspath("hyperparams.json")) as j:
 # ===== algo flags =====
 DOUBLE_DQN_ENABLED = os.getenv("DOUBLE_DQN_ENABLED", "1") == "1"
 DUELING_ENABLED = os.getenv("DUELING_ENABLED", "1") == "1"
+DIST_TYPE = str(os.getenv("DIST_TYPE", "c51")).strip().lower() or "c51"
+C51_ATOMS = int(os.getenv("C51_ATOMS", "51"))
+C51_V_MIN = float(os.getenv("C51_V_MIN", "-10"))
+C51_V_MAX = float(os.getenv("C51_V_MAX", "10"))
+NOISY_SIGMA0 = float(os.getenv("NOISY_SIGMA0", "0.5"))
+NOISY_DISABLE_EPS = os.getenv("NOISY_DISABLE_EPS", "1") == "1"
 REWARD_DEBUG = os.getenv("REWARD_DEBUG", "0") == "1"
 REWARD_DEBUG_EVERY = int(os.getenv("REWARD_DEBUG_EVERY", "200"))
 TRAIN_ALGO = str(os.getenv("TRAIN_ALGO", "dqn")).strip().lower() or "dqn"
@@ -170,6 +176,16 @@ N_STEP = int(os.getenv("N_STEP", "3"))
 if N_STEP < 1:
     N_STEP = 1
 # ======================
+if DIST_TYPE != "c51":
+    raise ValueError(
+        "[CONFIG][ERROR] Поддерживается только DIST_TYPE=c51. "
+        "Где: train.py (algo flags). Что делать: установите DIST_TYPE=c51."
+    )
+if C51_ATOMS < 2 or C51_V_MIN >= C51_V_MAX:
+    raise ValueError(
+        "[CONFIG][ERROR] Некорректные C51 параметры. "
+        "Где: train.py (algo flags). Что делать: проверьте C51_ATOMS>=2 и C51_V_MIN<C51_V_MAX."
+    )
 
 # ===== perf knobs =====
 RENDER_EVERY = int(os.getenv("RENDER_EVERY", "0"))  # 0 = выключить рендер полностью
@@ -243,8 +259,8 @@ DET_EVAL_OPPONENT_EPSILON = float(os.getenv("DET_EVAL_OPPONENT_EPSILON", "0.0"))
 
 # Actor-Learner periodic DET-like eval (во время тренировки)
 ACTOR_DET_EVAL_ENABLED = os.getenv("ACTOR_DET_EVAL_ENABLED", "1") == "1"
-ACTOR_DET_EVAL_EVERY_EPISODES = int(os.getenv("ACTOR_DET_EVAL_EVERY_EPISODES", "100"))
-ACTOR_DET_EVAL_EPISODES = int(os.getenv("ACTOR_DET_EVAL_EPISODES", "12"))
+ACTOR_DET_EVAL_EVERY_EPISODES = int(os.getenv("ACTOR_DET_EVAL_EVERY_EPISODES", "200"))
+ACTOR_DET_EVAL_EPISODES = int(os.getenv("ACTOR_DET_EVAL_EPISODES", "50"))
 ACTOR_DET_EVAL_OPPONENT_EPSILON = float(os.getenv("ACTOR_DET_EVAL_OPPONENT_EPSILON", "0.0"))
 
 REWARD_SCHEDULE_ENABLED = os.getenv("REWARD_SCHEDULE_ENABLED", "1") == "1"
@@ -542,13 +558,35 @@ def _resume_from_checkpoint(policy_net, target_net, optimizer, memory, checkpoin
         append_agent_log(err_msg)
         raise ValueError(err_msg)
 
-    policy_net.load_state_dict(normalize_state_dict(policy_state))
+    try:
+        policy_net.load_state_dict(normalize_state_dict(policy_state))
+    except Exception as exc:
+        err_msg = (
+            "[RESUME][ERROR] Чекпойнт несовместим с текущей архитектурой Rainbow (Noisy+C51). "
+            "Где: train.py (_resume_from_checkpoint/policy_net.load_state_dict). "
+            "Что делать: используйте новый checkpoint из этой версии или запустите обучение с нуля. "
+            f"Детали: {exc}"
+        )
+        print(err_msg)
+        append_agent_log(err_msg)
+        raise RuntimeError(err_msg) from exc
     policy_loaded = 1
 
     target_loaded = 0
     target_state = checkpoint.get("target_net") if isinstance(checkpoint, dict) else None
     if isinstance(target_state, dict):
-        target_net.load_state_dict(normalize_state_dict(target_state))
+        try:
+            target_net.load_state_dict(normalize_state_dict(target_state))
+        except Exception as exc:
+            err_msg = (
+                "[RESUME][ERROR] target_net в чекпойнте несовместим с текущей архитектурой Rainbow (Noisy+C51). "
+                "Где: train.py (_resume_from_checkpoint/target_net.load_state_dict). "
+                "Что делать: используйте совместимый checkpoint. "
+                f"Детали: {exc}"
+            )
+            print(err_msg)
+            append_agent_log(err_msg)
+            raise RuntimeError(err_msg) from exc
         target_loaded = 1
     else:
         target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
@@ -2873,6 +2911,9 @@ def main():
             f"Dueling={int(DUELING_ENABLED)} "
             f"PER={int(PER_ENABLED)} "
             f"N_STEP={N_STEP} "
+            f"Noisy=1 sigma0={NOISY_SIGMA0:.3f} "
+            f"C51=1 atoms={C51_ATOMS} vmin={C51_V_MIN:.3f} vmax={C51_V_MAX:.3f} "
+            f"NOISY_DISABLE_EPS={int(NOISY_DISABLE_EPS)} "
             f"LR={LR} "
             f"clip_reward={clip_reward_mode} "
             f"grad_clip={GRAD_CLIP_VALUE} "
@@ -3131,8 +3172,14 @@ def main():
             pass
     
     
-    policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
-    target_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
+    policy_net = DQN(
+        n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
+        noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE, num_atoms=C51_ATOMS, v_min=C51_V_MIN, v_max=C51_V_MAX
+    ).to(device)
+    target_net = DQN(
+        n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
+        noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE, num_atoms=C51_ATOMS, v_min=C51_V_MIN, v_max=C51_V_MAX
+    ).to(device)
     optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
     if os.getenv("TORCH_OPTIMIZER_NO_DYNAMO", "1") == "1":
         _patch_optimizer_methods_no_compile(optimizer)
@@ -3312,7 +3359,10 @@ def main():
         # PPO vs PPO / DQN vs DQN: периодические snapshot-обновления оппонента с learner.
         # PPO vs DQN / DQN vs PPO: веса оппонента фиксированы (без подмены state_dict другого algo).
         opponent_snapshot_sync_enabled = True
-        opponent_policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
+        opponent_policy_net = DQN(
+            n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
+            noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE, num_atoms=C51_ATOMS, v_min=C51_V_MIN, v_max=C51_V_MAX
+        ).to(device)
         opponent_policy_net.eval()
         league_pick = None
         if LEAGUE_ENABLE:
@@ -4646,13 +4696,21 @@ def main():
                             f"PER={int(PER_ENABLED)} "
                             f"alpha={PER_ALPHA:.4g} "
                             f"beta={last_per_beta:.4g} "
-                            f"N_STEP={N_STEP}"
+                            f"N_STEP={N_STEP} "
+                            f"Noisy=1 sigma0={NOISY_SIGMA0:.3f} "
+                            f"C51=1 atoms={C51_ATOMS} vmin={C51_V_MIN:.3f} vmax={C51_V_MAX:.3f}"
                         )
                         if N_STEP > 1:
                             effective_gamma = GAMMA ** N_STEP
                             train_line += f" effective_gamma={effective_gamma:.6g}"
                         if PER_ENABLED and last_td_stats.get("per_stats"):
                             per_stats = last_td_stats["per_stats"]
+                        if last_td_stats.get("dist_stats"):
+                            dist_stats = last_td_stats["dist_stats"]
+                            train_line += (
+                                f" ce_mean={dist_stats['ce_mean']:.6f}"
+                                f" ce_max={dist_stats['ce_max']:.6f}"
+                            )
                             train_line += (
                                 f" td_abs_mean={per_stats['td_error_mean']:.6f}"
                                 f" td_abs_max={per_stats['td_error_max']:.6f}"
@@ -4764,13 +4822,31 @@ def main():
         )
     with IO_PROFILER.timed("metrics save"):
         det_gui = save_actor_det_eval_plot(run_id=str(randNum), metrics_dir=METRICS_DIR)
+        opponent_source = str(opponent_source_state.get("source", "unknown"))
+        opponent_id = opponent_source_state.get("id")
+        if SELF_PLAY_ENABLED:
+            opponent_algo = "dqn" if opponent_policy_net is not None else "heuristic"
+        else:
+            opponent_algo = "heuristic"
+        learner_side = str(learner_identity.side or "P1").strip().upper() or "P1"
+        opponent_side = "P2" if learner_side == "P1" else "P1"
         if det_gui:
             _write_det_eval_data_json(
                 run_id=str(randNum),
                 det_plot_gui_paths=det_gui,
                 model_path=model_rel_path.replace("\\", "/"),
                 metrics_mode="det_eval",
-                extra={"algo": "dqn", "mode": "train_loop"},
+                extra={
+                    "algo": "dqn",
+                    "mode": "train_loop",
+                    "learner_side": learner_side,
+                    "learner_faction": str(learner_identity.faction or "Unknown"),
+                    "opponent_side": opponent_side,
+                    "opponent_faction": str(roster_config.get("enemy_faction", "Unknown")).strip(),
+                    "opponent_algo": opponent_algo,
+                    "opponent_source": opponent_source,
+                    "opponent_id": str(opponent_id) if opponent_id is not None else "",
+                },
             )
         else:
             _write_det_eval_data_json(
@@ -4778,7 +4854,18 @@ def main():
                 det_plot_gui_paths={},
                 model_path=model_rel_path.replace("\\", "/"),
                 metrics_mode="det_eval",
-                extra={"algo": "dqn", "mode": "train_loop", "det_eval_note": "нет точек DET-eval (DET_EVAL выкл. или ещё не было)"},
+                extra={
+                    "algo": "dqn",
+                    "mode": "train_loop",
+                    "det_eval_note": "нет точек DET-eval (DET_EVAL выкл. или ещё не было)",
+                    "learner_side": learner_side,
+                    "learner_faction": str(learner_identity.faction or "Unknown"),
+                    "opponent_side": opponent_side,
+                    "opponent_faction": str(roster_config.get("enemy_faction", "Unknown")).strip(),
+                    "opponent_algo": opponent_algo,
+                    "opponent_source": opponent_source,
+                    "opponent_id": str(opponent_id) if opponent_id is not None else "",
+                },
             )
     print("Generated metrics")
     final_agent_id = build_agent_id(learner_identity, f"final_ep{resume_episode_base + numLifeT}")
@@ -4990,8 +5077,14 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             f"enemy_policy_mode={enemy_policy_mode}"
         )
 
-    policy_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
-    target_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(device)
+    policy_net = DQN(
+        n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
+        noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE, num_atoms=C51_ATOMS, v_min=C51_V_MIN, v_max=C51_V_MAX
+    ).to(device)
+    target_net = DQN(
+        n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
+        noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE, num_atoms=C51_ATOMS, v_min=C51_V_MIN, v_max=C51_V_MAX
+    ).to(device)
     optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
     if os.getenv("TORCH_OPTIMIZER_NO_DYNAMO", "1") == "1":
         _patch_optimizer_methods_no_compile(optimizer)
@@ -5367,6 +5460,9 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                     "learner_faction": str(getattr(learner_identity, "faction", "Unknown") or "Unknown"),
                     "opponent_side": "P2" if str(getattr(learner_identity, "side", "P1") or "P1").strip().upper() == "P1" else "P1",
                     "opponent_faction": str(roster_config.get("enemy_faction", "Unknown")).strip(),
+                    "opponent_algo": "dqn" if (SELF_PLAY_ENABLED and opponent_policy_net is not None) else "heuristic",
+                    "opponent_source": str(opponent_source_state.get("source", "unknown")),
+                    "opponent_id": str(opponent_source_state.get("id")) if opponent_source_state.get("id") is not None else "",
                 },
             )
 
@@ -6000,7 +6096,10 @@ def _actor_learner_actor_entry(
 ):
     """Top-level entrypoint for Windows spawn pickling."""
     try:
-        cpu_net = DQN(n_observations, n_actions, dueling=DUELING_ENABLED).to(torch.device("cpu"))
+        cpu_net = DQN(
+            n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
+            noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE, num_atoms=C51_ATOMS, v_min=C51_V_MIN, v_max=C51_V_MAX
+        ).to(torch.device("cpu"))
         cpu_net.load_state_dict(init_weights)
         cpu_net.eval()
 

@@ -28,6 +28,31 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def unwrap_env(env):
     return getattr(env, "unwrapped", env)
 
+
+def c51_project_distribution(reward_vec, gamma_pow_vec, next_dist, support):
+    n_batch = reward_vec.shape[0]
+    n_atoms = support.shape[0]
+    v_min = float(support[0].item())
+    v_max = float(support[-1].item())
+    delta_z = (v_max - v_min) / float(n_atoms - 1)
+    tz = reward_vec.unsqueeze(1) + gamma_pow_vec.unsqueeze(1) * support.view(1, -1)
+    tz = tz.clamp(v_min, v_max)
+    b = (tz - v_min) / delta_z
+    l = b.floor().long().clamp(0, n_atoms - 1)
+    u = b.ceil().long().clamp(0, n_atoms - 1)
+    m = torch.zeros_like(next_dist)
+    offset = torch.arange(n_batch, device=next_dist.device).unsqueeze(1) * n_atoms
+    m_flat = m.view(-1)
+    next_flat = next_dist.view(-1)
+    m_flat.index_add_(0, (l + offset).view(-1), (next_flat * (u.float() - b).view(-1)))
+    m_flat.index_add_(0, (u + offset).view(-1), (next_flat * (b - l.float()).view(-1)))
+    same = u.eq(l)
+    if same.any():
+        same_idx = (l + offset)[same].view(-1)
+        same_mass = next_dist[same].view(-1)
+        m_flat.index_add_(0, same_idx, same_mass)
+    return m.clamp_min(1e-8)
+
 def normalize_state_dict(state_dict):
     if not isinstance(state_dict, dict):
         return state_dict
@@ -49,10 +74,11 @@ def normalize_state_dict(state_dict):
 
 def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None):
     force_greedy = os.getenv("FORCE_GREEDY", "0") == "1" or os.getenv("PLAY_NO_EXPLORATION", "0") == "1"
+    noisy_disable_eps = os.getenv("NOISY_DISABLE_EPS", "1") == "1"
     sample = random.random()
     decay_steps = max(1.0, float(EPS_DECAY))
     progress = min(float(steps_done) / decay_steps, 1.0)
-    eps_threshold = 0.0 if force_greedy else EPS_START + (EPS_END - EPS_START) * progress
+    eps_threshold = 0.0 if (force_greedy or noisy_disable_eps) else EPS_START + (EPS_END - EPS_START) * progress
     steps_done += 1
     dev = next(policy_net.parameters()).device
 
@@ -71,6 +97,12 @@ def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None
     if state.dim() == 1:
         state = state.unsqueeze(0)
 
+
+    if hasattr(policy_net, "reset_noise") and not force_greedy:
+        try:
+            policy_net.reset_noise()
+        except Exception:
+            pass
 
     if force_greedy or sample > eps_threshold:
         with torch.no_grad():
@@ -296,103 +328,176 @@ def optimize_model(
             m for m, s in zip(batch.next_shoot_mask, batch.next_state) if s is not None
         ]
 
+    def _gather_selected_q(head_outputs, actions):
+        arr_local = []
+        for head_idx, head in enumerate(head_outputs):
+            arr_local.append(head.gather(1, actions[:, head_idx].unsqueeze(1)))
+        return torch.cat(arr_local, dim=1)
+
+    def _build_shoot_mask(mask_source, width):
+        if mask_source is None:
+            return None
+        mask_list = []
+        for m in mask_source:
+            if m is None:
+                mask_list.append(torch.ones(width, device=dev, dtype=torch.bool))
+            else:
+                mask_list.append(torch.as_tensor(m, dtype=torch.bool, device=dev))
+        return torch.stack(mask_list, dim=0)
+
+    def _select_next_actions_from_q(q_heads, shoot_masks):
+        acts = [h.argmax(1) for h in q_heads]
+        if shoot_masks is not None and len(q_heads) > 2:
+            shoot_mask = _build_shoot_mask(shoot_masks, q_heads[2].shape[1])
+            if shoot_mask is not None and shoot_mask.shape == q_heads[2].shape:
+                valid_any = shoot_mask.any(dim=1)
+                masked_shoot = q_heads[2].clone()
+                masked_shoot[~shoot_mask] = -1e9
+                masked_shoot[~valid_any] = q_heads[2][~valid_any]
+                acts[2] = masked_shoot.argmax(1)
+        return acts
+
     forward_start = perf_counter()
-    # ---- Q(s,a) ----
-    with torch.autocast(device_type=dev.type, dtype=torch.float16, enabled=amp_enabled):
-        state_action_values = policy_net(state_batch)
-    move_action, attack_action, shoot_action, charge_action, use_cp_action, cp_on_action, *move_actions = state_action_values
+    if hasattr(policy_net, "reset_noise"):
+        policy_net.reset_noise()
+    if hasattr(target_net, "reset_noise"):
+        target_net.reset_noise()
 
-    arr = [
-        move_action.gather(1, action_batch[:, 0].unsqueeze(1)),
-        attack_action.gather(1, action_batch[:, 1].unsqueeze(1)),
-        shoot_action.gather(1, action_batch[:, 2].unsqueeze(1)),
-        charge_action.gather(1, action_batch[:, 3].unsqueeze(1)),
-        use_cp_action.gather(1, action_batch[:, 4].unsqueeze(1)),
-        cp_on_action.gather(1, action_batch[:, 5].unsqueeze(1)),
-    ]
-    for i in range(len(move_actions)):
-        arr.append(move_actions[i].gather(1, action_batch[:, i + 6].unsqueeze(1)))
+    use_c51 = str(getattr(policy_net, "distributional", "")).lower() == "c51"
 
-    selected_action_values = torch.cat(arr, dim=1)  # [B, num_heads]
-
-    # ---- max_a' Q_target(s', a') per head ----
-    next_state_values = torch.zeros((BATCH_SIZE, selected_action_values.shape[1]), device=dev, dtype=torch.float32)
-
-    with torch.no_grad():
-        if non_final_next_states is not None:
-            with torch.autocast(device_type=dev.type, dtype=torch.float16, enabled=amp_enabled):
-                target_next = target_net(non_final_next_states)  # list of [N, n_i]
-                if double_dqn_enabled:
-                    policy_next = policy_net(non_final_next_states)
-                    next_actions = [h.argmax(1) for h in policy_next]  # list of [N]
-                    if non_final_next_shoot_masks is not None:
-                        mask_list = []
-                        for m in non_final_next_shoot_masks:
-                            if m is None:
-                                mask_list.append(torch.ones(policy_next[2].shape[1], device=dev, dtype=torch.bool))
-                            else:
-                                mask_list.append(torch.as_tensor(m, dtype=torch.bool, device=dev))
-                        shoot_mask = torch.stack(mask_list, dim=0)
-                        if shoot_mask.shape == policy_next[2].shape and shoot_mask.numel() > 0:
-                            valid_any = shoot_mask.any(dim=1)
-                            masked_shoot = policy_next[2].clone()
-                            masked_shoot[~shoot_mask] = -1e9
-                            masked_shoot[~valid_any] = policy_next[2][~valid_any]
-                            next_actions[2] = masked_shoot.argmax(1)
-                    next_q = [
-                        tgt.gather(1, act.unsqueeze(1)).squeeze(1)
-                        for tgt, act in zip(target_next, next_actions)
-                    ]
-                    max_per_head = torch.stack(next_q, dim=1)  # [N, num_heads]
-                else:
-                    masked_targets = []
-                    for head_idx, head in enumerate(target_next):
-                        if head_idx == 2 and non_final_next_shoot_masks is not None:
-                            mask_list = []
-                            for m in non_final_next_shoot_masks:
-                                if m is None:
-                                    mask_list.append(torch.ones(head.shape[1], device=dev, dtype=torch.bool))
-                                else:
-                                    mask_list.append(torch.as_tensor(m, dtype=torch.bool, device=dev))
-                            shoot_mask = torch.stack(mask_list, dim=0)
-                            if shoot_mask.numel() > 0 and shoot_mask.shape == head.shape:
-                                valid_any = shoot_mask.any(dim=1)
-                                masked_head = head.clone()
-                                masked_head[~shoot_mask] = -1e9
-                                masked_head[~valid_any] = head[~valid_any]
-                                masked_targets.append(masked_head.max(1).values)
-                                continue
-                        masked_targets.append(head.max(1).values)
-                    max_per_head = torch.stack(masked_targets, dim=1)  # [N, num_heads]
-                next_state_values[non_final_mask] = max_per_head.float()
-
-    gamma_n = GAMMA ** n_step_batch
-    expected_state_action_values = reward_batch.unsqueeze(1) + (gamma_n.unsqueeze(1) * next_state_values)  # [B, num_heads]
-
-    if per_enabled:
+    if use_c51:
         with torch.autocast(device_type=dev.type, dtype=torch.float16, enabled=amp_enabled):
-            loss_per_element = F.smooth_l1_loss(
-                selected_action_values, expected_state_action_values, reduction="none"
-            )
-            per_sample_loss = loss_per_element.mean(dim=1)  # [B]
+            dist_outputs = policy_net.dist(state_batch)
+        selected_log_probs = []
+        for head_idx, head_logits in enumerate(dist_outputs):
+            action_idx = action_batch[:, head_idx].view(-1, 1, 1).expand(-1, 1, head_logits.shape[-1])
+            chosen_logits = head_logits.gather(1, action_idx).squeeze(1)
+            selected_log_probs.append(F.log_softmax(chosen_logits, dim=-1))
+
+        num_heads = len(dist_outputs)
+        n_atoms = int(getattr(policy_net, "num_atoms", 51))
+        support = policy_net.support.to(dev)
+        target_proj = torch.zeros((BATCH_SIZE, num_heads, n_atoms), device=dev, dtype=torch.float32)
+        next_state_values = torch.zeros((BATCH_SIZE, num_heads), device=dev, dtype=torch.float32)
+
+        with torch.no_grad():
+            if non_final_next_states is not None:
+                if double_dqn_enabled:
+                    policy_next_q = policy_net(non_final_next_states)
+                    next_actions = _select_next_actions_from_q(policy_next_q, non_final_next_shoot_masks)
+                else:
+                    if hasattr(target_net, "reset_noise"):
+                        target_net.reset_noise()
+                    target_next_q = target_net(non_final_next_states)
+                    next_actions = _select_next_actions_from_q(target_next_q, non_final_next_shoot_masks)
+
+                if hasattr(target_net, "reset_noise"):
+                    target_net.reset_noise()
+                target_next_dist_logits = target_net.dist(non_final_next_states)
+                gamma_n_nf = (GAMMA ** n_step_batch[non_final_mask]).float()
+                reward_nf = reward_batch[non_final_mask]
+
+                for head_idx, head_logits in enumerate(target_next_dist_logits):
+                    act = next_actions[head_idx].view(-1, 1, 1).expand(-1, 1, n_atoms)
+                    chosen_logits = head_logits.gather(1, act).squeeze(1)
+                    chosen_dist = torch.softmax(chosen_logits, dim=-1)
+                    projected = c51_project_distribution(reward_nf, gamma_n_nf, chosen_dist, support)
+                    target_proj[non_final_mask, head_idx] = projected
+                    next_state_values[non_final_mask, head_idx] = (chosen_dist * support.view(1, -1)).sum(dim=1)
+
+        non_final_reward = reward_batch[~non_final_mask]
+        if non_final_reward.numel() > 0:
+            terminal_idx = torch.where(~non_final_mask)[0]
+            for idx_t, r_val in zip(terminal_idx.tolist(), non_final_reward.tolist()):
+                atom_idx = torch.argmin((support - float(r_val)).abs()).item()
+                target_proj[idx_t, :, atom_idx] = 1.0
+
+        ce_per_head = []
+        for head_idx, log_p in enumerate(selected_log_probs):
+            ce = -(target_proj[:, head_idx, :] * log_p.float()).sum(dim=1)
+            ce_per_head.append(ce)
+        per_sample_loss = torch.stack(ce_per_head, dim=1).mean(dim=1)
+        if per_enabled:
             weight_t = torch.tensor(weights, device=dev, dtype=torch.float32)
             loss = (per_sample_loss * weight_t).mean()
-            td_errors = (selected_action_values - expected_state_action_values).abs().mean(dim=1)
-            new_priorities = td_errors.detach().cpu().numpy() + per_eps
-        memory.update_priorities(indices, new_priorities)
-        per_stats = {
-            "priority_mean": float(new_priorities.mean()),
-            "priority_max": float(new_priorities.max()),
-            "is_weight_mean": float(weight_t.mean().item()),
-            "is_weight_max": float(weight_t.max().item()),
-            "td_error_mean": float(td_errors.mean().item()),
-            "td_error_max": float(td_errors.max().item()),
+            td_errors = per_sample_loss.detach()
+            new_priorities = td_errors.cpu().numpy() + per_eps
+            memory.update_priorities(indices, new_priorities)
+            per_stats = {
+                "priority_mean": float(new_priorities.mean()),
+                "priority_max": float(new_priorities.max()),
+                "is_weight_mean": float(weight_t.mean().item()),
+                "is_weight_max": float(weight_t.max().item()),
+                "td_error_mean": float(td_errors.mean().item()),
+                "td_error_max": float(td_errors.max().item()),
+            }
+        else:
+            loss = per_sample_loss.mean()
+            per_stats = None
+        expected_state_action_values = reward_batch.unsqueeze(1) + ((GAMMA ** n_step_batch).unsqueeze(1) * next_state_values)
+        dist_stats = {
+            "ce_mean": float(per_sample_loss.mean().item()),
+            "ce_max": float(per_sample_loss.max().item()),
+            "atoms": int(n_atoms),
+            "v_min": float(support[0].item()),
+            "v_max": float(support[-1].item()),
         }
     else:
-        criterion = nn.SmoothL1Loss()
         with torch.autocast(device_type=dev.type, dtype=torch.float16, enabled=amp_enabled):
-            loss = criterion(selected_action_values, expected_state_action_values)
-        per_stats = None
+            state_action_values = policy_net(state_batch)
+        selected_action_values = _gather_selected_q(state_action_values, action_batch)
+        next_state_values = torch.zeros((BATCH_SIZE, selected_action_values.shape[1]), device=dev, dtype=torch.float32)
+        with torch.no_grad():
+            if non_final_next_states is not None:
+                with torch.autocast(device_type=dev.type, dtype=torch.float16, enabled=amp_enabled):
+                    target_next = target_net(non_final_next_states)
+                    if double_dqn_enabled:
+                        policy_next = policy_net(non_final_next_states)
+                        next_actions = _select_next_actions_from_q(policy_next, non_final_next_shoot_masks)
+                        next_q = [tgt.gather(1, act.unsqueeze(1)).squeeze(1) for tgt, act in zip(target_next, next_actions)]
+                        max_per_head = torch.stack(next_q, dim=1)
+                    else:
+                        masked_targets = []
+                        for head_idx, head in enumerate(target_next):
+                            if head_idx == 2 and non_final_next_shoot_masks is not None:
+                                shoot_mask = _build_shoot_mask(non_final_next_shoot_masks, head.shape[1])
+                                if shoot_mask is not None and shoot_mask.shape == head.shape:
+                                    valid_any = shoot_mask.any(dim=1)
+                                    masked_head = head.clone()
+                                    masked_head[~shoot_mask] = -1e9
+                                    masked_head[~valid_any] = head[~valid_any]
+                                    masked_targets.append(masked_head.max(1).values)
+                                    continue
+                            masked_targets.append(head.max(1).values)
+                        max_per_head = torch.stack(masked_targets, dim=1)
+                    next_state_values[non_final_mask] = max_per_head.float()
+        gamma_n = GAMMA ** n_step_batch
+        expected_state_action_values = reward_batch.unsqueeze(1) + (gamma_n.unsqueeze(1) * next_state_values)
+        if per_enabled:
+            with torch.autocast(device_type=dev.type, dtype=torch.float16, enabled=amp_enabled):
+                loss_per_element = F.smooth_l1_loss(
+                    selected_action_values, expected_state_action_values, reduction="none"
+                )
+                per_sample_loss = loss_per_element.mean(dim=1)
+                weight_t = torch.tensor(weights, device=dev, dtype=torch.float32)
+                loss = (per_sample_loss * weight_t).mean()
+                td_errors = (selected_action_values - expected_state_action_values).abs().mean(dim=1)
+                new_priorities = td_errors.detach().cpu().numpy() + per_eps
+            memory.update_priorities(indices, new_priorities)
+            per_stats = {
+                "priority_mean": float(new_priorities.mean()),
+                "priority_max": float(new_priorities.max()),
+                "is_weight_mean": float(weight_t.mean().item()),
+                "is_weight_max": float(weight_t.max().item()),
+                "td_error_mean": float(td_errors.mean().item()),
+                "td_error_max": float(td_errors.max().item()),
+            }
+        else:
+            criterion = nn.SmoothL1Loss()
+            with torch.autocast(device_type=dev.type, dtype=torch.float16, enabled=amp_enabled):
+                loss = criterion(selected_action_values, expected_state_action_values)
+            per_stats = None
+        dist_stats = None
 
     optimizer.zero_grad()
     backward_start = perf_counter()
@@ -414,6 +519,7 @@ def optimize_model(
         "td_target_mean": expected_state_action_values.mean().item(),
         "td_target_max": expected_state_action_values.max().item(),
         "per_stats": per_stats,
+        "dist_stats": dist_stats,
         "timing": {
             "sample_s": sample_time,
             "forward_s": forward_time,

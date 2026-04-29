@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import collections
+import os
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
@@ -103,8 +104,18 @@ def build_policy_fn(
         raise ValueError(f"agent '{opponent.agent_id}' has invalid env_contract signatures.")
 
     if opponent.algo == "dqn":
-        net = DQN(n_obs, n_actions, dueling=False).to(torch.device("cpu"))
-        net.load_state_dict(normalize_state_dict(opponent.policy_state))
+        policy_state = normalize_state_dict(opponent.policy_state)
+        dueling = any(str(k).startswith("value_heads.") for k in policy_state.keys())
+        dist_type = str(os.getenv("DIST_TYPE", "c51")).strip().lower() or "c51"
+        c51_atoms = int(os.getenv("C51_ATOMS", "51"))
+        c51_v_min = float(os.getenv("C51_V_MIN", "-10"))
+        c51_v_max = float(os.getenv("C51_V_MAX", "10"))
+        noisy_sigma0 = float(os.getenv("NOISY_SIGMA0", "0.5"))
+        net = DQN(
+            n_obs, n_actions, dueling=dueling, noisy=True,
+            noisy_sigma0=noisy_sigma0, distributional=dist_type, num_atoms=c51_atoms, v_min=c51_v_min, v_max=c51_v_max
+        ).to(torch.device("cpu"))
+        net.load_state_dict(policy_state)
         net.eval()
 
         def _policy_fn(obs_any) -> dict:
