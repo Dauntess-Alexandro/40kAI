@@ -275,6 +275,38 @@ REWARD_STAGE1_VP_REWARD_SCALE = float(os.getenv("REWARD_STAGE1_VP_REWARD_SCALE",
 REWARD_STAGE2_VP_REWARD_SCALE = float(os.getenv("REWARD_STAGE2_VP_REWARD_SCALE", str(max(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_REWARD_SCALE", 0.12), 0.16))))
 REWARD_STAGE3_VP_REWARD_SCALE = float(os.getenv("REWARD_STAGE3_VP_REWARD_SCALE", str(max(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_REWARD_SCALE", 0.12), 0.20))))
 
+# Runtime override: RCFG_<NAME>=<value> для быстрых A/B прогонов reward-конфига без правок файлов.
+_REWARD_CFG_ENV_KEYS = (
+    "VP_OBJECTIVE_STREAK_LEN",
+    "VP_OBJECTIVE_STREAK_BONUS",
+    "VP_OBJECTIVE_STREAK_LINEAR_CAP",
+    "VP_OBJECTIVE_OC_MARGIN_SCALE",
+    "MISSION_NO_CONTEST_PENALTY",
+    "MISSION_NO_CONTEST_LATE_MULT",
+    "NO_TARGET_NO_CONTEST_PENALTY",
+    "NO_TARGET_NO_CONTEST_ROUND_SCALE",
+    "VP_STALL_STEPS_THRESHOLD",
+    "VP_STALL_PENALTY",
+    "VP_STALL_STEP_GROWTH",
+    "REWARD_PROGRESS_EARLY_MULT",
+    "REWARD_PROGRESS_LATE_MULT",
+    "REWARD_HOLD_EARLY_MULT",
+    "REWARD_HOLD_LATE_MULT",
+)
+for _k in _REWARD_CFG_ENV_KEYS:
+    _v = os.getenv(f"RCFG_{_k}")
+    if _v is None:
+        continue
+    try:
+        _curr = getattr(reward_cfg, _k)
+        if isinstance(_curr, int):
+            setattr(reward_cfg, _k, int(float(_v)))
+        else:
+            setattr(reward_cfg, _k, float(_v))
+        print(f"[TRAIN][REWARD_CFG] override {_k}={getattr(reward_cfg, _k)}")
+    except Exception:
+        print(f"[TRAIN][REWARD_CFG][WARN] invalid override {_k}={_v}")
+
 if SELF_PLAY_UPDATE_EVERY_EPISODES < 1:
     SELF_PLAY_UPDATE_EVERY_EPISODES = 1
 if SELF_PLAY_UPDATE_EVERY_MIN < 1:
@@ -2301,6 +2333,7 @@ def run_ppo_training(
     b_hei = int(roster_config.get("b_hei", 0))
     actor_critic = ActorCriticMultiHead(n_observations, n_actions).to(device)
     optimizer = optim.AdamW(actor_critic.parameters(), lr=PPO_LR, amsgrad=True)
+    _patch_optimizer_methods_no_compile(optimizer)
     buffer = PPORolloutBuffer()
     global_step = 0
     ppo_update_step = 0
@@ -2584,6 +2617,7 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
 
     actor_critic = ActorCriticMultiHead(n_observations, n_actions).to(device)
     optimizer = optim.AdamW(actor_critic.parameters(), lr=PPO_LR, amsgrad=True)
+    _patch_optimizer_methods_no_compile(optimizer)
     buffer = PPORolloutBuffer()
 
     global_step = 0
@@ -5149,6 +5183,11 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             f"opponent_agent_id={OPPONENT_AGENT_ID or '-'} "
             f"enemy_policy_mode={enemy_policy_mode}"
         )
+    opponent_source_actor = "snapshot_policy_fn" if (SELF_PLAY_ENABLED and opponent_spec is not None) else "heuristic_auto"
+    try:
+        opponent_id_actor = str(getattr(opponent_spec, "agent_id", "") or OPPONENT_AGENT_ID or "")
+    except Exception:
+        opponent_id_actor = str(OPPONENT_AGENT_ID or "")
 
     policy_net = DQN(
         n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
@@ -5233,6 +5272,15 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     ep_rows: list[dict] = []
     randNum = random.randint(1000000, 9999999)
     loss_trace: list[float] = []
+    adaptive_tl_curriculum = os.getenv("ADAPTIVE_TURN_LIMIT_CURRICULUM", "1").strip() == "1"
+    tl_curriculum_hi = float(os.getenv("ADAPTIVE_TL_RATE_HIGH", "0.70"))
+    tl_curriculum_lo = float(os.getenv("ADAPTIVE_TL_RATE_LOW", "0.55"))
+    tl_penalty_step = float(os.getenv("ADAPTIVE_NO_CONTEST_STEP", "0.02"))
+    tl_penalty_max = float(os.getenv("ADAPTIVE_NO_CONTEST_MAX", "0.45"))
+    tl_oc_step = float(os.getenv("ADAPTIVE_OC_MARGIN_STEP", "0.005"))
+    tl_oc_max = float(os.getenv("ADAPTIVE_OC_MARGIN_MAX", "0.08"))
+    tl_penalty_min = float(getattr(reward_cfg, "MISSION_NO_CONTEST_PENALTY", 0.0))
+    tl_oc_min = float(getattr(reward_cfg, "VP_OBJECTIVE_OC_MARGIN_SCALE", 0.0))
 
     started = time.perf_counter()
     pbar = tqdm(total=int(totLifeT), mininterval=0.5)
@@ -5290,18 +5338,60 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                         )
                         if last_loss is not None:
                             det_payload["training_loss"] = float(last_loss)
+                        if adaptive_tl_curriculum:
+                            try:
+                                tl_rate = float(det_payload.get("turn_limit_rate", 0.0) or 0.0)
+                                old_pen = float(getattr(reward_cfg, "MISSION_NO_CONTEST_PENALTY", tl_penalty_min))
+                                old_oc = float(getattr(reward_cfg, "VP_OBJECTIVE_OC_MARGIN_SCALE", tl_oc_min))
+                                new_pen = old_pen
+                                new_oc = old_oc
+                                if tl_rate >= tl_curriculum_hi:
+                                    new_pen = min(tl_penalty_max, old_pen + tl_penalty_step)
+                                    new_oc = min(tl_oc_max, old_oc + tl_oc_step)
+                                elif tl_rate <= tl_curriculum_lo:
+                                    new_pen = max(tl_penalty_min, old_pen - tl_penalty_step)
+                                    new_oc = max(tl_oc_min, old_oc - tl_oc_step)
+                                reward_cfg.MISSION_NO_CONTEST_PENALTY = float(new_pen)
+                                reward_cfg.VP_OBJECTIVE_OC_MARGIN_SCALE = float(new_oc)
+                                if abs(new_pen - old_pen) > 1e-9 or abs(new_oc - old_oc) > 1e-9:
+                                    _log_train(
+                                        "[TRAIN][CURRICULUM] adaptive_turn_limit "
+                                        f"ep={episodes_finished} tl_rate={tl_rate:.3f} "
+                                        f"MISSION_NO_CONTEST_PENALTY={old_pen:.3f}->{new_pen:.3f} "
+                                        f"VP_OBJECTIVE_OC_MARGIN_SCALE={old_oc:.4f}->{new_oc:.4f}"
+                                    )
+                            except Exception:
+                                pass
                         _save_actor_det_eval_snapshot(run_id=str(randNum), payload=det_payload, metrics_dir=METRICS_DIR)
                         # Обновляем графики + data_*.json сразу после DET-eval,
                         # чтобы GUI мог показывать прогресс без ожидания завершения тренировки.
                         try:
                             det_gui = save_actor_det_eval_plot(run_id=str(randNum), metrics_dir=METRICS_DIR)
                             if det_gui:
+                                try:
+                                    learner_side = str(learner_identity.side or "P1").strip().upper() or "P1"
+                                except Exception:
+                                    learner_side = "P1"
+                                opponent_side = "P2" if learner_side == "P1" else "P1"
+                                opponent_faction = str(roster_config.get("enemy_faction", "Unknown")).strip()
+                                opponent_source = str(opponent_source_actor)
+                                opponent_id = str(opponent_id_actor)
                                 _write_det_eval_data_json(
                                     run_id=str(randNum),
                                     det_plot_gui_paths=det_gui,
                                     model_path="",
                                     metrics_mode="det_eval",
-                                    extra={"algo": "dqn", "mode": "actor_learner"},
+                                    extra={
+                                        "algo": "dqn",
+                                        "mode": "actor_learner",
+                                        "learner_side": learner_side,
+                                        "learner_faction": str(learner_identity.faction or "Unknown"),
+                                        "opponent_side": opponent_side,
+                                        "opponent_faction": opponent_faction,
+                                        "opponent_algo": "dqn" if (SELF_PLAY_ENABLED and opponent_spec is not None) else "heuristic",
+                                        "opponent_source": opponent_source,
+                                        "opponent_id": str(opponent_id or ""),
+                                    },
                                 )
                         except Exception:
                             pass
@@ -5510,8 +5600,8 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                 learner_side = "P1"
             opponent_side = "P2" if learner_side == "P1" else "P1"
             opponent_faction = str(roster_config.get("enemy_faction", "Unknown")).strip()
-            opponent_source = str(opponent_source_state.get("source", "unknown"))
-            opponent_id = opponent_source_state.get("id")
+            opponent_source = str(opponent_source_actor)
+            opponent_id = str(opponent_id_actor)
             _write_det_eval_data_json(
                 run_id=run_id,
                 det_plot_gui_paths=det_gui,
@@ -5526,7 +5616,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                     "opponent_faction": opponent_faction,
                     "opponent_algo": "dqn" if (SELF_PLAY_ENABLED and opponent_policy_net is not None) else "heuristic",
                     "opponent_source": opponent_source,
-                    "opponent_id": str(opponent_id) if opponent_id is not None else "",
+                    "opponent_id": str(opponent_id or ""),
                 },
             )
         else:
@@ -5544,8 +5634,8 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                     "opponent_side": "P2" if str(getattr(learner_identity, "side", "P1") or "P1").strip().upper() == "P1" else "P1",
                     "opponent_faction": str(roster_config.get("enemy_faction", "Unknown")).strip(),
                     "opponent_algo": "dqn" if (SELF_PLAY_ENABLED and opponent_policy_net is not None) else "heuristic",
-                    "opponent_source": str(opponent_source_state.get("source", "unknown")),
-                    "opponent_id": str(opponent_source_state.get("id")) if opponent_source_state.get("id") is not None else "",
+                    "opponent_source": str(opponent_source_actor),
+                    "opponent_id": str(opponent_id_actor or ""),
                 },
             )
 
@@ -5685,6 +5775,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
 
     actor_critic = ActorCriticMultiHead(n_observations, n_actions).to(device)
     optimizer = optim.AdamW(actor_critic.parameters(), lr=PPO_LR, amsgrad=True)
+    _patch_optimizer_methods_no_compile(optimizer)
     buffer = PPORolloutBuffer()
 
     # Self-play opponent snapshot (optional): загружаем один раз в learner и раздаём акторам.
@@ -5807,6 +5898,15 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
     metrics_obj = metrics(MODELS_DIR, run_id, model_name)
     ep_rows: list[dict] = []
     last_update_metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clip_fraction": 0.0}
+    adaptive_tl_curriculum = os.getenv("ADAPTIVE_TURN_LIMIT_CURRICULUM", "1").strip() == "1"
+    tl_curriculum_hi = float(os.getenv("ADAPTIVE_TL_RATE_HIGH", "0.70"))
+    tl_curriculum_lo = float(os.getenv("ADAPTIVE_TL_RATE_LOW", "0.55"))
+    tl_penalty_step = float(os.getenv("ADAPTIVE_NO_CONTEST_STEP", "0.02"))
+    tl_penalty_max = float(os.getenv("ADAPTIVE_NO_CONTEST_MAX", "0.45"))
+    tl_oc_step = float(os.getenv("ADAPTIVE_OC_MARGIN_STEP", "0.005"))
+    tl_oc_max = float(os.getenv("ADAPTIVE_OC_MARGIN_MAX", "0.08"))
+    tl_penalty_min = float(getattr(reward_cfg, "MISSION_NO_CONTEST_PENALTY", 0.0))
+    tl_oc_min = float(getattr(reward_cfg, "VP_OBJECTIVE_OC_MARGIN_SCALE", 0.0))
 
     append_agent_log(f"[PPO][ACTOR_LEARNER][CONFIG] actors={num_actors} batch_send={batch_send} queue_max={queue_max}")
     print(f"[PPO][ACTOR_LEARNER][CONFIG] actors={num_actors} batch_send={batch_send}", flush=True)
@@ -5894,17 +5994,53 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                             last_update_metrics.get("policy_loss", 0.0)
                             + PPO_VALUE_COEF * last_update_metrics.get("value_loss", 0.0)
                         )
+                        if adaptive_tl_curriculum:
+                            try:
+                                tl_rate = float(det_payload.get("turn_limit_rate", 0.0) or 0.0)
+                                old_pen = float(getattr(reward_cfg, "MISSION_NO_CONTEST_PENALTY", tl_penalty_min))
+                                old_oc = float(getattr(reward_cfg, "VP_OBJECTIVE_OC_MARGIN_SCALE", tl_oc_min))
+                                new_pen = old_pen
+                                new_oc = old_oc
+                                if tl_rate >= tl_curriculum_hi:
+                                    new_pen = min(tl_penalty_max, old_pen + tl_penalty_step)
+                                    new_oc = min(tl_oc_max, old_oc + tl_oc_step)
+                                elif tl_rate <= tl_curriculum_lo:
+                                    new_pen = max(tl_penalty_min, old_pen - tl_penalty_step)
+                                    new_oc = max(tl_oc_min, old_oc - tl_oc_step)
+                                reward_cfg.MISSION_NO_CONTEST_PENALTY = float(new_pen)
+                                reward_cfg.VP_OBJECTIVE_OC_MARGIN_SCALE = float(new_oc)
+                                if abs(new_pen - old_pen) > 1e-9 or abs(new_oc - old_oc) > 1e-9:
+                                    append_agent_log(
+                                        "[TRAIN][CURRICULUM] adaptive_turn_limit "
+                                        f"ep={episodes_finished} tl_rate={tl_rate:.3f} "
+                                        f"MISSION_NO_CONTEST_PENALTY={old_pen:.3f}->{new_pen:.3f} "
+                                        f"VP_OBJECTIVE_OC_MARGIN_SCALE={old_oc:.4f}->{new_oc:.4f}"
+                                    )
+                            except Exception:
+                                pass
                         _save_actor_det_eval_snapshot(run_id=str(run_id), payload=det_payload, metrics_dir=METRICS_DIR)
                         # Обновляем графики + data_*.json сразу после DET-eval, чтобы GUI видел прогресс.
                         try:
                             det_gui = save_actor_det_eval_plot(run_id=str(run_id), metrics_dir=METRICS_DIR)
                             if det_gui:
+                                learner_side = str(getattr(learner_identity, "side", "P1") or "P1").strip().upper() or "P1"
+                                opponent_side = "P2" if learner_side == "P1" else "P1"
                                 _write_det_eval_data_json(
                                     run_id=str(run_id),
                                     det_plot_gui_paths=det_gui,
                                     model_path=str(last_checkpoint).replace("\\", "/") if last_checkpoint else "",
                                     metrics_mode="det_eval",
-                                    extra={"algo": "ppo", "mode": "actor_learner"},
+                                    extra={
+                                        "algo": "ppo",
+                                        "mode": "actor_learner",
+                                        "learner_side": learner_side,
+                                        "learner_faction": str(getattr(learner_identity, "faction", "Unknown") or "Unknown"),
+                                        "opponent_side": opponent_side,
+                                        "opponent_faction": str(roster_config.get("enemy_faction", "Unknown")).strip(),
+                                        "opponent_algo": str(checkpoint_meta_algo or "heuristic"),
+                                        "opponent_source": str(opponent_source_label),
+                                        "opponent_id": str(opponent_agent_id or ""),
+                                    },
                                 )
                         except Exception:
                             pass

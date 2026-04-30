@@ -12,17 +12,17 @@ WIN_BONUS = 3.0
 LOSS_PENALTY = 2.0
 
 # С какого боевого раунда начинать начислять VP по миссии Only War.
-VP_START_SCORING_ROUND = 2
+VP_START_SCORING_ROUND = 1
 # Ограничение максимального VP за одну фазу командования.
 VP_CAP_PER_COMMAND = 3
 
 # Награды, связанные с удержанием/контролем objectives.
 # Бонус за удержание objective.
-VP_OBJECTIVE_HOLD_REWARD = 0.65
+VP_OBJECTIVE_HOLD_REWARD = 1.0
 # Штраф за упущенное удержание/прогресс по objective.
 VP_OBJECTIVE_HOLD_PENALTY = 0.12
 # Бонус за приближение к objective.
-VP_OBJECTIVE_PROXIMITY_REWARD = 0.5
+VP_OBJECTIVE_PROXIMITY_REWARD = 0.8
 # Нормировочный знаменатель для штрафа за пропущенный прогресс:
 # penalty = -VP_OBJECTIVE_HOLD_PENALTY * clamp01(missed_progress / VP_OBJECTIVE_MISSED_PROGRESS_NORM)
 VP_OBJECTIVE_MISSED_PROGRESS_NORM = 6.0
@@ -31,17 +31,23 @@ VP_DIFF_REWARD_SCALE = 0.11
 # Масштаб штрафа за ухудшение разницы VP (vp_diff < 0).
 VP_DIFF_PENALTY_SCALE = 0.12
 # Доп. штраф за ничью на turn_limit (анти "ничейная яма").
-TURN_LIMIT_DRAW_PENALTY = 1.25
+TURN_LIMIT_DRAW_PENALTY = 1.8
 # Доп. масштаб бонуса за победу по VP на turn_limit.
-TURN_LIMIT_VP_MARGIN_REWARD_SCALE = 0.50
+TURN_LIMIT_VP_MARGIN_REWARD_SCALE = 0.85
 # Доп. масштаб штрафа за проигрыш по VP на turn_limit.
-TURN_LIMIT_VP_MARGIN_PENALTY_SCALE = 0.50
+TURN_LIMIT_VP_MARGIN_PENALTY_SCALE = 0.75
 # Ограничение абсолютного VP margin для turn_limit shaping.
 TURN_LIMIT_VP_MARGIN_CLAMP = 6.0
 # Длина серии удержания objective для streak-бонуса.
-VP_OBJECTIVE_STREAK_LEN = 2
+VP_OBJECTIVE_STREAK_LEN = 1
 # Дополнительный бонус за достижение серии удержания objective.
-VP_OBJECTIVE_STREAK_BONUS = 0.2
+VP_OBJECTIVE_STREAK_BONUS = 0.35
+# Масштаб награды за изменение перевеса OC на objectives (delta по шагу).
+VP_OBJECTIVE_OC_MARGIN_SCALE = 0.03
+# Ограничение абсолютной delta по OC-margin (чтобы не раздувать шэйпинг).
+VP_OBJECTIVE_OC_MARGIN_DELTA_CLAMP = 12.0
+# Максимальный множитель линейного streak-бонуса (для глубокой серии удержания).
+VP_OBJECTIVE_STREAK_LINEAR_CAP = 3.0
 
 # ===============================
 # Шэйпинг наград (прочие фазы)
@@ -89,11 +95,17 @@ DAMAGE_TAKEN_SCALE = 0.38
 # Шэйпинг наград (objectives / utility-сигналы)
 # ==============================================
 # Штраф за бездействие вне целей (idle out of objective).
-IDLE_OUT_OF_OBJECTIVE_PENALTY = 0.02
+IDLE_OUT_OF_OBJECTIVE_PENALTY = 0.06
 # Масштаб пошагового бонуса за прогресс к objective.
-OBJECTIVE_PROGRESS_STEP_SCALE = 0.12
+OBJECTIVE_PROGRESS_STEP_SCALE = 0.22
 # Верхняя граница бонуса за прогресс к objective за шаг.
-OBJECTIVE_PROGRESS_STEP_CAP = 0.22
+OBJECTIVE_PROGRESS_STEP_CAP = 0.35
+# Штраф за "мертвое окно": нет валидных целей стрельбы и нет contest objective.
+NO_TARGET_NO_CONTEST_PENALTY = 0.08
+# Рост штрафа за "мертвое окно" по раундам после старта скоринга.
+NO_TARGET_NO_CONTEST_ROUND_SCALE = 0.06
+# Верхняя граница мультипликатора раундового роста для "мертвого окна".
+NO_TARGET_NO_CONTEST_MAX_MULT = 2.5
 # Бонус за убийство цели, находящейся на objective.
 KILL_ON_OBJECTIVE_BONUS = 0.2
 # Масштаб бонуса за нанесение урона цели на objective.
@@ -189,13 +201,27 @@ TERRAIN_SHAPING_STEP_RCAP = 0.12
 # ==========================================
 # Доп. штраф, если после старта скоринга никто не contest'ит objectives
 # (обе стороны имеют 0 OC на всех objectives). Это ломает "вечные" бои в стороне от миссии.
-MISSION_NO_CONTEST_PENALTY = 0.07
+MISSION_NO_CONTEST_PENALTY = 0.24
 # С какого battle round включать этот штраф (обычно совпадает со START_SCORING_ROUND).
 MISSION_NO_CONTEST_START_ROUND = VP_START_SCORING_ROUND
 # После этого раунда штраф мягко усиливается (динамика late-game anti-draw).
 MISSION_NO_CONTEST_LATE_ROUND = 10
 # +15% к базовому штрафу после LATE_ROUND (0.10..0.15 обычно достаточно).
-MISSION_NO_CONTEST_LATE_MULT = 1.15
+MISSION_NO_CONTEST_LATE_MULT = 1.50
+
+# Anti-stall по VP diff: если серия шагов без изменения VP слишком длинная.
+VP_STALL_STEPS_THRESHOLD = 4
+VP_STALL_PENALTY = 0.10
+VP_STALL_STEP_GROWTH = 0.15
+VP_STALL_PENALTY_MAX_MULT = 2.5
+
+# Round-aware scaling: ранняя игра = больше прогресса к objective; поздняя = удержание/deny.
+REWARD_ROUND_EARLY_END = 4
+REWARD_ROUND_LATE_START = 10
+REWARD_PROGRESS_EARLY_MULT = 1.30
+REWARD_PROGRESS_LATE_MULT = 0.80
+REWARD_HOLD_EARLY_MULT = 0.90
+REWARD_HOLD_LATE_MULT = 1.35
 
 
 # =========================

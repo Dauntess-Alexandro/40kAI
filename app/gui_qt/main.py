@@ -393,6 +393,20 @@ class GUIController(QtCore.QObject):
         return str(self._metrics_run_id or "")
 
     @QtCore.Property(str, notify=metricsSummaryChanged)
+    def metricsAlgo(self) -> str:
+        v = str(self._metrics_meta.get("algo", "")).strip()
+        if v:
+            return v.upper()
+        return str(self._training_algo or "dqn").upper()
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
+    def metricsMode(self) -> str:
+        v = str(self._metrics_meta.get("mode", "")).strip()
+        if v:
+            return v
+        return "actor_learner"
+
+    @QtCore.Property(str, notify=metricsSummaryChanged)
     def detEpisodeLast(self) -> str:
         return str(self._det_last.get("episode", "—"))
 
@@ -3350,9 +3364,52 @@ class GUIController(QtCore.QObject):
                     self.metricsLabelChanged.emit(self._metrics_label)
                     return True
 
+        # Резерв: если data_*.json ещё не создан, но DET-артефакты уже есть в artifacts/metrics.
+        latest_det_json = os.path.join(str(ARTIFACTS_METRICS_DIR), "actor_det_eval_latest.json")
+        if os.path.exists(latest_det_json):
+            try:
+                with open(latest_det_json, "r", encoding="utf-8", errors="replace") as handle:
+                    det_payload = json.load(handle)
+                run_id = str(det_payload.get("run_id", "") or "").strip()
+                if run_id:
+                    metric_map = {
+                        "reward": os.path.join(str(ARTIFACTS_METRICS_DIR), f"det_reward_{run_id}.png"),
+                        "loss": os.path.join(str(ARTIFACTS_METRICS_DIR), f"det_loss_{run_id}.png"),
+                        "epLen": os.path.join(str(ARTIFACTS_METRICS_DIR), f"det_ep_len_{run_id}.png"),
+                        "winrate": os.path.join(str(ARTIFACTS_METRICS_DIR), f"det_winrate_{run_id}.png"),
+                        "avgvp": os.path.join(str(ARTIFACTS_METRICS_DIR), f"det_avg_vp_{run_id}.png"),
+                        "hpdiff": os.path.join(str(ARTIFACTS_METRICS_DIR), f"det_hp_diff_{run_id}.png"),
+                        "killdiff": os.path.join(str(ARTIFACTS_METRICS_DIR), f"det_kill_diff_{run_id}.png"),
+                        "endreasons": os.path.join(str(ARTIFACTS_METRICS_DIR), f"det_endreasons_{run_id}.png"),
+                    }
+                    updated = {
+                        key: (path if os.path.exists(path) else self._metrics_defaults[key])
+                        for key, path in metric_map.items()
+                    }
+                    self._metrics_run_id = run_id
+                    self._metrics_meta = {
+                        "algo": str(det_payload.get("algo", "") or ""),
+                        "mode": "actor_learner",
+                        "learner_side": "",
+                        "learner_faction": "",
+                        "opponent_side": "",
+                        "opponent_faction": "",
+                        "opponent_algo": "",
+                        "opponent_source": "",
+                        "opponent_id": "",
+                    }
+                    self._set_metrics_files(updated)
+                    self._refresh_metrics_summaries()
+                    self._metrics_label = f"DET latest: run {run_id}"
+                    self.metricsLabelChanged.emit(self._metrics_label)
+                    return True
+            except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                pass
+
         self._set_metrics_files(dict(self._metrics_defaults))
         self._metrics_label = "По умолчанию"
         self._metrics_run_id = ""
+        self._metrics_meta = {}
         self._refresh_metrics_summaries()
         self.metricsLabelChanged.emit(self._metrics_label)
         return False

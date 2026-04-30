@@ -845,6 +845,11 @@ ApplicationWindow {
                                 onClicked: metricsFileDialog.open()
                             }
 
+                            Button {
+                                text: "Последняя модель"
+                                onClicked: controller.select_latest_metrics()
+                            }
+
                             Label {
                                 text: controller.metricsLabel
                                 Layout.fillWidth: true
@@ -871,8 +876,8 @@ ApplicationWindow {
                                     spacing: 4
 
                                     Text { text: "Модель"; font.bold: true; color: "#333333" }
-                                    Text { text: "Алгоритм: " + controller.trainingAlgo.toUpperCase(); color: "#555555" }
-                                    Text { text: "Режим: actor-learner"; color: "#555555" }
+                                    Text { text: "Алгоритм: " + controller.metricsAlgo; color: "#555555" }
+                                    Text { text: "Режим: " + controller.metricsMode; color: "#555555" }
                                     Text { text: "Run ID: " + controller.metricsRunId; color: "#777777"; elide: Text.ElideRight }
                                 }
                             }

@@ -5957,6 +5957,7 @@ class Warhammer40kEnv(gym.Env):
         self.mission_name = MISSION_NAME
         self.modelUpdates = ""
         self._prev_vp_diff = 0
+        self._vp_stall_steps = 0
         self._objective_hold_streaks = [0] * len(self.coordsOfOM)
         self._phase_event_emitted = False
         self._phase_unit_logged = set()
@@ -6460,6 +6461,9 @@ class Warhammer40kEnv(gym.Env):
         self.refresh_objective_control()
         _, pre_controlled = controlled_objectives(self, "model")
         pre_controlled_set = set(pre_controlled)
+        pre_oc_margin = float(np.sum(getattr(self, "model_obj_oc", np.array([], dtype=int)))) - float(
+            np.sum(getattr(self, "enemy_obj_oc", np.array([], dtype=int)))
+        )
         min_obj_dist_start = self._min_model_obj_distance() if run_secondary_checks else None
         start_obj_dists = [
             min(distance(self.unit_coords[idx], obj) for obj in self.coordsOfOM) if len(self.coordsOfOM) > 0 else 0.0
@@ -6521,8 +6525,31 @@ class Warhammer40kEnv(gym.Env):
         self.refresh_objective_control()
         _, post_controlled = controlled_objectives(self, "model")
         post_controlled_set = set(post_controlled)
+        post_oc_margin = float(np.sum(getattr(self, "model_obj_oc", np.array([], dtype=int)))) - float(
+            np.sum(getattr(self, "enemy_obj_oc", np.array([], dtype=int)))
+        )
         curr_vp_diff = self.modelVP - self.enemyVP
         vp_delta = curr_vp_diff - prev_vp_diff
+
+        br_now = int(getattr(self, "battle_round", 1))
+        early_end = max(1, int(getattr(reward_cfg, "REWARD_ROUND_EARLY_END", 4)))
+        late_start = max(early_end + 1, int(getattr(reward_cfg, "REWARD_ROUND_LATE_START", 10)))
+        progress_early_mult = float(getattr(reward_cfg, "REWARD_PROGRESS_EARLY_MULT", 1.30))
+        progress_late_mult = float(getattr(reward_cfg, "REWARD_PROGRESS_LATE_MULT", 0.80))
+        hold_early_mult = float(getattr(reward_cfg, "REWARD_HOLD_EARLY_MULT", 0.90))
+        hold_late_mult = float(getattr(reward_cfg, "REWARD_HOLD_LATE_MULT", 1.35))
+
+        if br_now <= early_end:
+            progress_round_mult = progress_early_mult
+            hold_round_mult = hold_early_mult
+        elif br_now >= late_start:
+            progress_round_mult = progress_late_mult
+            hold_round_mult = hold_late_mult
+        else:
+            mix = float(br_now - early_end) / float(max(1, late_start - early_end))
+            progress_round_mult = (1.0 - mix) * progress_early_mult + mix * progress_late_mult
+            hold_round_mult = (1.0 - mix) * hold_early_mult + mix * hold_late_mult
+
         vp_reward = reward_cfg.VP_DIFF_REWARD_SCALE * max(vp_delta, 0)
         vp_penalty = reward_cfg.VP_DIFF_PENALTY_SCALE * max(-vp_delta, 0)
         if vp_reward != 0 or vp_penalty != 0:
@@ -6560,6 +6587,46 @@ class Warhammer40kEnv(gym.Env):
                 f"margin_penalty=-{margin_penalty:.3f}"
             )
         self._prev_vp_diff = curr_vp_diff
+        if abs(vp_delta) < 1e-9:
+            self._vp_stall_steps = int(getattr(self, "_vp_stall_steps", 0)) + 1
+        else:
+            self._vp_stall_steps = 0
+
+        stall_threshold = max(1, int(getattr(reward_cfg, "VP_STALL_STEPS_THRESHOLD", 4)))
+        if self._vp_stall_steps >= stall_threshold:
+            stall_base = float(getattr(reward_cfg, "VP_STALL_PENALTY", 0.10))
+            stall_growth = float(getattr(reward_cfg, "VP_STALL_STEP_GROWTH", 0.15))
+            stall_cap = max(1.0, float(getattr(reward_cfg, "VP_STALL_PENALTY_MAX_MULT", 2.5)))
+            over = max(0, self._vp_stall_steps - stall_threshold)
+            stall_mult = min(stall_cap, 1.0 + stall_growth * over)
+            stall_penalty = stall_base * stall_mult
+            reward -= stall_penalty
+            self._log_reward(
+                "Reward (anti-stall VP): "
+                f"vp_diff={curr_vp_diff:.3f}, stall_steps={self._vp_stall_steps}, "
+                f"threshold={stall_threshold}, penalty=-{stall_penalty:.3f} "
+                f"(base={stall_base:.3f}, mult={stall_mult:.3f})"
+            )
+
+        oc_margin_delta = float(post_oc_margin - pre_oc_margin)
+        oc_margin_delta_clamp = max(
+            0.0,
+            float(getattr(reward_cfg, "VP_OBJECTIVE_OC_MARGIN_DELTA_CLAMP", 12.0)),
+        )
+        if oc_margin_delta_clamp > 0:
+            oc_margin_delta = max(-oc_margin_delta_clamp, min(oc_margin_delta_clamp, oc_margin_delta))
+        oc_margin_reward = (
+            float(getattr(reward_cfg, "VP_OBJECTIVE_OC_MARGIN_SCALE", 0.0))
+            * oc_margin_delta
+            * hold_round_mult
+        )
+        if oc_margin_reward != 0:
+            reward += oc_margin_reward
+            self._log_reward(
+                "Reward (objective OC margin): "
+                f"pre={pre_oc_margin:.3f}, post={post_oc_margin:.3f}, "
+                f"delta={oc_margin_delta:.3f}, round_mult={hold_round_mult:.3f}, reward={oc_margin_reward:+.3f}"
+            )
 
         streak_bonus = 0.0
         streak_len = reward_cfg.VP_OBJECTIVE_STREAK_LEN
@@ -6570,7 +6637,10 @@ class Warhammer40kEnv(gym.Env):
                 else:
                     self._objective_hold_streaks[idx] = 0
                 if self._objective_hold_streaks[idx] >= streak_len:
-                    streak_bonus += reward_cfg.VP_OBJECTIVE_STREAK_BONUS
+                    streak_depth = self._objective_hold_streaks[idx] - streak_len + 1
+                    streak_depth_cap = max(1.0, float(getattr(reward_cfg, "VP_OBJECTIVE_STREAK_LINEAR_CAP", 3.0)))
+                    streak_weight = min(streak_depth_cap, float(streak_depth))
+                    streak_bonus += reward_cfg.VP_OBJECTIVE_STREAK_BONUS * streak_weight * hold_round_mult
         if streak_bonus != 0:
             reward += streak_bonus
             self._log_reward(
@@ -6598,13 +6668,14 @@ class Warhammer40kEnv(gym.Env):
                 progress_norm = progress / norm_base
                 progress_scale = float(getattr(reward_cfg, "OBJECTIVE_PROGRESS_STEP_SCALE", 0.03))
                 progress_cap = float(getattr(reward_cfg, "OBJECTIVE_PROGRESS_STEP_CAP", 0.10))
-                progress_bonus = min(progress_cap, progress_scale * progress_norm)
+                progress_bonus = min(progress_cap, progress_scale * progress_norm) * progress_round_mult
                 if progress_bonus > 0:
                     reward += progress_bonus
                     self._log_reward(
                         "Reward (progress к objective): "
                         f"d_before={min_obj_dist_start:.3f}, d_after={min_obj_dist_end:.3f}, "
-                        f"delta={progress:.3f}, norm={progress_norm:.3f}, bonus=+{progress_bonus:.3f}"
+                        f"delta={progress:.3f}, norm={progress_norm:.3f}, round_mult={progress_round_mult:.3f}, "
+                        f"bonus=+{progress_bonus:.3f}"
                     )
         if run_secondary_checks:
             idle_conditions_met = (
@@ -6659,6 +6730,35 @@ class Warhammer40kEnv(gym.Env):
                         f"no_contest_penalty=-{effective_penalty:.3f} "
                         f"(base={penalty:.3f}, BR={br_now}, start={start_round}, late_round={late_round}, late_mult={late_mult:.3f})"
                     )
+        except Exception:
+            pass
+
+        try:
+            start_round_for_dead = int(getattr(reward_cfg, "VP_START_SCORING_ROUND", 1))
+            if br_now >= start_round_for_dead:
+                has_shoot_targets = False
+                for i_unit in range(len(self.unit_health)):
+                    if self.unit_health[i_unit] <= 0:
+                        continue
+                    targets_i = self.get_shoot_targets_for_unit("model", i_unit)
+                    if targets_i:
+                        has_shoot_targets = True
+                        break
+                model_any = int(np.sum(getattr(self, "model_obj_oc", np.array([], dtype=int))) > 0)
+                enemy_any = int(np.sum(getattr(self, "enemy_obj_oc", np.array([], dtype=int))) > 0)
+                if (not has_shoot_targets) and model_any == 0 and enemy_any == 0:
+                    dead_base = float(getattr(reward_cfg, "NO_TARGET_NO_CONTEST_PENALTY", 0.0))
+                    dead_round_scale = float(getattr(reward_cfg, "NO_TARGET_NO_CONTEST_ROUND_SCALE", 0.0))
+                    dead_cap = max(1.0, float(getattr(reward_cfg, "NO_TARGET_NO_CONTEST_MAX_MULT", 2.5)))
+                    dead_mult = min(dead_cap, 1.0 + dead_round_scale * max(0, br_now - start_round_for_dead))
+                    dead_penalty = dead_base * dead_mult
+                    if dead_penalty > 0:
+                        reward -= dead_penalty
+                        self._log_reward(
+                            "Reward (dead-window no-target/no-contest): "
+                            f"BR={br_now}, has_targets=0, model_any={model_any}, enemy_any={enemy_any}, "
+                            f"penalty=-{dead_penalty:.3f} (base={dead_base:.3f}, mult={dead_mult:.3f})"
+                        )
         except Exception:
             pass
 
