@@ -11,13 +11,15 @@ import torch
 from core.engine.agent_registry import compatible_contracts, load_agent_by_id
 from core.models.DQN import DQN
 from core.models.PPO import ActorCriticMultiHead
+from core.models.alphazero_model import AlphaZeroPolicyValueNet
+from core.models.action_contract import action_tensor_to_dict
 from core.models.utils import build_action_masks_by_head, build_shoot_action_mask, convertToDict, normalize_state_dict
 
 
 @dataclass(frozen=True)
 class OpponentSpec:
     agent_id: str
-    algo: str  # "dqn" | "ppo"
+    algo: str  # "dqn" | "ppo" | "alphazero"
     contract: dict[str, Any]
     policy_state: dict[str, Any]
 
@@ -55,7 +57,7 @@ def load_agent_opponent(*, agent_id: str, expected_contract: Optional[dict[str, 
     payload = load_agent_by_id(str(agent_id))
     meta = payload.get("meta") if isinstance(payload, dict) else {}
     algo = str((meta or {}).get("algo", "")).strip().lower()
-    if algo not in {"dqn", "ppo"}:
+    if algo not in {"dqn", "ppo", "alphazero"}:
         # Backward-compatible inference for older artifacts:
         # - DQN artifacts usually have target_state saved
         # - PPO artifacts usually don't
@@ -68,7 +70,11 @@ def load_agent_opponent(*, agent_id: str, expected_contract: Optional[dict[str, 
             if isinstance(policy_state_guess, dict) and any(str(k).startswith("policy_heads.") for k in policy_state_guess.keys()):
                 algo = "ppo"
             else:
-                raise ValueError(f"agent '{agent_id}' has unsupported algo='{algo}' (expected dqn/ppo).")
+                # AlphaZero artifacts usually store policy-value key.
+                if isinstance(policy_state_guess, dict) and any(str(k).startswith("policy_heads.") for k in policy_state_guess.keys()):
+                    algo = "alphazero"
+                else:
+                    raise ValueError(f"agent '{agent_id}' has unsupported algo='{algo}' (expected dqn/ppo/alphazero).")
 
     contract = payload.get("contract") if isinstance(payload, dict) else None
     if expected_contract is not None:
@@ -161,6 +167,24 @@ def build_policy_fn(
             action_dict = convertToDict(torch.tensor([action_np], device="cpu"))
             for i_u in range(int(len_model)):
                 action_dict[f"move_num_{i_u}"] = int(action_np[6 + i_u])
+            return action_dict
+
+        return _policy_fn
+
+    if opponent.algo == "alphazero":
+        net = AlphaZeroPolicyValueNet(n_obs, n_actions).to(torch.device("cpu"))
+        net.load_state_dict(normalize_state_dict(opponent.policy_state))
+        net.eval()
+
+        def _policy_fn(obs_any) -> dict:
+            obs_np = _to_np_state(obs_any)
+            obs_t = torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
+            masks_cpu = build_action_masks_by_head(env, int(len_model), log_fn=None, debug=False)
+            masks = [m.to(torch.device("cpu")).unsqueeze(0) for m in masks_cpu]
+            with torch.no_grad():
+                probs, _value = net.infer(obs_t, masks_by_head=masks)
+            action = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
+            action_dict = action_tensor_to_dict(torch.tensor([action], device="cpu"), len_model=int(len_model))
             return action_dict
 
         return _policy_fn

@@ -15,13 +15,16 @@ import gymnasium as gym
 import torch
 
 from core.engine.agent_registry import compatible_contracts, load_agent_by_id, make_env_contract
+from core.engine import Unit, initFile, unitData, weaponData
 from core.engine.game_io import GuiIO, set_active_io
 from core.engine.state_export import DEFAULT_STATE_PATH
 from core.engine.mission import board_dims_for_mission
 from core.models.DQN import DQN
 from core.models.PPO import ActorCriticMultiHead
+from core.models.alphazero_model import AlphaZeroPolicyValueNet
 from core.models.utils import select_action, convertToDict, build_shoot_action_mask, normalize_state_dict
 from core.models.utils import build_action_masks_by_head
+from core.models.action_contract import action_sizes_from_env
 from core.envs.warhamEnv import roll_off_attacker_defender
 from project_paths import ARTIFACTS_MODELS_DIR
 
@@ -65,20 +68,60 @@ def load_trusted_checkpoint(checkpoint_path: str):
 
 
 def n_actions_from_env(env, model_len: int) -> list[int]:
-    """Совпадает с train.py: размеры голов DQN из env.action_space (move_num_* = Discrete(24))."""
-    ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
-    for i_u in range(int(model_len)):
-        ordered_keys.append(f"move_num_{i_u}")
-    out: list[int] = []
-    for k in ordered_keys:
-        sp = env.action_space.spaces[k]
-        if hasattr(sp, "n"):
-            out.append(int(sp.n))
-        elif hasattr(sp, "nvec"):
-            out.extend([int(x) for x in sp.nvec])
-        else:
-            raise TypeError(f"Unsupported action space for {k}: {type(sp)}")
-    return out
+    """Совпадает с train.py: размеры голов действия из env.action_space."""
+    return action_sizes_from_env(env, int(model_len))
+
+
+def _build_units_from_runtime_config(b_len: int, b_hei: int):
+    """Fallback roster loader for Viewer when no pickle exists."""
+    enemy = []
+    model = []
+    enemy_faction = initFile.getEnemyFaction()
+    model_faction = initFile.getModelFaction()
+    enemy_units = initFile.getEnemyUnits()
+    model_units = initFile.getModelUnits()
+    enemy_weapons = initFile.getEnemyW()
+    model_weapons = initFile.getModelW()
+    enemy_counts = initFile.getEnemyUnitCounts()
+    model_counts = initFile.getModelUnitCounts()
+    enemy_ids = initFile.getEnemyUnitInstanceIds()
+    model_ids = initFile.getModelUnitInstanceIds()
+
+    for i, name in enumerate(enemy_units):
+        udata = unitData(enemy_faction, name)
+        cnt = enemy_counts[i] if i < len(enemy_counts) else 0
+        if cnt:
+            udata["#OfModels"] = int(cnt)
+        wpair = enemy_weapons[i] if i < len(enemy_weapons) else ("None", "None")
+        instance_id = enemy_ids[i] if i < len(enemy_ids) else None
+        enemy.append(
+            Unit(
+                udata,
+                weaponData(wpair[0]),
+                weaponData(wpair[1]),
+                int(b_len),
+                int(b_hei),
+                instance_id=instance_id,
+            )
+        )
+    for i, name in enumerate(model_units):
+        udata = unitData(model_faction, name)
+        cnt = model_counts[i] if i < len(model_counts) else 0
+        if cnt:
+            udata["#OfModels"] = int(cnt)
+        wpair = model_weapons[i] if i < len(model_weapons) else ("None", "None")
+        instance_id = model_ids[i] if i < len(model_ids) else None
+        model.append(
+            Unit(
+                udata,
+                weaponData(wpair[0]),
+                weaponData(wpair[1]),
+                int(b_len),
+                int(b_hei),
+                instance_id=instance_id,
+            )
+        )
+    return enemy, model
 
 
 def resolve_checkpoint_for_pickle(pickle_path: str) -> Optional[str]:
@@ -197,9 +240,69 @@ class GameController:
                             paired_models.append((os.path.getmtime(pickle_path), pickle_path, checkpoint_path))
 
             if not paired_models:
-                raise FileNotFoundError(
-                    "Не найдены пары файлов моделей (.pickle/.pth) в папке artifacts/models/."
+                if not agent_id_override:
+                    raise FileNotFoundError(
+                        "Не найдены пары файлов моделей (.pickle/.pth) в папке artifacts/models/."
+                    )
+                mission_name = str(os.getenv("MISSION_NAME", "") or "").strip() or "only_war"
+                b_len, b_hei = board_dims_for_mission(mission_name)
+                enemy, model = _build_units_from_runtime_config(int(b_len), int(b_hei))
+                env = gym.make(
+                    "40kAI-v0",
+                    disable_env_checker=True,
+                    enemy=enemy,
+                    model=model,
+                    b_len=int(b_len),
+                    b_hei=int(b_hei),
                 )
+                self._io.log(
+                    "[VIEWER][BOOTSTRAP] pickle/checkpoint не найдены; "
+                    "использую runtime roster (train_data/units) + agent-id."
+                )
+                checkpoint = {"algo": "dqn"}
+                payload = load_agent_by_id(agent_id_override)
+                model_info, enemy_info = env.reset(options={"m": model, "e": enemy, "playType": True, "Type": "big", "trunc": True})
+                n_actions = n_actions_from_env(env, len(model))
+                runtime_contract = make_env_contract(
+                    n_observations=len(model_info),
+                    n_actions=n_actions,
+                    mission_name=str(getattr(env.unwrapped, "mission_name", "only_war")),
+                    ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v1")),
+                )
+                ok, reason = compatible_contracts(runtime_contract, payload.get("contract", {}))
+                if not ok:
+                    raise ValueError(
+                        f"Несовместимый VIEWER_AGENT_ID={agent_id_override}: {reason}. "
+                        "Что делать дальше: выберите агента с тем же контрактом."
+                    )
+                policy_state = payload.get("policy_state") or {}
+                target_state = payload.get("target_state")
+                optimizer_state = payload.get("optimizer_state") or {}
+                meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+                agent_algo = str(meta.get("algo", "")).strip().lower()
+                if agent_algo not in {"dqn", "ppo", "alphazero"}:
+                    if any(str(k).startswith("policy_heads.") for k in policy_state.keys()):
+                        agent_algo = "ppo"
+                    else:
+                        agent_algo = "dqn"
+                if agent_algo == "ppo":
+                    checkpoint = {"actor_critic": policy_state, "algo": "ppo"}
+                elif agent_algo == "alphazero":
+                    checkpoint = {"policy_value_net": policy_state, "algo": "alphazero"}
+                else:
+                    checkpoint = {
+                        "policy_net": policy_state,
+                        "target_net": target_state or policy_state,
+                        "optimizer": optimizer_state,
+                        "net_type": "dueling" if any(str(k).startswith("value_heads.") for k in policy_state.keys()) else "basic",
+                        "algo": "dqn",
+                    }
+                checkpoint["_viewer_agent_id"] = agent_id_override
+                checkpoint["_viewer_model_source"] = "registry"
+                checkpoint["_viewer_bootstrap_pickle"] = "-"
+                checkpoint["_viewer_bootstrap_checkpoint"] = "-"
+                self._io.log(f"[LEAGUE] Viewer использует agent-id={agent_id_override}")
+                return env, model, enemy, checkpoint
 
             paired_models.sort(key=lambda item: item[0])
             _, model_path, checkpoint_path = paired_models[-1]
@@ -219,8 +322,13 @@ class GameController:
             if os.path.normpath(checkpoint_path) != os.path.normpath(expected):
                 self._io.log(f"[MODEL] checkpoint: используется {checkpoint_path} (рядом нет {expected})")
 
-        self._io.log(f"[MODEL] pickle={model_path}")
-        self._io.log(f"[MODEL] checkpoint={checkpoint_path}")
+        if agent_id_override:
+            self._io.log(f"[VIEWER][BOOTSTRAP] pickle={model_path}")
+            self._io.log(f"[VIEWER][BOOTSTRAP] checkpoint={checkpoint_path}")
+            self._io.log("[VIEWER][BOOTSTRAP] source используется только для env/roster, сеть берется из agent-id.")
+        else:
+            self._io.log(f"[MODEL] pickle={model_path}")
+            self._io.log(f"[MODEL] checkpoint={checkpoint_path}")
 
         _install_pickle_compat_aliases()
         with open(model_path, "rb") as handle:
@@ -279,7 +387,7 @@ class GameController:
             optimizer_state = payload.get("optimizer_state") or {}
             meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
             agent_algo = str(meta.get("algo", "")).strip().lower()
-            if agent_algo not in {"dqn", "ppo"}:
+            if agent_algo not in {"dqn", "ppo", "alphazero"}:
                 # Backward-compat: для старых снапшотов infer по структуре state_dict.
                 if any(str(k).startswith("policy_heads.") for k in policy_state.keys()):
                     agent_algo = "ppo"
@@ -290,6 +398,19 @@ class GameController:
                 checkpoint = {
                     "actor_critic": policy_state,
                     "algo": "ppo",
+                    "_viewer_agent_id": agent_id_override,
+                    "_viewer_model_source": "registry",
+                    "_viewer_bootstrap_pickle": model_path,
+                    "_viewer_bootstrap_checkpoint": checkpoint_path,
+                }
+            elif agent_algo == "alphazero":
+                checkpoint = {
+                    "policy_value_net": policy_state,
+                    "algo": "alphazero",
+                    "_viewer_agent_id": agent_id_override,
+                    "_viewer_model_source": "registry",
+                    "_viewer_bootstrap_pickle": model_path,
+                    "_viewer_bootstrap_checkpoint": checkpoint_path,
                 }
             else:
                 checkpoint = {
@@ -300,8 +421,17 @@ class GameController:
                     if any(str(k).startswith("value_heads.") for k in policy_state.keys())
                     else "basic",
                     "algo": "dqn",
+                    "_viewer_agent_id": agent_id_override,
+                    "_viewer_model_source": "registry",
+                    "_viewer_bootstrap_pickle": model_path,
+                    "_viewer_bootstrap_checkpoint": checkpoint_path,
                 }
             self._io.log(f"[LEAGUE] Viewer использует agent-id={agent_id_override}")
+        elif isinstance(checkpoint, dict):
+            checkpoint["_viewer_agent_id"] = ""
+            checkpoint["_viewer_model_source"] = "pickle_checkpoint"
+            checkpoint["_viewer_bootstrap_pickle"] = model_path
+            checkpoint["_viewer_bootstrap_checkpoint"] = checkpoint_path
         return env, model, enemy, checkpoint
 
     def _run_game_loop(self):
@@ -394,6 +524,13 @@ class GameController:
                 policy_net.load_state_dict(normalize_state_dict(ppo_state))
                 policy_net.eval()
                 target_net = None
+            elif algo == "alphazero":
+                self._io.log("[MODEL] Архитектура сети: alphazero_policy_value")
+                az_state = checkpoint.get("policy_value_net", checkpoint.get("policy_net", {}))
+                policy_net = AlphaZeroPolicyValueNet(n_observations, n_actions).to(device)
+                policy_net.load_state_dict(normalize_state_dict(az_state))
+                policy_net.eval()
+                target_net = None
             else:
                 net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
                 dueling = net_type == "dueling"
@@ -429,6 +566,25 @@ class GameController:
                 policy_net.eval()
                 target_net.eval()
 
+            viewer_agent_id = str(checkpoint.get("_viewer_agent_id", "")).strip() if isinstance(checkpoint, dict) else ""
+            viewer_model_source = str(checkpoint.get("_viewer_model_source", "")).strip() if isinstance(checkpoint, dict) else ""
+            if viewer_model_source == "registry" and viewer_agent_id:
+                self._io.log(
+                    f"[VIEWER][MODEL_SELECTED] algo={algo} agent_id={viewer_agent_id} source=registry deterministic=1"
+                )
+                self._io.log(
+                    "[VIEWER][MODEL_SELECTED] "
+                    f"bootstrap_pickle={checkpoint.get('_viewer_bootstrap_pickle', '-')} "
+                    f"bootstrap_checkpoint={checkpoint.get('_viewer_bootstrap_checkpoint', '-')}"
+                )
+            else:
+                self._io.log(
+                    "[VIEWER][MODEL_SELECTED] "
+                    f"algo={algo} agent_id=- source=pickle_checkpoint "
+                    f"pickle={checkpoint.get('_viewer_bootstrap_pickle', '-')} "
+                    f"checkpoint={checkpoint.get('_viewer_bootstrap_checkpoint', '-')}"
+                )
+
             self._io.log(
                 "\nИнструкции:\nИгрок управляет юнитами, начинающимися с 1 (т.е. 11, 12 и т.д.).\n"
                 "Модель управляет юнитами, начинающимися с 2 (т.е. 21, 22 и т.д.).\n"
@@ -456,6 +612,13 @@ class GameController:
                     with torch.no_grad():
                         action, _, _ = policy_net.act(state_tensor, masks_by_head=masks_b, deterministic=True)
                     action = action.to("cpu")
+                elif algo == "alphazero":
+                    masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
+                    masks_b = [m.to(state_tensor.device).unsqueeze(0) for m in masks]
+                    with torch.no_grad():
+                        probs, _value = policy_net.infer(state_tensor, masks_by_head=masks_b)
+                    action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
+                    action = torch.tensor([action_list], device="cpu")
                 else:
                     action = select_action(env, state_tensor, i, policy_net, len(model), shoot_mask=shoot_mask)
                 action_dict = convertToDict(action)

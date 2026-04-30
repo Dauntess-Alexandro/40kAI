@@ -15,6 +15,7 @@ warnings.filterwarnings("ignore")
 
 from core.models.DQN import *
 from core.models.PPO import ActorCriticMultiHead
+from core.models.alphazero_model import AlphaZeroPolicyValueNet
 from core.models.utils import normalize_state_dict
 from core.models.utils import *
 from core.engine.game_io import ConsoleIO, set_active_io
@@ -166,15 +167,23 @@ if args.agent_id:
         "target_net": agent_payload.get("target_state") or agent_payload.get("policy_state"),
         "optimizer": agent_payload.get("optimizer_state") or {},
         "net_type": "dueling" if any(str(k).startswith("value_heads.") for k in (agent_payload.get("policy_state") or {}).keys()) else "basic",
-        "algo": "dqn",
+        "algo": str((agent_payload.get("meta") or {}).get("algo", "dqn")).strip().lower() or "dqn",
     }
     _log(f"[LEAGUE] Используется agent-id={args.agent_id} из registry.")
 
 algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
+if algo not in {"dqn", "ppo", "alphazero"}:
+    algo = "dqn"
 if algo == "ppo":
     ppo_state = checkpoint.get("actor_critic", checkpoint.get("policy_net", {}))
     policy_net = ActorCriticMultiHead(n_observations, n_actions).to(device)
     policy_net.load_state_dict(normalize_state_dict(ppo_state))
+    policy_net.eval()
+    target_net = None
+elif algo == "alphazero":
+    az_state = checkpoint.get("policy_value_net", checkpoint.get("policy_net", {}))
+    policy_net = AlphaZeroPolicyValueNet(n_observations, n_actions).to(device)
+    policy_net.load_state_dict(normalize_state_dict(az_state))
     policy_net.eval()
     target_net = None
 else:
@@ -209,6 +218,16 @@ else:
         optimizer.load_state_dict(checkpoint["optimizer"])
     policy_net.eval()
     target_net.eval()
+
+def _model_source_path() -> str:
+    if isinstance(modelpth, list):
+        return str(modelpth[-1]) if modelpth else ""
+    return str(modelpth or "")
+
+_log(
+    f"[VIEWER][MODEL] agent_id={str(args.agent_id or '-')} algo={algo} "
+    f"source_checkpoint={_model_source_path() or '-'}"
+)
 
 isdone = False
 i = 0
@@ -245,10 +264,15 @@ while isdone == False:
                 opp = load_agent_opponent(agent_id=opponent_agent_id, expected_contract=play_contract)
                 opponent_policy_fn = build_policy_fn(env=env, len_model=len(enemy), opponent=opp, deterministic=True)
                 _log(f"[PLAY] opponent-agent-id={opponent_agent_id} algo={opp.algo} (deterministic)")
+                _log(
+                    f"[VIEWER][OPPONENT] mode=ai agent_id={opponent_agent_id} "
+                    f"algo={str(opp.algo).lower()} source=registry deterministic=1"
+                )
             except Exception as exc:
                 _log(f"[PLAY][WARN] opponent-agent-id invalid, fallback to human player. exc={exc}")
                 opponent_agent_id = ""
                 opponent_policy_fn = None
+                _log("[VIEWER][OPPONENT] mode=human reason=invalid_opponent_agent_id")
         if opponent_agent_id and opponent_policy_fn is not None:
             env.unwrapped.enemyTurn(trunc=True, policy_fn=opponent_policy_fn)
             if bool(getattr(env.unwrapped, "game_over", False)):
@@ -257,6 +281,8 @@ while isdone == False:
         else:
             done, info = env.unwrapped.player()
     else:
+        if i == 0:
+            _log("[VIEWER][OPPONENT] mode=human agent_id=- algo=manual_player")
         done, info = env.unwrapped.player()
     state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
     shoot_mask = build_shoot_action_mask(env)
@@ -267,6 +293,13 @@ while isdone == False:
             deterministic = (PLAY_EPS is None) or float(PLAY_EPS) <= 0.0
             action, _, _ = policy_net.act(state, masks_by_head=masks_b, deterministic=deterministic)
         action = action.to("cpu")
+    elif algo == "alphazero":
+        masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
+        masks_b = [m.to(state.device).unsqueeze(0) for m in masks]
+        with torch.no_grad():
+            probs, _value = policy_net.infer(state, masks_by_head=masks_b)
+        action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
+        action = torch.tensor([action_list], device="cpu")
     elif PLAY_EPS is not None:
         action = select_action_with_epsilon(
             env,

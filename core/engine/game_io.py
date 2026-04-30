@@ -191,7 +191,13 @@ class ConsoleIO(BaseIO):
     def log(self, message: str) -> None:
         if message is None:
             return
-        print(message)
+        try:
+            print(message)
+        except UnicodeEncodeError:
+            # Windows cp1251 console can't print some symbols (e.g. emoji 🎲).
+            # Keep training alive: print a lossy fallback to console, full UTF-8 stays in log file.
+            safe_message = str(message).encode("cp1251", errors="replace").decode("cp1251", errors="replace")
+            print(safe_message)
         _append_log_line(message, self.log_path)
 
     def request_bool(self, prompt: str) -> Optional[bool]:

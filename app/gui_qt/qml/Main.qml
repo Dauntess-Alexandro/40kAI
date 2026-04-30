@@ -162,7 +162,8 @@ ApplicationWindow {
                                             Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(300 * root.uiScale))
                                             model: [
                                                 { value: "dqn", label: "DQN (текущая модель)" },
-                                                { value: "ppo", label: "PPO (новый алгоритм)" }
+                                                { value: "ppo", label: "PPO (новый алгоритм)" },
+                                                { value: "alphazero", label: "AlphaZero (третий алгоритм)" }
                                             ]
                                             textRole: "label"
                                             valueRole: "value"

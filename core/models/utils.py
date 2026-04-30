@@ -12,6 +12,7 @@ import random
 import math
 
 from core.models.memory import Transition
+from core.models.action_contract import ordered_action_keys, action_tensor_to_dict
 from core.engine.utils import distance
 
 with open(os.path.abspath("hyperparams.json")) as j:
@@ -157,6 +158,16 @@ def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None
 
 def build_shoot_action_mask(env, log_fn=None, debug=False):
     env_unwrapped = unwrap_env(env)
+    if hasattr(env_unwrapped, "get_legal_action_masks_by_head"):
+        try:
+            legal = env_unwrapped.get_legal_action_masks_by_head(side="model")
+            mask = legal.get("shoot")
+            if mask is not None:
+                tmask = torch.as_tensor(mask, dtype=torch.bool)
+                if bool(tmask.any()):
+                    return tmask
+        except Exception:
+            pass
 
     def maybe_log_mask_state(state_key, message):
         if log_fn is None:
@@ -224,13 +235,18 @@ def build_action_masks_by_head(env, len_model, log_fn=None, debug=False):
     Сейчас строгая маска есть только для shoot; остальные головы = all_true.
     """
     env_unwrapped = unwrap_env(env)
-    ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
-    for i_u in range(int(len_model)):
-        ordered_keys.append(f"move_num_{i_u}")
+    ordered_keys = ordered_action_keys(int(len_model))
 
     masks = []
     shoot_mask = build_shoot_action_mask(env_unwrapped, log_fn=log_fn, debug=debug)
     fallback_count = 0
+    legal_by_head = None
+    if hasattr(env_unwrapped, "get_legal_action_masks_by_head"):
+        try:
+            legal_by_head = env_unwrapped.get_legal_action_masks_by_head(side="model")
+        except Exception:
+            legal_by_head = None
+
     for key in ordered_keys:
         sp = env_unwrapped.action_space.spaces[key]
         if hasattr(sp, "n"):
@@ -240,7 +256,11 @@ def build_action_masks_by_head(env, len_model, log_fn=None, debug=False):
             size = int(sp.nvec[0])
         else:
             size = 1
-        if key == "shoot" and shoot_mask is not None and len(shoot_mask) == size:
+        if legal_by_head is not None and key in legal_by_head:
+            mask = torch.as_tensor(legal_by_head[key], dtype=torch.bool).clone()
+            if mask.numel() != size:
+                mask = torch.ones(size, dtype=torch.bool)
+        elif key == "shoot" and shoot_mask is not None and len(shoot_mask) == size:
             mask = torch.as_tensor(shoot_mask, dtype=torch.bool).clone()
         else:
             mask = torch.ones(size, dtype=torch.bool)
@@ -257,18 +277,8 @@ def build_action_masks_by_head(env, len_model, log_fn=None, debug=False):
 
 def convertToDict(action):
     naction = action.numpy()[0]
-    action_dict = {
-        'move': naction[0],
-        'attack': naction[1],
-        'shoot': naction[2],
-        'charge': naction[3],
-        'use_cp': naction[4],
-        'cp_on': naction[5]
-    }
-    for i in range(len(naction)-6):
-        label = "move_num_"+str(i)
-        action_dict[label] = naction[i+6]
-    return action_dict
+    len_model = max(0, int(len(naction) - 6))
+    return action_tensor_to_dict(action, len_model=len_model)
 
 def optimize_model(
     policy_net,

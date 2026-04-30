@@ -1282,6 +1282,164 @@ class Warhammer40kEnv(gym.Env):
         self._shoot_target_reject_cache[cache_key] = list(rejected)
         return _ret(targets, rejected)
 
+    def get_charge_targets_for_unit(self, side: str, unit_idx: int) -> list[int]:
+        """
+        Возвращает глобальные id целей для charge.
+        Для согласованности action-contract используем global target-id (индекс юнита цели).
+        """
+        targets: list[int] = []
+        try:
+            if side == "model":
+                if not (0 <= int(unit_idx) < len(self.unit_health)):
+                    return targets
+                if self.unit_health[unit_idx] <= 0:
+                    return targets
+                if self.unitInAttack[unit_idx][0] == 1:
+                    return targets
+                if self.unitFellBack[unit_idx]:
+                    return targets
+                if bool(getattr(self, "unit_used_advance", [False] * len(self.unit_health))[unit_idx]):
+                    return targets
+                move_allowance = float(self.unit_data[unit_idx].get("M", 0))
+                if bool(getattr(self, "unit_has_assault", [False] * len(self.unit_health))[unit_idx]):
+                    adv_roll = getattr(self, "unit_advance_roll", [0] * len(self.unit_health))[unit_idx]
+                    move_allowance += float(adv_roll or 0)
+                max_charge_dist = move_allowance + 6.0
+                for e_idx in range(len(self.enemy_health)):
+                    if self.enemy_health[e_idx] <= 0:
+                        continue
+                    if self.enemyInAttack[e_idx][0] == 1:
+                        continue
+                    dist = float(distance(self.unit_coords[unit_idx], self.enemy_coords[e_idx]))
+                    if dist <= max_charge_dist:
+                        targets.append(int(e_idx))
+            else:
+                if not (0 <= int(unit_idx) < len(self.enemy_health)):
+                    return targets
+                if self.enemy_health[unit_idx] <= 0:
+                    return targets
+                if self.enemyInAttack[unit_idx][0] == 1:
+                    return targets
+                if self.enemyFellBack[unit_idx]:
+                    return targets
+                if bool(getattr(self, "enemy_used_advance", [False] * len(self.enemy_health))[unit_idx]):
+                    return targets
+                move_allowance = float(self.enemy_data[unit_idx].get("M", 0))
+                if bool(getattr(self, "enemy_has_assault", [False] * len(self.enemy_health))[unit_idx]):
+                    adv_roll = getattr(self, "enemy_advance_roll", [0] * len(self.enemy_health))[unit_idx]
+                    move_allowance += float(adv_roll or 0)
+                max_charge_dist = move_allowance + 6.0
+                for m_idx in range(len(self.unit_health)):
+                    if self.unit_health[m_idx] <= 0:
+                        continue
+                    if self.unitInAttack[m_idx][0] == 1:
+                        continue
+                    dist = float(distance(self.enemy_coords[unit_idx], self.unit_coords[m_idx]))
+                    if dist <= max_charge_dist:
+                        targets.append(int(m_idx))
+        except Exception:
+            return []
+        return targets
+
+    def get_legal_action_masks_by_head(self, side: str = "model") -> dict[str, np.ndarray]:
+        """
+        Phase-aware legal masks для factorized policy/MCTS.
+        Возвращает маски в едином контракте голов.
+        """
+        side = str(side or "model").strip().lower()
+        if side not in {"model", "enemy"}:
+            side = "model"
+        is_model = side == "model"
+        unit_health = self.unit_health if is_model else self.enemy_health
+        enemy_health = self.enemy_health if is_model else self.unit_health
+        in_attack = self.unitInAttack if is_model else self.enemyInAttack
+        fell_back = self.unitFellBack if is_model else self.enemyFellBack
+        weapon = self.unit_weapon if is_model else self.enemy_weapon
+        move_used_advance = (
+            getattr(self, "unit_used_advance", [False] * len(unit_health))
+            if is_model
+            else getattr(self, "enemy_used_advance", [False] * len(unit_health))
+        )
+
+        masks: dict[str, np.ndarray] = {}
+        spaces = self.action_space.spaces
+        # conservative defaults: all true
+        for key, sp in spaces.items():
+            if hasattr(sp, "n"):
+                masks[key] = np.ones(int(sp.n), dtype=bool)
+            elif hasattr(sp, "nvec"):
+                masks[key] = np.ones(int(sp.nvec[0]), dtype=bool)
+
+        alive_units = [idx for idx, hp in enumerate(unit_health) if hp > 0]
+        engaged_units = [idx for idx in alive_units if in_attack[idx][0] == 1]
+        can_shoot_units = [
+            idx for idx in alive_units
+            if (not fell_back[idx]) and in_attack[idx][0] == 0 and weapon[idx] != "None"
+        ]
+        can_charge_units = [
+            idx for idx in alive_units
+            if (not fell_back[idx]) and in_attack[idx][0] == 0 and (not bool(move_used_advance[idx]))
+        ]
+
+        # attack: 1 имеет смысл, когда есть engagement
+        attack_n = int(spaces["attack"].n)
+        attack_mask = np.zeros(attack_n, dtype=bool)
+        attack_mask[0] = True
+        if attack_n > 1 and len(engaged_units) > 0:
+            attack_mask[1] = True
+        masks["attack"] = attack_mask
+
+        # shoot/charge -> глобальные id
+        shoot_n = int(spaces["shoot"].n)
+        shoot_mask = np.zeros(shoot_n, dtype=bool)
+        for u_idx in can_shoot_units:
+            for t_idx in self.get_shoot_targets_for_unit(side, u_idx):
+                if 0 <= int(t_idx) < shoot_n:
+                    shoot_mask[int(t_idx)] = True
+        if not shoot_mask.any():
+            shoot_mask[:] = True
+        masks["shoot"] = shoot_mask
+
+        charge_n = int(spaces["charge"].n)
+        charge_mask = np.zeros(charge_n, dtype=bool)
+        for u_idx in can_charge_units:
+            for t_idx in self.get_charge_targets_for_unit(side, u_idx):
+                if 0 <= int(t_idx) < charge_n:
+                    charge_mask[int(t_idx)] = True
+        if not charge_mask.any():
+            charge_mask[:] = True
+        masks["charge"] = charge_mask
+
+        # cp_on: только живые юниты цели
+        cp_n = int(spaces["cp_on"].n)
+        cp_mask = np.zeros(cp_n, dtype=bool)
+        for idx in range(min(cp_n, len(unit_health))):
+            if unit_health[idx] > 0:
+                cp_mask[idx] = True
+        if not cp_mask.any():
+            cp_mask[:] = True
+        masks["cp_on"] = cp_mask
+
+        # move_num_i: legal overlay для каждого юнита
+        for i in range(len(unit_health)):
+            key = f"move_num_{i}"
+            if key not in spaces:
+                continue
+            n = int(spaces[key].n)
+            mmask = np.zeros(n, dtype=bool)
+            if unit_health[i] > 0:
+                overlay = self.get_unit_movement_overlay(side, int(i))
+                # индекс 0 зарезервирован под stay в fallback-режиме контроллера
+                mmask[0] = True
+                lim = min(n, 1 + len(overlay))
+                if lim > 1:
+                    mmask[1:lim] = True
+            if not mmask.any():
+                mmask[:] = True
+            masks[key] = mmask
+
+        return masks
+
     def _cell_from_coord(self, coord) -> tuple[int, int]:
         return int(round(float(coord[0]))), int(round(float(coord[1])))
 

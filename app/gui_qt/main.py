@@ -231,7 +231,7 @@ class GUIController(QtCore.QObject):
         self._selected_specific_opponent_id = ""
         self._opponent_preview_text = "Сейчас будет: —"
 
-        self._training_algo_options = ["dqn", "ppo"]
+        self._training_algo_options = ["dqn", "ppo", "alphazero"]
         self._training_algo = str(os.getenv("TRAIN_ALGO", "dqn")).strip().lower() or "dqn"
         if self._training_algo not in self._training_algo_options:
             self._training_algo = "dqn"
@@ -437,9 +437,9 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(int, constant=True)
     def detEvalEvery(self) -> int:
         try:
-            return max(1, int(os.getenv("ACTOR_DET_EVAL_EVERY_EPISODES", "200")))
+            return max(1, int(os.getenv("ACTOR_DET_EVAL_EVERY_EPISODES", "300")))
         except ValueError:
-            return 200
+            return 300
 
     @QtCore.Property(bool, constant=True)
     def selfPlayEnabled(self) -> bool:
@@ -1405,9 +1405,10 @@ class GUIController(QtCore.QObject):
             faction = str(payload.get("faction", "")).strip()
             created_at = str(payload.get("created_at", "")).strip()
             algo = str(payload.get("algo", "")).strip().lower()
-            if algo not in {"dqn", "ppo"}:
+            if algo not in {"dqn", "ppo", "alphazero"}:
                 # Backward-compat: старые снапшоты могли не писать "algo" в meta.json.
                 # Инферим по наличию target.pth: у DQN он есть, у PPO обычно отсутствует.
+                # Если явно указан alphazero в meta — не переопределяем.
                 paths = payload.get("paths") if isinstance(payload, dict) else None
                 if isinstance(paths, dict):
                     target_path = paths.get("target")
@@ -1628,7 +1629,7 @@ class GUIController(QtCore.QObject):
         learner_faction = self._display_faction_for_side(learner_side)
         opponent_faction = self._display_faction_for_side(opponent_side)
         learner_algo = (self._training_algo or "dqn").strip().lower()
-        if learner_algo not in {"dqn", "ppo"}:
+        if learner_algo not in {"dqn", "ppo", "alphazero"}:
             learner_algo = "dqn"
 
         opponent_algo = "unknown"
@@ -2361,6 +2362,7 @@ class GUIController(QtCore.QObject):
         if self._process is not None:
             self._emit_status("Процесс уже запущен. Сначала остановите текущий.")
             return
+        self._update_opponent_preview_text()
         if self._auto_clear_logs:
             try:
                 self._clear_runtime_logs(clear_play=False, clear_results=False)
@@ -2539,6 +2541,15 @@ class GUIController(QtCore.QObject):
         env.insert("LEARNER_SIDE", self._learner_side)
         env.insert("LEARNER_FACTION", self._learner_faction)
         env.insert("ACTION_TRACE_ENABLED", "1" if self._action_trace else "0")
+        if self._action_trace:
+            # Полный лог матча для train: фазы/ходы/действия, включая AlphaZero self-play без trunc.
+            env.insert("VERBOSE_LOGS", "1")
+            env.insert("TRAIN_DEBUG", "1")
+            env.insert("FIGHT_REPORT", "1")
+        else:
+            env.insert("VERBOSE_LOGS", "0")
+            env.insert("TRAIN_DEBUG", "0")
+            env.insert("FIGHT_REPORT", "0")
         env.insert("LEAGUE_ENABLE", "1")
         env.insert("DEPLOYMENT_MODE", self._deployment_mode)
         env.insert("TRAIN_EPISODES_OVERRIDE", str(int(self._num_games)))
@@ -2573,6 +2584,11 @@ class GUIController(QtCore.QObject):
             start_message = (
                 f"Старт {status_prefix.lower()}: PPO="
                 "on(lr=3e-4,gamma=0.99,gae=0.95,clip=0.2,rollout=1024,epochs=4,minibatch=256)."
+            )
+        elif self._training_algo == "alphazero":
+            start_message = (
+                f"Старт {status_prefix.lower()}: AlphaZero="
+                "on(mcts=96,c_puct=1.5,dir_alpha=0.3,dir_eps=0.25,temp_open=1.0,temp_late=0.2,batch=128)."
             )
         else:
             start_message = (
@@ -3830,8 +3846,11 @@ class GUIController(QtCore.QObject):
         if latest_agent_id:
             self._play_agent_override_id = latest_agent_id
             agent_algo = self._find_agent_algo_by_id(latest_agent_id)
+            if not selected_pickle:
+                self._play_model_label = f"Последний agent: {latest_agent_id}"
+                self.playModelLabelChanged.emit(self._play_model_label)
             self._play_model_algo_label = (
-                f"Алгоритм: {agent_algo.upper()}" if agent_algo in {"dqn", "ppo"} else "Алгоритм: —"
+                f"Алгоритм: {agent_algo.upper()}" if agent_algo in {"dqn", "ppo", "alphazero"} else "Алгоритм: —"
             )
             self._play_model_checkpoint_label = f"Agent: {latest_agent_id}"
             self.playModelMetaChanged.emit(self._play_model_algo_label)

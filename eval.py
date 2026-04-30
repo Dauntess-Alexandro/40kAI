@@ -3,6 +3,7 @@ import datetime
 import importlib
 import os
 import pickle
+import random
 import sys
 import types
 from collections import Counter
@@ -22,6 +23,7 @@ from core.engine.mission import (
 from core.envs.warhamEnv import roll_off_attacker_defender
 from core.models.DQN import DQN
 from core.models.PPO import ActorCriticMultiHead
+from core.models.alphazero_model import AlphaZeroPolicyValueNet
 from core.models.utils import normalize_state_dict
 from core.models.opponent_adapter import build_policy_fn, load_agent_opponent
 
@@ -231,6 +233,24 @@ def select_action_with_epsilon_ppo(env, state, policy_net, epsilon, len_model):
     return actions.to("cpu")
 
 
+def select_action_with_epsilon_alphazero(env, state, policy_net, epsilon, len_model):
+    masks_cpu = build_action_masks_by_head(env, len_model, log_fn=None, debug=False)
+    masks = [m.to(state.device).unsqueeze(0) for m in masks_cpu]
+    with torch.no_grad():
+        probs, _value = policy_net.infer(state, masks_by_head=masks)
+    if epsilon > 0 and random.random() < float(epsilon):
+        sampled = env.action_space.sample()
+        action_list = [
+            sampled["move"], sampled["attack"], sampled["shoot"],
+            sampled["charge"], sampled["use_cp"], sampled["cp_on"],
+        ]
+        for i in range(int(len_model)):
+            action_list.append(sampled[f"move_num_{i}"])
+        return torch.tensor([action_list], device="cpu")
+    action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
+    return torch.tensor([action_list], device="cpu")
+
+
 def run_episode(env, model_units, enemy_units, policy_net, epsilon, device, algo: str, opponent_policy_fn=None):
     env_unwrapped = unwrap_env(env)
     attacker_side, defender_side = roll_off_attacker_defender(
@@ -272,6 +292,14 @@ def run_episode(env, model_units, enemy_units, policy_net, epsilon, device, algo
         state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
         if algo == "ppo":
             action = select_action_with_epsilon_ppo(
+                env,
+                state_tensor,
+                policy_net,
+                epsilon,
+                len(model_units),
+            )
+        elif algo == "alphazero":
+            action = select_action_with_epsilon_alphazero(
                 env,
                 state_tensor,
                 policy_net,
@@ -446,7 +474,7 @@ def main():
         policy_state = payload.get("policy_state")
         meta = payload.get("meta") if isinstance(payload, dict) else {}
         learner_algo_override = str((meta or {}).get("algo", "")).strip().lower()
-        if learner_algo_override not in {"dqn", "ppo"}:
+        if learner_algo_override not in {"dqn", "ppo", "alphazero"}:
             target_state_guess = payload.get("target_state") if isinstance(payload, dict) else None
             learner_algo_override = "dqn" if isinstance(target_state_guess, dict) else "ppo"
         log(f"Используется learner-agent-id={selected_agent_id} (policy из registry).")
@@ -486,6 +514,13 @@ def main():
             ppo_state = policy_state
         policy_net = ActorCriticMultiHead(n_observations, n_actions).to(device)
         policy_net.load_state_dict(normalize_state_dict(ppo_state))
+        policy_net.eval()
+    elif algo == "alphazero":
+        az_state = checkpoint.get("policy_value_net") if isinstance(checkpoint, dict) else None
+        if not isinstance(az_state, dict):
+            az_state = policy_state
+        policy_net = AlphaZeroPolicyValueNet(n_observations, n_actions).to(device)
+        policy_net.load_state_dict(normalize_state_dict(az_state))
         policy_net.eval()
     else:
         net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None

@@ -20,5 +20,19 @@
         "minibatch_size": 256,
         "max_grad_norm": 0.5,
         "target_kl": 0.03
+    },
+    "alphazero": {
+        "learning_rate": 0.0003,
+        "batch_size": 128,
+        "value_loss_weight": 1.0,
+        "l2_weight": 0.000001,
+        "mcts_simulations": 96,
+        "c_puct": 1.5,
+        "dirichlet_alpha": 0.3,
+        "dirichlet_eps": 0.25,
+        "temperature_opening_moves": 12,
+        "temperature_opening_value": 1.0,
+        "temperature_late_value": 0.2,
+        "replay_capacity": 200000
     }
 }

@@ -20,6 +20,7 @@ from tqdm import tqdm
 from core.envs.warhamEnv import *
 from core.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
 from core.engine.io_profiler import get_io_profiler
+from core.engine.game_io import ConsoleIO, set_active_io
 from core.engine.mission import (
     normalize_mission_name,
     board_dims_for_mission,
@@ -56,6 +57,12 @@ from core.models.utils import *
 from core.models.PPO import ActorCriticMultiHead
 from core.models.ppo_buffer import PPORolloutBuffer
 from core.models.opponent_adapter import OpponentSpec, build_policy_fn, load_agent_opponent
+from core.models.alphazero_model import AlphaZeroPolicyValueNet
+from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
+from core.models.alphazero_replay import AlphaZeroReplayBuffer
+from core.models.alphazero_selfplay import play_episode_with_mcts, SelfPlayConfig
+from core.models.alphazero_trainer import AlphaZeroTrainConfig, train_alphazero_step
+from core.models.action_contract import ordered_action_keys, action_sizes_from_env
 MODELS_DIR = str(ARTIFACTS_MODELS_DIR)
 METRICS_DIR = str(ARTIFACTS_METRICS_DIR)
 RUNTIME_IMG_DIR = os.path.join(str(RUNTIME_STATE_DIR), "img")
@@ -150,7 +157,7 @@ NOISY_DISABLE_EPS = os.getenv("NOISY_DISABLE_EPS", "1") == "1"
 REWARD_DEBUG = os.getenv("REWARD_DEBUG", "0") == "1"
 REWARD_DEBUG_EVERY = int(os.getenv("REWARD_DEBUG_EVERY", "200"))
 TRAIN_ALGO = str(os.getenv("TRAIN_ALGO", "dqn")).strip().lower() or "dqn"
-if TRAIN_ALGO not in {"dqn", "ppo"}:
+if TRAIN_ALGO not in {"dqn", "ppo", "alphazero"}:
     TRAIN_ALGO = "dqn"
 # ===== train logging =====
 TRAIN_LOG_ENABLED = os.getenv("TRAIN_LOG_ENABLED", "1") == "1"
@@ -261,7 +268,7 @@ DET_EVAL_OPPONENT_EPSILON = float(os.getenv("DET_EVAL_OPPONENT_EPSILON", "0.0"))
 
 # Actor-Learner periodic DET-like eval (во время тренировки)
 ACTOR_DET_EVAL_ENABLED = os.getenv("ACTOR_DET_EVAL_ENABLED", "1") == "1"
-ACTOR_DET_EVAL_EVERY_EPISODES = int(os.getenv("ACTOR_DET_EVAL_EVERY_EPISODES", "200"))
+ACTOR_DET_EVAL_EVERY_EPISODES = int(os.getenv("ACTOR_DET_EVAL_EVERY_EPISODES", "300"))
 ACTOR_DET_EVAL_EPISODES = int(os.getenv("ACTOR_DET_EVAL_EPISODES", "50"))
 ACTOR_DET_EVAL_OPPONENT_EPSILON = float(os.getenv("ACTOR_DET_EVAL_OPPONENT_EPSILON", "0.0"))
 
@@ -2230,6 +2237,20 @@ PPO_UPDATE_EPOCHS = int(PPO_CFG.get("update_epochs", 4))
 PPO_MINIBATCH_SIZE = int(PPO_CFG.get("minibatch_size", 256))
 PPO_MAX_GRAD_NORM = float(PPO_CFG.get("max_grad_norm", 0.5))
 PPO_TARGET_KL = float(PPO_CFG.get("target_kl", 0.03))
+AZ_CFG = data.get("alphazero", {}) if isinstance(data, dict) else {}
+AZ_LR = float(AZ_CFG.get("learning_rate", LR))
+AZ_BATCH_SIZE = int(AZ_CFG.get("batch_size", 128))
+AZ_VALUE_LOSS_WEIGHT = float(AZ_CFG.get("value_loss_weight", 1.0))
+AZ_L2_WEIGHT = float(AZ_CFG.get("l2_weight", 1e-6))
+AZ_MCTS_SIMS = int(AZ_CFG.get("mcts_simulations", 96))
+AZ_C_PUCT = float(AZ_CFG.get("c_puct", 1.5))
+AZ_DIR_ALPHA = float(AZ_CFG.get("dirichlet_alpha", 0.3))
+AZ_DIR_EPS = float(AZ_CFG.get("dirichlet_eps", 0.25))
+AZ_TEMP_OPENING_MOVES = int(AZ_CFG.get("temperature_opening_moves", 12))
+AZ_TEMP_OPENING = float(AZ_CFG.get("temperature_opening_value", 1.0))
+AZ_TEMP_LATE = float(AZ_CFG.get("temperature_late_value", 0.2))
+AZ_REPLAY_CAPACITY = int(AZ_CFG.get("replay_capacity", 200000))
+AZ_OUTCOME_ONLY = str(os.getenv("AZ_OUTCOME_ONLY", str(AZ_CFG.get("outcome_only", 1)))).strip() == "1"
 
 # ============================================================
 # (C) Несколько обучающих апдейтов на один шаг среды
@@ -2438,17 +2459,32 @@ def run_ppo_training(
         metrics_obj.updateEpLen(ep_len)
         metrics_obj.updateLoss(ppo_metrics["policy_loss"] + PPO_VALUE_COEF * ppo_metrics["value_loss"])
 
-        winner_raw = str(final_info.get("winner", "draw")).strip().lower()
-        if winner_raw in {"model", "learner", "ai"}:
-            result = "win"
-        elif winner_raw in {"enemy", "player", "opponent"}:
-            result = "loss"
-        else:
-            result = "draw"
         model_vp = float(final_info.get("model VP", 0.0) or 0.0)
         player_vp = float(final_info.get("player VP", 0.0) or 0.0)
         vp_diff = model_vp - player_vp
         end_reason = str(final_info.get("end reason", "unknown") or "unknown")
+        winner_raw = str(final_info.get("winner", "draw")).strip().lower()
+        if end_reason == "wipeout_enemy":
+            result = "win"
+        elif end_reason == "wipeout_model":
+            result = "loss"
+        elif str(end_reason).startswith("turn_limit"):
+            if vp_diff > 0:
+                result = "win"
+            elif vp_diff < 0:
+                result = "loss"
+            else:
+                result = "draw"
+        elif winner_raw in {"model", "learner", "ai"}:
+            result = "win"
+        elif winner_raw in {"enemy", "player", "opponent"}:
+            result = "loss"
+        elif vp_diff > 0:
+            result = "win"
+        elif vp_diff < 0:
+            result = "loss"
+        else:
+            result = "draw"
         episode_row = {
             "episode": int(episode),
             "ep_reward": float(ep_reward),
@@ -2718,17 +2754,32 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
                 # GUI прогресс читает stdout и парсит шаблон ep=X/Y.
                 print(f"[PPO] ep={episodes_finished}/{totLifeT} done", flush=True)
 
-                winner_raw = str(final_info.get("winner", "draw")).strip().lower()
-                if winner_raw in {"model", "learner", "ai"}:
-                    result = "win"
-                elif winner_raw in {"enemy", "player", "opponent"}:
-                    result = "loss"
-                else:
-                    result = "draw"
                 model_vp = float(final_info.get("model VP", 0.0) or 0.0)
                 player_vp = float(final_info.get("player VP", 0.0) or 0.0)
                 vp_diff = model_vp - player_vp
                 end_reason = str(final_info.get("end reason", "unknown") or "unknown")
+                winner_raw = str(final_info.get("winner", "draw")).strip().lower()
+                if end_reason == "wipeout_enemy":
+                    result = "win"
+                elif end_reason == "wipeout_model":
+                    result = "loss"
+                elif str(end_reason).startswith("turn_limit"):
+                    if vp_diff > 0:
+                        result = "win"
+                    elif vp_diff < 0:
+                        result = "loss"
+                    else:
+                        result = "draw"
+                elif winner_raw in {"model", "learner", "ai"}:
+                    result = "win"
+                elif winner_raw in {"enemy", "player", "opponent"}:
+                    result = "loss"
+                elif vp_diff > 0:
+                    result = "win"
+                elif vp_diff < 0:
+                    result = "loss"
+                else:
+                    result = "draw"
                 episode_row = {
                     "episode": int(episodes_finished),
                     "ep_reward": float(ep_reward),
@@ -2899,6 +2950,9 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
 def main():
     global USE_SUBPROC_ENVS
     print("\nTraining...\n")
+    # Route env/runtime logs (phase-by-phase from warhamEnv) to the same train agent log file.
+    # Otherwise they fall back to default response log, and LOGS_FOR_AGENTS_TRAIN.md shows only compact lines.
+    set_active_io(ConsoleIO(log_path=str(AGENT_TRAIN_LOG_PATH)))
     train_start_time = time.perf_counter()
     clip_reward_enabled, clip_reward_min, clip_reward_max = parse_clip_reward_config(CLIP_REWARD)
     
@@ -2936,6 +2990,17 @@ def main():
     # PRO actor-learner по умолчанию (для DQN и PPO).
     # Для отката на старый pipeline: PRO_ACTOR_LEARNER=0.
     if use_pro_actor_learner:
+        if TRAIN_ALGO == "alphazero":
+            if TRAIN_LOG_TO_CONSOLE:
+                print("[TRAIN][MODE] PRO_ACTOR_LEARNER=1 (AlphaZero factorized MCTS + learner)")
+            _main_actor_learner_alphazero(
+                roster_config=roster_config,
+                totLifeT=totLifeT,
+                clip_reward_enabled=clip_reward_enabled,
+                clip_reward_min=clip_reward_min,
+                clip_reward_max=clip_reward_max,
+            )
+            return
         if TRAIN_ALGO == "ppo":
             if TRAIN_LOG_TO_CONSOLE:
                 print("[TRAIN][MODE] PRO_ACTOR_LEARNER=1 (PPO actors CPU + learner GPU)")
@@ -3220,6 +3285,18 @@ def main():
             "self_play_enabled": int(SELF_PLAY_ENABLED),
         },
     )
+
+    if TRAIN_ALGO == "alphazero":
+        append_agent_log(f"[AZ] Запуск AlphaZero ветки. episodes={totLifeT}")
+        _main_actor_learner_alphazero(
+            roster_config=roster_config,
+            totLifeT=totLifeT,
+            clip_reward_enabled=clip_reward_enabled,
+            clip_reward_min=clip_reward_min,
+            clip_reward_max=clip_reward_max,
+        )
+        _cleanup_train_envs(env_contexts=env_contexts, subproc_envs=subproc_envs, use_subproc=USE_SUBPROC_ENVS)
+        return
 
     if TRAIN_ALGO == "ppo":
         append_agent_log(
@@ -3698,7 +3775,7 @@ def main():
     side_tag = f"{learner_identity.side}_{learner_identity.faction}"
     safe_name = _sanitize_fs_name(f"{name}__learner_{side_tag}")
     algo_tag = str(TRAIN_ALGO or "dqn").strip().lower()
-    if algo_tag not in {"dqn", "ppo"}:
+    if algo_tag not in {"dqn", "ppo", "alphazero"}:
         algo_tag = "dqn"
     models_root = os.path.join(MODELS_DIR, algo_tag)
     fold = os.path.join(models_root, safe_name)
@@ -5150,7 +5227,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             if SELF_PLAY_OPPONENT_MODE == "fixed_checkpoint" and SELF_PLAY_FIXED_PATH:
                 checkpoint = torch.load(SELF_PLAY_FIXED_PATH, map_location="cpu", weights_only=False)
                 checkpoint_algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
-                if checkpoint_algo not in {"dqn", "ppo"}:
+                if checkpoint_algo not in {"dqn", "ppo", "alphazero"}:
                     checkpoint_algo = "dqn"
                 if isinstance(checkpoint, dict) and "policy_net" in checkpoint:
                     policy_state = normalize_state_dict(checkpoint["policy_net"])
@@ -6945,6 +7022,333 @@ def _actor_learner_actor_entry_ppo(
             data_q.put(("error", f"ppo_actor[{actor_idx}] {exc}"))
         except Exception:
             pass
+
+
+def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enabled, clip_reward_min, clip_reward_max) -> None:
+    """
+    AlphaZero actor-learner (v1):
+    - factorized MCTS self-play (single process learner-centric loop),
+    - replay-based updates policy/value сети,
+    - совместимые артефакты checkpoint + agent snapshot + базовые metrics.
+    """
+    b_len = int(roster_config["b_len"])
+    b_hei = int(roster_config["b_hei"])
+    rand_num = random.randint(1000000, 9999999)
+    run_id = str(rand_num)
+    model_name = datetime.datetime.now().strftime("%d-%H%M%S")
+    metrics_obj = metrics(MODELS_DIR, run_id, model_name)
+
+    # bootstrap env for contracts/sizes
+    enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+    mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+    attacker_side, defender_side = roll_off_attacker_defender(manual_roll_allowed=False, log_fn=None)
+    deploy_for_mission(
+        mission_name,
+        model_units=model,
+        enemy_units=enemy,
+        b_len=b_len,
+        b_hei=b_hei,
+        attacker_side=attacker_side,
+        log_fn=None,
+    )
+    post_deploy_setup(log_fn=None)
+    env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
+    env.attacker_side = attacker_side
+    env.defender_side = defender_side
+    state0, _ = env.reset(options={"m": model, "e": enemy, "trunc": True})
+    if isinstance(state0, (dict, collections.OrderedDict)):
+        n_observations = len(list(state0.values()))
+    else:
+        n_observations = int(np.array(state0).shape[0])
+    len_model = int(len(model))
+    n_actions = action_sizes_from_env(env, len_model)
+
+    learner_side_cfg = LEARNER_SIDE if LEARNER_SIDE in {"P1", "P2"} else "P1"
+    learner_identity = AgentIdentity(
+        side=learner_side_cfg,
+        faction=LEARNER_FACTION,
+        ruleset_version=RULESET_VERSION,
+    ).normalized()
+    env_contract = make_env_contract(
+        n_observations=n_observations,
+        n_actions=n_actions,
+        mission_name=mission_name,
+        ruleset_version=learner_identity.ruleset_version,
+        extras={"actor_learner": 1, "train_algo": "alphazero", "num_actors": 1},
+    )
+
+    az_net = AlphaZeroPolicyValueNet(n_observations=n_observations, n_actions=n_actions).to(device)
+    optimizer = optim.AdamW(az_net.parameters(), lr=AZ_LR, amsgrad=True)
+    _patch_optimizer_methods_no_compile(optimizer)
+    replay = AlphaZeroReplayBuffer(capacity=AZ_REPLAY_CAPACITY)
+    trainer_cfg = AlphaZeroTrainConfig(
+        lr=AZ_LR,
+        batch_size=AZ_BATCH_SIZE,
+        value_loss_weight=AZ_VALUE_LOSS_WEIGHT,
+        l2_weight=AZ_L2_WEIGHT,
+    )
+    mcts = AlphaZeroFactorizedMCTS(
+        az_net,
+        config=MCTSConfig(
+        simulations=AZ_MCTS_SIMS,
+        c_puct=AZ_C_PUCT,
+        dirichlet_alpha=AZ_DIR_ALPHA,
+        dirichlet_eps=AZ_DIR_EPS,
+        ),
+        device=device,
+    )
+    sp_cfg = SelfPlayConfig(
+        temperature_opening_moves=AZ_TEMP_OPENING_MOVES,
+        temperature_opening_value=AZ_TEMP_OPENING,
+        temperature_late_value=AZ_TEMP_LATE,
+    )
+    opponent_policy_fn = None
+    opponent_algo_label = "heuristic"
+    opponent_source_label = "heuristic_auto"
+    opponent_agent_id = ""
+    if int(SELF_PLAY_ENABLED) == 1:
+        if OPPONENT_AGENT_ID:
+            try:
+                opp_spec = load_agent_opponent(agent_id=OPPONENT_AGENT_ID, expected_contract=env_contract)
+                opponent_policy_fn = build_policy_fn(env=env, len_model=len_model, opponent=opp_spec, deterministic=True)
+                opponent_algo_label = str(opp_spec.algo or "unknown")
+                opponent_source_label = "snapshot_policy_fn"
+                opponent_agent_id = str(opp_spec.agent_id or OPPONENT_AGENT_ID)
+                append_agent_log(
+                    "[AZ][SELFPLAY] "
+                    f"enabled=1 mode={SELF_PLAY_OPPONENT_MODE} opponent_algo={opponent_algo_label} "
+                    f"opponent_agent_id={opponent_agent_id}"
+                )
+            except Exception as exc:
+                append_agent_log(
+                    "[AZ][SELFPLAY][WARN] "
+                    f"Не удалось загрузить оппонента agent_id={OPPONENT_AGENT_ID}; fallback на heuristic. exc={exc}"
+                )
+        else:
+            append_agent_log("[AZ][SELFPLAY][WARN] SELF_PLAY_ENABLED=1, но OPPONENT_AGENT_ID пустой; fallback на heuristic.")
+
+    append_agent_log(
+        "[AZ][CONFIG] "
+        f"outcome_only={int(AZ_OUTCOME_ONLY)} "
+        f"mcts={AZ_MCTS_SIMS} c_puct={AZ_C_PUCT} "
+        f"temp_open={AZ_TEMP_OPENING} temp_late={AZ_TEMP_LATE} "
+        f"opponent_mode={opponent_source_label} opponent_algo={opponent_algo_label}"
+    )
+
+    ep_rows = []
+    loss_trace: list[float] = []
+    checkpoint_dir = os.path.join(MODELS_DIR, "alphazero")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    last_checkpoint = ""
+    last_actor_det_eval_ep = 0
+
+    def _az_det_payload_from_rows(rows_slice: list[dict], episode_idx: int, train_loss: float) -> dict:
+        n_eval = max(1, len(rows_slice))
+        wins = sum(1 for r in rows_slice if str(r.get("result", "")).strip().lower() == "win")
+        draws = sum(1 for r in rows_slice if str(r.get("result", "")).strip().lower() == "draw")
+        turn_limit = sum(1 for r in rows_slice if str(r.get("end_reason", "")).startswith("turn_limit"))
+        wipe_enemy = sum(1 for r in rows_slice if str(r.get("end_reason", "")) == "wipeout_enemy")
+        wipe_model = sum(1 for r in rows_slice if str(r.get("end_reason", "")) == "wipeout_model")
+        vp_diff_mean = float(sum(float(r.get("vp_diff", 0) or 0) for r in rows_slice) / n_eval)
+        model_vp_mean = float(sum(float(r.get("model_vp", 0) or 0) for r in rows_slice) / n_eval)
+        enemy_vp_mean = float(sum(float(r.get("player_vp", 0) or 0) for r in rows_slice) / n_eval)
+        ep_len_mean = float(sum(float(r.get("ep_len", 0) or 0) for r in rows_slice) / n_eval)
+        reward_mean = float(sum(float(r.get("ep_reward", 0.0) or 0.0) for r in rows_slice) / n_eval)
+        return {
+            "eval_episodes": int(n_eval),
+            "win_rate": float(wins / n_eval),
+            "draw_rate": float(draws / n_eval),
+            "turn_limit_rate": float(turn_limit / n_eval),
+            "wipeout_enemy_rate": float(wipe_enemy / n_eval),
+            "wipeout_model_rate": float(wipe_model / n_eval),
+            "vp_diff_mean": vp_diff_mean,
+            "model_vp_mean": model_vp_mean,
+            "enemy_vp_mean": enemy_vp_mean,
+            "hp_diff_mean": 0.0,
+            "kill_diff_mean": 0.0,
+            "reward_mean": reward_mean,
+            "ep_len_mean": ep_len_mean,
+            "opponent_epsilon": 0.0,
+            "episode": int(episode_idx),
+            "algo": "alphazero",
+            "eval_tag": "actor_learner_selfplay_proxy",
+            "training_loss": float(train_loss),
+        }
+
+    for episode in range(1, int(totLifeT) + 1):
+        episode_transitions, az_info = play_episode_with_mcts(
+            env=env,
+            mcts=mcts,
+            len_model=len_model,
+            config=sp_cfg,
+            enemy_policy_fn=opponent_policy_fn,
+            outcome_only=AZ_OUTCOME_ONLY,
+        )
+        replay.push_many(episode_transitions)
+        update_info = train_alphazero_step(
+            net=az_net,
+            optimizer=optimizer,
+            replay=replay,
+            config=trainer_cfg,
+            device=device,
+        )
+        if update_info is not None:
+            loss_trace.append(float(update_info["loss"]))
+        # episode summary from env info
+        info = dict(az_info or {})
+        if not info:
+            info = getattr(env, "_last_step_info", {}) or {}
+        end_reason = str(info.get("end reason", "") or "")
+        model_vp = int(info.get("model VP", 0) or 0)
+        player_vp = int(info.get("player VP", 0) or 0)
+        vp_diff = int(model_vp) - int(player_vp)
+        # Важно: wipeout должен иметь приоритет над VP, иначе возможна инверсия
+        # вида "result=win при end_reason=wipeout_model".
+        result = "loss"
+        if end_reason == "wipeout_enemy":
+            result = "win"
+        elif end_reason == "wipeout_model":
+            result = "loss"
+        elif str(end_reason).startswith("turn_limit") and vp_diff == 0:
+            result = "draw"
+        elif vp_diff > 0:
+            result = "win"
+        elif vp_diff == 0:
+            result = "draw"
+        ep_rows.append(
+            {
+                "episode": int(episode),
+                "ep_reward": float(info.get("reward", 0.0) or 0.0),
+                "ep_len": int(info.get("turn", 0) or 0),
+                "result": str(result),
+                "end_reason": str(end_reason),
+                "model_vp": int(model_vp),
+                "player_vp": int(player_vp),
+                "vp_diff": int(vp_diff),
+            }
+        )
+        ep_line = (
+            f"[AZ] ep={episode}/{totLifeT} "
+            f"result={result} end_reason={end_reason} "
+            f"vp_diff={vp_diff} model_vp={model_vp} player_vp={player_vp} "
+            f"loss={(float(update_info['loss']) if update_info is not None else 0.0):.6f}"
+        )
+        if TRAIN_LOG_TO_FILE:
+            append_agent_log(ep_line)
+        if TRAIN_LOG_TO_CONSOLE:
+            print(ep_line, flush=True)
+
+        if episode % max(1, LOG_EVERY) == 0 or episode == int(totLifeT):
+            stats_path = os.path.join(METRICS_DIR, f"stats_{run_id}.csv")
+            try:
+                with open(stats_path, "w", encoding="utf-8", newline="") as f:
+                    w = csv.DictWriter(f, fieldnames=list(ep_rows[0].keys()))
+                    w.writeheader()
+                    w.writerows(ep_rows)
+            except Exception:
+                pass
+
+        if (
+            ACTOR_DET_EVAL_ENABLED
+            and episode > last_actor_det_eval_ep
+            and (episode % ACTOR_DET_EVAL_EVERY_EPISODES == 0 or episode == int(totLifeT))
+        ):
+            last_actor_det_eval_ep = int(episode)
+            det_window = ep_rows[-max(1, int(ACTOR_DET_EVAL_EPISODES)):]
+            det_payload = _az_det_payload_from_rows(
+                det_window,
+                episode_idx=int(episode),
+                train_loss=(float(update_info["loss"]) if update_info is not None else 0.0),
+            )
+            _save_actor_det_eval_snapshot(run_id=str(run_id), payload=det_payload, metrics_dir=METRICS_DIR)
+            try:
+                det_gui = save_actor_det_eval_plot(run_id=str(run_id), metrics_dir=METRICS_DIR)
+                if det_gui:
+                    learner_side = str(learner_identity.side or "P1").strip().upper() or "P1"
+                    opponent_side = "P2" if learner_side == "P1" else "P1"
+                    _write_det_eval_data_json(
+                        run_id=str(run_id),
+                        det_plot_gui_paths=det_gui,
+                        model_path=str(last_checkpoint or ""),
+                        metrics_mode="det_eval",
+                        extra={
+                            "algo": "alphazero",
+                            "mode": "actor_learner",
+                            "learner_side": learner_side,
+                            "learner_faction": str(learner_identity.faction or "Unknown"),
+                            "opponent_side": opponent_side,
+                            "opponent_faction": str(roster_config.get("enemy_faction", "Unknown")).strip(),
+                            "opponent_algo": str(opponent_algo_label),
+                            "opponent_source": str(opponent_source_label),
+                            "opponent_id": str(opponent_agent_id),
+                        },
+                    )
+            except Exception:
+                pass
+
+        if episode % max(1, SAVE_EVERY) == 0 or episode == int(totLifeT):
+            ckpt_path = os.path.join(checkpoint_dir, f"checkpoint_ep{episode}.pth")
+            torch.save(
+                {
+                    "algo": "alphazero",
+                    "policy_value_net": az_net.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "episode": int(episode),
+                    "env_contract": env_contract,
+                },
+                ckpt_path,
+            )
+            last_checkpoint = ckpt_path
+            append_agent_log(f"[AZ][CHECKPOINT] ep={episode} path={ckpt_path}")
+
+    # metrics + registry artifact
+    if ep_rows:
+        stats_path = os.path.join(METRICS_DIR, f"stats_{run_id}.csv")
+        with open(stats_path, "w", encoding="utf-8", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(ep_rows[0].keys()))
+            w.writeheader()
+            w.writerows(ep_rows)
+        append_agent_log(f"[AZ][METRICS] saved stats={stats_path}")
+        try:
+            det_gui = save_actor_det_eval_plot(run_id=str(run_id), metrics_dir=METRICS_DIR)
+            if det_gui:
+                learner_side = str(learner_identity.side or "P1").strip().upper() or "P1"
+                opponent_side = "P2" if learner_side == "P1" else "P1"
+                _write_det_eval_data_json(
+                    run_id=str(run_id),
+                    det_plot_gui_paths=det_gui,
+                    model_path=str(last_checkpoint or ""),
+                    metrics_mode="det_eval",
+                    extra={
+                        "algo": "alphazero",
+                        "mode": "actor_learner",
+                        "learner_side": learner_side,
+                        "learner_faction": str(learner_identity.faction or "Unknown"),
+                        "opponent_side": opponent_side,
+                        "opponent_faction": str(roster_config.get("enemy_faction", "Unknown")).strip(),
+                        "opponent_algo": str(opponent_algo_label),
+                        "opponent_source": str(opponent_source_label),
+                        "opponent_id": str(opponent_agent_id),
+                    },
+                )
+        except Exception:
+            pass
+    final_agent_id = build_agent_id(learner_identity, f"final_ep{int(totLifeT)}")
+    save_agent_artifact(
+        identity=learner_identity,
+        agent_id=final_agent_id,
+        env_contract=env_contract,
+        policy_state_dict=az_net.state_dict(),
+        target_state_dict={},
+        optimizer_state_dict=optimizer.state_dict(),
+        extra_meta={
+            "algo": "alphazero",
+            "episode": int(totLifeT),
+            "source_model_path": str(last_checkpoint or ""),
+            "mode": "actor_learner",
+        },
+    )
+    append_agent_log(f"[AZ][ACTOR_LEARNER] done: episodes={totLifeT} checkpoint={last_checkpoint}")
 
 if __name__ == "__main__":
     mp.freeze_support()
