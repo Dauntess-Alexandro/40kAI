@@ -5273,12 +5273,12 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     randNum = random.randint(1000000, 9999999)
     loss_trace: list[float] = []
     adaptive_tl_curriculum = os.getenv("ADAPTIVE_TURN_LIMIT_CURRICULUM", "1").strip() == "1"
-    tl_curriculum_hi = float(os.getenv("ADAPTIVE_TL_RATE_HIGH", "0.70"))
-    tl_curriculum_lo = float(os.getenv("ADAPTIVE_TL_RATE_LOW", "0.55"))
-    tl_penalty_step = float(os.getenv("ADAPTIVE_NO_CONTEST_STEP", "0.02"))
-    tl_penalty_max = float(os.getenv("ADAPTIVE_NO_CONTEST_MAX", "0.45"))
-    tl_oc_step = float(os.getenv("ADAPTIVE_OC_MARGIN_STEP", "0.005"))
-    tl_oc_max = float(os.getenv("ADAPTIVE_OC_MARGIN_MAX", "0.08"))
+    tl_curriculum_hi = float(os.getenv("ADAPTIVE_TL_RATE_HIGH", "0.72"))
+    tl_curriculum_lo = float(os.getenv("ADAPTIVE_TL_RATE_LOW", "0.58"))
+    tl_penalty_step = float(os.getenv("ADAPTIVE_NO_CONTEST_STEP", "0.01"))
+    tl_penalty_max = float(os.getenv("ADAPTIVE_NO_CONTEST_MAX", "0.30"))
+    tl_oc_step = float(os.getenv("ADAPTIVE_OC_MARGIN_STEP", "0.003"))
+    tl_oc_max = float(os.getenv("ADAPTIVE_OC_MARGIN_MAX", "0.05"))
     tl_penalty_min = float(getattr(reward_cfg, "MISSION_NO_CONTEST_PENALTY", 0.0))
     tl_oc_min = float(getattr(reward_cfg, "VP_OBJECTIVE_OC_MARGIN_SCALE", 0.0))
 
@@ -5899,12 +5899,12 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
     ep_rows: list[dict] = []
     last_update_metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clip_fraction": 0.0}
     adaptive_tl_curriculum = os.getenv("ADAPTIVE_TURN_LIMIT_CURRICULUM", "1").strip() == "1"
-    tl_curriculum_hi = float(os.getenv("ADAPTIVE_TL_RATE_HIGH", "0.70"))
-    tl_curriculum_lo = float(os.getenv("ADAPTIVE_TL_RATE_LOW", "0.55"))
-    tl_penalty_step = float(os.getenv("ADAPTIVE_NO_CONTEST_STEP", "0.02"))
-    tl_penalty_max = float(os.getenv("ADAPTIVE_NO_CONTEST_MAX", "0.45"))
-    tl_oc_step = float(os.getenv("ADAPTIVE_OC_MARGIN_STEP", "0.005"))
-    tl_oc_max = float(os.getenv("ADAPTIVE_OC_MARGIN_MAX", "0.08"))
+    tl_curriculum_hi = float(os.getenv("ADAPTIVE_TL_RATE_HIGH", "0.72"))
+    tl_curriculum_lo = float(os.getenv("ADAPTIVE_TL_RATE_LOW", "0.58"))
+    tl_penalty_step = float(os.getenv("ADAPTIVE_NO_CONTEST_STEP", "0.01"))
+    tl_penalty_max = float(os.getenv("ADAPTIVE_NO_CONTEST_MAX", "0.30"))
+    tl_oc_step = float(os.getenv("ADAPTIVE_OC_MARGIN_STEP", "0.003"))
+    tl_oc_max = float(os.getenv("ADAPTIVE_OC_MARGIN_MAX", "0.05"))
     tl_penalty_min = float(getattr(reward_cfg, "MISSION_NO_CONTEST_PENALTY", 0.0))
     tl_oc_min = float(getattr(reward_cfg, "VP_OBJECTIVE_OC_MARGIN_SCALE", 0.0))
 

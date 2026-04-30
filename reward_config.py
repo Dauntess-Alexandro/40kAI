@@ -41,13 +41,13 @@ TURN_LIMIT_VP_MARGIN_CLAMP = 6.0
 # Длина серии удержания objective для streak-бонуса.
 VP_OBJECTIVE_STREAK_LEN = 1
 # Дополнительный бонус за достижение серии удержания objective.
-VP_OBJECTIVE_STREAK_BONUS = 0.35
+VP_OBJECTIVE_STREAK_BONUS = 0.25
 # Масштаб награды за изменение перевеса OC на objectives (delta по шагу).
-VP_OBJECTIVE_OC_MARGIN_SCALE = 0.03
+VP_OBJECTIVE_OC_MARGIN_SCALE = 0.02
 # Ограничение абсолютной delta по OC-margin (чтобы не раздувать шэйпинг).
 VP_OBJECTIVE_OC_MARGIN_DELTA_CLAMP = 12.0
 # Максимальный множитель линейного streak-бонуса (для глубокой серии удержания).
-VP_OBJECTIVE_STREAK_LINEAR_CAP = 3.0
+VP_OBJECTIVE_STREAK_LINEAR_CAP = 2.0
 
 # ===============================
 # Шэйпинг наград (прочие фазы)
@@ -101,11 +101,11 @@ OBJECTIVE_PROGRESS_STEP_SCALE = 0.22
 # Верхняя граница бонуса за прогресс к objective за шаг.
 OBJECTIVE_PROGRESS_STEP_CAP = 0.35
 # Штраф за "мертвое окно": нет валидных целей стрельбы и нет contest objective.
-NO_TARGET_NO_CONTEST_PENALTY = 0.08
+NO_TARGET_NO_CONTEST_PENALTY = 0.04
 # Рост штрафа за "мертвое окно" по раундам после старта скоринга.
-NO_TARGET_NO_CONTEST_ROUND_SCALE = 0.06
+NO_TARGET_NO_CONTEST_ROUND_SCALE = 0.03
 # Верхняя граница мультипликатора раундового роста для "мертвого окна".
-NO_TARGET_NO_CONTEST_MAX_MULT = 2.5
+NO_TARGET_NO_CONTEST_MAX_MULT = 2.0
 # Бонус за убийство цели, находящейся на objective.
 KILL_ON_OBJECTIVE_BONUS = 0.2
 # Масштаб бонуса за нанесение урона цели на objective.
@@ -201,27 +201,27 @@ TERRAIN_SHAPING_STEP_RCAP = 0.12
 # ==========================================
 # Доп. штраф, если после старта скоринга никто не contest'ит objectives
 # (обе стороны имеют 0 OC на всех objectives). Это ломает "вечные" бои в стороне от миссии.
-MISSION_NO_CONTEST_PENALTY = 0.24
+MISSION_NO_CONTEST_PENALTY = 0.16
 # С какого battle round включать этот штраф (обычно совпадает со START_SCORING_ROUND).
 MISSION_NO_CONTEST_START_ROUND = VP_START_SCORING_ROUND
 # После этого раунда штраф мягко усиливается (динамика late-game anti-draw).
 MISSION_NO_CONTEST_LATE_ROUND = 10
 # +15% к базовому штрафу после LATE_ROUND (0.10..0.15 обычно достаточно).
-MISSION_NO_CONTEST_LATE_MULT = 1.50
+MISSION_NO_CONTEST_LATE_MULT = 1.25
 
 # Anti-stall по VP diff: если серия шагов без изменения VP слишком длинная.
-VP_STALL_STEPS_THRESHOLD = 4
-VP_STALL_PENALTY = 0.10
-VP_STALL_STEP_GROWTH = 0.15
-VP_STALL_PENALTY_MAX_MULT = 2.5
+VP_STALL_STEPS_THRESHOLD = 5
+VP_STALL_PENALTY = 0.06
+VP_STALL_STEP_GROWTH = 0.08
+VP_STALL_PENALTY_MAX_MULT = 2.0
 
 # Round-aware scaling: ранняя игра = больше прогресса к objective; поздняя = удержание/deny.
 REWARD_ROUND_EARLY_END = 4
 REWARD_ROUND_LATE_START = 10
-REWARD_PROGRESS_EARLY_MULT = 1.30
-REWARD_PROGRESS_LATE_MULT = 0.80
-REWARD_HOLD_EARLY_MULT = 0.90
-REWARD_HOLD_LATE_MULT = 1.35
+REWARD_PROGRESS_EARLY_MULT = 1.15
+REWARD_PROGRESS_LATE_MULT = 0.90
+REWARD_HOLD_EARLY_MULT = 0.95
+REWARD_HOLD_LATE_MULT = 1.15
 
 
 # =========================
