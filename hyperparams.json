@@ -32,7 +32,7 @@
         "dirichlet_eps": 0.25,
         "mcts_mode": "tree",
         "mcts_top_k_per_head": 12,
-        "mcts_max_depth": 3,
+        "mcts_max_depth": 4,
         "mcts_root_dirichlet_only": 1,
         "snapshot_opp_deterministic": 0,
         "opponent_stochastic_eps": 0.03,
