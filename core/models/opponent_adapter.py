@@ -183,7 +183,23 @@ def build_policy_fn(
             masks = [m.to(torch.device("cpu")).unsqueeze(0) for m in masks_cpu]
             with torch.no_grad():
                 probs, _value = net.infer(obs_t, masks_by_head=masks)
-            action = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
+            action = []
+            stochastic_eps = float(os.getenv("AZ_OPPONENT_STOCHASTIC_EPS", "0.10"))
+            stochastic_eps = max(0.0, min(1.0, stochastic_eps))
+            for p in probs:
+                row = p.squeeze(0).detach().cpu()
+                arg = int(torch.argmax(row, dim=0).item())
+                if bool(deterministic):
+                    action.append(arg)
+                    continue
+                if np.random.rand() < stochastic_eps:
+                    try:
+                        sample = int(torch.multinomial(row, num_samples=1).item())
+                        action.append(sample)
+                        continue
+                    except Exception:
+                        pass
+                action.append(arg)
             action_dict = action_tensor_to_dict(torch.tensor([action], device="cpu"), len_model=int(len_model))
             return action_dict
 

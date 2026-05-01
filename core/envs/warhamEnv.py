@@ -13,10 +13,12 @@ import datetime
 import inspect
 import math
 import os
+import copy
 import random
 import re
 import sys
 import time
+from contextlib import contextmanager
 from typing import Optional
 
 import reward_config as reward_cfg
@@ -1037,6 +1039,8 @@ class Warhammer40kEnv(gym.Env):
         self._agent_log_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "..", log_name)
         )
+        # Simulation sandbox depth counter (MCTS rollouts).
+        self._simulation_mode_depth = 0
 
         self.modelOC = []
         self.enemyOC = []
@@ -1087,6 +1091,115 @@ class Warhammer40kEnv(gym.Env):
 
         obsSpace = (len(model) * 3) + (len(enemy) * 3) + len(self.coordsOfOM * 2) + 1
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obsSpace,), dtype=np.float32)
+
+    def _in_simulation_mode(self) -> bool:
+        return int(getattr(self, "_simulation_mode_depth", 0) or 0) > 0
+
+    @contextmanager
+    def simulation_mode(self):
+        self._simulation_mode_depth = int(getattr(self, "_simulation_mode_depth", 0) or 0) + 1
+        try:
+            yield self
+        finally:
+            self._simulation_mode_depth = max(
+                0,
+                int(getattr(self, "_simulation_mode_depth", 0) or 0) - 1,
+            )
+
+    def snapshot_state(self) -> dict:
+        """Compact runtime snapshot for simulation rollouts (no I/O objects)."""
+        keys = [
+            "iter", "restarts", "playType", "_state_flush_last_ts", "_state_flush_pending",
+            "board",
+            "unit_coords", "enemy_coords", "unit_health", "enemy_health",
+            "unit_model_wounds", "enemy_model_wounds",
+            "unit_anchor_coords", "enemy_anchor_coords",
+            "unit_model_positions", "enemy_model_positions",
+            "model_used_advance", "enemy_used_advance", "model_advance_roll", "enemy_advance_roll",
+            "game_over", "unitInAttack", "enemyInAttack", "trunc",
+            "enemyCP", "modelCP", "enemyOverwatch", "modelStrat", "enemyStrat",
+            "unitFellBack", "enemyFellBack",
+            "modelVP", "enemyVP", "battle_round", "active_side", "phase", "numTurns", "turn_order",
+            "_round_banner_shown", "_fight_env_logged", "_phase_event_emitted", "_phase_unit_logged",
+            "_prev_vp_diff", "_objective_hold_streaks", "_target_cache_epoch",
+            "_distance_cache", "_shoot_target_cache", "_shoot_target_reject_cache",
+            "_terrain_shaping_shot_bonus_units",
+            "last_end_reason", "last_winner", "current_action_index",
+            "viewer_step_seq", "viewer_activation", "viewer_awaiting_ack",
+            "unitCharged", "enemyCharged", "modelUpdates",
+        ]
+        snap = {
+            "_random_state": random.getstate(),
+            "_np_random_state": np.random.get_state(),
+            "_simulation_mode_depth": int(getattr(self, "_simulation_mode_depth", 0) or 0),
+            "_model_unit_coords": [list(u.showCoords()) for u in getattr(self, "model", [])],
+            "_enemy_unit_coords": [list(u.showCoords()) for u in getattr(self, "enemy", [])],
+        }
+        for key in keys:
+            if hasattr(self, key):
+                snap[key] = copy.deepcopy(getattr(self, key))
+        return snap
+
+    def restore_state(self, snapshot: dict) -> None:
+        if not isinstance(snapshot, dict):
+            return
+        for key, value in snapshot.items():
+            if key in {"_random_state", "_np_random_state", "_simulation_mode_depth", "_model_unit_coords", "_enemy_unit_coords"}:
+                continue
+            try:
+                setattr(self, key, copy.deepcopy(value))
+            except Exception:
+                pass
+        try:
+            random.setstate(snapshot.get("_random_state", random.getstate()))
+        except Exception:
+            pass
+        try:
+            np_state = snapshot.get("_np_random_state", None)
+            if np_state is not None:
+                np.random.set_state(np_state)
+        except Exception:
+            pass
+        try:
+            model_coords = snapshot.get("_model_unit_coords", [])
+            for i, coords in enumerate(model_coords):
+                if 0 <= i < len(self.model):
+                    self.model[i].set_anchor(int(coords[0]), int(coords[1]))
+            enemy_coords = snapshot.get("_enemy_unit_coords", [])
+            for i, coords in enumerate(enemy_coords):
+                if 0 <= i < len(self.enemy):
+                    self.enemy[i].set_anchor(int(coords[0]), int(coords[1]))
+        except Exception:
+            pass
+        try:
+            self._sync_model_positions_to_anchors()
+        except Exception:
+            pass
+        self._simulation_mode_depth = int(snapshot.get("_simulation_mode_depth", 0) or 0)
+
+    def simulate_step(
+        self,
+        action_dict,
+        *,
+        enemy_policy_fn=None,
+        include_enemy_turn: bool = True,
+        trunc: bool = False,
+    ):
+        """
+        One rollout step with automatic state restore and no side effects.
+        Returns tuple: (next_obs, reward, done, trunc, info)
+        """
+        snap = self.snapshot_state()
+        with self.simulation_mode():
+            try:
+                next_obs, reward, done, trunc_out, info = self.step(action_dict)
+                if include_enemy_turn and not bool(done or trunc_out):
+                    self.enemyTurn(trunc=bool(trunc), policy_fn=enemy_policy_fn)
+                    done = bool(done or getattr(self, "game_over", False))
+                    info = self.get_info()
+                return np.asarray(next_obs, dtype=np.float32), float(reward), bool(done), bool(trunc_out), dict(info or {})
+            finally:
+                self.restore_state(snap)
 
     def get_info(self):
         # Важно: info используется и в GUI, и в train IPC.
@@ -2054,6 +2167,8 @@ class Warhammer40kEnv(gym.Env):
 
     def _flush_state_snapshot(self, reason: str = "", force: bool = False) -> bool:
         """Синхронный экспорт state.json для GUI с throttle, безопасный для training."""
+        if self._in_simulation_mode():
+            return False
         if not hasattr(self, "board"):
             return False
 
@@ -2515,6 +2630,8 @@ class Warhammer40kEnv(gym.Env):
         return None
 
     def _emit_event(self, event: dict) -> None:
+        if self._in_simulation_mode():
+            return
         if not isinstance(event, dict):
             return
         event.setdefault("battle_round", self.battle_round)
@@ -2526,6 +2643,8 @@ class Warhammer40kEnv(gym.Env):
         get_event_bus().emit(event)
 
     def _append_agent_log(self, msg: str) -> None:
+        if self._in_simulation_mode():
+            return
         if msg is None:
             return
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -7100,7 +7219,8 @@ class Warhammer40kEnv(gym.Env):
         return self.game_over, info
 
     def updateBoard(self):
-        self.render(mode="test")
+        if not self._in_simulation_mode():
+            self.render(mode="test")
         self.board = np.zeros((self.b_len, self.b_hei))
 
         for i in range(len(self.unit_health)):
@@ -7118,14 +7238,17 @@ class Warhammer40kEnv(gym.Env):
 
         self._sync_model_positions_to_anchors()
         # Принудительный flush в узловых точках (конец шага/фазы).
-        if not self._flush_state_snapshot(reason="updateBoard", force=True):
-            if bool(getattr(self, "playType", False)):
-                write_state_json(self)
+        if not self._in_simulation_mode():
+            if not self._flush_state_snapshot(reason="updateBoard", force=True):
+                if bool(getattr(self, "playType", False)):
+                    write_state_json(self)
 
     def returnBoard(self):
         return self.board
 
     def render(self, mode='train'):
+        if self._in_simulation_mode():
+            return self.board
         fig = plt.figure()
         ax = fig.add_subplot()
         fig.subplots_adjust(top=0.85)

@@ -33,6 +33,9 @@ def play_episode_with_mcts(
     config: SelfPlayConfig | None = None,
     enemy_policy_fn: Optional[Callable[[Any], dict]] = None,
     outcome_only: bool = True,
+    outcome_value_win: float = 1.0,
+    outcome_value_loss: float = -1.0,
+    outcome_value_draw: float = -0.25,
 ) -> tuple[list[AZTransition], dict]:
     cfg = config or SelfPlayConfig()
     env_u = getattr(env, "unwrapped", env)
@@ -54,7 +57,14 @@ def play_episode_with_mcts(
         ordered_keys = ordered_action_keys(int(len_model))
         legal_masks = [legal_dict[k] for k in ordered_keys]
         temp = cfg.temperature_opening_value if steps < int(cfg.temperature_opening_moves) else cfg.temperature_late_value
-        pi_targets, action_list, _v = mcts.run(obs=obs_np, legal_masks_by_head=legal_masks, temperature=temp)
+        pi_targets, action_list, _v = mcts.run(
+            obs=obs_np,
+            legal_masks_by_head=legal_masks,
+            temperature=temp,
+            env=env,
+            len_model=int(len_model),
+            enemy_policy_fn=enemy_policy_fn,
+        )
 
         action_dict = convertToDict(torch.tensor([action_list], dtype=torch.long))
         next_state, reward, done, trunc, info = env.step(action_dict)
@@ -80,14 +90,17 @@ def play_episode_with_mcts(
         steps += 1
 
     if outcome_only:
+        outcome_value_win = float(np.clip(float(outcome_value_win), -1.0, 1.0))
+        outcome_value_loss = float(np.clip(float(outcome_value_loss), -1.0, 1.0))
+        outcome_value_draw = float(np.clip(float(outcome_value_draw), -1.0, 1.0))
         winner = str(last_info.get("winner", "") or "").strip().lower()
         end_reason = str(last_info.get("end reason", "") or "").strip().lower()
         if winner in {"model", "learner", "ai"} or end_reason == "wipeout_enemy":
-            final_value = 1.0
+            final_value = outcome_value_win
         elif winner in {"enemy", "player", "opponent"} or end_reason == "wipeout_model":
-            final_value = -1.0
+            final_value = outcome_value_loss
         else:
-            final_value = 0.0
+            final_value = outcome_value_draw
 
     out: list[AZTransition] = []
     for s, pi in records:

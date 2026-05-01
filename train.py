@@ -2250,7 +2250,28 @@ AZ_TEMP_OPENING_MOVES = int(AZ_CFG.get("temperature_opening_moves", 12))
 AZ_TEMP_OPENING = float(AZ_CFG.get("temperature_opening_value", 1.0))
 AZ_TEMP_LATE = float(AZ_CFG.get("temperature_late_value", 0.2))
 AZ_REPLAY_CAPACITY = int(AZ_CFG.get("replay_capacity", 200000))
+AZ_MCTS_MODE = str(os.getenv("AZ_MCTS_MODE", str(AZ_CFG.get("mcts_mode", "proxy")))).strip().lower() or "proxy"
+if AZ_MCTS_MODE not in {"proxy", "tree"}:
+    AZ_MCTS_MODE = "proxy"
+AZ_MCTS_TOP_K_PER_HEAD = int(os.getenv("AZ_MCTS_TOP_K_PER_HEAD", str(AZ_CFG.get("mcts_top_k_per_head", 8))))
+AZ_MCTS_MAX_DEPTH = int(os.getenv("AZ_MCTS_MAX_DEPTH", str(AZ_CFG.get("mcts_max_depth", 1))))
+AZ_MCTS_ROOT_DIRICHLET_ONLY = str(
+    os.getenv("AZ_MCTS_ROOT_DIRICHLET_ONLY", str(AZ_CFG.get("mcts_root_dirichlet_only", 1)))
+).strip() == "1"
+AZ_SNAPSHOT_OPP_DETERMINISTIC = str(
+    os.getenv("AZ_SNAPSHOT_OPP_DETERMINISTIC", str(AZ_CFG.get("snapshot_opp_deterministic", 0)))
+).strip() == "1"
+AZ_OPPONENT_STOCHASTIC_EPS = float(
+    os.getenv("AZ_OPPONENT_STOCHASTIC_EPS", str(AZ_CFG.get("opponent_stochastic_eps", 0.10)))
+)
+AZ_OPPONENT_STOCHASTIC_EPS = max(0.0, min(1.0, AZ_OPPONENT_STOCHASTIC_EPS))
 AZ_OUTCOME_ONLY = str(os.getenv("AZ_OUTCOME_ONLY", str(AZ_CFG.get("outcome_only", 1)))).strip() == "1"
+AZ_OUTCOME_VALUE_WIN = float(os.getenv("AZ_OUTCOME_VALUE_WIN", str(AZ_CFG.get("outcome_value_win", 1.0))))
+AZ_OUTCOME_VALUE_LOSS = float(os.getenv("AZ_OUTCOME_VALUE_LOSS", str(AZ_CFG.get("outcome_value_loss", -1.0))))
+AZ_OUTCOME_VALUE_DRAW = float(os.getenv("AZ_OUTCOME_VALUE_DRAW", str(AZ_CFG.get("outcome_value_draw", -0.25))))
+AZ_OUTCOME_VALUE_WIN = max(-1.0, min(1.0, AZ_OUTCOME_VALUE_WIN))
+AZ_OUTCOME_VALUE_LOSS = max(-1.0, min(1.0, AZ_OUTCOME_VALUE_LOSS))
+AZ_OUTCOME_VALUE_DRAW = max(-1.0, min(1.0, AZ_OUTCOME_VALUE_DRAW))
 
 # ============================================================
 # (C) Несколько обучающих апдейтов на один шаг среды
@@ -7090,10 +7111,14 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     mcts = AlphaZeroFactorizedMCTS(
         az_net,
         config=MCTSConfig(
-        simulations=AZ_MCTS_SIMS,
-        c_puct=AZ_C_PUCT,
-        dirichlet_alpha=AZ_DIR_ALPHA,
-        dirichlet_eps=AZ_DIR_EPS,
+            simulations=AZ_MCTS_SIMS,
+            c_puct=AZ_C_PUCT,
+            dirichlet_alpha=AZ_DIR_ALPHA,
+            dirichlet_eps=AZ_DIR_EPS,
+            top_k_per_head=AZ_MCTS_TOP_K_PER_HEAD,
+            max_depth=AZ_MCTS_MAX_DEPTH,
+            mode=AZ_MCTS_MODE,
+            root_dirichlet_only=bool(AZ_MCTS_ROOT_DIRICHLET_ONLY),
         ),
         device=device,
     )
@@ -7110,14 +7135,20 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         if OPPONENT_AGENT_ID:
             try:
                 opp_spec = load_agent_opponent(agent_id=OPPONENT_AGENT_ID, expected_contract=env_contract)
-                opponent_policy_fn = build_policy_fn(env=env, len_model=len_model, opponent=opp_spec, deterministic=True)
+                opponent_policy_fn = build_policy_fn(
+                    env=env,
+                    len_model=len_model,
+                    opponent=opp_spec,
+                    deterministic=bool(AZ_SNAPSHOT_OPP_DETERMINISTIC),
+                )
                 opponent_algo_label = str(opp_spec.algo or "unknown")
                 opponent_source_label = "snapshot_policy_fn"
                 opponent_agent_id = str(opp_spec.agent_id or OPPONENT_AGENT_ID)
                 append_agent_log(
                     "[AZ][SELFPLAY] "
                     f"enabled=1 mode={SELF_PLAY_OPPONENT_MODE} opponent_algo={opponent_algo_label} "
-                    f"opponent_agent_id={opponent_agent_id}"
+                    f"opponent_agent_id={opponent_agent_id} "
+                    f"opp_deterministic={int(AZ_SNAPSHOT_OPP_DETERMINISTIC)} opp_eps={AZ_OPPONENT_STOCHASTIC_EPS:.2f}"
                 )
             except Exception as exc:
                 append_agent_log(
@@ -7130,7 +7161,10 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     append_agent_log(
         "[AZ][CONFIG] "
         f"outcome_only={int(AZ_OUTCOME_ONLY)} "
-        f"mcts={AZ_MCTS_SIMS} c_puct={AZ_C_PUCT} "
+        f"outcome_targets=({AZ_OUTCOME_VALUE_WIN:.2f},{AZ_OUTCOME_VALUE_LOSS:.2f},{AZ_OUTCOME_VALUE_DRAW:.2f}) "
+        f"mcts_mode={AZ_MCTS_MODE} mcts={AZ_MCTS_SIMS} c_puct={AZ_C_PUCT} "
+        f"top_k={AZ_MCTS_TOP_K_PER_HEAD} depth={AZ_MCTS_MAX_DEPTH} "
+        f"opp_det={int(AZ_SNAPSHOT_OPP_DETERMINISTIC)} opp_eps={AZ_OPPONENT_STOCHASTIC_EPS:.2f} "
         f"temp_open={AZ_TEMP_OPENING} temp_late={AZ_TEMP_LATE} "
         f"opponent_mode={opponent_source_label} opponent_algo={opponent_algo_label}"
     )
@@ -7183,6 +7217,9 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             config=sp_cfg,
             enemy_policy_fn=opponent_policy_fn,
             outcome_only=AZ_OUTCOME_ONLY,
+            outcome_value_win=AZ_OUTCOME_VALUE_WIN,
+            outcome_value_loss=AZ_OUTCOME_VALUE_LOSS,
+            outcome_value_draw=AZ_OUTCOME_VALUE_DRAW,
         )
         replay.push_many(episode_transitions)
         update_info = train_alphazero_step(
