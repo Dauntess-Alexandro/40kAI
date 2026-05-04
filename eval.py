@@ -1,6 +1,7 @@
 import argparse
 import datetime
 import importlib
+import json
 import os
 import pickle
 import random
@@ -29,17 +30,17 @@ from core.models.opponent_adapter import build_policy_fn, load_agent_opponent
 
 import gymnasium as gym
 import core.envs  # noqa: F401 (регистрация '40kAI-v0')
-from project_paths import AGENT_TRAIN_LOG_PATH, ARTIFACTS_MODELS_DIR, ensure_runtime_dirs
+from project_paths import AGENT_EVAL_LOG_PATH, ARTIFACTS_MODELS_DIR, ensure_runtime_dirs
 
-AGENT_TRAIN_LOG_FILE = str(AGENT_TRAIN_LOG_PATH.relative_to(AGENT_TRAIN_LOG_PATH.parent.parent))
-os.environ.setdefault("AGENT_LOG_FILE", AGENT_TRAIN_LOG_FILE)
+AGENT_EVAL_LOG_FILE = str(AGENT_EVAL_LOG_PATH.relative_to(AGENT_EVAL_LOG_PATH.parent.parent))
+os.environ.setdefault("AGENT_LOG_FILE", AGENT_EVAL_LOG_FILE)
 from core.models.utils import build_shoot_action_mask, build_action_masks_by_head, convertToDict, unwrap_env
 
 
 def _append_eval_log(message: str) -> None:
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ensure_runtime_dirs()
-    log_path = str(AGENT_TRAIN_LOG_PATH)
+    log_path = str(AGENT_EVAL_LOG_PATH)
     try:
         with open(log_path, "a", encoding="utf-8") as log_file:
             log_file.write(f"{timestamp} | [EVAL] {message}\n")
@@ -251,7 +252,17 @@ def select_action_with_epsilon_alphazero(env, state, policy_net, epsilon, len_mo
     return torch.tensor([action_list], device="cpu")
 
 
-def run_episode(env, model_units, enemy_units, policy_net, epsilon, device, algo: str, opponent_policy_fn=None):
+def run_episode(
+    env,
+    model_units,
+    enemy_units,
+    policy_net,
+    epsilon,
+    device,
+    algo: str,
+    opponent_policy_fn=None,
+    learner_side: str = "P1",
+):
     env_unwrapped = unwrap_env(env)
     attacker_side, defender_side = roll_off_attacker_defender(
         manual_roll_allowed=False,
@@ -280,13 +291,259 @@ def run_episode(env, model_units, enemy_units, policy_net, epsilon, device, algo
     done = False
     episode_len = 0
     total_reward = 0.0
+    trace_enabled = str(os.getenv("EVAL_ACTION_TRACE", "1")).strip() == "1"
+    trace_max_lines = max(200, int(os.getenv("EVAL_TRACE_MAX_LINES_PER_GAME", "2000")))
+    trace_everything = str(os.getenv("EVAL_TRACE_EVERYTHING", "0")).strip() == "1"
+    trace_style = str(os.getenv("EVAL_TRACE_STYLE", "warhammer")).strip().lower() or "warhammer"
+    opponent_side = "P2" if str(learner_side).upper() == "P1" else "P1"
+    trace_lines: list[str] = []
+    current_round = 0
+    round_stats: dict[int, dict[str, int]] = {}
+    move_dir_labels = {
+        0: "up",
+        1: "left",
+        2: "down",
+        3: "right",
+        4: "stay",
+    }
+
+    def _safe_int(v, default=0):
+        try:
+            return int(v)
+        except Exception:
+            return int(default)
+
+    def _safe_float(v, default=0.0):
+        try:
+            return float(v)
+        except Exception:
+            return float(default)
+
+    def _head_masks_summary() -> str:
+        try:
+            masks = build_action_masks_by_head(env, len(model_units), log_fn=None, debug=False)
+            head_names = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
+            parts = []
+            for i, m in enumerate(masks[:6]):
+                m_np = m.detach().cpu().numpy() if hasattr(m, "detach") else m
+                total = int(len(m_np))
+                valid = int(sum(1 for x in m_np if bool(x)))
+                label = head_names[i] if i < len(head_names) else f"h{i}"
+                parts.append(f"{label}:{valid}/{total}")
+            return ", ".join(parts)
+        except Exception:
+            return "masks=unavailable"
+
+    def _head_masks_counts() -> dict[str, tuple[int, int]]:
+        out = {
+            "move": (0, 0),
+            "attack": (0, 0),
+            "shoot": (0, 0),
+            "charge": (0, 0),
+            "use_cp": (0, 0),
+            "cp_on": (0, 0),
+        }
+        try:
+            masks = build_action_masks_by_head(env, len(model_units), log_fn=None, debug=False)
+            for idx, key in enumerate(("move", "attack", "shoot", "charge", "use_cp", "cp_on")):
+                if idx >= len(masks):
+                    continue
+                m = masks[idx]
+                m_np = m.detach().cpu().numpy() if hasattr(m, "detach") else m
+                total = int(len(m_np))
+                valid = int(sum(1 for x in m_np if bool(x)))
+                out[key] = (valid, total)
+        except Exception:
+            pass
+        return out
+
+    def _human_action(action_dict: dict) -> str:
+        move_val = _safe_int(action_dict.get("move", 4), 4)
+        attack_val = _safe_int(action_dict.get("attack", 0), 0)
+        shoot_val = _safe_int(action_dict.get("shoot", -1), -1)
+        charge_val = _safe_int(action_dict.get("charge", 0), 0)
+        use_cp_val = _safe_int(action_dict.get("use_cp", 0), 0)
+        cp_on_val = _safe_int(action_dict.get("cp_on", 0), 0)
+        move_units = []
+        for i_u in range(int(len(model_units))):
+            k = f"move_num_{i_u}"
+            if k in action_dict:
+                move_units.append(str(_safe_int(action_dict.get(k, 0), 0)))
+        move_units_text = ",".join(move_units) if move_units else "-"
+        return (
+            f"move={move_val}({move_dir_labels.get(move_val, 'unk')}) "
+            f"attack={attack_val} shoot={shoot_val} charge={charge_val} "
+            f"use_cp={use_cp_val} cp_on={cp_on_val} move_num=[{move_units_text}]"
+        )
+
+    def _human_action_with_units(action_dict: dict) -> str:
+        chunks = [_human_action(action_dict)]
+        unit_parts = []
+        for i_u in range(int(len(model_units))):
+            key = f"move_num_{i_u}"
+            if key not in action_dict:
+                continue
+            unit_name = f"unit{i_u}"
+            try:
+                ud = model_units[i_u].showUnitData() if i_u < len(model_units) else {}
+                candidate = str((ud or {}).get("Name", "")).strip()
+                if candidate:
+                    unit_name = candidate
+            except Exception:
+                pass
+            unit_parts.append(f"{unit_name}:{_safe_int(action_dict.get(key, 0), 0)}")
+        if unit_parts:
+            chunks.append(f"units=[{' | '.join(unit_parts)}]")
+        return " ; ".join(chunks)
+
+    def _step_verdict(action_dict: dict, masks_counts: dict[str, tuple[int, int]], shoot_targets: int) -> str:
+        verdicts: list[str] = []
+        attack_v, _attack_t = masks_counts.get("attack", (0, 0))
+        charge_v, _charge_t = masks_counts.get("charge", (0, 0))
+        shoot_v, _shoot_t = masks_counts.get("shoot", (0, 0))
+        move_v, _move_t = masks_counts.get("move", (0, 0))
+
+        move = _safe_int(action_dict.get("move", 4), 4)
+        attack = _safe_int(action_dict.get("attack", 0), 0)
+        shoot = _safe_int(action_dict.get("shoot", -1), -1)
+        charge = _safe_int(action_dict.get("charge", 0), 0)
+        use_cp = _safe_int(action_dict.get("use_cp", 0), 0)
+
+        if shoot_targets <= 0 and shoot >= 0:
+            verdicts.append("shoot_without_targets")
+        if attack_v > 1 and attack == 0:
+            verdicts.append("skip_attack_while_options_exist")
+        if charge_v > 1 and charge == 0:
+            verdicts.append("skip_charge_while_options_exist")
+        if shoot_v > 1 and shoot == 0:
+            verdicts.append("default_shoot_choice_with_options")
+        if move_v > 1 and move == 4:
+            verdicts.append("stay_while_move_options_exist")
+        if use_cp == 0:
+            verdicts.append("cp_not_used")
+
+        if not verdicts:
+            return "ok"
+        return ",".join(verdicts)
+
+    def _step_verdict_ru(verdict_raw: str) -> str:
+        if verdict_raw == "ok":
+            return "OK: выбор действий выглядит корректно."
+        mapping = {
+            "shoot_without_targets": "Выбран shoot без доступных целей.",
+            "skip_attack_while_options_exist": "Пропущена атака при доступных вариантах.",
+            "skip_charge_while_options_exist": "Пропущен charge при доступных вариантах.",
+            "default_shoot_choice_with_options": "Выбран дефолтный shoot при наличии альтернатив.",
+            "stay_while_move_options_exist": "Выбран stay при доступных вариантах движения.",
+            "cp_not_used": "CP не использован в этот шаг.",
+        }
+        parts = []
+        for token in str(verdict_raw).split(","):
+            token = token.strip()
+            if not token:
+                continue
+            parts.append(mapping.get(token, token))
+        return " | ".join(parts) if parts else str(verdict_raw)
+
+    def _mask_tuple(masks_counts: dict[str, tuple[int, int]] | None, key: str) -> tuple[int, int]:
+        if not isinstance(masks_counts, dict):
+            return (0, 0)
+        return masks_counts.get(key, (0, 0))
+
+    def _emit_wh40k_phase_report(
+        *,
+        side_label: str,
+        step_no: int,
+        action_dict: dict,
+        masks_counts: dict[str, tuple[int, int]] | None = None,
+        shoot_targets: int | None = None,
+    ) -> None:
+        move = _safe_int(action_dict.get("move", 4), 4)
+        attack = _safe_int(action_dict.get("attack", 0), 0)
+        shoot = _safe_int(action_dict.get("shoot", -1), -1)
+        charge = _safe_int(action_dict.get("charge", 0), 0)
+        use_cp = _safe_int(action_dict.get("use_cp", 0), 0)
+        cp_on = _safe_int(action_dict.get("cp_on", 0), 0)
+
+        mv_valid, mv_total = _mask_tuple(masks_counts, "move")
+        at_valid, at_total = _mask_tuple(masks_counts, "attack")
+        sh_valid, sh_total = _mask_tuple(masks_counts, "shoot")
+        ch_valid, ch_total = _mask_tuple(masks_counts, "charge")
+
+        _trace(
+            "[WH40K][PHASE][COMMAND] "
+            f"step={step_no} side={side_label} use_cp={use_cp} cp_on={cp_on} "
+            f"attack_options={at_valid}/{at_total} shoot_options={sh_valid}/{sh_total} charge_options={ch_valid}/{ch_total}"
+        )
+        _trace(
+            "[WH40K][PHASE][MOVE] "
+            f"step={step_no} side={side_label} move={move}({move_dir_labels.get(move, 'unk')}) "
+            f"move_options={mv_valid}/{mv_total}"
+        )
+        if shoot_targets is not None:
+            _trace(
+                "[WH40K][PHASE][SHOOT] "
+                f"step={step_no} side={side_label} shoot_target={shoot} targets_available={int(shoot_targets)}"
+            )
+        else:
+            _trace(
+                "[WH40K][PHASE][SHOOT] "
+                f"step={step_no} side={side_label} shoot_target={shoot} targets_available=unknown"
+            )
+        _trace(
+            "[WH40K][PHASE][CHARGE] "
+            f"step={step_no} side={side_label} charge_target={charge} charge_options={ch_valid}/{ch_total}"
+        )
+        _trace(
+            "[WH40K][PHASE][FIGHT] "
+            f"step={step_no} side={side_label} attack_flag={attack}"
+        )
+
+    def _trace(line: str) -> None:
+        if not trace_enabled:
+            return
+        if len(trace_lines) < trace_max_lines:
+            trace_lines.append(line)
+
+    _trace(
+        "[TRACE][EP_START] "
+        f"mission={mission_name} attacker={attacker_side} defender={defender_side} "
+        f"algo={algo} epsilon={float(epsilon):.3f} learner_side={learner_side} opponent_side={opponent_side}"
+    )
     while not done:
+        step_no = int(episode_len) + 1
+        enemy_mode = "policy_fn" if opponent_policy_fn is not None else "heuristic_auto"
+        _trace(
+            f"[TRACE][STEP] idx={step_no} phase=enemy_turn mode={enemy_mode} "
+            f"game_over_before={int(bool(getattr(env_unwrapped, 'game_over', False)))}"
+        )
         if opponent_policy_fn is not None:
-            env_unwrapped.enemyTurn(trunc=True, policy_fn=opponent_policy_fn)
+            def _logged_opponent_policy(obs_any):
+                try:
+                    action = opponent_policy_fn(obs_any)
+                    _trace(f"[TRACE][ENEMY_ACTION] step={step_no} action={action}")
+                    if trace_style == "warhammer" and isinstance(action, dict):
+                        _emit_wh40k_phase_report(
+                            side_label=opponent_side,
+                            step_no=step_no,
+                            action_dict=action,
+                            masks_counts=None,
+                            shoot_targets=None,
+                        )
+                    return action
+                except Exception as exc:
+                    _trace(f"[TRACE][ENEMY_ACTION][WARN] step={step_no} exc={exc}")
+                    raise
+
+            env_unwrapped.enemyTurn(trunc=True, policy_fn=_logged_opponent_policy)
         else:
             env_unwrapped.enemyTurn(trunc=True)
         if env_unwrapped.game_over:
             info = env_unwrapped.get_info()
+            _trace(
+                f"[TRACE][STEP] idx={step_no} phase=enemy_turn_end game_over=1 "
+                f"winner={info.get('winner', None)} end_reason={info.get('end reason', '')}"
+            )
             break
 
         state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
@@ -317,7 +574,113 @@ def run_episode(env, model_units, enemy_units, policy_net, epsilon, device, algo
                 shoot_mask=shoot_mask,
             )
         action_dict = convertToDict(action)
+        masks_counts = _head_masks_counts()
+        shoot_targets = 0
+        try:
+            shoot_mask_for_log = build_shoot_action_mask(env)
+            if shoot_mask_for_log is not None:
+                shoot_targets = int(sum(1 for x in shoot_mask_for_log if bool(x)))
+        except Exception:
+            shoot_targets = 0
+        _trace(
+            f"[TRACE][MODEL_ACTION] step={step_no} action={action_dict} "
+            f"shoot_targets={shoot_targets}"
+        )
+        _trace(
+            f"[TRACE][MODEL_ACTION_HUMAN] step={step_no} {_human_action(action_dict)} "
+            f"masks=({_head_masks_summary()})"
+        )
+        if trace_style == "warhammer":
+            _trace(
+                f"[WH40K][ORDERS] step={step_no} side={learner_side} "
+                f"{_human_action_with_units(action_dict)}"
+            )
+            _emit_wh40k_phase_report(
+                side_label=learner_side,
+                step_no=step_no,
+                action_dict=action_dict,
+                masks_counts=masks_counts,
+                shoot_targets=int(shoot_targets),
+            )
+        verdict = _step_verdict(action_dict, masks_counts=masks_counts, shoot_targets=shoot_targets)
+        _trace(f"[TRACE][STEP_VERDICT] step={step_no} verdict={verdict}")
+        if trace_style == "warhammer":
+            _trace(f"[WH40K][TACTIC_VERDICT] step={step_no} { _step_verdict_ru(verdict) }")
         next_observation, reward, done, _, info = env.step(action_dict)
+        battle_round = _safe_int(info.get("battle round", 0), 0)
+        if battle_round > 0 and battle_round != current_round:
+            current_round = battle_round
+            _trace(f"[TRACE][ROUND] battle_round={current_round} turn={_safe_int(info.get('turn', 0), 0)}")
+            if trace_style == "warhammer":
+                _trace(
+                    "[WH40K][ROUND_START] "
+                    f"BR={current_round} TURN={_safe_int(info.get('turn', 0), 0)} "
+                    f"phase={str(info.get('phase', '') or '')} active_side={str(info.get('active side', '') or '')}"
+                )
+        if current_round > 0:
+            st = round_stats.setdefault(
+                int(current_round),
+                {
+                    "steps": 0,
+                    "reward_sum_x1000": 0,
+                    "attack_nonzero": 0,
+                    "shoot_nonzero": 0,
+                    "charge_nonzero": 0,
+                    "cp_used": 0,
+                },
+            )
+            st["steps"] += 1
+            st["reward_sum_x1000"] += int(round(float(reward) * 1000.0))
+            st["attack_nonzero"] += 1 if _safe_int(action_dict.get("attack", 0), 0) > 0 else 0
+            st["shoot_nonzero"] += 1 if _safe_int(action_dict.get("shoot", -1), -1) > 0 else 0
+            st["charge_nonzero"] += 1 if _safe_int(action_dict.get("charge", 0), 0) > 0 else 0
+            st["cp_used"] += 1 if _safe_int(action_dict.get("use_cp", 0), 0) > 0 else 0
+        model_ctrl = info.get("model controlled objectives", []) if isinstance(info, dict) else []
+        enemy_ctrl = info.get("player controlled objectives", []) if isinstance(info, dict) else []
+        model_health = info.get("model health", []) if isinstance(info, dict) else []
+        enemy_health = info.get("player health", []) if isinstance(info, dict) else []
+        model_hp_total = (
+            sum(_safe_float(x, 0.0) for x in model_health)
+            if isinstance(model_health, (list, tuple))
+            else _safe_float(model_health, 0.0)
+        )
+        enemy_hp_total = (
+            sum(_safe_float(x, 0.0) for x in enemy_health)
+            if isinstance(enemy_health, (list, tuple))
+            else _safe_float(enemy_health, 0.0)
+        )
+        _trace(
+            "[TRACE][STEP_RESULT] "
+            f"step={step_no} reward={float(reward):.4f} done={int(bool(done))} "
+            f"battle_round={_safe_int(info.get('battle round', 0), 0)} "
+            f"turn={int(info.get('turn', 0) or 0)} "
+            f"model_vp={int(info.get('model VP', 0) or 0)} "
+            f"enemy_vp={int(info.get('player VP', 0) or 0)} "
+            f"model_ctrl_n={len(model_ctrl) if isinstance(model_ctrl, (list, tuple)) else 0} "
+            f"enemy_ctrl_n={len(enemy_ctrl) if isinstance(enemy_ctrl, (list, tuple)) else 0} "
+            f"model_hp_total={model_hp_total:.2f} enemy_hp_total={enemy_hp_total:.2f} "
+            f"winner={info.get('winner', None)} "
+            f"end_reason={info.get('end reason', '')}"
+        )
+        if trace_style == "warhammer":
+            _trace(
+                "[WH40K][BATTLESTATE] "
+                f"BR={battle_round} TURN={_safe_int(info.get('turn', 0), 0)} "
+                f"{learner_side}_vp={_safe_int(info.get('model VP', 0), 0)} "
+                f"{opponent_side}_vp={_safe_int(info.get('player VP', 0), 0)} "
+                f"{learner_side}_hp={model_hp_total:.2f} {opponent_side}_hp={enemy_hp_total:.2f} "
+                f"{learner_side}_ctrl={len(model_ctrl) if isinstance(model_ctrl, (list, tuple)) else 0} "
+                f"{opponent_side}_ctrl={len(enemy_ctrl) if isinstance(enemy_ctrl, (list, tuple)) else 0} "
+                f"reward={_safe_float(reward, 0.0):.4f}"
+            )
+        if trace_everything:
+            try:
+                _trace(
+                    "[TRACE][STEP_INFO_JSON] "
+                    f"step={step_no} data={json.dumps(info, ensure_ascii=False, default=str, sort_keys=True)}"
+                )
+            except Exception:
+                _trace(f"[TRACE][STEP_INFO_JSON][WARN] step={step_no} json_dump_failed")
         try:
             total_reward += float(reward)
         except (TypeError, ValueError):
@@ -336,6 +699,50 @@ def run_episode(env, model_units, enemy_units, policy_net, epsilon, device, algo
     model_vp = info.get("model VP", 0)
     enemy_vp = info.get("player VP", 0)
     vp_diff = model_vp - enemy_vp
+    _trace(
+        "[TRACE][EP_END] "
+        f"winner={winner} end_reason={end_reason} "
+        f"model_vp={model_vp} enemy_vp={enemy_vp} vp_diff={vp_diff} "
+        f"episode_len={episode_len} reward_total={float(total_reward):.4f}"
+    )
+    if trace_style == "warhammer":
+        winner_side = "draw"
+        if winner == "model":
+            winner_side = str(learner_side)
+        elif winner == "enemy":
+            winner_side = str(opponent_side)
+        _trace(
+            "[WH40K][AFTER_ACTION_REPORT] "
+            f"winner={winner_side} end_reason={end_reason} "
+            f"{learner_side}_vp={_safe_int(model_vp, 0)} {opponent_side}_vp={_safe_int(enemy_vp, 0)} "
+            f"len={episode_len} reward_total={float(total_reward):.4f}"
+        )
+    for r_idx in sorted(round_stats.keys()):
+        rs = round_stats.get(r_idx, {})
+        steps_r = int(rs.get("steps", 0) or 0)
+        reward_r = float(int(rs.get("reward_sum_x1000", 0) or 0)) / 1000.0
+        _trace(
+            "[TRACE][ROUND_SUMMARY] "
+            f"battle_round={r_idx} steps={steps_r} reward_sum={reward_r:.4f} "
+            f"attack_nonzero={int(rs.get('attack_nonzero', 0) or 0)} "
+            f"shoot_nonzero={int(rs.get('shoot_nonzero', 0) or 0)} "
+            f"charge_nonzero={int(rs.get('charge_nonzero', 0) or 0)} "
+            f"cp_used={int(rs.get('cp_used', 0) or 0)}"
+        )
+        if trace_style == "warhammer":
+            _trace(
+                "[WH40K][ROUND_SUMMARY] "
+                f"BR={r_idx} steps={steps_r} reward_sum={reward_r:.4f} "
+                f"attack={int(rs.get('attack_nonzero', 0) or 0)} "
+                f"shoot={int(rs.get('shoot_nonzero', 0) or 0)} "
+                f"charge={int(rs.get('charge_nonzero', 0) or 0)} "
+                f"cp_used={int(rs.get('cp_used', 0) or 0)}"
+            )
+    if trace_enabled and len(trace_lines) >= trace_max_lines:
+        trace_lines.append(
+            f"[TRACE][EP_TRUNCATED] Достигнут лимит строк trace: {trace_max_lines}. "
+            "Увеличьте EVAL_TRACE_MAX_LINES_PER_GAME при необходимости."
+        )
 
     model_health = info.get("model health", []) if isinstance(info, dict) else []
     enemy_health = info.get("player health", []) if isinstance(info, dict) else []
@@ -368,6 +775,7 @@ def run_episode(env, model_units, enemy_units, policy_net, epsilon, device, algo
         total_reward,
         hp_diff_model_minus_enemy,
         kill_diff_model_minus_enemy,
+        trace_lines,
     )
 
 
@@ -591,9 +999,20 @@ def main():
             total_reward,
             hp_diff_model_minus_enemy,
             kill_diff_model_minus_enemy,
+            trace_lines,
         ) = run_episode(
-            env, model_units, enemy_units, policy_net, epsilon, device, algo, opponent_policy_fn=opponent_policy_fn
+            env,
+            model_units,
+            enemy_units,
+            policy_net,
+            epsilon,
+            device,
+            algo,
+            opponent_policy_fn=opponent_policy_fn,
+            learner_side=learner_side,
         )
+        for line in trace_lines:
+            _append_eval_log(f"[TRACE][GAME {idx}] {line}")
         if learner_side == "P1":
             p1_vp = model_vp
             p2_vp = enemy_vp

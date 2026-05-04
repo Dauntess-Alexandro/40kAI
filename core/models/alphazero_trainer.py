@@ -14,12 +14,31 @@ class AlphaZeroTrainConfig:
     batch_size: int = 128
     value_loss_weight: float = 1.0
     l2_weight: float = 1e-6
+    balanced_outcome_sampling: bool = False
+    max_policy_staleness_updates: int = -1
 
 
-def train_alphazero_step(*, net, optimizer, replay: AlphaZeroReplayBuffer, config: AlphaZeroTrainConfig, device: torch.device):
-    batch = replay.sample(int(config.batch_size))
+def train_alphazero_step(
+    *,
+    net,
+    optimizer,
+    replay: AlphaZeroReplayBuffer,
+    config: AlphaZeroTrainConfig,
+    device: torch.device,
+    current_policy_version: int = 0,
+):
+    if bool(getattr(config, "balanced_outcome_sampling", False)):
+        batch = replay.sample_balanced_outcome(int(config.batch_size))
+    else:
+        batch = replay.sample(int(config.batch_size))
     if not batch:
         return None
+    max_staleness = int(getattr(config, "max_policy_staleness_updates", -1))
+    if max_staleness >= 0:
+        min_ver = int(current_policy_version) - max_staleness
+        batch = [b for b in batch if int(getattr(b, "policy_version", 0)) >= min_ver]
+        if not batch:
+            return None
     obs = torch.tensor([b.state for b in batch], dtype=torch.float32, device=device)
     target_value = torch.tensor([b.value_target for b in batch], dtype=torch.float32, device=device)
     logits_by_head, value = net(obs)

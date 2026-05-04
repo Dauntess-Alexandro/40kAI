@@ -59,7 +59,7 @@ from core.models.ppo_buffer import PPORolloutBuffer
 from core.models.opponent_adapter import OpponentSpec, build_policy_fn, load_agent_opponent
 from core.models.alphazero_model import AlphaZeroPolicyValueNet
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
-from core.models.alphazero_replay import AlphaZeroReplayBuffer
+from core.models.alphazero_replay import AlphaZeroReplayBuffer, AZTransition
 from core.models.alphazero_selfplay import play_episode_with_mcts, SelfPlayConfig
 from core.models.alphazero_trainer import AlphaZeroTrainConfig, train_alphazero_step
 from core.models.action_contract import ordered_action_keys, action_sizes_from_env
@@ -2272,6 +2272,22 @@ AZ_OUTCOME_VALUE_DRAW = float(os.getenv("AZ_OUTCOME_VALUE_DRAW", str(AZ_CFG.get(
 AZ_OUTCOME_VALUE_WIN = max(-1.0, min(1.0, AZ_OUTCOME_VALUE_WIN))
 AZ_OUTCOME_VALUE_LOSS = max(-1.0, min(1.0, AZ_OUTCOME_VALUE_LOSS))
 AZ_OUTCOME_VALUE_DRAW = max(-1.0, min(1.0, AZ_OUTCOME_VALUE_DRAW))
+AZ_NUM_ACTORS = max(1, int(os.getenv("AZ_NUM_ACTORS", str(AZ_CFG.get("num_actors", 2)))))
+AZ_ACTOR_BATCH_SEND = max(8, int(os.getenv("AZ_ACTOR_BATCH_SEND", str(AZ_CFG.get("actor_batch_send", 64)))))
+AZ_ACTOR_QUEUE_MAX = max(64, int(os.getenv("AZ_ACTOR_QUEUE_MAX", str(AZ_CFG.get("actor_queue_max", 256)))))
+AZ_SYNC_EVERY_UPDATES = max(1, int(os.getenv("AZ_SYNC_EVERY_UPDATES", str(AZ_CFG.get("sync_every_updates", 2)))))
+AZ_UPDATES_PER_ROLLOUT = max(1, int(os.getenv("AZ_UPDATES_PER_ROLLOUT", str(AZ_CFG.get("updates_per_rollout", 2)))))
+AZ_REPLAY_MIN_SIZE = max(1, int(os.getenv("AZ_REPLAY_MIN_SIZE", str(AZ_CFG.get("replay_min_size", 512)))))
+AZ_MAX_POLICY_STALENESS_UPDATES = int(
+    os.getenv("AZ_MAX_POLICY_STALENESS_UPDATES", str(AZ_CFG.get("max_policy_staleness_updates", 600)))
+)
+AZ_BALANCED_OUTCOME_SAMPLING = str(
+    os.getenv("AZ_BALANCED_OUTCOME_SAMPLING", str(AZ_CFG.get("balanced_outcome_sampling", 1)))
+).strip() == "1"
+AZ_DET_EVAL_GATE_WIN_MIN = float(os.getenv("AZ_DET_EVAL_GATE_WIN_MIN", str(AZ_CFG.get("det_eval_gate_win_min", 0.45))))
+AZ_DET_EVAL_GATE_TURN_LIMIT_MAX = float(
+    os.getenv("AZ_DET_EVAL_GATE_TURN_LIMIT_MAX", str(AZ_CFG.get("det_eval_gate_turn_limit_max", 0.65)))
+)
 
 # ============================================================
 # (C) Несколько обучающих апдейтов на один шаг среды
@@ -7045,17 +7061,210 @@ def _actor_learner_actor_entry_ppo(
             pass
 
 
+def _actor_learner_actor_entry_alphazero(
+    actor_idx: int,
+    episodes: int,
+    roster_config: dict,
+    b_len: int,
+    b_hei: int,
+    n_observations: int,
+    n_actions: list,
+    init_weights: dict,
+    batch_send: int,
+    data_q,
+    self_play_enabled: int,
+    opponent_spec,
+    sp_cfg_payload: dict,
+    mcts_cfg_payload: dict,
+    outcome_payload: dict,
+):
+    """Top-level entrypoint for Windows spawn pickling (AlphaZero actor)."""
+    try:
+        cpu_device = torch.device("cpu")
+        az_net = AlphaZeroPolicyValueNet(n_observations=n_observations, n_actions=n_actions).to(cpu_device)
+        az_net.load_state_dict(normalize_state_dict(init_weights))
+        az_net.eval()
+        mcts = AlphaZeroFactorizedMCTS(
+            az_net,
+            config=MCTSConfig(
+                simulations=int(mcts_cfg_payload.get("simulations", AZ_MCTS_SIMS)),
+                c_puct=float(mcts_cfg_payload.get("c_puct", AZ_C_PUCT)),
+                dirichlet_alpha=float(mcts_cfg_payload.get("dirichlet_alpha", AZ_DIR_ALPHA)),
+                dirichlet_eps=float(mcts_cfg_payload.get("dirichlet_eps", AZ_DIR_EPS)),
+                top_k_per_head=int(mcts_cfg_payload.get("top_k_per_head", AZ_MCTS_TOP_K_PER_HEAD)),
+                max_depth=int(mcts_cfg_payload.get("max_depth", AZ_MCTS_MAX_DEPTH)),
+                mode=str(mcts_cfg_payload.get("mode", AZ_MCTS_MODE)),
+                root_dirichlet_only=bool(mcts_cfg_payload.get("root_dirichlet_only", AZ_MCTS_ROOT_DIRICHLET_ONLY)),
+            ),
+            device=cpu_device,
+        )
+        sp_cfg = SelfPlayConfig(
+            temperature_opening_moves=int(sp_cfg_payload.get("temperature_opening_moves", AZ_TEMP_OPENING_MOVES)),
+            temperature_opening_value=float(sp_cfg_payload.get("temperature_opening_value", AZ_TEMP_OPENING)),
+            temperature_late_value=float(sp_cfg_payload.get("temperature_late_value", AZ_TEMP_LATE)),
+        )
+
+        enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+        mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+        env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
+        len_model = int(len(model))
+
+        sync_enabled = os.getenv("ACTOR_SYNC_ENABLED", "1") == "1"
+        sync_path = os.path.join(MODELS_DIR, "actor_sync", "latest_az_policy.pth")
+        sync_check_every_ep = max(1, int(os.getenv("ACTOR_SYNC_CHECK_EVERY_EP", "5")))
+        last_sync_mtime = -1.0
+        current_policy_version = int(outcome_payload.get("policy_version", 0) or 0)
+
+        opponent_policy_fn = None
+        if int(self_play_enabled) == 1 and opponent_spec is not None:
+            try:
+                opponent_policy_fn = build_policy_fn(
+                    env=env,
+                    len_model=len_model,
+                    opponent=opponent_spec,
+                    deterministic=bool(AZ_SNAPSHOT_OPP_DETERMINISTIC),
+                )
+            except Exception:
+                opponent_policy_fn = None
+
+        rollout_batch: list[dict] = []
+        for _ep in range(int(episodes)):
+            ep_idx_1based = int(_ep) + 1
+            if sync_enabled and (_ep % sync_check_every_ep == 0):
+                try:
+                    if os.path.isfile(sync_path):
+                        mtime = os.path.getmtime(sync_path)
+                        if mtime > last_sync_mtime:
+                            payload = torch.load(sync_path, map_location="cpu", weights_only=False)
+                            sd = payload.get("state_dict") if isinstance(payload, dict) else None
+                            if isinstance(sd, dict):
+                                az_net.load_state_dict(normalize_state_dict(sd))
+                                az_net.eval()
+                                mcts.net = az_net
+                                last_sync_mtime = float(mtime)
+                                current_policy_version = int(payload.get("policy_version", current_policy_version) or current_policy_version)
+                except Exception:
+                    pass
+
+            attacker_side, defender_side = roll_off_attacker_defender(
+                manual_roll_allowed=False,
+                log_fn=None,
+            )
+            deploy_for_mission(
+                mission_name,
+                model_units=model,
+                enemy_units=enemy,
+                b_len=b_len,
+                b_hei=b_hei,
+                attacker_side=attacker_side,
+                log_fn=None,
+            )
+            post_deploy_setup(log_fn=None)
+            env.attacker_side = attacker_side
+            env.defender_side = defender_side
+
+            transitions, info = play_episode_with_mcts(
+                env=env,
+                mcts=mcts,
+                len_model=len_model,
+                config=sp_cfg,
+                enemy_policy_fn=opponent_policy_fn,
+                outcome_only=bool(outcome_payload.get("outcome_only", AZ_OUTCOME_ONLY)),
+                outcome_value_win=float(outcome_payload.get("outcome_value_win", AZ_OUTCOME_VALUE_WIN)),
+                outcome_value_loss=float(outcome_payload.get("outcome_value_loss", AZ_OUTCOME_VALUE_LOSS)),
+                outcome_value_draw=float(outcome_payload.get("outcome_value_draw", AZ_OUTCOME_VALUE_DRAW)),
+                policy_version=int(current_policy_version),
+            )
+            for t in transitions:
+                rollout_batch.append(
+                    {
+                        "state": np.asarray(t.state, dtype=np.float32),
+                        "policy_targets": [np.asarray(p, dtype=np.float32) for p in t.policy_targets],
+                        "value_target": float(t.value_target),
+                        "policy_version": int(getattr(t, "policy_version", current_policy_version)),
+                    }
+                )
+            if len(rollout_batch) >= int(batch_send):
+                data_q.put(
+                    (
+                        "rollout",
+                        {
+                            "actor_idx": int(actor_idx),
+                            "policy_version": int(current_policy_version),
+                            "transitions": list(rollout_batch),
+                        },
+                    )
+                )
+                rollout_batch = []
+
+            info = dict(info or {})
+            end_reason = str(info.get("end reason", "") or "")
+            model_vp = int(info.get("model VP", 0) or 0)
+            player_vp = int(info.get("player VP", 0) or 0)
+            vp_diff = int(model_vp) - int(player_vp)
+            result = "loss"
+            if end_reason == "wipeout_enemy":
+                result = "win"
+            elif end_reason == "wipeout_model":
+                result = "loss"
+            elif str(end_reason).startswith("turn_limit"):
+                if vp_diff > 0:
+                    result = "win"
+                elif vp_diff == 0:
+                    result = "draw"
+            elif vp_diff > 0:
+                result = "win"
+            elif vp_diff == 0:
+                result = "draw"
+            data_q.put(
+                (
+                    "ep",
+                    {
+                        "episode": None,
+                        "actor_idx": int(actor_idx),
+                        "actor_ep": int(ep_idx_1based),
+                        "ep_reward": float(info.get("reward", 0.0) or 0.0),
+                        "ep_len": int(info.get("turn", 0) or 0),
+                        "turn": int(info.get("turn", 0) or 0),
+                        "model_vp": int(model_vp),
+                        "player_vp": int(player_vp),
+                        "vp_diff": int(vp_diff),
+                        "result": str(result),
+                        "end_reason": str(end_reason),
+                        "end_code": int(info.get("res", 0) or 0),
+                        "policy_version": int(current_policy_version),
+                    },
+                )
+            )
+
+        if rollout_batch:
+            data_q.put(
+                (
+                    "rollout",
+                    {
+                        "actor_idx": int(actor_idx),
+                        "policy_version": int(current_policy_version),
+                        "transitions": list(rollout_batch),
+                    },
+                )
+            )
+        data_q.put(("done", int(actor_idx)))
+    except Exception as exc:
+        try:
+            data_q.put(("error", f"az_actor[{actor_idx}] {exc}"))
+        except Exception:
+            pass
+
+
 def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enabled, clip_reward_min, clip_reward_max) -> None:
     """
-    AlphaZero actor-learner (v1):
-    - factorized MCTS self-play (single process learner-centric loop),
-    - replay-based updates policy/value сети,
-    - совместимые артефакты checkpoint + agent snapshot + базовые metrics.
+    AlphaZero actor-learner (quality-first):
+    - actors (CPU) генерируют self-play эпизоды через MCTS,
+    - learner (GPU/CPU) читает rollout-и, обновляет net и sync-ит веса акторам.
     """
     b_len = int(roster_config["b_len"])
     b_hei = int(roster_config["b_hei"])
-    rand_num = random.randint(1000000, 9999999)
-    run_id = str(rand_num)
+    run_id = str(random.randint(1000000, 9999999))
     model_name = datetime.datetime.now().strftime("%d-%H%M%S")
     metrics_obj = metrics(MODELS_DIR, run_id, model_name)
 
@@ -7073,16 +7282,20 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         log_fn=None,
     )
     post_deploy_setup(log_fn=None)
-    env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
-    env.attacker_side = attacker_side
-    env.defender_side = defender_side
-    state0, _ = env.reset(options={"m": model, "e": enemy, "trunc": True})
+    env0 = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
+    env0.attacker_side = attacker_side
+    env0.defender_side = defender_side
+    state0, _ = env0.reset(options={"m": model, "e": enemy, "trunc": True})
     if isinstance(state0, (dict, collections.OrderedDict)):
         n_observations = len(list(state0.values()))
     else:
         n_observations = int(np.array(state0).shape[0])
     len_model = int(len(model))
-    n_actions = action_sizes_from_env(env, len_model)
+    n_actions = action_sizes_from_env(env0, len_model)
+    try:
+        env0.close()
+    except Exception:
+        pass
 
     learner_side_cfg = LEARNER_SIDE if LEARNER_SIDE in {"P1", "P2"} else "P1"
     learner_identity = AgentIdentity(
@@ -7095,7 +7308,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         n_actions=n_actions,
         mission_name=mission_name,
         ruleset_version=learner_identity.ruleset_version,
-        extras={"actor_learner": 1, "train_algo": "alphazero", "num_actors": 1},
+        extras={"actor_learner": 1, "train_algo": "alphazero", "num_actors": int(AZ_NUM_ACTORS)},
     )
 
     az_net = AlphaZeroPolicyValueNet(n_observations=n_observations, n_actions=n_actions).to(device)
@@ -7107,49 +7320,54 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         batch_size=AZ_BATCH_SIZE,
         value_loss_weight=AZ_VALUE_LOSS_WEIGHT,
         l2_weight=AZ_L2_WEIGHT,
+        balanced_outcome_sampling=bool(AZ_BALANCED_OUTCOME_SAMPLING),
+        max_policy_staleness_updates=int(AZ_MAX_POLICY_STALENESS_UPDATES),
     )
-    mcts = AlphaZeroFactorizedMCTS(
-        az_net,
-        config=MCTSConfig(
-            simulations=AZ_MCTS_SIMS,
-            c_puct=AZ_C_PUCT,
-            dirichlet_alpha=AZ_DIR_ALPHA,
-            dirichlet_eps=AZ_DIR_EPS,
-            top_k_per_head=AZ_MCTS_TOP_K_PER_HEAD,
-            max_depth=AZ_MCTS_MAX_DEPTH,
-            mode=AZ_MCTS_MODE,
-            root_dirichlet_only=bool(AZ_MCTS_ROOT_DIRICHLET_ONLY),
-        ),
-        device=device,
-    )
-    sp_cfg = SelfPlayConfig(
-        temperature_opening_moves=AZ_TEMP_OPENING_MOVES,
-        temperature_opening_value=AZ_TEMP_OPENING,
-        temperature_late_value=AZ_TEMP_LATE,
-    )
-    opponent_policy_fn = None
+
+    policy_version = 0
+    optimize_steps = 0
+    global_step = 0
+    episodes_finished = 0
+    resume_episode_base = 0
+    if RESUME_CHECKPOINT:
+        try:
+            checkpoint = _load_checkpoint_payload(RESUME_CHECKPOINT)
+            if isinstance(checkpoint, dict):
+                policy_state = checkpoint.get("policy_value_net")
+                if not isinstance(policy_state, dict):
+                    policy_state = _extract_policy_state_dict(checkpoint)
+                if isinstance(policy_state, dict):
+                    az_net.load_state_dict(normalize_state_dict(policy_state))
+                opt_state = checkpoint.get("optimizer")
+                if isinstance(opt_state, dict):
+                    optimizer.load_state_dict(opt_state)
+                replay_state = checkpoint.get("replay_memory")
+                if replay_state is not None:
+                    replay.load_state_dict(replay_state)
+                resume_episode_base = int(checkpoint.get("episode", 0) or 0)
+                episodes_finished = int(checkpoint.get("episodes_finished", resume_episode_base) or resume_episode_base)
+                global_step = int(checkpoint.get("global_step", 0) or 0)
+                optimize_steps = int(checkpoint.get("optimize_steps", 0) or 0)
+                policy_version = int(checkpoint.get("policy_version", optimize_steps) or optimize_steps)
+                append_agent_log(
+                    "[AZ][RESUME] "
+                    f"path={RESUME_CHECKPOINT} episode={episodes_finished} replay={len(replay)} "
+                    f"global_step={global_step} optimize_steps={optimize_steps} policy_version={policy_version}"
+                )
+        except Exception as exc:
+            append_agent_log(f"[AZ][RESUME][WARN] Не удалось загрузить checkpoint, старт с нуля. exc={exc}")
+
+    opponent_spec = None
     opponent_algo_label = "heuristic"
     opponent_source_label = "heuristic_auto"
     opponent_agent_id = ""
     if int(SELF_PLAY_ENABLED) == 1:
         if OPPONENT_AGENT_ID:
             try:
-                opp_spec = load_agent_opponent(agent_id=OPPONENT_AGENT_ID, expected_contract=env_contract)
-                opponent_policy_fn = build_policy_fn(
-                    env=env,
-                    len_model=len_model,
-                    opponent=opp_spec,
-                    deterministic=bool(AZ_SNAPSHOT_OPP_DETERMINISTIC),
-                )
-                opponent_algo_label = str(opp_spec.algo or "unknown")
+                opponent_spec = load_agent_opponent(agent_id=OPPONENT_AGENT_ID, expected_contract=env_contract)
+                opponent_algo_label = str(opponent_spec.algo or "unknown")
                 opponent_source_label = "snapshot_policy_fn"
-                opponent_agent_id = str(opp_spec.agent_id or OPPONENT_AGENT_ID)
-                append_agent_log(
-                    "[AZ][SELFPLAY] "
-                    f"enabled=1 mode={SELF_PLAY_OPPONENT_MODE} opponent_algo={opponent_algo_label} "
-                    f"opponent_agent_id={opponent_agent_id} "
-                    f"opp_deterministic={int(AZ_SNAPSHOT_OPP_DETERMINISTIC)} opp_eps={AZ_OPPONENT_STOCHASTIC_EPS:.2f}"
-                )
+                opponent_agent_id = str(opponent_spec.agent_id or OPPONENT_AGENT_ID)
             except Exception as exc:
                 append_agent_log(
                     "[AZ][SELFPLAY][WARN] "
@@ -7160,21 +7378,58 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
 
     append_agent_log(
         "[AZ][CONFIG] "
-        f"outcome_only={int(AZ_OUTCOME_ONLY)} "
-        f"outcome_targets=({AZ_OUTCOME_VALUE_WIN:.2f},{AZ_OUTCOME_VALUE_LOSS:.2f},{AZ_OUTCOME_VALUE_DRAW:.2f}) "
-        f"mcts_mode={AZ_MCTS_MODE} mcts={AZ_MCTS_SIMS} c_puct={AZ_C_PUCT} "
+        f"num_actors={AZ_NUM_ACTORS} actor_batch_send={AZ_ACTOR_BATCH_SEND} queue_max={AZ_ACTOR_QUEUE_MAX} "
+        f"sync_every_updates={AZ_SYNC_EVERY_UPDATES} updates_per_rollout={AZ_UPDATES_PER_ROLLOUT} "
+        f"balanced_sampling={int(AZ_BALANCED_OUTCOME_SAMPLING)} "
+        f"max_staleness={AZ_MAX_POLICY_STALENESS_UPDATES} replay_min={AZ_REPLAY_MIN_SIZE} "
+        f"outcome_only={int(AZ_OUTCOME_ONLY)} mcts_mode={AZ_MCTS_MODE} mcts={AZ_MCTS_SIMS} "
         f"top_k={AZ_MCTS_TOP_K_PER_HEAD} depth={AZ_MCTS_MAX_DEPTH} "
-        f"opp_det={int(AZ_SNAPSHOT_OPP_DETERMINISTIC)} opp_eps={AZ_OPPONENT_STOCHASTIC_EPS:.2f} "
-        f"temp_open={AZ_TEMP_OPENING} temp_late={AZ_TEMP_LATE} "
         f"opponent_mode={opponent_source_label} opponent_algo={opponent_algo_label}"
     )
 
-    ep_rows = []
+    ep_rows: list[dict] = []
     loss_trace: list[float] = []
-    checkpoint_dir = os.path.join(MODELS_DIR, "alphazero")
-    os.makedirs(checkpoint_dir, exist_ok=True)
     last_checkpoint = ""
     last_actor_det_eval_ep = 0
+    last_guard_turn_limit_rate = 0.0
+
+    checkpoint_dir = os.path.join(MODELS_DIR, "alphazero")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    sync_dir = os.path.join(MODELS_DIR, "actor_sync")
+    os.makedirs(sync_dir, exist_ok=True)
+    sync_path = os.path.join(sync_dir, "latest_az_policy.pth")
+    opp_sync_path = os.path.join(sync_dir, "latest_az_opponent.pth")
+
+    def _save_az_sync() -> None:
+        cpu_sd = {k: v.detach().cpu() for k, v in normalize_state_dict(az_net.state_dict()).items()}
+        torch.save(
+            {
+                "policy_version": int(policy_version),
+                "optimize_steps": int(optimize_steps),
+                "state_dict": cpu_sd,
+            },
+            sync_path,
+        )
+
+    def _save_checkpoint(episode_idx: int) -> str:
+        ckpt_path = os.path.join(checkpoint_dir, f"checkpoint_ep{int(episode_idx)}.pth")
+        torch.save(
+            {
+                "algo": "alphazero",
+                "policy_value_net": az_net.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "episode": int(episode_idx),
+                "episodes_finished": int(episodes_finished),
+                "global_step": int(global_step),
+                "optimize_steps": int(optimize_steps),
+                "policy_version": int(policy_version),
+                "replay_memory": replay.state_dict(),
+                "env_contract": env_contract,
+                "num_actors": int(AZ_NUM_ACTORS),
+            },
+            ckpt_path,
+        )
+        return ckpt_path
 
     def _az_det_payload_from_rows(rows_slice: list[dict], episode_idx: int, train_loss: float) -> dict:
         n_eval = max(1, len(rows_slice))
@@ -7205,147 +7460,265 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             "opponent_epsilon": 0.0,
             "episode": int(episode_idx),
             "algo": "alphazero",
-            "eval_tag": "actor_learner_selfplay_proxy",
+            "eval_tag": "actor_learner_policy_fn" if opponent_spec is not None else "actor_learner_heuristic",
             "training_loss": float(train_loss),
         }
 
-    for episode in range(1, int(totLifeT) + 1):
-        episode_transitions, az_info = play_episode_with_mcts(
-            env=env,
-            mcts=mcts,
-            len_model=len_model,
-            config=sp_cfg,
-            enemy_policy_fn=opponent_policy_fn,
-            outcome_only=AZ_OUTCOME_ONLY,
-            outcome_value_win=AZ_OUTCOME_VALUE_WIN,
-            outcome_value_loss=AZ_OUTCOME_VALUE_LOSS,
-            outcome_value_draw=AZ_OUTCOME_VALUE_DRAW,
-        )
-        replay.push_many(episode_transitions)
-        update_info = train_alphazero_step(
-            net=az_net,
-            optimizer=optimizer,
-            replay=replay,
-            config=trainer_cfg,
-            device=device,
-        )
-        if update_info is not None:
-            loss_trace.append(float(update_info["loss"]))
-        # episode summary from env info
-        info = dict(az_info or {})
-        if not info:
-            info = getattr(env, "_last_step_info", {}) or {}
-        end_reason = str(info.get("end reason", "") or "")
-        model_vp = int(info.get("model VP", 0) or 0)
-        player_vp = int(info.get("player VP", 0) or 0)
-        vp_diff = int(model_vp) - int(player_vp)
-        # Важно: wipeout должен иметь приоритет над VP, иначе возможна инверсия
-        # вида "result=win при end_reason=wipeout_model".
-        result = "loss"
-        if end_reason == "wipeout_enemy":
-            result = "win"
-        elif end_reason == "wipeout_model":
-            result = "loss"
-        elif str(end_reason).startswith("turn_limit") and vp_diff == 0:
-            result = "draw"
-        elif vp_diff > 0:
-            result = "win"
-        elif vp_diff == 0:
-            result = "draw"
-        ep_rows.append(
-            {
-                "episode": int(episode),
-                "ep_reward": float(info.get("reward", 0.0) or 0.0),
-                "ep_len": int(info.get("turn", 0) or 0),
-                "result": str(result),
-                "end_reason": str(end_reason),
-                "model_vp": int(model_vp),
-                "player_vp": int(player_vp),
-                "vp_diff": int(vp_diff),
-            }
-        )
-        ep_line = (
-            f"[AZ] ep={episode}/{totLifeT} "
-            f"result={result} end_reason={end_reason} "
-            f"vp_diff={vp_diff} model_vp={model_vp} player_vp={player_vp} "
-            f"loss={(float(update_info['loss']) if update_info is not None else 0.0):.6f}"
-        )
-        if TRAIN_LOG_TO_FILE:
+    _save_az_sync()
+
+    remaining_episodes = max(0, int(totLifeT) - int(episodes_finished))
+    ctx = mp.get_context("spawn")
+    data_q: mp.Queue = ctx.Queue(maxsize=int(AZ_ACTOR_QUEUE_MAX))
+    procs = []
+
+    if remaining_episodes > 0:
+        for a_idx in range(int(AZ_NUM_ACTORS)):
+            base = int(remaining_episodes) // int(AZ_NUM_ACTORS)
+            rem = int(remaining_episodes) % int(AZ_NUM_ACTORS)
+            actor_episodes = int(base + (1 if a_idx < rem else 0))
+            if actor_episodes <= 0:
+                continue
+            p = ctx.Process(
+                target=_actor_learner_actor_entry_alphazero,
+                args=(
+                    int(a_idx),
+                    int(actor_episodes),
+                    roster_config,
+                    int(b_len),
+                    int(b_hei),
+                    int(n_observations),
+                    list(n_actions),
+                    {k: v.detach().cpu() for k, v in normalize_state_dict(az_net.state_dict()).items()},
+                    int(AZ_ACTOR_BATCH_SEND),
+                    data_q,
+                    int(1 if SELF_PLAY_ENABLED else 0),
+                    opponent_spec,
+                    {
+                        "temperature_opening_moves": AZ_TEMP_OPENING_MOVES,
+                        "temperature_opening_value": AZ_TEMP_OPENING,
+                        "temperature_late_value": AZ_TEMP_LATE,
+                    },
+                    {
+                        "simulations": AZ_MCTS_SIMS,
+                        "c_puct": AZ_C_PUCT,
+                        "dirichlet_alpha": AZ_DIR_ALPHA,
+                        "dirichlet_eps": AZ_DIR_EPS,
+                        "top_k_per_head": AZ_MCTS_TOP_K_PER_HEAD,
+                        "max_depth": AZ_MCTS_MAX_DEPTH,
+                        "mode": AZ_MCTS_MODE,
+                        "root_dirichlet_only": AZ_MCTS_ROOT_DIRICHLET_ONLY,
+                    },
+                    {
+                        "outcome_only": AZ_OUTCOME_ONLY,
+                        "outcome_value_win": AZ_OUTCOME_VALUE_WIN,
+                        "outcome_value_loss": AZ_OUTCOME_VALUE_LOSS,
+                        "outcome_value_draw": AZ_OUTCOME_VALUE_DRAW,
+                        "policy_version": int(policy_version),
+                    },
+                ),
+                daemon=True,
+            )
+            p.start()
+            procs.append(p)
+
+    done_actors = 0
+    active_actors = len(procs)
+    last_sync_opt_steps = optimize_steps
+    pbar = tqdm(total=int(totLifeT), initial=int(episodes_finished), mininterval=0.5)
+    last_loss = 0.0
+
+    while done_actors < active_actors:
+        try:
+            kind, payload = data_q.get(timeout=1.0)
+        except mp_queue.Empty:
+            continue
+
+        if kind == "error":
+            raise RuntimeError(payload)
+        if kind == "done":
+            done_actors += 1
+            continue
+
+        if kind == "ep":
+            if not isinstance(payload, dict):
+                continue
+            episodes_finished += 1
+            payload["episode"] = int(episodes_finished)
+            ep_rows.append(payload)
+            metrics_obj.updateRew(float(payload.get("ep_reward", 0.0) or 0.0))
+            metrics_obj.updateEpLen(int(payload.get("ep_len", 0) or 0))
+            pbar.n = min(int(totLifeT), int(episodes_finished))
+            pbar.refresh()
+            print(f"ep={episodes_finished}/{totLifeT}", flush=True)
+
+            ep_line = (
+                f"[AZ] ep={episodes_finished}/{totLifeT} actor={int(payload.get('actor_idx', -1))} "
+                f"result={payload.get('result','')} end_reason={payload.get('end_reason','')} "
+                f"vp_diff={int(payload.get('vp_diff',0) or 0)} "
+                f"loss={float(last_loss):.6f} replay={len(replay)} "
+                f"staleness_guard={AZ_MAX_POLICY_STALENESS_UPDATES}"
+            )
             append_agent_log(ep_line)
-        if TRAIN_LOG_TO_CONSOLE:
-            print(ep_line, flush=True)
+            if TRAIN_LOG_TO_CONSOLE:
+                print(ep_line, flush=True)
 
-        if episode % max(1, LOG_EVERY) == 0 or episode == int(totLifeT):
-            stats_path = os.path.join(METRICS_DIR, f"stats_{run_id}.csv")
-            try:
-                with open(stats_path, "w", encoding="utf-8", newline="") as f:
-                    w = csv.DictWriter(f, fieldnames=list(ep_rows[0].keys()))
-                    w.writeheader()
-                    w.writerows(ep_rows)
-            except Exception:
-                pass
-
-        if (
-            ACTOR_DET_EVAL_ENABLED
-            and episode > last_actor_det_eval_ep
-            and (episode % ACTOR_DET_EVAL_EVERY_EPISODES == 0 or episode == int(totLifeT))
-        ):
-            last_actor_det_eval_ep = int(episode)
-            det_window = ep_rows[-max(1, int(ACTOR_DET_EVAL_EPISODES)):]
-            det_payload = _az_det_payload_from_rows(
-                det_window,
-                episode_idx=int(episode),
-                train_loss=(float(update_info["loss"]) if update_info is not None else 0.0),
-            )
-            _save_actor_det_eval_snapshot(run_id=str(run_id), payload=det_payload, metrics_dir=METRICS_DIR)
-            try:
-                det_gui = save_actor_det_eval_plot(run_id=str(run_id), metrics_dir=METRICS_DIR)
-                if det_gui:
-                    learner_side = str(learner_identity.side or "P1").strip().upper() or "P1"
-                    opponent_side = "P2" if learner_side == "P1" else "P1"
-                    _write_det_eval_data_json(
-                        run_id=str(run_id),
-                        det_plot_gui_paths=det_gui,
-                        model_path=str(last_checkpoint or ""),
-                        metrics_mode="det_eval",
-                        extra={
-                            "algo": "alphazero",
-                            "mode": "actor_learner",
-                            "learner_side": learner_side,
-                            "learner_faction": str(learner_identity.faction or "Unknown"),
-                            "opponent_side": opponent_side,
-                            "opponent_faction": str(roster_config.get("enemy_faction", "Unknown")).strip(),
-                            "opponent_algo": str(opponent_algo_label),
-                            "opponent_source": str(opponent_source_label),
-                            "opponent_id": str(opponent_agent_id),
-                        },
+            if (
+                ACTOR_DET_EVAL_ENABLED
+                and episodes_finished > last_actor_det_eval_ep
+                and (episodes_finished % ACTOR_DET_EVAL_EVERY_EPISODES == 0 or episodes_finished == int(totLifeT))
+            ):
+                last_actor_det_eval_ep = int(episodes_finished)
+                det_window = ep_rows[-max(1, int(ACTOR_DET_EVAL_EPISODES)):]
+                det_payload = _az_det_payload_from_rows(det_window, episode_idx=int(episodes_finished), train_loss=float(last_loss))
+                _save_actor_det_eval_snapshot(run_id=str(run_id), payload=det_payload, metrics_dir=METRICS_DIR)
+                gate_pass = (
+                    float(det_payload.get("win_rate", 0.0)) >= float(AZ_DET_EVAL_GATE_WIN_MIN)
+                    and float(det_payload.get("turn_limit_rate", 1.0)) <= float(AZ_DET_EVAL_GATE_TURN_LIMIT_MAX)
+                )
+                if gate_pass:
+                    try:
+                        torch.save(
+                            {
+                                "episode": int(episodes_finished),
+                                "policy_version": int(policy_version),
+                                "state_dict": {k: v.detach().cpu() for k, v in normalize_state_dict(az_net.state_dict()).items()},
+                            },
+                            opp_sync_path,
+                        )
+                        append_agent_log(
+                            "[AZ][GATE] pass "
+                            f"ep={episodes_finished} win_rate={det_payload['win_rate']:.3f} "
+                            f"turn_limit_rate={det_payload['turn_limit_rate']:.3f}"
+                        )
+                    except Exception as exc:
+                        append_agent_log(f"[AZ][GATE][WARN] Не удалось обновить latest_az_opponent: {exc}")
+                else:
+                    append_agent_log(
+                        "[AZ][GATE] blocked "
+                        f"ep={episodes_finished} win_rate={det_payload['win_rate']:.3f}<{AZ_DET_EVAL_GATE_WIN_MIN:.3f} "
+                        f"or turn_limit_rate={det_payload['turn_limit_rate']:.3f}>{AZ_DET_EVAL_GATE_TURN_LIMIT_MAX:.3f}"
                     )
-            except Exception:
-                pass
 
-        if episode % max(1, SAVE_EVERY) == 0 or episode == int(totLifeT):
-            ckpt_path = os.path.join(checkpoint_dir, f"checkpoint_ep{episode}.pth")
-            torch.save(
-                {
-                    "algo": "alphazero",
-                    "policy_value_net": az_net.state_dict(),
-                    "optimizer": optimizer.state_dict(),
-                    "episode": int(episode),
-                    "env_contract": env_contract,
-                },
-                ckpt_path,
+                try:
+                    det_gui = save_actor_det_eval_plot(run_id=str(run_id), metrics_dir=METRICS_DIR)
+                    if det_gui:
+                        learner_side = str(learner_identity.side or "P1").strip().upper() or "P1"
+                        opponent_side = "P2" if learner_side == "P1" else "P1"
+                        _write_det_eval_data_json(
+                            run_id=str(run_id),
+                            det_plot_gui_paths=det_gui,
+                            model_path=str(last_checkpoint or ""),
+                            metrics_mode="det_eval",
+                            extra={
+                                "algo": "alphazero",
+                                "mode": "actor_learner",
+                                "learner_side": learner_side,
+                                "learner_faction": str(learner_identity.faction or "Unknown"),
+                                "opponent_side": opponent_side,
+                                "opponent_faction": str(roster_config.get("enemy_faction", "Unknown")).strip(),
+                                "opponent_algo": str(opponent_algo_label),
+                                "opponent_source": str(opponent_source_label),
+                                "opponent_id": str(opponent_agent_id),
+                                "gate_pass": int(1 if gate_pass else 0),
+                            },
+                        )
+                except Exception:
+                    pass
+
+                turn_limit_rate = float(det_payload.get("turn_limit_rate", 0.0) or 0.0)
+                if turn_limit_rate > max(0.70, last_guard_turn_limit_rate + 0.05):
+                    append_agent_log(
+                        "[AZ][GUARD][WARN] "
+                        f"turn_limit_rate растёт: prev={last_guard_turn_limit_rate:.3f} now={turn_limit_rate:.3f}. "
+                        "Что делать: проверьте temperature/outcome targets и self-play opponent."
+                    )
+                last_guard_turn_limit_rate = float(turn_limit_rate)
+
+            if SAVE_EVERY > 0 and (episodes_finished % max(1, SAVE_EVERY) == 0):
+                last_checkpoint = _save_checkpoint(episodes_finished)
+                append_agent_log(f"[AZ][CHECKPOINT] ep={episodes_finished} path={last_checkpoint}")
+
+            continue
+
+        if kind != "rollout":
+            continue
+        if not isinstance(payload, dict):
+            continue
+        raw_transitions = payload.get("transitions")
+        if not isinstance(raw_transitions, list) or not raw_transitions:
+            continue
+        transitions: list[AZTransition] = []
+        for raw in raw_transitions:
+            if not isinstance(raw, dict):
+                continue
+            state_np = np.asarray(raw.get("state", []), dtype=np.float32)
+            pi_raw = raw.get("policy_targets", [])
+            if not isinstance(pi_raw, list):
+                continue
+            pi = [np.asarray(p, dtype=np.float32) for p in pi_raw]
+            transitions.append(
+                AZTransition(
+                    state=state_np,
+                    policy_targets=pi,
+                    value_target=float(raw.get("value_target", 0.0) or 0.0),
+                    policy_version=int(raw.get("policy_version", payload.get("policy_version", 0)) or 0),
+                )
             )
-            last_checkpoint = ckpt_path
-            append_agent_log(f"[AZ][CHECKPOINT] ep={episode} path={ckpt_path}")
+        if not transitions:
+            continue
 
-    # metrics + registry artifact
+        replay.push_many(transitions)
+        global_step += len(transitions)
+        for _ in range(int(AZ_UPDATES_PER_ROLLOUT)):
+            if len(replay) < max(int(AZ_REPLAY_MIN_SIZE), int(AZ_BATCH_SIZE)):
+                break
+            update_info = train_alphazero_step(
+                net=az_net,
+                optimizer=optimizer,
+                replay=replay,
+                config=trainer_cfg,
+                device=device,
+                current_policy_version=int(policy_version),
+            )
+            if update_info is None:
+                continue
+            optimize_steps += 1
+            policy_version += 1
+            last_loss = float(update_info.get("loss", 0.0) or 0.0)
+            loss_trace.append(float(last_loss))
+            metrics_obj.updateLoss(float(last_loss))
+            append_agent_log(
+                "[AZ][UPDATE] "
+                f"step={optimize_steps} policy_version={policy_version} "
+                f"loss={float(update_info.get('loss', 0.0)):.6f} "
+                f"policy_loss={float(update_info.get('policy_loss', 0.0)):.6f} "
+                f"value_loss={float(update_info.get('value_loss', 0.0)):.6f} replay={len(replay)}"
+            )
+            if optimize_steps - last_sync_opt_steps >= int(AZ_SYNC_EVERY_UPDATES):
+                _save_az_sync()
+                last_sync_opt_steps = int(optimize_steps)
+
+    pbar.close()
+    _save_az_sync()
+    for p in procs:
+        try:
+            p.join(timeout=2.0)
+        except Exception:
+            pass
+
+    if not last_checkpoint:
+        last_checkpoint = _save_checkpoint(int(episodes_finished or resume_episode_base or totLifeT))
+        append_agent_log(f"[AZ][CHECKPOINT] final path={last_checkpoint}")
+
     if ep_rows:
-        stats_path = os.path.join(METRICS_DIR, f"stats_{run_id}.csv")
-        with open(stats_path, "w", encoding="utf-8", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=list(ep_rows[0].keys()))
-            w.writeheader()
-            w.writerows(ep_rows)
-        append_agent_log(f"[AZ][METRICS] saved stats={stats_path}")
+        save_extra_metrics(
+            run_id=run_id,
+            ep_rows=ep_rows,
+            metrics_dir=METRICS_DIR,
+            write_legacy_gui_plots=False,
+        )
+        save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows, metrics_dir=METRICS_DIR)
+        append_agent_log(f"[AZ][METRICS] saved run_id={run_id}")
         try:
             det_gui = save_actor_det_eval_plot(run_id=str(run_id), metrics_dir=METRICS_DIR)
             if det_gui:
@@ -7370,22 +7743,30 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 )
         except Exception:
             pass
-    final_agent_id = build_agent_id(learner_identity, f"final_ep{int(totLifeT)}")
+
+    final_episode = int(max(episodes_finished, resume_episode_base))
+    final_agent_id = build_agent_id(learner_identity, f"final_ep{final_episode}")
     save_agent_artifact(
         identity=learner_identity,
         agent_id=final_agent_id,
         env_contract=env_contract,
-        policy_state_dict=az_net.state_dict(),
+        policy_state_dict=normalize_state_dict(az_net.state_dict()),
         target_state_dict={},
         optimizer_state_dict=optimizer.state_dict(),
         extra_meta={
             "algo": "alphazero",
-            "episode": int(totLifeT),
+            "episode": int(final_episode),
             "source_model_path": str(last_checkpoint or ""),
             "mode": "actor_learner",
+            "num_actors": int(AZ_NUM_ACTORS),
+            "policy_version": int(policy_version),
         },
     )
-    append_agent_log(f"[AZ][ACTOR_LEARNER] done: episodes={totLifeT} checkpoint={last_checkpoint}")
+    append_agent_log(
+        "[AZ][ACTOR_LEARNER] done "
+        f"episodes={final_episode}/{totLifeT} checkpoint={last_checkpoint} "
+        f"global_step={global_step} updates={optimize_steps} replay={len(replay)}"
+    )
 
 if __name__ == "__main__":
     mp.freeze_support()

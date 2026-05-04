@@ -36,6 +36,7 @@ def play_episode_with_mcts(
     outcome_value_win: float = 1.0,
     outcome_value_loss: float = -1.0,
     outcome_value_draw: float = -0.25,
+    policy_version: int = 0,
 ) -> tuple[list[AZTransition], dict]:
     cfg = config or SelfPlayConfig()
     env_u = getattr(env, "unwrapped", env)
@@ -104,7 +105,14 @@ def play_episode_with_mcts(
 
     out: list[AZTransition] = []
     for s, pi in records:
-        out.append(AZTransition(state=s, policy_targets=pi, value_target=final_value))
+        out.append(
+            AZTransition(
+                state=s,
+                policy_targets=pi,
+                value_target=final_value,
+                policy_version=int(policy_version),
+            )
+        )
     if not last_info:
         try:
             gi = env_u.get_info()

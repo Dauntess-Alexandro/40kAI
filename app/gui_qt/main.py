@@ -15,6 +15,7 @@ from typing import Optional
 from PySide6 import QtCore, QtGui, QtQml
 from PySide6.QtGui import QIcon
 from project_paths import (
+    AGENT_EVAL_LOG_PATH,
     AGENT_PLAY_LOG_PATH,
     AGENT_TRAIN_LOG_PATH,
     APP_DIR,
@@ -1913,13 +1914,21 @@ class GUIController(QtCore.QObject):
     def clear_model_cache(self) -> None:
         try:
             self._clear_cache_files()
-            self._emit_status("Кэш моделей, runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, runtime/logs/LOGS_FOR_AGENTS_PLAY.md и artifacts/results/results.txt очищены.")
-            self._emit_log("[GUI] Кэш моделей, runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, runtime/logs/LOGS_FOR_AGENTS_PLAY.md и artifacts/results/results.txt очищены.")
+            self._emit_status(
+                "Кэш моделей, runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, runtime/logs/LOGS_FOR_AGENTS_PLAY.md, "
+                "runtime/logs/LOGS_FOR_AGENTS_EVAL.md и artifacts/results/results.txt очищены."
+            )
+            self._emit_log(
+                "[GUI] Кэш моделей, runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, runtime/logs/LOGS_FOR_AGENTS_PLAY.md, "
+                "runtime/logs/LOGS_FOR_AGENTS_EVAL.md и artifacts/results/results.txt очищены."
+            )
         except OSError as exc:
             message = (
                 "Не удалось очистить кэш и логи. "
                 "Где: gui_qt/main.py (clear_model_cache). "
-                "Что делать: проверьте права доступа к artifacts/models/, artifacts/metrics/, runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, runtime/logs/LOGS_FOR_AGENTS_PLAY.md и artifacts/results/results.txt, затем повторите."
+                "Что делать: проверьте права доступа к artifacts/models/, artifacts/metrics/, "
+                "runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, runtime/logs/LOGS_FOR_AGENTS_PLAY.md, "
+                "runtime/logs/LOGS_FOR_AGENTS_EVAL.md и artifacts/results/results.txt, затем повторите."
             )
             self._emit_status(message)
             self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
@@ -1928,13 +1937,40 @@ class GUIController(QtCore.QObject):
     def clear_agent_logs(self) -> None:
         try:
             self._clear_runtime_logs()
-            self._emit_status("runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, runtime/logs/LOGS_FOR_AGENTS_PLAY.md и artifacts/results/results.txt очищены.")
-            self._emit_log("[GUI] runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, runtime/logs/LOGS_FOR_AGENTS_PLAY.md и artifacts/results/results.txt очищены.")
+            self._emit_status(
+                "runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, runtime/logs/LOGS_FOR_AGENTS_PLAY.md, "
+                "runtime/logs/LOGS_FOR_AGENTS_EVAL.md и artifacts/results/results.txt очищены."
+            )
+            self._emit_log(
+                "[GUI] runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, runtime/logs/LOGS_FOR_AGENTS_PLAY.md, "
+                "runtime/logs/LOGS_FOR_AGENTS_EVAL.md и artifacts/results/results.txt очищены."
+            )
         except OSError as exc:
             message = (
                 "Не удалось очистить логи. "
                 "Где: gui_qt/main.py (clear_agent_logs). "
-                "Что делать: проверьте путь и права доступа к runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, runtime/logs/LOGS_FOR_AGENTS_PLAY.md и artifacts/results/results.txt, затем повторите."
+                "Что делать: проверьте путь и права доступа к runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, "
+                "runtime/logs/LOGS_FOR_AGENTS_PLAY.md, runtime/logs/LOGS_FOR_AGENTS_EVAL.md "
+                "и artifacts/results/results.txt, затем повторите."
+            )
+            self._emit_status(message)
+            self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
+
+    @QtCore.Slot()
+    def clear_eval_log(self) -> None:
+        try:
+            ensure_runtime_dirs()
+            eval_log_path = str(AGENT_EVAL_LOG_PATH)
+            with open(eval_log_path, "w", encoding="utf-8"):
+                pass
+            self._set_eval_log_text("")
+            self._emit_status("Лог оценки очищен: runtime/logs/LOGS_FOR_AGENTS_EVAL.md.")
+            self._emit_log("[GUI] Лог оценки очищен: runtime/logs/LOGS_FOR_AGENTS_EVAL.md.", level="INFO")
+        except OSError as exc:
+            message = (
+                "Не удалось очистить лог оценки. "
+                "Где: gui_qt/main.py (clear_eval_log). "
+                "Что делать: проверьте права доступа к runtime/logs/LOGS_FOR_AGENTS_EVAL.md и повторите."
             )
             self._emit_status(message)
             self._emit_log(f"[GUI] {message} Детали: {exc}", level="ERROR")
@@ -2468,12 +2504,13 @@ class GUIController(QtCore.QObject):
             level="INFO",
         )
         # Доп. лог матчапа: кто против кого, включая algo (dqn/ppo/heuristic).
+        effective_opp_id = str(env_overrides.get("OPPONENT_AGENT_ID", "") or "").strip()
         opp_algo = "heuristic" if selected_opponent_source == "heuristic" else "unknown"
-        if selected_opponent_source in {"latest_snapshot", "specific_agent"} and self._selected_specific_opponent_id:
-            opp_algo = str(self._specific_opponent_algo_by_id.get(self._selected_specific_opponent_id, "unknown"))
+        if selected_opponent_source in {"latest_snapshot", "specific_agent"} and effective_opp_id:
+            opp_algo = str(self._specific_opponent_algo_by_id.get(effective_opp_id, "unknown"))
         learner_algo = str(self._training_algo or "dqn").strip().lower()
         self._emit_log(
-            f"[GUI] [MATCHUP] learner_algo={learner_algo} opponent_algo={opp_algo} opponent_agent_id={self._selected_specific_opponent_id or '-'}",
+            f"[GUI] [MATCHUP] learner_algo={learner_algo} opponent_algo={opp_algo} opponent_agent_id={effective_opp_id or '-'}",
             level="INFO",
         )
         self._emit_log(
@@ -4210,6 +4247,7 @@ class GUIController(QtCore.QObject):
         clear_play: bool = True,
         clear_results: bool = True,
         clear_train: bool = True,
+        clear_eval: bool = True,
     ) -> None:
         logs_dir = str(AGENT_TRAIN_LOG_PATH.parent)
         os.makedirs(logs_dir, exist_ok=True)
@@ -4220,6 +4258,10 @@ class GUIController(QtCore.QObject):
         if clear_play:
             play_log_path = str(AGENT_PLAY_LOG_PATH)
             with open(play_log_path, "w", encoding="utf-8"):
+                pass
+        if clear_eval:
+            eval_log_path = str(AGENT_EVAL_LOG_PATH)
+            with open(eval_log_path, "w", encoding="utf-8"):
                 pass
         if clear_results:
             results_path = str(RESULTS_PATH)

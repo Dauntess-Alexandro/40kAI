@@ -4,10 +4,14 @@
 - README в этом репозитории может быть устаревшим — **не полагайся на README как на источник истины**.
 - Всегда сверяйся с **актуальным кодом** и реальными файлами в репо.
 
-## Логи для отладки (runtime/logs/LOGS_FOR_AGENTS_TRAIN.md / runtime/logs/LOGS_FOR_AGENTS_PLAY.md)
-- В папке `runtime/logs/` есть два файла логов: **LOGS_FOR_AGENTS_TRAIN.md** (train/eval) и **LOGS_FOR_AGENTS_PLAY.md** (игра/Viewer) — это “источник правды” по тому, что реально происходило.
+## Логи для отладки (runtime/logs/LOGS_FOR_AGENTS_TRAIN.md / LOGS_FOR_AGENTS_PLAY.md / LOGS_FOR_AGENTS_EVAL.md)
+- В папке `runtime/logs/` есть три файла логов:
+  - **LOGS_FOR_AGENTS_TRAIN.md** — обучение (`train`),
+  - **LOGS_FOR_AGENTS_PLAY.md** — игра/Viewer (`play`),
+  - **LOGS_FOR_AGENTS_EVAL.md** — оценка (`eval`).
+- Все три файла — “источник правды” по тому, что реально происходило.
 - При любом баге/неожиданном поведении:
-  1) **сначала прочитай свежие строки** из `runtime/logs/LOGS_FOR_AGENTS_TRAIN.md` и `runtime/logs/LOGS_FOR_AGENTS_PLAY.md`,
+  1) **сначала прочитай свежие строки** из релевантного файла (и при необходимости соседних): `LOGS_FOR_AGENTS_TRAIN.md`, `LOGS_FOR_AGENTS_PLAY.md`, `LOGS_FOR_AGENTS_EVAL.md`,
   2) найди маркеры фаз/ходов/юнитов/ошибок,
   3) только потом предлагай правки.
 - Если в логах есть признаки ошибки/варнингов/неконсистентности — укажи:

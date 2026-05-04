@@ -2278,6 +2278,12 @@ ApplicationWindow {
                                     enabled: controller.running
                                     onClicked: controller.stop_process()
                                 }
+
+                                Button {
+                                    text: "Очистить лог"
+                                    enabled: !controller.running
+                                    onClicked: controller.clear_eval_log()
+                                }
                             }
                         }
 
