@@ -31,7 +31,7 @@ VP_DIFF_REWARD_SCALE = 0.11
 # Масштаб штрафа за ухудшение разницы VP (vp_diff < 0).
 VP_DIFF_PENALTY_SCALE = 0.12
 # Доп. штраф за ничью на turn_limit (анти "ничейная яма").
-TURN_LIMIT_DRAW_PENALTY = 1.8
+TURN_LIMIT_DRAW_PENALTY = 2.2
 # Доп. масштаб бонуса за победу по VP на turn_limit.
 TURN_LIMIT_VP_MARGIN_REWARD_SCALE = 0.85
 # Доп. масштаб штрафа за проигрыш по VP на turn_limit.
@@ -89,7 +89,7 @@ SHOOT_REWARD_ACTION_BONUS = 0.0
 
 # Масштаб штрафа за полученный урон в шаге модели
 # (нормируется относительно суммарного максимального HP модели).
-DAMAGE_TAKEN_SCALE = 0.38
+DAMAGE_TAKEN_SCALE = 0.32
 
 # ==============================================
 # Шэйпинг наград (objectives / utility-сигналы)
@@ -97,7 +97,7 @@ DAMAGE_TAKEN_SCALE = 0.38
 # Штраф за бездействие вне целей (idle out of objective).
 IDLE_OUT_OF_OBJECTIVE_PENALTY = 0.06
 # Масштаб пошагового бонуса за прогресс к objective.
-OBJECTIVE_PROGRESS_STEP_SCALE = 0.22
+OBJECTIVE_PROGRESS_STEP_SCALE = 0.26
 # Верхняя граница бонуса за прогресс к objective за шаг.
 OBJECTIVE_PROGRESS_STEP_CAP = 0.35
 # Штраф за "мертвое окно": нет валидных целей стрельбы и нет contest objective.
@@ -201,7 +201,7 @@ TERRAIN_SHAPING_STEP_RCAP = 0.12
 # ==========================================
 # Доп. штраф, если после старта скоринга никто не contest'ит objectives
 # (обе стороны имеют 0 OC на всех objectives). Это ломает "вечные" бои в стороне от миссии.
-MISSION_NO_CONTEST_PENALTY = 0.16
+MISSION_NO_CONTEST_PENALTY = 0.20
 # С какого battle round включать этот штраф (обычно совпадает со START_SCORING_ROUND).
 MISSION_NO_CONTEST_START_ROUND = VP_START_SCORING_ROUND
 # После этого раунда штраф мягко усиливается (динамика late-game anti-draw).
@@ -215,13 +215,22 @@ VP_STALL_PENALTY = 0.06
 VP_STALL_STEP_GROWTH = 0.08
 VP_STALL_PENALTY_MAX_MULT = 2.0
 
+# Anti-loop по повторяющимся action tuples (move/attack/shoot/charge/use_cp/cp_on)
+# Штраф включается при длинной серии одинаковых действий.
+ACTION_REPEAT_STEPS_THRESHOLD = 3
+ACTION_REPEAT_PENALTY = 0.04
+ACTION_REPEAT_STEP_GROWTH = 0.20
+ACTION_REPEAT_PENALTY_MAX_MULT = 2.5
+# 1: применять только если у модели были реальные альтернативы (move>1 или shoot>1)
+ACTION_REPEAT_REQUIRE_OPTIONS = 1
+
 # Round-aware scaling: ранняя игра = больше прогресса к objective; поздняя = удержание/deny.
 REWARD_ROUND_EARLY_END = 4
 REWARD_ROUND_LATE_START = 10
 REWARD_PROGRESS_EARLY_MULT = 1.15
-REWARD_PROGRESS_LATE_MULT = 0.90
+REWARD_PROGRESS_LATE_MULT = 1.00
 REWARD_HOLD_EARLY_MULT = 0.95
-REWARD_HOLD_LATE_MULT = 1.15
+REWARD_HOLD_LATE_MULT = 1.08
 
 
 # =========================

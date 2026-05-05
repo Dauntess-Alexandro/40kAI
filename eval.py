@@ -5,6 +5,7 @@ import json
 import os
 import pickle
 import random
+import re
 import sys
 import types
 from collections import Counter
@@ -187,34 +188,34 @@ def _build_env_from_train_roster():
         return None, None, None, str(exc)
 
 
-def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, shoot_mask=None):
+def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, action_masks=None, shoot_mask=None):
+    masks_seq = action_masks
+    if masks_seq is None and shoot_mask is not None:
+        masks_seq = [None] * (6 + int(len_model))
+        masks_seq[2] = torch.as_tensor(shoot_mask, dtype=torch.bool)
     if epsilon <= 0:
         with torch.no_grad():
             decision = policy_net(state)
             action = []
             for head_idx, head in enumerate(decision):
                 head = head.squeeze(0)
-                if head_idx == 2 and shoot_mask is not None:
-                    mask = torch.as_tensor(shoot_mask, dtype=torch.bool, device=head.device)
-                    if mask.numel() == head.numel() and mask.any():
-                        masked_head = head.clone()
-                        masked_head[~mask] = -1e9
-                        action.append(int(masked_head.argmax().item()))
-                        continue
+                if masks_seq is not None and head_idx < len(masks_seq):
+                    raw_mask = masks_seq[head_idx]
+                    if raw_mask is not None:
+                        mask = torch.as_tensor(raw_mask, dtype=torch.bool, device=head.device)
+                        if mask.numel() == head.numel() and mask.any():
+                            masked_head = head.clone()
+                            masked_head[~mask] = -1e9
+                            action.append(int(masked_head.argmax().item()))
+                            continue
                 action.append(int(head.argmax().item()))
             return torch.tensor([action], device="cpu")
 
     sampled_action = env.action_space.sample()
-    shoot_choice = sampled_action["shoot"]
-    if shoot_mask is not None:
-        mask = torch.as_tensor(shoot_mask, dtype=torch.bool)
-        valid_indices = torch.where(mask)[0].tolist()
-        if valid_indices:
-            shoot_choice = valid_indices[torch.randint(0, len(valid_indices), (1,)).item()]
     action_list = [
         sampled_action["move"],
         sampled_action["attack"],
-        shoot_choice,
+        sampled_action["shoot"],
         sampled_action["charge"],
         sampled_action["use_cp"],
         sampled_action["cp_on"],
@@ -222,6 +223,14 @@ def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, shoot
     for i in range(len_model):
         label = "move_num_" + str(i)
         action_list.append(sampled_action[label])
+    if masks_seq is not None:
+        for idx, raw_mask in enumerate(masks_seq):
+            if raw_mask is None or idx >= len(action_list):
+                continue
+            mask = torch.as_tensor(raw_mask, dtype=torch.bool)
+            valid_indices = torch.where(mask)[0].tolist()
+            if valid_indices:
+                action_list[idx] = int(valid_indices[torch.randint(0, len(valid_indices), (1,)).item()])
     return torch.tensor([action_list], device="cpu")
 
 
@@ -564,14 +573,14 @@ def run_episode(
                 len(model_units),
             )
         else:
-            shoot_mask = build_shoot_action_mask(env)
+            action_masks = build_action_masks_by_head(env, len(model_units), log_fn=None, debug=False)
             action = select_action_with_epsilon(
                 env,
                 state_tensor,
                 policy_net,
                 epsilon,
                 len(model_units),
-                shoot_mask=shoot_mask,
+                action_masks=action_masks,
             )
         action_dict = convertToDict(action)
         masks_counts = _head_masks_counts()
@@ -987,6 +996,15 @@ def main():
     kill_diffs_p1_minus_p2 = []
     rewards_learner = []
     end_reasons_v2 = Counter()
+    step_metrics = Counter()
+    action_tuple_counter = Counter()
+    model_action_re = re.compile(
+        r"move=(?P<move>-?\d+).*?attack=(?P<attack>-?\d+).*?shoot=(?P<shoot>-?\d+).*?"
+        r"charge=(?P<charge>-?\d+).*?use_cp=(?P<use_cp>-?\d+).*?cp_on=(?P<cp_on>-?\d+).*?"
+        r"masks=\(move:(?P<move_v>\d+)/(?P<move_t>\d+), attack:(?P<attack_v>\d+)/(?P<attack_t>\d+), "
+        r"shoot:(?P<shoot_v>\d+)/(?P<shoot_t>\d+), charge:(?P<charge_v>\d+)/(?P<charge_t>\d+),"
+    )
+    step_result_re = re.compile(r"model_ctrl_n=(?P<model_ctrl>\d+)")
 
     for idx in range(1, games + 1):
         (
@@ -1013,6 +1031,50 @@ def main():
         )
         for line in trace_lines:
             _append_eval_log(f"[TRACE][GAME {idx}] {line}")
+            if line.startswith("[TRACE][MODEL_ACTION_HUMAN]"):
+                m = model_action_re.search(line)
+                if m:
+                    move = int(m.group("move"))
+                    attack = int(m.group("attack"))
+                    shoot = int(m.group("shoot"))
+                    charge = int(m.group("charge"))
+                    use_cp = int(m.group("use_cp"))
+                    cp_on = int(m.group("cp_on"))
+                    move_v = int(m.group("move_v"))
+                    shoot_v = int(m.group("shoot_v"))
+                    charge_v = int(m.group("charge_v"))
+                    step_metrics["total_model_steps"] += 1
+                    action_tuple_counter[(move, attack, shoot, charge, use_cp, cp_on)] += 1
+                    if move_v > 1:
+                        step_metrics["move_opt_steps"] += 1
+                        if move == 4:
+                            step_metrics["stay_opt_steps"] += 1
+                    if shoot_v > 1:
+                        step_metrics["shoot_opt_steps"] += 1
+                        if shoot == 0:
+                            step_metrics["shoot_zero_opt_steps"] += 1
+                    if charge_v > 1:
+                        step_metrics["charge_opt_steps"] += 1
+                        if charge == 0:
+                            step_metrics["charge_zero_opt_steps"] += 1
+            elif line.startswith("[TRACE][STEP_VERDICT]"):
+                verdict_raw = line.split("verdict=", 1)[-1].strip()
+                for token in verdict_raw.split(","):
+                    token = token.strip()
+                    if not token or token == "ok":
+                        continue
+                    if token == "stay_while_move_options_exist":
+                        step_metrics["verdict_stay"] += 1
+                    elif token == "skip_charge_while_options_exist":
+                        step_metrics["verdict_skip_charge"] += 1
+                    elif token == "default_shoot_choice_with_options":
+                        step_metrics["verdict_default_shoot"] += 1
+            elif line.startswith("[TRACE][STEP_RESULT]"):
+                m = step_result_re.search(line)
+                if m:
+                    step_metrics["step_result_total"] += 1
+                    if int(m.group("model_ctrl")) == 0:
+                        step_metrics["step_result_model_ctrl_zero"] += 1
         if learner_side == "P1":
             p1_vp = model_vp
             p2_vp = enemy_vp
@@ -1048,12 +1110,7 @@ def main():
         elif winner_side == "P2":
             p2_wins += 1
 
-        if end_reason == "wipeout_enemy":
-            end_reasons_v2["wipeout_" + learner_side.lower()] += 1
-        elif end_reason == "wipeout_model":
-            end_reasons_v2["wipeout_" + opponent_side.lower()] += 1
-        else:
-            end_reasons_v2[end_reason] += 1
+        end_reasons_v2[str(end_reason or "unknown")] += 1
         log(
             "Игра "
             f"{idx}/{games}: "
@@ -1086,10 +1143,62 @@ def main():
     avg_kill_diff_p1_minus_p2 = (
         sum(kill_diffs_p1_minus_p2) / len(kill_diffs_p1_minus_p2) if kill_diffs_p1_minus_p2 else 0.0
     )
+    total_model_steps = int(step_metrics.get("total_model_steps", 0))
+    move_opt_steps = int(step_metrics.get("move_opt_steps", 0))
+    shoot_opt_steps = int(step_metrics.get("shoot_opt_steps", 0))
+    charge_opt_steps = int(step_metrics.get("charge_opt_steps", 0))
+    step_result_total = int(step_metrics.get("step_result_total", 0))
+    stay_rate_when_move_options = (
+        float(step_metrics.get("stay_opt_steps", 0)) / float(move_opt_steps)
+        if move_opt_steps
+        else 0.0
+    )
+    skip_charge_rate_when_options = (
+        float(step_metrics.get("verdict_skip_charge", 0)) / float(total_model_steps)
+        if total_model_steps
+        else 0.0
+    )
+    default_shoot_rate_when_options = (
+        float(step_metrics.get("verdict_default_shoot", 0)) / float(total_model_steps)
+        if total_model_steps
+        else 0.0
+    )
+    shoot_zero_rate_when_shoot_options = (
+        float(step_metrics.get("shoot_zero_opt_steps", 0)) / float(shoot_opt_steps)
+        if shoot_opt_steps
+        else 0.0
+    )
+    charge_zero_rate_when_charge_options = (
+        float(step_metrics.get("charge_zero_opt_steps", 0)) / float(charge_opt_steps)
+        if charge_opt_steps
+        else 0.0
+    )
+    model_ctrl_zero_rate = (
+        float(step_metrics.get("step_result_model_ctrl_zero", 0)) / float(step_result_total)
+        if step_result_total
+        else 0.0
+    )
+    top_action_counts = [count for _action, count in action_tuple_counter.most_common(5)]
+    top1_action_share = (
+        float(top_action_counts[0]) / float(total_model_steps)
+        if total_model_steps and top_action_counts
+        else 0.0
+    )
+    top5_action_share = (
+        float(sum(top_action_counts)) / float(total_model_steps)
+        if total_model_steps
+        else 0.0
+    )
 
     turn_limit_count = int(end_reasons_v2.get("turn_limit", 0))
-    wipeout_p1_count = int(end_reasons_v2.get("wipeout_p1", 0))
-    wipeout_p2_count = int(end_reasons_v2.get("wipeout_p2", 0))
+    wipeout_model_count = int(end_reasons_v2.get("wipeout_model", 0))
+    wipeout_enemy_count = int(end_reasons_v2.get("wipeout_enemy", 0))
+    if learner_side == "P1":
+        wipeout_p1_count = wipeout_enemy_count
+        wipeout_p2_count = wipeout_model_count
+    else:
+        wipeout_p1_count = wipeout_model_count
+        wipeout_p2_count = wipeout_enemy_count
 
     log(
         "[SUMMARY_V2] "
@@ -1102,7 +1211,16 @@ def main():
         f"avg_ep_len={avg_ep_len:.3f} "
         f"avg_hp_diff_p1_minus_p2={avg_hp_diff_p1_minus_p2:.3f} "
         f"avg_kill_diff_p1_minus_p2={avg_kill_diff_p1_minus_p2:.3f} "
-        f"turn_limit_count={turn_limit_count} wipeout_p1_count={wipeout_p1_count} wipeout_p2_count={wipeout_p2_count} "
+        f"stay_rate_when_move_options={stay_rate_when_move_options:.3f} "
+        f"skip_charge_rate_when_options={skip_charge_rate_when_options:.3f} "
+        f"default_shoot_rate_when_options={default_shoot_rate_when_options:.3f} "
+        f"shoot_zero_rate_when_shoot_options={shoot_zero_rate_when_shoot_options:.3f} "
+        f"charge_zero_rate_when_charge_options={charge_zero_rate_when_charge_options:.3f} "
+        f"model_ctrl_zero_rate={model_ctrl_zero_rate:.3f} "
+        f"top1_action_share={top1_action_share:.3f} top5_action_share={top5_action_share:.3f} "
+        f"turn_limit_count={turn_limit_count} "
+        f"wipeout_model_count={wipeout_model_count} wipeout_enemy_count={wipeout_enemy_count} "
+        f"wipeout_p1_count={wipeout_p1_count} wipeout_p2_count={wipeout_p2_count} "
         f"end_reasons={dict(end_reasons_v2)}"
     )
 
@@ -1118,8 +1236,20 @@ def main():
     log(f"[DETAIL] Avg Kill diff (P1-P2): {avg_kill_diff_p1_minus_p2:.3f}")
     log(f"[DETAIL] Avg длина эпизода: {avg_ep_len:.3f}")
     log(
+        "[DETAIL] Пассивность: "
+        f"stay@move_opts={stay_rate_when_move_options:.3f}, "
+        f"skip_charge={skip_charge_rate_when_options:.3f}, "
+        f"default_shoot={default_shoot_rate_when_options:.3f}, "
+        f"shoot0@opts={shoot_zero_rate_when_shoot_options:.3f}, "
+        f"charge0@opts={charge_zero_rate_when_charge_options:.3f}, "
+        f"model_ctrl0={model_ctrl_zero_rate:.3f}, "
+        f"top1={top1_action_share:.3f}, top5={top5_action_share:.3f}"
+    )
+    log(
         "[DETAIL] Причины завершения: "
-        f"turn_limit={turn_limit_count}, wipeout_p1={wipeout_p1_count}, wipeout_p2={wipeout_p2_count}, "
+        f"turn_limit={turn_limit_count}, "
+        f"wipeout_model={wipeout_model_count}, wipeout_enemy={wipeout_enemy_count}, "
+        f"wipeout_p1={wipeout_p1_count}, wipeout_p2={wipeout_p2_count}, "
         f"raw={dict(end_reasons_v2)}"
     )
     log("[DETAIL] ------------------------------------------------")

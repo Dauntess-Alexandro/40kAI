@@ -16,7 +16,7 @@ from core.models.utils import convertToDict
 class SelfPlayConfig:
     temperature_opening_moves: int = 12
     temperature_opening_value: float = 1.0
-    temperature_late_value: float = 0.2
+    temperature_late_value: float = 0.3
 
 
 def _state_to_np(state: Any) -> np.ndarray:

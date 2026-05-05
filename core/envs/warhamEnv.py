@@ -1027,6 +1027,8 @@ class Warhammer40kEnv(gym.Env):
         self._distance_cache = {}
         self._shoot_target_cache = {}
         self._shoot_target_reject_cache = {}
+        self._last_action_signature: tuple[int, int, int, int, int, int] | None = None
+        self._action_repeat_streak = 0
         self.terrain_features = list(getattr(self, "terrain_features", []) or [])
         self.terrain_opaque_cells: set[tuple[int, int]] = set()
         self.terrain_obscuring_cells: set[tuple[int, int]] = self.get_terrain_obscuring_cells_set()
@@ -1124,6 +1126,7 @@ class Warhammer40kEnv(gym.Env):
             "_prev_vp_diff", "_objective_hold_streaks", "_target_cache_epoch",
             "_distance_cache", "_shoot_target_cache", "_shoot_target_reject_cache",
             "_terrain_shaping_shot_bonus_units",
+            "_last_action_signature", "_action_repeat_streak",
             "last_end_reason", "last_winner", "current_action_index",
             "viewer_step_seq", "viewer_activation", "viewer_awaiting_ack",
             "unitCharged", "enemyCharged", "modelUpdates",
@@ -1510,7 +1513,9 @@ class Warhammer40kEnv(gym.Env):
                 if 0 <= int(t_idx) < shoot_n:
                     shoot_mask[int(t_idx)] = True
         if not shoot_mask.any():
-            shoot_mask[:] = True
+            # no-op semantics: при отсутствии валидных целей оставляем только индекс 0
+            # вместо all-true, чтобы policy не получала ложные альтернативы.
+            shoot_mask[0] = True
         masks["shoot"] = shoot_mask
 
         charge_n = int(spaces["charge"].n)
@@ -1520,7 +1525,8 @@ class Warhammer40kEnv(gym.Env):
                 if 0 <= int(t_idx) < charge_n:
                     charge_mask[int(t_idx)] = True
         if not charge_mask.any():
-            charge_mask[:] = True
+            # no-op semantics: при отсутствии валидных целей оставляем только индекс 0.
+            charge_mask[0] = True
         masks["charge"] = charge_mask
 
         # cp_on: только живые юниты цели
@@ -1552,6 +1558,18 @@ class Warhammer40kEnv(gym.Env):
             masks[key] = mmask
 
         return masks
+
+    def _action_signature(self, action) -> tuple[int, int, int, int, int, int]:
+        if not isinstance(action, dict):
+            return (-1, -1, -1, -1, -1, -1)
+        return (
+            self._coerce_int(action.get("move", -1), default=-1),
+            self._coerce_int(action.get("attack", -1), default=-1),
+            self._coerce_int(action.get("shoot", -1), default=-1),
+            self._coerce_int(action.get("charge", -1), default=-1),
+            self._coerce_int(action.get("use_cp", -1), default=-1),
+            self._coerce_int(action.get("cp_on", -1), default=-1),
+        )
 
     def _cell_from_coord(self, coord) -> tuple[int, int]:
         return int(round(float(coord[0]))), int(round(float(coord[1])))
@@ -6235,6 +6253,8 @@ class Warhammer40kEnv(gym.Env):
         self.modelUpdates = ""
         self._prev_vp_diff = 0
         self._vp_stall_steps = 0
+        self._last_action_signature = None
+        self._action_repeat_streak = 0
         self._objective_hold_streaks = [0] * len(self.coordsOfOM)
         self._phase_event_emitted = False
         self._phase_unit_logged = set()
@@ -6748,6 +6768,15 @@ class Warhammer40kEnv(gym.Env):
         ]
         terrain_snapshot_before = self._terrain_potential_snapshot(start_obj_dists)
         prev_vp_diff = self._prev_vp_diff
+        legal_masks_before = self.get_legal_action_masks_by_head(side="model")
+        move_options_before = int(np.sum(legal_masks_before.get("move", np.array([], dtype=bool))))
+        shoot_options_before = int(np.sum(legal_masks_before.get("shoot", np.array([], dtype=bool))))
+        action_signature = self._action_signature(action)
+        if self._last_action_signature is not None and action_signature == self._last_action_signature:
+            self._action_repeat_streak = int(getattr(self, "_action_repeat_streak", 0)) + 1
+        else:
+            self._action_repeat_streak = 1
+        self._last_action_signature = action_signature
         self.unitCharged = [0] * len(self.unit_health)
         self.enemyCharged = [0] * len(self.enemy_health)
         self.active_side = "model"
@@ -6883,6 +6912,25 @@ class Warhammer40kEnv(gym.Env):
                 f"vp_diff={curr_vp_diff:.3f}, stall_steps={self._vp_stall_steps}, "
                 f"threshold={stall_threshold}, penalty=-{stall_penalty:.3f} "
                 f"(base={stall_base:.3f}, mult={stall_mult:.3f})"
+            )
+        repeat_threshold = max(2, int(getattr(reward_cfg, "ACTION_REPEAT_STEPS_THRESHOLD", 3)))
+        repeat_base = float(getattr(reward_cfg, "ACTION_REPEAT_PENALTY", 0.0))
+        repeat_growth = float(getattr(reward_cfg, "ACTION_REPEAT_STEP_GROWTH", 0.2))
+        repeat_cap = max(1.0, float(getattr(reward_cfg, "ACTION_REPEAT_PENALTY_MAX_MULT", 2.5)))
+        repeat_only_with_options = bool(int(getattr(reward_cfg, "ACTION_REPEAT_REQUIRE_OPTIONS", 1)))
+        has_options = (move_options_before > 1) or (shoot_options_before > 1)
+        if repeat_base > 0 and self._action_repeat_streak >= repeat_threshold and (
+            has_options or (not repeat_only_with_options)
+        ):
+            over_repeat = max(0, int(self._action_repeat_streak) - repeat_threshold)
+            repeat_mult = min(repeat_cap, 1.0 + repeat_growth * over_repeat)
+            repeat_penalty = repeat_base * repeat_mult
+            reward -= repeat_penalty
+            self._log_reward(
+                "Reward (anti-loop action repeat): "
+                f"signature={action_signature}, streak={int(self._action_repeat_streak)}, "
+                f"threshold={repeat_threshold}, move_opts={move_options_before}, shoot_opts={shoot_options_before}, "
+                f"penalty=-{repeat_penalty:.3f} (base={repeat_base:.3f}, mult={repeat_mult:.3f})"
             )
 
         oc_margin_delta = float(post_oc_margin - pre_oc_margin)

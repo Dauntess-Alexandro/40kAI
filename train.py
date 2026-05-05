@@ -2248,7 +2248,7 @@ AZ_DIR_ALPHA = float(AZ_CFG.get("dirichlet_alpha", 0.3))
 AZ_DIR_EPS = float(AZ_CFG.get("dirichlet_eps", 0.25))
 AZ_TEMP_OPENING_MOVES = int(AZ_CFG.get("temperature_opening_moves", 12))
 AZ_TEMP_OPENING = float(AZ_CFG.get("temperature_opening_value", 1.0))
-AZ_TEMP_LATE = float(AZ_CFG.get("temperature_late_value", 0.2))
+AZ_TEMP_LATE = float(AZ_CFG.get("temperature_late_value", 0.3))
 AZ_REPLAY_CAPACITY = int(AZ_CFG.get("replay_capacity", 200000))
 AZ_MCTS_MODE = str(os.getenv("AZ_MCTS_MODE", str(AZ_CFG.get("mcts_mode", "proxy")))).strip().lower() or "proxy"
 if AZ_MCTS_MODE not in {"proxy", "tree"}:
@@ -2286,7 +2286,10 @@ AZ_BALANCED_OUTCOME_SAMPLING = str(
 ).strip() == "1"
 AZ_DET_EVAL_GATE_WIN_MIN = float(os.getenv("AZ_DET_EVAL_GATE_WIN_MIN", str(AZ_CFG.get("det_eval_gate_win_min", 0.45))))
 AZ_DET_EVAL_GATE_TURN_LIMIT_MAX = float(
-    os.getenv("AZ_DET_EVAL_GATE_TURN_LIMIT_MAX", str(AZ_CFG.get("det_eval_gate_turn_limit_max", 0.65)))
+    os.getenv("AZ_DET_EVAL_GATE_TURN_LIMIT_MAX", str(AZ_CFG.get("det_eval_gate_turn_limit_max", 0.60)))
+)
+AZ_DET_EVAL_GATE_DRAW_MAX = float(
+    os.getenv("AZ_DET_EVAL_GATE_DRAW_MAX", str(AZ_CFG.get("det_eval_gate_draw_max", 0.70)))
 )
 
 # ============================================================
@@ -7574,6 +7577,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 gate_pass = (
                     float(det_payload.get("win_rate", 0.0)) >= float(AZ_DET_EVAL_GATE_WIN_MIN)
                     and float(det_payload.get("turn_limit_rate", 1.0)) <= float(AZ_DET_EVAL_GATE_TURN_LIMIT_MAX)
+                    and float(det_payload.get("draw_rate", 1.0)) <= float(AZ_DET_EVAL_GATE_DRAW_MAX)
                 )
                 if gate_pass:
                     try:
@@ -7588,7 +7592,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                         append_agent_log(
                             "[AZ][GATE] pass "
                             f"ep={episodes_finished} win_rate={det_payload['win_rate']:.3f} "
-                            f"turn_limit_rate={det_payload['turn_limit_rate']:.3f}"
+                            f"turn_limit_rate={det_payload['turn_limit_rate']:.3f} "
+                            f"draw_rate={det_payload['draw_rate']:.3f}"
                         )
                     except Exception as exc:
                         append_agent_log(f"[AZ][GATE][WARN] Не удалось обновить latest_az_opponent: {exc}")
@@ -7596,7 +7601,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                     append_agent_log(
                         "[AZ][GATE] blocked "
                         f"ep={episodes_finished} win_rate={det_payload['win_rate']:.3f}<{AZ_DET_EVAL_GATE_WIN_MIN:.3f} "
-                        f"or turn_limit_rate={det_payload['turn_limit_rate']:.3f}>{AZ_DET_EVAL_GATE_TURN_LIMIT_MAX:.3f}"
+                        f"or turn_limit_rate={det_payload['turn_limit_rate']:.3f}>{AZ_DET_EVAL_GATE_TURN_LIMIT_MAX:.3f} "
+                        f"or draw_rate={det_payload['draw_rate']:.3f}>{AZ_DET_EVAL_GATE_DRAW_MAX:.3f}"
                     )
 
                 try:
