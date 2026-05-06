@@ -27,13 +27,13 @@ VP_OBJECTIVE_PROXIMITY_REWARD = 0.8
 # penalty = -VP_OBJECTIVE_HOLD_PENALTY * clamp01(missed_progress / VP_OBJECTIVE_MISSED_PROGRESS_NORM)
 VP_OBJECTIVE_MISSED_PROGRESS_NORM = 6.0
 # Масштаб бонуса за улучшение разницы VP (vp_diff > 0).
-VP_DIFF_REWARD_SCALE = 0.11
+VP_DIFF_REWARD_SCALE = 0.14
 # Масштаб штрафа за ухудшение разницы VP (vp_diff < 0).
-VP_DIFF_PENALTY_SCALE = 0.12
+VP_DIFF_PENALTY_SCALE = 0.14
 # Доп. штраф за ничью на turn_limit (анти "ничейная яма").
-TURN_LIMIT_DRAW_PENALTY = 2.2
+TURN_LIMIT_DRAW_PENALTY = 3.2
 # Доп. масштаб бонуса за победу по VP на turn_limit.
-TURN_LIMIT_VP_MARGIN_REWARD_SCALE = 0.85
+TURN_LIMIT_VP_MARGIN_REWARD_SCALE = 1.2
 # Доп. масштаб штрафа за проигрыш по VP на turn_limit.
 TURN_LIMIT_VP_MARGIN_PENALTY_SCALE = 0.75
 # Ограничение абсолютного VP margin для turn_limit shaping.
@@ -211,7 +211,7 @@ MISSION_NO_CONTEST_LATE_MULT = 1.25
 
 # Anti-stall по VP diff: если серия шагов без изменения VP слишком длинная.
 VP_STALL_STEPS_THRESHOLD = 5
-VP_STALL_PENALTY = 0.06
+VP_STALL_PENALTY = 0.08
 VP_STALL_STEP_GROWTH = 0.08
 VP_STALL_PENALTY_MAX_MULT = 2.0
 
