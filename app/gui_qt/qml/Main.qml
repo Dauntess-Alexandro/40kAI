@@ -1994,6 +1994,27 @@ ApplicationWindow {
                                         text: "deterministic, epsilon=0"
                                         color: "#5b6472"
                                     }
+                                    Label {
+                                        text: "AZ оппонент:"
+                                        font.bold: true
+                                        color: "#2f3b52"
+                                    }
+                                    ComboBox {
+                                        Layout.preferredWidth: Math.round(170 * root.uiScale)
+                                        enabled: !controller.running
+                                        model: [
+                                            { value: "greedy", label: "Greedy (быстро)" },
+                                            { value: "mcts", label: "MCTS (сильнее)" }
+                                        ]
+                                        textRole: "label"
+                                        currentIndex: {
+                                            for (var i = 0; i < model.length; i++) {
+                                                if (model[i].value === controller.evalAzOpponentMode) return i
+                                            }
+                                            return 0
+                                        }
+                                        onActivated: controller.set_eval_az_opponent_mode(model[currentIndex].value)
+                                    }
                                     Item { Layout.fillWidth: true }
                                 }
 

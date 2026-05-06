@@ -198,6 +198,10 @@ class GUIController(QtCore.QObject):
         self._eval_result_avg_vp_diff = "Avg VP diff (P1-P2): —"
         self._eval_result_turn_limit_rate = "Turn-limit rate: —"
         self._eval_result_quality_hint = "Качество серии: нет данных."
+        self._eval_az_opponent_mode_options = ["greedy", "mcts"]
+        self._eval_az_opponent_mode = str(os.getenv("AZ_EVAL_OPPONENT_MODE", "greedy")).strip().lower() or "greedy"
+        if self._eval_az_opponent_mode not in self._eval_az_opponent_mode_options:
+            self._eval_az_opponent_mode = "greedy"
         self._active_process_kind = ""
         self._board_text = "ASCII карта будет доступна после запуска игры."
         self._self_play_from_checkpoint = False
@@ -589,6 +593,14 @@ class GUIController(QtCore.QObject):
     @QtCore.Property("QStringList", constant=True)
     def evalPolicyOptions(self):
         return self._eval_policy_options
+
+    @QtCore.Property("QStringList", constant=True)
+    def evalAzOpponentModeOptions(self):
+        return self._eval_az_opponent_mode_options
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalAzOpponentMode(self) -> str:
+        return self._eval_az_opponent_mode
 
     @QtCore.Property(str, notify=evalSetupChanged)
     def evalP1Policy(self) -> str:
@@ -1112,6 +1124,17 @@ class GUIController(QtCore.QObject):
                 self._update_eval_matchup_text()
                 self.evalSetupChanged.emit()
 
+    @QtCore.Slot(str)
+    def set_eval_az_opponent_mode(self, value: str) -> None:
+        mode = str(value or "").strip().lower()
+        if mode not in self._eval_az_opponent_mode_options:
+            mode = "greedy"
+        if mode == self._eval_az_opponent_mode:
+            return
+        self._eval_az_opponent_mode = mode
+        self._update_eval_matchup_text()
+        self.evalSetupChanged.emit()
+
     @QtCore.Slot()
     def refresh_eval_agents(self) -> None:
         self._refresh_eval_agent_options()
@@ -1564,7 +1587,9 @@ class GUIController(QtCore.QObject):
         else:
             self._eval_scenario_text = "Сценарий: обе стороны эвристика (недоступно для запуска)."
 
-        self._eval_mini_summary = f"Игр: {self._eval_games} • deterministic • epsilon=0"
+        self._eval_mini_summary = (
+            f"Игр: {self._eval_games} • deterministic • epsilon=0 • AZ-opponent={self._eval_az_opponent_mode}"
+        )
         self._eval_matchup_text = (
             f"{self._eval_p1_display_name}\n"
             f"{self._eval_p2_display_name}\n"
@@ -2142,6 +2167,7 @@ class GUIController(QtCore.QObject):
         env.insert("LEARNER_SIDE", learner_side)
         env.insert("LEARNER_FACTION", self._display_faction_for_side(learner_side))
         env.insert("LEAGUE_ENABLE", "1")
+        env.insert("AZ_EVAL_OPPONENT_MODE", self._eval_az_opponent_mode)
         env.insert("AGENT_LOG_FILE", str(AGENT_TRAIN_LOG_PATH.relative_to(PROJECT_ROOT)))
         self._process.setProcessEnvironment(env)
 
@@ -2167,13 +2193,15 @@ class GUIController(QtCore.QObject):
         self._emit_log(
             f"[EVAL] Старт оценки: игр={self._eval_games}, learner_side={learner_side}, "
             f"learner_agent_id={learner_agent_id or '-'}, opponent_agent_id={opponent_agent_id or 'heuristic'}, "
-            f"модель={os.path.basename(model_path) if model_path != 'None' else 'registry/roster'}, exploration=off.",
+            f"модель={os.path.basename(model_path) if model_path != 'None' else 'registry/roster'}, "
+            f"AZ-opponent-mode={self._eval_az_opponent_mode}, exploration=off.",
             level="INFO",
         )
         self._append_eval_log_line(
             f"Старт оценки: игр={self._eval_games}, learner_side={learner_side}, "
             f"learner_agent_id={learner_agent_id or '-'}, opponent_agent_id={opponent_agent_id or 'heuristic'}, "
-            f"модель={os.path.basename(model_path) if model_path != 'None' else 'registry/roster'}, exploration=off."
+            f"модель={os.path.basename(model_path) if model_path != 'None' else 'registry/roster'}, "
+            f"AZ-opponent-mode={self._eval_az_opponent_mode}, exploration=off."
         )
         self._emit_status("Оценка запущена...")
         self._process.start(sys.executable, args)

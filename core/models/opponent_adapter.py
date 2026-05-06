@@ -12,6 +12,7 @@ from core.engine.agent_registry import compatible_contracts, load_agent_by_id
 from core.models.DQN import DQN
 from core.models.PPO import ActorCriticMultiHead
 from core.models.alphazero_model import AlphaZeroPolicyValueNet
+from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.action_contract import action_tensor_to_dict
 from core.models.utils import build_action_masks_by_head, build_shoot_action_mask, convertToDict, normalize_state_dict
 
@@ -175,31 +176,65 @@ def build_policy_fn(
         net = AlphaZeroPolicyValueNet(n_obs, n_actions).to(torch.device("cpu"))
         net.load_state_dict(normalize_state_dict(opponent.policy_state))
         net.eval()
+        az_eval_mode = str(os.getenv("AZ_EVAL_OPPONENT_MODE", "greedy")).strip().lower() or "greedy"
+        if az_eval_mode not in {"greedy", "mcts"}:
+            az_eval_mode = "greedy"
+        mcts = None
+        if az_eval_mode == "mcts":
+            mcts_mode = str(os.getenv("AZ_EVAL_MCTS_MODE", "tree")).strip().lower() or "tree"
+            if mcts_mode not in {"proxy", "tree"}:
+                mcts_mode = "tree"
+            mcts_cfg = MCTSConfig(
+                simulations=max(1, int(os.getenv("AZ_EVAL_MCTS_SIMS", "96"))),
+                c_puct=float(os.getenv("AZ_EVAL_MCTS_C_PUCT", "1.5")),
+                dirichlet_alpha=float(os.getenv("AZ_EVAL_MCTS_DIR_ALPHA", "0.3")),
+                dirichlet_eps=float(os.getenv("AZ_EVAL_MCTS_DIR_EPS", "0.0")),
+                top_k_per_head=max(1, int(os.getenv("AZ_EVAL_MCTS_TOP_K_PER_HEAD", "8"))),
+                max_depth=max(1, int(os.getenv("AZ_EVAL_MCTS_MAX_DEPTH", "1"))),
+                mode=mcts_mode,
+                root_dirichlet_only=True,
+            )
+            mcts = AlphaZeroFactorizedMCTS(net, config=mcts_cfg, device=torch.device("cpu"))
 
         def _policy_fn(obs_any) -> dict:
             obs_np = _to_np_state(obs_any)
             obs_t = torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
             masks_cpu = build_action_masks_by_head(env, int(len_model), log_fn=None, debug=False)
             masks = [m.to(torch.device("cpu")).unsqueeze(0) for m in masks_cpu]
-            with torch.no_grad():
-                probs, _value = net.infer(obs_t, masks_by_head=masks)
-            action = []
-            stochastic_eps = float(os.getenv("AZ_OPPONENT_STOCHASTIC_EPS", "0.10"))
-            stochastic_eps = max(0.0, min(1.0, stochastic_eps))
-            for p in probs:
-                row = p.squeeze(0).detach().cpu()
-                arg = int(torch.argmax(row, dim=0).item())
+            if az_eval_mode == "mcts" and mcts is not None:
+                legal_masks = [m.squeeze(0).detach().cpu().numpy().astype(bool) for m in masks]
+                pi_targets, selected, _value = mcts.run(
+                    obs=obs_np,
+                    legal_masks_by_head=legal_masks,
+                    temperature=float(os.getenv("AZ_EVAL_MCTS_TEMPERATURE", "0.10")),
+                    env=env,
+                    len_model=int(len_model),
+                    enemy_policy_fn=None,
+                )
                 if bool(deterministic):
-                    action.append(arg)
-                    continue
-                if np.random.rand() < stochastic_eps:
-                    try:
-                        sample = int(torch.multinomial(row, num_samples=1).item())
-                        action.append(sample)
+                    action = [int(np.argmax(pi)) for pi in pi_targets]
+                else:
+                    action = [int(x) for x in selected]
+            else:
+                with torch.no_grad():
+                    probs, _value = net.infer(obs_t, masks_by_head=masks)
+                action = []
+                stochastic_eps = float(os.getenv("AZ_OPPONENT_STOCHASTIC_EPS", "0.10"))
+                stochastic_eps = max(0.0, min(1.0, stochastic_eps))
+                for p in probs:
+                    row = p.squeeze(0).detach().cpu()
+                    arg = int(torch.argmax(row, dim=0).item())
+                    if bool(deterministic):
+                        action.append(arg)
                         continue
-                    except Exception:
-                        pass
-                action.append(arg)
+                    if np.random.rand() < stochastic_eps:
+                        try:
+                            sample = int(torch.multinomial(row, num_samples=1).item())
+                            action.append(sample)
+                            continue
+                        except Exception:
+                            pass
+                    action.append(arg)
             action_dict = action_tensor_to_dict(torch.tensor([action], device="cpu"), len_model=int(len_model))
             return action_dict
 
