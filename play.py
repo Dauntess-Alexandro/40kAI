@@ -16,6 +16,8 @@ warnings.filterwarnings("ignore")
 from core.models.DQN import *
 from core.models.PPO import ActorCriticMultiHead
 from core.models.alphazero_model import AlphaZeroPolicyValueNet
+from core.models.gumbel_muzero_model import GumbelMuZeroNet
+from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.utils import normalize_state_dict
 from core.models.utils import *
 from core.engine.game_io import ConsoleIO, set_active_io
@@ -172,7 +174,7 @@ if args.agent_id:
     _log(f"[LEAGUE] Используется agent-id={args.agent_id} из registry.")
 
 algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
-if algo not in {"dqn", "ppo", "alphazero"}:
+if algo not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
     algo = "dqn"
 if algo == "ppo":
     ppo_state = checkpoint.get("actor_critic", checkpoint.get("policy_net", {}))
@@ -184,6 +186,18 @@ elif algo == "alphazero":
     az_state = checkpoint.get("policy_value_net", checkpoint.get("policy_net", {}))
     policy_net = AlphaZeroPolicyValueNet(n_observations, n_actions).to(device)
     policy_net.load_state_dict(normalize_state_dict(az_state))
+    policy_net.eval()
+    target_net = None
+elif algo == "gumbel_muzero":
+    gmz_state = checkpoint.get("gumbel_muzero_net", checkpoint.get("policy_net", {}))
+    policy_net = GumbelMuZeroNet(
+        obs_dim=int(n_observations),
+        action_sizes=[int(x) for x in n_actions],
+        latent_dim=int(os.getenv("GMZ_LATENT_DIM", "256")),
+        hidden_dim=int(os.getenv("GMZ_HIDDEN_DIM", "256")),
+        action_embed_dim=int(os.getenv("GMZ_ACTION_EMBED_DIM", "64")),
+    ).to(device)
+    policy_net.load_state_dict(normalize_state_dict(gmz_state))
     policy_net.eval()
     target_net = None
 else:
@@ -299,6 +313,25 @@ while isdone == False:
         with torch.no_grad():
             probs, _value = policy_net.infer(state, masks_by_head=masks_b)
         action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
+        action = torch.tensor([action_list], device="cpu")
+    elif algo == "gumbel_muzero":
+        masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
+        legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
+        search = GumbelMuZeroSearch(
+            net=policy_net,
+            config=GumbelMuZeroSearchConfig(
+                num_simulations=max(1, int(os.getenv("GMZ_PLAY_SIMS", "96"))),
+                root_top_k=max(1, int(os.getenv("GMZ_PLAY_ROOT_TOP_K", "16"))),
+                temperature=float(os.getenv("GMZ_PLAY_TEMPERATURE", "0.10")),
+            ),
+            device=state.device,
+        )
+        pi_targets, _selected, _value = search.run(
+            obs=state.squeeze(0).detach().cpu().numpy(),
+            legal_masks_by_head=legal_masks,
+            deterministic=True,
+        )
+        action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
         action = torch.tensor([action_list], device="cpu")
     elif PLAY_EPS is not None:
         action = select_action_with_epsilon(

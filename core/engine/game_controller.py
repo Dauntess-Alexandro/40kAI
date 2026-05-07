@@ -22,6 +22,8 @@ from core.engine.mission import board_dims_for_mission
 from core.models.DQN import DQN
 from core.models.PPO import ActorCriticMultiHead
 from core.models.alphazero_model import AlphaZeroPolicyValueNet
+from core.models.gumbel_muzero_model import GumbelMuZeroNet
+from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.utils import select_action, convertToDict, build_shoot_action_mask, normalize_state_dict
 from core.models.utils import build_action_masks_by_head
 from core.models.action_contract import action_sizes_from_env
@@ -280,7 +282,7 @@ class GameController:
                 optimizer_state = payload.get("optimizer_state") or {}
                 meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
                 agent_algo = str(meta.get("algo", "")).strip().lower()
-                if agent_algo not in {"dqn", "ppo", "alphazero"}:
+                if agent_algo not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
                     if any(str(k).startswith("policy_heads.") for k in policy_state.keys()):
                         agent_algo = "ppo"
                     else:
@@ -289,6 +291,8 @@ class GameController:
                     checkpoint = {"actor_critic": policy_state, "algo": "ppo"}
                 elif agent_algo == "alphazero":
                     checkpoint = {"policy_value_net": policy_state, "algo": "alphazero"}
+                elif agent_algo == "gumbel_muzero":
+                    checkpoint = {"gumbel_muzero_net": policy_state, "algo": "gumbel_muzero"}
                 else:
                     checkpoint = {
                         "policy_net": policy_state,
@@ -387,7 +391,7 @@ class GameController:
             optimizer_state = payload.get("optimizer_state") or {}
             meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
             agent_algo = str(meta.get("algo", "")).strip().lower()
-            if agent_algo not in {"dqn", "ppo", "alphazero"}:
+            if agent_algo not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
                 # Backward-compat: для старых снапшотов infer по структуре state_dict.
                 if any(str(k).startswith("policy_heads.") for k in policy_state.keys()):
                     agent_algo = "ppo"
@@ -407,6 +411,15 @@ class GameController:
                 checkpoint = {
                     "policy_value_net": policy_state,
                     "algo": "alphazero",
+                    "_viewer_agent_id": agent_id_override,
+                    "_viewer_model_source": "registry",
+                    "_viewer_bootstrap_pickle": model_path,
+                    "_viewer_bootstrap_checkpoint": checkpoint_path,
+                }
+            elif agent_algo == "gumbel_muzero":
+                checkpoint = {
+                    "gumbel_muzero_net": policy_state,
+                    "algo": "gumbel_muzero",
                     "_viewer_agent_id": agent_id_override,
                     "_viewer_model_source": "registry",
                     "_viewer_bootstrap_pickle": model_path,
@@ -531,6 +544,19 @@ class GameController:
                 policy_net.load_state_dict(normalize_state_dict(az_state))
                 policy_net.eval()
                 target_net = None
+            elif algo == "gumbel_muzero":
+                self._io.log("[MODEL] Архитектура сети: gumbel_muzero")
+                gmz_state = checkpoint.get("gumbel_muzero_net", checkpoint.get("policy_net", {}))
+                policy_net = GumbelMuZeroNet(
+                    obs_dim=int(n_observations),
+                    action_sizes=[int(x) for x in n_actions],
+                    latent_dim=int(os.getenv("GMZ_LATENT_DIM", "256")),
+                    hidden_dim=int(os.getenv("GMZ_HIDDEN_DIM", "256")),
+                    action_embed_dim=int(os.getenv("GMZ_ACTION_EMBED_DIM", "64")),
+                ).to(device)
+                policy_net.load_state_dict(normalize_state_dict(gmz_state))
+                policy_net.eval()
+                target_net = None
             else:
                 net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
                 dueling = net_type == "dueling"
@@ -618,6 +644,25 @@ class GameController:
                     with torch.no_grad():
                         probs, _value = policy_net.infer(state_tensor, masks_by_head=masks_b)
                     action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
+                    action = torch.tensor([action_list], device="cpu")
+                elif algo == "gumbel_muzero":
+                    masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
+                    legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
+                    search = GumbelMuZeroSearch(
+                        net=policy_net,
+                        config=GumbelMuZeroSearchConfig(
+                            num_simulations=max(1, int(os.getenv("GMZ_PLAY_SIMS", "96"))),
+                            root_top_k=max(1, int(os.getenv("GMZ_PLAY_ROOT_TOP_K", "16"))),
+                            temperature=float(os.getenv("GMZ_PLAY_TEMPERATURE", "0.10")),
+                        ),
+                        device=state_tensor.device,
+                    )
+                    pi_targets, _selected, _value = search.run(
+                        obs=state_tensor.squeeze(0).detach().cpu().numpy(),
+                        legal_masks_by_head=legal_masks,
+                        deterministic=True,
+                    )
+                    action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
                     action = torch.tensor([action_list], device="cpu")
                 else:
                     action = select_action(env, state_tensor, i, policy_net, len(model), shoot_mask=shoot_mask)

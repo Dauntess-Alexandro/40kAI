@@ -236,7 +236,7 @@ class GUIController(QtCore.QObject):
         self._selected_specific_opponent_id = ""
         self._opponent_preview_text = "Сейчас будет: —"
 
-        self._training_algo_options = ["dqn", "ppo", "alphazero"]
+        self._training_algo_options = ["dqn", "ppo", "alphazero", "gumbel_muzero"]
         self._training_algo = str(os.getenv("TRAIN_ALGO", "dqn")).strip().lower() or "dqn"
         if self._training_algo not in self._training_algo_options:
             self._training_algo = "dqn"
@@ -267,8 +267,66 @@ class GUIController(QtCore.QObject):
             "max_grad_norm": 0.5,
             "target_kl": 0.03,
         }
+        # Секция hyperparams.json["gumbel_muzero"] — читает train.py (GMZ_*).
+        self._default_gmz_hyperparams: dict[str, int | float] = {
+            "learning_rate": 0.0003,
+            "batch_size": 128,
+            "unroll_steps": 5,
+            "value_loss_weight": 1.0,
+            "reward_loss_weight": 1.0,
+            "l2_weight": 1e-6,
+            "discount": 0.997,
+            "replay_capacity": 250000,
+            "num_actors": 8,
+            "actor_batch_send": 64,
+            "actor_queue_max": 256,
+            "sync_every_updates": 2,
+            "updates_per_rollout": 2,
+            "replay_min_size": 512,
+            "max_policy_staleness_updates": 600,
+            "latent_dim": 256,
+            "hidden_dim": 256,
+            "action_embed_dim": 64,
+            "num_simulations": 32,
+            "root_top_k": 8,
+            "gumbel_scale": 1.0,
+            "search_temperature": 0.15,
+            "temperature_opening_moves": 12,
+            "temperature_opening_value": 1.0,
+            "temperature_late_value": 0.25,
+            "outcome_only": 1,
+            "outcome_value_win": 1.0,
+            "outcome_value_loss": -1.0,
+            "outcome_value_draw": -0.25,
+        }
+        self._gmz_profile_presets: dict[str, dict[str, int]] = {
+            "fast": {
+                "num_actors": 8,
+                "num_simulations": 16,
+                "root_top_k": 4,
+                "batch_size": 96,
+                "replay_capacity": 120000,
+            },
+            "balanced": {
+                "num_actors": 8,
+                "num_simulations": 32,
+                "root_top_k": 8,
+                "batch_size": 128,
+                "replay_capacity": 250000,
+            },
+            "heavy": {
+                "num_actors": 8,
+                "num_simulations": 128,
+                "root_top_k": 20,
+                "batch_size": 160,
+                "replay_capacity": 400000,
+                "actor_queue_max": 512,
+            },
+        }
+        self._gmz_selected_profile = "custom"
         self._hyperparams = dict(self._default_hyperparams)
         self._ppo_hyperparams = dict(self._default_ppo_hyperparams)
+        self._gmz_hyperparams = dict(self._default_gmz_hyperparams)
         self._settings_dirty = False
         self._settings_save_state = "✓ Сохранено"
         self._load_hyperparams_from_disk(log_errors=True)
@@ -899,6 +957,41 @@ class GUIController(QtCore.QObject):
     def hpPpoTargetKl(self) -> float:
         return float(self._ppo_hyperparams.get("target_kl", self._default_ppo_hyperparams["target_kl"]))
 
+    @QtCore.Property(float, notify=trainingHyperparamsChanged)
+    def hpGmzLearningRate(self) -> float:
+        return float(self._gmz_hyperparams.get("learning_rate", self._default_gmz_hyperparams["learning_rate"]))
+
+    @QtCore.Property(int, notify=trainingHyperparamsChanged)
+    def hpGmzBatchSize(self) -> int:
+        return int(self._gmz_hyperparams.get("batch_size", self._default_gmz_hyperparams["batch_size"]))
+
+    @QtCore.Property(int, notify=trainingHyperparamsChanged)
+    def hpGmzNumSimulations(self) -> int:
+        return int(self._gmz_hyperparams.get("num_simulations", self._default_gmz_hyperparams["num_simulations"]))
+
+    @QtCore.Property(int, notify=trainingHyperparamsChanged)
+    def hpGmzRootTopK(self) -> int:
+        return int(self._gmz_hyperparams.get("root_top_k", self._default_gmz_hyperparams["root_top_k"]))
+
+    @QtCore.Property(int, notify=trainingHyperparamsChanged)
+    def hpGmzUnrollSteps(self) -> int:
+        return int(self._gmz_hyperparams.get("unroll_steps", self._default_gmz_hyperparams["unroll_steps"]))
+
+    @QtCore.Property(int, notify=trainingHyperparamsChanged)
+    def hpGmzNumActors(self) -> int:
+        return int(self._gmz_hyperparams.get("num_actors", self._default_gmz_hyperparams["num_actors"]))
+
+    @QtCore.Property(str, notify=trainingHyperparamsChanged)
+    def hpGmzPresetLabel(self) -> str:
+        labels = {
+            "fast": "Fast",
+            "balanced": "Balanced",
+            "heavy": "Heavy",
+            "custom": "Custom",
+        }
+        key = str(self._gmz_selected_profile or "custom").strip().lower()
+        return labels.get(key, "Custom")
+
     @QtCore.Property(bool, notify=settingsDirtyChanged)
     def settingsDirty(self) -> bool:
         return self._settings_dirty
@@ -1429,7 +1522,7 @@ class GUIController(QtCore.QObject):
             faction = str(payload.get("faction", "")).strip()
             created_at = str(payload.get("created_at", "")).strip()
             algo = str(payload.get("algo", "")).strip().lower()
-            if algo not in {"dqn", "ppo", "alphazero"}:
+            if algo not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
                 # Backward-compat: старые снапшоты могли не писать "algo" в meta.json.
                 # Инферим по наличию target.pth: у DQN он есть, у PPO обычно отсутствует.
                 # Если явно указан alphazero в meta — не переопределяем.
@@ -1655,7 +1748,7 @@ class GUIController(QtCore.QObject):
         learner_faction = self._display_faction_for_side(learner_side)
         opponent_faction = self._display_faction_for_side(opponent_side)
         learner_algo = (self._training_algo or "dqn").strip().lower()
-        if learner_algo not in {"dqn", "ppo", "alphazero"}:
+        if learner_algo not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
             learner_algo = "dqn"
 
         opponent_algo = "unknown"
@@ -1736,6 +1829,54 @@ class GUIController(QtCore.QObject):
         self.trainingHyperparamsChanged.emit()
         self.mark_settings_dirty()
 
+    @QtCore.Slot(str, str)
+    def set_gmz_hyperparam(self, key: str, value: str) -> None:
+        normalized_key = str(key or "").strip()
+        if normalized_key not in self._default_gmz_hyperparams:
+            return
+
+        current = self._gmz_hyperparams.get(normalized_key, self._default_gmz_hyperparams[normalized_key])
+        try:
+            if isinstance(self._default_gmz_hyperparams[normalized_key], int):
+                parsed: int | float = int(float(str(value).strip()))
+            else:
+                parsed = float(str(value).strip())
+        except (TypeError, ValueError):
+            self._emit_status(
+                f"Некорректное значение GMZ-параметра '{normalized_key}' в Настройках. "
+                "Проверьте формат и попробуйте снова."
+            )
+            return
+
+        if current == parsed:
+            return
+        self._gmz_hyperparams[normalized_key] = parsed
+        self._refresh_gmz_profile_label()
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+
+    def _detect_gmz_profile(self) -> str:
+        for profile_name, expected in self._gmz_profile_presets.items():
+            if all(self._gmz_hyperparams.get(k) == v for k, v in expected.items()):
+                return profile_name
+        return "custom"
+
+    def _refresh_gmz_profile_label(self) -> None:
+        self._gmz_selected_profile = self._detect_gmz_profile()
+
+    @QtCore.Slot(str)
+    def apply_gmz_profile(self, profile: str) -> None:
+        mode = str(profile or "").strip().lower()
+        if mode not in {"fast", "balanced", "heavy"}:
+            return
+        base = dict(self._default_gmz_hyperparams)
+        base.update(self._gmz_profile_presets.get(mode, {}))
+        self._gmz_hyperparams.update(base)
+        self._gmz_selected_profile = mode
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+        self._emit_status(f"Применен профиль Gumbel MuZero: {mode}. Сохраните настройки.")
+
     @QtCore.Slot()
     def reload_training_hyperparams(self) -> None:
         if self._load_hyperparams_from_disk(log_errors=True):
@@ -1746,6 +1887,8 @@ class GUIController(QtCore.QObject):
     def reset_training_hyperparams(self) -> None:
         self._hyperparams = dict(self._default_hyperparams)
         self._ppo_hyperparams = dict(self._default_ppo_hyperparams)
+        self._gmz_hyperparams = dict(self._default_gmz_hyperparams)
+        self._refresh_gmz_profile_label()
         self.trainingHyperparamsChanged.emit()
         self.mark_settings_dirty()
         self._emit_status("Параметры тренировки сброшены к значениям по умолчанию.")
@@ -1766,6 +1909,13 @@ class GUIController(QtCore.QObject):
                 "Исправьте значения PPO и повторите сохранение."
             )
             return
+        gmz_error = self._validate_gmz_hyperparams(self._gmz_hyperparams)
+        if gmz_error:
+            self._emit_status(
+                f"Не удалось сохранить hyperparams.json в Настройках: {gmz_error}. "
+                "Исправьте значения Gumbel MuZero и повторите сохранение."
+            )
+            return
         try:
             # Сохраняем прочие ключи из файла; DQN-поля — merge сверху, секция ppo — целиком из формы.
             existing_payload: dict[str, object] = {}
@@ -1780,6 +1930,7 @@ class GUIController(QtCore.QObject):
             merged_payload = dict(existing_payload)
             merged_payload.update(self._hyperparams)
             merged_payload["ppo"] = dict(self._ppo_hyperparams)
+            merged_payload["gumbel_muzero"] = dict(self._gmz_hyperparams)
             with open(self._hyperparams_path, "w", encoding="utf-8") as handle:
                 json.dump(merged_payload, handle, indent=4, ensure_ascii=False)
                 handle.write("\n")
@@ -1876,6 +2027,33 @@ class GUIController(QtCore.QObject):
             return "ppo.target_kl должен быть > 0"
         return None
 
+    def _validate_gmz_hyperparams(self, payload: dict[str, int | float]) -> str | None:
+        lr = float(payload["learning_rate"])
+        batch_size = int(payload["batch_size"])
+        unroll_steps = int(payload["unroll_steps"])
+        discount = float(payload["discount"])
+        replay_capacity = int(payload["replay_capacity"])
+        num_actors = int(payload["num_actors"])
+        num_simulations = int(payload["num_simulations"])
+        root_top_k = int(payload["root_top_k"])
+        if not (0.0 < lr <= 1.0):
+            return "gumbel_muzero.learning_rate должен быть в диапазоне (0, 1]"
+        if batch_size < 1:
+            return "gumbel_muzero.batch_size должен быть >= 1"
+        if unroll_steps < 1:
+            return "gumbel_muzero.unroll_steps должен быть >= 1"
+        if not (0.0 < discount <= 1.0):
+            return "gumbel_muzero.discount должен быть в диапазоне (0, 1]"
+        if replay_capacity < 1024:
+            return "gumbel_muzero.replay_capacity должен быть >= 1024"
+        if num_actors < 1:
+            return "gumbel_muzero.num_actors должен быть >= 1"
+        if num_simulations < 1:
+            return "gumbel_muzero.num_simulations должен быть >= 1"
+        if root_top_k < 1:
+            return "gumbel_muzero.root_top_k должен быть >= 1"
+        return None
+
     def _load_hyperparams_from_disk(self, log_errors: bool = False) -> bool:
         try:
             with open(self._hyperparams_path, "r", encoding="utf-8") as handle:
@@ -1883,6 +2061,8 @@ class GUIController(QtCore.QObject):
         except (OSError, json.JSONDecodeError) as exc:
             self._hyperparams = dict(self._default_hyperparams)
             self._ppo_hyperparams = dict(self._default_ppo_hyperparams)
+            self._gmz_hyperparams = dict(self._default_gmz_hyperparams)
+            self._refresh_gmz_profile_label()
             self.trainingHyperparamsChanged.emit()
             if log_errors:
                 self._emit_status(
@@ -1920,6 +2100,22 @@ class GUIController(QtCore.QObject):
                 ppo_updated[key] = default_value
 
         self._ppo_hyperparams = ppo_updated
+
+        gmz_raw = payload.get("gumbel_muzero", {})
+        if not isinstance(gmz_raw, dict):
+            gmz_raw = {}
+        gmz_updated = dict(self._default_gmz_hyperparams)
+        for key, default_value in self._default_gmz_hyperparams.items():
+            raw = gmz_raw.get(key, default_value)
+            try:
+                if isinstance(default_value, int):
+                    gmz_updated[key] = int(raw)
+                else:
+                    gmz_updated[key] = float(raw)
+            except (TypeError, ValueError):
+                gmz_updated[key] = default_value
+        self._gmz_hyperparams = gmz_updated
+        self._refresh_gmz_profile_label()
         self.trainingHyperparamsChanged.emit()
         return True
 
@@ -2168,6 +2364,11 @@ class GUIController(QtCore.QObject):
         env.insert("LEARNER_FACTION", self._display_faction_for_side(learner_side))
         env.insert("LEAGUE_ENABLE", "1")
         env.insert("AZ_EVAL_OPPONENT_MODE", self._eval_az_opponent_mode)
+        # Fast GMZ eval preset: lower search budget + greedy mode for quick checks.
+        env.insert("GMZ_EVAL_SIMS", "32")
+        env.insert("GMZ_EVAL_ROOT_TOP_K", "8")
+        env.insert("GMZ_EVAL_MODE", "greedy")
+        env.insert("GMZ_OPPONENT_MODE", "greedy")
         env.insert("AGENT_LOG_FILE", str(AGENT_TRAIN_LOG_PATH.relative_to(PROJECT_ROOT)))
         self._process.setProcessEnvironment(env)
 
@@ -2194,14 +2395,14 @@ class GUIController(QtCore.QObject):
             f"[EVAL] Старт оценки: игр={self._eval_games}, learner_side={learner_side}, "
             f"learner_agent_id={learner_agent_id or '-'}, opponent_agent_id={opponent_agent_id or 'heuristic'}, "
             f"модель={os.path.basename(model_path) if model_path != 'None' else 'registry/roster'}, "
-            f"AZ-opponent-mode={self._eval_az_opponent_mode}, exploration=off.",
+            f"AZ-opponent-mode={self._eval_az_opponent_mode}, GMZ-eval=greedy(sims=32,top_k=8), exploration=off.",
             level="INFO",
         )
         self._append_eval_log_line(
             f"Старт оценки: игр={self._eval_games}, learner_side={learner_side}, "
             f"learner_agent_id={learner_agent_id or '-'}, opponent_agent_id={opponent_agent_id or 'heuristic'}, "
             f"модель={os.path.basename(model_path) if model_path != 'None' else 'registry/roster'}, "
-            f"AZ-opponent-mode={self._eval_az_opponent_mode}, exploration=off."
+            f"AZ-opponent-mode={self._eval_az_opponent_mode}, GMZ-eval=greedy(sims=32,top_k=8), exploration=off."
         )
         self._emit_status("Оценка запущена...")
         self._process.start(sys.executable, args)
@@ -2618,6 +2819,40 @@ class GUIController(QtCore.QObject):
         env.insert("LEAGUE_ENABLE", "1")
         env.insert("DEPLOYMENT_MODE", self._deployment_mode)
         env.insert("TRAIN_EPISODES_OVERRIDE", str(int(self._num_games)))
+        if self._training_algo == "gumbel_muzero":
+            gmz_map = {
+                "learning_rate": "GMZ_LR",
+                "batch_size": "GMZ_BATCH_SIZE",
+                "unroll_steps": "GMZ_UNROLL_STEPS",
+                "value_loss_weight": "GMZ_VALUE_LOSS_WEIGHT",
+                "reward_loss_weight": "GMZ_REWARD_LOSS_WEIGHT",
+                "l2_weight": "GMZ_L2_WEIGHT",
+                "discount": "GMZ_DISCOUNT",
+                "replay_capacity": "GMZ_REPLAY_CAPACITY",
+                "num_actors": "GMZ_NUM_ACTORS",
+                "actor_batch_send": "GMZ_ACTOR_BATCH_SEND",
+                "actor_queue_max": "GMZ_ACTOR_QUEUE_MAX",
+                "sync_every_updates": "GMZ_SYNC_EVERY_UPDATES",
+                "updates_per_rollout": "GMZ_UPDATES_PER_ROLLOUT",
+                "replay_min_size": "GMZ_REPLAY_MIN_SIZE",
+                "max_policy_staleness_updates": "GMZ_MAX_POLICY_STALENESS_UPDATES",
+                "latent_dim": "GMZ_LATENT_DIM",
+                "hidden_dim": "GMZ_HIDDEN_DIM",
+                "action_embed_dim": "GMZ_ACTION_EMBED_DIM",
+                "num_simulations": "GMZ_MCTS_SIMS",
+                "root_top_k": "GMZ_ROOT_TOP_K",
+                "gumbel_scale": "GMZ_GUMBEL_SCALE",
+                "search_temperature": "GMZ_SEARCH_TEMPERATURE",
+                "temperature_opening_moves": "GMZ_TEMP_OPENING_MOVES",
+                "temperature_opening_value": "GMZ_TEMP_OPENING",
+                "temperature_late_value": "GMZ_TEMP_LATE",
+                "outcome_only": "GMZ_OUTCOME_ONLY",
+                "outcome_value_win": "GMZ_OUTCOME_VALUE_WIN",
+                "outcome_value_loss": "GMZ_OUTCOME_VALUE_LOSS",
+                "outcome_value_draw": "GMZ_OUTCOME_VALUE_DRAW",
+            }
+            for key, env_key in gmz_map.items():
+                env.insert(env_key, str(self._gmz_hyperparams.get(key, self._default_gmz_hyperparams.get(key))))
         if self._deployment_mode == "manual_player":
             self._emit_log(
                 "[GUI] [TRAIN] DEPLOYMENT_MODE=manual_player не поддерживается для неинтерактивного train.py; "
@@ -2654,6 +2889,18 @@ class GUIController(QtCore.QObject):
             start_message = (
                 f"Старт {status_prefix.lower()}: AlphaZero="
                 "on(mcts=96,c_puct=1.5,dir_alpha=0.3,dir_eps=0.25,temp_open=1.0,temp_late=0.2,batch=128)."
+            )
+        elif self._training_algo == "gumbel_muzero":
+            gmz_sims = int(self._gmz_hyperparams.get("num_simulations", self._default_gmz_hyperparams["num_simulations"]))
+            gmz_top_k = int(self._gmz_hyperparams.get("root_top_k", self._default_gmz_hyperparams["root_top_k"]))
+            gmz_unroll = int(self._gmz_hyperparams.get("unroll_steps", self._default_gmz_hyperparams["unroll_steps"]))
+            gmz_replay = int(self._gmz_hyperparams.get("replay_capacity", self._default_gmz_hyperparams["replay_capacity"]))
+            gmz_batch = int(self._gmz_hyperparams.get("batch_size", self._default_gmz_hyperparams["batch_size"]))
+            gmz_actors = int(self._gmz_hyperparams.get("num_actors", self._default_gmz_hyperparams["num_actors"]))
+            start_message = (
+                f"Старт {status_prefix.lower()}: GumbelMuZero="
+                f"on(sims={gmz_sims},root_top_k={gmz_top_k},unroll={gmz_unroll},"
+                f"replay={gmz_replay},batch={gmz_batch},actors={gmz_actors})."
             )
         else:
             start_message = (
@@ -3420,7 +3667,8 @@ class GUIController(QtCore.QObject):
                 "killdiff": self._metrics_defaults["killdiff"],
                 "endreasons": self._resolve_metric_path(payload.get("endreasons"), self._metrics_defaults["endreasons"]),
             }
-        self._metrics_run_id = self._extract_run_id_from_path(json_path)
+        run_id_from_payload = str(payload.get("run_id", "") or "").strip()
+        self._metrics_run_id = run_id_from_payload or self._extract_run_id_from_path(json_path)
         self._set_metrics_files(updated)
         self._refresh_metrics_summaries()
         return True
@@ -3792,10 +4040,13 @@ class GUIController(QtCore.QObject):
         self._metric_summary_texts = summaries
         self._model_state_text = model_state
         self.metricsSummaryChanged.emit()
-        self._load_latest_heuristic_metrics()
+        self._load_latest_heuristic_metrics(run_id=str(run_id))
 
-    def _load_latest_heuristic_metrics(self) -> None:
-        path = str(ARTIFACTS_METRICS_DIR / "heur_metrics_latest.json")
+    def _load_latest_heuristic_metrics(self, run_id: str = "") -> None:
+        preferred_run = str(run_id or "").strip()
+        preferred_path = str(ARTIFACTS_METRICS_DIR / f"heur_metrics_{preferred_run}.json") if preferred_run else ""
+        latest_path = str(ARTIFACTS_METRICS_DIR / "heur_metrics_latest.json")
+        path = preferred_path if preferred_path and os.path.exists(preferred_path) else latest_path
         if not os.path.exists(path):
             self._heuristic_metrics = {}
             self._heuristic_metrics_text = "Нет данных метрик эвристики."
@@ -3806,7 +4057,7 @@ class GUIController(QtCore.QObject):
                 payload = json.load(handle)
         except (OSError, json.JSONDecodeError):
             self._heuristic_metrics = {}
-            self._heuristic_metrics_text = "Не удалось прочитать artifacts/metrics/heur_metrics_latest.json."
+            self._heuristic_metrics_text = f"Не удалось прочитать {path}."
             self.heuristicMetricsChanged.emit()
             return
         self._heuristic_metrics = payload if isinstance(payload, dict) else {}
@@ -3818,6 +4069,7 @@ class GUIController(QtCore.QObject):
         lines = [
             f"Последний ран: {run_id}",
             f"Обновлено: {updated_at}",
+            f"Источник: {os.path.basename(path)}",
             "",
             "Только метрики эвристики:",
             f"Винрейт эвристики (все train-игры): {float(self._heuristic_metrics.get('train_heur_winrate', 0.0)):.3f}",
@@ -3915,7 +4167,9 @@ class GUIController(QtCore.QObject):
                 self._play_model_label = f"Последний agent: {latest_agent_id}"
                 self.playModelLabelChanged.emit(self._play_model_label)
             self._play_model_algo_label = (
-                f"Алгоритм: {agent_algo.upper()}" if agent_algo in {"dqn", "ppo", "alphazero"} else "Алгоритм: —"
+                f"Алгоритм: {agent_algo.upper()}"
+                if agent_algo in {"dqn", "ppo", "alphazero", "gumbel_muzero"}
+                else "Алгоритм: —"
             )
             self._play_model_checkpoint_label = f"Agent: {latest_agent_id}"
             self.playModelMetaChanged.emit(self._play_model_algo_label)

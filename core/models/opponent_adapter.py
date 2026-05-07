@@ -13,6 +13,8 @@ from core.models.DQN import DQN
 from core.models.PPO import ActorCriticMultiHead
 from core.models.alphazero_model import AlphaZeroPolicyValueNet
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
+from core.models.gumbel_muzero_model import GumbelMuZeroNet
+from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.action_contract import action_tensor_to_dict
 from core.models.utils import build_action_masks_by_head, build_shoot_action_mask, convertToDict, normalize_state_dict
 
@@ -20,7 +22,7 @@ from core.models.utils import build_action_masks_by_head, build_shoot_action_mas
 @dataclass(frozen=True)
 class OpponentSpec:
     agent_id: str
-    algo: str  # "dqn" | "ppo" | "alphazero"
+    algo: str  # "dqn" | "ppo" | "alphazero" | "gumbel_muzero"
     contract: dict[str, Any]
     policy_state: dict[str, Any]
 
@@ -58,7 +60,7 @@ def load_agent_opponent(*, agent_id: str, expected_contract: Optional[dict[str, 
     payload = load_agent_by_id(str(agent_id))
     meta = payload.get("meta") if isinstance(payload, dict) else {}
     algo = str((meta or {}).get("algo", "")).strip().lower()
-    if algo not in {"dqn", "ppo", "alphazero"}:
+    if algo not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
         # Backward-compatible inference for older artifacts:
         # - DQN artifacts usually have target_state saved
         # - PPO artifacts usually don't
@@ -75,7 +77,10 @@ def load_agent_opponent(*, agent_id: str, expected_contract: Optional[dict[str, 
                 if isinstance(policy_state_guess, dict) and any(str(k).startswith("policy_heads.") for k in policy_state_guess.keys()):
                     algo = "alphazero"
                 else:
-                    raise ValueError(f"agent '{agent_id}' has unsupported algo='{algo}' (expected dqn/ppo/alphazero).")
+                    raise ValueError(
+                        f"agent '{agent_id}' has unsupported algo='{algo}' "
+                        "(expected dqn/ppo/alphazero/gumbel_muzero)."
+                    )
 
     contract = payload.get("contract") if isinstance(payload, dict) else None
     if expected_contract is not None:
@@ -237,6 +242,52 @@ def build_policy_fn(
                     action.append(arg)
             action_dict = action_tensor_to_dict(torch.tensor([action], device="cpu"), len_model=int(len_model))
             return action_dict
+
+        return _policy_fn
+
+    if opponent.algo == "gumbel_muzero":
+        net = GumbelMuZeroNet(
+            obs_dim=int(n_obs),
+            action_sizes=[int(x) for x in n_actions],
+            latent_dim=int(os.getenv("GMZ_LATENT_DIM", "256")),
+            hidden_dim=int(os.getenv("GMZ_HIDDEN_DIM", "256")),
+            action_embed_dim=int(os.getenv("GMZ_ACTION_EMBED_DIM", "64")),
+        ).to(torch.device("cpu"))
+        net.load_state_dict(normalize_state_dict(opponent.policy_state))
+        net.eval()
+        gmz_mode = str(os.getenv("GMZ_OPPONENT_MODE", "search")).strip().lower() or "search"
+        if gmz_mode not in {"search", "greedy"}:
+            gmz_mode = "search"
+        search = GumbelMuZeroSearch(
+            net=net,
+            config=GumbelMuZeroSearchConfig(
+                num_simulations=max(1, int(os.getenv("GMZ_EVAL_SIMS", "32"))),
+                root_top_k=max(1, int(os.getenv("GMZ_EVAL_ROOT_TOP_K", "8"))),
+                temperature=float(os.getenv("GMZ_EVAL_TEMPERATURE", "0.15")),
+            ),
+            device=torch.device("cpu"),
+        )
+
+        def _policy_fn(obs_any) -> dict:
+            obs_np = _to_np_state(obs_any)
+            masks_cpu = build_action_masks_by_head(env, int(len_model), log_fn=None, debug=False)
+            legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
+            obs_t = torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
+            if gmz_mode == "greedy":
+                with torch.no_grad():
+                    probs, _value = net.infer(obs_t, masks_by_head=[m.unsqueeze(0) for m in masks_cpu])
+                action = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
+            else:
+                pi_targets, selected, _value = search.run(
+                    obs=obs_np,
+                    legal_masks_by_head=legal_masks,
+                    deterministic=bool(deterministic),
+                )
+                if bool(deterministic):
+                    action = [int(np.argmax(pi)) for pi in pi_targets]
+                else:
+                    action = [int(x) for x in selected]
+            return action_tensor_to_dict(torch.tensor([action], device="cpu"), len_model=int(len_model))
 
         return _policy_fn
 

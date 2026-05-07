@@ -62,6 +62,11 @@ from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.alphazero_replay import AlphaZeroReplayBuffer, AZTransition
 from core.models.alphazero_selfplay import play_episode_with_mcts, SelfPlayConfig
 from core.models.alphazero_trainer import AlphaZeroTrainConfig, train_alphazero_step
+from core.models.gumbel_muzero_model import GumbelMuZeroNet
+from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
+from core.models.gumbel_muzero_replay import GumbelMuZeroReplayBuffer, GMZTransition
+from core.models.gumbel_muzero_selfplay import play_episode_with_gumbel_muzero, GumbelSelfPlayConfig
+from core.models.gumbel_muzero_trainer import GumbelMuZeroTrainConfig, train_gumbel_muzero_step
 from core.models.action_contract import ordered_action_keys, action_sizes_from_env
 MODELS_DIR = str(ARTIFACTS_MODELS_DIR)
 METRICS_DIR = str(ARTIFACTS_METRICS_DIR)
@@ -157,7 +162,7 @@ NOISY_DISABLE_EPS = os.getenv("NOISY_DISABLE_EPS", "1") == "1"
 REWARD_DEBUG = os.getenv("REWARD_DEBUG", "0") == "1"
 REWARD_DEBUG_EVERY = int(os.getenv("REWARD_DEBUG_EVERY", "200"))
 TRAIN_ALGO = str(os.getenv("TRAIN_ALGO", "dqn")).strip().lower() or "dqn"
-if TRAIN_ALGO not in {"dqn", "ppo", "alphazero"}:
+if TRAIN_ALGO not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
     TRAIN_ALGO = "dqn"
 # ===== train logging =====
 TRAIN_LOG_ENABLED = os.getenv("TRAIN_LOG_ENABLED", "1") == "1"
@@ -165,6 +170,9 @@ TRAIN_LOG_EVERY_UPDATES = int(os.getenv("TRAIN_LOG_EVERY_UPDATES", "200"))
 TRAIN_LOG_TO_FILE = os.getenv("TRAIN_LOG_TO_FILE", "1") == "1"
 TRAIN_LOG_TO_CONSOLE = str(os.getenv("TRAIN_LOG_TO_CONSOLE", "0")).strip() == "1"
 TRAIN_DEBUG = os.getenv("TRAIN_DEBUG", "0") == "1"
+ACTOR_PROGRESS_STDOUT_EVERY = max(1, int(os.getenv("ACTOR_PROGRESS_STDOUT_EVERY", "1")))
+ACTOR_PBAR_MININTERVAL = max(0.0, float(os.getenv("ACTOR_PBAR_MININTERVAL", "0.05" if os.name == "nt" else "0.05")))
+ACTOR_PBAR_MINITERS = max(1, int(os.getenv("ACTOR_PBAR_MINITERS", "1")))
 LOG_EVERY = int(os.getenv("LOG_EVERY", "200"))
 ACTION_TRACE_ENABLED = os.getenv("ACTION_TRACE_ENABLED", "0") == "1"
 ACTION_TRACE_FIRST_EP = max(0, int(os.getenv("ACTION_TRACE_FIRST_EP", "3") or "3"))
@@ -870,6 +878,13 @@ def _write_det_eval_data_json(
         payload.update(extra)
     with open(data_json_path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2)
+    # Alias для GUI "latest metrics" без зависимости от mtime старых data_*.json.
+    latest_json_path = os.path.join(MODELS_DIR, "data_latest.json")
+    try:
+        with open(latest_json_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+    except OSError:
+        pass
     return data_json_path
 
 
@@ -954,7 +969,7 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = METRICS_DIR) -> dic
 
     # --- winrate ---
     fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-    ax.plot(episodes, win_rates, color="#1f77b4", linewidth=1.6, label="win_rate")
+    ax.plot(episodes, win_rates, color="#1f77b4", linewidth=1.6, marker="o", markersize=3, label="win_rate")
     _trend_line(ax, episodes, win_rates)
     ax.set_ylim(-0.05, 1.05)
     ax.set_ylabel("Win rate")
@@ -971,7 +986,7 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = METRICS_DIR) -> dic
 
     # --- reward ---
     fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-    ax.plot(episodes, reward_mean, color="#1f77b4", linewidth=1.6, label="reward_mean")
+    ax.plot(episodes, reward_mean, color="#1f77b4", linewidth=1.6, marker="o", markersize=3, label="reward_mean")
     _trend_line(ax, episodes, reward_mean)
     ax.set_ylabel("Суммарная награда за eval-игру / N")
     ax.set_title("DET-eval: средняя награда")
@@ -987,8 +1002,8 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = METRICS_DIR) -> dic
 
     # --- avg VP (model/enemy) ---
     fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-    ax.plot(episodes, model_vp_m, color="#1f77b4", linewidth=1.6, label="model_vp_mean")
-    ax.plot(episodes, enemy_vp_m, color="#d62728", linewidth=1.6, label="enemy_vp_mean")
+    ax.plot(episodes, model_vp_m, color="#1f77b4", linewidth=1.6, marker="o", markersize=3, label="model_vp_mean")
+    ax.plot(episodes, enemy_vp_m, color="#d62728", linewidth=1.6, marker="o", markersize=3, label="enemy_vp_mean")
     ax.set_ylabel("VP")
     ax.set_title("DET-eval: Avg VP (model vs enemy)")
     ax.set_xlabel("Эпизод обучения (якорь)")
@@ -1023,7 +1038,7 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = METRICS_DIR) -> dic
 
     # --- ep_len ---
     fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-    ax.plot(episodes, ep_len_m, color="#9467bd", linewidth=1.6, label="ep_len_mean")
+    ax.plot(episodes, ep_len_m, color="#9467bd", linewidth=1.6, marker="o", markersize=3, label="ep_len_mean")
     _trend_line(ax, episodes, ep_len_m)
     ax.set_ylabel("Средняя длина eval-эпизода (шаги)")
     ax.set_title("DET-eval: длина эпизода")
@@ -1039,7 +1054,7 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = METRICS_DIR) -> dic
 
     # --- hp_diff ---
     fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-    ax.plot(episodes, hp_diff_m, color="#d62728", linewidth=1.6, label="hp_diff_mean")
+    ax.plot(episodes, hp_diff_m, color="#d62728", linewidth=1.6, marker="o", markersize=3, label="hp_diff_mean")
     _trend_line(ax, episodes, hp_diff_m)
     ax.set_ylabel("HP diff (model − enemy)")
     ax.set_title("DET-eval: HP diff (конец игры)")
@@ -1055,7 +1070,7 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = METRICS_DIR) -> dic
 
     # --- kill_diff ---
     fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-    ax.plot(episodes, kill_diff_m, color="#8c564b", linewidth=1.6, label="kill_diff_mean")
+    ax.plot(episodes, kill_diff_m, color="#8c564b", linewidth=1.6, marker="o", markersize=3, label="kill_diff_mean")
     _trend_line(ax, episodes, kill_diff_m)
     ax.set_ylabel("Kill diff (model − enemy)")
     ax.set_title("DET-eval: Kill diff (по моделям)")
@@ -1071,9 +1086,9 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = METRICS_DIR) -> dic
 
     # --- end reasons (доли) ---
     fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-    ax.plot(episodes, wo_e, color="#1f77b4", linewidth=1.4, label="wipeout_enemy")
-    ax.plot(episodes, wo_m, color="#ff7f0e", linewidth=1.4, label="wipeout_model")
-    ax.plot(episodes, tl_r, color="#2ca02c", linewidth=1.4, label="turn_limit")
+    ax.plot(episodes, wo_e, color="#1f77b4", linewidth=1.4, marker="o", markersize=3, label="wipeout_enemy")
+    ax.plot(episodes, wo_m, color="#ff7f0e", linewidth=1.4, marker="o", markersize=3, label="wipeout_model")
+    ax.plot(episodes, tl_r, color="#2ca02c", linewidth=1.4, marker="o", markersize=3, label="turn_limit")
     ax.set_ylim(-0.05, 1.05)
     ax.set_ylabel("Доля игр")
     ax.set_title("DET-eval: причины завершения (доли)")
@@ -2291,6 +2306,38 @@ AZ_DET_EVAL_GATE_TURN_LIMIT_MAX = float(
 AZ_DET_EVAL_GATE_DRAW_MAX = float(
     os.getenv("AZ_DET_EVAL_GATE_DRAW_MAX", str(AZ_CFG.get("det_eval_gate_draw_max", 0.70)))
 )
+GMZ_CFG = data.get("gumbel_muzero", {}) if isinstance(data, dict) else {}
+GMZ_LR = float(GMZ_CFG.get("learning_rate", AZ_LR))
+GMZ_BATCH_SIZE = int(GMZ_CFG.get("batch_size", 128))
+GMZ_UNROLL_STEPS = int(GMZ_CFG.get("unroll_steps", 5))
+GMZ_REWARD_LOSS_WEIGHT = float(GMZ_CFG.get("reward_loss_weight", 1.0))
+GMZ_VALUE_LOSS_WEIGHT = float(GMZ_CFG.get("value_loss_weight", 1.0))
+GMZ_L2_WEIGHT = float(GMZ_CFG.get("l2_weight", 1e-6))
+GMZ_DISCOUNT = float(GMZ_CFG.get("discount", 0.997))
+GMZ_REPLAY_CAPACITY = int(GMZ_CFG.get("replay_capacity", 250000))
+GMZ_NUM_ACTORS = max(1, int(os.getenv("GMZ_NUM_ACTORS", str(GMZ_CFG.get("num_actors", AZ_NUM_ACTORS)))))
+GMZ_ACTOR_BATCH_SEND = max(8, int(os.getenv("GMZ_ACTOR_BATCH_SEND", str(GMZ_CFG.get("actor_batch_send", 64)))))
+GMZ_ACTOR_QUEUE_MAX = max(64, int(os.getenv("GMZ_ACTOR_QUEUE_MAX", str(GMZ_CFG.get("actor_queue_max", 256)))))
+GMZ_SYNC_EVERY_UPDATES = max(1, int(os.getenv("GMZ_SYNC_EVERY_UPDATES", str(GMZ_CFG.get("sync_every_updates", 2)))))
+GMZ_UPDATES_PER_ROLLOUT = max(1, int(os.getenv("GMZ_UPDATES_PER_ROLLOUT", str(GMZ_CFG.get("updates_per_rollout", 2)))))
+GMZ_REPLAY_MIN_SIZE = max(1, int(os.getenv("GMZ_REPLAY_MIN_SIZE", str(GMZ_CFG.get("replay_min_size", 512)))))
+GMZ_MAX_POLICY_STALENESS_UPDATES = int(
+    os.getenv("GMZ_MAX_POLICY_STALENESS_UPDATES", str(GMZ_CFG.get("max_policy_staleness_updates", 600)))
+)
+GMZ_LATENT_DIM = int(os.getenv("GMZ_LATENT_DIM", str(GMZ_CFG.get("latent_dim", 256))))
+GMZ_HIDDEN_DIM = int(os.getenv("GMZ_HIDDEN_DIM", str(GMZ_CFG.get("hidden_dim", 256))))
+GMZ_ACTION_EMBED_DIM = int(os.getenv("GMZ_ACTION_EMBED_DIM", str(GMZ_CFG.get("action_embed_dim", 64))))
+GMZ_MCTS_SIMS = int(os.getenv("GMZ_MCTS_SIMS", str(GMZ_CFG.get("num_simulations", 96))))
+GMZ_ROOT_TOP_K = int(os.getenv("GMZ_ROOT_TOP_K", str(GMZ_CFG.get("root_top_k", 16))))
+GMZ_GUMBEL_SCALE = float(os.getenv("GMZ_GUMBEL_SCALE", str(GMZ_CFG.get("gumbel_scale", 1.0))))
+GMZ_SEARCH_TEMP = float(os.getenv("GMZ_SEARCH_TEMPERATURE", str(GMZ_CFG.get("search_temperature", 0.15))))
+GMZ_TEMP_OPENING_MOVES = int(os.getenv("GMZ_TEMP_OPENING_MOVES", str(GMZ_CFG.get("temperature_opening_moves", 12))))
+GMZ_TEMP_OPENING = float(os.getenv("GMZ_TEMP_OPENING", str(GMZ_CFG.get("temperature_opening_value", 1.0))))
+GMZ_TEMP_LATE = float(os.getenv("GMZ_TEMP_LATE", str(GMZ_CFG.get("temperature_late_value", 0.25))))
+GMZ_OUTCOME_ONLY = str(os.getenv("GMZ_OUTCOME_ONLY", str(GMZ_CFG.get("outcome_only", 1)))).strip() == "1"
+GMZ_OUTCOME_VALUE_WIN = float(os.getenv("GMZ_OUTCOME_VALUE_WIN", str(GMZ_CFG.get("outcome_value_win", 1.0))))
+GMZ_OUTCOME_VALUE_LOSS = float(os.getenv("GMZ_OUTCOME_VALUE_LOSS", str(GMZ_CFG.get("outcome_value_loss", -1.0))))
+GMZ_OUTCOME_VALUE_DRAW = float(os.getenv("GMZ_OUTCOME_VALUE_DRAW", str(GMZ_CFG.get("outcome_value_draw", -0.25))))
 
 # ============================================================
 # (C) Несколько обучающих апдейтов на один шаг среды
@@ -3052,6 +3099,17 @@ def main():
                 clip_reward_max=clip_reward_max,
             )
             return
+        if TRAIN_ALGO == "gumbel_muzero":
+            if TRAIN_LOG_TO_CONSOLE:
+                print("[TRAIN][MODE] PRO_ACTOR_LEARNER=1 (Gumbel MuZero actors CPU + learner GPU)")
+            _main_actor_learner_gumbel_muzero(
+                roster_config=roster_config,
+                totLifeT=totLifeT,
+                clip_reward_enabled=clip_reward_enabled,
+                clip_reward_min=clip_reward_min,
+                clip_reward_max=clip_reward_max,
+            )
+            return
         if TRAIN_ALGO == "dqn":
             if TRAIN_LOG_TO_CONSOLE:
                 print("[TRAIN][MODE] PRO_ACTOR_LEARNER=1 (DQN actors CPU + learner GPU)")
@@ -3329,6 +3387,18 @@ def main():
     if TRAIN_ALGO == "alphazero":
         append_agent_log(f"[AZ] Запуск AlphaZero ветки. episodes={totLifeT}")
         _main_actor_learner_alphazero(
+            roster_config=roster_config,
+            totLifeT=totLifeT,
+            clip_reward_enabled=clip_reward_enabled,
+            clip_reward_min=clip_reward_min,
+            clip_reward_max=clip_reward_max,
+        )
+        _cleanup_train_envs(env_contexts=env_contexts, subproc_envs=subproc_envs, use_subproc=USE_SUBPROC_ENVS)
+        return
+
+    if TRAIN_ALGO == "gumbel_muzero":
+        append_agent_log(f"[GMZ] Запуск Gumbel MuZero ветки. episodes={totLifeT}")
+        _main_actor_learner_gumbel_muzero(
             roster_config=roster_config,
             totLifeT=totLifeT,
             clip_reward_enabled=clip_reward_enabled,
@@ -3815,7 +3885,7 @@ def main():
     side_tag = f"{learner_identity.side}_{learner_identity.faction}"
     safe_name = _sanitize_fs_name(f"{name}__learner_{side_tag}")
     algo_tag = str(TRAIN_ALGO or "dqn").strip().lower()
-    if algo_tag not in {"dqn", "ppo", "alphazero"}:
+    if algo_tag not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
         algo_tag = "dqn"
     models_root = os.path.join(MODELS_DIR, algo_tag)
     fold = os.path.join(models_root, safe_name)
@@ -5267,7 +5337,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             if SELF_PLAY_OPPONENT_MODE == "fixed_checkpoint" and SELF_PLAY_FIXED_PATH:
                 checkpoint = torch.load(SELF_PLAY_FIXED_PATH, map_location="cpu", weights_only=False)
                 checkpoint_algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
-                if checkpoint_algo not in {"dqn", "ppo", "alphazero"}:
+                if checkpoint_algo not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
                     checkpoint_algo = "dqn"
                 if isinstance(checkpoint, dict) and "policy_net" in checkpoint:
                     policy_state = normalize_state_dict(checkpoint["policy_net"])
@@ -5400,7 +5470,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     tl_oc_min = float(getattr(reward_cfg, "VP_OBJECTIVE_OC_MARGIN_SCALE", 0.0))
 
     started = time.perf_counter()
-    pbar = tqdm(total=int(totLifeT), mininterval=0.5)
+    pbar = tqdm(total=int(totLifeT), mininterval=ACTOR_PBAR_MININTERVAL, miniters=ACTOR_PBAR_MINITERS)
 
     while done_actors < num_actors:
         try:
@@ -5419,14 +5489,15 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                     payload["episode"] = len(ep_rows) + 1
                 ep_rows.append(payload)
                 episodes_finished = len(ep_rows)
+                target_n = min(int(totLifeT), int(episodes_finished))
+                if target_n > int(pbar.n):
+                    pbar.update(target_n - int(pbar.n))
                 # GUI прогресс читает stdout и парсит шаблон ep=X/Y.
-                try:
-                    print(f"ep={episodes_finished}/{totLifeT}", flush=True)
-                except Exception:
-                    pass
-                if episodes_finished:
-                    pbar.n = min(int(totLifeT), int(episodes_finished))
-                    pbar.refresh()
+                if (episodes_finished % ACTOR_PROGRESS_STDOUT_EVERY == 0) or (episodes_finished >= int(totLifeT)):
+                    try:
+                        print(f"ep={episodes_finished}/{totLifeT}", flush=True)
+                    except Exception:
+                        pass
 
                 # Periodic DET-like eval для Actor-Learner (аналог DET_EVAL в основном loop).
                 if (
@@ -5917,9 +5988,13 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                 opponent_source_label = "fixed_checkpoint"
                 if isinstance(checkpoint, dict):
                     checkpoint_meta_algo = str(checkpoint.get("algo", "") or "").strip().lower()
-                    if checkpoint_meta_algo not in ("dqn", "ppo"):
+                    if checkpoint_meta_algo not in ("dqn", "ppo", "alphazero", "gumbel_muzero"):
                         if "actor_critic" in checkpoint:
                             checkpoint_meta_algo = "ppo"
+                        elif "gumbel_muzero_net" in checkpoint:
+                            checkpoint_meta_algo = "gumbel_muzero"
+                        elif "policy_value_net" in checkpoint:
+                            checkpoint_meta_algo = "alphazero"
                         elif "policy_net" in checkpoint:
                             checkpoint_meta_algo = "dqn"
                 if opponent_state_dict_cpu is not None:
@@ -5950,7 +6025,12 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
 
     # PPO vs PPO: learner периодически пишет снапшот в latest_ppo_opp. PPO vs DQN: оппонент фиксирован.
     opponent_snapshot_sync_enabled = True
-    if SELF_PLAY_ENABLED and opponent_state_dict_cpu is not None and checkpoint_meta_algo in ("dqn", "ppo"):
+    if SELF_PLAY_ENABLED and opponent_state_dict_cpu is not None and checkpoint_meta_algo in (
+        "dqn",
+        "ppo",
+        "alphazero",
+        "gumbel_muzero",
+    ):
         opponent_snapshot_sync_enabled = checkpoint_meta_algo == "ppo"
 
     # Sync learner -> actors (через файл, Windows-friendly)
@@ -7527,7 +7607,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     done_actors = 0
     active_actors = len(procs)
     last_sync_opt_steps = optimize_steps
-    pbar = tqdm(total=int(totLifeT), initial=int(episodes_finished), mininterval=0.5)
+    pbar = tqdm(total=int(totLifeT), initial=int(episodes_finished), mininterval=ACTOR_PBAR_MININTERVAL, miniters=ACTOR_PBAR_MINITERS)
     last_loss = 0.0
 
     while done_actors < active_actors:
@@ -7550,9 +7630,11 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             ep_rows.append(payload)
             metrics_obj.updateRew(float(payload.get("ep_reward", 0.0) or 0.0))
             metrics_obj.updateEpLen(int(payload.get("ep_len", 0) or 0))
-            pbar.n = min(int(totLifeT), int(episodes_finished))
-            pbar.refresh()
-            print(f"ep={episodes_finished}/{totLifeT}", flush=True)
+            target_n = min(int(totLifeT), int(episodes_finished))
+            if target_n > int(pbar.n):
+                pbar.update(target_n - int(pbar.n))
+            if (episodes_finished % ACTOR_PROGRESS_STDOUT_EVERY == 0) or (episodes_finished >= int(totLifeT)):
+                print(f"ep={episodes_finished}/{totLifeT}", flush=True)
 
             ep_line = (
                 f"[AZ] ep={episodes_finished}/{totLifeT} actor={int(payload.get('actor_idx', -1))} "
@@ -7770,6 +7852,675 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     )
     append_agent_log(
         "[AZ][ACTOR_LEARNER] done "
+        f"episodes={final_episode}/{totLifeT} checkpoint={last_checkpoint} "
+        f"global_step={global_step} updates={optimize_steps} replay={len(replay)}"
+    )
+
+
+def _actor_learner_actor_entry_gumbel_muzero(
+    actor_idx: int,
+    episodes: int,
+    roster_config: dict,
+    b_len: int,
+    b_hei: int,
+    n_observations: int,
+    n_actions: list,
+    init_weights: dict,
+    batch_send: int,
+    data_q,
+    self_play_enabled: int,
+    opponent_spec,
+    sp_cfg_payload: dict,
+    search_cfg_payload: dict,
+    outcome_payload: dict,
+):
+    """Top-level entrypoint for Windows spawn pickling (Gumbel MuZero actor)."""
+    try:
+        cpu_device = torch.device("cpu")
+        gmz_net = GumbelMuZeroNet(
+            obs_dim=int(n_observations),
+            action_sizes=[int(x) for x in n_actions],
+            latent_dim=int(search_cfg_payload.get("latent_dim", GMZ_LATENT_DIM)),
+            hidden_dim=int(search_cfg_payload.get("hidden_dim", GMZ_HIDDEN_DIM)),
+            action_embed_dim=int(search_cfg_payload.get("action_embed_dim", GMZ_ACTION_EMBED_DIM)),
+        ).to(cpu_device)
+        gmz_net.load_state_dict(normalize_state_dict(init_weights))
+        gmz_net.eval()
+        search = GumbelMuZeroSearch(
+            gmz_net,
+            config=GumbelMuZeroSearchConfig(
+                num_simulations=int(search_cfg_payload.get("num_simulations", GMZ_MCTS_SIMS)),
+                root_top_k=int(search_cfg_payload.get("root_top_k", GMZ_ROOT_TOP_K)),
+                discount=float(search_cfg_payload.get("discount", GMZ_DISCOUNT)),
+                temperature=float(search_cfg_payload.get("temperature", GMZ_SEARCH_TEMP)),
+                gumbel_scale=float(search_cfg_payload.get("gumbel_scale", GMZ_GUMBEL_SCALE)),
+            ),
+            device=cpu_device,
+        )
+        sp_cfg = GumbelSelfPlayConfig(
+            temperature_opening_moves=int(sp_cfg_payload.get("temperature_opening_moves", GMZ_TEMP_OPENING_MOVES)),
+            temperature_opening_value=float(sp_cfg_payload.get("temperature_opening_value", GMZ_TEMP_OPENING)),
+            temperature_late_value=float(sp_cfg_payload.get("temperature_late_value", GMZ_TEMP_LATE)),
+            outcome_only=bool(outcome_payload.get("outcome_only", GMZ_OUTCOME_ONLY)),
+            outcome_value_win=float(outcome_payload.get("outcome_value_win", GMZ_OUTCOME_VALUE_WIN)),
+            outcome_value_loss=float(outcome_payload.get("outcome_value_loss", GMZ_OUTCOME_VALUE_LOSS)),
+            outcome_value_draw=float(outcome_payload.get("outcome_value_draw", GMZ_OUTCOME_VALUE_DRAW)),
+        )
+
+        enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+        mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+        env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
+        len_model = int(len(model))
+
+        sync_enabled = os.getenv("ACTOR_SYNC_ENABLED", "1") == "1"
+        sync_path = os.path.join(MODELS_DIR, "actor_sync", "latest_gmz_policy.pth")
+        sync_check_every_ep = max(1, int(os.getenv("ACTOR_SYNC_CHECK_EVERY_EP", "5")))
+        last_sync_mtime = -1.0
+        current_policy_version = int(outcome_payload.get("policy_version", 0) or 0)
+
+        opponent_policy_fn = None
+        if int(self_play_enabled) == 1 and opponent_spec is not None:
+            try:
+                opponent_policy_fn = build_policy_fn(
+                    env=env,
+                    len_model=len_model,
+                    opponent=opponent_spec,
+                    deterministic=bool(AZ_SNAPSHOT_OPP_DETERMINISTIC),
+                )
+            except Exception:
+                opponent_policy_fn = None
+
+        rollout_batch: list[dict] = []
+        for _ep in range(int(episodes)):
+            ep_idx_1based = int(_ep) + 1
+            if sync_enabled and (_ep % sync_check_every_ep == 0):
+                try:
+                    if os.path.isfile(sync_path):
+                        mtime = os.path.getmtime(sync_path)
+                        if mtime > last_sync_mtime:
+                            payload = torch.load(sync_path, map_location="cpu", weights_only=False)
+                            sd = payload.get("state_dict") if isinstance(payload, dict) else None
+                            if isinstance(sd, dict):
+                                gmz_net.load_state_dict(normalize_state_dict(sd))
+                                gmz_net.eval()
+                                search.net = gmz_net
+                                last_sync_mtime = float(mtime)
+                                current_policy_version = int(payload.get("policy_version", current_policy_version) or current_policy_version)
+                except Exception:
+                    pass
+
+            attacker_side, defender_side = roll_off_attacker_defender(
+                manual_roll_allowed=False,
+                log_fn=None,
+            )
+            deploy_for_mission(
+                mission_name,
+                model_units=model,
+                enemy_units=enemy,
+                b_len=b_len,
+                b_hei=b_hei,
+                attacker_side=attacker_side,
+                log_fn=None,
+            )
+            post_deploy_setup(log_fn=None)
+            env.attacker_side = attacker_side
+            env.defender_side = defender_side
+
+            transitions, info = play_episode_with_gumbel_muzero(
+                env=env,
+                search=search,
+                len_model=len_model,
+                config=sp_cfg,
+                enemy_policy_fn=opponent_policy_fn,
+                policy_version=int(current_policy_version),
+            )
+            for t in transitions:
+                rollout_batch.append(
+                    {
+                        "state": np.asarray(t.state, dtype=np.float32),
+                        "action": np.asarray(t.action, dtype=np.int64),
+                        "reward": float(t.reward),
+                        "done": bool(t.done),
+                        "policy_targets": [np.asarray(p, dtype=np.float32) for p in t.policy_targets],
+                        "value_target": float(t.value_target),
+                        "policy_version": int(getattr(t, "policy_version", current_policy_version)),
+                    }
+                )
+            if len(rollout_batch) >= int(batch_send):
+                data_q.put(
+                    (
+                        "rollout",
+                        {
+                            "actor_idx": int(actor_idx),
+                            "policy_version": int(current_policy_version),
+                            "transitions": list(rollout_batch),
+                        },
+                    )
+                )
+                rollout_batch = []
+
+            info = dict(info or {})
+            end_reason = str(info.get("end reason", "") or "")
+            model_vp = int(info.get("model VP", 0) or 0)
+            player_vp = int(info.get("player VP", 0) or 0)
+            vp_diff = int(model_vp) - int(player_vp)
+            result = "loss"
+            if end_reason == "wipeout_enemy":
+                result = "win"
+            elif end_reason == "wipeout_model":
+                result = "loss"
+            elif str(end_reason).startswith("turn_limit"):
+                if vp_diff > 0:
+                    result = "win"
+                elif vp_diff == 0:
+                    result = "draw"
+            elif vp_diff > 0:
+                result = "win"
+            elif vp_diff == 0:
+                result = "draw"
+            data_q.put(
+                (
+                    "ep",
+                    {
+                        "episode": None,
+                        "actor_idx": int(actor_idx),
+                        "actor_ep": int(ep_idx_1based),
+                        "ep_reward": float(info.get("reward", 0.0) or 0.0),
+                        "ep_len": int(info.get("turn", 0) or 0),
+                        "turn": int(info.get("turn", 0) or 0),
+                        "model_vp": int(model_vp),
+                        "player_vp": int(player_vp),
+                        "vp_diff": int(vp_diff),
+                        "result": str(result),
+                        "end_reason": str(end_reason),
+                        "end_code": int(info.get("res", 0) or 0),
+                        "policy_version": int(current_policy_version),
+                    },
+                )
+            )
+
+        if rollout_batch:
+            data_q.put(
+                (
+                    "rollout",
+                    {
+                        "actor_idx": int(actor_idx),
+                        "policy_version": int(current_policy_version),
+                        "transitions": list(rollout_batch),
+                    },
+                )
+            )
+        data_q.put(("done", int(actor_idx)))
+    except Exception as exc:
+        try:
+            data_q.put(("error", f"gmz_actor[{actor_idx}] {exc}"))
+        except Exception:
+            pass
+
+
+def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_enabled, clip_reward_min, clip_reward_max) -> None:
+    b_len = int(roster_config["b_len"])
+    b_hei = int(roster_config["b_hei"])
+    run_id = str(random.randint(1000000, 9999999))
+    model_name = datetime.datetime.now().strftime("%d-%H%M%S")
+    metrics_obj = metrics(MODELS_DIR, run_id, model_name)
+
+    enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+    mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+    attacker_side, defender_side = roll_off_attacker_defender(manual_roll_allowed=False, log_fn=None)
+    deploy_for_mission(
+        mission_name,
+        model_units=model,
+        enemy_units=enemy,
+        b_len=b_len,
+        b_hei=b_hei,
+        attacker_side=attacker_side,
+        log_fn=None,
+    )
+    post_deploy_setup(log_fn=None)
+    env0 = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
+    env0.attacker_side = attacker_side
+    env0.defender_side = defender_side
+    state0, _ = env0.reset(options={"m": model, "e": enemy, "trunc": True})
+    if isinstance(state0, (dict, collections.OrderedDict)):
+        n_observations = len(list(state0.values()))
+    else:
+        n_observations = int(np.array(state0).shape[0])
+    len_model = int(len(model))
+    n_actions = action_sizes_from_env(env0, len_model)
+    try:
+        env0.close()
+    except Exception:
+        pass
+
+    learner_side_cfg = LEARNER_SIDE if LEARNER_SIDE in {"P1", "P2"} else "P1"
+    learner_identity = AgentIdentity(
+        side=learner_side_cfg,
+        faction=LEARNER_FACTION,
+        ruleset_version=RULESET_VERSION,
+    ).normalized()
+    env_contract = make_env_contract(
+        n_observations=n_observations,
+        n_actions=n_actions,
+        mission_name=mission_name,
+        ruleset_version=learner_identity.ruleset_version,
+        extras={"actor_learner": 1, "train_algo": "gumbel_muzero", "num_actors": int(GMZ_NUM_ACTORS)},
+    )
+
+    gmz_net = GumbelMuZeroNet(
+        obs_dim=int(n_observations),
+        action_sizes=[int(x) for x in n_actions],
+        latent_dim=int(GMZ_LATENT_DIM),
+        hidden_dim=int(GMZ_HIDDEN_DIM),
+        action_embed_dim=int(GMZ_ACTION_EMBED_DIM),
+    ).to(device)
+    optimizer = optim.AdamW(gmz_net.parameters(), lr=GMZ_LR, amsgrad=True)
+    _patch_optimizer_methods_no_compile(optimizer)
+    replay = GumbelMuZeroReplayBuffer(capacity=GMZ_REPLAY_CAPACITY)
+    trainer_cfg = GumbelMuZeroTrainConfig(
+        lr=GMZ_LR,
+        batch_size=GMZ_BATCH_SIZE,
+        unroll_steps=GMZ_UNROLL_STEPS,
+        value_loss_weight=GMZ_VALUE_LOSS_WEIGHT,
+        reward_loss_weight=GMZ_REWARD_LOSS_WEIGHT,
+        l2_weight=GMZ_L2_WEIGHT,
+        max_policy_staleness_updates=int(GMZ_MAX_POLICY_STALENESS_UPDATES),
+    )
+
+    policy_version = 0
+    optimize_steps = 0
+    global_step = 0
+    episodes_finished = 0
+    resume_episode_base = 0
+    if RESUME_CHECKPOINT:
+        try:
+            checkpoint = _load_checkpoint_payload(RESUME_CHECKPOINT)
+            if isinstance(checkpoint, dict):
+                policy_state = checkpoint.get("gumbel_muzero_net")
+                if not isinstance(policy_state, dict):
+                    policy_state = _extract_policy_state_dict(checkpoint)
+                if isinstance(policy_state, dict):
+                    gmz_net.load_state_dict(normalize_state_dict(policy_state))
+                opt_state = checkpoint.get("optimizer")
+                if isinstance(opt_state, dict):
+                    optimizer.load_state_dict(opt_state)
+                replay_state = checkpoint.get("replay_memory")
+                if replay_state is not None:
+                    replay.load_state_dict(replay_state)
+                resume_episode_base = int(checkpoint.get("episode", 0) or 0)
+                episodes_finished = int(checkpoint.get("episodes_finished", resume_episode_base) or resume_episode_base)
+                global_step = int(checkpoint.get("global_step", 0) or 0)
+                optimize_steps = int(checkpoint.get("optimize_steps", 0) or 0)
+                policy_version = int(checkpoint.get("policy_version", optimize_steps) or optimize_steps)
+                append_agent_log(
+                    "[GMZ][RESUME] "
+                    f"path={RESUME_CHECKPOINT} episode={episodes_finished} replay={len(replay)} "
+                    f"global_step={global_step} optimize_steps={optimize_steps} policy_version={policy_version}"
+                )
+        except Exception as exc:
+            append_agent_log(f"[GMZ][RESUME][WARN] Не удалось загрузить checkpoint, старт с нуля. exc={exc}")
+
+    opponent_spec = None
+    opponent_algo_label = "heuristic"
+    opponent_source_label = "heuristic_auto"
+    opponent_agent_id = ""
+    if int(SELF_PLAY_ENABLED) == 1:
+        if OPPONENT_AGENT_ID:
+            try:
+                opponent_spec = load_agent_opponent(agent_id=OPPONENT_AGENT_ID, expected_contract=env_contract)
+                opponent_algo_label = str(opponent_spec.algo or "unknown")
+                opponent_source_label = "snapshot_policy_fn"
+                opponent_agent_id = str(opponent_spec.agent_id or OPPONENT_AGENT_ID)
+            except Exception as exc:
+                append_agent_log(
+                    "[GMZ][SELFPLAY][WARN] "
+                    f"Не удалось загрузить оппонента agent_id={OPPONENT_AGENT_ID}; fallback на heuristic. exc={exc}"
+                )
+        else:
+            append_agent_log("[GMZ][SELFPLAY][WARN] SELF_PLAY_ENABLED=1, но OPPONENT_AGENT_ID пустой; fallback на heuristic.")
+
+    append_agent_log(
+        "[GMZ][CONFIG] "
+        f"num_actors={GMZ_NUM_ACTORS} actor_batch_send={GMZ_ACTOR_BATCH_SEND} queue_max={GMZ_ACTOR_QUEUE_MAX} "
+        f"sync_every_updates={GMZ_SYNC_EVERY_UPDATES} updates_per_rollout={GMZ_UPDATES_PER_ROLLOUT} "
+        f"max_staleness={GMZ_MAX_POLICY_STALENESS_UPDATES} replay_min={GMZ_REPLAY_MIN_SIZE} "
+        f"outcome_only={int(GMZ_OUTCOME_ONLY)} sims={GMZ_MCTS_SIMS} root_top_k={GMZ_ROOT_TOP_K} "
+        f"opponent_mode={opponent_source_label} opponent_algo={opponent_algo_label}"
+    )
+
+    ep_rows: list[dict] = []
+    last_checkpoint = ""
+    last_loss = 0.0
+
+    checkpoint_dir = os.path.join(MODELS_DIR, "gumbel_muzero")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    sync_dir = os.path.join(MODELS_DIR, "actor_sync")
+    os.makedirs(sync_dir, exist_ok=True)
+    sync_path = os.path.join(sync_dir, "latest_gmz_policy.pth")
+
+    def _save_gmz_sync() -> None:
+        cpu_sd = {k: v.detach().cpu() for k, v in normalize_state_dict(gmz_net.state_dict()).items()}
+        torch.save(
+            {
+                "policy_version": int(policy_version),
+                "optimize_steps": int(optimize_steps),
+                "state_dict": cpu_sd,
+            },
+            sync_path,
+        )
+
+    def _save_checkpoint(episode_idx: int) -> str:
+        ckpt_path = os.path.join(checkpoint_dir, f"checkpoint_ep{int(episode_idx)}.pth")
+        torch.save(
+            {
+                "algo": "gumbel_muzero",
+                "gumbel_muzero_net": gmz_net.state_dict(),
+                "policy_net": gmz_net.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "episode": int(episode_idx),
+                "episodes_finished": int(episodes_finished),
+                "global_step": int(global_step),
+                "optimize_steps": int(optimize_steps),
+                "policy_version": int(policy_version),
+                "replay_memory": replay.state_dict(),
+                "env_contract": env_contract,
+                "num_actors": int(GMZ_NUM_ACTORS),
+            },
+            ckpt_path,
+        )
+        return ckpt_path
+
+    def _gmz_det_payload_from_rows(rows_slice: list[dict], episode_idx: int, train_loss: float) -> dict:
+        rows = rows_slice if rows_slice else []
+        n_eval = max(1, len(rows))
+        wins = sum(1 for r in rows if str(r.get("result", "")).strip().lower() == "win")
+        draws = sum(1 for r in rows if str(r.get("result", "")).strip().lower() == "draw")
+        turn_limit = sum(1 for r in rows if str(r.get("end_reason", "")).startswith("turn_limit"))
+        wipe_enemy = sum(1 for r in rows if str(r.get("end_reason", "")) == "wipeout_enemy")
+        wipe_model = sum(1 for r in rows if str(r.get("end_reason", "")) == "wipeout_model")
+        vp_diff_mean = float(sum(float(r.get("vp_diff", 0) or 0) for r in rows) / n_eval)
+        model_vp_mean = float(sum(float(r.get("model_vp", 0) or 0) for r in rows) / n_eval)
+        enemy_vp_mean = float(sum(float(r.get("player_vp", 0) or 0) for r in rows) / n_eval)
+        ep_len_mean = float(sum(float(r.get("ep_len", 0) or 0) for r in rows) / n_eval)
+        reward_mean = float(sum(float(r.get("ep_reward", 0.0) or 0.0) for r in rows) / n_eval)
+        return {
+            "eval_episodes": int(n_eval),
+            "win_rate": float(wins / n_eval),
+            "draw_rate": float(draws / n_eval),
+            "turn_limit_rate": float(turn_limit / n_eval),
+            "wipeout_enemy_rate": float(wipe_enemy / n_eval),
+            "wipeout_model_rate": float(wipe_model / n_eval),
+            "vp_diff_mean": vp_diff_mean,
+            "model_vp_mean": model_vp_mean,
+            "enemy_vp_mean": enemy_vp_mean,
+            "hp_diff_mean": 0.0,
+            "kill_diff_mean": 0.0,
+            "reward_mean": reward_mean,
+            "ep_len_mean": ep_len_mean,
+            "opponent_epsilon": 0.0,
+            "episode": int(max(episode_idx, 1)),
+            "algo": "gumbel_muzero",
+            "eval_tag": "actor_learner_summary",
+            "training_loss": float(train_loss),
+        }
+
+    _save_gmz_sync()
+    remaining_episodes = max(0, int(totLifeT) - int(episodes_finished))
+    ctx = mp.get_context("spawn")
+    data_q: mp.Queue = ctx.Queue(maxsize=int(GMZ_ACTOR_QUEUE_MAX))
+    procs = []
+
+    if remaining_episodes > 0:
+        for a_idx in range(int(GMZ_NUM_ACTORS)):
+            base = int(remaining_episodes) // int(GMZ_NUM_ACTORS)
+            rem = int(remaining_episodes) % int(GMZ_NUM_ACTORS)
+            actor_episodes = int(base + (1 if a_idx < rem else 0))
+            if actor_episodes <= 0:
+                continue
+            p = ctx.Process(
+                target=_actor_learner_actor_entry_gumbel_muzero,
+                args=(
+                    int(a_idx),
+                    int(actor_episodes),
+                    roster_config,
+                    int(b_len),
+                    int(b_hei),
+                    int(n_observations),
+                    list(n_actions),
+                    {k: v.detach().cpu() for k, v in normalize_state_dict(gmz_net.state_dict()).items()},
+                    int(GMZ_ACTOR_BATCH_SEND),
+                    data_q,
+                    int(1 if SELF_PLAY_ENABLED else 0),
+                    opponent_spec,
+                    {
+                        "temperature_opening_moves": GMZ_TEMP_OPENING_MOVES,
+                        "temperature_opening_value": GMZ_TEMP_OPENING,
+                        "temperature_late_value": GMZ_TEMP_LATE,
+                    },
+                    {
+                        "num_simulations": GMZ_MCTS_SIMS,
+                        "root_top_k": GMZ_ROOT_TOP_K,
+                        "discount": GMZ_DISCOUNT,
+                        "temperature": GMZ_SEARCH_TEMP,
+                        "gumbel_scale": GMZ_GUMBEL_SCALE,
+                        "latent_dim": GMZ_LATENT_DIM,
+                        "hidden_dim": GMZ_HIDDEN_DIM,
+                        "action_embed_dim": GMZ_ACTION_EMBED_DIM,
+                    },
+                    {
+                        "outcome_only": GMZ_OUTCOME_ONLY,
+                        "outcome_value_win": GMZ_OUTCOME_VALUE_WIN,
+                        "outcome_value_loss": GMZ_OUTCOME_VALUE_LOSS,
+                        "outcome_value_draw": GMZ_OUTCOME_VALUE_DRAW,
+                        "policy_version": int(policy_version),
+                    },
+                ),
+                daemon=True,
+            )
+            p.start()
+            procs.append(p)
+
+    done_actors = 0
+    active_actors = len(procs)
+    last_sync_opt_steps = optimize_steps
+    last_actor_det_eval_ep = 0
+    pbar = tqdm(total=int(totLifeT), initial=int(episodes_finished), mininterval=ACTOR_PBAR_MININTERVAL, miniters=ACTOR_PBAR_MINITERS)
+    while done_actors < active_actors:
+        try:
+            kind, payload = data_q.get(timeout=1.0)
+        except mp_queue.Empty:
+            continue
+        if kind == "error":
+            raise RuntimeError(payload)
+        if kind == "done":
+            done_actors += 1
+            continue
+        if kind == "ep":
+            if not isinstance(payload, dict):
+                continue
+            episodes_finished += 1
+            payload["episode"] = int(episodes_finished)
+            ep_rows.append(payload)
+            metrics_obj.updateRew(float(payload.get("ep_reward", 0.0) or 0.0))
+            metrics_obj.updateEpLen(int(payload.get("ep_len", 0) or 0))
+            target_n = min(int(totLifeT), int(episodes_finished))
+            if target_n > int(pbar.n):
+                pbar.update(target_n - int(pbar.n))
+            if (episodes_finished % ACTOR_PROGRESS_STDOUT_EVERY == 0) or (episodes_finished >= int(totLifeT)):
+                print(f"ep={episodes_finished}/{totLifeT}", flush=True)
+            if SAVE_EVERY > 0 and (episodes_finished % max(1, SAVE_EVERY) == 0):
+                last_checkpoint = _save_checkpoint(episodes_finished)
+                append_agent_log(f"[GMZ][CHECKPOINT] ep={episodes_finished} path={last_checkpoint}")
+            if (
+                ACTOR_DET_EVAL_ENABLED
+                and episodes_finished > last_actor_det_eval_ep
+                and (episodes_finished % ACTOR_DET_EVAL_EVERY_EPISODES == 0 or episodes_finished == int(totLifeT))
+            ):
+                last_actor_det_eval_ep = int(episodes_finished)
+                det_window = ep_rows[-max(1, int(ACTOR_DET_EVAL_EPISODES)):]
+                det_payload = _gmz_det_payload_from_rows(
+                    det_window,
+                    episode_idx=int(episodes_finished),
+                    train_loss=float(last_loss),
+                )
+                _save_actor_det_eval_snapshot(run_id=str(run_id), payload=det_payload, metrics_dir=METRICS_DIR)
+                det_gui = save_actor_det_eval_plot(run_id=str(run_id), metrics_dir=METRICS_DIR)
+                learner_side = str(learner_identity.side or "P1").strip().upper() or "P1"
+                opponent_side = "P2" if learner_side == "P1" else "P1"
+                _write_det_eval_data_json(
+                    run_id=str(run_id),
+                    det_plot_gui_paths=det_gui or {},
+                    model_path=str(last_checkpoint or ""),
+                    metrics_mode="det_eval",
+                    extra={
+                        "algo": "gumbel_muzero",
+                        "mode": "actor_learner",
+                        "learner_side": learner_side,
+                        "learner_faction": str(learner_identity.faction or "Unknown"),
+                        "opponent_side": opponent_side,
+                        "opponent_faction": str(roster_config.get("enemy_faction", "Unknown")).strip(),
+                        "opponent_algo": str(opponent_algo_label),
+                        "opponent_source": str(opponent_source_label),
+                        "opponent_id": str(opponent_agent_id),
+                    },
+                )
+            continue
+        if kind != "rollout":
+            continue
+        if not isinstance(payload, dict):
+            continue
+        raw_transitions = payload.get("transitions")
+        if not isinstance(raw_transitions, list) or not raw_transitions:
+            continue
+        transitions: list[GMZTransition] = []
+        for raw in raw_transitions:
+            if not isinstance(raw, dict):
+                continue
+            pi_raw = raw.get("policy_targets", [])
+            if not isinstance(pi_raw, list):
+                continue
+            transitions.append(
+                GMZTransition(
+                    state=np.asarray(raw.get("state", []), dtype=np.float32),
+                    action=np.asarray(raw.get("action", []), dtype=np.int64),
+                    reward=float(raw.get("reward", 0.0) or 0.0),
+                    done=bool(raw.get("done", False)),
+                    policy_targets=[np.asarray(p, dtype=np.float32) for p in pi_raw],
+                    value_target=float(raw.get("value_target", 0.0) or 0.0),
+                    policy_version=int(raw.get("policy_version", payload.get("policy_version", 0)) or 0),
+                )
+            )
+        if not transitions:
+            continue
+        replay.push_many(transitions)
+        global_step += len(transitions)
+        for _ in range(int(GMZ_UPDATES_PER_ROLLOUT)):
+            if len(replay) < max(int(GMZ_REPLAY_MIN_SIZE), int(GMZ_BATCH_SIZE)):
+                break
+            update_info = train_gumbel_muzero_step(
+                net=gmz_net,
+                optimizer=optimizer,
+                replay=replay,
+                config=trainer_cfg,
+                device=device,
+                current_policy_version=int(policy_version),
+            )
+            if update_info is None:
+                continue
+            optimize_steps += 1
+            policy_version += 1
+            last_loss = float(update_info.get("loss", 0.0) or 0.0)
+            metrics_obj.updateLoss(float(last_loss))
+            append_agent_log(
+                "[GMZ][UPDATE] "
+                f"step={optimize_steps} policy_version={policy_version} "
+                f"loss={float(update_info.get('loss', 0.0)):.6f} "
+                f"policy_loss={float(update_info.get('policy_loss', 0.0)):.6f} "
+                f"value_loss={float(update_info.get('value_loss', 0.0)):.6f} "
+                f"reward_loss={float(update_info.get('reward_loss', 0.0)):.6f} replay={len(replay)}"
+            )
+            if optimize_steps - last_sync_opt_steps >= int(GMZ_SYNC_EVERY_UPDATES):
+                _save_gmz_sync()
+                last_sync_opt_steps = int(optimize_steps)
+
+    pbar.close()
+    _save_gmz_sync()
+    for p in procs:
+        try:
+            p.join(timeout=2.0)
+        except Exception:
+            pass
+
+    if not last_checkpoint:
+        last_checkpoint = _save_checkpoint(int(episodes_finished or resume_episode_base or totLifeT))
+        append_agent_log(f"[GMZ][CHECKPOINT] final path={last_checkpoint}")
+
+    if ep_rows:
+        save_extra_metrics(
+            run_id=run_id,
+            ep_rows=ep_rows,
+            metrics_dir=METRICS_DIR,
+            write_legacy_gui_plots=False,
+        )
+        save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows, metrics_dir=METRICS_DIR)
+        # Финальный DET-снапшот для надёжной привязки GUI к текущему run_id.
+        det_payload = _gmz_det_payload_from_rows(
+            ep_rows[-max(1, int(ACTOR_DET_EVAL_EPISODES)):],
+            episode_idx=int(max(episodes_finished, 1)),
+            train_loss=float(last_loss),
+        )
+        _save_actor_det_eval_snapshot(run_id=str(run_id), payload=det_payload, metrics_dir=METRICS_DIR)
+        det_gui = save_actor_det_eval_plot(run_id=str(run_id), metrics_dir=METRICS_DIR)
+        if det_gui:
+            learner_side = str(learner_identity.side or "P1").strip().upper() or "P1"
+            opponent_side = "P2" if learner_side == "P1" else "P1"
+            _write_det_eval_data_json(
+                run_id=str(run_id),
+                det_plot_gui_paths=det_gui,
+                model_path=str(last_checkpoint or ""),
+                metrics_mode="det_eval",
+                extra={
+                    "algo": "gumbel_muzero",
+                    "mode": "actor_learner",
+                    "learner_side": learner_side,
+                    "learner_faction": str(learner_identity.faction or "Unknown"),
+                    "opponent_side": opponent_side,
+                    "opponent_faction": str(roster_config.get("enemy_faction", "Unknown")).strip(),
+                    "opponent_algo": str(opponent_algo_label),
+                    "opponent_source": str(opponent_source_label),
+                    "opponent_id": str(opponent_agent_id),
+                },
+            )
+        else:
+            _write_det_eval_data_json(
+                run_id=str(run_id),
+                det_plot_gui_paths={},
+                model_path=str(last_checkpoint or ""),
+                metrics_mode="det_eval",
+                extra={"algo": "gumbel_muzero", "mode": "actor_learner", "det_eval_note": "нет точек DET-eval"},
+            )
+        append_agent_log(f"[GMZ][METRICS] saved run_id={run_id}")
+
+    final_episode = int(max(episodes_finished, resume_episode_base))
+    final_agent_id = build_agent_id(learner_identity, f"final_ep{final_episode}")
+    save_agent_artifact(
+        identity=learner_identity,
+        agent_id=final_agent_id,
+        env_contract=env_contract,
+        policy_state_dict=normalize_state_dict(gmz_net.state_dict()),
+        target_state_dict={},
+        optimizer_state_dict=optimizer.state_dict(),
+        extra_meta={
+            "algo": "gumbel_muzero",
+            "episode": int(final_episode),
+            "source_model_path": str(last_checkpoint or ""),
+            "mode": "actor_learner",
+            "num_actors": int(GMZ_NUM_ACTORS),
+            "policy_version": int(policy_version),
+        },
+    )
+    append_agent_log(
+        "[GMZ][ACTOR_LEARNER] done "
         f"episodes={final_episode}/{totLifeT} checkpoint={last_checkpoint} "
         f"global_step={global_step} updates={optimize_steps} replay={len(replay)}"
     )

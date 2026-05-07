@@ -163,7 +163,8 @@ ApplicationWindow {
                                             model: [
                                                 { value: "dqn", label: "DQN (текущая модель)" },
                                                 { value: "ppo", label: "PPO (новый алгоритм)" },
-                                                { value: "alphazero", label: "AlphaZero (третий алгоритм)" }
+                                                { value: "alphazero", label: "AlphaZero (третий алгоритм)" },
+                                                { value: "gumbel_muzero", label: "Gumbel MuZero (четвертый алгоритм)" }
                                             ]
                                             textRole: "label"
                                             valueRole: "value"
@@ -1799,6 +1800,108 @@ ApplicationWindow {
                                                 onValueModified: controller.set_ppo_hyperparam("target_kl", (value / factor).toString())
                                                 ToolTip.visible: hovered
                                                 ToolTip.text: "Порог ранней остановки по приближённому KL."
+                                            }
+                                        }
+                                    }
+
+                                    ColumnLayout {
+                                        spacing: root.spacingXs
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: Math.round(280 * root.uiScale)
+
+                                        Label {
+                                            text: "Gumbel MuZero"
+                                            font.bold: true
+                                            Layout.fillWidth: true
+                                        }
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: root.spacingSm
+                                            Button { text: "Fast"; onClicked: controller.apply_gmz_profile("fast") }
+                                            Button { text: "Balanced"; onClicked: controller.apply_gmz_profile("balanced") }
+                                            Button { text: "Heavy"; onClicked: controller.apply_gmz_profile("heavy") }
+                                        }
+
+                                        Label {
+                                            text: "Текущий пресет: " + controller.hpGmzPresetLabel
+                                            color: palette.mid
+                                            Layout.fillWidth: true
+                                        }
+
+                                        GridLayout {
+                                            columns: 2
+                                            columnSpacing: root.spacingMd
+                                            rowSpacing: root.spacingSm
+                                            Layout.fillWidth: true
+
+                                            Label { text: "learning_rate" }
+                                            SpinBox {
+                                                from: 0
+                                                to: 1000000
+                                                stepSize: 1
+                                                editable: true
+                                                property real factor: 1000000
+                                                value: Math.round(controller.hpGmzLearningRate * factor)
+                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 6) }
+                                                valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
+                                                onValueModified: controller.set_gmz_hyperparam("learning_rate", (value / factor).toString())
+                                            }
+
+                                            Label { text: "batch_size" }
+                                            SpinBox {
+                                                from: 1
+                                                to: 8192
+                                                stepSize: 32
+                                                editable: true
+                                                value: controller.hpGmzBatchSize
+                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                onValueModified: controller.set_gmz_hyperparam("batch_size", value.toString())
+                                            }
+
+                                            Label { text: "num_simulations" }
+                                            SpinBox {
+                                                from: 1
+                                                to: 512
+                                                stepSize: 1
+                                                editable: true
+                                                value: controller.hpGmzNumSimulations
+                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                onValueModified: controller.set_gmz_hyperparam("num_simulations", value.toString())
+                                            }
+
+                                            Label { text: "root_top_k" }
+                                            SpinBox {
+                                                from: 1
+                                                to: 256
+                                                stepSize: 1
+                                                editable: true
+                                                value: controller.hpGmzRootTopK
+                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                onValueModified: controller.set_gmz_hyperparam("root_top_k", value.toString())
+                                            }
+
+                                            Label { text: "unroll_steps" }
+                                            SpinBox {
+                                                from: 1
+                                                to: 64
+                                                stepSize: 1
+                                                editable: true
+                                                value: controller.hpGmzUnrollSteps
+                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                onValueModified: controller.set_gmz_hyperparam("unroll_steps", value.toString())
+                                            }
+
+                                            Label { text: "num_actors" }
+                                            SpinBox {
+                                                from: 1
+                                                to: 64
+                                                stepSize: 1
+                                                editable: true
+                                                value: controller.hpGmzNumActors
+                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                onValueModified: controller.set_gmz_hyperparam("num_actors", value.toString())
                                             }
                                         }
                                     }

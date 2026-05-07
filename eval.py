@@ -26,6 +26,8 @@ from core.envs.warhamEnv import roll_off_attacker_defender
 from core.models.DQN import DQN
 from core.models.PPO import ActorCriticMultiHead
 from core.models.alphazero_model import AlphaZeroPolicyValueNet
+from core.models.gumbel_muzero_model import GumbelMuZeroNet
+from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.utils import normalize_state_dict
 from core.models.opponent_adapter import build_policy_fn, load_agent_opponent
 
@@ -258,6 +260,46 @@ def select_action_with_epsilon_alphazero(env, state, policy_net, epsilon, len_mo
             action_list.append(sampled[f"move_num_{i}"])
         return torch.tensor([action_list], device="cpu")
     action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
+    return torch.tensor([action_list], device="cpu")
+
+
+def select_action_with_epsilon_gumbel_muzero(env, state, policy_net, epsilon, len_model):
+    masks_cpu = build_action_masks_by_head(env, len_model, log_fn=None, debug=False)
+    legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
+    obs_np = state.squeeze(0).detach().cpu().numpy()
+    if epsilon > 0 and random.random() < float(epsilon):
+        sampled = env.action_space.sample()
+        action_list = [
+            sampled["move"], sampled["attack"], sampled["shoot"],
+            sampled["charge"], sampled["use_cp"], sampled["cp_on"],
+        ]
+        for i in range(int(len_model)):
+            action_list.append(sampled[f"move_num_{i}"])
+        return torch.tensor([action_list], device="cpu")
+    gmz_eval_mode = str(os.getenv("GMZ_EVAL_MODE", os.getenv("GMZ_OPPONENT_MODE", "search"))).strip().lower() or "search"
+    if gmz_eval_mode not in {"search", "greedy"}:
+        gmz_eval_mode = "search"
+    if gmz_eval_mode == "greedy":
+        with torch.no_grad():
+            probs, _value = policy_net.infer(
+                state,
+                masks_by_head=[m.to(state.device).unsqueeze(0) for m in masks_cpu],
+            )
+        action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
+        return torch.tensor([action_list], device="cpu")
+    search = GumbelMuZeroSearch(
+        net=policy_net,
+        config=GumbelMuZeroSearchConfig(
+            num_simulations=max(1, int(os.getenv("GMZ_EVAL_SIMS", "32"))),
+            root_top_k=max(1, int(os.getenv("GMZ_EVAL_ROOT_TOP_K", "8"))),
+            temperature=float(os.getenv("GMZ_EVAL_TEMPERATURE", "0.15")),
+        ),
+        device=state.device,
+    )
+    pi_targets, selected, _value = search.run(obs=obs_np, legal_masks_by_head=legal_masks, deterministic=True)
+    action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
+    if not action_list:
+        action_list = [int(x) for x in selected]
     return torch.tensor([action_list], device="cpu")
 
 
@@ -566,6 +608,14 @@ def run_episode(
             )
         elif algo == "alphazero":
             action = select_action_with_epsilon_alphazero(
+                env,
+                state_tensor,
+                policy_net,
+                epsilon,
+                len(model_units),
+            )
+        elif algo == "gumbel_muzero":
+            action = select_action_with_epsilon_gumbel_muzero(
                 env,
                 state_tensor,
                 policy_net,
@@ -891,7 +941,7 @@ def main():
         policy_state = payload.get("policy_state")
         meta = payload.get("meta") if isinstance(payload, dict) else {}
         learner_algo_override = str((meta or {}).get("algo", "")).strip().lower()
-        if learner_algo_override not in {"dqn", "ppo", "alphazero"}:
+        if learner_algo_override not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
             target_state_guess = payload.get("target_state") if isinstance(payload, dict) else None
             learner_algo_override = "dqn" if isinstance(target_state_guess, dict) else "ppo"
         log(f"Используется learner-agent-id={selected_agent_id} (policy из registry).")
@@ -938,6 +988,19 @@ def main():
             az_state = policy_state
         policy_net = AlphaZeroPolicyValueNet(n_observations, n_actions).to(device)
         policy_net.load_state_dict(normalize_state_dict(az_state))
+        policy_net.eval()
+    elif algo == "gumbel_muzero":
+        gmz_state = checkpoint.get("gumbel_muzero_net") if isinstance(checkpoint, dict) else None
+        if not isinstance(gmz_state, dict):
+            gmz_state = policy_state
+        policy_net = GumbelMuZeroNet(
+            obs_dim=int(n_observations),
+            action_sizes=[int(x) for x in n_actions],
+            latent_dim=int(os.getenv("GMZ_LATENT_DIM", "256")),
+            hidden_dim=int(os.getenv("GMZ_HIDDEN_DIM", "256")),
+            action_embed_dim=int(os.getenv("GMZ_ACTION_EMBED_DIM", "64")),
+        ).to(device)
+        policy_net.load_state_dict(normalize_state_dict(gmz_state))
         policy_net.eval()
     else:
         net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
