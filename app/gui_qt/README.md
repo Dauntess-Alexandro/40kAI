@@ -1,4 +1,4 @@
-# 40kAI — второй GUI (Qt/PySide6)
+# 40kAI (Qt/PySide6)
 
 Минимальный Qt/QML GUI для запуска `train.py` и `eval.py` как отдельных процессов с потоковыми логами.
 

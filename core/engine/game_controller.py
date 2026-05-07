@@ -22,6 +22,7 @@ from core.engine.mission import board_dims_for_mission
 from core.models.DQN import DQN
 from core.models.PPO import ActorCriticMultiHead
 from core.models.alphazero_model import AlphaZeroPolicyValueNet
+from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.utils import select_action, convertToDict, build_shoot_action_mask, normalize_state_dict
@@ -464,6 +465,12 @@ class GameController:
 
             env.io = self._io
             env.playType = True
+            az_play_mode = str(os.getenv("AZ_PLAY_MODE", "greedy")).strip().lower() or "greedy"
+            if az_play_mode not in {"greedy", "mcts"}:
+                az_play_mode = "greedy"
+            gmz_play_mode = str(os.getenv("GMZ_PLAY_MODE", "greedy")).strip().lower() or "greedy"
+            if gmz_play_mode not in {"greedy", "search"}:
+                gmz_play_mode = "greedy"
 
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -530,6 +537,12 @@ class GameController:
             self._io.log(f"[MODEL] n_actions (из env): {n_actions}")
 
             algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
+            if algo == "alphazero":
+                self._io.log(f"[VIEWER][INFERENCE_MODE] algo=alphazero mode={az_play_mode}")
+            elif algo == "gumbel_muzero":
+                self._io.log(f"[VIEWER][INFERENCE_MODE] algo=gumbel_muzero mode={gmz_play_mode}")
+            else:
+                self._io.log(f"[VIEWER][INFERENCE_MODE] algo={algo} mode=greedy(fixed)")
             if algo == "ppo":
                 self._io.log("[MODEL] Архитектура сети: ppo_actor_critic")
                 ppo_state = checkpoint.get("actor_critic", checkpoint.get("policy_net", {}))
@@ -640,29 +653,60 @@ class GameController:
                     action = action.to("cpu")
                 elif algo == "alphazero":
                     masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
-                    masks_b = [m.to(state_tensor.device).unsqueeze(0) for m in masks]
-                    with torch.no_grad():
-                        probs, _value = policy_net.infer(state_tensor, masks_by_head=masks_b)
-                    action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
+                    if az_play_mode == "mcts":
+                        legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
+                        mcts = AlphaZeroFactorizedMCTS(
+                            policy_net,
+                            config=MCTSConfig(
+                                simulations=max(1, int(os.getenv("AZ_PLAY_MCTS_SIMS", "96"))),
+                                c_puct=float(os.getenv("AZ_PLAY_MCTS_C_PUCT", "1.5")),
+                                dirichlet_alpha=float(os.getenv("AZ_PLAY_MCTS_DIR_ALPHA", "0.3")),
+                                dirichlet_eps=float(os.getenv("AZ_PLAY_MCTS_DIR_EPS", "0.0")),
+                                top_k_per_head=max(1, int(os.getenv("AZ_PLAY_MCTS_TOP_K_PER_HEAD", "8"))),
+                                max_depth=max(1, int(os.getenv("AZ_PLAY_MCTS_MAX_DEPTH", "1"))),
+                                mode=str(os.getenv("AZ_PLAY_MCTS_MODE", "tree")).strip().lower() or "tree",
+                            ),
+                            device=state_tensor.device,
+                        )
+                        pi_targets, _selected, _value = mcts.run(
+                            obs=state_tensor.squeeze(0).detach().cpu().numpy(),
+                            legal_masks_by_head=legal_masks,
+                            temperature=float(os.getenv("AZ_PLAY_MCTS_TEMPERATURE", "0.06")),
+                            env=env,
+                            len_model=len(model),
+                            enemy_policy_fn=None,
+                        )
+                        action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
+                    else:
+                        masks_b = [m.to(state_tensor.device).unsqueeze(0) for m in masks]
+                        with torch.no_grad():
+                            probs, _value = policy_net.infer(state_tensor, masks_by_head=masks_b)
+                        action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
                     action = torch.tensor([action_list], device="cpu")
                 elif algo == "gumbel_muzero":
                     masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
-                    legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
-                    search = GumbelMuZeroSearch(
-                        net=policy_net,
-                        config=GumbelMuZeroSearchConfig(
-                            num_simulations=max(1, int(os.getenv("GMZ_PLAY_SIMS", "96"))),
-                            root_top_k=max(1, int(os.getenv("GMZ_PLAY_ROOT_TOP_K", "16"))),
-                            temperature=float(os.getenv("GMZ_PLAY_TEMPERATURE", "0.10")),
-                        ),
-                        device=state_tensor.device,
-                    )
-                    pi_targets, _selected, _value = search.run(
-                        obs=state_tensor.squeeze(0).detach().cpu().numpy(),
-                        legal_masks_by_head=legal_masks,
-                        deterministic=True,
-                    )
-                    action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
+                    if gmz_play_mode == "search":
+                        legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
+                        search = GumbelMuZeroSearch(
+                            net=policy_net,
+                            config=GumbelMuZeroSearchConfig(
+                                num_simulations=max(1, int(os.getenv("GMZ_PLAY_SIMS", "96"))),
+                                root_top_k=max(1, int(os.getenv("GMZ_PLAY_ROOT_TOP_K", "16"))),
+                                temperature=float(os.getenv("GMZ_PLAY_TEMPERATURE", "0.10")),
+                            ),
+                            device=state_tensor.device,
+                        )
+                        pi_targets, _selected, _value = search.run(
+                            obs=state_tensor.squeeze(0).detach().cpu().numpy(),
+                            legal_masks_by_head=legal_masks,
+                            deterministic=True,
+                        )
+                        action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
+                    else:
+                        masks_b = [m.to(state_tensor.device).unsqueeze(0) for m in masks]
+                        with torch.no_grad():
+                            probs, _value = policy_net.infer(state_tensor, masks_by_head=masks_b)
+                        action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
                     action = torch.tensor([action_list], device="cpu")
                 else:
                     action = select_action(env, state_tensor, i, policy_net, len(model), shoot_mask=shoot_mask)

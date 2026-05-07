@@ -158,8 +158,11 @@ class GUIController(QtCore.QObject):
         self._play_model_path = ""
         self._play_model_label = "Модель не выбрана"
         self._play_model_algo_label = "Алгоритм: —"
+        self._play_model_algo_key = ""
         self._play_model_checkpoint_label = "Checkpoint: —"
         self._play_agent_override_id = ""
+        self._play_az_mode = "greedy"
+        self._play_gmz_mode = "greedy"
         self._play_viewer_player_role_label = "Ты: —"
         self._play_viewer_model_role_label = "ИИ: —"
         self._eval_model_path = ""
@@ -185,6 +188,8 @@ class GUIController(QtCore.QObject):
         self._eval_p2_full_agent_id = ""
         self._eval_p1_badges: list[str] = []
         self._eval_p2_badges: list[str] = []
+        self._eval_p1_inference_mode = "greedy"
+        self._eval_p2_inference_mode = "greedy"
         self._eval_p1_icon_text = "AI"
         self._eval_p2_icon_text = "HR"
         self._eval_scenario_text = "Сценарий: выберите политики P1/P2."
@@ -198,10 +203,6 @@ class GUIController(QtCore.QObject):
         self._eval_result_avg_vp_diff = "Avg VP diff (P1-P2): —"
         self._eval_result_turn_limit_rate = "Turn-limit rate: —"
         self._eval_result_quality_hint = "Качество серии: нет данных."
-        self._eval_az_opponent_mode_options = ["greedy", "mcts"]
-        self._eval_az_opponent_mode = str(os.getenv("AZ_EVAL_OPPONENT_MODE", "greedy")).strip().lower() or "greedy"
-        if self._eval_az_opponent_mode not in self._eval_az_opponent_mode_options:
-            self._eval_az_opponent_mode = "greedy"
         self._active_process_kind = ""
         self._board_text = "ASCII карта будет доступна после запуска игры."
         self._self_play_from_checkpoint = False
@@ -616,6 +617,40 @@ class GUIController(QtCore.QObject):
     def playModelAlgoLabel(self) -> str:
         return self._play_model_algo_label
 
+    @QtCore.Property(bool, notify=playModelMetaChanged)
+    def playInferenceModeVisible(self) -> bool:
+        return self._play_model_algo_key in {"alphazero", "gumbel_muzero"}
+
+    @QtCore.Property(str, notify=playModelMetaChanged)
+    def playInferenceModeLabel(self) -> str:
+        if self._play_model_algo_key == "alphazero":
+            return "Режим AZ:"
+        if self._play_model_algo_key == "gumbel_muzero":
+            return "Режим GMZ:"
+        return "Режим:"
+
+    @QtCore.Property("QVariantList", notify=playModelMetaChanged)
+    def playInferenceModeOptions(self):
+        if self._play_model_algo_key == "alphazero":
+            return [
+                {"value": "greedy", "label": "Greedy (быстро)"},
+                {"value": "mcts", "label": "MCTS (сильнее)"},
+            ]
+        if self._play_model_algo_key == "gumbel_muzero":
+            return [
+                {"value": "greedy", "label": "Greedy (быстро)"},
+                {"value": "search", "label": "Search (сильнее)"},
+            ]
+        return []
+
+    @QtCore.Property(str, notify=playModelMetaChanged)
+    def playInferenceMode(self) -> str:
+        if self._play_model_algo_key == "alphazero":
+            return self._play_az_mode
+        if self._play_model_algo_key == "gumbel_muzero":
+            return self._play_gmz_mode
+        return "greedy"
+
     @QtCore.Property(str, notify=playModelMetaChanged)
     def playModelCheckpointLabel(self) -> str:
         return self._play_model_checkpoint_label
@@ -652,14 +687,6 @@ class GUIController(QtCore.QObject):
     def evalPolicyOptions(self):
         return self._eval_policy_options
 
-    @QtCore.Property("QStringList", constant=True)
-    def evalAzOpponentModeOptions(self):
-        return self._eval_az_opponent_mode_options
-
-    @QtCore.Property(str, notify=evalSetupChanged)
-    def evalAzOpponentMode(self) -> str:
-        return self._eval_az_opponent_mode
-
     @QtCore.Property(str, notify=evalSetupChanged)
     def evalP1Policy(self) -> str:
         return self._eval_p1_policy
@@ -675,6 +702,57 @@ class GUIController(QtCore.QObject):
     @QtCore.Property("QStringList", notify=evalSetupChanged)
     def evalP2AgentOptions(self):
         return self._eval_p2_agent_labels
+
+    def _eval_side_algo_key(self, side: str) -> str:
+        normalized_side = str(side or "").strip().upper()
+        if normalized_side == "P1":
+            mode = str(self._eval_p1_policy).strip().lower()
+            agent_id = str(self._eval_selected_p1_agent_id).strip()
+        else:
+            mode = str(self._eval_p2_policy).strip().lower()
+            agent_id = str(self._eval_selected_p2_agent_id).strip()
+        if mode != "agent" or not agent_id:
+            return ""
+        rec = self._eval_agent_meta_by_id.get(agent_id, {})
+        return str(rec.get("algo", "")).strip().lower()
+
+    def _eval_inference_options_for_algo(self, algo: str) -> list[dict[str, str]]:
+        algo_key = str(algo or "").strip().lower()
+        if algo_key == "alphazero":
+            return [
+                {"value": "greedy", "label": "Greedy (быстро)"},
+                {"value": "mcts", "label": "MCTS (сильнее)"},
+            ]
+        if algo_key == "gumbel_muzero":
+            return [
+                {"value": "greedy", "label": "Greedy (быстро)"},
+                {"value": "search", "label": "Search (сильнее)"},
+            ]
+        return []
+
+    @QtCore.Property(bool, notify=evalSetupChanged)
+    def evalP1InferenceModeVisible(self) -> bool:
+        return len(self._eval_inference_options_for_algo(self._eval_side_algo_key("P1"))) > 0
+
+    @QtCore.Property(bool, notify=evalSetupChanged)
+    def evalP2InferenceModeVisible(self) -> bool:
+        return len(self._eval_inference_options_for_algo(self._eval_side_algo_key("P2"))) > 0
+
+    @QtCore.Property("QVariantList", notify=evalSetupChanged)
+    def evalP1InferenceModeOptions(self):
+        return self._eval_inference_options_for_algo(self._eval_side_algo_key("P1"))
+
+    @QtCore.Property("QVariantList", notify=evalSetupChanged)
+    def evalP2InferenceModeOptions(self):
+        return self._eval_inference_options_for_algo(self._eval_side_algo_key("P2"))
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP1InferenceMode(self) -> str:
+        return str(self._eval_p1_inference_mode or "greedy")
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP2InferenceMode(self) -> str:
+        return str(self._eval_p2_inference_mode or "greedy")
 
     @QtCore.Property(str, notify=evalSetupChanged)
     def evalP1SelectedAgentLabel(self) -> str:
@@ -1218,15 +1296,51 @@ class GUIController(QtCore.QObject):
                 self.evalSetupChanged.emit()
 
     @QtCore.Slot(str)
-    def set_eval_az_opponent_mode(self, value: str) -> None:
+    def set_eval_p1_inference_mode(self, value: str) -> None:
         mode = str(value or "").strip().lower()
-        if mode not in self._eval_az_opponent_mode_options:
+        algo = self._eval_side_algo_key("P1")
+        allowed = {str(item.get("value", "")).strip().lower() for item in self._eval_inference_options_for_algo(algo)}
+        if mode not in allowed:
             mode = "greedy"
-        if mode == self._eval_az_opponent_mode:
+        if mode == self._eval_p1_inference_mode:
             return
-        self._eval_az_opponent_mode = mode
+        self._eval_p1_inference_mode = mode
         self._update_eval_matchup_text()
         self.evalSetupChanged.emit()
+
+    @QtCore.Slot(str)
+    def set_eval_p2_inference_mode(self, value: str) -> None:
+        mode = str(value or "").strip().lower()
+        algo = self._eval_side_algo_key("P2")
+        allowed = {str(item.get("value", "")).strip().lower() for item in self._eval_inference_options_for_algo(algo)}
+        if mode not in allowed:
+            mode = "greedy"
+        if mode == self._eval_p2_inference_mode:
+            return
+        self._eval_p2_inference_mode = mode
+        self._update_eval_matchup_text()
+        self.evalSetupChanged.emit()
+
+    @QtCore.Slot(str)
+    def set_play_inference_mode(self, value: str) -> None:
+        mode = str(value or "").strip().lower()
+        if self._play_model_algo_key == "alphazero":
+            if mode not in {"greedy", "mcts"}:
+                mode = "greedy"
+            if mode == self._play_az_mode:
+                return
+            self._play_az_mode = mode
+            self.playModelMetaChanged.emit(self._play_model_algo_label)
+            self._emit_status(f"Режим AZ для игры: {mode}.")
+            return
+        if self._play_model_algo_key == "gumbel_muzero":
+            if mode not in {"greedy", "search"}:
+                mode = "greedy"
+            if mode == self._play_gmz_mode:
+                return
+            self._play_gmz_mode = mode
+            self.playModelMetaChanged.emit(self._play_model_algo_label)
+            self._emit_status(f"Режим GMZ для игры: {mode}.")
 
     @QtCore.Slot()
     def refresh_eval_agents(self) -> None:
@@ -1680,9 +1794,7 @@ class GUIController(QtCore.QObject):
         else:
             self._eval_scenario_text = "Сценарий: обе стороны эвристика (недоступно для запуска)."
 
-        self._eval_mini_summary = (
-            f"Игр: {self._eval_games} • deterministic • epsilon=0 • AZ-opponent={self._eval_az_opponent_mode}"
-        )
+        self._eval_mini_summary = f"Игр: {self._eval_games} • deterministic • epsilon=0 • AZ-opponent=greedy"
         self._eval_matchup_text = (
             f"{self._eval_p1_display_name}\n"
             f"{self._eval_p2_display_name}\n"
@@ -2320,6 +2432,11 @@ class GUIController(QtCore.QObject):
         learner_agent_id = str(cfg.get("learner_agent_id", "")).strip()
         opponent_agent_id = str(cfg.get("opponent_agent_id", "")).strip()
         learner_side = str(cfg.get("learner_side", "P1")).strip().upper() or "P1"
+        opponent_side = "P2" if learner_side == "P1" else "P1"
+        learner_algo = self._eval_side_algo_key(learner_side)
+        opponent_algo = self._eval_side_algo_key(opponent_side)
+        learner_mode = self._eval_p1_inference_mode if learner_side == "P1" else self._eval_p2_inference_mode
+        opponent_mode = self._eval_p1_inference_mode if opponent_side == "P1" else self._eval_p2_inference_mode
 
         model_path = self._resolve_eval_model_path()
         if not learner_agent_id and model_path == "None":
@@ -2363,12 +2480,23 @@ class GUIController(QtCore.QObject):
         env.insert("LEARNER_SIDE", learner_side)
         env.insert("LEARNER_FACTION", self._display_faction_for_side(learner_side))
         env.insert("LEAGUE_ENABLE", "1")
-        env.insert("AZ_EVAL_OPPONENT_MODE", self._eval_az_opponent_mode)
-        # Fast GMZ eval preset: lower search budget + greedy mode for quick checks.
+        az_eval_mode = learner_mode if learner_algo == "alphazero" and learner_mode in {"greedy", "mcts"} else "greedy"
+        az_opponent_mode = "greedy"
+        if opponent_algo == "alphazero" and opponent_mode in {"greedy", "mcts"}:
+            az_opponent_mode = opponent_mode
+        env.insert("AZ_EVAL_MODE", az_eval_mode)
+        env.insert("AZ_EVAL_OPPONENT_MODE", az_opponent_mode)
+        if az_eval_mode == "mcts" or az_opponent_mode == "mcts":
+            # Максимально детерминированный AZ-MCTS для game/eval.
+            env.insert("AZ_EVAL_MCTS_TEMPERATURE", "0.06")
+            env.insert("AZ_EVAL_MCTS_DIR_EPS", "0.0")
+        # Fast GMZ eval preset: lower search budget + selectable mode for learner/opponent.
         env.insert("GMZ_EVAL_SIMS", "32")
         env.insert("GMZ_EVAL_ROOT_TOP_K", "8")
-        env.insert("GMZ_EVAL_MODE", "greedy")
-        env.insert("GMZ_OPPONENT_MODE", "greedy")
+        gmz_eval_mode = learner_mode if learner_algo == "gumbel_muzero" and learner_mode in {"greedy", "search"} else "greedy"
+        gmz_opponent_mode = opponent_mode if opponent_algo == "gumbel_muzero" and opponent_mode in {"greedy", "search"} else "greedy"
+        env.insert("GMZ_EVAL_MODE", gmz_eval_mode)
+        env.insert("GMZ_OPPONENT_MODE", gmz_opponent_mode)
         env.insert("AGENT_LOG_FILE", str(AGENT_TRAIN_LOG_PATH.relative_to(PROJECT_ROOT)))
         self._process.setProcessEnvironment(env)
 
@@ -2391,19 +2519,22 @@ class GUIController(QtCore.QObject):
             args.extend(["--learner-agent-id", learner_agent_id])
         if opponent_agent_id:
             args.extend(["--opponent-agent-id", opponent_agent_id])
-        self._emit_log(
-            f"[EVAL] Старт оценки: игр={self._eval_games}, learner_side={learner_side}, "
-            f"learner_agent_id={learner_agent_id or '-'}, opponent_agent_id={opponent_agent_id or 'heuristic'}, "
-            f"модель={os.path.basename(model_path) if model_path != 'None' else 'registry/roster'}, "
-            f"AZ-opponent-mode={self._eval_az_opponent_mode}, GMZ-eval=greedy(sims=32,top_k=8), exploration=off.",
-            level="INFO",
-        )
-        self._append_eval_log_line(
+        mode_parts: list[str] = []
+        if learner_algo == "alphazero" or opponent_algo == "alphazero":
+            mode_parts.append(f"AZ-eval={az_eval_mode}")
+            mode_parts.append(f"AZ-opponent-mode={az_opponent_mode}")
+        if learner_algo == "gumbel_muzero" or opponent_algo == "gumbel_muzero":
+            mode_parts.append(f"GMZ-eval={gmz_eval_mode}(sims=32,top_k=8)")
+            mode_parts.append(f"GMZ-opponent={gmz_opponent_mode}")
+        mode_tail = (", " + ", ".join(mode_parts)) if mode_parts else ""
+        eval_start_msg = (
             f"Старт оценки: игр={self._eval_games}, learner_side={learner_side}, "
             f"learner_agent_id={learner_agent_id or '-'}, opponent_agent_id={opponent_agent_id or 'heuristic'}, "
-            f"модель={os.path.basename(model_path) if model_path != 'None' else 'registry/roster'}, "
-            f"AZ-opponent-mode={self._eval_az_opponent_mode}, GMZ-eval=greedy(sims=32,top_k=8), exploration=off."
+            f"модель={os.path.basename(model_path) if model_path != 'None' else 'registry/roster'}"
+            f"{mode_tail}, exploration=off."
         )
+        self._emit_log(f"[EVAL] {eval_start_msg}", level="INFO")
+        self._append_eval_log_line(eval_start_msg)
         self._emit_status("Оценка запущена...")
         self._process.start(sys.executable, args)
         if not self._process.waitForStarted(3000):
@@ -2433,6 +2564,13 @@ class GUIController(QtCore.QObject):
         env["MISSION_NAME"] = self._selected_mission
         env["DEPLOYMENT_MODE"] = self._deployment_mode
         env["AGENT_LOG_FILE"] = str(AGENT_PLAY_LOG_PATH.relative_to(PROJECT_ROOT))
+        if self._play_model_algo_key == "alphazero":
+            env["AZ_PLAY_MODE"] = self._play_az_mode
+            if self._play_az_mode == "mcts":
+                env["AZ_PLAY_MCTS_TEMPERATURE"] = "0.06"
+                env["AZ_PLAY_MCTS_DIR_EPS"] = "0.0"
+        elif self._play_model_algo_key == "gumbel_muzero":
+            env["GMZ_PLAY_MODE"] = self._play_gmz_mode
         if self._play_agent_override_id:
             env["VIEWER_AGENT_ID"] = self._play_agent_override_id
             player_label, model_label = self._infer_viewer_role_labels_from_agent_id(
@@ -2472,6 +2610,13 @@ class GUIController(QtCore.QObject):
         env["MISSION_NAME"] = self._selected_mission
         env["DEPLOYMENT_MODE"] = self._deployment_mode
         env["AGENT_LOG_FILE"] = str(AGENT_PLAY_LOG_PATH.relative_to(PROJECT_ROOT))
+        if self._play_model_algo_key == "alphazero":
+            env["AZ_PLAY_MODE"] = self._play_az_mode
+            if self._play_az_mode == "mcts":
+                env["AZ_PLAY_MCTS_TEMPERATURE"] = "0.06"
+                env["AZ_PLAY_MCTS_DIR_EPS"] = "0.0"
+        elif self._play_model_algo_key == "gumbel_muzero":
+            env["GMZ_PLAY_MODE"] = self._play_gmz_mode
         if self._play_agent_override_id:
             env["VIEWER_AGENT_ID"] = self._play_agent_override_id
             player_label, model_label = self._infer_viewer_role_labels_from_agent_id(
@@ -2488,8 +2633,13 @@ class GUIController(QtCore.QObject):
             env=env,
             start_new_session=True,
         )
-        self._emit_log("[VIEWER] Запуск в greedy-режиме: exploration отключен (epsilon=0).", level="INFO")
-        self._emit_status("Запуск игры в GUI через Viewer (greedy, без исследования).")
+        mode_hint = "greedy"
+        if self._play_model_algo_key == "alphazero":
+            mode_hint = self._play_az_mode
+        elif self._play_model_algo_key == "gumbel_muzero":
+            mode_hint = self._play_gmz_mode
+        self._emit_log(f"[VIEWER] Запуск режима игры: {mode_hint} (exploration=off).", level="INFO")
+        self._emit_status(f"Запуск игры в GUI через Viewer ({mode_hint}, без исследования).")
 
     def _infer_viewer_role_labels_from_model_pickle(self, pickle_path: str) -> tuple[str, str]:
         """
@@ -3377,7 +3527,8 @@ class GUIController(QtCore.QObject):
         self._play_model_checkpoint_label = (
             f"Checkpoint: {os.path.basename(checkpoint_path)}" if checkpoint_path else "Checkpoint: —"
         )
-        self._play_model_algo_label = f"Алгоритм: {algo}" if algo else "Алгоритм: —"
+        self._play_model_algo_key = str(algo or "").strip().lower()
+        self._play_model_algo_label = f"Алгоритм: {self._format_algo_label(self._play_model_algo_key)}" if algo else "Алгоритм: —"
         self.playModelMetaChanged.emit(self._play_model_algo_label)
 
         # Подсказки для вкладки "Игра" (кто за кого играет).
@@ -3434,23 +3585,39 @@ class GUIController(QtCore.QObject):
                 payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
                 if isinstance(payload, dict):
                     algo = str(payload.get("algo", "") or "").strip().lower()
-                    if algo in {"ppo", "dqn"}:
-                        return algo.upper()
+                    if algo in {"ppo", "dqn", "alphazero", "gumbel_muzero"}:
+                        return algo
                     net_type = str(payload.get("net_type", "") or "").strip().lower()
                     if "ppo" in net_type:
-                        return "PPO"
+                        return "ppo"
                     if "dueling" in net_type or "basic" in net_type:
-                        return "DQN"
+                        return "dqn"
             except Exception:
                 pass
 
         # 2) Фолбэк по имени файла/папки.
         joined = (str(pickle_path or "") + " " + str(checkpoint_path or "")).lower()
+        if "gumbel_muzero" in joined or "gmz" in joined:
+            return "gumbel_muzero"
+        if "alphazero" in joined:
+            return "alphazero"
         if "ppo-run-" in joined or "checkpoint_ep" in joined:
-            return "PPO"
+            return "ppo"
         if "actor_learner" in joined or re.search(r"model-\d+-\d+.*\.pth", joined):
-            return "DQN"
+            return "dqn"
         return ""
+
+    def _format_algo_label(self, algo_key: str) -> str:
+        key = str(algo_key or "").strip().lower()
+        if key == "gumbel_muzero":
+            return "GUMBEL_MUZERO"
+        if key == "alphazero":
+            return "ALPHAZERO"
+        if key == "ppo":
+            return "PPO"
+        if key == "dqn":
+            return "DQN"
+        return key.upper() if key else "—"
 
     def _set_eval_model(self, path: str, source: str) -> None:
         self._eval_model_path = path
@@ -3468,6 +3635,7 @@ class GUIController(QtCore.QObject):
         latest_model = self._find_latest_model_file()
         if not latest_model:
             self._play_model_path = ""
+            self._play_model_algo_key = ""
             self._play_agent_override_id = ""
             if initial:
                 self._play_model_label = "Модель не найдена"
@@ -4163,11 +4331,12 @@ class GUIController(QtCore.QObject):
         if latest_agent_id:
             self._play_agent_override_id = latest_agent_id
             agent_algo = self._find_agent_algo_by_id(latest_agent_id)
+            self._play_model_algo_key = str(agent_algo or "").strip().lower()
             if not selected_pickle:
                 self._play_model_label = f"Последний agent: {latest_agent_id}"
                 self.playModelLabelChanged.emit(self._play_model_label)
             self._play_model_algo_label = (
-                f"Алгоритм: {agent_algo.upper()}"
+                f"Алгоритм: {self._format_algo_label(self._play_model_algo_key)}"
                 if agent_algo in {"dqn", "ppo", "alphazero", "gumbel_muzero"}
                 else "Алгоритм: —"
             )
@@ -4188,6 +4357,7 @@ class GUIController(QtCore.QObject):
             return True
 
         self._play_agent_override_id = ""
+        self._play_model_algo_key = ""
         if selected_pickle:
             if self._play_model_path:
                 self._sync_metrics_with_model(self._play_model_path)

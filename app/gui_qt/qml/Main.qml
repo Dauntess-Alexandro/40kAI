@@ -9,7 +9,7 @@ ApplicationWindow {
     width: Math.round(Screen.width * 0.85)
     height: Math.round(Screen.height * 0.85)
     visible: true
-    title: "40kAI — второй GUI (Qt)"
+    title: "40kAI"
 
     property string statusText: "Готово к запуску."
     property real uiScale: Math.max(1.0, Math.min(Screen.width / 1920, Screen.height / 1080))
@@ -161,10 +161,10 @@ ApplicationWindow {
                                             id: trainingAlgoComboMain
                                             Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(300 * root.uiScale))
                                             model: [
-                                                { value: "dqn", label: "DQN (текущая модель)" },
-                                                { value: "ppo", label: "PPO (новый алгоритм)" },
-                                                { value: "alphazero", label: "AlphaZero (третий алгоритм)" },
-                                                { value: "gumbel_muzero", label: "Gumbel MuZero (четвертый алгоритм)" }
+                                                { value: "dqn", label: "DQN" },
+                                                { value: "ppo", label: "PPO" },
+                                                { value: "alphazero", label: "AlphaZero" },
+                                                { value: "gumbel_muzero", label: "Gumbel MuZero" }
                                             ]
                                             textRole: "label"
                                             valueRole: "value"
@@ -1359,6 +1359,35 @@ ApplicationWindow {
                                     color: "#555555"
                                 }
 
+                                RowLayout {
+                                    visible: controller.playInferenceModeVisible
+                                    Layout.fillWidth: true
+                                    spacing: root.spacingSm
+
+                                    Label {
+                                        text: controller.playInferenceModeLabel
+                                        font.bold: true
+                                    }
+
+                                    ComboBox {
+                                        Layout.preferredWidth: Math.round(190 * root.uiScale)
+                                        model: controller.playInferenceModeOptions
+                                        textRole: "label"
+                                        enabled: !controller.running
+                                        currentIndex: {
+                                            for (var i = 0; i < model.length; i++) {
+                                                if (model[i].value === controller.playInferenceMode) return i
+                                            }
+                                            return 0
+                                        }
+                                        onActivated: {
+                                            if (model && model[currentIndex]) {
+                                                controller.set_play_inference_mode(model[currentIndex].value)
+                                            }
+                                        }
+                                    }
+                                }
+
                                 Label {
                                     text: controller.playModelCheckpointLabel
                                     wrapMode: Text.WordWrap
@@ -2097,27 +2126,6 @@ ApplicationWindow {
                                         text: "deterministic, epsilon=0"
                                         color: "#5b6472"
                                     }
-                                    Label {
-                                        text: "AZ оппонент:"
-                                        font.bold: true
-                                        color: "#2f3b52"
-                                    }
-                                    ComboBox {
-                                        Layout.preferredWidth: Math.round(170 * root.uiScale)
-                                        enabled: !controller.running
-                                        model: [
-                                            { value: "greedy", label: "Greedy (быстро)" },
-                                            { value: "mcts", label: "MCTS (сильнее)" }
-                                        ]
-                                        textRole: "label"
-                                        currentIndex: {
-                                            for (var i = 0; i < model.length; i++) {
-                                                if (model[i].value === controller.evalAzOpponentMode) return i
-                                            }
-                                            return 0
-                                        }
-                                        onActivated: controller.set_eval_az_opponent_mode(model[currentIndex].value)
-                                    }
                                     Item { Layout.fillWidth: true }
                                 }
 
@@ -2230,6 +2238,30 @@ ApplicationWindow {
                                                     onClicked: controller.copy_eval_agent_id("P1")
                                                     ToolTip.visible: hovered && controller.evalP1FullAgentId.length > 0
                                                     ToolTip.text: controller.evalP1FullAgentId
+                                                }
+                                                Label {
+                                                    visible: controller.evalP1InferenceModeVisible
+                                                    text: "Режим:"
+                                                    font.bold: true
+                                                    color: "#2f3b52"
+                                                }
+                                                ComboBox {
+                                                    visible: controller.evalP1InferenceModeVisible
+                                                    Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                    enabled: !controller.running
+                                                    model: controller.evalP1InferenceModeOptions
+                                                    textRole: "label"
+                                                    currentIndex: {
+                                                        for (var i = 0; i < model.length; i++) {
+                                                            if (model[i].value === controller.evalP1InferenceMode) return i
+                                                        }
+                                                        return 0
+                                                    }
+                                                    onActivated: {
+                                                        if (model && model[currentIndex]) {
+                                                            controller.set_eval_p1_inference_mode(model[currentIndex].value)
+                                                        }
+                                                    }
                                                 }
                                                 Text {
                                                     Layout.fillWidth: true
@@ -2361,6 +2393,30 @@ ApplicationWindow {
                                                     onClicked: controller.copy_eval_agent_id("P2")
                                                     ToolTip.visible: hovered && controller.evalP2FullAgentId.length > 0
                                                     ToolTip.text: controller.evalP2FullAgentId
+                                                }
+                                                Label {
+                                                    visible: controller.evalP2InferenceModeVisible
+                                                    text: "Режим:"
+                                                    font.bold: true
+                                                    color: "#2f3b52"
+                                                }
+                                                ComboBox {
+                                                    visible: controller.evalP2InferenceModeVisible
+                                                    Layout.preferredWidth: Math.round(180 * root.uiScale)
+                                                    enabled: !controller.running
+                                                    model: controller.evalP2InferenceModeOptions
+                                                    textRole: "label"
+                                                    currentIndex: {
+                                                        for (var i = 0; i < model.length; i++) {
+                                                            if (model[i].value === controller.evalP2InferenceMode) return i
+                                                        }
+                                                        return 0
+                                                    }
+                                                    onActivated: {
+                                                        if (model && model[currentIndex]) {
+                                                            controller.set_eval_p2_inference_mode(model[currentIndex].value)
+                                                        }
+                                                    }
                                                 }
                                                 Text {
                                                     Layout.fillWidth: true

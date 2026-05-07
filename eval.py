@@ -26,6 +26,7 @@ from core.envs.warhamEnv import roll_off_attacker_defender
 from core.models.DQN import DQN
 from core.models.PPO import ActorCriticMultiHead
 from core.models.alphazero_model import AlphaZeroPolicyValueNet
+from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.utils import normalize_state_dict
@@ -247,6 +248,36 @@ def select_action_with_epsilon_ppo(env, state, policy_net, epsilon, len_model):
 
 def select_action_with_epsilon_alphazero(env, state, policy_net, epsilon, len_model):
     masks_cpu = build_action_masks_by_head(env, len_model, log_fn=None, debug=False)
+    az_eval_mode = str(os.getenv("AZ_EVAL_MODE", os.getenv("AZ_EVAL_OPPONENT_MODE", "greedy"))).strip().lower() or "greedy"
+    if az_eval_mode not in {"greedy", "mcts"}:
+        az_eval_mode = "greedy"
+    if az_eval_mode == "mcts":
+        legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
+        mcts = AlphaZeroFactorizedMCTS(
+            policy_net,
+            config=MCTSConfig(
+                simulations=max(1, int(os.getenv("AZ_EVAL_MCTS_SIMS", "96"))),
+                c_puct=float(os.getenv("AZ_EVAL_MCTS_C_PUCT", "1.5")),
+                dirichlet_alpha=float(os.getenv("AZ_EVAL_MCTS_DIR_ALPHA", "0.3")),
+                dirichlet_eps=float(os.getenv("AZ_EVAL_MCTS_DIR_EPS", "0.0")),
+                top_k_per_head=max(1, int(os.getenv("AZ_EVAL_MCTS_TOP_K_PER_HEAD", "8"))),
+                max_depth=max(1, int(os.getenv("AZ_EVAL_MCTS_MAX_DEPTH", "1"))),
+                mode=str(os.getenv("AZ_EVAL_MCTS_MODE", "tree")).strip().lower() or "tree",
+            ),
+            device=state.device,
+        )
+        pi_targets, selected, _value = mcts.run(
+            obs=state.squeeze(0).detach().cpu().numpy(),
+            legal_masks_by_head=legal_masks,
+            temperature=float(os.getenv("AZ_EVAL_MCTS_TEMPERATURE", "0.06")),
+            env=env,
+            len_model=len_model,
+            enemy_policy_fn=None,
+        )
+        action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
+        if not action_list:
+            action_list = [int(x) for x in selected]
+        return torch.tensor([action_list], device="cpu")
     masks = [m.to(state.device).unsqueeze(0) for m in masks_cpu]
     with torch.no_grad():
         probs, _value = policy_net.infer(state, masks_by_head=masks)
@@ -949,10 +980,12 @@ def main():
         policy_state = _extract_policy_state_dict(checkpoint)
 
     opponent_agent_id = (args.opponent_agent_id or "").strip()
+    opponent_algo_label = "heuristic"
     opponent_policy_fn = None
     if opponent_agent_id:
         try:
             opp = load_agent_opponent(agent_id=opponent_agent_id, expected_contract=eval_contract)
+            opponent_algo_label = str(getattr(opp, "algo", "") or "").strip().lower() or "unknown"
             opponent_policy_fn = build_policy_fn(env=env, len_model=len(enemy_units), opponent=opp, deterministic=True)
             log(
                 f"Оппонент через registry: opponent-agent-id={opponent_agent_id}, algo={opp.algo} (deterministic)."
@@ -1035,10 +1068,23 @@ def main():
         policy_net.eval()
         target_net.eval()
 
+    az_eval_mode = str(os.getenv("AZ_EVAL_MODE", "greedy")).strip().lower() or "greedy"
+    az_opp_mode = str(os.getenv("AZ_EVAL_OPPONENT_MODE", "greedy")).strip().lower() or "greedy"
+    gmz_eval_mode = str(os.getenv("GMZ_EVAL_MODE", "search")).strip().lower() or "search"
+    gmz_opp_mode = str(os.getenv("GMZ_OPPONENT_MODE", "search")).strip().lower() or "search"
+    mode_parts: list[str] = []
+    if algo == "alphazero" or opponent_algo_label == "alphazero":
+        mode_parts.append(f"az_eval_mode={az_eval_mode}")
+        mode_parts.append(f"az_opponent_mode={az_opp_mode}")
+    if algo == "gumbel_muzero" or opponent_algo_label == "gumbel_muzero":
+        mode_parts.append(f"gmz_eval_mode={gmz_eval_mode}")
+        mode_parts.append(f"gmz_opponent_mode={gmz_opp_mode}")
+    modes_tail = (", " + ", ".join(mode_parts)) if mode_parts else ""
     log(
         f"Старт оценки: игр={games}, epsilon={epsilon:.3f}, "
         f"модель={os.path.basename(pickle_path)}, checkpoint={os.path.basename(checkpoint_path)}, "
-            f"heuristic_mode={str(os.getenv('HEURISTIC_MODE', 'v2')).strip().lower() or 'v2'}, algo={algo}."
+        f"heuristic_mode={str(os.getenv('HEURISTIC_MODE', 'v2')).strip().lower() or 'v2'}, algo={algo}, "
+        f"opponent_algo={opponent_algo_label}{modes_tail}."
     )
 
     learner_side = str(os.getenv("LEARNER_SIDE", "P1")).strip().upper() or "P1"

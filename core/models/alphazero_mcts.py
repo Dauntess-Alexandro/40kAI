@@ -99,7 +99,10 @@ class AlphaZeroFactorizedMCTS:
             logits = np.log(np.clip(pi, 1e-12, 1.0)) / temp
             ptemp = np.exp(logits - np.max(logits))
             ptemp = _masked_normalize(ptemp, legal)
-            action = int(np.random.choice(np.arange(ptemp.size), p=ptemp))
+            if temp <= 1e-3:
+                action = int(np.argmax(ptemp))
+            else:
+                action = int(np.random.choice(np.arange(ptemp.size), p=ptemp))
             policy_targets.append(ptemp.astype(np.float32))
             selected_actions.append(action)
         self.last_run_stats = {"mode": "proxy", "simulations": 1.0}
@@ -235,7 +238,10 @@ class AlphaZeroFactorizedMCTS:
                 logits = np.log(np.clip(n, 1e-12, None)) / temp
                 ptemp = np.exp(logits - np.max(logits))
                 pi = _masked_normalize(ptemp, legal)
-            action = int(np.random.choice(np.arange(pi.size), p=pi))
+            if temp <= 1e-3:
+                action = int(np.argmax(pi))
+            else:
+                action = int(np.random.choice(np.arange(pi.size), p=pi))
             policy_targets.append(pi.astype(np.float32))
             selected_actions.append(action)
 
