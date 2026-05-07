@@ -181,6 +181,11 @@ ApplicationWindow {
                                                     controller.set_training_algo(model[currentIndex].value)
                                             }
                                         }
+                                        Button {
+                                            text: "О моделях"
+                                            enabled: !controller.running
+                                            onClicked: trainingAlgoHelpDialog.open()
+                                        }
                                     }
 
                                 }
@@ -1386,6 +1391,47 @@ ApplicationWindow {
                                             }
                                         }
                                     }
+
+                                    Label {
+                                        visible: controller.playInferenceTemperatureVisible
+                                        text: "Темп.:"
+                                        color: "#2f3b52"
+                                    }
+
+                                    TextField {
+                                        visible: controller.playInferenceTemperatureVisible
+                                        Layout.preferredWidth: Math.round(80 * root.uiScale)
+                                        enabled: !controller.running
+                                        text: controller.playInferenceTemperature
+                                        placeholderText: "0.10"
+                                        onEditingFinished: controller.set_play_inference_temperature(text)
+                                    }
+                                }
+
+                                Rectangle {
+                                    visible: controller.playInferenceModeVisible
+                                    Layout.fillWidth: true
+                                    color: "#f3f4f6"
+                                    border.color: "#d1d5db"
+                                    border.width: 1
+                                    radius: Math.round(8 * root.uiScale)
+                                    implicitHeight: playInferenceHelpText.implicitHeight + Math.round(12 * root.uiScale)
+                                    Text {
+                                        id: playInferenceHelpText
+                                        anchors.fill: parent
+                                        anchors.margins: Math.round(6 * root.uiScale)
+                                        wrapMode: Text.WordWrap
+                                        color: "#374151"
+                                        text:
+                                            "Greedy — ИИ сразу берет лучший ход. Это самый быстрый режим.\n" +
+                                            "MCTS/Search — ИИ сначала просчитывает варианты вперед. Обычно сильнее, но медленнее.\n" +
+                                            "Температура работает только в MCTS/Search:\n" +
+                                            "• меньше (0.03–0.08) — более стабильно;\n" +
+                                            "• больше (0.10–0.15) — больше разнообразия.\n" +
+                                            "Старт: AZ 0.06, GMZ 0.10.\n" +
+                                            "PPO и DQN работают без поиска дерева, поэтому MCTS/Search и температура к ним не применяются.\n" +
+                                            "Эвристика — скриптовый бот, не использует нейросеть и температуру."
+                                    }
                                 }
 
                                 Label {
@@ -2139,7 +2185,7 @@ ApplicationWindow {
                                         border.color: "#2f6ed8"
                                         border.width: 1
                                         radius: Math.round(10 * root.uiScale)
-                                        implicitHeight: p1CardLayout.implicitHeight + root.spacingMd * 2
+                                        implicitHeight: Math.max(p1CardLayout.implicitHeight, p2CardLayout.implicitHeight) + root.spacingMd * 2
 
                                         ColumnLayout {
                                             id: p1CardLayout
@@ -2240,16 +2286,18 @@ ApplicationWindow {
                                                     ToolTip.text: controller.evalP1FullAgentId
                                                 }
                                                 Label {
-                                                    visible: controller.evalP1InferenceModeVisible
                                                     text: "Режим:"
                                                     font.bold: true
                                                     color: "#2f3b52"
+                                                    opacity: controller.evalP1InferenceModeVisible ? 1.0 : 0.55
                                                 }
                                                 ComboBox {
-                                                    visible: controller.evalP1InferenceModeVisible
                                                     Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                    enabled: !controller.running
-                                                    model: controller.evalP1InferenceModeOptions
+                                                    enabled: !controller.running && controller.evalP1InferenceModeVisible
+                                                    opacity: controller.evalP1InferenceModeVisible ? 1.0 : 0.55
+                                                    model: controller.evalP1InferenceModeVisible
+                                                        ? controller.evalP1InferenceModeOptions
+                                                        : [{ value: "greedy", label: "Greedy" }]
                                                     textRole: "label"
                                                     currentIndex: {
                                                         for (var i = 0; i < model.length; i++) {
@@ -2258,8 +2306,25 @@ ApplicationWindow {
                                                         return 0
                                                     }
                                                     onActivated: {
-                                                        if (model && model[currentIndex]) {
+                                                        if (controller.evalP1InferenceModeVisible && model && model[currentIndex]) {
                                                             controller.set_eval_p1_inference_mode(model[currentIndex].value)
+                                                        }
+                                                    }
+                                                }
+                                                Label {
+                                                    text: "Темп.:"
+                                                    color: "#2f3b52"
+                                                    opacity: controller.evalP1InferenceTemperatureVisible ? 1.0 : 0.55
+                                                }
+                                                TextField {
+                                                    Layout.preferredWidth: Math.round(80 * root.uiScale)
+                                                    enabled: !controller.running && controller.evalP1InferenceTemperatureVisible
+                                                    opacity: controller.evalP1InferenceTemperatureVisible ? 1.0 : 0.55
+                                                    text: controller.evalP1InferenceTemperature
+                                                    placeholderText: "0.10"
+                                                    onEditingFinished: {
+                                                        if (controller.evalP1InferenceTemperatureVisible) {
+                                                            controller.set_eval_p1_inference_temperature(text)
                                                         }
                                                     }
                                                 }
@@ -2270,6 +2335,31 @@ ApplicationWindow {
                                                     font.pixelSize: Math.round(11 * root.uiScale)
                                                     horizontalAlignment: Text.AlignRight
                                                     elide: Text.ElideRight
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                color: "#f3f4f6"
+                                                border.color: "#d1d5db"
+                                                border.width: 1
+                                                radius: Math.round(8 * root.uiScale)
+                                                implicitHeight: evalP1InferenceHelpText.implicitHeight + Math.round(12 * root.uiScale)
+                                                Text {
+                                                    id: evalP1InferenceHelpText
+                                                    anchors.fill: parent
+                                                    anchors.margins: Math.round(6 * root.uiScale)
+                                                    wrapMode: Text.WordWrap
+                                                    color: "#374151"
+                                                    text:
+                                                        "Greedy — ИИ сразу берет лучший ход. Это самый быстрый режим.\n" +
+                                                        "MCTS/Search — ИИ сначала просчитывает варианты вперед. Обычно сильнее, но медленнее.\n" +
+                                                        "Температура работает только в MCTS/Search:\n" +
+                                                        "• меньше (0.03–0.08) — более стабильно;\n" +
+                                                        "• больше (0.10–0.15) — больше разнообразия.\n" +
+                                                        "Старт: AZ 0.06, GMZ 0.10.\n" +
+                                                        "PPO и DQN работают без поиска дерева, поэтому MCTS/Search и температура к ним не применяются.\n" +
+                                                        "Эвристика — скриптовый бот, не использует нейросеть и температуру."
                                                 }
                                             }
                                         }
@@ -2294,7 +2384,7 @@ ApplicationWindow {
                                         border.color: "#cf3f3f"
                                         border.width: 1
                                         radius: Math.round(10 * root.uiScale)
-                                        implicitHeight: p2CardLayout.implicitHeight + root.spacingMd * 2
+                                        implicitHeight: Math.max(p1CardLayout.implicitHeight, p2CardLayout.implicitHeight) + root.spacingMd * 2
 
                                         ColumnLayout {
                                             id: p2CardLayout
@@ -2395,16 +2485,18 @@ ApplicationWindow {
                                                     ToolTip.text: controller.evalP2FullAgentId
                                                 }
                                                 Label {
-                                                    visible: controller.evalP2InferenceModeVisible
                                                     text: "Режим:"
                                                     font.bold: true
                                                     color: "#2f3b52"
+                                                    opacity: controller.evalP2InferenceModeVisible ? 1.0 : 0.55
                                                 }
                                                 ComboBox {
-                                                    visible: controller.evalP2InferenceModeVisible
                                                     Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                    enabled: !controller.running
-                                                    model: controller.evalP2InferenceModeOptions
+                                                    enabled: !controller.running && controller.evalP2InferenceModeVisible
+                                                    opacity: controller.evalP2InferenceModeVisible ? 1.0 : 0.55
+                                                    model: controller.evalP2InferenceModeVisible
+                                                        ? controller.evalP2InferenceModeOptions
+                                                        : [{ value: "greedy", label: "Greedy" }]
                                                     textRole: "label"
                                                     currentIndex: {
                                                         for (var i = 0; i < model.length; i++) {
@@ -2413,8 +2505,25 @@ ApplicationWindow {
                                                         return 0
                                                     }
                                                     onActivated: {
-                                                        if (model && model[currentIndex]) {
+                                                        if (controller.evalP2InferenceModeVisible && model && model[currentIndex]) {
                                                             controller.set_eval_p2_inference_mode(model[currentIndex].value)
+                                                        }
+                                                    }
+                                                }
+                                                Label {
+                                                    text: "Темп.:"
+                                                    color: "#2f3b52"
+                                                    opacity: controller.evalP2InferenceTemperatureVisible ? 1.0 : 0.55
+                                                }
+                                                TextField {
+                                                    Layout.preferredWidth: Math.round(80 * root.uiScale)
+                                                    enabled: !controller.running && controller.evalP2InferenceTemperatureVisible
+                                                    opacity: controller.evalP2InferenceTemperatureVisible ? 1.0 : 0.55
+                                                    text: controller.evalP2InferenceTemperature
+                                                    placeholderText: "0.10"
+                                                    onEditingFinished: {
+                                                        if (controller.evalP2InferenceTemperatureVisible) {
+                                                            controller.set_eval_p2_inference_temperature(text)
                                                         }
                                                     }
                                                 }
@@ -2425,6 +2534,31 @@ ApplicationWindow {
                                                     font.pixelSize: Math.round(11 * root.uiScale)
                                                     horizontalAlignment: Text.AlignRight
                                                     elide: Text.ElideRight
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                color: "#f3f4f6"
+                                                border.color: "#d1d5db"
+                                                border.width: 1
+                                                radius: Math.round(8 * root.uiScale)
+                                                implicitHeight: evalP2InferenceHelpText.implicitHeight + Math.round(12 * root.uiScale)
+                                                Text {
+                                                    id: evalP2InferenceHelpText
+                                                    anchors.fill: parent
+                                                    anchors.margins: Math.round(6 * root.uiScale)
+                                                    wrapMode: Text.WordWrap
+                                                    color: "#374151"
+                                                    text:
+                                                        "Greedy — ИИ сразу берет лучший ход. Это самый быстрый режим.\n" +
+                                                        "MCTS/Search — ИИ сначала просчитывает варианты вперед. Обычно сильнее, но медленнее.\n" +
+                                                        "Температура работает только в MCTS/Search:\n" +
+                                                        "• меньше (0.03–0.08) — более стабильно;\n" +
+                                                        "• больше (0.10–0.15) — больше разнообразия.\n" +
+                                                        "Старт: AZ 0.06, GMZ 0.10.\n" +
+                                                        "PPO и DQN работают без поиска дерева, поэтому MCTS/Search и температура к ним не применяются.\n" +
+                                                        "Эвристика — скриптовый бот, не использует нейросеть и температуру."
                                                 }
                                             }
                                         }
@@ -2693,6 +2827,698 @@ ApplicationWindow {
             repeat: true
             running: asciiBoardDialog.visible
             onTriggered: controller.refresh_board_text()
+        }
+    }
+
+    Dialog {
+        id: trainingAlgoHelpDialog
+        title: "Подсказка по моделям обучения"
+        modal: true
+        width: root.dialogWidthLg
+        height: Math.round(700 * root.uiScale)
+        anchors.centerIn: Overlay.overlay
+
+        contentItem: ColumnLayout {
+            spacing: root.spacingSm
+
+            ScrollView {
+                id: trainingAlgoHelpScroll
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                ColumnLayout {
+                    id: trainingAlgoHelpColumn
+                    width: Math.max(200, trainingAlgoHelpScroll.availableWidth)
+                    spacing: root.spacingMd
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: root.spacingSm
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.minimumHeight: summarySpeedColumn.implicitHeight + Math.round(16 * root.uiScale)
+                            radius: Math.round(10 * root.uiScale)
+                            color: "#eff6ff"
+                            border.color: "#bfdbfe"
+                            border.width: 1
+
+                            ColumnLayout {
+                                id: summarySpeedColumn
+                                anchors.fill: parent
+                                anchors.margins: Math.round(10 * root.uiScale)
+                                spacing: Math.round(4 * root.uiScale)
+
+                                Label {
+                                    text: "Скорость и простота"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(13 * root.uiScale)
+                                    color: "#1e3a8a"
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    text: "DQN · PPO — быстрые итерации, удобный старт обучения."
+                                    wrapMode: Text.WordWrap
+                                    color: "#334155"
+                                    Layout.fillWidth: true
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.minimumHeight: summaryQualityColumn.implicitHeight + Math.round(16 * root.uiScale)
+                            radius: Math.round(10 * root.uiScale)
+                            color: "#faf5ff"
+                            border.color: "#e9d5ff"
+                            border.width: 1
+
+                            ColumnLayout {
+                                id: summaryQualityColumn
+                                anchors.fill: parent
+                                anchors.margins: Math.round(10 * root.uiScale)
+                                spacing: Math.round(4 * root.uiScale)
+
+                                Label {
+                                    text: "Качество и поиск"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(13 * root.uiScale)
+                                    color: "#581c87"
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    text: "AlphaZero · Gumbel MuZero — сильнее за счёт просчёта вперёд, дороже по времени."
+                                    wrapMode: Text.WordWrap
+                                    color: "#334155"
+                                    Layout.fillWidth: true
+                                }
+                            }
+                        }
+                    }
+
+                    // DQN
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: dqnCardRow.implicitHeight
+                        radius: Math.round(12 * root.uiScale)
+                        color: "#ffffff"
+                        border.color: "#e5e7eb"
+                        border.width: 1
+
+                        RowLayout {
+                            id: dqnCardRow
+                            width: parent.width
+                            spacing: 0
+
+                            Rectangle {
+                                width: Math.round(6 * root.uiScale)
+                                Layout.fillHeight: true
+                                color: "#2563eb"
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: root.spacingSm
+                                Layout.margins: Math.round(12 * root.uiScale)
+
+                                Text {
+                                    text: "DQN (Deep Q-Network)"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(16 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: Math.round(6 * root.uiScale)
+
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#dbeafe"
+                                        implicitHeight: dqnB1.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: dqnB1.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: dqnB1
+                                            anchors.centerIn: parent
+                                            text: "Быстро"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#1e40af"
+                                        }
+                                    }
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#e0e7ff"
+                                        implicitHeight: dqnB2.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: dqnB2.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: dqnB2
+                                            anchors.centerIn: parent
+                                            text: "Baseline"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#3730a3"
+                                        }
+                                    }
+                                }
+
+                                Label {
+                                    text: "Что это"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "value-based RL. Модель учится предсказывать, насколько выгодно каждое действие в текущем состоянии, и выбирает действие с максимальной оценкой (Q-value)."
+                                }
+                                Label {
+                                    text: "Как учится"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "через replay-буфер прошлых переходов и target-сеть для стабилизации."
+                                }
+                                Label {
+                                    text: "Сильные стороны"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "• быстрый инференс;\n• простой baseline;\n• удобен для первых экспериментов и smoke-тестов."
+                                }
+                                Label {
+                                    text: "Ограничения"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "• хуже в задачах, где нужно глубокое планирование на несколько ходов вперёд;\n• чувствителен к reward shaping и качеству exploration."
+                                }
+                                Label {
+                                    text: "Когда выбирать"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "когда важны скорость итераций и понятный старт."
+                                }
+                            }
+                        }
+                    }
+
+                    // PPO
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: ppoCardRow.implicitHeight
+                        radius: Math.round(12 * root.uiScale)
+                        color: "#ffffff"
+                        border.color: "#e5e7eb"
+                        border.width: 1
+
+                        RowLayout {
+                            id: ppoCardRow
+                            width: parent.width
+                            spacing: 0
+
+                            Rectangle {
+                                width: Math.round(6 * root.uiScale)
+                                Layout.fillHeight: true
+                                color: "#0d9488"
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: root.spacingSm
+                                Layout.margins: Math.round(12 * root.uiScale)
+
+                                Text {
+                                    text: "PPO (Proximal Policy Optimization)"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(16 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: Math.round(6 * root.uiScale)
+
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#ccfbf1"
+                                        implicitHeight: ppoB1.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: ppoB1.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: ppoB1
+                                            anchors.centerIn: parent
+                                            text: "Стабильно"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#115e59"
+                                        }
+                                    }
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#99f6e4"
+                                        implicitHeight: ppoB2.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: ppoB2.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: ppoB2
+                                            anchors.centerIn: parent
+                                            text: "Универсально"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#134e4a"
+                                        }
+                                    }
+                                }
+
+                                Label {
+                                    text: "Что это"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "policy-gradient RL. Модель учится напрямую улучшать стратегию выбора действий, но делает это аккуратными шагами (clip-обновления), чтобы не разрушать уже выученное поведение."
+                                }
+                                Label {
+                                    text: "Как учится"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "rollout-ы → advantage/GAE → несколько эпох обновления на одном пакете данных."
+                                }
+                                Label {
+                                    text: "Сильные стороны"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "• обычно более стабильное обучение, чем у простых value-only подходов;\n• хороший баланс скорость/качество;\n• часто удобный рабочий дефолт для RL."
+                                }
+                                Label {
+                                    text: "Ограничения"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "• без tree-search на ходе (не просчитывает дерево вариантов);\n• качество всё ещё сильно зависит от настройки гиперпараметров и награды."
+                                }
+                                Label {
+                                    text: "Когда выбирать"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "когда нужен надёжный тренировочный режим без дорогого поиска."
+                                }
+                            }
+                        }
+                    }
+
+                    // AlphaZero
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: azCardRow.implicitHeight
+                        radius: Math.round(12 * root.uiScale)
+                        color: "#ffffff"
+                        border.color: "#e5e7eb"
+                        border.width: 1
+
+                        RowLayout {
+                            id: azCardRow
+                            width: parent.width
+                            spacing: 0
+
+                            Rectangle {
+                                width: Math.round(6 * root.uiScale)
+                                Layout.fillHeight: true
+                                color: "#7c3aed"
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: root.spacingSm
+                                Layout.margins: Math.round(12 * root.uiScale)
+
+                                Text {
+                                    text: "AlphaZero (AZ)"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(16 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: Math.round(6 * root.uiScale)
+
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#ede9fe"
+                                        implicitHeight: azB1.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: azB1.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: azB1
+                                            anchors.centerIn: parent
+                                            text: "MCTS"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#5b21b6"
+                                        }
+                                    }
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#ddd6fe"
+                                        implicitHeight: azB2.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: azB2.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: azB2
+                                            anchors.centerIn: parent
+                                            text: "Сильнее"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#4c1d95"
+                                        }
+                                    }
+                                }
+
+                                Label {
+                                    text: "Что это"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "policy/value сеть + MCTS (поиск по дереву). Сеть даёт priors и value, а MCTS перед ходом просматривает ветки и выбирает более сильное решение."
+                                }
+                                Label {
+                                    text: "Как учится"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "self-play с генерацией более качественных target-политик из поиска."
+                                }
+                                Label {
+                                    text: "Сильные стороны"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "• обычно сильнее в тактических и стратегических сценариях;\n• лучше видит последствия на несколько ходов вперёд."
+                                }
+                                Label {
+                                    text: "Ограничения"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "• существенно дороже по CPU/GPU на каждом ходе;\n• выше требования к настройке search-параметров."
+                                }
+                                Label {
+                                    text: "Режимы инференса"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "• Greedy — быстро, без поиска;\n• MCTS — сильнее, но медленнее."
+                                }
+                                Label {
+                                    text: "Температура"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "влияет только в MCTS (в Greedy не используется)."
+                                }
+                                Label {
+                                    text: "Когда выбирать"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "когда приоритет — качество решений, а не максимальная скорость."
+                                }
+                            }
+                        }
+                    }
+
+                    // Gumbel MuZero
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: gmzCardRow.implicitHeight
+                        radius: Math.round(12 * root.uiScale)
+                        color: "#ffffff"
+                        border.color: "#e5e7eb"
+                        border.width: 1
+
+                        RowLayout {
+                            id: gmzCardRow
+                            width: parent.width
+                            spacing: 0
+
+                            Rectangle {
+                                width: Math.round(6 * root.uiScale)
+                                Layout.fillHeight: true
+                                color: "#d97706"
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: root.spacingSm
+                                Layout.margins: Math.round(12 * root.uiScale)
+
+                                Text {
+                                    text: "Gumbel MuZero (GMZ)"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(16 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: Math.round(6 * root.uiScale)
+
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#fef3c7"
+                                        implicitHeight: gmzB1.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: gmzB1.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: gmzB1
+                                            anchors.centerIn: parent
+                                            text: "Поиск"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#92400e"
+                                        }
+                                    }
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#fde68a"
+                                        implicitHeight: gmzB2.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: gmzB2.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: gmzB2
+                                            anchors.centerIn: parent
+                                            text: "Тяжёлый"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#78350f"
+                                        }
+                                    }
+                                }
+
+                                Label {
+                                    text: "Что это"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "развитие идеи AlphaZero: поиск + внутренняя модель динамики в latent-пространстве. Проще: модель не только выбирает ход, но и внутри себя моделирует, что будет дальше."
+                                }
+                                Label {
+                                    text: "Как учится"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "representation/dynamics/prediction + search targets + unroll."
+                                }
+                                Label {
+                                    text: "Сильные стороны"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "• высокий потолок качества;\n• хорошо работает в сложных тактических зависимостях."
+                                }
+                                Label {
+                                    text: "Ограничения"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "• самый тяжёлый режим по вычислениям;\n• самый чувствительный к гиперпараметрам и стабильности пайплайна."
+                                }
+                                Label {
+                                    text: "Режимы инференса"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "• Greedy — быстрее, без search;\n• Search — сильнее, но медленнее."
+                                }
+                                Label {
+                                    text: "Температура"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "влияет только в Search (в Greedy не используется)."
+                                }
+                                Label {
+                                    text: "Когда выбирать"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: "#111827"
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: "#374151"
+                                    text: "когда цель — максимум силы модели и есть бюджет по времени/ресурсам."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "Закрыть"
+                    onClicked: trainingAlgoHelpDialog.close()
+                }
+            }
         }
     }
 

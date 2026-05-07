@@ -323,7 +323,7 @@ def select_action_with_epsilon_gumbel_muzero(env, state, policy_net, epsilon, le
         config=GumbelMuZeroSearchConfig(
             num_simulations=max(1, int(os.getenv("GMZ_EVAL_SIMS", "32"))),
             root_top_k=max(1, int(os.getenv("GMZ_EVAL_ROOT_TOP_K", "8"))),
-            temperature=float(os.getenv("GMZ_EVAL_TEMPERATURE", "0.15")),
+            temperature=float(os.getenv("GMZ_EVAL_TEMPERATURE", "0.10")),
         ),
         device=state.device,
     )
@@ -1074,11 +1074,27 @@ def main():
     gmz_opp_mode = str(os.getenv("GMZ_OPPONENT_MODE", "search")).strip().lower() or "search"
     mode_parts: list[str] = []
     if algo == "alphazero" or opponent_algo_label == "alphazero":
-        mode_parts.append(f"az_eval_mode={az_eval_mode}")
-        mode_parts.append(f"az_opponent_mode={az_opp_mode}")
+        az_eval_tail = f"az_eval_mode={az_eval_mode}"
+        az_opp_tail = f"az_opponent_mode={az_opp_mode}"
+        if algo == "alphazero" and az_eval_mode == "mcts":
+            az_eval_tail += f"(temp={float(os.getenv('AZ_EVAL_MCTS_TEMPERATURE', '0.06')):.3f})"
+        if opponent_algo_label == "alphazero" and az_opp_mode == "mcts":
+            az_opp_tail += (
+                f"(temp={float(os.getenv('AZ_EVAL_OPPONENT_MCTS_TEMPERATURE', os.getenv('AZ_EVAL_MCTS_TEMPERATURE', '0.06'))):.3f})"
+            )
+        mode_parts.append(az_eval_tail)
+        mode_parts.append(az_opp_tail)
     if algo == "gumbel_muzero" or opponent_algo_label == "gumbel_muzero":
-        mode_parts.append(f"gmz_eval_mode={gmz_eval_mode}")
-        mode_parts.append(f"gmz_opponent_mode={gmz_opp_mode}")
+        gmz_eval_tail = f"gmz_eval_mode={gmz_eval_mode}"
+        gmz_opp_tail = f"gmz_opponent_mode={gmz_opp_mode}"
+        if algo == "gumbel_muzero" and gmz_eval_mode == "search":
+            gmz_eval_tail += f"(temp={float(os.getenv('GMZ_EVAL_TEMPERATURE', '0.10')):.3f})"
+        if opponent_algo_label == "gumbel_muzero" and gmz_opp_mode == "search":
+            gmz_opp_tail += (
+                f"(temp={float(os.getenv('GMZ_EVAL_OPPONENT_TEMPERATURE', os.getenv('GMZ_EVAL_TEMPERATURE', '0.10'))):.3f})"
+            )
+        mode_parts.append(gmz_eval_tail)
+        mode_parts.append(gmz_opp_tail)
     modes_tail = (", " + ", ".join(mode_parts)) if mode_parts else ""
     log(
         f"Старт оценки: игр={games}, epsilon={epsilon:.3f}, "

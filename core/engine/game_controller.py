@@ -538,9 +538,13 @@ class GameController:
 
             algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
             if algo == "alphazero":
-                self._io.log(f"[VIEWER][INFERENCE_MODE] algo=alphazero mode={az_play_mode}")
+                az_temp = float(os.getenv("AZ_PLAY_MCTS_TEMPERATURE", "0.06"))
+                az_tail = f", temperature={az_temp:.3f}" if az_play_mode == "mcts" else ""
+                self._io.log(f"[VIEWER][INFERENCE_MODE] algo=alphazero mode={az_play_mode}{az_tail}")
             elif algo == "gumbel_muzero":
-                self._io.log(f"[VIEWER][INFERENCE_MODE] algo=gumbel_muzero mode={gmz_play_mode}")
+                gmz_temp = float(os.getenv("GMZ_PLAY_TEMPERATURE", "0.10"))
+                gmz_tail = f", temperature={gmz_temp:.3f}" if gmz_play_mode == "search" else ""
+                self._io.log(f"[VIEWER][INFERENCE_MODE] algo=gumbel_muzero mode={gmz_play_mode}{gmz_tail}")
             else:
                 self._io.log(f"[VIEWER][INFERENCE_MODE] algo={algo} mode=greedy(fixed)")
             if algo == "ppo":

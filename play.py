@@ -184,9 +184,13 @@ algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoi
 if algo not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
     algo = "dqn"
 if algo == "alphazero":
-    _log(f"[PLAY][INFERENCE_MODE] algo=alphazero mode={AZ_PLAY_MODE}")
+    az_temp = float(os.getenv("AZ_PLAY_MCTS_TEMPERATURE", "0.06"))
+    az_tail = f", temperature={az_temp:.3f}" if AZ_PLAY_MODE == "mcts" else ""
+    _log(f"[PLAY][INFERENCE_MODE] algo=alphazero mode={AZ_PLAY_MODE}{az_tail}")
 elif algo == "gumbel_muzero":
-    _log(f"[PLAY][INFERENCE_MODE] algo=gumbel_muzero mode={GMZ_PLAY_MODE}")
+    gmz_temp = float(os.getenv("GMZ_PLAY_TEMPERATURE", "0.10"))
+    gmz_tail = f", temperature={gmz_temp:.3f}" if GMZ_PLAY_MODE == "search" else ""
+    _log(f"[PLAY][INFERENCE_MODE] algo=gumbel_muzero mode={GMZ_PLAY_MODE}{gmz_tail}")
 else:
     _log(f"[PLAY][INFERENCE_MODE] algo={algo} mode=greedy(fixed)")
 if algo == "ppo":

@@ -1,6 +1,7 @@
 import ast
 import csv
 import json
+import math
 import os
 import re
 import shutil
@@ -163,6 +164,8 @@ class GUIController(QtCore.QObject):
         self._play_agent_override_id = ""
         self._play_az_mode = "greedy"
         self._play_gmz_mode = "greedy"
+        self._play_az_temperature = 0.06
+        self._play_gmz_temperature = 0.10
         self._play_viewer_player_role_label = "Ты: —"
         self._play_viewer_model_role_label = "ИИ: —"
         self._eval_model_path = ""
@@ -190,6 +193,10 @@ class GUIController(QtCore.QObject):
         self._eval_p2_badges: list[str] = []
         self._eval_p1_inference_mode = "greedy"
         self._eval_p2_inference_mode = "greedy"
+        self._eval_p1_az_temperature = 0.06
+        self._eval_p2_az_temperature = 0.06
+        self._eval_p1_gmz_temperature = 0.10
+        self._eval_p2_gmz_temperature = 0.10
         self._eval_p1_icon_text = "AI"
         self._eval_p2_icon_text = "HR"
         self._eval_scenario_text = "Сценарий: выберите политики P1/P2."
@@ -633,13 +640,13 @@ class GUIController(QtCore.QObject):
     def playInferenceModeOptions(self):
         if self._play_model_algo_key == "alphazero":
             return [
-                {"value": "greedy", "label": "Greedy (быстро)"},
-                {"value": "mcts", "label": "MCTS (сильнее)"},
+                {"value": "greedy", "label": "Greedy"},
+                {"value": "mcts", "label": "MCTS"},
             ]
         if self._play_model_algo_key == "gumbel_muzero":
             return [
-                {"value": "greedy", "label": "Greedy (быстро)"},
-                {"value": "search", "label": "Search (сильнее)"},
+                {"value": "greedy", "label": "Greedy"},
+                {"value": "search", "label": "Search"},
             ]
         return []
 
@@ -650,6 +657,22 @@ class GUIController(QtCore.QObject):
         if self._play_model_algo_key == "gumbel_muzero":
             return self._play_gmz_mode
         return "greedy"
+
+    @QtCore.Property(bool, notify=playModelMetaChanged)
+    def playInferenceTemperatureVisible(self) -> bool:
+        if self._play_model_algo_key == "alphazero":
+            return self._play_az_mode == "mcts"
+        if self._play_model_algo_key == "gumbel_muzero":
+            return self._play_gmz_mode == "search"
+        return False
+
+    @QtCore.Property(str, notify=playModelMetaChanged)
+    def playInferenceTemperature(self) -> str:
+        if self._play_model_algo_key == "alphazero":
+            return f"{float(self._play_az_temperature):.2f}"
+        if self._play_model_algo_key == "gumbel_muzero":
+            return f"{float(self._play_gmz_temperature):.2f}"
+        return "0.10"
 
     @QtCore.Property(str, notify=playModelMetaChanged)
     def playModelCheckpointLabel(self) -> str:
@@ -720,13 +743,13 @@ class GUIController(QtCore.QObject):
         algo_key = str(algo or "").strip().lower()
         if algo_key == "alphazero":
             return [
-                {"value": "greedy", "label": "Greedy (быстро)"},
-                {"value": "mcts", "label": "MCTS (сильнее)"},
+                {"value": "greedy", "label": "Greedy"},
+                {"value": "mcts", "label": "MCTS"},
             ]
         if algo_key == "gumbel_muzero":
             return [
-                {"value": "greedy", "label": "Greedy (быстро)"},
-                {"value": "search", "label": "Search (сильнее)"},
+                {"value": "greedy", "label": "Greedy"},
+                {"value": "search", "label": "Search"},
             ]
         return []
 
@@ -753,6 +776,55 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=evalSetupChanged)
     def evalP2InferenceMode(self) -> str:
         return str(self._eval_p2_inference_mode or "greedy")
+
+    def _eval_side_temp_visible(self, side: str) -> bool:
+        algo = self._eval_side_algo_key(side)
+        mode = self._eval_p1_inference_mode if str(side).upper() == "P1" else self._eval_p2_inference_mode
+        if algo == "alphazero":
+            return mode == "mcts"
+        if algo == "gumbel_muzero":
+            return mode == "search"
+        return False
+
+    def _sanitize_temperature(self, raw: str, default: float) -> float:
+        try:
+            value = float(str(raw).strip().replace(",", "."))
+        except Exception:
+            return float(default)
+        if not math.isfinite(value):
+            return float(default)
+        return float(max(0.001, min(2.0, value)))
+
+    def _eval_side_temperature(self, side: str) -> float:
+        side_key = str(side).upper()
+        algo = self._eval_side_algo_key(side_key)
+        if side_key == "P1":
+            if algo == "alphazero":
+                return float(self._eval_p1_az_temperature)
+            if algo == "gumbel_muzero":
+                return float(self._eval_p1_gmz_temperature)
+            return 0.10
+        if algo == "alphazero":
+            return float(self._eval_p2_az_temperature)
+        if algo == "gumbel_muzero":
+            return float(self._eval_p2_gmz_temperature)
+        return 0.10
+
+    @QtCore.Property(bool, notify=evalSetupChanged)
+    def evalP1InferenceTemperatureVisible(self) -> bool:
+        return self._eval_side_temp_visible("P1")
+
+    @QtCore.Property(bool, notify=evalSetupChanged)
+    def evalP2InferenceTemperatureVisible(self) -> bool:
+        return self._eval_side_temp_visible("P2")
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP1InferenceTemperature(self) -> str:
+        return f"{self._eval_side_temperature('P1'):.2f}"
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP2InferenceTemperature(self) -> str:
+        return f"{self._eval_side_temperature('P2'):.2f}"
 
     @QtCore.Property(str, notify=evalSetupChanged)
     def evalP1SelectedAgentLabel(self) -> str:
@@ -1322,6 +1394,34 @@ class GUIController(QtCore.QObject):
         self.evalSetupChanged.emit()
 
     @QtCore.Slot(str)
+    def set_eval_p1_inference_temperature(self, value: str) -> None:
+        algo = self._eval_side_algo_key("P1")
+        parsed = self._sanitize_temperature(value, self._eval_side_temperature("P1"))
+        changed = False
+        if algo == "alphazero":
+            changed = abs(parsed - float(self._eval_p1_az_temperature)) > 1e-9
+            self._eval_p1_az_temperature = parsed
+        elif algo == "gumbel_muzero":
+            changed = abs(parsed - float(self._eval_p1_gmz_temperature)) > 1e-9
+            self._eval_p1_gmz_temperature = parsed
+        if changed:
+            self.evalSetupChanged.emit()
+
+    @QtCore.Slot(str)
+    def set_eval_p2_inference_temperature(self, value: str) -> None:
+        algo = self._eval_side_algo_key("P2")
+        parsed = self._sanitize_temperature(value, self._eval_side_temperature("P2"))
+        changed = False
+        if algo == "alphazero":
+            changed = abs(parsed - float(self._eval_p2_az_temperature)) > 1e-9
+            self._eval_p2_az_temperature = parsed
+        elif algo == "gumbel_muzero":
+            changed = abs(parsed - float(self._eval_p2_gmz_temperature)) > 1e-9
+            self._eval_p2_gmz_temperature = parsed
+        if changed:
+            self.evalSetupChanged.emit()
+
+    @QtCore.Slot(str)
     def set_play_inference_mode(self, value: str) -> None:
         mode = str(value or "").strip().lower()
         if self._play_model_algo_key == "alphazero":
@@ -1341,6 +1441,21 @@ class GUIController(QtCore.QObject):
             self._play_gmz_mode = mode
             self.playModelMetaChanged.emit(self._play_model_algo_label)
             self._emit_status(f"Режим GMZ для игры: {mode}.")
+
+    @QtCore.Slot(str)
+    def set_play_inference_temperature(self, value: str) -> None:
+        parsed = self._sanitize_temperature(value, 0.10)
+        if self._play_model_algo_key == "alphazero":
+            if abs(parsed - float(self._play_az_temperature)) <= 1e-9:
+                return
+            self._play_az_temperature = parsed
+            self.playModelMetaChanged.emit(self._play_model_algo_label)
+            return
+        if self._play_model_algo_key == "gumbel_muzero":
+            if abs(parsed - float(self._play_gmz_temperature)) <= 1e-9:
+                return
+            self._play_gmz_temperature = parsed
+            self.playModelMetaChanged.emit(self._play_model_algo_label)
 
     @QtCore.Slot()
     def refresh_eval_agents(self) -> None:
@@ -2487,8 +2602,10 @@ class GUIController(QtCore.QObject):
         env.insert("AZ_EVAL_MODE", az_eval_mode)
         env.insert("AZ_EVAL_OPPONENT_MODE", az_opponent_mode)
         if az_eval_mode == "mcts" or az_opponent_mode == "mcts":
-            # Максимально детерминированный AZ-MCTS для game/eval.
-            env.insert("AZ_EVAL_MCTS_TEMPERATURE", "0.06")
+            if learner_algo == "alphazero" and az_eval_mode == "mcts":
+                env.insert("AZ_EVAL_MCTS_TEMPERATURE", f"{self._eval_side_temperature(learner_side):.3f}")
+            if opponent_algo == "alphazero" and az_opponent_mode == "mcts":
+                env.insert("AZ_EVAL_OPPONENT_MCTS_TEMPERATURE", f"{self._eval_side_temperature(opponent_side):.3f}")
             env.insert("AZ_EVAL_MCTS_DIR_EPS", "0.0")
         # Fast GMZ eval preset: lower search budget + selectable mode for learner/opponent.
         env.insert("GMZ_EVAL_SIMS", "32")
@@ -2497,6 +2614,10 @@ class GUIController(QtCore.QObject):
         gmz_opponent_mode = opponent_mode if opponent_algo == "gumbel_muzero" and opponent_mode in {"greedy", "search"} else "greedy"
         env.insert("GMZ_EVAL_MODE", gmz_eval_mode)
         env.insert("GMZ_OPPONENT_MODE", gmz_opponent_mode)
+        if learner_algo == "gumbel_muzero" and gmz_eval_mode == "search":
+            env.insert("GMZ_EVAL_TEMPERATURE", f"{self._eval_side_temperature(learner_side):.3f}")
+        if opponent_algo == "gumbel_muzero" and gmz_opponent_mode == "search":
+            env.insert("GMZ_EVAL_OPPONENT_TEMPERATURE", f"{self._eval_side_temperature(opponent_side):.3f}")
         env.insert("AGENT_LOG_FILE", str(AGENT_TRAIN_LOG_PATH.relative_to(PROJECT_ROOT)))
         self._process.setProcessEnvironment(env)
 
@@ -2521,11 +2642,23 @@ class GUIController(QtCore.QObject):
             args.extend(["--opponent-agent-id", opponent_agent_id])
         mode_parts: list[str] = []
         if learner_algo == "alphazero" or opponent_algo == "alphazero":
-            mode_parts.append(f"AZ-eval={az_eval_mode}")
-            mode_parts.append(f"AZ-opponent-mode={az_opponent_mode}")
+            az_eval_tail = f"AZ-eval={az_eval_mode}"
+            az_opp_tail = f"AZ-opponent-mode={az_opponent_mode}"
+            if learner_algo == "alphazero" and az_eval_mode == "mcts":
+                az_eval_tail += f"(temp={self._eval_side_temperature(learner_side):.2f})"
+            if opponent_algo == "alphazero" and az_opponent_mode == "mcts":
+                az_opp_tail += f"(temp={self._eval_side_temperature(opponent_side):.2f})"
+            mode_parts.append(az_eval_tail)
+            mode_parts.append(az_opp_tail)
         if learner_algo == "gumbel_muzero" or opponent_algo == "gumbel_muzero":
-            mode_parts.append(f"GMZ-eval={gmz_eval_mode}(sims=32,top_k=8)")
-            mode_parts.append(f"GMZ-opponent={gmz_opponent_mode}")
+            gmz_eval_tail = f"GMZ-eval={gmz_eval_mode}(sims=32,top_k=8)"
+            gmz_opp_tail = f"GMZ-opponent={gmz_opponent_mode}"
+            if learner_algo == "gumbel_muzero" and gmz_eval_mode == "search":
+                gmz_eval_tail += f"(temp={self._eval_side_temperature(learner_side):.2f})"
+            if opponent_algo == "gumbel_muzero" and gmz_opponent_mode == "search":
+                gmz_opp_tail += f"(temp={self._eval_side_temperature(opponent_side):.2f})"
+            mode_parts.append(gmz_eval_tail)
+            mode_parts.append(gmz_opp_tail)
         mode_tail = (", " + ", ".join(mode_parts)) if mode_parts else ""
         eval_start_msg = (
             f"Старт оценки: игр={self._eval_games}, learner_side={learner_side}, "
@@ -2567,10 +2700,12 @@ class GUIController(QtCore.QObject):
         if self._play_model_algo_key == "alphazero":
             env["AZ_PLAY_MODE"] = self._play_az_mode
             if self._play_az_mode == "mcts":
-                env["AZ_PLAY_MCTS_TEMPERATURE"] = "0.06"
+                env["AZ_PLAY_MCTS_TEMPERATURE"] = f"{float(self._play_az_temperature):.3f}"
                 env["AZ_PLAY_MCTS_DIR_EPS"] = "0.0"
         elif self._play_model_algo_key == "gumbel_muzero":
             env["GMZ_PLAY_MODE"] = self._play_gmz_mode
+            if self._play_gmz_mode == "search":
+                env["GMZ_PLAY_TEMPERATURE"] = f"{float(self._play_gmz_temperature):.3f}"
         if self._play_agent_override_id:
             env["VIEWER_AGENT_ID"] = self._play_agent_override_id
             player_label, model_label = self._infer_viewer_role_labels_from_agent_id(
@@ -2613,10 +2748,12 @@ class GUIController(QtCore.QObject):
         if self._play_model_algo_key == "alphazero":
             env["AZ_PLAY_MODE"] = self._play_az_mode
             if self._play_az_mode == "mcts":
-                env["AZ_PLAY_MCTS_TEMPERATURE"] = "0.06"
+                env["AZ_PLAY_MCTS_TEMPERATURE"] = f"{float(self._play_az_temperature):.3f}"
                 env["AZ_PLAY_MCTS_DIR_EPS"] = "0.0"
         elif self._play_model_algo_key == "gumbel_muzero":
             env["GMZ_PLAY_MODE"] = self._play_gmz_mode
+            if self._play_gmz_mode == "search":
+                env["GMZ_PLAY_TEMPERATURE"] = f"{float(self._play_gmz_temperature):.3f}"
         if self._play_agent_override_id:
             env["VIEWER_AGENT_ID"] = self._play_agent_override_id
             player_label, model_label = self._infer_viewer_role_labels_from_agent_id(

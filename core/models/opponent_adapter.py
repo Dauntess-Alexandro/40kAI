@@ -211,7 +211,12 @@ def build_policy_fn(
                 pi_targets, selected, _value = mcts.run(
                     obs=obs_np,
                     legal_masks_by_head=legal_masks,
-                    temperature=float(os.getenv("AZ_EVAL_MCTS_TEMPERATURE", "0.10")),
+                    temperature=float(
+                        os.getenv(
+                            "AZ_EVAL_OPPONENT_MCTS_TEMPERATURE",
+                            os.getenv("AZ_EVAL_MCTS_TEMPERATURE", "0.10"),
+                        )
+                    ),
                     env=env,
                     len_model=int(len_model),
                     enemy_policy_fn=None,
@@ -263,7 +268,12 @@ def build_policy_fn(
             config=GumbelMuZeroSearchConfig(
                 num_simulations=max(1, int(os.getenv("GMZ_EVAL_SIMS", "32"))),
                 root_top_k=max(1, int(os.getenv("GMZ_EVAL_ROOT_TOP_K", "8"))),
-                temperature=float(os.getenv("GMZ_EVAL_TEMPERATURE", "0.15")),
+                temperature=float(
+                    os.getenv(
+                        "GMZ_EVAL_OPPONENT_TEMPERATURE",
+                        os.getenv("GMZ_EVAL_TEMPERATURE", "0.10"),
+                    )
+                ),
             ),
             device=torch.device("cpu"),
         )
