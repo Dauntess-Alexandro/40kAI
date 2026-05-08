@@ -2328,30 +2328,12 @@ ApplicationWindow {
                                                         }
                                                     }
                                                 }
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: controller.evalP1FullAgentId.length > 0 ? "ID в tooltip" : "ID: —"
-                                                    color: "#5b6472"
-                                                    font.pixelSize: Math.round(11 * root.uiScale)
-                                                    horizontalAlignment: Text.AlignRight
-                                                    elide: Text.ElideRight
-                                                }
-                                            }
-
-                                            Rectangle {
-                                                Layout.fillWidth: true
-                                                color: "#f3f4f6"
-                                                border.color: "#d1d5db"
-                                                border.width: 1
-                                                radius: Math.round(8 * root.uiScale)
-                                                implicitHeight: evalP1InferenceHelpText.implicitHeight + Math.round(12 * root.uiScale)
-                                                Text {
-                                                    id: evalP1InferenceHelpText
-                                                    anchors.fill: parent
-                                                    anchors.margins: Math.round(6 * root.uiScale)
-                                                    wrapMode: Text.WordWrap
-                                                    color: "#374151"
-                                                    text:
+                                                Button {
+                                                    text: "i"
+                                                    flat: true
+                                                    font.bold: true
+                                                    ToolTip.visible: hovered
+                                                    ToolTip.text:
                                                         "Greedy — ИИ сразу берет лучший ход. Это самый быстрый режим.\n" +
                                                         "MCTS/Search — ИИ сначала просчитывает варианты вперед. Обычно сильнее, но медленнее.\n" +
                                                         "Температура работает только в MCTS/Search:\n" +
@@ -2360,6 +2342,14 @@ ApplicationWindow {
                                                         "Старт: AZ 0.06, GMZ 0.10.\n" +
                                                         "PPO и DQN работают без поиска дерева, поэтому MCTS/Search и температура к ним не применяются.\n" +
                                                         "Эвристика — скриптовый бот, не использует нейросеть и температуру."
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: controller.evalP1FullAgentId.length > 0 ? "ID в tooltip" : "ID: —"
+                                                    color: "#5b6472"
+                                                    font.pixelSize: Math.round(11 * root.uiScale)
+                                                    horizontalAlignment: Text.AlignRight
+                                                    elide: Text.ElideRight
                                                 }
                                             }
                                         }
@@ -2527,30 +2517,12 @@ ApplicationWindow {
                                                         }
                                                     }
                                                 }
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: controller.evalP2FullAgentId.length > 0 ? "ID в tooltip" : "ID: —"
-                                                    color: "#5b6472"
-                                                    font.pixelSize: Math.round(11 * root.uiScale)
-                                                    horizontalAlignment: Text.AlignRight
-                                                    elide: Text.ElideRight
-                                                }
-                                            }
-
-                                            Rectangle {
-                                                Layout.fillWidth: true
-                                                color: "#f3f4f6"
-                                                border.color: "#d1d5db"
-                                                border.width: 1
-                                                radius: Math.round(8 * root.uiScale)
-                                                implicitHeight: evalP2InferenceHelpText.implicitHeight + Math.round(12 * root.uiScale)
-                                                Text {
-                                                    id: evalP2InferenceHelpText
-                                                    anchors.fill: parent
-                                                    anchors.margins: Math.round(6 * root.uiScale)
-                                                    wrapMode: Text.WordWrap
-                                                    color: "#374151"
-                                                    text:
+                                                Button {
+                                                    text: "i"
+                                                    flat: true
+                                                    font.bold: true
+                                                    ToolTip.visible: hovered
+                                                    ToolTip.text:
                                                         "Greedy — ИИ сразу берет лучший ход. Это самый быстрый режим.\n" +
                                                         "MCTS/Search — ИИ сначала просчитывает варианты вперед. Обычно сильнее, но медленнее.\n" +
                                                         "Температура работает только в MCTS/Search:\n" +
@@ -2559,6 +2531,14 @@ ApplicationWindow {
                                                         "Старт: AZ 0.06, GMZ 0.10.\n" +
                                                         "PPO и DQN работают без поиска дерева, поэтому MCTS/Search и температура к ним не применяются.\n" +
                                                         "Эвристика — скриптовый бот, не использует нейросеть и температуру."
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: controller.evalP2FullAgentId.length > 0 ? "ID в tooltip" : "ID: —"
+                                                    color: "#5b6472"
+                                                    font.pixelSize: Math.round(11 * root.uiScale)
+                                                    horizontalAlignment: Text.AlignRight
+                                                    elide: Text.ElideRight
                                                 }
                                             }
                                         }
@@ -2966,7 +2946,7 @@ ApplicationWindow {
                                         Text {
                                             id: dqnB1
                                             anchors.centerIn: parent
-                                            text: "Быстро"
+                                            text: "Классика+"
                                             font.pixelSize: Math.round(11 * root.uiScale)
                                             color: "#1e40af"
                                         }
@@ -2979,7 +2959,33 @@ ApplicationWindow {
                                         Text {
                                             id: dqnB2
                                             anchors.centerIn: parent
-                                            text: "Baseline"
+                                            text: "Надёжный"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#3730a3"
+                                        }
+                                    }
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#dbeafe"
+                                        implicitHeight: dqnB3.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: dqnB3.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: dqnB3
+                                            anchors.centerIn: parent
+                                            text: "Средний train"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#1e40af"
+                                        }
+                                    }
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#e0e7ff"
+                                        implicitHeight: dqnB4.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: dqnB4.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: dqnB4
+                                            anchors.centerIn: parent
+                                            text: "Q-оценки"
                                             font.pixelSize: Math.round(11 * root.uiScale)
                                             color: "#3730a3"
                                         }
@@ -2997,7 +3003,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "value-based RL. Модель учится предсказывать, насколько выгодно каждое действие в текущем состоянии, и выбирает действие с максимальной оценкой (Q-value)."
+                                    text: "ИИ, который учится понимать, какой ход выгоднее в текущей ситуации. Для каждого действия он оценивает ожидаемую пользу и выбирает лучший вариант."
                                 }
                                 Label {
                                     text: "Как учится"
@@ -3010,7 +3016,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "через replay-буфер прошлых переходов и target-сеть для стабилизации."
+                                    text: "запоминает прошлые ситуации (состояние, действие, результат), потом на этих данных постепенно улучшает оценки действий. Со временем реже ошибается и лучше выбирает ходы в похожих сценариях."
                                 }
                                 Label {
                                     text: "Сильные стороны"
@@ -3023,7 +3029,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "• быстрый инференс;\n• простой baseline;\n• удобен для первых экспериментов и smoke-тестов."
+                                    text: "• понятная логика выбора хода;\n• хорошее качество игры после обучения;\n• удобно сравнивать с PPO/AZ/GMZ;\n• обычно предсказуемое поведение в повторяющихся ситуациях;\n• подходит как надежный базовый агент для тестов и долгих прогонов."
                                 }
                                 Label {
                                     text: "Ограничения"
@@ -3036,7 +3042,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "• хуже в задачах, где нужно глубокое планирование на несколько ходов вперёд;\n• чувствителен к reward shaping и качеству exploration."
+                                    text: "• может учиться дольше PPO;\n• чувствителен к настройкам;\n• требует больше вычислений при тренировке;\n• качество сильно зависит от того, насколько удачно подобраны гиперпараметры;\n• в очень сложной тактике может хуже справляться, чем модели с полноценным поиском (MCTS/Search)."
                                 }
                                 Label {
                                     text: "Когда выбирать"
@@ -3049,7 +3055,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "когда важны скорость итераций и понятный старт."
+                                    text: "когда нужен надежный агент с понятным поведением и есть готовность подождать обучение ради качества итоговой модели."
                                 }
                             }
                         }
@@ -3100,7 +3106,7 @@ ApplicationWindow {
                                         Text {
                                             id: ppoB1
                                             anchors.centerIn: parent
-                                            text: "Стабильно"
+                                            text: "Рабочий дефолт"
                                             font.pixelSize: Math.round(11 * root.uiScale)
                                             color: "#115e59"
                                         }
@@ -3113,7 +3119,33 @@ ApplicationWindow {
                                         Text {
                                             id: ppoB2
                                             anchors.centerIn: parent
-                                            text: "Универсально"
+                                            text: "Стабильный"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#134e4a"
+                                        }
+                                    }
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#ccfbf1"
+                                        implicitHeight: ppoB3.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: ppoB3.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: ppoB3
+                                            anchors.centerIn: parent
+                                            text: "Быстрый train"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#115e59"
+                                        }
+                                    }
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#99f6e4"
+                                        implicitHeight: ppoB4.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: ppoB4.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: ppoB4
+                                            anchors.centerIn: parent
+                                            text: "Policy-RL"
                                             font.pixelSize: Math.round(11 * root.uiScale)
                                             color: "#134e4a"
                                         }
@@ -3131,7 +3163,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "policy-gradient RL. Модель учится напрямую улучшать стратегию выбора действий, но делает это аккуратными шагами (clip-обновления), чтобы не разрушать уже выученное поведение."
+                                    text: "ИИ, который учится напрямую улучшать стратегию выбора действий. Он не просто оценивает отдельные ходы, а постепенно делает всю политику игры более качественной."
                                 }
                                 Label {
                                     text: "Как учится"
@@ -3144,7 +3176,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "rollout-ы → advantage/GAE → несколько эпох обновления на одном пакете данных."
+                                    text: "играет серии шагов (rollout), оценивает, какие решения были полезными, и обновляет стратегию небольшими безопасными шагами, чтобы не ломать уже выученное поведение."
                                 }
                                 Label {
                                     text: "Сильные стороны"
@@ -3157,7 +3189,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "• обычно более стабильное обучение, чем у простых value-only подходов;\n• хороший баланс скорость/качество;\n• часто удобный рабочий дефолт для RL."
+                                    text: "• обычно стабильно обучается;\n• хороший баланс между скоростью обучения и качеством;\n• удобен как рабочий режим по умолчанию;\n• часто быстрее и предсказуемее в настройке, чем сложные search-модели;\n• подходит для длительных тренировок без сильных скачков поведения."
                                 }
                                 Label {
                                     text: "Ограничения"
@@ -3170,7 +3202,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "• без tree-search на ходе (не просчитывает дерево вариантов);\n• качество всё ещё сильно зависит от настройки гиперпараметров и награды."
+                                    text: "• не использует поиск по дереву на каждом ходе;\n• в сложной тактике может уступать AZ/GMZ с MCTS/Search;\n• качество зависит от rollout/epoch/minibatch настроек;\n• иногда требует тонкой подстройки коэффициентов (clip, entropy, value loss)."
                                 }
                                 Label {
                                     text: "Когда выбирать"
@@ -3183,7 +3215,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "когда нужен надёжный тренировочный режим без дорогого поиска."
+                                    text: "когда нужен надежный универсальный агент с хорошим балансом скорость обучения / качество игры."
                                 }
                             }
                         }
@@ -3234,7 +3266,7 @@ ApplicationWindow {
                                         Text {
                                             id: azB1
                                             anchors.centerIn: parent
-                                            text: "MCTS"
+                                            text: "Тактика+"
                                             font.pixelSize: Math.round(11 * root.uiScale)
                                             color: "#5b21b6"
                                         }
@@ -3247,7 +3279,33 @@ ApplicationWindow {
                                         Text {
                                             id: azB2
                                             anchors.centerIn: parent
-                                            text: "Сильнее"
+                                            text: "Качество"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#4c1d95"
+                                        }
+                                    }
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#ede9fe"
+                                        implicitHeight: azB3.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: azB3.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: azB3
+                                            anchors.centerIn: parent
+                                            text: "Compute-heavy"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#5b21b6"
+                                        }
+                                    }
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#ddd6fe"
+                                        implicitHeight: azB4.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: azB4.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: azB4
+                                            anchors.centerIn: parent
+                                            text: "MCTS"
                                             font.pixelSize: Math.round(11 * root.uiScale)
                                             color: "#4c1d95"
                                         }
@@ -3265,7 +3323,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "policy/value сеть + MCTS (поиск по дереву). Сеть даёт priors и value, а MCTS перед ходом просматривает ветки и выбирает более сильное решение."
+                                    text: "ИИ, который сочетает нейросеть и поиск по дереву (MCTS). Нейросеть подсказывает хорошие направления, а MCTS просчитывает варианты вперед и помогает выбрать более сильный ход."
                                 }
                                 Label {
                                     text: "Как учится"
@@ -3278,7 +3336,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "self-play с генерацией более качественных target-политик из поиска."
+                                    text: "играет self-play матчи, накапливает позиции и улучшает сеть так, чтобы она лучше оценивала ходы и состояния, опираясь на результаты поиска."
                                 }
                                 Label {
                                     text: "Сильные стороны"
@@ -3291,7 +3349,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "• обычно сильнее в тактических и стратегических сценариях;\n• лучше видит последствия на несколько ходов вперёд."
+                                    text: "• сильная тактическая игра за счёт просчета вперед;\n• лучше учитывает последствия на несколько ходов;\n• часто заметно усиливается при росте search-бюджета;\n• хорошо подходит для eval/viewer, где важна сила решений."
                                 }
                                 Label {
                                     text: "Ограничения"
@@ -3304,7 +3362,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "• существенно дороже по CPU/GPU на каждом ходе;\n• выше требования к настройке search-параметров."
+                                    text: "• медленнее на инференсе из-за MCTS;\n• требует больше CPU/GPU ресурсов;\n• чувствителен к настройкам поиска (simulations, c_puct, temperature);\n• при слишком малом search-бюджете может терять преимущество."
                                 }
                                 Label {
                                     text: "Режимы инференса"
@@ -3343,7 +3401,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "когда приоритет — качество решений, а не максимальная скорость."
+                                    text: "когда приоритет — качество решений и сила игры, а не максимальная скорость."
                                 }
                             }
                         }
@@ -3394,7 +3452,7 @@ ApplicationWindow {
                                         Text {
                                             id: gmzB1
                                             anchors.centerIn: parent
-                                            text: "Поиск"
+                                            text: "Топ Качество"
                                             font.pixelSize: Math.round(11 * root.uiScale)
                                             color: "#92400e"
                                         }
@@ -3407,7 +3465,33 @@ ApplicationWindow {
                                         Text {
                                             id: gmzB2
                                             anchors.centerIn: parent
-                                            text: "Тяжёлый"
+                                            text: "Тяжёлый режим"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#78350f"
+                                        }
+                                    }
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#fef3c7"
+                                        implicitHeight: gmzB3.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: gmzB3.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: gmzB3
+                                            anchors.centerIn: parent
+                                            text: "Very Compute-heavy"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#92400e"
+                                        }
+                                    }
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#fde68a"
+                                        implicitHeight: gmzB4.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: gmzB4.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: gmzB4
+                                            anchors.centerIn: parent
+                                            text: "Search+"
                                             font.pixelSize: Math.round(11 * root.uiScale)
                                             color: "#78350f"
                                         }
@@ -3425,7 +3509,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "развитие идеи AlphaZero: поиск + внутренняя модель динамики в latent-пространстве. Проще: модель не только выбирает ход, но и внутри себя моделирует, что будет дальше."
+                                    text: "ИИ с поиском, который дополнительно использует внутреннюю модель динамики. Проще: он не только выбирает ход, но и внутри модели проигрывает возможное будущее."
                                 }
                                 Label {
                                     text: "Как учится"
@@ -3438,7 +3522,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "representation/dynamics/prediction + search targets + unroll."
+                                    text: "через self-play и unroll-обучение: representation/dynamics/prediction блоки совместно учатся лучше моделировать состояние, последствия действий и полезность решений."
                                 }
                                 Label {
                                     text: "Сильные стороны"
@@ -3451,7 +3535,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "• высокий потолок качества;\n• хорошо работает в сложных тактических зависимостях."
+                                    text: "• высокий потолок качества игры;\n• хорошо работает в сложных и длинных тактических сценариях;\n• search-режим часто дает сильные решения в eval/viewer;\n• мощный инструмент, когда цель — выжать максимум качества."
                                 }
                                 Label {
                                     text: "Ограничения"
@@ -3464,7 +3548,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "• самый тяжёлый режим по вычислениям;\n• самый чувствительный к гиперпараметрам и стабильности пайплайна."
+                                    text: "• самый тяжелый режим по вычислениям;\n• дольше тренируется и сложнее в тюнинге;\n• чувствителен к параметрам search/replay/unroll;\n• при малом compute может не раскрывать потенциал полностью."
                                 }
                                 Label {
                                     text: "Режимы инференса"
@@ -3503,7 +3587,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: "#374151"
-                                    text: "когда цель — максимум силы модели и есть бюджет по времени/ресурсам."
+                                    text: "когда нужен максимум силы модели и есть бюджет по времени/ресурсам для обучения и оценки."
                                 }
                             }
                         }
