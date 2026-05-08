@@ -2356,15 +2356,136 @@ ApplicationWindow {
                                     }
 
                                     Rectangle {
-                                        Layout.preferredWidth: Math.round(70 * root.uiScale)
-                                        Layout.fillHeight: true
-                                        color: "transparent"
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "VS"
-                                            font.bold: true
-                                            font.pixelSize: Math.round(24 * root.uiScale)
-                                            color: "#5b6472"
+                                        Layout.preferredWidth: Math.round(280 * root.uiScale)
+                                        Layout.alignment: Qt.AlignVCenter
+                                        color: "#f7f9fd"
+                                        border.color: "#d7deea"
+                                        border.width: 1
+                                        radius: Math.round(12 * root.uiScale)
+                                        implicitHeight: centerDuelLayout.implicitHeight + root.spacingMd * 2
+
+                                        ColumnLayout {
+                                            id: centerDuelLayout
+                                            anchors.fill: parent
+                                            anchors.margins: root.spacingMd
+                                            spacing: Math.round(6 * root.uiScale)
+
+                                            Text {
+                                                text: "LIVE DUEL"
+                                                color: "#445066"
+                                                font.bold: true
+                                                font.pixelSize: Math.round(11 * root.uiScale)
+                                                horizontalAlignment: Text.AlignHCenter
+                                                Layout.fillWidth: true
+                                            }
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: root.spacingSm
+                                                Text {
+                                                    text: "P1 " + Math.round(controller.evalLiveP1Winrate * 100) + "%"
+                                                    color: "#2f6ed8"
+                                                    font.bold: true
+                                                    Layout.alignment: Qt.AlignVCenter
+                                                }
+                                                Item { Layout.fillWidth: true }
+                                                Text {
+                                                    text: "P2 " + Math.round(controller.evalLiveP2Winrate * 100) + "%"
+                                                    color: "#c74343"
+                                                    font.bold: true
+                                                    Layout.alignment: Qt.AlignVCenter
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                id: duelTrack
+                                                Layout.fillWidth: true
+                                                Layout.preferredHeight: Math.round(18 * root.uiScale)
+                                                radius: height / 2
+                                                color: "#e9eef7"
+                                                border.color: "#d0d9e8"
+                                                border.width: 1
+                                                clip: true
+
+                                                Rectangle {
+                                                    anchors.left: parent.left
+                                                    anchors.top: parent.top
+                                                    anchors.bottom: parent.bottom
+                                                    width: parent.width * Math.max(0.0, Math.min(1.0, controller.evalLiveP1Winrate))
+                                                    color: "#2f6ed8"
+                                                    radius: parent.radius
+                                                }
+                                                Rectangle {
+                                                    anchors.right: parent.right
+                                                    anchors.top: parent.top
+                                                    anchors.bottom: parent.bottom
+                                                    width: parent.width * Math.max(0.0, Math.min(1.0, controller.evalLiveP2Winrate))
+                                                    color: "#cf3f3f"
+                                                    radius: parent.radius
+                                                }
+                                                Rectangle {
+                                                    id: duelMarker
+                                                    width: Math.round(12 * root.uiScale)
+                                                    height: Math.round(24 * root.uiScale)
+                                                    radius: Math.round(6 * root.uiScale)
+                                                    color: "white"
+                                                    border.color: "#4b5563"
+                                                    border.width: 1
+                                                    y: (duelTrack.height - height) / 2
+                                                    x: {
+                                                        var ratio = controller.evalLiveGamesDone > 0
+                                                            ? Math.max(0.0, Math.min(1.0, controller.evalLiveP1Winrate))
+                                                            : 0.5
+                                                        var minX = Math.round(2 * root.uiScale)
+                                                        var maxX = duelTrack.width - width - Math.round(2 * root.uiScale)
+                                                        return minX + (maxX - minX) * ratio
+                                                    }
+                                                    Behavior on x {
+                                                        NumberAnimation {
+                                                            duration: 220
+                                                            easing.type: Easing.InOutCubic
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Text {
+                                                text: controller.evalLiveProgressText
+                                                color: "#5b6472"
+                                                font.pixelSize: Math.round(11 * root.uiScale)
+                                                horizontalAlignment: Text.AlignHCenter
+                                                Layout.fillWidth: true
+                                            }
+
+                                            Rectangle {
+                                                Layout.alignment: Qt.AlignHCenter
+                                                radius: Math.round(7 * root.uiScale)
+                                                color: controller.evalLiveLeaderSide === "P1"
+                                                    ? "#dce8ff"
+                                                    : controller.evalLiveLeaderSide === "P2"
+                                                        ? "#ffe0e0"
+                                                        : "#eceff4"
+                                                border.width: 1
+                                                border.color: controller.evalLiveLeaderSide === "P1"
+                                                    ? "#b8cdf6"
+                                                    : controller.evalLiveLeaderSide === "P2"
+                                                        ? "#f0b6b6"
+                                                        : "#d2d7df"
+                                                implicitWidth: liveStateText.implicitWidth + Math.round(16 * root.uiScale)
+                                                implicitHeight: liveStateText.implicitHeight + Math.round(8 * root.uiScale)
+                                                Text {
+                                                    id: liveStateText
+                                                    anchors.centerIn: parent
+                                                    text: controller.evalLiveStatusText
+                                                    color: controller.evalLiveLeaderSide === "P1"
+                                                        ? "#214f9f"
+                                                        : controller.evalLiveLeaderSide === "P2"
+                                                            ? "#993434"
+                                                            : "#4b5563"
+                                                    font.bold: true
+                                                    font.pixelSize: Math.round(11 * root.uiScale)
+                                                }
+                                            }
                                         }
                                     }
 
@@ -2633,16 +2754,35 @@ ApplicationWindow {
                                         color: "#eef4ff"
                                         border.color: "#bcd0f8"
                                         border.width: 1
-                                        implicitHeight: p1ResultText.implicitHeight + root.spacingSm * 2
-                                        Text {
-                                            id: p1ResultText
-                                            anchors.centerIn: parent
-                                            text: controller.evalResultWinrateP1
-                                            color: "#2f6ed8"
-                                            font.bold: true
-                                            wrapMode: Text.WordWrap
-                                            horizontalAlignment: Text.AlignHCenter
-                                            width: parent.width - root.spacingMd * 2
+                                        implicitHeight: p1WinrateCard.implicitHeight + root.spacingSm * 2
+                                        ColumnLayout {
+                                            id: p1WinrateCard
+                                            anchors.fill: parent
+                                            anchors.margins: root.spacingSm
+                                            spacing: Math.round(4 * root.uiScale)
+                                            Text {
+                                                text: "P1 WINRATE"
+                                                color: "#2f6ed8"
+                                                font.bold: true
+                                                font.pixelSize: Math.round(11 * root.uiScale)
+                                                horizontalAlignment: Text.AlignHCenter
+                                                Layout.fillWidth: true
+                                            }
+                                            Text {
+                                                text: Math.round(controller.evalLiveP1Winrate * 100) + "%"
+                                                color: "#1f4fa3"
+                                                font.bold: true
+                                                font.pixelSize: Math.round(24 * root.uiScale)
+                                                horizontalAlignment: Text.AlignHCenter
+                                                Layout.fillWidth: true
+                                            }
+                                            Text {
+                                                text: controller.evalResultWinrateP1
+                                                color: "#2f6ed8"
+                                                wrapMode: Text.WordWrap
+                                                horizontalAlignment: Text.AlignHCenter
+                                                Layout.fillWidth: true
+                                            }
                                         }
                                     }
 
@@ -2652,16 +2792,35 @@ ApplicationWindow {
                                         color: "#fff1f1"
                                         border.color: "#f0b6b6"
                                         border.width: 1
-                                        implicitHeight: p2ResultText.implicitHeight + root.spacingSm * 2
-                                        Text {
-                                            id: p2ResultText
-                                            anchors.centerIn: parent
-                                            text: controller.evalResultWinrateP2
-                                            color: "#c74343"
-                                            font.bold: true
-                                            wrapMode: Text.WordWrap
-                                            horizontalAlignment: Text.AlignHCenter
-                                            width: parent.width - root.spacingMd * 2
+                                        implicitHeight: p2WinrateCard.implicitHeight + root.spacingSm * 2
+                                        ColumnLayout {
+                                            id: p2WinrateCard
+                                            anchors.fill: parent
+                                            anchors.margins: root.spacingSm
+                                            spacing: Math.round(4 * root.uiScale)
+                                            Text {
+                                                text: "P2 WINRATE"
+                                                color: "#cf3f3f"
+                                                font.bold: true
+                                                font.pixelSize: Math.round(11 * root.uiScale)
+                                                horizontalAlignment: Text.AlignHCenter
+                                                Layout.fillWidth: true
+                                            }
+                                            Text {
+                                                text: Math.round(controller.evalLiveP2Winrate * 100) + "%"
+                                                color: "#a13333"
+                                                font.bold: true
+                                                font.pixelSize: Math.round(24 * root.uiScale)
+                                                horizontalAlignment: Text.AlignHCenter
+                                                Layout.fillWidth: true
+                                            }
+                                            Text {
+                                                text: controller.evalResultWinrateP2
+                                                color: "#c74343"
+                                                wrapMode: Text.WordWrap
+                                                horizontalAlignment: Text.AlignHCenter
+                                                Layout.fillWidth: true
+                                            }
                                         }
                                     }
                                 }
@@ -2676,15 +2835,26 @@ ApplicationWindow {
                                         color: "#f7f9fd"
                                         border.color: "#d7deea"
                                         border.width: 1
-                                        implicitHeight: avgVpText.implicitHeight + root.spacingSm * 2
-                                        Text {
-                                            id: avgVpText
-                                            anchors.centerIn: parent
-                                            text: controller.evalResultAvgVpDiff
-                                            color: "#374151"
-                                            wrapMode: Text.WordWrap
-                                            horizontalAlignment: Text.AlignHCenter
-                                            width: parent.width - root.spacingMd * 2
+                                        implicitHeight: avgVpCard.implicitHeight + root.spacingSm * 2
+                                        ColumnLayout {
+                                            id: avgVpCard
+                                            anchors.fill: parent
+                                            anchors.margins: root.spacingSm
+                                            spacing: Math.round(4 * root.uiScale)
+                                            Text {
+                                                text: "Avg VP Diff"
+                                                color: "#374151"
+                                                font.bold: true
+                                                horizontalAlignment: Text.AlignHCenter
+                                                Layout.fillWidth: true
+                                            }
+                                            Text {
+                                                text: controller.evalResultAvgVpDiff
+                                                color: "#374151"
+                                                wrapMode: Text.WordWrap
+                                                horizontalAlignment: Text.AlignHCenter
+                                                Layout.fillWidth: true
+                                            }
                                         }
                                     }
 
@@ -2694,24 +2864,47 @@ ApplicationWindow {
                                         color: "#f7f9fd"
                                         border.color: "#d7deea"
                                         border.width: 1
-                                        implicitHeight: turnLimitText.implicitHeight + root.spacingSm * 2
-                                        Text {
-                                            id: turnLimitText
-                                            anchors.centerIn: parent
-                                            text: controller.evalResultTurnLimitRate
-                                            color: "#374151"
-                                            wrapMode: Text.WordWrap
-                                            horizontalAlignment: Text.AlignHCenter
-                                            width: parent.width - root.spacingMd * 2
+                                        implicitHeight: turnLimitCard.implicitHeight + root.spacingSm * 2
+                                        ColumnLayout {
+                                            id: turnLimitCard
+                                            anchors.fill: parent
+                                            anchors.margins: root.spacingSm
+                                            spacing: Math.round(4 * root.uiScale)
+                                            Text {
+                                                text: "Turn-limit"
+                                                color: "#374151"
+                                                font.bold: true
+                                                horizontalAlignment: Text.AlignHCenter
+                                                Layout.fillWidth: true
+                                            }
+                                            Text {
+                                                text: controller.evalResultTurnLimitRate
+                                                color: "#374151"
+                                                wrapMode: Text.WordWrap
+                                                horizontalAlignment: Text.AlignHCenter
+                                                Layout.fillWidth: true
+                                            }
                                         }
                                     }
                                 }
 
-                                Text {
-                                    text: controller.evalResultQualityHint
-                                    color: "#5b6472"
-                                    font.bold: true
-                                    wrapMode: Text.WordWrap
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    radius: Math.round(8 * root.uiScale)
+                                    color: "#f4f7fb"
+                                    border.width: 1
+                                    border.color: "#d7deea"
+                                    implicitHeight: qualityHintText.implicitHeight + root.spacingSm * 2
+                                    Text {
+                                        id: qualityHintText
+                                        anchors.centerIn: parent
+                                        width: parent.width - root.spacingMd * 2
+                                        text: controller.evalResultQualityHint
+                                        color: "#4b5563"
+                                        font.bold: true
+                                        wrapMode: Text.WordWrap
+                                        horizontalAlignment: Text.AlignHCenter
+                                    }
                                 }
 
                                 TextArea {

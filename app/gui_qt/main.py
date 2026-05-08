@@ -210,6 +210,12 @@ class GUIController(QtCore.QObject):
         self._eval_result_avg_vp_diff = "Avg VP diff (P1-P2): —"
         self._eval_result_turn_limit_rate = "Turn-limit rate: —"
         self._eval_result_quality_hint = "Качество серии: нет данных."
+        self._eval_live_games_done = 0
+        self._eval_live_games_total = self._eval_games
+        self._eval_live_p1_wins = 0
+        self._eval_live_p2_wins = 0
+        self._eval_live_draws = 0
+        self._eval_live_last_game_idx = 0
         self._active_process_kind = ""
         self._board_text = "ASCII карта будет доступна после запуска игры."
         self._self_play_from_checkpoint = False
@@ -930,6 +936,71 @@ class GUIController(QtCore.QObject):
     def evalResultQualityHint(self) -> str:
         return self._eval_result_quality_hint
 
+    @QtCore.Property(int, notify=evalSetupChanged)
+    def evalLiveGamesDone(self) -> int:
+        return self._eval_live_games_done
+
+    @QtCore.Property(int, notify=evalSetupChanged)
+    def evalLiveGamesTotal(self) -> int:
+        return max(0, self._eval_live_games_total)
+
+    @QtCore.Property(int, notify=evalSetupChanged)
+    def evalLiveP1Wins(self) -> int:
+        return self._eval_live_p1_wins
+
+    @QtCore.Property(int, notify=evalSetupChanged)
+    def evalLiveP2Wins(self) -> int:
+        return self._eval_live_p2_wins
+
+    @QtCore.Property(int, notify=evalSetupChanged)
+    def evalLiveDraws(self) -> int:
+        return self._eval_live_draws
+
+    @QtCore.Property(float, notify=evalSetupChanged)
+    def evalLiveP1Winrate(self) -> float:
+        if self._eval_live_games_done <= 0:
+            return 0.5
+        return self._eval_live_p1_wins / float(self._eval_live_games_done)
+
+    @QtCore.Property(float, notify=evalSetupChanged)
+    def evalLiveP2Winrate(self) -> float:
+        if self._eval_live_games_done <= 0:
+            return 0.5
+        return self._eval_live_p2_wins / float(self._eval_live_games_done)
+
+    @QtCore.Property(float, notify=evalSetupChanged)
+    def evalLiveLeadPercent(self) -> float:
+        return (self.evalLiveP1Winrate - self.evalLiveP2Winrate) * 100.0
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalLiveLeaderSide(self) -> str:
+        if self._eval_live_games_done <= 0:
+            return "none"
+        lead = self.evalLiveLeadPercent
+        if abs(lead) < 2.0:
+            return "draw"
+        return "P1" if lead > 0 else "P2"
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalLiveStatusText(self) -> str:
+        if self._eval_live_games_done <= 0:
+            return "Ожидание первой игры"
+        lead = self.evalLiveLeadPercent
+        abs_lead = abs(lead)
+        if abs_lead < 2.0:
+            return "Равная серия"
+        if abs_lead >= 20.0:
+            return "Разгром P1" if lead > 0 else "Разгром P2"
+        return "Преимущество P1" if lead > 0 else "Преимущество P2"
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalLiveProgressText(self) -> str:
+        total = max(self._eval_live_games_total, self._eval_games)
+        if total <= 0:
+            return "После 0 игр"
+        done = min(self._eval_live_games_done, total)
+        return f"После {done}/{total} игр"
+
     @QtCore.Property(str, notify=boardTextChanged)
     def boardText(self) -> str:
         return self._board_text
@@ -1303,6 +1374,8 @@ class GUIController(QtCore.QObject):
             return
         if self._eval_games != value:
             self._eval_games = value
+            if self._eval_live_games_done <= 0:
+                self._eval_live_games_total = value
             self.evalGamesChanged.emit(value)
             self._update_eval_matchup_text()
             self.evalSetupChanged.emit()
@@ -3295,6 +3368,7 @@ class GUIController(QtCore.QObject):
             if line.strip():
                 if self._active_process_kind == "eval":
                     self._append_eval_log_line(line)
+                    self._maybe_update_eval_live(line)
                     self._maybe_update_eval_summary(line)
                 if self._should_show_train_log(line):
                     self._emit_log(line)
@@ -3517,6 +3591,68 @@ class GUIController(QtCore.QObject):
         self._eval_result_avg_vp_diff = "Avg VP diff (P1-P2): —"
         self._eval_result_turn_limit_rate = "Turn-limit rate: —"
         self._eval_result_quality_hint = "Качество серии: нет данных."
+        self._reset_eval_live_state(emit=False)
+        self.evalSetupChanged.emit()
+
+    def _reset_eval_live_state(self, emit: bool = True) -> None:
+        self._eval_live_games_done = 0
+        self._eval_live_games_total = max(0, int(self._eval_games))
+        self._eval_live_p1_wins = 0
+        self._eval_live_p2_wins = 0
+        self._eval_live_draws = 0
+        self._eval_live_last_game_idx = 0
+        if emit:
+            self.evalSetupChanged.emit()
+
+    def _set_eval_live_state(
+        self,
+        p1_wins: int,
+        p2_wins: int,
+        draws: int,
+        total_games: int,
+        *,
+        emit: bool = True,
+    ) -> None:
+        self._eval_live_p1_wins = max(0, int(p1_wins))
+        self._eval_live_p2_wins = max(0, int(p2_wins))
+        self._eval_live_draws = max(0, int(draws))
+        self._eval_live_games_done = self._eval_live_p1_wins + self._eval_live_p2_wins + self._eval_live_draws
+        self._eval_live_games_total = max(int(total_games), self._eval_live_games_done, int(self._eval_games))
+        self._eval_live_last_game_idx = max(self._eval_live_last_game_idx, self._eval_live_games_done)
+        if emit:
+            self.evalSetupChanged.emit()
+
+    def _maybe_update_eval_live(self, line: str) -> None:
+        normalized = line.strip()
+        if "winner_side=" not in normalized or "Игра" not in normalized:
+            return
+
+        match = re.search(
+            r"Игра\s+(?P<idx>\d+)\s*/\s*(?P<total>\d+):.*?\bwinner_side=(?P<winner>P1|P2|draw)\b",
+            normalized,
+        )
+        if not match:
+            return
+
+        game_idx = int(match.group("idx"))
+        total_games = int(match.group("total"))
+        winner_side = str(match.group("winner"))
+
+        if game_idx <= self._eval_live_last_game_idx:
+            return
+        if game_idx == 1 and self._eval_live_last_game_idx > 1:
+            self._reset_eval_live_state(emit=False)
+
+        if winner_side == "P1":
+            self._eval_live_p1_wins += 1
+        elif winner_side == "P2":
+            self._eval_live_p2_wins += 1
+        else:
+            self._eval_live_draws += 1
+
+        self._eval_live_games_done = self._eval_live_p1_wins + self._eval_live_p2_wins + self._eval_live_draws
+        self._eval_live_games_total = max(total_games, self._eval_live_games_done, int(self._eval_games))
+        self._eval_live_last_game_idx = game_idx
         self.evalSetupChanged.emit()
 
     def _format_eval_summary_v2(self, payload: str) -> str:
@@ -3551,6 +3687,7 @@ class GUIController(QtCore.QObject):
         self._eval_result_avg_vp_diff = f"Avg VP diff (P1-P2): {avg_vp_diff:+.3f}"
         self._eval_result_turn_limit_rate = f"Turn-limit rate: {turn_limit_rate:.1%} ({turn_limit_count}/{total_games})"
         self._eval_result_quality_hint = quality_hint
+        self._set_eval_live_state(p1_wins, p2_wins, draws, total_games, emit=False)
         self.evalSetupChanged.emit()
 
         reason_text = pairs.get("end_reasons", "{}")
@@ -3615,6 +3752,7 @@ class GUIController(QtCore.QObject):
         self._eval_result_avg_vp_diff = f"Avg VP diff: {pairs.get('avg_vp_diff', '?')}"
         self._eval_result_turn_limit_rate = f"Turn-limit rate: {turn_limit_rate:.1%} ({turn_limit_count}/{total_games})"
         self._eval_result_quality_hint = "Качество серии: используется базовый summary."
+        self._set_eval_live_state(wins, losses, draws, total_games, emit=False)
         self.evalSetupChanged.emit()
 
         lines = ["Подробный результат оценки:"]
