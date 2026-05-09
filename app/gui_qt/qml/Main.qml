@@ -30,6 +30,7 @@ ApplicationWindow {
     property int unitIconSize: controller.unitIconSize
     property string modelFactionName: modelFactionNecrons.checked ? "Necrons" : "-"
     property string playerFactionName: playerFactionNecrons.checked ? "Necrons" : "-"
+    property bool evalShowLog: true
 
     font.pixelSize: Math.round(14 * uiScale)
 
@@ -2095,22 +2096,90 @@ ApplicationWindow {
             Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Item {
+                ScrollView {
                     anchors.fill: parent
                     anchors.margins: root.spacingLg
+                    clip: true
 
                     ColumnLayout {
-                        anchors.fill: parent
+                        width: Math.max(parent ? parent.width : 0, root.width - 2 * root.spacingLg)
                         spacing: root.spacingLg
 
-                        Text {
-                            text: "Оценка: P1 vs P2"
-                            font.pixelSize: Math.round(20 * root.uiScale)
-                            font.bold: true
+                        Rectangle {
+                            Layout.fillWidth: true
+                            color: "#f4f7fc"
+                            radius: Math.round(14 * root.uiScale)
+                            border.width: 1
+                            border.color: "#d6deec"
+                            implicitHeight: evalHeaderLayout.implicitHeight + root.spacingMd * 2
+
+                            RowLayout {
+                                id: evalHeaderLayout
+                                anchors.fill: parent
+                                anchors.margins: root.spacingMd
+                                spacing: root.spacingMd
+
+                                ColumnLayout {
+                                    spacing: Math.round(4 * root.uiScale)
+                                    Layout.fillWidth: true
+
+                                    Text {
+                                        text: "Оценка: P1 vs P2"
+                                        font.pixelSize: Math.round(22 * root.uiScale)
+                                        font.bold: true
+                                        color: "#1f2937"
+                                    }
+                                    Text {
+                                        text: controller.evalMiniSummary
+                                        color: "#5b6472"
+                                    }
+                                }
+
+                                Rectangle {
+                                    radius: Math.round(10 * root.uiScale)
+                                    color: controller.running ? "#e8f1ff" : "#edf2f7"
+                                    border.width: 1
+                                    border.color: controller.running ? "#b9cff7" : "#d1d9e6"
+                                    implicitWidth: evalRunStatus.implicitWidth + Math.round(22 * root.uiScale)
+                                    implicitHeight: evalRunStatus.implicitHeight + Math.round(10 * root.uiScale)
+                                    Text {
+                                        id: evalRunStatus
+                                        anchors.centerIn: parent
+                                        text: controller.running ? "RUNNING" : "IDLE"
+                                        font.bold: true
+                                        color: controller.running ? "#2453a4" : "#4b5563"
+                                        font.pixelSize: Math.round(11 * root.uiScale)
+                                    }
+                                }
+
+                                RowLayout {
+                                    spacing: root.spacingXs
+                                    Label {
+                                        text: "Игр:"
+                                        font.bold: true
+                                    }
+                                    TextField {
+                                        id: evalGamesField
+                                        text: controller.evalGames.toString()
+                                        validator: IntValidator { bottom: 1 }
+                                        Layout.preferredWidth: Math.round(96 * root.uiScale)
+                                        enabled: !controller.running
+                                        onEditingFinished: {
+                                            var value = parseInt(text)
+                                            if (!isNaN(value)) {
+                                                controller.set_eval_games(value)
+                                                text = controller.evalGames.toString()
+                                            } else {
+                                                text = controller.evalGames.toString()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         GroupBox {
-                            title: "Состав матча"
+                            title: "Сетап матча"
                             Layout.fillWidth: true
 
                             ColumnLayout {
@@ -2145,34 +2214,9 @@ ApplicationWindow {
                                     }
                                 }
 
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: root.spacingSm
-                                    Label {
-                                        text: "Количество игр:"
-                                        font.bold: true
-                                    }
-                                    TextField {
-                                        id: evalGamesField
-                                        text: controller.evalGames.toString()
-                                        validator: IntValidator { bottom: 1 }
-                                        Layout.preferredWidth: Math.round(110 * root.uiScale)
-                                        enabled: !controller.running
-                                        onEditingFinished: {
-                                            var value = parseInt(text)
-                                            if (!isNaN(value)) {
-                                                controller.set_eval_games(value)
-                                                text = controller.evalGames.toString()
-                                            } else {
-                                                text = controller.evalGames.toString()
-                                            }
-                                        }
-                                    }
-                                    Text {
-                                        text: "deterministic, epsilon=0"
-                                        color: "#5b6472"
-                                    }
-                                    Item { Layout.fillWidth: true }
+                                Text {
+                                    text: "deterministic, epsilon=0"
+                                    color: "#5b6472"
                                 }
 
                                 RowLayout {
@@ -2356,140 +2400,6 @@ ApplicationWindow {
                                     }
 
                                     Rectangle {
-                                        Layout.preferredWidth: Math.round(280 * root.uiScale)
-                                        Layout.alignment: Qt.AlignVCenter
-                                        color: "#f7f9fd"
-                                        border.color: "#d7deea"
-                                        border.width: 1
-                                        radius: Math.round(12 * root.uiScale)
-                                        implicitHeight: centerDuelLayout.implicitHeight + root.spacingMd * 2
-
-                                        ColumnLayout {
-                                            id: centerDuelLayout
-                                            anchors.fill: parent
-                                            anchors.margins: root.spacingMd
-                                            spacing: Math.round(6 * root.uiScale)
-
-                                            Text {
-                                                text: "LIVE DUEL"
-                                                color: "#445066"
-                                                font.bold: true
-                                                font.pixelSize: Math.round(11 * root.uiScale)
-                                                horizontalAlignment: Text.AlignHCenter
-                                                Layout.fillWidth: true
-                                            }
-
-                                            RowLayout {
-                                                Layout.fillWidth: true
-                                                spacing: root.spacingSm
-                                                Text {
-                                                    text: "P1 " + Math.round(controller.evalLiveP1Winrate * 100) + "%"
-                                                    color: "#2f6ed8"
-                                                    font.bold: true
-                                                    Layout.alignment: Qt.AlignVCenter
-                                                }
-                                                Item { Layout.fillWidth: true }
-                                                Text {
-                                                    text: "P2 " + Math.round(controller.evalLiveP2Winrate * 100) + "%"
-                                                    color: "#c74343"
-                                                    font.bold: true
-                                                    Layout.alignment: Qt.AlignVCenter
-                                                }
-                                            }
-
-                                            Rectangle {
-                                                id: duelTrack
-                                                Layout.fillWidth: true
-                                                Layout.preferredHeight: Math.round(18 * root.uiScale)
-                                                radius: height / 2
-                                                color: "#e9eef7"
-                                                border.color: "#d0d9e8"
-                                                border.width: 1
-                                                clip: true
-
-                                                Rectangle {
-                                                    anchors.left: parent.left
-                                                    anchors.top: parent.top
-                                                    anchors.bottom: parent.bottom
-                                                    width: parent.width * Math.max(0.0, Math.min(1.0, controller.evalLiveP1Winrate))
-                                                    color: "#2f6ed8"
-                                                    radius: parent.radius
-                                                }
-                                                Rectangle {
-                                                    anchors.right: parent.right
-                                                    anchors.top: parent.top
-                                                    anchors.bottom: parent.bottom
-                                                    width: parent.width * Math.max(0.0, Math.min(1.0, controller.evalLiveP2Winrate))
-                                                    color: "#cf3f3f"
-                                                    radius: parent.radius
-                                                }
-                                                Rectangle {
-                                                    id: duelMarker
-                                                    width: Math.round(12 * root.uiScale)
-                                                    height: Math.round(24 * root.uiScale)
-                                                    radius: Math.round(6 * root.uiScale)
-                                                    color: "white"
-                                                    border.color: "#4b5563"
-                                                    border.width: 1
-                                                    y: (duelTrack.height - height) / 2
-                                                    x: {
-                                                        var ratio = controller.evalLiveGamesDone > 0
-                                                            ? Math.max(0.0, Math.min(1.0, controller.evalLiveP1Winrate))
-                                                            : 0.5
-                                                        var minX = Math.round(2 * root.uiScale)
-                                                        var maxX = duelTrack.width - width - Math.round(2 * root.uiScale)
-                                                        return minX + (maxX - minX) * ratio
-                                                    }
-                                                    Behavior on x {
-                                                        NumberAnimation {
-                                                            duration: 220
-                                                            easing.type: Easing.InOutCubic
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            Text {
-                                                text: controller.evalLiveProgressText
-                                                color: "#5b6472"
-                                                font.pixelSize: Math.round(11 * root.uiScale)
-                                                horizontalAlignment: Text.AlignHCenter
-                                                Layout.fillWidth: true
-                                            }
-
-                                            Rectangle {
-                                                Layout.alignment: Qt.AlignHCenter
-                                                radius: Math.round(7 * root.uiScale)
-                                                color: controller.evalLiveLeaderSide === "P1"
-                                                    ? "#dce8ff"
-                                                    : controller.evalLiveLeaderSide === "P2"
-                                                        ? "#ffe0e0"
-                                                        : "#eceff4"
-                                                border.width: 1
-                                                border.color: controller.evalLiveLeaderSide === "P1"
-                                                    ? "#b8cdf6"
-                                                    : controller.evalLiveLeaderSide === "P2"
-                                                        ? "#f0b6b6"
-                                                        : "#d2d7df"
-                                                implicitWidth: liveStateText.implicitWidth + Math.round(16 * root.uiScale)
-                                                implicitHeight: liveStateText.implicitHeight + Math.round(8 * root.uiScale)
-                                                Text {
-                                                    id: liveStateText
-                                                    anchors.centerIn: parent
-                                                    text: controller.evalLiveStatusText
-                                                    color: controller.evalLiveLeaderSide === "P1"
-                                                        ? "#214f9f"
-                                                        : controller.evalLiveLeaderSide === "P2"
-                                                            ? "#993434"
-                                                            : "#4b5563"
-                                                    font.bold: true
-                                                    font.pixelSize: Math.round(11 * root.uiScale)
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    Rectangle {
                                         Layout.fillWidth: true
                                         color: "#fff1f1"
                                         border.color: "#cf3f3f"
@@ -2665,6 +2575,142 @@ ApplicationWindow {
                                         }
                                     }
                                 }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    color: "#f7f9fd"
+                                    border.color: "#d7deea"
+                                    border.width: 1
+                                    radius: Math.round(12 * root.uiScale)
+                                    implicitHeight: centerDuelLayout.implicitHeight + root.spacingMd * 2
+
+                                    ColumnLayout {
+                                        id: centerDuelLayout
+                                        anchors.fill: parent
+                                        anchors.margins: root.spacingMd
+                                        spacing: Math.round(6 * root.uiScale)
+
+                                        Text {
+                                            text: "LIVE DUEL"
+                                            color: "#445066"
+                                            font.bold: true
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            horizontalAlignment: Text.AlignHCenter
+                                            Layout.fillWidth: true
+                                        }
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: root.spacingSm
+                                            Text {
+                                                text: "P1 " + Math.round(controller.evalLiveP1Winrate * 100) + "%"
+                                                color: "#2f6ed8"
+                                                font.bold: true
+                                                font.pixelSize: Math.round(14 * root.uiScale)
+                                                Layout.alignment: Qt.AlignVCenter
+                                            }
+                                            Item { Layout.fillWidth: true }
+                                            Text {
+                                                text: "P2 " + Math.round(controller.evalLiveP2Winrate * 100) + "%"
+                                                color: "#c74343"
+                                                font.bold: true
+                                                font.pixelSize: Math.round(14 * root.uiScale)
+                                                Layout.alignment: Qt.AlignVCenter
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            id: duelTrack
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: Math.round(24 * root.uiScale)
+                                            radius: height / 2
+                                            color: "#e9eef7"
+                                            border.color: "#d0d9e8"
+                                            border.width: 1
+                                            clip: true
+
+                                            Rectangle {
+                                                anchors.left: parent.left
+                                                anchors.top: parent.top
+                                                anchors.bottom: parent.bottom
+                                                width: parent.width * Math.max(0.0, Math.min(1.0, controller.evalLiveP1Winrate))
+                                                color: "#2f6ed8"
+                                                radius: parent.radius
+                                            }
+                                            Rectangle {
+                                                anchors.right: parent.right
+                                                anchors.top: parent.top
+                                                anchors.bottom: parent.bottom
+                                                width: parent.width * Math.max(0.0, Math.min(1.0, controller.evalLiveP2Winrate))
+                                                color: "#cf3f3f"
+                                                radius: parent.radius
+                                            }
+                                            Rectangle {
+                                                id: duelMarker
+                                                width: Math.round(12 * root.uiScale)
+                                                height: Math.round(30 * root.uiScale)
+                                                radius: Math.round(6 * root.uiScale)
+                                                color: "white"
+                                                border.color: "#4b5563"
+                                                border.width: 1
+                                                y: (duelTrack.height - height) / 2
+                                                x: {
+                                                    var ratio = controller.evalLiveGamesDone > 0
+                                                        ? Math.max(0.0, Math.min(1.0, controller.evalLiveP1Winrate))
+                                                        : 0.5
+                                                    var minX = Math.round(2 * root.uiScale)
+                                                    var maxX = duelTrack.width - width - Math.round(2 * root.uiScale)
+                                                    return minX + (maxX - minX) * ratio
+                                                }
+                                                Behavior on x {
+                                                    NumberAnimation {
+                                                        duration: 220
+                                                        easing.type: Easing.InOutCubic
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: root.spacingSm
+                                            Text {
+                                                text: controller.evalLiveProgressText
+                                                color: "#5b6472"
+                                                font.pixelSize: Math.round(11 * root.uiScale)
+                                            }
+                                            Item { Layout.fillWidth: true }
+                                            Rectangle {
+                                                radius: Math.round(7 * root.uiScale)
+                                                color: controller.evalLiveLeaderSide === "P1"
+                                                    ? "#dce8ff"
+                                                    : controller.evalLiveLeaderSide === "P2"
+                                                        ? "#ffe0e0"
+                                                        : "#eceff4"
+                                                border.width: 1
+                                                border.color: controller.evalLiveLeaderSide === "P1"
+                                                    ? "#b8cdf6"
+                                                    : controller.evalLiveLeaderSide === "P2"
+                                                        ? "#f0b6b6"
+                                                        : "#d2d7df"
+                                                implicitWidth: liveStateText.implicitWidth + Math.round(16 * root.uiScale)
+                                                implicitHeight: liveStateText.implicitHeight + Math.round(8 * root.uiScale)
+                                                Text {
+                                                    id: liveStateText
+                                                    anchors.centerIn: parent
+                                                    text: controller.evalLiveStatusText
+                                                    color: controller.evalLiveLeaderSide === "P1"
+                                                        ? "#214f9f"
+                                                        : controller.evalLiveLeaderSide === "P2"
+                                                            ? "#993434"
+                                                            : "#4b5563"
+                                                    font.bold: true
+                                                    font.pixelSize: Math.round(11 * root.uiScale)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -2679,24 +2725,28 @@ ApplicationWindow {
                                 Button {
                                     text: "Обновить список агентов"
                                     enabled: !controller.running
+                                    flat: true
                                     onClicked: controller.refresh_eval_agents()
                                 }
 
                                 Button {
                                     text: "Запустить оценку"
                                     enabled: !controller.running && controller.evalLaunchReady
+                                    highlighted: true
                                     onClicked: controller.start_eval()
                                 }
 
                                 Button {
                                     text: "Остановить"
                                     enabled: controller.running
+                                    down: controller.running
                                     onClicked: controller.stop_process()
                                 }
 
                                 Button {
                                     text: "Очистить лог"
                                     enabled: !controller.running
+                                    flat: true
                                     onClicked: controller.clear_eval_log()
                                 }
                             }
@@ -2730,7 +2780,7 @@ ApplicationWindow {
                         }
 
                         GroupBox {
-                            title: "Подробный результат"
+                            title: "Итог и аналитика"
                             Layout.fillWidth: true
 
                             ColumnLayout {
@@ -2822,6 +2872,25 @@ ApplicationWindow {
                                                 Layout.fillWidth: true
                                             }
                                         }
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    radius: Math.round(9 * root.uiScale)
+                                    color: "#f2f6fd"
+                                    border.color: "#d3deef"
+                                    border.width: 1
+                                    implicitHeight: splitInsight.implicitHeight + root.spacingSm * 2
+                                    Text {
+                                        id: splitInsight
+                                        anchors.centerIn: parent
+                                        width: parent.width - root.spacingMd * 2
+                                        text: "Сплит побед в live-режиме: P1 " + Math.round(controller.evalLiveP1Winrate * 100) + "% vs P2 " + Math.round(controller.evalLiveP2Winrate * 100) + "%"
+                                        wrapMode: Text.WordWrap
+                                        horizontalAlignment: Text.AlignHCenter
+                                        color: "#334155"
+                                        font.bold: true
                                     }
                                 }
 
@@ -2918,20 +2987,43 @@ ApplicationWindow {
                         }
 
                         GroupBox {
-                            title: "Лог оценки"
+                            title: "Детали и лог"
                             Layout.fillWidth: true
-                            Layout.fillHeight: true
+                            Layout.preferredHeight: Math.round(260 * root.uiScale)
 
-                            ScrollView {
+                            ColumnLayout {
                                 anchors.fill: parent
+                                spacing: root.spacingSm
 
-                                TextArea {
-                                    id: evalLogArea
-                                    readOnly: true
-                                    wrapMode: TextArea.Wrap
-                                    text: controller.evalLogText
-                                    onTextChanged: {
-                                        cursorPosition = length
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: root.spacingSm
+                                    Text {
+                                        text: "События"
+                                        font.bold: true
+                                        color: "#334155"
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    Button {
+                                        text: root.evalShowLog ? "Свернуть лог" : "Показать лог"
+                                        flat: true
+                                        onClicked: root.evalShowLog = !root.evalShowLog
+                                    }
+                                }
+
+                                ScrollView {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    visible: root.evalShowLog
+
+                                    TextArea {
+                                        id: evalLogArea
+                                        readOnly: true
+                                        wrapMode: TextArea.Wrap
+                                        text: controller.evalLogText
+                                        onTextChanged: {
+                                            cursorPosition = length
+                                        }
                                     }
                                 }
                             }
