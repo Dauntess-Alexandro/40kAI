@@ -42,6 +42,12 @@ ApplicationWindow {
     property color p2Accent: "#cf3f3f"
     property int evalDrawerTab: 0
 
+    function extractPercent(text) {
+        var raw = text || ""
+        var match = raw.match(/([0-9]+(?:[\\.,][0-9]+)?)\s*%/)
+        return match ? (match[1] + "%") : "—"
+    }
+
     font.pixelSize: Math.round(14 * uiScale)
 
     ColumnLayout {
@@ -2595,6 +2601,16 @@ ApplicationWindow {
                                     border.width: 1
                                     radius: root.radiusMd
                                     implicitHeight: centerDuelLayout.implicitHeight + root.spacingMd * 2
+                                    Rectangle {
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        anchors.top: parent.top
+                                        anchors.bottom: parent.bottom
+                                        anchors.topMargin: Math.round(2 * root.uiScale)
+                                        radius: parent.radius
+                                        color: "#12000000"
+                                        z: -1
+                                    }
 
                                     ColumnLayout {
                                         id: centerDuelLayout
@@ -2621,7 +2637,11 @@ ApplicationWindow {
                                                         ? "Преимущество: P2 +" + Math.abs(Math.round((controller.evalLiveP2Winrate - controller.evalLiveP1Winrate) * 100)) + "%"
                                                         : "Баланс сил: паритет")
                                                 : "Ожидание первой игры"
-                                            color: root.uiTextMain
+                                            color: controller.evalLiveLeaderSide === "P1"
+                                                ? root.p1Accent
+                                                : controller.evalLiveLeaderSide === "P2"
+                                                    ? root.p2Accent
+                                                    : root.uiTextMain
                                             font.bold: true
                                             font.pixelSize: Math.round(13 * root.uiScale)
                                         }
@@ -2705,42 +2725,98 @@ ApplicationWindow {
                             title: "Действия и запуск"
                             Layout.fillWidth: true
 
-                            RowLayout {
+                            ColumnLayout {
                                 anchors.fill: parent
-                                spacing: root.spacingMd
+                                spacing: root.spacingSm
 
-                                Button {
-                                    text: "Обновить список агентов"
-                                    enabled: !controller.running
-                                    flat: true
-                                    onClicked: controller.refresh_eval_agents()
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    radius: Math.round(10 * root.uiScale)
+                                    color: "#eef2fa"
+                                    border.width: 1
+                                    border.color: "#d7deea"
+                                    implicitHeight: statusBarLayout.implicitHeight + root.spacingSm * 2
+
+                                    ColumnLayout {
+                                        id: statusBarLayout
+                                        anchors.fill: parent
+                                        anchors.margins: root.spacingSm
+                                        spacing: Math.round(6 * root.uiScale)
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            Text {
+                                                text: controller.running ? "RUNNING" : "IDLE"
+                                                color: controller.running ? root.p1Accent : root.uiTextMuted
+                                                font.bold: true
+                                                font.pixelSize: Math.round(11 * root.uiScale)
+                                            }
+                                            Item { Layout.fillWidth: true }
+                                            Text {
+                                                text: controller.evalLiveProgressText
+                                                color: root.uiTextMuted
+                                                font.pixelSize: Math.round(11 * root.uiScale)
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: Math.round(4 * root.uiScale)
+                                            radius: height / 2
+                                            color: "#d9e1f0"
+                                            clip: true
+
+                                            Rectangle {
+                                                anchors.left: parent.left
+                                                anchors.top: parent.top
+                                                anchors.bottom: parent.bottom
+                                                width: parent.width * (controller.evalLiveGamesTotal > 0
+                                                    ? Math.max(0.0, Math.min(1.0, controller.evalLiveGamesDone / controller.evalLiveGamesTotal))
+                                                    : 0.0)
+                                                radius: parent.radius
+                                                color: controller.running ? root.p1Accent : "#9aa9c6"
+                                            }
+                                        }
+                                    }
                                 }
 
-                                Button {
-                                    text: "Запустить оценку"
-                                    enabled: !controller.running && controller.evalLaunchReady
-                                    highlighted: true
-                                    onClicked: controller.start_eval()
-                                }
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: root.spacingMd
 
-                                Button {
-                                    text: "Остановить"
-                                    enabled: controller.running
-                                    down: controller.running
-                                    onClicked: controller.stop_process()
-                                }
+                                    Button {
+                                        text: "Обновить список агентов"
+                                        enabled: !controller.running
+                                        flat: true
+                                        onClicked: controller.refresh_eval_agents()
+                                    }
 
-                                Button {
-                                    text: "Очистить лог"
-                                    enabled: !controller.running
-                                    flat: true
-                                    onClicked: controller.clear_eval_log()
-                                }
+                                    Button {
+                                        text: "Запустить оценку"
+                                        enabled: !controller.running && controller.evalLaunchReady
+                                        highlighted: true
+                                        onClicked: controller.start_eval()
+                                    }
 
-                                Button {
-                                    text: "Детали"
-                                    flat: true
-                                    onClicked: evalDetailsDrawer.open()
+                                    Button {
+                                        text: "Остановить"
+                                        enabled: controller.running
+                                        highlighted: controller.running
+                                        onClicked: controller.stop_process()
+                                    }
+
+                                    Button {
+                                        text: "Очистить лог"
+                                        enabled: !controller.running
+                                        flat: true
+                                        onClicked: controller.clear_eval_log()
+                                    }
+
+                                    Button {
+                                        text: "Детали"
+                                        flat: true
+                                        onClicked: evalDetailsDrawer.open()
+                                    }
                                 }
                             }
                         }
@@ -2791,6 +2867,16 @@ ApplicationWindow {
                                         border.color: "#bcd0f8"
                                         border.width: 1
                                         implicitHeight: p1WinrateCard.implicitHeight + root.spacingMd * 2
+                                        Rectangle {
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.top: parent.top
+                                            anchors.bottom: parent.bottom
+                                            anchors.topMargin: Math.round(2 * root.uiScale)
+                                            radius: parent.radius
+                                            color: "#10000000"
+                                            z: -1
+                                        }
                                         ColumnLayout {
                                             id: p1WinrateCard
                                             anchors.fill: parent
@@ -2822,6 +2908,13 @@ ApplicationWindow {
                                                 horizontalAlignment: Text.AlignHCenter
                                                 Layout.fillWidth: true
                                             }
+                                            Text {
+                                                text: "Итог: " + root.extractPercent(controller.evalResultWinrateP1)
+                                                color: root.uiTextMuted
+                                                font.pixelSize: Math.round(11 * root.uiScale)
+                                                horizontalAlignment: Text.AlignHCenter
+                                                Layout.fillWidth: true
+                                            }
                                         }
                                     }
 
@@ -2832,6 +2925,16 @@ ApplicationWindow {
                                         border.color: "#d7deea"
                                         border.width: 1
                                         implicitHeight: avgVpCard.implicitHeight + root.spacingMd * 2
+                                        Rectangle {
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.top: parent.top
+                                            anchors.bottom: parent.bottom
+                                            anchors.topMargin: Math.round(2 * root.uiScale)
+                                            radius: parent.radius
+                                            color: "#10000000"
+                                            z: -1
+                                        }
                                         ColumnLayout {
                                             id: avgVpCard
                                             anchors.fill: parent
@@ -2861,6 +2964,16 @@ ApplicationWindow {
                                         border.color: "#f0b6b6"
                                         border.width: 1
                                         implicitHeight: turnLimitCard.implicitHeight + root.spacingMd * 2
+                                        Rectangle {
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.top: parent.top
+                                            anchors.bottom: parent.bottom
+                                            anchors.topMargin: Math.round(2 * root.uiScale)
+                                            radius: parent.radius
+                                            color: "#10000000"
+                                            z: -1
+                                        }
                                         ColumnLayout {
                                             id: turnLimitCard
                                             anchors.fill: parent
@@ -2877,6 +2990,13 @@ ApplicationWindow {
                                                 text: controller.evalResultTurnLimitRate
                                                 color: "#a13333"
                                                 wrapMode: Text.WordWrap
+                                                horizontalAlignment: Text.AlignHCenter
+                                                Layout.fillWidth: true
+                                            }
+                                            Text {
+                                                text: "Итог: " + root.extractPercent(controller.evalResultTurnLimitRate)
+                                                color: root.uiTextMuted
+                                                font.pixelSize: Math.round(11 * root.uiScale)
                                                 horizontalAlignment: Text.AlignHCenter
                                                 Layout.fillWidth: true
                                             }
