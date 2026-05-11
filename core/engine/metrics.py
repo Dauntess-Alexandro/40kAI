@@ -5,6 +5,21 @@ import os
 from scipy.optimize import curve_fit
 from project_paths import ARTIFACTS_METRICS_DIR, ARTIFACTS_MODELS_DIR, RUNTIME_STATE_DIR
 
+plt.rcParams.update(
+    {
+        "figure.facecolor": "#171d26",
+        "axes.facecolor": "#1d2632",
+        "axes.edgecolor": "#3a4658",
+        "axes.labelcolor": "#d7dde7",
+        "xtick.color": "#b8c2d1",
+        "ytick.color": "#b8c2d1",
+        "grid.color": "#3a4658",
+        "text.color": "#d7dde7",
+        "savefig.facecolor": "#171d26",
+        "savefig.edgecolor": "#171d26",
+    }
+)
+
 class metrics(object):
     def __init__(self, folder, randNum, modelName):
         self.avgRew = []

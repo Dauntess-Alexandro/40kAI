@@ -15,6 +15,7 @@ from typing import Optional
 
 from PySide6 import QtCore, QtGui, QtQml
 from PySide6.QtGui import QIcon
+from PySide6.QtQuickControls2 import QQuickStyle
 from project_paths import (
     AGENT_EVAL_LOG_PATH,
     AGENT_PLAY_LOG_PATH,
@@ -5000,7 +5001,24 @@ def main() -> int:
     if sys.platform.startswith("win"):
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("40kAI.GUI")
 
+    # Use a non-native Controls style so Button background/content customization works.
+    if not os.environ.get("QT_QUICK_CONTROLS_STYLE"):
+        os.environ["QT_QUICK_CONTROLS_STYLE"] = "Fusion"
+    QQuickStyle.setStyle(os.environ["QT_QUICK_CONTROLS_STYLE"])
+
     app = QtGui.QGuiApplication(sys.argv)
+    app_palette = QtGui.QPalette()
+    app_palette.setColor(QtGui.QPalette.Window, QtGui.QColor("#0f1319"))
+    app_palette.setColor(QtGui.QPalette.Base, QtGui.QColor("#171d26"))
+    app_palette.setColor(QtGui.QPalette.AlternateBase, QtGui.QColor("#1d2632"))
+    app_palette.setColor(QtGui.QPalette.Button, QtGui.QColor("#1d2632"))
+    app_palette.setColor(QtGui.QPalette.ButtonText, QtGui.QColor("#d7dde7"))
+    app_palette.setColor(QtGui.QPalette.Text, QtGui.QColor("#d7dde7"))
+    app_palette.setColor(QtGui.QPalette.WindowText, QtGui.QColor("#d7dde7"))
+    app_palette.setColor(QtGui.QPalette.Highlight, QtGui.QColor("#2f6ed8"))
+    app_palette.setColor(QtGui.QPalette.HighlightedText, QtGui.QColor("#ffffff"))
+    app_palette.setColor(QtGui.QPalette.PlaceholderText, QtGui.QColor("#98a4b8"))
+    app.setPalette(app_palette)
 
     icon_path = os.path.join(os.path.dirname(__file__), "assets", "40kai_icon.ico")
     if os.path.exists(icon_path):

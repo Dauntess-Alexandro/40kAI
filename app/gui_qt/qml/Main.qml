@@ -10,6 +10,7 @@ ApplicationWindow {
     height: Math.round(Screen.height * 0.85)
     visible: true
     title: "40kAI"
+    color: bgBase
 
     property string statusText: "Готово к запуску."
     property real uiScale: Math.max(1.0, Math.min(Screen.width / 1920, Screen.height / 1080))
@@ -32,14 +33,26 @@ ApplicationWindow {
     property string playerFactionName: playerFactionNecrons.checked ? "Necrons" : "-"
     property bool evalShowLog: true
     property int evalDetailTab: 0
+    property int radiusSm: Math.round(8 * uiScale)
     property int radiusMd: Math.round(12 * uiScale)
-    property color uiBgBase: "#eff3f9"
-    property color uiBgCard: "#f7f9fd"
-    property color uiBorder: "#d7deea"
-    property color uiTextMain: "#1f2937"
-    property color uiTextMuted: "#5b6472"
-    property color p1Accent: "#2f6ed8"
-    property color p2Accent: "#cf3f3f"
+    property color bgBase: "#0f1319"
+    property color bgSurface: "#171d26"
+    property color bgElevated: "#1d2632"
+    property color borderMuted: "#2a3342"
+    property color textPrimary: "#d7dde7"
+    property color textSecondary: "#98a4b8"
+    property color accentP1: "#2f6ed8"
+    property color accentP2: "#cf3f3f"
+    property color accentPrimaryAction: "#b88a26"
+    property color accentDanger: "#a35345"
+    property color accentGhost: "#6f7d92"
+    property color uiBgBase: bgSurface
+    property color uiBgCard: bgElevated
+    property color uiBorder: borderMuted
+    property color uiTextMain: textPrimary
+    property color uiTextMuted: textSecondary
+    property color p1Accent: accentP1
+    property color p2Accent: accentP2
     property int evalDrawerTab: 0
     property int evalSectionTitleSize: Math.round(13 * uiScale)
     property int evalCaptionSize: Math.round(11 * uiScale)
@@ -53,6 +66,15 @@ ApplicationWindow {
     }
 
     font.pixelSize: Math.round(14 * uiScale)
+    palette.window: bgBase
+    palette.base: bgSurface
+    palette.button: bgElevated
+    palette.buttonText: textPrimary
+    palette.text: textPrimary
+    palette.windowText: textPrimary
+    palette.highlight: accentP1
+    palette.highlightedText: "#ffffff"
+    palette.placeholderText: "#7f8ba0"
 
     ColumnLayout {
         anchors.fill: parent
@@ -110,7 +132,7 @@ ApplicationWindow {
                                     RowLayout {
                                         spacing: root.spacingSm
                                         Label { text: "Выбор миссии" }
-                                        ComboBox {
+                                        StyledComboBox {
                                             id: missionCombo
                                             Layout.preferredWidth: root.inputWidthMd
                                             model: controller.missionOptions
@@ -178,7 +200,7 @@ ApplicationWindow {
                                     RowLayout {
                                         spacing: root.spacingSm
                                         Label { text: "Модель обучения:" }
-                                        ComboBox {
+                                        StyledComboBox {
                                             id: trainingAlgoComboMain
                                             Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(300 * root.uiScale))
                                             model: [
@@ -268,17 +290,29 @@ ApplicationWindow {
                                     }
 
                                     Label { text: "Сторона обучения" }
-                                    ComboBox {
+                                    StyledComboBox {
                                         model: controller.learnerSideOptions
                                         Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(220 * root.uiScale))
+                                        implicitHeight: Math.round(34 * root.uiScale)
+                                        leftPadding: Math.round(10 * root.uiScale)
+                                        rightPadding: Math.round(28 * root.uiScale)
+                                        topPadding: Math.round(4 * root.uiScale)
+                                        bottomPadding: Math.round(4 * root.uiScale)
+                                        font.pixelSize: Math.round(14 * root.uiScale)
                                         currentIndex: Math.max(0, controller.learnerSideOptions.indexOf(controller.learnerSide))
                                         enabled: !controller.running
                                         onActivated: controller.set_learner_side(currentText)
                                     }
 
                                     Label { text: "Источник оппонента" }
-                                    ComboBox {
+                                    StyledComboBox {
                                         Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(220 * root.uiScale))
+                                        implicitHeight: Math.round(34 * root.uiScale)
+                                        leftPadding: Math.round(10 * root.uiScale)
+                                        rightPadding: Math.round(28 * root.uiScale)
+                                        topPadding: Math.round(4 * root.uiScale)
+                                        bottomPadding: Math.round(4 * root.uiScale)
+                                        font.pixelSize: Math.round(14 * root.uiScale)
                                         model: [
                                             { value: "heuristic", label: "Эвристика" },
                                             { value: "latest_snapshot", label: "Последний снапшот" },
@@ -303,8 +337,14 @@ ApplicationWindow {
                                     Label {
                                         text: "Конкретный агент"
                                     }
-                                    ComboBox {
+                                    StyledComboBox {
                                         Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(460 * root.uiScale))
+                                        implicitHeight: Math.round(34 * root.uiScale)
+                                        leftPadding: Math.round(10 * root.uiScale)
+                                        rightPadding: Math.round(28 * root.uiScale)
+                                        topPadding: Math.round(4 * root.uiScale)
+                                        bottomPadding: Math.round(4 * root.uiScale)
+                                        font.pixelSize: Math.round(14 * root.uiScale)
                                         model: controller.specificOpponentAgentOptions
                                         currentIndex: controller.specificOpponentAgentOptions.length > 0
                                             ? Math.max(0, controller.specificOpponentAgentOptions.indexOf(controller.selectedSpecificOpponentLabel))
@@ -319,7 +359,7 @@ ApplicationWindow {
                                     Label {
                                         Layout.columnSpan: 2
                                         text: controller.opponentPreviewText
-                                        color: "#555555"
+                                        color: root.uiTextMuted
                                         Layout.fillWidth: true
                                         wrapMode: Text.NoWrap
                                         elide: Text.ElideRight
@@ -430,7 +470,7 @@ ApplicationWindow {
 
                                 Label {
                                     text: "P1:"
-                                    color: "#666666"
+                                    color: root.uiTextMuted
                                 }
 
                                 Image {
@@ -446,17 +486,17 @@ ApplicationWindow {
 
                                 Label {
                                     text: root.playerFactionName
-                                    color: "#666666"
+                                    color: root.uiTextMuted
                                 }
 
                                 Label {
                                     text: "•"
-                                    color: "#666666"
+                                    color: root.uiTextMuted
                                 }
 
                                 Label {
                                     text: "P2:"
-                                    color: "#666666"
+                                    color: root.uiTextMuted
                                 }
 
                                 Image {
@@ -472,7 +512,7 @@ ApplicationWindow {
 
                                 Label {
                                     text: root.modelFactionName
-                                    color: "#666666"
+                                    color: root.uiTextMuted
                                 }
                             }
                         }
@@ -506,8 +546,8 @@ ApplicationWindow {
                                     Rectangle {
                                         Layout.fillWidth: true
                                         radius: Math.round(6 * root.uiScale)
-                                        color: "#f6f6f6"
-                                        border.color: "#d7d7d7"
+                                        color: root.bgSurface
+                                        border.color: root.uiBorder
                                         border.width: 1
                                         implicitHeight: modelFactionNecrons.implicitHeight + root.spacingSm
 
@@ -549,8 +589,8 @@ ApplicationWindow {
                                     Rectangle {
                                         Layout.fillWidth: true
                                         radius: Math.round(6 * root.uiScale)
-                                        color: "#f6f6f6"
-                                        border.color: "#d7d7d7"
+                                        color: root.bgSurface
+                                        border.color: root.uiBorder
                                         border.width: 1
                                         implicitHeight: playerFactionNecrons.implicitHeight + root.spacingSm
 
@@ -645,7 +685,7 @@ ApplicationWindow {
                                         Text {
                                             id: unitNameAvailable
                                             text: model.display
-                                            color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
+                                            color: ListView.isCurrentItem ? "#ffffff" : root.uiTextMain
                                             elide: Text.ElideRight
                                             anchors.verticalCenter: parent.verticalCenter
                                             anchors.left: unitIconAvailable.visible ? unitIconAvailable.right : parent.left
@@ -721,7 +761,7 @@ ApplicationWindow {
                                         Text {
                                             id: unitNamePlayer
                                             text: model.display
-                                            color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
+                                            color: ListView.isCurrentItem ? "#ffffff" : root.uiTextMain
                                             elide: Text.ElideRight
                                             anchors.verticalCenter: parent.verticalCenter
                                             anchors.left: unitIconPlayer.visible ? unitIconPlayer.right : parent.left
@@ -801,7 +841,7 @@ ApplicationWindow {
                                         Text {
                                             id: unitNameModel
                                             text: model.display
-                                            color: ListView.isCurrentItem ? "#ffffff" : "#1f1f1f"
+                                            color: ListView.isCurrentItem ? "#ffffff" : root.uiTextMain
                                             elide: Text.ElideRight
                                             anchors.verticalCenter: parent.verticalCenter
                                             anchors.left: unitIconModel.visible ? unitIconModel.right : parent.left
@@ -861,7 +901,7 @@ ApplicationWindow {
                             text: "Оценка DET: детерминированные прогоны против эвристики/настроенного оппонента. Не сырые тренировочные партии."
                             width: parent.width
                             wrapMode: Text.WordWrap
-                            color: "#666666"
+                            color: root.uiTextMuted
                         }
 
                         RowLayout {
@@ -893,8 +933,8 @@ ApplicationWindow {
                             Rectangle {
                                 Layout.fillWidth: true
                                 radius: 6
-                                color: "#f5f5f5"
-                                border.color: "#dddddd"
+                                color: root.bgSurface
+                                border.color: root.uiBorder
                                 border.width: 1
                                 implicitHeight: Math.round(92 * root.uiScale)
 
@@ -903,9 +943,9 @@ ApplicationWindow {
                                     anchors.margins: root.spacingSm
                                     spacing: 4
 
-                                    Text { text: "Модель"; font.bold: true; color: "#333333" }
-                                    Text { text: "Алгоритм: " + controller.metricsAlgo; color: "#555555" }
-                                    Text { text: "Режим: " + controller.metricsMode; color: "#555555" }
+                                    Text { text: "Модель"; font.bold: true; color: root.uiTextMain }
+                                    Text { text: "Алгоритм: " + controller.metricsAlgo; color: root.uiTextMuted }
+                                    Text { text: "Режим: " + controller.metricsMode; color: root.uiTextMuted }
                                     Text { text: "Run ID: " + controller.metricsRunId; color: "#777777"; elide: Text.ElideRight }
                                 }
                             }
@@ -913,8 +953,8 @@ ApplicationWindow {
                             Rectangle {
                                 Layout.fillWidth: true
                                 radius: 6
-                                color: "#f5f9ff"
-                                border.color: "#d0e3ff"
+                                color: "#1a2a40"
+                                border.color: "#2f6ed8"
                                 border.width: 1
                                 implicitHeight: Math.round(92 * root.uiScale)
 
@@ -923,18 +963,18 @@ ApplicationWindow {
                                     anchors.margins: root.spacingSm
                                     spacing: 4
 
-                                    Text { text: "Последний DET-eval"; font.bold: true; color: "#333333" }
-                                    Text { text: "Эпизод: " + controller.detEpisodeLast; color: "#555555" }
-                                    Text { text: "Winrate: " + controller.detWinrateLast; color: "#555555" }
-                                    Text { text: "Reward: " + controller.detRewardLast + " | Ep_len: " + controller.detEpLenLast; color: "#555555" }
+                                    Text { text: "Последний DET-eval"; font.bold: true; color: root.uiTextMain }
+                                    Text { text: "Эпизод: " + controller.detEpisodeLast; color: root.uiTextMuted }
+                                    Text { text: "Winrate: " + controller.detWinrateLast; color: root.uiTextMuted }
+                                    Text { text: "Reward: " + controller.detRewardLast + " | Ep_len: " + controller.detEpLenLast; color: root.uiTextMuted }
                                 }
                             }
 
                             Rectangle {
                                 Layout.fillWidth: true
                                 radius: 6
-                                color: "#fff9f5"
-                                border.color: "#ffe0c2"
+                                color: "#332b1d"
+                                border.color: "#b88a26"
                                 border.width: 1
                                 implicitHeight: Math.round(92 * root.uiScale)
 
@@ -943,10 +983,10 @@ ApplicationWindow {
                                     anchors.margins: root.spacingSm
                                     spacing: 4
 
-                                    Text { text: "Оппонент"; font.bold: true; color: "#333333" }
-                                    Text { text: "Self-play: " + (controller.selfPlayEnabled ? "включён" : "выключен"); color: "#555555" }
-                                    Text { text: "Источник оппонента: " + controller.opponentSource; color: "#555555" }
-                                    Text { text: "Алгоритм оппонента: " + controller.opponentAlgo + (controller.opponentId.length > 0 ? (" (id=" + controller.opponentId + ")") : ""); color: "#555555" }
+                                    Text { text: "Оппонент"; font.bold: true; color: root.uiTextMain }
+                                    Text { text: "Self-play: " + (controller.selfPlayEnabled ? "включён" : "выключен"); color: root.uiTextMuted }
+                                    Text { text: "Источник оппонента: " + controller.opponentSource; color: root.uiTextMuted }
+                                    Text { text: "Алгоритм оппонента: " + controller.opponentAlgo + (controller.opponentId.length > 0 ? (" (id=" + controller.opponentId + ")") : ""); color: root.uiTextMuted }
                                 }
                             }
                         }
@@ -993,7 +1033,7 @@ ApplicationWindow {
                                     Label {
                                         text: controller.rewardSummary
                                         wrapMode: Text.WordWrap
-                                        color: "#666666"
+                                        color: root.uiTextMuted
                                     }
                                 }
                             }
@@ -1034,7 +1074,7 @@ ApplicationWindow {
                                     Label {
                                         text: controller.lossSummary
                                         wrapMode: Text.WordWrap
-                                        color: "#666666"
+                                        color: root.uiTextMuted
                                     }
                                 }
                             }
@@ -1075,7 +1115,7 @@ ApplicationWindow {
                                     Label {
                                         text: controller.epLenSummary
                                         wrapMode: Text.WordWrap
-                                        color: "#666666"
+                                        color: root.uiTextMuted
                                     }
                                 }
                             }
@@ -1116,7 +1156,7 @@ ApplicationWindow {
                                     Label {
                                         text: controller.winrateSummary
                                         wrapMode: Text.WordWrap
-                                        color: "#666666"
+                                        color: root.uiTextMuted
                                     }
                                 }
                             }
@@ -1157,7 +1197,7 @@ ApplicationWindow {
                                     Label {
                                         text: controller.avgVpSummary
                                         wrapMode: Text.WordWrap
-                                        color: "#666666"
+                                        color: root.uiTextMuted
                                     }
                                 }
                             }
@@ -1198,7 +1238,7 @@ ApplicationWindow {
                                     Label {
                                         text: controller.hpDiffSummary
                                         wrapMode: Text.WordWrap
-                                        color: "#666666"
+                                        color: root.uiTextMuted
                                     }
                                 }
                             }
@@ -1239,7 +1279,7 @@ ApplicationWindow {
                                     Label {
                                         text: controller.killDiffSummary
                                         wrapMode: Text.WordWrap
-                                        color: "#666666"
+                                        color: root.uiTextMuted
                                     }
                                 }
                             }
@@ -1280,7 +1320,7 @@ ApplicationWindow {
                                     Label {
                                         text: controller.endReasonSummary
                                         wrapMode: Text.WordWrap
-                                        color: "#666666"
+                                        color: root.uiTextMuted
                                     }
                                 }
                             }
@@ -1313,7 +1353,7 @@ ApplicationWindow {
                         Label {
                             text: "Сводка по ENEMY heuristic: роли, режимы, риски, cover, EV и стабильность."
                             wrapMode: Text.WordWrap
-                            color: "#666666"
+                            color: root.uiTextMuted
                         }
 
                         GroupBox {
@@ -1382,7 +1422,7 @@ ApplicationWindow {
                                 Label {
                                     text: controller.playModelAlgoLabel
                                     wrapMode: Text.WordWrap
-                                    color: "#555555"
+                                    color: root.uiTextMuted
                                 }
 
                                 RowLayout {
@@ -1395,7 +1435,7 @@ ApplicationWindow {
                                         font.bold: true
                                     }
 
-                                    ComboBox {
+                                    StyledComboBox {
                                         Layout.preferredWidth: Math.round(190 * root.uiScale)
                                         model: controller.playInferenceModeOptions
                                         textRole: "label"
@@ -1416,7 +1456,7 @@ ApplicationWindow {
                                     Label {
                                         visible: controller.playInferenceTemperatureVisible
                                         text: "Темп.:"
-                                        color: "#2f3b52"
+                                        color: root.uiTextMuted
                                     }
 
                                     TextField {
@@ -1432,8 +1472,8 @@ ApplicationWindow {
                                 Rectangle {
                                     visible: controller.playInferenceModeVisible
                                     Layout.fillWidth: true
-                                    color: "#f3f4f6"
-                                    border.color: "#d1d5db"
+                                    color: root.uiBgCard
+                                    border.color: root.uiBorder
                                     border.width: 1
                                     radius: Math.round(8 * root.uiScale)
                                     implicitHeight: playInferenceHelpText.implicitHeight + Math.round(12 * root.uiScale)
@@ -1442,7 +1482,7 @@ ApplicationWindow {
                                         anchors.fill: parent
                                         anchors.margins: Math.round(6 * root.uiScale)
                                         wrapMode: Text.WordWrap
-                                        color: "#374151"
+                                        color: root.uiTextMuted
                                         text:
                                             "Greedy — ИИ сразу берет лучший ход. Это самый быстрый режим.\n" +
                                             "MCTS/Search — ИИ сначала просчитывает варианты вперед. Обычно сильнее, но медленнее.\n" +
@@ -1458,7 +1498,7 @@ ApplicationWindow {
                                 Label {
                                     text: controller.playModelCheckpointLabel
                                     wrapMode: Text.WordWrap
-                                    color: "#555555"
+                                    color: root.uiTextMuted
                                 }
 
                                 Label {
@@ -1535,8 +1575,8 @@ ApplicationWindow {
                         Rectangle {
                             Layout.fillWidth: true
                             radius: Math.round(10 * root.uiScale)
-                            color: "#f8f9fb"
-                            border.color: "#d9dee8"
+                            color: root.uiBgCard
+                            border.color: root.uiBorder
                             border.width: 1
                             implicitHeight: hyperparamsCardLayout.implicitHeight + root.spacingMd * 2
 
@@ -1554,7 +1594,7 @@ ApplicationWindow {
 
                                 Label {
                                     text: "Изменения применяются после сохранения файла."
-                                    color: "#666666"
+                                    color: root.uiTextMuted
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                 }
@@ -2008,8 +2048,8 @@ ApplicationWindow {
                         Rectangle {
                             Layout.fillWidth: true
                             radius: Math.round(10 * root.uiScale)
-                            color: "#f8f9fb"
-                            border.color: "#d9dee8"
+                            color: root.uiBgCard
+                            border.color: root.uiBorder
                             border.width: 1
                             implicitHeight: deploymentCardLayout.implicitHeight + root.spacingMd * 2
 
@@ -2028,11 +2068,11 @@ ApplicationWindow {
                                 Label {
                                     text: "Выберите режим расстановки юнитов перед боем."
                                     wrapMode: Text.WordWrap
-                                    color: "#666666"
+                                    color: root.uiTextMuted
                                     Layout.fillWidth: true
                                 }
 
-                                ComboBox {
+                                StyledComboBox {
                                     id: deploymentModeCombo
                                     Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(420 * root.uiScale))
                                     model: [
@@ -2057,7 +2097,7 @@ ApplicationWindow {
 
                                 Label {
                                     text: "Текущий режим: " + controller.deploymentMode
-                                    color: "#555555"
+                                    color: root.uiTextMuted
                                     wrapMode: Text.WordWrap
                                 }
                             }
@@ -2066,8 +2106,8 @@ ApplicationWindow {
                         Rectangle {
                             Layout.fillWidth: true
                             radius: Math.round(10 * root.uiScale)
-                            color: "#f8f9fb"
-                            border.color: "#d9dee8"
+                            color: root.uiBgCard
+                            border.color: root.uiBorder
                             border.width: 1
                             implicitHeight: actionRowLayout.implicitHeight + root.spacingMd * 2
 
@@ -2209,10 +2249,10 @@ ApplicationWindow {
 
                                 Rectangle {
                                     Layout.fillWidth: true
-                                    color: "#f7f9fd"
+                                    color: root.uiBgCard
                                     radius: Math.round(10 * root.uiScale)
                                     border.width: 1
-                                    border.color: "#d7deea"
+                                    border.color: root.uiBorder
                                     implicitHeight: matchupHeadLayout.implicitHeight + root.spacingMd * 2
 
                                     ColumnLayout {
@@ -2225,19 +2265,19 @@ ApplicationWindow {
                                             text: controller.evalDuelTitle
                                             font.bold: true
                                             font.pixelSize: Math.round(22 * root.uiScale)
-                                            color: "#1f2937"
+                                            color: root.uiTextMain
                                         }
                                         Text {
                                             text: controller.evalDuelSubtitle
                                             font.pixelSize: Math.round(13 * root.uiScale)
-                                            color: "#5b6472"
+                                            color: root.uiTextMuted
                                         }
                                     }
                                 }
 
                                 Text {
                                     text: "deterministic, epsilon=0"
-                                    color: "#5b6472"
+                                    color: root.uiTextMuted
                                 }
 
                                 RowLayout {
@@ -2246,7 +2286,7 @@ ApplicationWindow {
 
                                     Rectangle {
                                         Layout.fillWidth: true
-                                        color: "#eef4ff"
+                                        color: "#16253a"
                                         border.color: "#2f6ed8"
                                         border.width: 1
                                         radius: Math.round(10 * root.uiScale)
@@ -2282,7 +2322,7 @@ ApplicationWindow {
                                                 Item { Layout.fillWidth: true }
                                             }
 
-                                            ComboBox {
+                                            StyledComboBox {
                                                 Layout.fillWidth: true
                                                 enabled: !controller.running
                                                 model: [
@@ -2298,7 +2338,7 @@ ApplicationWindow {
                                                 }
                                                 onActivated: controller.set_eval_p1_policy(model[currentIndex].value)
                                             }
-                                            ComboBox {
+                                            StyledComboBox {
                                                 Layout.fillWidth: true
                                                 enabled: !controller.running && controller.evalP1Policy === "agent"
                                                 opacity: controller.evalP1Policy === "agent" ? 1.0 : 0.55
@@ -2312,7 +2352,7 @@ ApplicationWindow {
                                             Text {
                                                 text: controller.evalP1DisplayName
                                                 wrapMode: Text.WordWrap
-                                                color: "#1f2937"
+                                                color: root.uiTextMain
                                                 font.bold: true
                                             }
 
@@ -2323,16 +2363,16 @@ ApplicationWindow {
                                                     model: controller.evalP1Badges
                                                     delegate: Rectangle {
                                                         radius: Math.round(8 * root.uiScale)
-                                                        color: "#dce8ff"
+                                                        color: "#1f3552"
                                                         border.width: 1
-                                                        border.color: "#b8cdf6"
+                                                        border.color: "#2f6ed8"
                                                         implicitWidth: badgeP1Text.implicitWidth + Math.round(12 * root.uiScale)
                                                         implicitHeight: badgeP1Text.implicitHeight + Math.round(6 * root.uiScale)
                                                         Text {
                                                             id: badgeP1Text
                                                             anchors.centerIn: parent
                                                             text: modelData
-                                                            color: "#214f9f"
+                                                            color: "#9fc2ff"
                                                             font.pixelSize: Math.round(11 * root.uiScale)
                                                             font.bold: true
                                                         }
@@ -2354,10 +2394,10 @@ ApplicationWindow {
                                                 Label {
                                                     text: "Режим:"
                                                     font.bold: true
-                                                    color: "#2f3b52"
+                                                    color: root.uiTextMuted
                                                     opacity: controller.evalP1InferenceModeVisible ? 1.0 : 0.55
                                                 }
-                                                ComboBox {
+                                                StyledComboBox {
                                                     Layout.preferredWidth: Math.round(180 * root.uiScale)
                                                     enabled: !controller.running && controller.evalP1InferenceModeVisible
                                                     opacity: controller.evalP1InferenceModeVisible ? 1.0 : 0.55
@@ -2379,7 +2419,7 @@ ApplicationWindow {
                                                 }
                                                 Label {
                                                     text: "Темп.:"
-                                                    color: "#2f3b52"
+                                                    color: root.uiTextMuted
                                                     opacity: controller.evalP1InferenceTemperatureVisible ? 1.0 : 0.55
                                                 }
                                                 TextField {
@@ -2423,7 +2463,7 @@ ApplicationWindow {
 
                                     Rectangle {
                                         Layout.fillWidth: true
-                                        color: "#fff1f1"
+                                        color: "#361f23"
                                         border.color: "#cf3f3f"
                                         border.width: 1
                                         radius: Math.round(10 * root.uiScale)
@@ -2459,7 +2499,7 @@ ApplicationWindow {
                                                 Item { Layout.fillWidth: true }
                                             }
 
-                                            ComboBox {
+                                            StyledComboBox {
                                                 Layout.fillWidth: true
                                                 enabled: !controller.running
                                                 model: [
@@ -2475,7 +2515,7 @@ ApplicationWindow {
                                                 }
                                                 onActivated: controller.set_eval_p2_policy(model[currentIndex].value)
                                             }
-                                            ComboBox {
+                                            StyledComboBox {
                                                 Layout.fillWidth: true
                                                 enabled: !controller.running && controller.evalP2Policy === "agent"
                                                 opacity: controller.evalP2Policy === "agent" ? 1.0 : 0.55
@@ -2489,7 +2529,7 @@ ApplicationWindow {
                                             Text {
                                                 text: controller.evalP2DisplayName
                                                 wrapMode: Text.WordWrap
-                                                color: "#1f2937"
+                                                color: root.uiTextMain
                                                 font.bold: true
                                             }
 
@@ -2500,16 +2540,16 @@ ApplicationWindow {
                                                     model: controller.evalP2Badges
                                                     delegate: Rectangle {
                                                         radius: Math.round(8 * root.uiScale)
-                                                        color: "#ffe0e0"
+                                                        color: "#4a282c"
                                                         border.width: 1
-                                                        border.color: "#f0b6b6"
+                                                        border.color: "#cf3f3f"
                                                         implicitWidth: badgeP2Text.implicitWidth + Math.round(12 * root.uiScale)
                                                         implicitHeight: badgeP2Text.implicitHeight + Math.round(6 * root.uiScale)
                                                         Text {
                                                             id: badgeP2Text
                                                             anchors.centerIn: parent
                                                             text: modelData
-                                                            color: "#993434"
+                                                            color: "#ffb6b6"
                                                             font.pixelSize: Math.round(11 * root.uiScale)
                                                             font.bold: true
                                                         }
@@ -2531,10 +2571,10 @@ ApplicationWindow {
                                                 Label {
                                                     text: "Режим:"
                                                     font.bold: true
-                                                    color: "#2f3b52"
+                                                    color: root.uiTextMuted
                                                     opacity: controller.evalP2InferenceModeVisible ? 1.0 : 0.55
                                                 }
-                                                ComboBox {
+                                                StyledComboBox {
                                                     Layout.preferredWidth: Math.round(180 * root.uiScale)
                                                     enabled: !controller.running && controller.evalP2InferenceModeVisible
                                                     opacity: controller.evalP2InferenceModeVisible ? 1.0 : 0.55
@@ -2556,7 +2596,7 @@ ApplicationWindow {
                                                 }
                                                 Label {
                                                     text: "Темп.:"
-                                                    color: "#2f3b52"
+                                                    color: root.uiTextMuted
                                                     opacity: controller.evalP2InferenceTemperatureVisible ? 1.0 : 0.55
                                                 }
                                                 TextField {
@@ -2685,7 +2725,7 @@ ApplicationWindow {
                                                     anchors.right: parent.right
                                                     anchors.top: parent.top
                                                     height: Math.max(1, Math.round(2 * root.uiScale))
-                                                    color: "#40ffffff"
+                                                    color: "#00ffffff"
                                                 }
                                                 Rectangle {
                                                     anchors.fill: parent
@@ -2729,7 +2769,7 @@ ApplicationWindow {
                                                     anchors.right: parent.right
                                                     anchors.top: parent.top
                                                     height: Math.max(1, Math.round(2 * root.uiScale))
-                                                    color: "#33ffffff"
+                                                    color: "#00ffffff"
                                                 }
                                                 Rectangle {
                                                     anchors.fill: parent
@@ -2809,7 +2849,7 @@ ApplicationWindow {
                                             Layout.fillWidth: true
                                             Layout.preferredHeight: Math.max(2, Math.round(3 * root.uiScale))
                                             radius: height / 2
-                                            color: "#e5e7eb"
+                                            color: root.uiBorder
                                             clip: true
                                             Rectangle {
                                                 anchors.left: parent.left
@@ -2864,9 +2904,9 @@ ApplicationWindow {
                                 Rectangle {
                                     Layout.fillWidth: true
                                     radius: Math.round(10 * root.uiScale)
-                                    color: "#eef2fa"
+                                    color: root.bgElevated
                                     border.width: 1
-                                    border.color: "#d7deea"
+                                    border.color: root.uiBorder
                                     implicitHeight: statusBarLayout.implicitHeight + root.spacingSm * 2
 
                                     RowLayout {
@@ -2909,7 +2949,7 @@ ApplicationWindow {
                                             Layout.preferredWidth: Math.round(120 * root.uiScale)
                                             Layout.preferredHeight: Math.round(4 * root.uiScale)
                                             radius: height / 2
-                                            color: "#d9e1f0"
+                                            color: root.borderMuted
                                             clip: true
                                             Rectangle {
                                                 anchors.left: parent.left
@@ -2930,46 +2970,124 @@ ApplicationWindow {
                                     spacing: root.spacingMd
 
                                     Button {
-                                        text: "Обновить список агентов"
+                                        text: "ОБНОВИТЬ СПИСОК"
                                         enabled: !controller.running
-                                        flat: true
                                         Layout.preferredHeight: root.actionButtonHeight
                                         Layout.preferredWidth: root.actionButtonMinWidth
+                                        contentItem: Text {
+                                            text: parent.text
+                                            color: parent.enabled ? "#8c98ad" : "#737b8a"
+                                            font.bold: true
+                                            font.pixelSize: root.evalCaptionSize
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        background: Rectangle {
+                                            radius: Math.round(4 * root.uiScale)
+                                            color: parent.hovered ? "#1a2a3645" : "transparent"
+                                            border.width: 1
+                                            border.color: parent.hovered ? "#95a3b8" : "#6f7d92"
+                                        }
                                         onClicked: controller.refresh_eval_agents()
                                     }
 
                                     Button {
-                                        text: "Запустить оценку"
+                                        text: "ЗАПУСТИТЬ ОЦЕНКУ"
                                         enabled: !controller.running && controller.evalLaunchReady
-                                        highlighted: true
                                         Layout.preferredHeight: root.actionButtonHeight
                                         Layout.preferredWidth: root.actionButtonMinWidth
+                                        contentItem: Text {
+                                            text: parent.text
+                                            color: parent.enabled ? "#151102" : "#6a6347"
+                                            font.bold: true
+                                            font.pixelSize: root.evalCaptionSize
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        background: Rectangle {
+                                            radius: Math.round(4 * root.uiScale)
+                                            color: parent.pressed
+                                                ? "#d7a719"
+                                                : parent.hovered
+                                                    ? "#e8b932"
+                                                    : "#b88a26"
+                                            border.width: 1
+                                            border.color: parent.hovered ? "#ffe08a" : "#8f6b1f"
+                                            Rectangle {
+                                                anchors.left: parent.left
+                                                anchors.right: parent.right
+                                                anchors.top: parent.top
+                                                height: Math.max(1, Math.round(2 * root.uiScale))
+                                                color: "#66fff4bf"
+                                            }
+                                        }
                                         onClicked: controller.start_eval()
                                     }
 
                                     Button {
-                                        text: "Остановить"
+                                        text: "ОСТАНОВИТЬ"
                                         enabled: controller.running
-                                        highlighted: controller.running
                                         Layout.preferredHeight: root.actionButtonHeight
                                         Layout.preferredWidth: root.actionButtonMinWidth
+                                        contentItem: Text {
+                                            text: parent.text
+                                            color: parent.enabled ? "#f0b08a" : "#8f857f"
+                                            font.bold: true
+                                            font.pixelSize: root.evalCaptionSize
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        background: Rectangle {
+                                            radius: Math.round(4 * root.uiScale)
+                                            color: parent.enabled
+                                                ? (parent.hovered ? "#4a2c2c" : "#2e2f33")
+                                                : "#2a2c31"
+                                            border.width: 1
+                                            border.color: parent.enabled ? "#a35345" : "#4f545f"
+                                        }
                                         onClicked: controller.stop_process()
                                     }
 
                                     Button {
-                                        text: "Очистить лог"
+                                        text: "ОЧИСТИТЬ ЛОГ"
                                         enabled: !controller.running
-                                        flat: true
                                         Layout.preferredHeight: root.actionButtonHeight
                                         Layout.preferredWidth: root.actionButtonMinWidth
+                                        contentItem: Text {
+                                            text: parent.text
+                                            color: parent.enabled ? "#8c98ad" : "#737b8a"
+                                            font.bold: true
+                                            font.pixelSize: root.evalCaptionSize
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        background: Rectangle {
+                                            radius: Math.round(4 * root.uiScale)
+                                            color: parent.hovered ? "#1a2a3645" : "transparent"
+                                            border.width: 1
+                                            border.color: parent.hovered ? "#95a3b8" : "#6f7d92"
+                                        }
                                         onClicked: controller.clear_eval_log()
                                     }
 
                                     Button {
-                                        text: "Детали"
-                                        flat: true
+                                        text: "ДЕТАЛИ"
                                         Layout.preferredHeight: root.actionButtonHeight
                                         Layout.preferredWidth: root.actionButtonMinWidth
+                                        contentItem: Text {
+                                            text: parent.text
+                                            color: "#8c98ad"
+                                            font.bold: true
+                                            font.pixelSize: root.evalCaptionSize
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        background: Rectangle {
+                                            radius: Math.round(4 * root.uiScale)
+                                            color: parent.hovered ? "#1a2a3645" : "transparent"
+                                            border.width: 1
+                                            border.color: parent.hovered ? "#95a3b8" : "#6f7d92"
+                                        }
                                         onClicked: evalDetailsDrawer.open()
                                     }
                                 }
@@ -3020,8 +3138,8 @@ ApplicationWindow {
                                     Rectangle {
                                         Layout.fillWidth: true
                                         radius: Math.round(8 * root.uiScale)
-                                        color: "#eef4ff"
-                                        border.color: "#bcd0f8"
+                                        color: "#1b2738"
+                                        border.color: "#35557f"
                                         border.width: 1
                                         implicitHeight: edgeCard.implicitHeight + root.spacingMd * 2
                                         Rectangle {
@@ -3084,8 +3202,8 @@ ApplicationWindow {
                                     Rectangle {
                                         Layout.fillWidth: true
                                         radius: Math.round(8 * root.uiScale)
-                                        color: "#f7f9fd"
-                                        border.color: "#d7deea"
+                                        color: root.uiBgCard
+                                        border.color: root.uiBorder
                                         border.width: 1
                                         implicitHeight: confidenceCard.implicitHeight + root.spacingMd * 2
                                         Rectangle {
@@ -3105,7 +3223,7 @@ ApplicationWindow {
                                             spacing: Math.round(4 * root.uiScale)
                                             Text {
                                                 text: "Надежность"
-                                                color: "#374151"
+                                                color: root.uiTextMuted
                                                 font.bold: true
                                                 font.pixelSize: root.evalCaptionSize
                                                 horizontalAlignment: Text.AlignHCenter
@@ -3119,7 +3237,7 @@ ApplicationWindow {
                                                     if (done >= 20 && diff >= 7) return "Средняя"
                                                     return "Низкая"
                                                 }
-                                                color: "#374151"
+                                                color: root.uiTextMuted
                                                 font.bold: true
                                                 font.pixelSize: Math.round(22 * root.uiScale)
                                                 horizontalAlignment: Text.AlignHCenter
@@ -3138,8 +3256,8 @@ ApplicationWindow {
                                     Rectangle {
                                         Layout.fillWidth: true
                                         radius: Math.round(8 * root.uiScale)
-                                        color: "#fff1f1"
-                                        border.color: "#f0b6b6"
+                                        color: "#2a1f22"
+                                        border.color: "#8d4a4a"
                                         border.width: 1
                                         implicitHeight: scoreCard.implicitHeight + root.spacingMd * 2
                                         Rectangle {
@@ -3485,8 +3603,8 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         implicitHeight: dqnCardRow.implicitHeight
                         radius: Math.round(12 * root.uiScale)
-                        color: "#ffffff"
-                        border.color: "#e5e7eb"
+                        color: root.bgElevated
+                        border.color: root.uiBorder
                         border.width: 1
 
                         RowLayout {
@@ -3509,7 +3627,7 @@ ApplicationWindow {
                                     text: "DQN (Deep Q-Network)"
                                     font.bold: true
                                     font.pixelSize: Math.round(16 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
 
@@ -3575,65 +3693,65 @@ ApplicationWindow {
                                     text: "Что это"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "ИИ, который учится понимать, какой ход выгоднее в текущей ситуации. Для каждого действия он оценивает ожидаемую пользу и выбирает лучший вариант."
                                 }
                                 Label {
                                     text: "Как учится"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "запоминает прошлые ситуации (состояние, действие, результат), потом на этих данных постепенно улучшает оценки действий. Со временем реже ошибается и лучше выбирает ходы в похожих сценариях."
                                 }
                                 Label {
                                     text: "Сильные стороны"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "• понятная логика выбора хода;\n• хорошее качество игры после обучения;\n• удобно сравнивать с PPO/AZ/GMZ;\n• обычно предсказуемое поведение в повторяющихся ситуациях;\n• подходит как надежный базовый агент для тестов и долгих прогонов."
                                 }
                                 Label {
                                     text: "Ограничения"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "• может учиться дольше PPO;\n• чувствителен к настройкам;\n• требует больше вычислений при тренировке;\n• качество сильно зависит от того, насколько удачно подобраны гиперпараметры;\n• в очень сложной тактике может хуже справляться, чем модели с полноценным поиском (MCTS/Search)."
                                 }
                                 Label {
                                     text: "Когда выбирать"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "когда нужен надежный агент с понятным поведением и есть готовность подождать обучение ради качества итоговой модели."
                                 }
                             }
@@ -3645,8 +3763,8 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         implicitHeight: ppoCardRow.implicitHeight
                         radius: Math.round(12 * root.uiScale)
-                        color: "#ffffff"
-                        border.color: "#e5e7eb"
+                        color: root.bgElevated
+                        border.color: root.uiBorder
                         border.width: 1
 
                         RowLayout {
@@ -3669,7 +3787,7 @@ ApplicationWindow {
                                     text: "PPO (Proximal Policy Optimization)"
                                     font.bold: true
                                     font.pixelSize: Math.round(16 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
 
@@ -3735,65 +3853,65 @@ ApplicationWindow {
                                     text: "Что это"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "ИИ, который учится напрямую улучшать стратегию выбора действий. Он не просто оценивает отдельные ходы, а постепенно делает всю политику игры более качественной."
                                 }
                                 Label {
                                     text: "Как учится"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "играет серии шагов (rollout), оценивает, какие решения были полезными, и обновляет стратегию небольшими безопасными шагами, чтобы не ломать уже выученное поведение."
                                 }
                                 Label {
                                     text: "Сильные стороны"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "• обычно стабильно обучается;\n• хороший баланс между скоростью обучения и качеством;\n• удобен как рабочий режим по умолчанию;\n• часто быстрее и предсказуемее в настройке, чем сложные search-модели;\n• подходит для длительных тренировок без сильных скачков поведения."
                                 }
                                 Label {
                                     text: "Ограничения"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "• не использует поиск по дереву на каждом ходе;\n• в сложной тактике может уступать AZ/GMZ с MCTS/Search;\n• качество зависит от rollout/epoch/minibatch настроек;\n• иногда требует тонкой подстройки коэффициентов (clip, entropy, value loss)."
                                 }
                                 Label {
                                     text: "Когда выбирать"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "когда нужен надежный универсальный агент с хорошим балансом скорость обучения / качество игры."
                                 }
                             }
@@ -3805,8 +3923,8 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         implicitHeight: azCardRow.implicitHeight
                         radius: Math.round(12 * root.uiScale)
-                        color: "#ffffff"
-                        border.color: "#e5e7eb"
+                        color: root.bgElevated
+                        border.color: root.uiBorder
                         border.width: 1
 
                         RowLayout {
@@ -3829,7 +3947,7 @@ ApplicationWindow {
                                     text: "AlphaZero (AZ)"
                                     font.bold: true
                                     font.pixelSize: Math.round(16 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
 
@@ -3895,91 +4013,91 @@ ApplicationWindow {
                                     text: "Что это"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "ИИ, который сочетает нейросеть и поиск по дереву (MCTS). Нейросеть подсказывает хорошие направления, а MCTS просчитывает варианты вперед и помогает выбрать более сильный ход."
                                 }
                                 Label {
                                     text: "Как учится"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "играет self-play матчи, накапливает позиции и улучшает сеть так, чтобы она лучше оценивала ходы и состояния, опираясь на результаты поиска."
                                 }
                                 Label {
                                     text: "Сильные стороны"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "• сильная тактическая игра за счёт просчета вперед;\n• лучше учитывает последствия на несколько ходов;\n• часто заметно усиливается при росте search-бюджета;\n• хорошо подходит для eval/viewer, где важна сила решений."
                                 }
                                 Label {
                                     text: "Ограничения"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "• медленнее на инференсе из-за MCTS;\n• требует больше CPU/GPU ресурсов;\n• чувствителен к настройкам поиска (simulations, c_puct, temperature);\n• при слишком малом search-бюджете может терять преимущество."
                                 }
                                 Label {
                                     text: "Режимы инференса"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "• Greedy — быстро, без поиска;\n• MCTS — сильнее, но медленнее."
                                 }
                                 Label {
                                     text: "Температура"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "влияет только в MCTS (в Greedy не используется)."
                                 }
                                 Label {
                                     text: "Когда выбирать"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "когда приоритет — качество решений и сила игры, а не максимальная скорость."
                                 }
                             }
@@ -3991,8 +4109,8 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         implicitHeight: gmzCardRow.implicitHeight
                         radius: Math.round(12 * root.uiScale)
-                        color: "#ffffff"
-                        border.color: "#e5e7eb"
+                        color: root.bgElevated
+                        border.color: root.uiBorder
                         border.width: 1
 
                         RowLayout {
@@ -4015,7 +4133,7 @@ ApplicationWindow {
                                     text: "Gumbel MuZero (GMZ)"
                                     font.bold: true
                                     font.pixelSize: Math.round(16 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
 
@@ -4081,91 +4199,91 @@ ApplicationWindow {
                                     text: "Что это"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "ИИ с поиском, который дополнительно использует внутреннюю модель динамики. Проще: он не только выбирает ход, но и внутри модели проигрывает возможное будущее."
                                 }
                                 Label {
                                     text: "Как учится"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "через self-play и unroll-обучение: representation/dynamics/prediction блоки совместно учатся лучше моделировать состояние, последствия действий и полезность решений."
                                 }
                                 Label {
                                     text: "Сильные стороны"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "• высокий потолок качества игры;\n• хорошо работает в сложных и длинных тактических сценариях;\n• search-режим часто дает сильные решения в eval/viewer;\n• мощный инструмент, когда цель — выжать максимум качества."
                                 }
                                 Label {
                                     text: "Ограничения"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "• самый тяжелый режим по вычислениям;\n• дольше тренируется и сложнее в тюнинге;\n• чувствителен к параметрам search/replay/unroll;\n• при малом compute может не раскрывать потенциал полностью."
                                 }
                                 Label {
                                     text: "Режимы инференса"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "• Greedy — быстрее, без search;\n• Search — сильнее, но медленнее."
                                 }
                                 Label {
                                     text: "Температура"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "влияет только в Search (в Greedy не используется)."
                                 }
                                 Label {
                                     text: "Когда выбирать"
                                     font.bold: true
                                     font.pixelSize: Math.round(12 * root.uiScale)
-                                    color: "#111827"
+                                    color: root.uiTextMain
                                     Layout.fillWidth: true
                                 }
                                 Label {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    color: "#374151"
+                                    color: root.uiTextMuted
                                     text: "когда нужен максимум силы модели и есть бюджет по времени/ресурсам для обучения и оценки."
                                 }
                             }
