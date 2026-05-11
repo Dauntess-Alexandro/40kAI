@@ -34,12 +34,12 @@ ComboBox {
 
     background: Rectangle {
         radius: 0
-        color: control.enabled ? "#253244" : "#202734"
+        color: control.enabled ? "#141b26" : "#10151d"
         border.width: 1
         border.color: control.visualFocus
             ? "#b88a26"
             : control.hovered
-                ? "#6a7a94"
-                : "#3a475b"
+                ? "#5c6b82"
+                : "#2f3848"
     }
 }

@@ -273,20 +273,105 @@ ApplicationWindow {
                                     }
 
                                     GridLayout {
+                                        id: missionMetaGrid
                                         columns: 2
                                         columnSpacing: root.spacingMd
                                         rowSpacing: root.spacingXs
                                         Layout.fillWidth: true
-                                        Label { text: "РЕЖИМ"; font.bold: true; color: root.uiTextMuted }
-                                        Label { text: "ONLY WAR" }
-                                        Label { text: "РАЗМЕР"; font.bold: true; color: root.uiTextMuted }
-                                        Label { text: "60×40"; font.family: root.fontDataFamily }
-                                        Label { text: "ТОЧКА"; font.bold: true; color: root.uiTextMuted }
-                                        Label { text: "1, центр (30,20)" }
-                                        Label { text: "ДЕПЛОЙ"; font.bold: true; color: root.uiTextMuted }
-                                        Label { text: "Attacker слева / Defender справа"; wrapMode: Text.Wrap }
-                                        Label { text: "ПРИМЕЧАНИЕ"; font.bold: true; color: root.uiTextMuted }
-                                        Label { text: "roll-off определяет роли"; wrapMode: Text.Wrap }
+                                        property int labelColW: Math.round(124 * root.uiScale)
+
+                                        Label {
+                                            Layout.minimumWidth: missionMetaGrid.labelColW
+                                            Layout.maximumWidth: missionMetaGrid.labelColW
+                                            horizontalAlignment: Text.AlignLeft
+                                            text: "РЕЖИМ"
+                                            font.bold: true
+                                            font.family: root.fontUiFamily
+                                            font.pixelSize: root.evalCaptionSize
+                                            color: root.uiTextMuted
+                                        }
+                                        Label {
+                                            Layout.fillWidth: true
+                                            horizontalAlignment: Text.AlignLeft
+                                            text: "ONLY WAR"
+                                            font.family: root.fontUiFamily
+                                            font.pixelSize: root.evalCaptionSize
+                                            color: root.uiTextMain
+                                        }
+                                        Label {
+                                            Layout.minimumWidth: missionMetaGrid.labelColW
+                                            Layout.maximumWidth: missionMetaGrid.labelColW
+                                            horizontalAlignment: Text.AlignLeft
+                                            text: "РАЗМЕР"
+                                            font.bold: true
+                                            font.family: root.fontUiFamily
+                                            font.pixelSize: root.evalCaptionSize
+                                            color: root.uiTextMuted
+                                        }
+                                        Label {
+                                            Layout.fillWidth: true
+                                            horizontalAlignment: Text.AlignLeft
+                                            text: "60×40"
+                                            font.family: root.fontDataFamily
+                                            font.pixelSize: root.evalCaptionSize
+                                            color: root.uiTextMain
+                                        }
+                                        Label {
+                                            Layout.minimumWidth: missionMetaGrid.labelColW
+                                            Layout.maximumWidth: missionMetaGrid.labelColW
+                                            horizontalAlignment: Text.AlignLeft
+                                            text: "ТОЧКА"
+                                            font.bold: true
+                                            font.family: root.fontUiFamily
+                                            font.pixelSize: root.evalCaptionSize
+                                            color: root.uiTextMuted
+                                        }
+                                        Label {
+                                            Layout.fillWidth: true
+                                            horizontalAlignment: Text.AlignLeft
+                                            text: "1, центр (30,20)"
+                                            font.family: root.fontDataFamily
+                                            font.pixelSize: root.evalCaptionSize
+                                            color: root.uiTextMain
+                                        }
+                                        Label {
+                                            Layout.minimumWidth: missionMetaGrid.labelColW
+                                            Layout.maximumWidth: missionMetaGrid.labelColW
+                                            horizontalAlignment: Text.AlignLeft
+                                            text: "ДЕПЛОЙ"
+                                            font.bold: true
+                                            font.family: root.fontUiFamily
+                                            font.pixelSize: root.evalCaptionSize
+                                            color: root.uiTextMuted
+                                        }
+                                        Label {
+                                            Layout.fillWidth: true
+                                            horizontalAlignment: Text.AlignLeft
+                                            text: "Attacker слева / Defender справа"
+                                            wrapMode: Text.Wrap
+                                            font.family: root.fontUiFamily
+                                            font.pixelSize: root.evalCaptionSize
+                                            color: root.uiTextMain
+                                        }
+                                        Label {
+                                            Layout.minimumWidth: missionMetaGrid.labelColW
+                                            Layout.maximumWidth: missionMetaGrid.labelColW
+                                            horizontalAlignment: Text.AlignLeft
+                                            text: "ПРИМЕЧАНИЕ"
+                                            font.bold: true
+                                            font.family: root.fontUiFamily
+                                            font.pixelSize: root.evalCaptionSize
+                                            color: root.uiTextMuted
+                                        }
+                                        Label {
+                                            Layout.fillWidth: true
+                                            horizontalAlignment: Text.AlignLeft
+                                            text: "roll-off определяет роли"
+                                            wrapMode: Text.Wrap
+                                            font.family: root.fontUiFamily
+                                            font.pixelSize: root.evalCaptionSize
+                                            color: root.uiTextMain
+                                        }
                                     }
                                 }
                             }
@@ -326,9 +411,9 @@ ApplicationWindow {
                                             font.family: root.fontDataFamily
                                             background: Rectangle {
                                                 radius: 0
-                                                color: parent.activeFocus ? "#2a3345" : "#202734"
+                                                color: parent.activeFocus ? "#1e2633" : "#141b26"
                                                 border.width: 1
-                                                border.color: parent.activeFocus ? "#b88a26" : "#3a475b"
+                                                border.color: parent.activeFocus ? "#b88a26" : "#2f3848"
                                             }
                                             onEditingFinished: {
                                                 var value = parseInt(text)
@@ -368,22 +453,29 @@ ApplicationWindow {
                                             }
                                         }
                                         Button {
-                                            text: "О МОДЕЛЯХ"
+                                            text: "ⓘ"
+                                            ToolTip.visible: hovered
+                                            ToolTip.text: "О моделях и алгоритмах"
+                                            ToolTip.delay: 400
+                                            implicitWidth: Math.round(36 * root.uiScale)
+                                            implicitHeight: Math.round(32 * root.uiScale)
                                             enabled: !controller.running
                                             contentItem: Text {
                                                 text: parent.text
-                                                color: parent.enabled ? "#d5b15a" : "#737b8a"
+                                                color: parent.enabled
+                                                    ? (parent.hovered ? "#e8c86a" : "#8b95a8")
+                                                    : "#5c6474"
                                                 font.bold: true
-                                                font.pixelSize: root.evalCaptionSize
+                                                font.pixelSize: Math.round(14 * root.uiScale)
                                                 horizontalAlignment: Text.AlignHCenter
                                                 verticalAlignment: Text.AlignVCenter
                                             }
                                             background: ChamferPanel {
                                                 cutSize: Math.round(6 * root.uiScale)
                                                 contentMargin: 0
-                                                fillColor: parent.hovered ? "#25303d" : "transparent"
+                                                fillColor: parent.hovered ? "#1e2633" : "transparent"
                                                 borderWidth: 1
-                                                borderColor: parent.hovered ? "#e1be68" : "#b88a26"
+                                                borderColor: parent.hovered ? "#b88a26" : "#4f5a6b"
                                             }
                                             onClicked: trainingAlgoHelpDialog.open()
                                         }
@@ -476,44 +568,54 @@ ApplicationWindow {
                                         font.letterSpacing: 1.0
                                     }
 
-                                    CheckBox {
+                                    TacticalCheckBox {
                                         text: "САМООБУЧЕНИЕ ОТ СТАРОЙ МОДЕЛИ"
+                                        scaleRef: root.uiScale
+                                        labelFontFamily: root.fontUiFamily
+                                        labelFontSize: root.evalCaptionSize
+                                        labelColorEnabled: root.uiTextMain
                                         checked: controller.selfPlayFromCheckpoint
                                         enabled: !controller.running
-                                        font.family: root.fontUiFamily
-                                        font.pixelSize: root.evalCaptionSize
                                         onToggled: controller.set_self_play_from_checkpoint(checked)
                                     }
-                                    CheckBox {
+                                    TacticalCheckBox {
                                         text: "ПРОДОЛЖИТЬ ОБУЧЕНИЕ (RESUME_CHECKPOINT)"
+                                        scaleRef: root.uiScale
+                                        labelFontFamily: root.fontUiFamily
+                                        labelFontSize: root.evalCaptionSize
+                                        labelColorEnabled: root.uiTextMain
                                         checked: controller.resumeFromCheckpoint
                                         enabled: !controller.running
-                                        font.family: root.fontUiFamily
-                                        font.pixelSize: root.evalCaptionSize
                                         onToggled: controller.set_resume_from_checkpoint(checked)
                                     }
-                                    CheckBox {
+                                    TacticalCheckBox {
                                         text: "НЕ ЛОГИРОВАТЬ ТРЕНИРОВКУ (SPEED)"
+                                        scaleRef: root.uiScale
+                                        labelFontFamily: root.fontUiFamily
+                                        labelFontSize: root.evalCaptionSize
+                                        labelColorEnabled: root.uiTextMain
                                         checked: controller.disableTrainLogging
                                         enabled: !controller.running
-                                        font.family: root.fontUiFamily
-                                        font.pixelSize: root.evalCaptionSize
                                         onToggled: controller.set_disable_train_logging(checked)
                                     }
-                                    CheckBox {
+                                    TacticalCheckBox {
                                         text: "ДЕТАЛЬНЫЙ ТРЕЙС ДЕЙСТВИЙ (DEBUG)"
+                                        scaleRef: root.uiScale
+                                        labelFontFamily: root.fontUiFamily
+                                        labelFontSize: root.evalCaptionSize
+                                        labelColorEnabled: root.uiTextMain
                                         checked: controller.actionTrace
                                         enabled: !controller.running
-                                        font.family: root.fontUiFamily
-                                        font.pixelSize: root.evalCaptionSize
                                         onToggled: controller.set_action_trace(checked)
                                     }
-                                    CheckBox {
+                                    TacticalCheckBox {
                                         text: "ОЧИЩАТЬ ЛОГИ АВТОМАТИЧЕСКИ"
+                                        scaleRef: root.uiScale
+                                        labelFontFamily: root.fontUiFamily
+                                        labelFontSize: root.evalCaptionSize
+                                        labelColorEnabled: root.uiTextMain
                                         checked: controller.autoClearLogs
                                         enabled: !controller.running
-                                        font.family: root.fontUiFamily
-                                        font.pixelSize: root.evalCaptionSize
                                         onToggled: controller.set_auto_clear_logs(checked)
                                     }
 
@@ -601,57 +703,68 @@ ApplicationWindow {
                                 anchors.fill: parent
                                 spacing: root.spacingSm
 
-                                RowLayout {
+                                ColumnLayout {
                                     Layout.fillWidth: true
-                                    Text {
-                                        text: "ЖУРНАЛ"
-                                        color: root.uiTextMain
-                                        font.bold: true
-                                        font.pixelSize: root.evalSectionTitleSize
-                                        font.family: root.fontUiFamily
-                                        font.capitalization: Font.AllUppercase
-                                        font.letterSpacing: 1.0
-                                    }
-                                    Item { Layout.fillWidth: true }
-                                    Button {
-                                        text: "ОЧИСТИТЬ"
-                                        flat: true
-                                        contentItem: Text {
-                                            text: parent.text
-                                            color: "#d5b15a"
+                                    spacing: root.spacingXs
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        Text {
+                                            text: "ЖУРНАЛ"
+                                            color: "#e8c86a"
                                             font.bold: true
-                                            font.pixelSize: root.evalCaptionSize
-                                            horizontalAlignment: Text.AlignHCenter
-                                            verticalAlignment: Text.AlignVCenter
+                                            font.pixelSize: Math.round(14 * root.uiScale)
+                                            font.family: root.fontUiFamily
+                                            font.capitalization: Font.AllUppercase
+                                            font.letterSpacing: 1.4
                                         }
-                                        background: ChamferPanel {
-                                            cutSize: Math.round(6 * root.uiScale)
-                                            contentMargin: 0
-                                            fillColor: parent.hovered ? "#25303d" : "transparent"
-                                            borderWidth: 1
-                                            borderColor: parent.hovered ? "#e1be68" : "#b88a26"
+                                        Item { Layout.fillWidth: true }
+                                        Button {
+                                            text: "ОЧИСТИТЬ"
+                                            flat: true
+                                            contentItem: Text {
+                                                text: parent.text
+                                                color: parent.hovered ? "#d5b15a" : "#9aa3b2"
+                                                font.bold: true
+                                                font.pixelSize: root.evalCaptionSize
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+                                            background: ChamferPanel {
+                                                cutSize: Math.round(6 * root.uiScale)
+                                                contentMargin: 0
+                                                fillColor: parent.hovered ? "#25303d" : "transparent"
+                                                borderWidth: 1
+                                                borderColor: parent.hovered ? "#b88a26" : "#4f5a6b"
+                                            }
+                                            onClicked: logArea.text = ""
                                         }
-                                        onClicked: logArea.text = ""
+                                        Button {
+                                            text: root.mainLogExpanded ? "СВЕРНУТЬ" : "РАЗВЕРНУТЬ"
+                                            flat: true
+                                            contentItem: Text {
+                                                text: parent.text
+                                                color: parent.hovered ? "#d5b15a" : "#9aa3b2"
+                                                font.bold: true
+                                                font.pixelSize: root.evalCaptionSize
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+                                            background: ChamferPanel {
+                                                cutSize: Math.round(6 * root.uiScale)
+                                                contentMargin: 0
+                                                fillColor: parent.hovered ? "#25303d" : "transparent"
+                                                borderWidth: 1
+                                                borderColor: parent.hovered ? "#b88a26" : "#4f5a6b"
+                                            }
+                                            onClicked: root.mainLogExpanded = !root.mainLogExpanded
+                                        }
                                     }
-                                    Button {
-                                        text: root.mainLogExpanded ? "СВЕРНУТЬ" : "РАЗВЕРНУТЬ"
-                                        flat: true
-                                        contentItem: Text {
-                                            text: parent.text
-                                            color: "#d5b15a"
-                                            font.bold: true
-                                            font.pixelSize: root.evalCaptionSize
-                                            horizontalAlignment: Text.AlignHCenter
-                                            verticalAlignment: Text.AlignVCenter
-                                        }
-                                        background: ChamferPanel {
-                                            cutSize: Math.round(6 * root.uiScale)
-                                            contentMargin: 0
-                                            fillColor: parent.hovered ? "#25303d" : "transparent"
-                                            borderWidth: 1
-                                            borderColor: parent.hovered ? "#e1be68" : "#b88a26"
-                                        }
-                                        onClicked: root.mainLogExpanded = !root.mainLogExpanded
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        height: 1
+                                        color: "#2a3544"
                                     }
                                 }
 
