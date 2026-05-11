@@ -441,6 +441,14 @@ class GUIController(QtCore.QObject):
     def trainRosterP2Faction(self) -> str:
         return self._display_faction_for_side("P2")
 
+    @QtCore.Property("QStringList", notify=trainSetupSummaryChanged)
+    def trainContextP1RosterLines(self) -> list[str]:
+        return self._train_context_roster_lines(self._player_roster)
+
+    @QtCore.Property("QStringList", notify=trainSetupSummaryChanged)
+    def trainContextP2RosterLines(self) -> list[str]:
+        return self._train_context_roster_lines(self._model_roster)
+
     @QtCore.Property(str, notify=trainSetupSummaryChanged)
     def trainSetupSummaryLine(self) -> str:
         return self._format_train_setup_summary_line()
@@ -2060,6 +2068,29 @@ class GUIController(QtCore.QObject):
         if normalized_side == "P2":
             return self._infer_faction_from_roster(self._model_roster)
         return "Unknown"
+
+    def _train_context_roster_lines(self, roster: list[RosterEntry]) -> list[str]:
+        """Короткие подписи юнитов для блока «Контекст тренировки» (оружие — позже)."""
+        if not roster:
+            return []
+        max_visible = 12
+        lines: list[str] = []
+        for entry in roster[:max_visible]:
+            name = str(entry.name or "").strip() or "—"
+            try:
+                cnt = int(entry.count)
+            except (TypeError, ValueError):
+                cnt = 0
+            if cnt > 1:
+                lines.append(f"{name} ×{cnt}")
+            elif cnt == 1:
+                lines.append(name)
+            else:
+                lines.append(name)
+        remainder = len(roster) - max_visible
+        if remainder > 0:
+            lines.append(f"+ещё {remainder}")
+        return lines
 
     def _format_train_setup_summary_line(self) -> str:
         mission = (self._selected_mission or "—").strip().upper().replace("_", " ")

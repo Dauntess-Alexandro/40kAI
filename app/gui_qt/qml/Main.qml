@@ -291,6 +291,42 @@ ApplicationWindow {
                                                 elide: Text.ElideRight
                                             }
                                         }
+                                        Label {
+                                            visible: controller.trainContextP1RosterLines.length === 0
+                                            Layout.fillWidth: true
+                                            text: "Состав P1: пусто — задайте на вкладке «Ростер»."
+                                            color: root.uiTextMuted
+                                            font.family: root.fontDataFamily
+                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                            wrapMode: Text.Wrap
+                                        }
+                                        Flow {
+                                            visible: controller.trainContextP1RosterLines.length > 0
+                                            Layout.fillWidth: true
+                                            spacing: Math.round(5 * root.uiScale)
+                                            Repeater {
+                                                model: controller.trainContextP1RosterLines
+                                                delegate: Rectangle {
+                                                    implicitHeight: p1ChipLine.implicitHeight + Math.round(8 * root.uiScale)
+                                                    implicitWidth: p1ChipLine.width + Math.round(10 * root.uiScale)
+                                                    color: "#141b26"
+                                                    border.width: 1
+                                                    border.color: "#35475c"
+                                                    Text {
+                                                        id: p1ChipLine
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: Math.round(5 * root.uiScale)
+                                                        width: Math.round(180 * root.uiScale)
+                                                        text: modelData
+                                                        elide: Text.ElideRight
+                                                        color: "#c9d1dc"
+                                                        font.family: root.fontDataFamily
+                                                        font.pixelSize: Math.round(10 * root.uiScale)
+                                                    }
+                                                }
+                                            }
+                                        }
                                         RowLayout {
                                             Layout.fillWidth: true
                                             spacing: root.spacingXs
@@ -318,6 +354,50 @@ ApplicationWindow {
                                                 font.bold: true
                                                 elide: Text.ElideRight
                                             }
+                                        }
+                                        Label {
+                                            visible: controller.trainContextP2RosterLines.length === 0
+                                            Layout.fillWidth: true
+                                            text: "Состав P2: пусто — задайте на вкладке «Ростер»."
+                                            color: root.uiTextMuted
+                                            font.family: root.fontDataFamily
+                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                            wrapMode: Text.Wrap
+                                        }
+                                        Flow {
+                                            visible: controller.trainContextP2RosterLines.length > 0
+                                            Layout.fillWidth: true
+                                            spacing: Math.round(5 * root.uiScale)
+                                            Repeater {
+                                                model: controller.trainContextP2RosterLines
+                                                delegate: Rectangle {
+                                                    implicitHeight: p2ChipLine.implicitHeight + Math.round(8 * root.uiScale)
+                                                    implicitWidth: p2ChipLine.width + Math.round(10 * root.uiScale)
+                                                    color: "#141b26"
+                                                    border.width: 1
+                                                    border.color: "#35475c"
+                                                    Text {
+                                                        id: p2ChipLine
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: Math.round(5 * root.uiScale)
+                                                        width: Math.round(180 * root.uiScale)
+                                                        text: modelData
+                                                        elide: Text.ElideRight
+                                                        color: "#c9d1dc"
+                                                        font.family: root.fontDataFamily
+                                                        font.pixelSize: Math.round(10 * root.uiScale)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: "Оружие, дроны и опции листа — позже; сейчас только имена и количество из «Ростер»."
+                                            color: root.uiTextMuted
+                                            font.family: root.fontDataFamily
+                                            font.pixelSize: Math.round(9 * root.uiScale)
+                                            wrapMode: Text.Wrap
                                         }
                                         RowLayout {
                                             Layout.fillWidth: true
