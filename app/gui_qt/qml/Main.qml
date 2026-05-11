@@ -226,124 +226,140 @@ ApplicationWindow {
 
                         ChamferPanel {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             fillColor: root.uiBgCard
                             borderColor: root.uiBorder
                             borderWidth: 1
                             cutSize: Math.round(10 * root.uiScale)
                             contentMargin: root.spacingMd
+                            implicitHeight: trainCtxRoot.implicitHeight + 2 * root.spacingMd
 
-                            RowLayout {
-                                anchors.fill: parent
-                                spacing: root.spacingMd
+                            ColumnLayout {
+                                id: trainCtxRoot
+                                width: parent.width
+                                spacing: root.spacingSm
 
-                                TrainMiniBoard {
-                                    scaleRef: root.uiScale
-                                    Layout.alignment: Qt.AlignTop
-                                }
-
-                                ColumnLayout {
+                                RowLayout {
                                     Layout.fillWidth: true
-                                    spacing: root.spacingXs
-
-                                    Text {
-                                        text: "КОНТЕКСТ ТРЕНИРОВКИ"
-                                        color: root.uiTextMain
-                                        font.bold: true
-                                        font.pixelSize: root.evalSectionTitleSize
-                                        font.family: root.fontUiFamily
-                                        font.capitalization: Font.AllUppercase
-                                        font.letterSpacing: 1.0
+                                    spacing: root.spacingMd
+                                    TrainMiniBoard {
+                                        scaleRef: root.uiScale
+                                        Layout.alignment: Qt.AlignTop
                                     }
-
-                                    RowLayout {
+                                    ColumnLayout {
                                         Layout.fillWidth: true
-                                        spacing: root.spacingSm
-                                        Label {
-                                            text: "P1:"
-                                            color: root.uiTextMuted
-                                            font.family: root.fontUiFamily
-                                            font.bold: true
-                                        }
-                                        Image {
-                                            source: controller.faction_icon_source(controller.trainRosterP1Faction)
-                                            sourceSize.width: root.factionIconSize
-                                            sourceSize.height: root.factionIconSize
-                                            Layout.preferredWidth: root.factionIconSize
-                                            Layout.preferredHeight: root.factionIconSize
-                                            visible: source !== ""
-                                            fillMode: Image.PreserveAspectFit
-                                            smooth: true
-                                        }
-                                        Label {
-                                            text: controller.trainRosterP1Faction
+                                        spacing: root.spacingXs
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: "КОНТЕКСТ ТРЕНИРОВКИ"
                                             color: root.uiTextMain
-                                            font.family: root.fontUiFamily
                                             font.bold: true
-                                        }
-                                        Label {
-                                            text: "·"
-                                            color: root.uiTextMuted
-                                        }
-                                        Label {
-                                            text: "P2:"
-                                            color: root.uiTextMuted
+                                            font.pixelSize: root.evalSectionTitleSize
                                             font.family: root.fontUiFamily
-                                            font.bold: true
+                                            font.capitalization: Font.AllUppercase
+                                            font.letterSpacing: 1.0
+                                            wrapMode: Text.Wrap
+                                            maximumLineCount: 2
                                         }
-                                        Image {
-                                            source: controller.faction_icon_source(controller.trainRosterP2Faction)
-                                            sourceSize.width: root.factionIconSize
-                                            sourceSize.height: root.factionIconSize
-                                            Layout.preferredWidth: root.factionIconSize
-                                            Layout.preferredHeight: root.factionIconSize
-                                            visible: source !== ""
-                                            fillMode: Image.PreserveAspectFit
-                                            smooth: true
-                                        }
-                                        Label {
-                                            text: controller.trainRosterP2Faction
-                                            color: root.uiTextMain
-                                            font.family: root.fontUiFamily
-                                            font.bold: true
-                                        }
-                                        Item { Layout.fillWidth: true }
-                                        Rectangle {
-                                            radius: 0
-                                            color: "#141b26"
-                                            border.width: 1
-                                            border.color: controller.learnerSide === "P1" ? root.p1Accent : root.p2Accent
-                                            width: learnerSideBadge.implicitWidth + Math.round(14 * root.uiScale)
-                                            height: learnerSideBadge.implicitHeight + Math.round(8 * root.uiScale)
-                                            Text {
-                                                id: learnerSideBadge
-                                                anchors.centerIn: parent
-                                                text: "УЧИТСЯ: " + controller.learnerSide
-                                                font.family: root.fontDataFamily
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: root.spacingXs
+                                            Label {
+                                                text: "P1:"
+                                                color: root.uiTextMuted
+                                                font.family: root.fontUiFamily
                                                 font.bold: true
-                                                font.pixelSize: root.evalCaptionSize
+                                            }
+                                            Image {
+                                                source: controller.faction_icon_source(controller.trainRosterP1Faction)
+                                                sourceSize.width: Math.min(root.factionIconSize, Math.round(28 * root.uiScale))
+                                                sourceSize.height: Math.min(root.factionIconSize, Math.round(28 * root.uiScale))
+                                                Layout.preferredWidth: sourceSize.width
+                                                Layout.preferredHeight: sourceSize.height
+                                                visible: source !== ""
+                                                fillMode: Image.PreserveAspectFit
+                                                smooth: true
+                                            }
+                                            Label {
+                                                Layout.fillWidth: true
+                                                text: controller.trainRosterP1Faction
                                                 color: root.uiTextMain
+                                                font.family: root.fontUiFamily
+                                                font.bold: true
+                                                elide: Text.ElideRight
+                                            }
+                                        }
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: root.spacingXs
+                                            Label {
+                                                text: "P2:"
+                                                color: root.uiTextMuted
+                                                font.family: root.fontUiFamily
+                                                font.bold: true
+                                            }
+                                            Image {
+                                                source: controller.faction_icon_source(controller.trainRosterP2Faction)
+                                                sourceSize.width: Math.min(root.factionIconSize, Math.round(28 * root.uiScale))
+                                                sourceSize.height: Math.min(root.factionIconSize, Math.round(28 * root.uiScale))
+                                                Layout.preferredWidth: sourceSize.width
+                                                Layout.preferredHeight: sourceSize.height
+                                                visible: source !== ""
+                                                fillMode: Image.PreserveAspectFit
+                                                smooth: true
+                                            }
+                                            Label {
+                                                Layout.fillWidth: true
+                                                text: controller.trainRosterP2Faction
+                                                color: root.uiTextMain
+                                                font.family: root.fontUiFamily
+                                                font.bold: true
+                                                elide: Text.ElideRight
+                                            }
+                                        }
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            Item { Layout.fillWidth: true }
+                                            Rectangle {
+                                                radius: 0
+                                                color: "#141b26"
+                                                border.width: 1
+                                                border.color: controller.learnerSide === "P1" ? root.p1Accent : root.p2Accent
+                                                width: learnerSideBadge.implicitWidth + Math.round(14 * root.uiScale)
+                                                height: learnerSideBadge.implicitHeight + Math.round(8 * root.uiScale)
+                                                Text {
+                                                    id: learnerSideBadge
+                                                    anchors.centerIn: parent
+                                                    text: "УЧИТСЯ: " + controller.learnerSide
+                                                    font.family: root.fontDataFamily
+                                                    font.bold: true
+                                                    font.pixelSize: root.evalCaptionSize
+                                                    color: root.uiTextMain
+                                                }
                                             }
                                         }
                                     }
+                                }
 
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: controller.trainSetupSummaryLine
-                                        wrapMode: Text.Wrap
-                                        color: "#d0d6e0"
-                                        font.family: root.fontDataFamily
-                                        font.pixelSize: root.evalCaptionSize
-                                    }
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: controller.opponentPreviewText
-                                        wrapMode: Text.WordWrap
-                                        maximumLineCount: 2
-                                        elide: Text.ElideRight
-                                        color: root.uiTextMuted
-                                        font.family: root.fontDataFamily
-                                        font.pixelSize: Math.round(10 * root.uiScale)
-                                    }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: controller.trainSetupSummaryLine
+                                    wrapMode: Text.Wrap
+                                    color: "#d0d6e0"
+                                    font.family: root.fontDataFamily
+                                    font.pixelSize: root.evalCaptionSize
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: controller.opponentPreviewText
+                                    wrapMode: Text.WordWrap
+                                    maximumLineCount: 2
+                                    elide: Text.ElideRight
+                                    color: root.uiTextMuted
+                                    font.family: root.fontDataFamily
+                                    font.pixelSize: Math.round(10 * root.uiScale)
                                 }
                             }
                         }
@@ -356,6 +372,7 @@ ApplicationWindow {
 
                             ChamferPanel {
                                 Layout.fillWidth: true
+                                Layout.minimumWidth: 0
                                 Layout.preferredHeight: Math.round(280 * root.uiScale)
                                 fillColor: root.uiBgCard
                                 borderColor: root.uiBorder
@@ -502,6 +519,7 @@ ApplicationWindow {
 
                             ChamferPanel {
                                 Layout.fillWidth: true
+                                Layout.minimumWidth: 0
                                 Layout.preferredHeight: Math.round(280 * root.uiScale)
                                 fillColor: root.uiBgCard
                                 borderColor: root.uiBorder
@@ -671,6 +689,7 @@ ApplicationWindow {
 
                             ChamferPanel {
                                 Layout.fillWidth: true
+                                Layout.minimumWidth: 0
                                 Layout.preferredHeight: Math.round(280 * root.uiScale)
                                 fillColor: root.uiBgCard
                                 borderColor: root.uiBorder
@@ -816,6 +835,7 @@ ApplicationWindow {
 
                         ChamferPanel {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             fillColor: root.uiBgCard
                             borderColor: root.uiBorder
                             borderWidth: 1

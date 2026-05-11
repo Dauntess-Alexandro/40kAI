@@ -2,6 +2,7 @@ import QtQuick 2.15
 
 Item {
     id: root
+    clip: true
     property color fillColor: "#1d2632"
     property color borderColor: "#2a3342"
     property int cutSize: 8

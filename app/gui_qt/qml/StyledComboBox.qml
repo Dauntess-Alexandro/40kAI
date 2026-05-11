@@ -8,6 +8,8 @@ ComboBox {
     rightPadding: 28
     topPadding: 4
     bottomPadding: 4
+    // Длинные подписи агента не должны раздувать implicit width и ломать GridLayout.
+    implicitWidth: Math.max(160, Math.round(font.pixelSize * 14) + leftPadding + rightPadding + 28)
     implicitHeight: Math.max(32, Math.round(font.pixelSize * 2.1))
 
     contentItem: Text {
