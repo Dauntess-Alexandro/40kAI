@@ -2653,10 +2653,14 @@ ApplicationWindow {
 
                                         Rectangle {
                                             id: snapshotTrack
+                                            property int decisiveGames: controller.evalLiveP1Wins + controller.evalLiveP2Wins
+                                            property real p1Share: decisiveGames > 0 ? (controller.evalLiveP1Wins / decisiveGames) : 0.5
+                                            property real p2Share: decisiveGames > 0 ? (controller.evalLiveP2Wins / decisiveGames) : 0.5
+                                            property real drawShare: controller.evalLiveGamesDone > 0 ? (controller.evalLiveDraws / controller.evalLiveGamesDone) : 0.0
                                             Layout.fillWidth: true
                                             Layout.preferredHeight: Math.round(22 * root.uiScale)
                                             radius: height / 2
-                                            color: "#e9eef7"
+                                            color: "#dfe6f3"
                                             border.color: root.uiBorder
                                             border.width: 1
                                             clip: true
@@ -2665,22 +2669,120 @@ ApplicationWindow {
                                                 anchors.left: parent.left
                                                 anchors.top: parent.top
                                                 anchors.bottom: parent.bottom
-                                                width: parent.width * Math.max(0.0, Math.min(1.0, controller.evalLiveP1Winrate))
-                                                color: root.p1Accent
+                                                width: parent.width * Math.max(0.0, Math.min(1.0, snapshotTrack.p1Share))
+                                                gradient: Gradient {
+                                                    orientation: Gradient.Horizontal
+                                                    GradientStop { position: 0.0; color: "#1f4ea8" }
+                                                    GradientStop { position: 0.7; color: "#2f6ed8" }
+                                                    GradientStop { position: 1.0; color: "#6fb2ff" }
+                                                }
                                                 radius: parent.radius
                                                 Behavior on width {
                                                     NumberAnimation { duration: 260; easing.type: Easing.InOutCubic }
+                                                }
+                                                Rectangle {
+                                                    anchors.left: parent.left
+                                                    anchors.right: parent.right
+                                                    anchors.top: parent.top
+                                                    height: Math.max(1, Math.round(2 * root.uiScale))
+                                                    color: "#40ffffff"
+                                                }
+                                                Rectangle {
+                                                    anchors.fill: parent
+                                                    radius: parent.radius
+                                                    color: "#10000000"
+                                                }
+                                                Rectangle {
+                                                    anchors.left: parent.left
+                                                    anchors.top: parent.top
+                                                    anchors.bottom: parent.bottom
+                                                    width: Math.max(0, parent.width - Math.round(2 * root.uiScale))
+                                                    visible: snapshotTrack.p1Share >= 0.6
+                                                    radius: parent.radius
+                                                    color: "#00ffffff"
+                                                    opacity: 0.0
+                                                    SequentialAnimation on opacity {
+                                                        running: controller.running && snapshotTrack.p1Share >= 0.6
+                                                        loops: Animation.Infinite
+                                                        NumberAnimation { from: 0.0; to: 0.18; duration: 600; easing.type: Easing.InOutQuad }
+                                                        NumberAnimation { from: 0.18; to: 0.0; duration: 600; easing.type: Easing.InOutQuad }
+                                                    }
                                                 }
                                             }
                                             Rectangle {
                                                 anchors.right: parent.right
                                                 anchors.top: parent.top
                                                 anchors.bottom: parent.bottom
-                                                width: parent.width * Math.max(0.0, Math.min(1.0, controller.evalLiveP2Winrate))
-                                                color: root.p2Accent
+                                                width: parent.width * Math.max(0.0, Math.min(1.0, snapshotTrack.p2Share))
+                                                gradient: Gradient {
+                                                    orientation: Gradient.Horizontal
+                                                    GradientStop { position: 0.0; color: "#ff8c8c" }
+                                                    GradientStop { position: 0.3; color: "#cf3f3f" }
+                                                    GradientStop { position: 1.0; color: "#9d1e1e" }
+                                                }
                                                 radius: parent.radius
                                                 Behavior on width {
                                                     NumberAnimation { duration: 260; easing.type: Easing.InOutCubic }
+                                                }
+                                                Rectangle {
+                                                    anchors.left: parent.left
+                                                    anchors.right: parent.right
+                                                    anchors.top: parent.top
+                                                    height: Math.max(1, Math.round(2 * root.uiScale))
+                                                    color: "#33ffffff"
+                                                }
+                                                Rectangle {
+                                                    anchors.fill: parent
+                                                    radius: parent.radius
+                                                    color: "#10000000"
+                                                }
+                                                Rectangle {
+                                                    anchors.right: parent.right
+                                                    anchors.top: parent.top
+                                                    anchors.bottom: parent.bottom
+                                                    width: Math.max(0, parent.width - Math.round(2 * root.uiScale))
+                                                    visible: snapshotTrack.p2Share >= 0.6
+                                                    radius: parent.radius
+                                                    color: "#00ffffff"
+                                                    opacity: 0.0
+                                                    SequentialAnimation on opacity {
+                                                        running: controller.running && snapshotTrack.p2Share >= 0.6
+                                                        loops: Animation.Infinite
+                                                        NumberAnimation { from: 0.0; to: 0.16; duration: 620; easing.type: Easing.InOutQuad }
+                                                        NumberAnimation { from: 0.16; to: 0.0; duration: 620; easing.type: Easing.InOutQuad }
+                                                    }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                x: Math.round((parent.width - width) / 2)
+                                                width: Math.max(2, Math.round(2 * root.uiScale))
+                                                height: Math.round(parent.height * 0.9)
+                                                radius: width / 2
+                                                color: "#66ffffff"
+                                            }
+
+                                            Rectangle {
+                                                width: Math.round(16 * root.uiScale)
+                                                height: width
+                                                radius: width / 2
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                x: Math.max(0, Math.min(parent.width - width,
+                                                    parent.width * Math.max(0.0, Math.min(1.0, snapshotTrack.p1Share)) - width / 2))
+                                                color: "#40fff5c2"
+                                                border.width: 1
+                                                border.color: "#88ffffff"
+                                                visible: controller.evalLiveGamesDone > 0
+                                                opacity: 0.75
+                                                Behavior on x {
+                                                    NumberAnimation { duration: 260; easing.type: Easing.InOutCubic }
+                                                }
+                                                SequentialAnimation on opacity {
+                                                    running: controller.running && controller.evalLiveGamesDone > 0
+                                                    loops: Animation.Infinite
+                                                    NumberAnimation { from: 0.45; to: 0.85; duration: 520; easing.type: Easing.InOutQuad }
+                                                    NumberAnimation { from: 0.85; to: 0.45; duration: 520; easing.type: Easing.InOutQuad }
                                                 }
                                             }
                                         }
@@ -2689,17 +2791,33 @@ ApplicationWindow {
                                             Layout.fillWidth: true
                                             spacing: root.spacingSm
                                             Text {
-                                                text: "P1 " + Math.round(controller.evalLiveP1Winrate * 100) + "%"
+                                                text: "P1 " + Math.round(snapshotTrack.p1Share * 100) + "%"
                                                 color: root.p1Accent
                                                 font.bold: true
                                                 font.pixelSize: root.evalCaptionSize
                                             }
                                             Item { Layout.fillWidth: true }
                                             Text {
-                                                text: "P2 " + Math.round(controller.evalLiveP2Winrate * 100) + "%"
+                                                text: "P2 " + Math.round(snapshotTrack.p2Share * 100) + "%"
                                                 color: root.p2Accent
                                                 font.bold: true
                                                 font.pixelSize: root.evalCaptionSize
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: Math.max(2, Math.round(3 * root.uiScale))
+                                            radius: height / 2
+                                            color: "#e5e7eb"
+                                            clip: true
+                                            Rectangle {
+                                                anchors.left: parent.left
+                                                anchors.top: parent.top
+                                                anchors.bottom: parent.bottom
+                                                width: parent.width * Math.max(0.0, Math.min(1.0, snapshotTrack.drawShare))
+                                                radius: parent.radius
+                                                color: "#9ca3af"
                                             }
                                         }
 
@@ -2714,12 +2832,20 @@ ApplicationWindow {
                                             Item { Layout.fillWidth: true }
                                         }
 
-                                        Text {
+                                        RowLayout {
                                             Layout.fillWidth: true
-                                            text: controller.evalLiveProgressText + " • " + controller.evalLiveStatusText
-                                            color: root.uiTextMuted
-                                            font.pixelSize: root.evalCaptionSize
-                                            horizontalAlignment: Text.AlignHCenter
+                                            spacing: root.spacingSm
+                                            Text {
+                                                text: controller.evalLiveProgressText + " • " + controller.evalLiveStatusText
+                                                color: root.uiTextMuted
+                                                font.pixelSize: root.evalCaptionSize
+                                            }
+                                            Item { Layout.fillWidth: true }
+                                            Text {
+                                                text: "D: " + controller.evalLiveDraws + " (" + Math.round(snapshotTrack.drawShare * 100) + "%)"
+                                                color: "#6b7280"
+                                                font.pixelSize: root.evalCaptionSize
+                                            }
                                         }
                                     }
                                 }
