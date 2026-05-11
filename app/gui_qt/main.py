@@ -32,6 +32,8 @@ from project_paths import (
     ensure_runtime_dirs,
 )
 
+_GUI_CONTROLLER_REF = None
+
 
 @dataclass
 class RosterEntry:
@@ -4998,6 +5000,7 @@ class GUIController(QtCore.QObject):
 
 
 def main() -> int:
+    global _GUI_CONTROLLER_REF
     if sys.platform.startswith("win"):
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("40kAI.GUI")
 
@@ -5026,8 +5029,17 @@ def main() -> int:
 
     engine = QtQml.QQmlApplicationEngine()
 
-    controller = GUIController()
-    engine.rootContext().setContextProperty("controller", controller)
+    _GUI_CONTROLLER_REF = GUIController()
+    try:
+        ownership = QtQml.QQmlEngine.CppOwnership
+    except AttributeError:
+        ownership = QtQml.QQmlEngine.ObjectOwnership.CppOwnership
+    QtQml.QQmlEngine.setObjectOwnership(_GUI_CONTROLLER_REF, ownership)
+    # Keep explicit strong references on app/engine side so QML context
+    # never sees a collected/null controller object.
+    app._controller_ref = _GUI_CONTROLLER_REF
+    engine._controller_ref = _GUI_CONTROLLER_REF
+    engine.rootContext().setContextProperty("controller", _GUI_CONTROLLER_REF)
 
     qml_path = os.path.join(os.path.dirname(__file__), "qml", "Main.qml")
     engine.load(QtCore.QUrl.fromLocalFile(qml_path))

@@ -9,6 +9,7 @@ ApplicationWindow {
     width: Math.round(Screen.width * 0.85)
     height: Math.round(Screen.height * 0.85)
     visible: true
+    visibility: Window.Maximized
     title: "40kAI"
     color: bgBase
 
@@ -58,6 +59,8 @@ ApplicationWindow {
     property int evalCaptionSize: Math.round(11 * uiScale)
     property int actionButtonHeight: Math.round(30 * uiScale)
     property int actionButtonMinWidth: Math.round(120 * uiScale)
+    property string fontUiFamily: "Rajdhani"
+    property string fontDataFamily: "IBM Plex Mono"
 
     function extractPercent(text) {
         var raw = text || ""
@@ -65,6 +68,7 @@ ApplicationWindow {
         return match ? (match[1] + "%") : "—"
     }
 
+    font.family: fontUiFamily
     font.pixelSize: Math.round(14 * uiScale)
     palette.window: bgBase
     palette.base: bgSurface
@@ -1433,6 +1437,8 @@ ApplicationWindow {
                                     Label {
                                         text: controller.playInferenceModeLabel
                                         font.bold: true
+                                        font.capitalization: Font.AllUppercase
+                                        font.letterSpacing: 0.8
                                     }
 
                                     StyledComboBox {
@@ -1457,6 +1463,8 @@ ApplicationWindow {
                                         visible: controller.playInferenceTemperatureVisible
                                         text: "Темп.:"
                                         color: root.uiTextMuted
+                                        font.capitalization: Font.AllUppercase
+                                        font.letterSpacing: 0.8
                                     }
 
                                     TextField {
@@ -1465,6 +1473,7 @@ ApplicationWindow {
                                         enabled: !controller.running
                                         text: controller.playInferenceTemperature
                                         placeholderText: "0.10"
+                                        font.family: root.fontDataFamily
                                         onEditingFinished: controller.set_play_inference_temperature(text)
                                     }
                                 }
@@ -2165,12 +2174,13 @@ ApplicationWindow {
                         width: Math.max(parent ? parent.width : 0, root.width - 2 * root.spacingLg)
                         spacing: root.spacingLg
 
-                        Rectangle {
+                        ChamferPanel {
                             Layout.fillWidth: true
-                            color: root.uiBgBase
-                            radius: root.radiusMd
-                            border.width: 1
-                            border.color: root.uiBorder
+                            fillColor: root.uiBgBase
+                            borderColor: root.uiBorder
+                            borderWidth: 1
+                            cutSize: Math.round(12 * root.uiScale)
+                            contentMargin: 0
                             implicitHeight: evalHeaderLayout.implicitHeight + root.spacingMd * 2
 
                             RowLayout {
@@ -2184,22 +2194,26 @@ ApplicationWindow {
                                     Layout.fillWidth: true
 
                                     Text {
-                                        text: "Оценка: P1 vs P2"
+                                        text: "ОЦЕНКА: P1 VS P2"
                                         font.pixelSize: Math.round(22 * root.uiScale)
                                         font.bold: true
                                         color: root.uiTextMain
+                                        font.family: root.fontUiFamily
+                                        font.letterSpacing: 1.0
                                     }
                                     Text {
                                         text: controller.evalMiniSummary
                                         color: root.uiTextMuted
+                                        font.family: root.fontDataFamily
+                                        font.capitalization: Font.AllUppercase
                                     }
                                 }
 
                                 Rectangle {
-                                    radius: Math.round(10 * root.uiScale)
-                                    color: controller.running ? "#e8f1ff" : "#edf2f7"
+                                    radius: 0
+                                    color: "#1e2734"
                                     border.width: 1
-                                    border.color: controller.running ? "#b9cff7" : "#d1d9e6"
+                                    border.color: controller.running ? "#b88a26" : "#4c5667"
                                     implicitWidth: evalRunStatus.implicitWidth + Math.round(22 * root.uiScale)
                                     implicitHeight: evalRunStatus.implicitHeight + Math.round(10 * root.uiScale)
                                     Text {
@@ -2207,8 +2221,10 @@ ApplicationWindow {
                                         anchors.centerIn: parent
                                         text: controller.running ? "RUNNING" : "IDLE"
                                         font.bold: true
-                                        color: controller.running ? "#2453a4" : "#4b5563"
+                                        color: controller.running ? "#e1be68" : "#9ca3af"
                                         font.pixelSize: Math.round(11 * root.uiScale)
+                                        font.family: root.fontDataFamily
+                                        font.letterSpacing: 0.8
                                     }
                                 }
 
@@ -2224,6 +2240,13 @@ ApplicationWindow {
                                         validator: IntValidator { bottom: 1 }
                                         Layout.preferredWidth: Math.round(96 * root.uiScale)
                                         enabled: !controller.running
+                                        font.family: root.fontDataFamily
+                                        background: Rectangle {
+                                            radius: 0
+                                            color: parent.enabled ? "#253244" : "#202734"
+                                            border.width: 1
+                                            border.color: parent.activeFocus ? "#b88a26" : "#3a475b"
+                                        }
                                         onEditingFinished: {
                                             var value = parseInt(text)
                                             if (!isNaN(value)) {
@@ -2250,7 +2273,7 @@ ApplicationWindow {
                                 Rectangle {
                                     Layout.fillWidth: true
                                     color: root.uiBgCard
-                                    radius: Math.round(10 * root.uiScale)
+                                    radius: 0
                                     border.width: 1
                                     border.color: root.uiBorder
                                     implicitHeight: matchupHeadLayout.implicitHeight + root.spacingMd * 2
@@ -2262,15 +2285,18 @@ ApplicationWindow {
                                         spacing: Math.round(4 * root.uiScale)
 
                                         Text {
-                                            text: controller.evalDuelTitle
+                                            text: (controller.evalDuelTitle || "").toUpperCase()
                                             font.bold: true
                                             font.pixelSize: Math.round(22 * root.uiScale)
                                             color: root.uiTextMain
+                                            font.family: root.fontUiFamily
+                                            font.letterSpacing: 1.0
                                         }
                                         Text {
-                                            text: controller.evalDuelSubtitle
+                                            text: (controller.evalDuelSubtitle || "").toUpperCase()
                                             font.pixelSize: Math.round(13 * root.uiScale)
                                             color: root.uiTextMuted
+                                            font.family: root.fontDataFamily
                                         }
                                     }
                                 }
@@ -2284,12 +2310,13 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                     spacing: root.spacingMd
 
-                                    Rectangle {
+                                    ChamferPanel {
                                         Layout.fillWidth: true
-                                        color: "#16253a"
-                                        border.color: "#2f6ed8"
-                                        border.width: 1
-                                        radius: Math.round(10 * root.uiScale)
+                                        fillColor: "#16253a"
+                                        borderColor: "#2f6ed8"
+                                        borderWidth: 1
+                                        cutSize: Math.round(12 * root.uiScale)
+                                        contentMargin: 0
                                         implicitHeight: Math.max(p1CardLayout.implicitHeight, p2CardLayout.implicitHeight) + root.spacingSm * 2
 
                                         ColumnLayout {
@@ -2301,23 +2328,20 @@ ApplicationWindow {
                                             RowLayout {
                                                 Layout.fillWidth: true
                                                 spacing: root.spacingSm
-                                                Rectangle {
+                                                HexAvatar {
                                                     width: Math.round(30 * root.uiScale)
                                                     height: width
-                                                    radius: width / 2
-                                                    color: "#2f6ed8"
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: controller.evalP1IconText
-                                                        color: "white"
-                                                        font.bold: true
-                                                    }
+                                                    fillColor: "#2f6ed8"
+                                                    borderColor: "#84a9ee"
+                                                    label: controller.evalP1IconText
                                                 }
                                                 Text {
                                                     text: "P1"
                                                     color: "#2f6ed8"
                                                     font.bold: true
                                                     font.pixelSize: Math.round(16 * root.uiScale)
+                                                    font.family: root.fontUiFamily
+                                                    font.letterSpacing: 1.0
                                                 }
                                                 Item { Layout.fillWidth: true }
                                             }
@@ -2326,8 +2350,8 @@ ApplicationWindow {
                                                 Layout.fillWidth: true
                                                 enabled: !controller.running
                                                 model: [
-                                                    { value: "agent", label: "Агент" },
-                                                    { value: "heuristic", label: "Эвристика" }
+                                                    { value: "agent", label: "АГЕНТ" },
+                                                    { value: "heuristic", label: "ЭВРИСТИКА" }
                                                 ]
                                                 textRole: "label"
                                                 currentIndex: {
@@ -2354,6 +2378,7 @@ ApplicationWindow {
                                                 wrapMode: Text.WordWrap
                                                 color: root.uiTextMain
                                                 font.bold: true
+                                                font.family: root.fontDataFamily
                                             }
 
                                             Flow {
@@ -2362,7 +2387,7 @@ ApplicationWindow {
                                                 Repeater {
                                                     model: controller.evalP1Badges
                                                     delegate: Rectangle {
-                                                        radius: Math.round(8 * root.uiScale)
+                                                        radius: 0
                                                         color: "#1f3552"
                                                         border.width: 1
                                                         border.color: "#2f6ed8"
@@ -2371,10 +2396,12 @@ ApplicationWindow {
                                                         Text {
                                                             id: badgeP1Text
                                                             anchors.centerIn: parent
-                                                            text: modelData
+                                                            text: (modelData || "").toString().toUpperCase()
                                                             color: "#9fc2ff"
                                                             font.pixelSize: Math.round(11 * root.uiScale)
                                                             font.bold: true
+                                                            font.family: root.fontUiFamily
+                                                            font.letterSpacing: 0.6
                                                         }
                                                     }
                                                 }
@@ -2384,9 +2411,11 @@ ApplicationWindow {
                                                 Layout.fillWidth: true
                                                 spacing: root.spacingSm
                                                 Button {
-                                                    text: "Копировать ID"
+                                                    text: "COPY ID"
                                                     flat: true
                                                     enabled: controller.evalP1FullAgentId.length > 0
+                                                    font.capitalization: Font.AllUppercase
+                                                    font.letterSpacing: 0.6
                                                     onClicked: controller.copy_eval_agent_id("P1")
                                                     ToolTip.visible: hovered && controller.evalP1FullAgentId.length > 0
                                                     ToolTip.text: controller.evalP1FullAgentId
@@ -2394,6 +2423,8 @@ ApplicationWindow {
                                                 Label {
                                                     text: "Режим:"
                                                     font.bold: true
+                                                    font.capitalization: Font.AllUppercase
+                                                    font.letterSpacing: 0.8
                                                     color: root.uiTextMuted
                                                     opacity: controller.evalP1InferenceModeVisible ? 1.0 : 0.55
                                                 }
@@ -2419,6 +2450,8 @@ ApplicationWindow {
                                                 }
                                                 Label {
                                                     text: "Темп.:"
+                                                    font.capitalization: Font.AllUppercase
+                                                    font.letterSpacing: 0.8
                                                     color: root.uiTextMuted
                                                     opacity: controller.evalP1InferenceTemperatureVisible ? 1.0 : 0.55
                                                 }
@@ -2428,6 +2461,13 @@ ApplicationWindow {
                                                     opacity: controller.evalP1InferenceTemperatureVisible ? 1.0 : 0.55
                                                     text: controller.evalP1InferenceTemperature
                                                     placeholderText: "0.10"
+                                                    font.family: root.fontDataFamily
+                                                    background: Rectangle {
+                                                        radius: 0
+                                                        color: parent.enabled ? "#253244" : "#202734"
+                                                        border.width: 1
+                                                        border.color: parent.activeFocus ? "#b88a26" : "#3a475b"
+                                                    }
                                                     onEditingFinished: {
                                                         if (controller.evalP1InferenceTemperatureVisible) {
                                                             controller.set_eval_p1_inference_temperature(text)
@@ -2435,7 +2475,7 @@ ApplicationWindow {
                                                     }
                                                 }
                                                 Button {
-                                                    text: "i"
+                                                    text: "ⓘ"
                                                     flat: true
                                                     font.bold: true
                                                     ToolTip.visible: hovered
@@ -2461,12 +2501,13 @@ ApplicationWindow {
                                         }
                                     }
 
-                                    Rectangle {
+                                    ChamferPanel {
                                         Layout.fillWidth: true
-                                        color: "#361f23"
-                                        border.color: "#cf3f3f"
-                                        border.width: 1
-                                        radius: Math.round(10 * root.uiScale)
+                                        fillColor: "#361f23"
+                                        borderColor: "#cf3f3f"
+                                        borderWidth: 1
+                                        cutSize: Math.round(12 * root.uiScale)
+                                        contentMargin: 0
                                         implicitHeight: Math.max(p1CardLayout.implicitHeight, p2CardLayout.implicitHeight) + root.spacingSm * 2
 
                                         ColumnLayout {
@@ -2478,23 +2519,20 @@ ApplicationWindow {
                                             RowLayout {
                                                 Layout.fillWidth: true
                                                 spacing: root.spacingSm
-                                                Rectangle {
+                                                HexAvatar {
                                                     width: Math.round(30 * root.uiScale)
                                                     height: width
-                                                    radius: width / 2
-                                                    color: "#cf3f3f"
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: controller.evalP2IconText
-                                                        color: "white"
-                                                        font.bold: true
-                                                    }
+                                                    fillColor: "#cf3f3f"
+                                                    borderColor: "#e38c8c"
+                                                    label: controller.evalP2IconText
                                                 }
                                                 Text {
                                                     text: "P2"
                                                     color: "#cf3f3f"
                                                     font.bold: true
                                                     font.pixelSize: Math.round(16 * root.uiScale)
+                                                    font.family: root.fontUiFamily
+                                                    font.letterSpacing: 1.0
                                                 }
                                                 Item { Layout.fillWidth: true }
                                             }
@@ -2503,8 +2541,8 @@ ApplicationWindow {
                                                 Layout.fillWidth: true
                                                 enabled: !controller.running
                                                 model: [
-                                                    { value: "agent", label: "Агент" },
-                                                    { value: "heuristic", label: "Эвристика" }
+                                                    { value: "agent", label: "АГЕНТ" },
+                                                    { value: "heuristic", label: "ЭВРИСТИКА" }
                                                 ]
                                                 textRole: "label"
                                                 currentIndex: {
@@ -2531,6 +2569,7 @@ ApplicationWindow {
                                                 wrapMode: Text.WordWrap
                                                 color: root.uiTextMain
                                                 font.bold: true
+                                                font.family: root.fontDataFamily
                                             }
 
                                             Flow {
@@ -2539,7 +2578,7 @@ ApplicationWindow {
                                                 Repeater {
                                                     model: controller.evalP2Badges
                                                     delegate: Rectangle {
-                                                        radius: Math.round(8 * root.uiScale)
+                                                        radius: 0
                                                         color: "#4a282c"
                                                         border.width: 1
                                                         border.color: "#cf3f3f"
@@ -2548,10 +2587,12 @@ ApplicationWindow {
                                                         Text {
                                                             id: badgeP2Text
                                                             anchors.centerIn: parent
-                                                            text: modelData
+                                                            text: (modelData || "").toString().toUpperCase()
                                                             color: "#ffb6b6"
                                                             font.pixelSize: Math.round(11 * root.uiScale)
                                                             font.bold: true
+                                                            font.family: root.fontUiFamily
+                                                            font.letterSpacing: 0.6
                                                         }
                                                     }
                                                 }
@@ -2561,9 +2602,11 @@ ApplicationWindow {
                                                 Layout.fillWidth: true
                                                 spacing: root.spacingSm
                                                 Button {
-                                                    text: "Копировать ID"
+                                                    text: "COPY ID"
                                                     flat: true
                                                     enabled: controller.evalP2FullAgentId.length > 0
+                                                    font.capitalization: Font.AllUppercase
+                                                    font.letterSpacing: 0.6
                                                     onClicked: controller.copy_eval_agent_id("P2")
                                                     ToolTip.visible: hovered && controller.evalP2FullAgentId.length > 0
                                                     ToolTip.text: controller.evalP2FullAgentId
@@ -2571,6 +2614,8 @@ ApplicationWindow {
                                                 Label {
                                                     text: "Режим:"
                                                     font.bold: true
+                                                    font.capitalization: Font.AllUppercase
+                                                    font.letterSpacing: 0.8
                                                     color: root.uiTextMuted
                                                     opacity: controller.evalP2InferenceModeVisible ? 1.0 : 0.55
                                                 }
@@ -2596,6 +2641,8 @@ ApplicationWindow {
                                                 }
                                                 Label {
                                                     text: "Темп.:"
+                                                    font.capitalization: Font.AllUppercase
+                                                    font.letterSpacing: 0.8
                                                     color: root.uiTextMuted
                                                     opacity: controller.evalP2InferenceTemperatureVisible ? 1.0 : 0.55
                                                 }
@@ -2605,6 +2652,13 @@ ApplicationWindow {
                                                     opacity: controller.evalP2InferenceTemperatureVisible ? 1.0 : 0.55
                                                     text: controller.evalP2InferenceTemperature
                                                     placeholderText: "0.10"
+                                                    font.family: root.fontDataFamily
+                                                    background: Rectangle {
+                                                        radius: 0
+                                                        color: parent.enabled ? "#253244" : "#202734"
+                                                        border.width: 1
+                                                        border.color: parent.activeFocus ? "#b88a26" : "#3a475b"
+                                                    }
                                                     onEditingFinished: {
                                                         if (controller.evalP2InferenceTemperatureVisible) {
                                                             controller.set_eval_p2_inference_temperature(text)
@@ -2612,7 +2666,7 @@ ApplicationWindow {
                                                     }
                                                 }
                                                 Button {
-                                                    text: "i"
+                                                    text: "ⓘ"
                                                     flat: true
                                                     font.bold: true
                                                     ToolTip.visible: hovered
@@ -2644,7 +2698,7 @@ ApplicationWindow {
                                     color: root.uiBgCard
                                     border.color: root.uiBorder
                                     border.width: 1
-                                    radius: root.radiusMd
+                                    radius: 0
                                     implicitHeight: centerDuelLayout.implicitHeight + root.spacingMd * 2
                                     Rectangle {
                                         anchors.left: parent.left
@@ -2668,6 +2722,8 @@ ApplicationWindow {
                                             color: root.uiTextMuted
                                             font.bold: true
                                             font.pixelSize: root.evalCaptionSize
+                                            font.family: "Consolas"
+                                            font.letterSpacing: 1.1
                                             horizontalAlignment: Text.AlignHCenter
                                             Layout.fillWidth: true
                                         }
@@ -2700,7 +2756,7 @@ ApplicationWindow {
                                             Layout.fillWidth: true
                                             Layout.preferredHeight: Math.round(22 * root.uiScale)
                                             radius: height / 2
-                                            color: "#dfe6f3"
+                                            color: "#202a39"
                                             border.color: root.uiBorder
                                             border.width: 1
                                             clip: true
@@ -2800,7 +2856,7 @@ ApplicationWindow {
                                                 width: Math.max(2, Math.round(2 * root.uiScale))
                                                 height: Math.round(parent.height * 0.9)
                                                 radius: width / 2
-                                                color: "#66ffffff"
+                                                color: "#66dce6ff"
                                             }
 
                                             Rectangle {
@@ -2812,7 +2868,7 @@ ApplicationWindow {
                                                     parent.width * Math.max(0.0, Math.min(1.0, snapshotTrack.p1Share)) - width / 2))
                                                 color: "#40fff5c2"
                                                 border.width: 1
-                                                border.color: "#88ffffff"
+                                                border.color: "#88ffe3a8"
                                                 visible: controller.evalLiveGamesDone > 0
                                                 opacity: 0.75
                                                 Behavior on x {
@@ -2868,6 +2924,7 @@ ApplicationWindow {
                                                 text: "Счет: P1 " + controller.evalLiveP1Wins + " • P2 " + controller.evalLiveP2Wins + " • Ничьи " + controller.evalLiveDraws
                                                 color: root.uiTextMuted
                                                 font.pixelSize: root.evalCaptionSize
+                                                font.family: "Consolas"
                                             }
                                             Item { Layout.fillWidth: true }
                                         }
@@ -2901,12 +2958,13 @@ ApplicationWindow {
                                 anchors.fill: parent
                                 spacing: root.spacingSm
 
-                                Rectangle {
+                                ChamferPanel {
                                     Layout.fillWidth: true
-                                    radius: Math.round(10 * root.uiScale)
-                                    color: root.bgElevated
-                                    border.width: 1
-                                    border.color: root.uiBorder
+                                    fillColor: root.bgElevated
+                                    borderColor: root.uiBorder
+                                    borderWidth: 1
+                                    cutSize: Math.round(10 * root.uiScale)
+                                    contentMargin: 0
                                     implicitHeight: statusBarLayout.implicitHeight + root.spacingSm * 2
 
                                     RowLayout {
@@ -2948,7 +3006,7 @@ ApplicationWindow {
                                         Rectangle {
                                             Layout.preferredWidth: Math.round(120 * root.uiScale)
                                             Layout.preferredHeight: Math.round(4 * root.uiScale)
-                                            radius: height / 2
+                                            radius: 0
                                             color: root.borderMuted
                                             clip: true
                                             Rectangle {
@@ -2958,7 +3016,7 @@ ApplicationWindow {
                                                 width: parent.width * (controller.evalLiveGamesTotal > 0
                                                     ? Math.max(0.0, Math.min(1.0, controller.evalLiveGamesDone / controller.evalLiveGamesTotal))
                                                     : 0.0)
-                                                radius: parent.radius
+                                                radius: 0
                                                 color: controller.running ? root.p1Accent : "#9aa9c6"
                                             }
                                         }
@@ -2970,32 +3028,10 @@ ApplicationWindow {
                                     spacing: root.spacingMd
 
                                     Button {
-                                        text: "ОБНОВИТЬ СПИСОК"
-                                        enabled: !controller.running
-                                        Layout.preferredHeight: root.actionButtonHeight
-                                        Layout.preferredWidth: root.actionButtonMinWidth
-                                        contentItem: Text {
-                                            text: parent.text
-                                            color: parent.enabled ? "#8c98ad" : "#737b8a"
-                                            font.bold: true
-                                            font.pixelSize: root.evalCaptionSize
-                                            horizontalAlignment: Text.AlignHCenter
-                                            verticalAlignment: Text.AlignVCenter
-                                        }
-                                        background: Rectangle {
-                                            radius: Math.round(4 * root.uiScale)
-                                            color: parent.hovered ? "#1a2a3645" : "transparent"
-                                            border.width: 1
-                                            border.color: parent.hovered ? "#95a3b8" : "#6f7d92"
-                                        }
-                                        onClicked: controller.refresh_eval_agents()
-                                    }
-
-                                    Button {
-                                        text: "ЗАПУСТИТЬ ОЦЕНКУ"
+                                        text: "⚙ АКТИВИРОВАТЬ ОЦЕНКУ"
                                         enabled: !controller.running && controller.evalLaunchReady
                                         Layout.preferredHeight: root.actionButtonHeight
-                                        Layout.preferredWidth: root.actionButtonMinWidth
+                                        Layout.preferredWidth: Math.round(root.actionButtonMinWidth * 1.35)
                                         contentItem: Text {
                                             text: parent.text
                                             color: parent.enabled ? "#151102" : "#6a6347"
@@ -3004,15 +3040,16 @@ ApplicationWindow {
                                             horizontalAlignment: Text.AlignHCenter
                                             verticalAlignment: Text.AlignVCenter
                                         }
-                                        background: Rectangle {
-                                            radius: Math.round(4 * root.uiScale)
-                                            color: parent.pressed
+                                        background: ChamferPanel {
+                                            cutSize: Math.round(6 * root.uiScale)
+                                            contentMargin: 0
+                                            fillColor: parent.pressed
                                                 ? "#d7a719"
                                                 : parent.hovered
                                                     ? "#e8b932"
                                                     : "#b88a26"
-                                            border.width: 1
-                                            border.color: parent.hovered ? "#ffe08a" : "#8f6b1f"
+                                            borderWidth: 1
+                                            borderColor: parent.hovered ? "#ffe08a" : "#8f6b1f"
                                             Rectangle {
                                                 anchors.left: parent.left
                                                 anchors.right: parent.right
@@ -3025,68 +3062,97 @@ ApplicationWindow {
                                     }
 
                                     Button {
-                                        text: "ОСТАНОВИТЬ"
+                                        text: "■ ОСТАНОВИТЬ"
                                         enabled: controller.running
                                         Layout.preferredHeight: root.actionButtonHeight
                                         Layout.preferredWidth: root.actionButtonMinWidth
+                                        Layout.rightMargin: Math.round(16 * root.uiScale)
                                         contentItem: Text {
                                             text: parent.text
-                                            color: parent.enabled ? "#f0b08a" : "#8f857f"
+                                            color: parent.enabled ? "#d1d5db" : "#9ca3af"
                                             font.bold: true
                                             font.pixelSize: root.evalCaptionSize
                                             horizontalAlignment: Text.AlignHCenter
                                             verticalAlignment: Text.AlignVCenter
                                         }
-                                        background: Rectangle {
-                                            radius: Math.round(4 * root.uiScale)
-                                            color: parent.enabled
+                                        background: ChamferPanel {
+                                            cutSize: Math.round(6 * root.uiScale)
+                                            contentMargin: 0
+                                            fillColor: parent.enabled
                                                 ? (parent.hovered ? "#4a2c2c" : "#2e2f33")
                                                 : "#2a2c31"
-                                            border.width: 1
-                                            border.color: parent.enabled ? "#a35345" : "#4f545f"
+                                            borderWidth: 1
+                                            borderColor: parent.enabled ? "#b88a26" : "#4f545f"
                                         }
                                         onClicked: controller.stop_process()
                                     }
 
+                                    Item { Layout.fillWidth: true }
+
                                     Button {
-                                        text: "ОЧИСТИТЬ ЛОГ"
+                                        text: "⟳ ОБНОВИТЬ"
                                         enabled: !controller.running
                                         Layout.preferredHeight: root.actionButtonHeight
                                         Layout.preferredWidth: root.actionButtonMinWidth
                                         contentItem: Text {
                                             text: parent.text
-                                            color: parent.enabled ? "#8c98ad" : "#737b8a"
+                                            color: parent.enabled ? "#d5b15a" : "#737b8a"
                                             font.bold: true
                                             font.pixelSize: root.evalCaptionSize
                                             horizontalAlignment: Text.AlignHCenter
                                             verticalAlignment: Text.AlignVCenter
                                         }
-                                        background: Rectangle {
-                                            radius: Math.round(4 * root.uiScale)
-                                            color: parent.hovered ? "#1a2a3645" : "transparent"
-                                            border.width: 1
-                                            border.color: parent.hovered ? "#95a3b8" : "#6f7d92"
+                                        background: ChamferPanel {
+                                            cutSize: Math.round(6 * root.uiScale)
+                                            contentMargin: 0
+                                            fillColor: parent.hovered ? "#25303d" : "transparent"
+                                            borderWidth: 1
+                                            borderColor: parent.hovered ? "#e1be68" : "#b88a26"
+                                        }
+                                        onClicked: controller.refresh_eval_agents()
+                                    }
+
+                                    Button {
+                                        text: "⌫ ОЧИСТИТЬ"
+                                        enabled: !controller.running
+                                        Layout.preferredHeight: root.actionButtonHeight
+                                        Layout.preferredWidth: root.actionButtonMinWidth
+                                        contentItem: Text {
+                                            text: parent.text
+                                            color: parent.enabled ? "#d5b15a" : "#737b8a"
+                                            font.bold: true
+                                            font.pixelSize: root.evalCaptionSize
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        background: ChamferPanel {
+                                            cutSize: Math.round(6 * root.uiScale)
+                                            contentMargin: 0
+                                            fillColor: parent.hovered ? "#25303d" : "transparent"
+                                            borderWidth: 1
+                                            borderColor: parent.hovered ? "#e1be68" : "#b88a26"
                                         }
                                         onClicked: controller.clear_eval_log()
                                     }
 
                                     Button {
-                                        text: "ДЕТАЛИ"
+                                        text: "◉ ДЕТАЛИ"
                                         Layout.preferredHeight: root.actionButtonHeight
                                         Layout.preferredWidth: root.actionButtonMinWidth
                                         contentItem: Text {
                                             text: parent.text
-                                            color: "#8c98ad"
+                                            color: "#d5b15a"
                                             font.bold: true
                                             font.pixelSize: root.evalCaptionSize
                                             horizontalAlignment: Text.AlignHCenter
                                             verticalAlignment: Text.AlignVCenter
                                         }
-                                        background: Rectangle {
-                                            radius: Math.round(4 * root.uiScale)
-                                            color: parent.hovered ? "#1a2a3645" : "transparent"
-                                            border.width: 1
-                                            border.color: parent.hovered ? "#95a3b8" : "#6f7d92"
+                                        background: ChamferPanel {
+                                            cutSize: Math.round(6 * root.uiScale)
+                                            contentMargin: 0
+                                            fillColor: parent.hovered ? "#25303d" : "transparent"
+                                            borderWidth: 1
+                                            borderColor: parent.hovered ? "#e1be68" : "#b88a26"
                                         }
                                         onClicked: evalDetailsDrawer.open()
                                     }
@@ -3106,7 +3172,7 @@ ApplicationWindow {
                                 Text {
                                     text: controller.evalScenarioText
                                     wrapMode: Text.WordWrap
-                                    color: "#2f3b52"
+                                    color: root.uiTextMain
                                     font.bold: true
                                 }
                                 Text {
@@ -3117,7 +3183,7 @@ ApplicationWindow {
                                 }
                                 Text {
                                     text: controller.evalMiniSummary
-                                    color: "#5b6472"
+                                    color: root.uiTextMuted
                                 }
                             }
                         }
@@ -3135,23 +3201,14 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                     spacing: root.spacingSm
 
-                                    Rectangle {
+                                    ChamferPanel {
                                         Layout.fillWidth: true
-                                        radius: Math.round(8 * root.uiScale)
-                                        color: "#1b2738"
-                                        border.color: "#35557f"
-                                        border.width: 1
+                                        fillColor: "#1b2738"
+                                        borderColor: "#35557f"
+                                        borderWidth: 1
+                                        cutSize: Math.round(10 * root.uiScale)
+                                        contentMargin: 0
                                         implicitHeight: edgeCard.implicitHeight + root.spacingMd * 2
-                                        Rectangle {
-                                            anchors.left: parent.left
-                                            anchors.right: parent.right
-                                            anchors.top: parent.top
-                                            anchors.bottom: parent.bottom
-                                            anchors.topMargin: Math.round(2 * root.uiScale)
-                                            radius: parent.radius
-                                            color: "#10000000"
-                                            z: -1
-                                        }
                                         ColumnLayout {
                                             id: edgeCard
                                             anchors.fill: parent
@@ -3189,6 +3246,19 @@ ApplicationWindow {
                                                 horizontalAlignment: Text.AlignHCenter
                                                 Layout.fillWidth: true
                                             }
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: Math.round(2 * root.uiScale)
+                                                Repeater {
+                                                    model: 11
+                                                    delegate: Rectangle {
+                                                        Layout.fillWidth: true
+                                                        implicitHeight: 2
+                                                        color: index === 5 ? "#6f95cf" : "#3d5270"
+                                                        opacity: 0.75
+                                                    }
+                                                }
+                                            }
                                             Text {
                                                 text: "Итог P1: " + root.extractPercent(controller.evalResultWinrateP1)
                                                 color: root.uiTextMuted
@@ -3199,23 +3269,14 @@ ApplicationWindow {
                                         }
                                     }
 
-                                    Rectangle {
+                                    ChamferPanel {
                                         Layout.fillWidth: true
-                                        radius: Math.round(8 * root.uiScale)
-                                        color: root.uiBgCard
-                                        border.color: root.uiBorder
-                                        border.width: 1
+                                        fillColor: root.uiBgCard
+                                        borderColor: "#7a6430"
+                                        borderWidth: 1
+                                        cutSize: Math.round(10 * root.uiScale)
+                                        contentMargin: 0
                                         implicitHeight: confidenceCard.implicitHeight + root.spacingMd * 2
-                                        Rectangle {
-                                            anchors.left: parent.left
-                                            anchors.right: parent.right
-                                            anchors.top: parent.top
-                                            anchors.bottom: parent.bottom
-                                            anchors.topMargin: Math.round(2 * root.uiScale)
-                                            radius: parent.radius
-                                            color: "#10000000"
-                                            z: -1
-                                        }
                                         ColumnLayout {
                                             id: confidenceCard
                                             anchors.fill: parent
@@ -3253,23 +3314,14 @@ ApplicationWindow {
                                         }
                                     }
 
-                                    Rectangle {
+                                    ChamferPanel {
                                         Layout.fillWidth: true
-                                        radius: Math.round(8 * root.uiScale)
-                                        color: "#2a1f22"
-                                        border.color: "#8d4a4a"
-                                        border.width: 1
+                                        fillColor: "#2a1f22"
+                                        borderColor: "#8d4a4a"
+                                        borderWidth: 1
+                                        cutSize: Math.round(10 * root.uiScale)
+                                        contentMargin: 0
                                         implicitHeight: scoreCard.implicitHeight + root.spacingMd * 2
-                                        Rectangle {
-                                            anchors.left: parent.left
-                                            anchors.right: parent.right
-                                            anchors.top: parent.top
-                                            anchors.bottom: parent.bottom
-                                            anchors.topMargin: Math.round(2 * root.uiScale)
-                                            radius: parent.radius
-                                            color: "#10000000"
-                                            z: -1
-                                        }
                                         ColumnLayout {
                                             id: scoreCard
                                             anchors.fill: parent
@@ -3287,9 +3339,12 @@ ApplicationWindow {
                                                 text: "P1 " + controller.evalLiveP1Wins + " • P2 " + controller.evalLiveP2Wins + " • D " + controller.evalLiveDraws
                                                 color: root.uiTextMain
                                                 font.bold: true
-                                                font.pixelSize: Math.round(21 * root.uiScale)
+                                                font.pixelSize: Math.round(28 * root.uiScale)
+                                                font.family: "Consolas"
                                                 horizontalAlignment: Text.AlignHCenter
                                                 Layout.fillWidth: true
+                                                style: Text.Outline
+                                                styleColor: "#302838"
                                             }
                                             Text {
                                                 text: "Winrate: P1 " + Math.round(controller.evalLiveP1Winrate * 100) + "% • P2 " + Math.round(controller.evalLiveP2Winrate * 100) + "%"
