@@ -96,6 +96,7 @@ class GUIController(QtCore.QObject):
     settingsSaveStateChanged = QtCore.Signal(str)
     trainingAlgoChanged = QtCore.Signal(str)
     trainSetupSummaryChanged = QtCore.Signal()
+    rosterWeaponsPreviewChanged = QtCore.Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -228,6 +229,12 @@ class GUIController(QtCore.QObject):
         self._action_trace = str(os.getenv("ACTION_TRACE_ENABLED", "0")).strip() == "1"
         self._auto_clear_logs = True
         self._unit_faction_by_name: dict[str, str] = {}
+        self._unit_weapons_by_name: dict[str, list[str]] = {}
+        self._weapon_type_by_army_name: dict[tuple[str, str], str] = {}
+        self._roster_available_preview_index = -1
+        self._roster_preview_melee: list[str] = []
+        self._roster_preview_ranged: list[str] = []
+        self._roster_preview_unknown: list[str] = []
         self._deployment_mode_options = ["manual_player", "auto", "rl_phase"]
         self._deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "rl_phase")).strip().lower() or "rl_phase"
         if self._deployment_mode not in self._deployment_mode_options:
@@ -448,6 +455,25 @@ class GUIController(QtCore.QObject):
     @QtCore.Property("QStringList", notify=trainSetupSummaryChanged)
     def trainContextP2RosterLines(self) -> list[str]:
         return self._train_context_roster_lines(self._model_roster)
+
+    @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
+    def rosterWeaponsPreviewUnitName(self) -> str:
+        idx = self._roster_available_preview_index
+        if 0 <= idx < len(self._available_units):
+            return str(self._available_units[idx].name)
+        return "—"
+
+    @QtCore.Property("QStringList", notify=rosterWeaponsPreviewChanged)
+    def rosterWeaponsPreviewRanged(self) -> list[str]:
+        return self._roster_preview_ranged
+
+    @QtCore.Property("QStringList", notify=rosterWeaponsPreviewChanged)
+    def rosterWeaponsPreviewMelee(self) -> list[str]:
+        return self._roster_preview_melee
+
+    @QtCore.Property("QStringList", notify=rosterWeaponsPreviewChanged)
+    def rosterWeaponsPreviewUnknown(self) -> list[str]:
+        return self._roster_preview_unknown
 
     @QtCore.Property(str, notify=trainSetupSummaryChanged)
     def trainSetupSummaryLine(self) -> str:
@@ -4885,6 +4911,13 @@ class GUIController(QtCore.QObject):
             self._model_model,
             [f"{entry.name} (x{entry.count})" for entry in self._model_roster],
         )
+        if self._available_units:
+            idx = self._roster_available_preview_index
+            if idx < 0 or idx >= len(self._available_units):
+                idx = 0
+            self.set_roster_available_preview_index(idx)
+        else:
+            self.set_roster_available_preview_index(-1)
 
     def _replace_model_items(self, model: QtGui.QStandardItemModel, values: list[str]) -> None:
         model.clear()
@@ -4904,6 +4937,46 @@ class GUIController(QtCore.QObject):
         self.rosterSummaryChanged.emit(self._roster_summary)
         self._emit_train_setup_summary_changed()
 
+    def _weapon_battlefield_kind(self, unit_name: str, weapon_name: str) -> str:
+        army = str(self._unit_faction_by_name.get(str(unit_name).strip(), "") or "").strip().lower()
+        wn = str(weapon_name or "").strip()
+        if not wn:
+            return "unknown"
+        typ = self._weapon_type_by_army_name.get((army, wn.lower()), "")
+        if not typ:
+            typ = self._weapon_type_by_army_name.get((army, wn), "")
+        typ_l = str(typ or "").strip().lower()
+        if typ_l == "melee":
+            return "melee"
+        if typ_l == "ranged":
+            return "ranged"
+        return "unknown"
+
+    def _rebuild_roster_weapons_preview(self) -> None:
+        melee: list[str] = []
+        ranged: list[str] = []
+        unknown: list[str] = []
+        idx = self._roster_available_preview_index
+        if 0 <= idx < len(self._available_units):
+            uname = str(self._available_units[idx].name).strip()
+            for w in self._unit_weapons_by_name.get(uname, []):
+                kind = self._weapon_battlefield_kind(uname, w)
+                if kind == "melee":
+                    melee.append(w)
+                elif kind == "ranged":
+                    ranged.append(w)
+                else:
+                    unknown.append(w)
+        self._roster_preview_melee = melee
+        self._roster_preview_ranged = ranged
+        self._roster_preview_unknown = unknown
+        self.rosterWeaponsPreviewChanged.emit()
+
+    @QtCore.Slot(int)
+    def set_roster_available_preview_index(self, index: int) -> None:
+        self._roster_available_preview_index = int(index)
+        self._rebuild_roster_weapons_preview()
+
     def _load_available_units(self) -> None:
         unit_path = os.path.join(self._repo_root, "core", "engine", "unitData.json")
         if not os.path.exists(unit_path):
@@ -4911,18 +4984,42 @@ class GUIController(QtCore.QObject):
             return
         with open(unit_path, "r", encoding="utf-8") as handle:
             payload = json.load(handle)
+
+        self._available_units.clear()
+        self._unit_faction_by_name.clear()
+        self._unit_weapons_by_name.clear()
+        self._weapon_type_by_army_name.clear()
+
         units = payload.get("UnitData", [])
         for unit in units:
             name = unit.get("Name")
             faction = unit.get("Army")
             if not name or not faction:
                 continue
-            # Используем для вывода faction из ростера (даже если UI сейчас показывает только часть фракций).
-            self._unit_faction_by_name[str(name).strip()] = str(faction).strip()
-            if faction.lower() != "necrons":
+            name_s = str(name).strip()
+            fact_s = str(faction).strip()
+            self._unit_faction_by_name[name_s] = fact_s
+            raw_weapons = unit.get("Weapons") or []
+            self._unit_weapons_by_name[name_s] = [str(x).strip() for x in raw_weapons if str(x).strip()]
+
+        for w in payload.get("WeaponData", []):
+            army = str(w.get("Army", "") or "").strip().lower()
+            nm = str(w.get("Name", "") or "").strip()
+            typ = str(w.get("Type", "") or "").strip()
+            if nm:
+                self._weapon_type_by_army_name[(army, nm.lower())] = typ
+
+        for unit in units:
+            name = unit.get("Name")
+            faction = unit.get("Army")
+            if not name or not faction:
+                continue
+            if str(faction).lower() != "necrons":
                 continue
             default_count = unit.get("#OfModels", 1)
             self._available_units.append(UnitInfo(name=name, faction=faction, default_count=default_count))
+
+        self.set_roster_available_preview_index(0 if self._available_units else -1)
 
     def _load_rosters_from_file(self) -> None:
         units_path = str(UNITS_PATH)

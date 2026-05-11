@@ -1099,7 +1099,7 @@ ApplicationWindow {
                     }
 
                     GridLayout {
-                        columns: 4
+                        columns: 5
                         columnSpacing: root.spacingMd
                         rowSpacing: 0
                         Layout.fillWidth: true
@@ -1244,6 +1244,8 @@ ApplicationWindow {
                                     Layout.fillHeight: true
                                     model: controller.availableUnitsModel
                                     clip: true
+                                    Component.onCompleted: controller.set_roster_available_preview_index(currentIndex)
+                                    onCurrentIndexChanged: controller.set_roster_available_preview_index(currentIndex)
                                     delegate: Rectangle {
                                         width: ListView.view ? ListView.view.width : 0
                                         height: Math.max(unitNameAvailable.implicitHeight, unitIconAvailable.height) + root.spacingSm
@@ -1290,6 +1292,124 @@ ApplicationWindow {
                                         text: "Добавить в P2"
                                         flat: true
                                         onClicked: controller.add_unit_to_model(availableUnitsView.currentIndex)
+                                    }
+                                }
+                            }
+                        }
+
+                        GroupBox {
+                            title: ""
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            Layout.alignment: Qt.AlignTop
+                            Layout.horizontalStretchFactor: 2
+                            Layout.minimumWidth: Math.round(168 * root.uiScale)
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: root.spacingXs
+                                spacing: root.spacingSm
+
+                                Label {
+                                    text: "Оружие выбранного"
+                                    font.bold: true
+                                    Layout.preferredHeight: Math.round(22 * root.uiScale)
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                                Label {
+                                    text: controller.rosterWeaponsPreviewUnitName
+                                    font.bold: true
+                                    color: root.uiTextMuted
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                    font.pixelSize: Math.round(11 * root.uiScale)
+                                }
+
+                                ScrollView {
+                                    id: rosterWeaponsScroll
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    clip: true
+
+                                    Column {
+                                        width: Math.max(
+                                            Math.round(140 * root.uiScale),
+                                            rosterWeaponsScroll.width > 0 ? rosterWeaponsScroll.width - Math.round(8 * root.uiScale) : Math.round(140 * root.uiScale))
+                                        spacing: Math.round(8 * root.uiScale)
+
+                                        Label {
+                                            text: "ДБ (дальний бой)"
+                                            font.bold: true
+                                            font.family: root.fontUiFamily
+                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                            color: "#9eb6d4"
+                                        }
+                                        Label {
+                                            visible: controller.rosterWeaponsPreviewRanged.length === 0
+                                            text: "— нет"
+                                            font.family: root.fontDataFamily
+                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                            color: root.uiTextMuted
+                                        }
+                                        Repeater {
+                                            model: controller.rosterWeaponsPreviewRanged
+                                            Label {
+                                                width: parent.width
+                                                text: "· " + modelData
+                                                wrapMode: Text.Wrap
+                                                font.family: root.fontDataFamily
+                                                font.pixelSize: Math.round(10 * root.uiScale)
+                                                color: root.uiTextMain
+                                            }
+                                        }
+
+                                        Item { height: Math.round(4 * root.uiScale); width: 1 }
+
+                                        Label {
+                                            text: "ББ (ближний бой)"
+                                            font.bold: true
+                                            font.family: root.fontUiFamily
+                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                            color: "#c4a882"
+                                        }
+                                        Label {
+                                            visible: controller.rosterWeaponsPreviewMelee.length === 0
+                                            text: "— нет"
+                                            font.family: root.fontDataFamily
+                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                            color: root.uiTextMuted
+                                        }
+                                        Repeater {
+                                            model: controller.rosterWeaponsPreviewMelee
+                                            Label {
+                                                width: parent.width
+                                                text: "· " + modelData
+                                                wrapMode: Text.Wrap
+                                                font.family: root.fontDataFamily
+                                                font.pixelSize: Math.round(10 * root.uiScale)
+                                                color: root.uiTextMain
+                                            }
+                                        }
+
+                                        Label {
+                                            visible: controller.rosterWeaponsPreviewUnknown.length > 0
+                                            text: "Тип не сопоставлен:"
+                                            font.bold: true
+                                            font.family: root.fontUiFamily
+                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                            color: "#b87a7a"
+                                        }
+                                        Repeater {
+                                            model: controller.rosterWeaponsPreviewUnknown
+                                            Label {
+                                                width: parent.width
+                                                text: "· " + modelData
+                                                wrapMode: Text.Wrap
+                                                font.family: root.fontDataFamily
+                                                font.pixelSize: Math.round(10 * root.uiScale)
+                                                color: root.uiTextMain
+                                            }
+                                        }
                                     }
                                 }
                             }
