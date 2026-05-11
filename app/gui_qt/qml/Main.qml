@@ -59,6 +59,7 @@ ApplicationWindow {
     property int evalCaptionSize: Math.round(11 * uiScale)
     property int actionButtonHeight: Math.round(30 * uiScale)
     property int actionButtonMinWidth: Math.round(120 * uiScale)
+    property bool mainLogExpanded: true
     property string fontUiFamily: "Rajdhani"
     property string fontDataFamily: "IBM Plex Mono"
 
@@ -87,14 +88,19 @@ ApplicationWindow {
         TabBar {
             id: mainTabs
             Layout.fillWidth: true
+            spacing: root.spacingXs
+            background: Rectangle {
+                color: root.bgBase
+                border.width: 0
+            }
 
-            TabButton { text: "Главная" }
-            TabButton { text: "Ростер" }
-            TabButton { text: "Метрики модели" }
-                TabButton { text: "Метрики эвристики" }
-            TabButton { text: "Игра" }
-            TabButton { text: "Настройки" }
-            TabButton { text: "Оценка" }
+            TacticalTabButton { text: "Главная" }
+            TacticalTabButton { text: "Ростер" }
+            TacticalTabButton { text: "Метрики модели" }
+            TacticalTabButton { text: "Метрики эвристики" }
+            TacticalTabButton { text: "Игра" }
+            TacticalTabButton { text: "Настройки" }
+            TacticalTabButton { text: "Оценка" }
         }
 
         StackLayout {
@@ -107,91 +113,223 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
 
-                Item {
+                ScrollView {
                     anchors.fill: parent
                     anchors.margins: root.spacingLg
+                    clip: true
 
                     ColumnLayout {
-                        anchors.fill: parent
+                        width: Math.max(parent ? parent.width : 0, root.width - 2 * root.spacingLg)
                         spacing: root.spacingMd
 
-                    GridLayout {
-                        columns: 2
-                        columnSpacing: root.spacingLg
-                        rowSpacing: root.spacingMd
-                        Layout.fillWidth: true
-
-                        ColumnLayout {
-                            spacing: root.spacingSm
+                        ChamferPanel {
                             Layout.fillWidth: true
+                            fillColor: root.uiBgBase
+                            borderColor: root.uiBorder
+                            borderWidth: 1
+                            cutSize: Math.round(12 * root.uiScale)
+                            contentMargin: 0
+                            implicitHeight: heroRow.implicitHeight + root.spacingMd * 2
 
-                            GroupBox {
-                                title: "Миссия"
-                                Layout.fillWidth: true
+                            RowLayout {
+                                id: heroRow
+                                anchors.fill: parent
+                                anchors.margins: root.spacingMd
+                                spacing: root.spacingMd
 
                                 ColumnLayout {
-                                    spacing: root.spacingSm
+                                    Layout.fillWidth: true
+                                    spacing: Math.round(4 * root.uiScale)
+                                    Text {
+                                        text: "ЦЕНТР УПРАВЛЕНИЯ ТРЕНИРОВКОЙ"
+                                        color: root.uiTextMain
+                                        font.bold: true
+                                        font.pixelSize: Math.round(20 * root.uiScale)
+                                        font.family: root.fontUiFamily
+                                        font.letterSpacing: 1.0
+                                    }
+                                    Text {
+                                        text: root.statusText
+                                        color: root.uiTextMuted
+                                        font.family: root.fontDataFamily
+                                    }
+                                }
+
+                                Rectangle {
+                                    radius: 0
+                                    color: "#1e2734"
+                                    border.width: 1
+                                    border.color: controller.running ? "#b88a26" : "#4c5667"
+                                    implicitWidth: trainStatusLabel.implicitWidth + Math.round(24 * root.uiScale)
+                                    implicitHeight: trainStatusLabel.implicitHeight + Math.round(12 * root.uiScale)
+                                    Text {
+                                        id: trainStatusLabel
+                                        anchors.centerIn: parent
+                                        text: controller.running ? "RUNNING" : "IDLE"
+                                        color: controller.running ? "#e1be68" : "#9ca3af"
+                                        font.bold: true
+                                        font.family: root.fontDataFamily
+                                        font.pixelSize: Math.round(11 * root.uiScale)
+                                        font.letterSpacing: 0.8
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    spacing: Math.round(2 * root.uiScale)
+                                    Text {
+                                        text: "ПРОГРЕСС"
+                                        color: root.uiTextMuted
+                                        font.capitalization: Font.AllUppercase
+                                        font.family: root.fontUiFamily
+                                        font.bold: true
+                                        font.letterSpacing: 0.9
+                                    }
+                                    Text {
+                                        text: controller.progressStats
+                                        color: root.uiTextMain
+                                        font.family: root.fontDataFamily
+                                    }
+                                }
+                            }
+                        }
+
+                        Item {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: Math.round(28 * root.uiScale)
+
+                            ProgressBar {
+                                id: trainingProgress
+                                anchors.fill: parent
+                                value: controller.progressValue
+                                background: Rectangle {
+                                    radius: 0
+                                    color: "#1a2230"
+                                    border.width: 1
+                                    border.color: root.uiBorder
+                                }
+                                contentItem: Item {
+                                    Rectangle {
+                                        width: trainingProgress.visualPosition * parent.width
+                                        height: parent.height
+                                        color: "#b88a26"
+                                    }
+                                }
+                            }
+                            Text {
+                                anchors.centerIn: parent
+                                text: controller.progressText
+                                color: root.uiTextMain
+                                font.bold: true
+                                font.family: root.fontDataFamily
+                            }
+                        }
+
+                        GridLayout {
+                            Layout.fillWidth: true
+                            columns: 3
+                            columnSpacing: root.spacingMd
+                            rowSpacing: root.spacingMd
+
+                            ChamferPanel {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: Math.round(280 * root.uiScale)
+                                fillColor: root.uiBgCard
+                                borderColor: root.uiBorder
+                                borderWidth: 1
+                                cutSize: Math.round(10 * root.uiScale)
+                                contentMargin: root.spacingMd
+
+                                ColumnLayout {
                                     anchors.fill: parent
+                                    spacing: root.spacingSm
+
+                                    Text {
+                                        text: "МИССИЯ"
+                                        color: root.uiTextMain
+                                        font.bold: true
+                                        font.pixelSize: root.evalSectionTitleSize
+                                        font.family: root.fontUiFamily
+                                        font.capitalization: Font.AllUppercase
+                                        font.letterSpacing: 1.0
+                                    }
 
                                     RowLayout {
+                                        Layout.fillWidth: true
                                         spacing: root.spacingSm
-                                        Label { text: "Выбор миссии" }
+                                        Label {
+                                            text: "ВЫБОР"
+                                            font.bold: true
+                                            font.family: root.fontUiFamily
+                                            font.letterSpacing: 0.7
+                                            color: root.uiTextMuted
+                                        }
                                         StyledComboBox {
                                             id: missionCombo
-                                            Layout.preferredWidth: root.inputWidthMd
+                                            Layout.preferredWidth: Math.max(root.inputWidthSm, Math.round(150 * root.uiScale))
                                             model: controller.missionOptions
                                             currentIndex: Math.max(0, controller.missionOptions.indexOf(controller.selectedMission))
                                             onActivated: controller.set_selected_mission_index(currentIndex)
                                         }
                                     }
 
-                                    ColumnLayout {
+                                    GridLayout {
+                                        columns: 2
+                                        columnSpacing: root.spacingMd
+                                        rowSpacing: root.spacingXs
                                         Layout.fillWidth: true
-                                        spacing: root.spacingXs
-
-                                        Label {
-                                            text: "Only War"
-                                            font.bold: true
-                                        }
-
-                                        GridLayout {
-                                            columns: 2
-                                            columnSpacing: root.spacingMd
-                                            rowSpacing: root.spacingXs
-                                            Layout.fillWidth: true
-
-                                            Label { text: "Размер стола:"; font.bold: true }
-                                            Label { text: "60×40" }
-
-                                            Label { text: "Контрольная точка:"; font.bold: true }
-                                            Label { text: "1, центр (30,20)" }
-
-                                            Label { text: "Деплой:"; font.bold: true }
-                                            Label { text: "Attacker слева / Defender справа"; wrapMode: Text.Wrap }
-
-                                            Label { text: "Примечание:"; font.bold: true }
-                                            Label { text: "roll-off определяет роли"; wrapMode: Text.Wrap }
-                                        }
+                                        Label { text: "РЕЖИМ"; font.bold: true; color: root.uiTextMuted }
+                                        Label { text: "ONLY WAR" }
+                                        Label { text: "РАЗМЕР"; font.bold: true; color: root.uiTextMuted }
+                                        Label { text: "60×40"; font.family: root.fontDataFamily }
+                                        Label { text: "ТОЧКА"; font.bold: true; color: root.uiTextMuted }
+                                        Label { text: "1, центр (30,20)" }
+                                        Label { text: "ДЕПЛОЙ"; font.bold: true; color: root.uiTextMuted }
+                                        Label { text: "Attacker слева / Defender справа"; wrapMode: Text.Wrap }
+                                        Label { text: "ПРИМЕЧАНИЕ"; font.bold: true; color: root.uiTextMuted }
+                                        Label { text: "roll-off определяет роли"; wrapMode: Text.Wrap }
                                     }
                                 }
                             }
 
-                            GroupBox {
-                                title: "Настройки"
+                            ChamferPanel {
                                 Layout.fillWidth: true
+                                Layout.preferredHeight: Math.round(280 * root.uiScale)
+                                fillColor: root.uiBgCard
+                                borderColor: root.uiBorder
+                                borderWidth: 1
+                                cutSize: Math.round(10 * root.uiScale)
+                                contentMargin: root.spacingMd
 
                                 ColumnLayout {
-                                    spacing: root.spacingSm
                                     anchors.fill: parent
+                                    spacing: root.spacingSm
+
+                                    Text {
+                                        text: "КОНФИГУРАЦИЯ"
+                                        color: root.uiTextMain
+                                        font.bold: true
+                                        font.pixelSize: root.evalSectionTitleSize
+                                        font.family: root.fontUiFamily
+                                        font.capitalization: Font.AllUppercase
+                                        font.letterSpacing: 1.0
+                                    }
 
                                     RowLayout {
+                                        Layout.fillWidth: true
                                         spacing: root.spacingSm
-                                        Label { text: "# эпизодов для Тренировки:" }
+                                        Label { text: "ЭПИЗОДЫ"; font.bold: true; color: root.uiTextMuted }
                                         TextField {
                                             id: numGamesField
                                             text: controller.numGames.toString()
                                             validator: IntValidator { bottom: 1 }
                                             Layout.preferredWidth: root.inputWidthMd
+                                            font.family: root.fontDataFamily
+                                            background: Rectangle {
+                                                radius: 0
+                                                color: parent.activeFocus ? "#2a3345" : "#202734"
+                                                border.width: 1
+                                                border.color: parent.activeFocus ? "#b88a26" : "#3a475b"
+                                            }
                                             onEditingFinished: {
                                                 var value = parseInt(text)
                                                 if (!isNaN(value)) {
@@ -202,16 +340,17 @@ ApplicationWindow {
                                     }
 
                                     RowLayout {
+                                        Layout.fillWidth: true
                                         spacing: root.spacingSm
-                                        Label { text: "Модель обучения:" }
+                                        Label { text: "АЛГОРИТМ"; font.bold: true; color: root.uiTextMuted }
                                         StyledComboBox {
                                             id: trainingAlgoComboMain
-                                            Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(300 * root.uiScale))
+                                            Layout.fillWidth: true
                                             model: [
                                                 { value: "dqn", label: "DQN" },
                                                 { value: "ppo", label: "PPO" },
-                                                { value: "alphazero", label: "AlphaZero" },
-                                                { value: "gumbel_muzero", label: "Gumbel MuZero" }
+                                                { value: "alphazero", label: "ALPHAZERO" },
+                                                { value: "gumbel_muzero", label: "GUMBEL MUZERO" }
                                             ]
                                             textRole: "label"
                                             valueRole: "value"
@@ -229,126 +368,69 @@ ApplicationWindow {
                                             }
                                         }
                                         Button {
-                                            text: "О моделях"
+                                            text: "О МОДЕЛЯХ"
                                             enabled: !controller.running
+                                            contentItem: Text {
+                                                text: parent.text
+                                                color: parent.enabled ? "#d5b15a" : "#737b8a"
+                                                font.bold: true
+                                                font.pixelSize: root.evalCaptionSize
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+                                            background: ChamferPanel {
+                                                cutSize: Math.round(6 * root.uiScale)
+                                                contentMargin: 0
+                                                fillColor: parent.hovered ? "#25303d" : "transparent"
+                                                borderWidth: 1
+                                                borderColor: parent.hovered ? "#e1be68" : "#b88a26"
+                                            }
                                             onClicked: trainingAlgoHelpDialog.open()
                                         }
                                     }
 
-                                }
-                            }
-                        }
-
-                        ColumnLayout {
-                            spacing: root.spacingSm
-                            Layout.fillWidth: true
-
-                            GroupBox {
-                                title: "Действия"
-                                Layout.fillWidth: true
-
-                                GridLayout {
-                                    columns: 2
-                                    columnSpacing: root.spacingSm
-                                    rowSpacing: root.spacingSm
-                                    anchors.fill: parent
-
-                                    CheckBox {
-                                        text: "Самообучение от старой модели"
-                                        checked: controller.selfPlayFromCheckpoint
-                                        enabled: !controller.running
-                                        Layout.columnSpan: 2
-                                        onToggled: controller.set_self_play_from_checkpoint(checked)
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: root.spacingSm
+                                        Label { text: "СТОРОНА"; font.bold: true; color: root.uiTextMuted }
+                                        StyledComboBox {
+                                            Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(170 * root.uiScale))
+                                            model: controller.learnerSideOptions
+                                            currentIndex: Math.max(0, controller.learnerSideOptions.indexOf(controller.learnerSide))
+                                            enabled: !controller.running
+                                            onActivated: controller.set_learner_side(currentText)
+                                        }
                                     }
 
-                                    CheckBox {
-                                        text: "Продолжить обучение (RESUME_CHECKPOINT)"
-                                        checked: controller.resumeFromCheckpoint
-                                        enabled: !controller.running
-                                        Layout.columnSpan: 2
-                                        onToggled: controller.set_resume_from_checkpoint(checked)
-                                    }
-
-                                    CheckBox {
-                                        text: "Не логировать тренировку (speed)"
-                                        checked: controller.disableTrainLogging
-                                        enabled: !controller.running
-                                        Layout.columnSpan: 2
-                                        onToggled: controller.set_disable_train_logging(checked)
-                                    }
-
-                                    CheckBox {
-                                        text: "Детальный трейс действий модели (debug, пишет много в лог)"
-                                        checked: controller.actionTrace
-                                        enabled: !controller.running
-                                        Layout.columnSpan: 2
-                                        onToggled: controller.set_action_trace(checked)
-                                    }
-
-                                    CheckBox {
-                                        text: "Очищать логи автоматически"
-                                        checked: controller.autoClearLogs
-                                        enabled: !controller.running
-                                        Layout.columnSpan: 2
-                                        onToggled: controller.set_auto_clear_logs(checked)
-                                    }
-
-                                    Label { text: "Сторона обучения" }
-                                    StyledComboBox {
-                                        model: controller.learnerSideOptions
-                                        Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(220 * root.uiScale))
-                                        implicitHeight: Math.round(34 * root.uiScale)
-                                        leftPadding: Math.round(10 * root.uiScale)
-                                        rightPadding: Math.round(28 * root.uiScale)
-                                        topPadding: Math.round(4 * root.uiScale)
-                                        bottomPadding: Math.round(4 * root.uiScale)
-                                        font.pixelSize: Math.round(14 * root.uiScale)
-                                        currentIndex: Math.max(0, controller.learnerSideOptions.indexOf(controller.learnerSide))
-                                        enabled: !controller.running
-                                        onActivated: controller.set_learner_side(currentText)
-                                    }
-
-                                    Label { text: "Источник оппонента" }
-                                    StyledComboBox {
-                                        Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(220 * root.uiScale))
-                                        implicitHeight: Math.round(34 * root.uiScale)
-                                        leftPadding: Math.round(10 * root.uiScale)
-                                        rightPadding: Math.round(28 * root.uiScale)
-                                        topPadding: Math.round(4 * root.uiScale)
-                                        bottomPadding: Math.round(4 * root.uiScale)
-                                        font.pixelSize: Math.round(14 * root.uiScale)
-                                        model: [
-                                            { value: "heuristic", label: "Эвристика" },
-                                            { value: "latest_snapshot", label: "Последний снапшот" },
-                                            { value: "specific_agent", label: "Конкретный агент" }
-                                        ]
-                                        textRole: "label"
-                                        valueRole: "value"
-                                        currentIndex: {
-                                            for (var i = 0; i < model.length; i++) {
-                                                if (model[i].value === controller.opponentSource)
-                                                    return i
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: root.spacingSm
+                                        Label { text: "ОППОНЕНТ"; font.bold: true; color: root.uiTextMuted }
+                                        StyledComboBox {
+                                            Layout.fillWidth: true
+                                            model: [
+                                                { value: "heuristic", label: "ЭВРИСТИКА" },
+                                                { value: "latest_snapshot", label: "ПОСЛЕДНИЙ СНАПШОТ" },
+                                                { value: "specific_agent", label: "КОНКРЕТНЫЙ АГЕНТ" }
+                                            ]
+                                            textRole: "label"
+                                            valueRole: "value"
+                                            currentIndex: {
+                                                for (var i = 0; i < model.length; i++) {
+                                                    if (model[i].value === controller.opponentSource) return i
+                                                }
+                                                return 0
                                             }
-                                            return 0
-                                        }
-                                        enabled: !controller.running
-                                        onActivated: {
-                                            if (currentIndex >= 0 && currentIndex < model.length)
-                                                controller.set_opponent_source(model[currentIndex].value)
+                                            enabled: !controller.running
+                                            onActivated: {
+                                                if (currentIndex >= 0 && currentIndex < model.length)
+                                                    controller.set_opponent_source(model[currentIndex].value)
+                                            }
                                         }
                                     }
 
-                                    Label {
-                                        text: "Конкретный агент"
-                                    }
                                     StyledComboBox {
-                                        Layout.preferredWidth: Math.max(root.inputWidthMd, Math.round(460 * root.uiScale))
-                                        implicitHeight: Math.round(34 * root.uiScale)
-                                        leftPadding: Math.round(10 * root.uiScale)
-                                        rightPadding: Math.round(28 * root.uiScale)
-                                        topPadding: Math.round(4 * root.uiScale)
-                                        bottomPadding: Math.round(4 * root.uiScale)
-                                        font.pixelSize: Math.round(14 * root.uiScale)
+                                        Layout.fillWidth: true
                                         model: controller.specificOpponentAgentOptions
                                         currentIndex: controller.specificOpponentAgentOptions.length > 0
                                             ? Math.max(0, controller.specificOpponentAgentOptions.indexOf(controller.selectedSpecificOpponentLabel))
@@ -361,7 +443,6 @@ ApplicationWindow {
                                     }
 
                                     Label {
-                                        Layout.columnSpan: 2
                                         text: controller.opponentPreviewText
                                         color: root.uiTextMuted
                                         Layout.fillWidth: true
@@ -369,74 +450,232 @@ ApplicationWindow {
                                         elide: Text.ElideRight
                                         maximumLineCount: 1
                                     }
+                                }
+                            }
 
-                                    Button {
-                                        text: "Тренировка 8х"
-                                        enabled: !controller.running
-                                        onClicked: controller.start_train_8x()
+                            ChamferPanel {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: Math.round(280 * root.uiScale)
+                                fillColor: root.uiBgCard
+                                borderColor: root.uiBorder
+                                borderWidth: 1
+                                cutSize: Math.round(10 * root.uiScale)
+                                contentMargin: root.spacingMd
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    spacing: root.spacingSm
+
+                                    Text {
+                                        text: "ОПЕРАЦИИ"
+                                        color: root.uiTextMain
+                                        font.bold: true
+                                        font.pixelSize: root.evalSectionTitleSize
+                                        font.family: root.fontUiFamily
+                                        font.capitalization: Font.AllUppercase
+                                        font.letterSpacing: 1.0
                                     }
 
-                                    Button {
-                                        text: "Очистить кеш"
+                                    CheckBox {
+                                        text: "САМООБУЧЕНИЕ ОТ СТАРОЙ МОДЕЛИ"
+                                        checked: controller.selfPlayFromCheckpoint
                                         enabled: !controller.running
-                                        onClicked: clearCacheDialog.open()
+                                        font.family: root.fontUiFamily
+                                        font.pixelSize: root.evalCaptionSize
+                                        onToggled: controller.set_self_play_from_checkpoint(checked)
+                                    }
+                                    CheckBox {
+                                        text: "ПРОДОЛЖИТЬ ОБУЧЕНИЕ (RESUME_CHECKPOINT)"
+                                        checked: controller.resumeFromCheckpoint
+                                        enabled: !controller.running
+                                        font.family: root.fontUiFamily
+                                        font.pixelSize: root.evalCaptionSize
+                                        onToggled: controller.set_resume_from_checkpoint(checked)
+                                    }
+                                    CheckBox {
+                                        text: "НЕ ЛОГИРОВАТЬ ТРЕНИРОВКУ (SPEED)"
+                                        checked: controller.disableTrainLogging
+                                        enabled: !controller.running
+                                        font.family: root.fontUiFamily
+                                        font.pixelSize: root.evalCaptionSize
+                                        onToggled: controller.set_disable_train_logging(checked)
+                                    }
+                                    CheckBox {
+                                        text: "ДЕТАЛЬНЫЙ ТРЕЙС ДЕЙСТВИЙ (DEBUG)"
+                                        checked: controller.actionTrace
+                                        enabled: !controller.running
+                                        font.family: root.fontUiFamily
+                                        font.pixelSize: root.evalCaptionSize
+                                        onToggled: controller.set_action_trace(checked)
+                                    }
+                                    CheckBox {
+                                        text: "ОЧИЩАТЬ ЛОГИ АВТОМАТИЧЕСКИ"
+                                        checked: controller.autoClearLogs
+                                        enabled: !controller.running
+                                        font.family: root.fontUiFamily
+                                        font.pixelSize: root.evalCaptionSize
+                                        onToggled: controller.set_auto_clear_logs(checked)
                                     }
 
-                                    Button {
-                                        text: "Очистить логи"
-                                        enabled: !controller.running
-                                        onClicked: controller.clear_agent_logs()
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: root.spacingSm
+                                        Button {
+                                            text: "ТРЕНИРОВКА 8X"
+                                            enabled: !controller.running
+                                            onClicked: controller.start_train_8x()
+                                            Layout.preferredWidth: Math.round(150 * root.uiScale)
+                                            contentItem: Text {
+                                                text: parent.text
+                                                color: parent.enabled ? "#151102" : "#6a6347"
+                                                font.bold: true
+                                                font.pixelSize: root.evalCaptionSize
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+                                            background: ChamferPanel {
+                                                cutSize: Math.round(6 * root.uiScale)
+                                                contentMargin: 0
+                                                fillColor: parent.pressed ? "#d7a719" : (parent.hovered ? "#e8b932" : "#b88a26")
+                                                borderWidth: 1
+                                                borderColor: parent.hovered ? "#ffe08a" : "#8f6b1f"
+                                            }
+                                        }
+                                        Button {
+                                            text: "ОЧИСТИТЬ КЭШ"
+                                            enabled: !controller.running
+                                            onClicked: clearCacheDialog.open()
+                                            Layout.preferredWidth: Math.round(140 * root.uiScale)
+                                            contentItem: Text {
+                                                text: parent.text
+                                                color: parent.enabled ? "#d5b15a" : "#737b8a"
+                                                font.bold: true
+                                                font.pixelSize: root.evalCaptionSize
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+                                            background: ChamferPanel {
+                                                cutSize: Math.round(6 * root.uiScale)
+                                                contentMargin: 0
+                                                fillColor: parent.hovered ? "#25303d" : "transparent"
+                                                borderWidth: 1
+                                                borderColor: parent.hovered ? "#e1be68" : "#b88a26"
+                                            }
+                                        }
+                                        Button {
+                                            text: "ОЧИСТИТЬ ЛОГИ"
+                                            enabled: !controller.running
+                                            onClicked: controller.clear_agent_logs()
+                                            Layout.preferredWidth: Math.round(140 * root.uiScale)
+                                            contentItem: Text {
+                                                text: parent.text
+                                                color: parent.enabled ? "#d5b15a" : "#737b8a"
+                                                font.bold: true
+                                                font.pixelSize: root.evalCaptionSize
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+                                            background: ChamferPanel {
+                                                cutSize: Math.round(6 * root.uiScale)
+                                                contentMargin: 0
+                                                fillColor: parent.hovered ? "#25303d" : "transparent"
+                                                borderWidth: 1
+                                                borderColor: parent.hovered ? "#e1be68" : "#b88a26"
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    Label {
-                        text: root.statusText
-                    }
+                        ChamferPanel {
+                            Layout.fillWidth: true
+                            fillColor: root.uiBgCard
+                            borderColor: root.uiBorder
+                            borderWidth: 1
+                            cutSize: Math.round(10 * root.uiScale)
+                            contentMargin: root.spacingMd
+                            implicitHeight: mainLogExpanded ? Math.round(320 * root.uiScale) : Math.round(56 * root.uiScale)
 
-                    Label {
-                        text: controller.progressLabel
-                    }
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: root.spacingSm
 
-                    Item {
-                        Layout.fillWidth: true
-                        height: Math.round(24 * root.uiScale)
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Text {
+                                        text: "ЖУРНАЛ"
+                                        color: root.uiTextMain
+                                        font.bold: true
+                                        font.pixelSize: root.evalSectionTitleSize
+                                        font.family: root.fontUiFamily
+                                        font.capitalization: Font.AllUppercase
+                                        font.letterSpacing: 1.0
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    Button {
+                                        text: "ОЧИСТИТЬ"
+                                        flat: true
+                                        contentItem: Text {
+                                            text: parent.text
+                                            color: "#d5b15a"
+                                            font.bold: true
+                                            font.pixelSize: root.evalCaptionSize
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        background: ChamferPanel {
+                                            cutSize: Math.round(6 * root.uiScale)
+                                            contentMargin: 0
+                                            fillColor: parent.hovered ? "#25303d" : "transparent"
+                                            borderWidth: 1
+                                            borderColor: parent.hovered ? "#e1be68" : "#b88a26"
+                                        }
+                                        onClicked: logArea.text = ""
+                                    }
+                                    Button {
+                                        text: root.mainLogExpanded ? "СВЕРНУТЬ" : "РАЗВЕРНУТЬ"
+                                        flat: true
+                                        contentItem: Text {
+                                            text: parent.text
+                                            color: "#d5b15a"
+                                            font.bold: true
+                                            font.pixelSize: root.evalCaptionSize
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        background: ChamferPanel {
+                                            cutSize: Math.round(6 * root.uiScale)
+                                            contentMargin: 0
+                                            fillColor: parent.hovered ? "#25303d" : "transparent"
+                                            borderWidth: 1
+                                            borderColor: parent.hovered ? "#e1be68" : "#b88a26"
+                                        }
+                                        onClicked: root.mainLogExpanded = !root.mainLogExpanded
+                                    }
+                                }
 
-                        ProgressBar {
-                            id: trainingProgress
-                            anchors.fill: parent
-                            value: controller.progressValue
-                        }
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: controller.progressText
-                            color: "#ffffff"
-                        }
-                    }
-
-                    Label {
-                        text: controller.progressStats
-                    }
-
-                    GroupBox {
-                        title: "Логи"
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-
-                        ScrollView {
-                            anchors.fill: parent
-
-                            TextArea {
-                                id: logArea
-                                readOnly: true
-                                wrapMode: TextArea.Wrap
-                                text: ""
+                                ScrollView {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    visible: root.mainLogExpanded
+                                    TextArea {
+                                        id: logArea
+                                        readOnly: true
+                                        wrapMode: TextArea.Wrap
+                                        text: ""
+                                        font.family: root.fontDataFamily
+                                        color: root.uiTextMain
+                                        background: Rectangle {
+                                            radius: 0
+                                            color: "#111722"
+                                            border.width: 1
+                                            border.color: "#2e394d"
+                                        }
+                                    }
+                                }
                             }
                         }
-                    }
                     }
                 }
             }
