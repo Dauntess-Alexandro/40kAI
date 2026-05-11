@@ -95,6 +95,7 @@ class GUIController(QtCore.QObject):
     settingsDirtyChanged = QtCore.Signal(bool)
     settingsSaveStateChanged = QtCore.Signal(str)
     trainingAlgoChanged = QtCore.Signal(str)
+    trainSetupSummaryChanged = QtCore.Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -431,6 +432,18 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=missionChanged)
     def selectedMission(self) -> str:
         return self._selected_mission
+
+    @QtCore.Property(str, notify=trainSetupSummaryChanged)
+    def trainRosterP1Faction(self) -> str:
+        return self._display_faction_for_side("P1")
+
+    @QtCore.Property(str, notify=trainSetupSummaryChanged)
+    def trainRosterP2Faction(self) -> str:
+        return self._display_faction_for_side("P2")
+
+    @QtCore.Property(str, notify=trainSetupSummaryChanged)
+    def trainSetupSummaryLine(self) -> str:
+        return self._format_train_setup_summary_line()
 
     @QtCore.Property(str, notify=metricsChanged)
     def metricsRewardPath(self) -> str:
@@ -1351,6 +1364,7 @@ class GUIController(QtCore.QObject):
         if self._num_games != value:
             self._num_games = value
             self.numGamesChanged.emit(value)
+            self._emit_train_setup_summary_changed()
 
     @QtCore.Slot(str)
     def set_selected_mission(self, mission: str) -> None:
@@ -1360,6 +1374,7 @@ class GUIController(QtCore.QObject):
         if self._selected_mission != normalized:
             self._selected_mission = normalized
             self.missionChanged.emit(normalized)
+            self._emit_train_setup_summary_changed()
 
     @QtCore.Slot(int)
     def set_selected_mission_index(self, index: int) -> None:
@@ -1719,6 +1734,7 @@ class GUIController(QtCore.QObject):
         self.learnerFactionChanged.emit(faction)
         self._emit_status(f"Фракция обучения: {faction}")
         self.mark_settings_dirty()
+        self._update_opponent_preview_text()
 
     @QtCore.Slot(str)
     def set_opponent_policy(self, value: str) -> None:
@@ -1747,7 +1763,7 @@ class GUIController(QtCore.QObject):
             if latest_id != self._selected_specific_opponent_id:
                 self._selected_specific_opponent_id = latest_id
                 self.selectedSpecificOpponentIdChanged.emit(self._selected_specific_opponent_id)
-                self._update_opponent_preview_text()
+        self._update_opponent_preview_text()
         self._emit_status(f"Источник оппонента: {self._opponent_source_label(source)}")
         self.mark_settings_dirty()
 
@@ -2045,6 +2061,28 @@ class GUIController(QtCore.QObject):
             return self._infer_faction_from_roster(self._model_roster)
         return "Unknown"
 
+    def _format_train_setup_summary_line(self) -> str:
+        mission = (self._selected_mission or "—").strip().upper().replace("_", " ")
+        algo = (self._training_algo or "dqn").strip().upper()
+        episodes = int(self._num_games)
+        p1 = self._display_faction_for_side("P1")
+        p2 = self._display_faction_for_side("P2")
+        side = (self._learner_side or "P1").strip().upper()
+        src = (self._opponent_source or "heuristic").strip().lower()
+        if src == "heuristic":
+            opp_l = "ЭВРИСТИКА"
+        elif src == "latest_snapshot":
+            opp_l = "СНАПШОТ"
+        else:
+            opp_l = "КОНКР. АГЕНТ"
+        return (
+            f"{mission} · {algo} · {episodes} эп. · "
+            f"P1={p1} · P2={p2} · ОБУЧЕНИЕ {side} · ОППОНЕНТ: {opp_l}"
+        )
+
+    def _emit_train_setup_summary_changed(self) -> None:
+        self.trainSetupSummaryChanged.emit()
+
     def _update_opponent_preview_text(self) -> None:
         learner_side = self._learner_side
         opponent_side = "P2" if learner_side == "P1" else "P1"
@@ -2081,6 +2119,7 @@ class GUIController(QtCore.QObject):
         if text != self._opponent_preview_text:
             self._opponent_preview_text = text
             self.opponentPreviewTextChanged.emit(text)
+        self._emit_train_setup_summary_changed()
 
     @QtCore.Slot(str, str)
     def set_training_hyperparam(self, key: str, value: str) -> None:
@@ -4832,6 +4871,7 @@ class GUIController(QtCore.QObject):
             f"Юниты P2: {len(self._model_roster)}"
         )
         self.rosterSummaryChanged.emit(self._roster_summary)
+        self._emit_train_setup_summary_changed()
 
     def _load_available_units(self) -> None:
         unit_path = os.path.join(self._repo_root, "core", "engine", "unitData.json")

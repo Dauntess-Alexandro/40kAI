@@ -224,6 +224,130 @@ ApplicationWindow {
                             }
                         }
 
+                        ChamferPanel {
+                            Layout.fillWidth: true
+                            fillColor: root.uiBgCard
+                            borderColor: root.uiBorder
+                            borderWidth: 1
+                            cutSize: Math.round(10 * root.uiScale)
+                            contentMargin: root.spacingMd
+
+                            RowLayout {
+                                anchors.fill: parent
+                                spacing: root.spacingMd
+
+                                TrainMiniBoard {
+                                    scaleRef: root.uiScale
+                                    Layout.alignment: Qt.AlignTop
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: root.spacingXs
+
+                                    Text {
+                                        text: "КОНТЕКСТ ТРЕНИРОВКИ"
+                                        color: root.uiTextMain
+                                        font.bold: true
+                                        font.pixelSize: root.evalSectionTitleSize
+                                        font.family: root.fontUiFamily
+                                        font.capitalization: Font.AllUppercase
+                                        font.letterSpacing: 1.0
+                                    }
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: root.spacingSm
+                                        Label {
+                                            text: "P1:"
+                                            color: root.uiTextMuted
+                                            font.family: root.fontUiFamily
+                                            font.bold: true
+                                        }
+                                        Image {
+                                            source: controller.faction_icon_source(controller.trainRosterP1Faction)
+                                            sourceSize.width: root.factionIconSize
+                                            sourceSize.height: root.factionIconSize
+                                            Layout.preferredWidth: root.factionIconSize
+                                            Layout.preferredHeight: root.factionIconSize
+                                            visible: source !== ""
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
+                                        }
+                                        Label {
+                                            text: controller.trainRosterP1Faction
+                                            color: root.uiTextMain
+                                            font.family: root.fontUiFamily
+                                            font.bold: true
+                                        }
+                                        Label {
+                                            text: "·"
+                                            color: root.uiTextMuted
+                                        }
+                                        Label {
+                                            text: "P2:"
+                                            color: root.uiTextMuted
+                                            font.family: root.fontUiFamily
+                                            font.bold: true
+                                        }
+                                        Image {
+                                            source: controller.faction_icon_source(controller.trainRosterP2Faction)
+                                            sourceSize.width: root.factionIconSize
+                                            sourceSize.height: root.factionIconSize
+                                            Layout.preferredWidth: root.factionIconSize
+                                            Layout.preferredHeight: root.factionIconSize
+                                            visible: source !== ""
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
+                                        }
+                                        Label {
+                                            text: controller.trainRosterP2Faction
+                                            color: root.uiTextMain
+                                            font.family: root.fontUiFamily
+                                            font.bold: true
+                                        }
+                                        Item { Layout.fillWidth: true }
+                                        Rectangle {
+                                            radius: 0
+                                            color: "#141b26"
+                                            border.width: 1
+                                            border.color: controller.learnerSide === "P1" ? root.p1Accent : root.p2Accent
+                                            width: learnerSideBadge.implicitWidth + Math.round(14 * root.uiScale)
+                                            height: learnerSideBadge.implicitHeight + Math.round(8 * root.uiScale)
+                                            Text {
+                                                id: learnerSideBadge
+                                                anchors.centerIn: parent
+                                                text: "УЧИТСЯ: " + controller.learnerSide
+                                                font.family: root.fontDataFamily
+                                                font.bold: true
+                                                font.pixelSize: root.evalCaptionSize
+                                                color: root.uiTextMain
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: controller.trainSetupSummaryLine
+                                        wrapMode: Text.Wrap
+                                        color: "#d0d6e0"
+                                        font.family: root.fontDataFamily
+                                        font.pixelSize: root.evalCaptionSize
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: controller.opponentPreviewText
+                                        wrapMode: Text.WordWrap
+                                        maximumLineCount: 2
+                                        elide: Text.ElideRight
+                                        color: root.uiTextMuted
+                                        font.family: root.fontDataFamily
+                                        font.pixelSize: Math.round(10 * root.uiScale)
+                                    }
+                                }
+                            }
+                        }
+
                         GridLayout {
                             Layout.fillWidth: true
                             columns: 3
