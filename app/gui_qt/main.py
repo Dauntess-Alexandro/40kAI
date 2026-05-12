@@ -527,6 +527,31 @@ class GUIController(QtCore.QObject):
     def rosterCompositionDelta(self) -> str:
         return self._build_roster_composition_delta()
 
+    @QtCore.Property(str, notify=rosterOverviewChanged)
+    def rosterPointsP1(self) -> str:
+        return f"{self._roster_points_total('P1')} pts"
+
+    @QtCore.Property(str, notify=rosterOverviewChanged)
+    def rosterPointsP2(self) -> str:
+        return f"{self._roster_points_total('P2')} pts"
+
+    @QtCore.Property(str, notify=rosterOverviewChanged)
+    def rosterPointsDelta(self) -> str:
+        p1 = self._roster_points_total("P1")
+        p2 = self._roster_points_total("P2")
+        return f"Δ pts {p1 - p2:+d}"
+
+    @QtCore.Property(str, notify=rosterOverviewChanged)
+    def rosterPointsDeltaColor(self) -> str:
+        p1 = self._roster_points_total("P1")
+        p2 = self._roster_points_total("P2")
+        diff = p1 - p2
+        if diff > 0:
+            return "#8fb6e8"
+        if diff < 0:
+            return "#d58f8f"
+        return "#9aa3b2"
+
     @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
     def rosterActiveProfile(self) -> str:
         entry = self._get_selected_roster_entry()
@@ -5189,6 +5214,16 @@ class GUIController(QtCore.QObject):
                 total += 1
         return total
 
+    def _entry_points(self, entry: RosterEntry) -> int:
+        return int(self._unit_points_by_name.get(str(entry.name).strip(), 0) or 0)
+
+    def _roster_points_total(self, side: str) -> int:
+        roster = self._roster_for_side(side)
+        total = 0
+        for entry in roster:
+            total += self._entry_points(entry)
+        return total
+
     def _build_roster_kpi(self, side: str) -> str:
         roster = self._roster_for_side(side)
         if not roster:
@@ -5237,9 +5272,11 @@ class GUIController(QtCore.QObject):
         p2_units = len(self._model_roster)
         p1_models = sum(max(0, int(e.count)) for e in self._player_roster)
         p2_models = sum(max(0, int(e.count)) for e in self._model_roster)
+        p1_pts = self._roster_points_total("P1")
+        p2_pts = self._roster_points_total("P2")
         du = p1_units - p2_units
         dm = p1_models - p2_models
-        return f"Δ состав: юниты {du:+d}, модели {dm:+d}"
+        return f"Δ состав: юниты {du:+d}, модели {dm:+d}, pts {p1_pts - p2_pts:+d}"
 
     @QtCore.Slot(str, int, result=str)
     def roster_entry_role(self, side: str, index: int) -> str:

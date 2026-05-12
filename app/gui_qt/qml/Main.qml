@@ -1047,7 +1047,7 @@ ApplicationWindow {
                                 spacing: root.spacingSm
 
                                 Text {
-                                    text: "КОМАНДНАЯ ДОКТРИНА"
+                                    text: "БОЕВАЯ СВОДКА РОСТЕРА"
                                     color: "#e8c86a"
                                     font.bold: true
                                     font.family: root.fontUiFamily
@@ -1058,12 +1058,22 @@ ApplicationWindow {
 
                                 Item { Layout.fillWidth: true }
 
-                                Text {
-                                    text: controller.rosterSummary + " • " + controller.rosterCompositionDelta
-                                    color: root.uiTextMuted
-                                    font.family: root.fontDataFamily
-                                    font.pixelSize: root.evalCaptionSize
-                                    elide: Text.ElideRight
+                                RowLayout {
+                                    spacing: root.spacingXs
+                                    Text {
+                                        text: controller.rosterSummary + " • " + controller.rosterCompositionDelta + " • "
+                                        color: root.uiTextMuted
+                                        font.family: root.fontDataFamily
+                                        font.pixelSize: root.evalCaptionSize
+                                        elide: Text.ElideRight
+                                    }
+                                    Text {
+                                        text: controller.rosterPointsDelta
+                                        color: controller.rosterPointsDeltaColor
+                                        font.family: root.fontDataFamily
+                                        font.pixelSize: root.evalCaptionSize
+                                        font.bold: true
+                                    }
                                 }
 
                                 Button {
@@ -1105,8 +1115,8 @@ ApplicationWindow {
                                         anchors.fill: parent
                                         anchors.margins: Math.round(6 * root.uiScale)
                                         spacing: 2
-                                        Text { text: "P1 ДОКТРИНА"; color: "#9eb6d4"; font.bold: true; font.family: root.fontUiFamily; font.pixelSize: Math.round(10 * root.uiScale) }
-                                        Text { text: controller.rosterDoctrineP1; color: root.uiTextMain; font.family: root.fontDataFamily; font.pixelSize: Math.round(10 * root.uiScale); elide: Text.ElideRight }
+                                        Text { text: "P1 СВОДКА"; color: "#9eb6d4"; font.bold: true; font.family: root.fontUiFamily; font.pixelSize: Math.round(10 * root.uiScale) }
+                                        Text { text: "Общий бюджет: " + controller.rosterPointsP1; color: root.uiTextMain; font.family: root.fontDataFamily; font.pixelSize: Math.round(10 * root.uiScale); elide: Text.ElideRight }
                                         Text { text: controller.rosterKpiP1; color: root.uiTextMuted; font.family: root.fontDataFamily; font.pixelSize: Math.round(9 * root.uiScale); elide: Text.ElideRight }
                                     }
                                 }
@@ -1122,8 +1132,8 @@ ApplicationWindow {
                                         anchors.fill: parent
                                         anchors.margins: Math.round(6 * root.uiScale)
                                         spacing: 2
-                                        Text { text: "P2 ДОКТРИНА"; color: "#d4a69e"; font.bold: true; font.family: root.fontUiFamily; font.pixelSize: Math.round(10 * root.uiScale) }
-                                        Text { text: controller.rosterDoctrineP2; color: root.uiTextMain; font.family: root.fontDataFamily; font.pixelSize: Math.round(10 * root.uiScale); elide: Text.ElideRight }
+                                        Text { text: "P2 СВОДКА"; color: "#d4a69e"; font.bold: true; font.family: root.fontUiFamily; font.pixelSize: Math.round(10 * root.uiScale) }
+                                        Text { text: "Общий бюджет: " + controller.rosterPointsP2; color: root.uiTextMain; font.family: root.fontDataFamily; font.pixelSize: Math.round(10 * root.uiScale); elide: Text.ElideRight }
                                         Text { text: controller.rosterKpiP2; color: root.uiTextMuted; font.family: root.fontDataFamily; font.pixelSize: Math.round(9 * root.uiScale); elide: Text.ElideRight }
                                     }
                                 }
