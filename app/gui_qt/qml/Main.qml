@@ -1430,59 +1430,73 @@ ApplicationWindow {
                                 Rectangle {
                                     Layout.fillWidth: true
                                     implicitHeight: briefInner.implicitHeight + Math.round(14 * root.uiScale)
-                                    color: "#121a26"
-                                    border.width: 1
-                                    border.color: "#2f3848"
+                                    color: "#080d14"
+                                    border.width: 0
                                     radius: 0
+                                    Rectangle {
+                                        anchors.left: parent.left
+                                        anchors.top: parent.top
+                                        anchors.bottom: parent.bottom
+                                        width: Math.round(3 * root.uiScale)
+                                        color: "#6b5a32"
+                                    }
                                     ColumnLayout {
                                         id: briefInner
                                         anchors.left: parent.left
                                         anchors.right: parent.right
                                         anchors.top: parent.top
-                                        anchors.margins: Math.round(7 * root.uiScale)
+                                        anchors.leftMargin: Math.round(12 * root.uiScale)
+                                        anchors.rightMargin: Math.round(8 * root.uiScale)
+                                        anchors.topMargin: Math.round(8 * root.uiScale)
+                                        anchors.bottomMargin: Math.round(8 * root.uiScale)
                                         spacing: Math.round(4 * root.uiScale)
-                                        Label {
-                                            text: "ИТОГ СБОРКИ"
-                                            color: "#7f8a9d"
-                                            font.bold: true
-                                            font.family: root.fontUiFamily
-                                            font.pixelSize: Math.round(9 * root.uiScale)
-                                            font.capitalization: Font.AllUppercase
-                                            font.letterSpacing: 0.6
+                                        Text {
+                                            text: "// LOADOUT.AUDIT"
+                                            color: "#4a5566"
+                                            font.family: root.fontDataFamily
+                                            font.pixelSize: Math.round(7 * root.uiScale)
                                         }
                                         Text {
                                             Layout.fillWidth: true
-                                            text: "ДБ: " + controller.rosterWeaponsSelectedRanged + " | ББ: " + controller.rosterWeaponsSelectedMelee
-                                            color: root.uiTextMuted
-                                            elide: Text.ElideRight
+                                            text: "> ДАЛЬНИЙ: " + controller.rosterWeaponsSelectedRanged
+                                            color: "#b8c8dc"
                                             wrapMode: Text.WordWrap
                                             font.family: root.fontDataFamily
                                             font.pixelSize: Math.round(10 * root.uiScale)
                                         }
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: "> БЛИЖНИЙ: " + controller.rosterWeaponsSelectedMelee
+                                            color: "#b8c8dc"
+                                            wrapMode: Text.WordWrap
+                                            font.family: root.fontDataFamily
+                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                        }
+                                        Text {
+                                            readonly property bool ready: controller.rosterWeaponsPreviewUnitName !== "—"
+                                                && controller.rosterWeaponsSelectedRanged !== "—"
+                                                && controller.rosterWeaponsSelectedMelee !== "—"
+                                            text: ready ? "STATUS: LOADOUT READY" : "STATUS: AWAITING SELECTION"
+                                            color: ready ? "#7bc96f" : "#c9a227"
+                                            font.family: root.fontDataFamily
+                                            font.pixelSize: Math.round(9 * root.uiScale)
+                                            font.bold: true
+                                        }
                                     }
                                 }
 
-                                RowLayout {
+                                Text {
                                     Layout.fillWidth: true
-                                    spacing: root.spacingXs
-                                    Label {
-                                        text: "ДАЛЬНИЙ БОЙ:"
-                                        color: "#9eb6d4"
-                                        font.bold: true
-                                        font.family: root.fontUiFamily
-                                    }
-                                    Item { Layout.fillWidth: true }
-                                    Label {
-                                        text: controller.rosterWeaponsPreviewRangedCount + " проф."
-                                        color: root.uiTextMuted
-                                        font.family: root.fontDataFamily
-                                        font.pixelSize: Math.round(9 * root.uiScale)
-                                    }
+                                    text: "> ДАЛЬНИЙ БОЙ  [ " + controller.rosterWeaponsPreviewRangedCount + " проф. ]"
+                                    color: "#7d8a9c"
+                                    font.family: root.fontUiFamily
+                                    font.pixelSize: Math.round(11 * root.uiScale)
+                                    font.capitalization: Font.AllUppercase
+                                    font.letterSpacing: 0.7
                                 }
-                                Rectangle {
+                                Item {
                                     Layout.fillWidth: true
-                                    implicitHeight: 1
-                                    color: "#4b5d76"
+                                    Layout.preferredHeight: Math.round(6 * root.uiScale)
                                 }
                                 Repeater {
                                     model: controller.rosterWeaponsPreviewRanged
@@ -1490,58 +1504,88 @@ ApplicationWindow {
                                         readonly property string rwWeaponName: modelData
                                         readonly property bool rwSel: rwWeaponName === controller.rosterWeaponsSelectedRanged
                                         Layout.fillWidth: true
-                                        Layout.fillHeight: false
-                                        implicitHeight: Math.round(76 * root.uiScale)
-                                        color: "#131923"
-                                        border.width: 2
-                                        border.color: rwSel ? "#6ea0db" : "#2f3848"
+                                        implicitHeight: Math.round(90 * root.uiScale)
+                                        color: "#111820"
+                                        border.width: rwSel ? 2 : 1
+                                        border.color: rwSel ? "#e8c86a" : "#3d4558"
                                         radius: 0
+
                                         RowLayout {
                                             anchors.fill: parent
-                                            anchors.margins: Math.round(5 * root.uiScale)
-                                            spacing: root.spacingXs
-                                            Image {
-                                                source: controller.roster_weapon_icon_source(rwWeaponName)
-                                                sourceSize.width: Math.round(34 * root.uiScale)
-                                                sourceSize.height: Math.round(34 * root.uiScale)
-                                                Layout.preferredWidth: Math.round(34 * root.uiScale)
-                                                Layout.preferredHeight: Math.round(34 * root.uiScale)
-                                                fillMode: Image.PreserveAspectFit
-                                                visible: source !== ""
-                                                smooth: true
+                                            anchors.margins: Math.round(8 * root.uiScale)
+                                            spacing: root.spacingSm
+
+                                            Rectangle {
+                                                Layout.preferredWidth: Math.round(14 * root.uiScale)
+                                                Layout.preferredHeight: Math.round(14 * root.uiScale)
+                                                Layout.alignment: Qt.AlignTop
+                                                Layout.topMargin: Math.round(5 * root.uiScale)
+                                                radius: 0
+                                                color: rwSel ? "#c79a32" : "transparent"
+                                                border.width: 1
+                                                border.color: rwSel ? "#f0d78a" : "#5c6578"
                                             }
+
+                                            Rectangle {
+                                                Layout.preferredWidth: Math.round(44 * root.uiScale)
+                                                Layout.preferredHeight: Math.round(44 * root.uiScale)
+                                                Layout.alignment: Qt.AlignTop
+                                                color: root.rosterSlateInstrumentBg
+                                                border.width: 1
+                                                border.color: "#323c4d"
+                                                Image {
+                                                    anchors.centerIn: parent
+                                                    width: Math.round(36 * root.uiScale)
+                                                    height: Math.round(36 * root.uiScale)
+                                                    source: controller.roster_weapon_icon_source(rwWeaponName)
+                                                    fillMode: Image.PreserveAspectFit
+                                                    smooth: true
+                                                    visible: source !== ""
+                                                }
+                                            }
+
                                             ColumnLayout {
                                                 Layout.fillWidth: true
-                                                spacing: 0
+                                                spacing: Math.round(4 * root.uiScale)
                                                 Text {
+                                                    Layout.fillWidth: true
                                                     text: rwWeaponName
                                                     color: root.uiTextMain
                                                     font.bold: true
                                                     font.family: root.fontUiFamily
+                                                    font.pixelSize: Math.round(12 * root.uiScale)
                                                     elide: Text.ElideRight
                                                 }
                                                 Row {
-                                                    spacing: Math.round(4 * root.uiScale)
+                                                    spacing: 0
                                                     Repeater {
                                                         model: 6
-                                                        delegate: Column {
+                                                        delegate: Item {
                                                             property int colIndex: index
                                                             width: root.rosterWeaponStatColWidths[colIndex]
+                                                            implicitHeight: hdrRw.implicitHeight + valRw.implicitHeight + 2
                                                             Text {
+                                                                id: hdrRw
+                                                                anchors.horizontalCenter: parent.horizontalCenter
                                                                 width: parent.width
                                                                 horizontalAlignment: Text.AlignHCenter
                                                                 text: root.rosterWeaponStatHdrs[colIndex]
-                                                                color: "#7f8a9d"
-                                                                font.family: "JetBrains Mono"
-                                                                font.pixelSize: Math.round(8 * root.uiScale)
+                                                                color: "#5c6678"
+                                                                font.family: root.fontDataFamily
+                                                                font.pixelSize: Math.round(6 * root.uiScale)
+                                                                font.letterSpacing: 0.35
                                                             }
                                                             Text {
+                                                                id: valRw
+                                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                                anchors.top: hdrRw.bottom
+                                                                anchors.topMargin: 2
                                                                 width: parent.width
                                                                 horizontalAlignment: Text.AlignHCenter
                                                                 text: controller.roster_weapon_stat_values_for_selected(rwWeaponName)[colIndex]
-                                                                color: "#eef4ff"
-                                                                font.bold: true
-                                                                font.family: "JetBrains Mono"
+                                                                color: "#f4f7fc"
+                                                                font.weight: Font.DemiBold
+                                                                font.family: root.fontDataFamily
                                                                 font.pixelSize: Math.round(10 * root.uiScale)
                                                             }
                                                         }
@@ -1549,49 +1593,27 @@ ApplicationWindow {
                                                 }
                                                 Flow {
                                                     Layout.fillWidth: true
-                                                    spacing: Math.round(4 * root.uiScale)
+                                                    spacing: root.rosterSlateGridStep
                                                     Repeater {
                                                         model: controller.roster_weapon_ability_badges_for_weapon(rwWeaponName)
                                                         delegate: Rectangle {
-                                                            implicitHeight: badgeRText.implicitHeight + Math.round(3 * root.uiScale)
-                                                            implicitWidth: badgeRText.implicitWidth + Math.round(6 * root.uiScale)
-                                                            color: "#243545"
+                                                            color: "#141b26"
                                                             border.width: 1
-                                                            border.color: "#3f5b75"
+                                                            border.color: "#4a5c72"
                                                             radius: 0
+                                                            implicitWidth: badgeRText.implicitWidth + Math.round(12 * root.uiScale)
+                                                            implicitHeight: badgeRText.implicitHeight + Math.round(4 * root.uiScale)
                                                             Text {
                                                                 id: badgeRText
                                                                 anchors.centerIn: parent
                                                                 text: modelData
-                                                                color: "#d6eefc"
-                                                                font.bold: true
+                                                                color: "#b8c8dc"
                                                                 font.family: root.fontDataFamily
                                                                 font.pixelSize: Math.round(8 * root.uiScale)
                                                             }
                                                         }
                                                     }
                                                 }
-                                            }
-                                        }
-                                        Rectangle {
-                                            visible: rwSel
-                                            anchors.right: parent.right
-                                            anchors.top: parent.top
-                                            anchors.margins: Math.round(5 * root.uiScale)
-                                            color: "transparent"
-                                            border.width: 1
-                                            border.color: "#8fb6e8"
-                                            radius: 0
-                                            implicitWidth: selectedRText.implicitWidth + Math.round(8 * root.uiScale)
-                                            implicitHeight: selectedRText.implicitHeight + Math.round(4 * root.uiScale)
-                                            Text {
-                                                id: selectedRText
-                                                anchors.centerIn: parent
-                                                text: "SELECTED"
-                                                color: "#9eb6d4"
-                                                font.bold: true
-                                                font.family: root.fontDataFamily
-                                                font.pixelSize: Math.round(8 * root.uiScale)
                                             }
                                         }
                                         MouseArea {
@@ -1601,27 +1623,18 @@ ApplicationWindow {
                                     }
                                 }
 
-                                RowLayout {
+                                Text {
                                     Layout.fillWidth: true
-                                    spacing: root.spacingXs
-                                    Label {
-                                        text: "БЛИЖНИЙ БОЙ:"
-                                        color: "#c4a882"
-                                        font.bold: true
-                                        font.family: root.fontUiFamily
-                                    }
-                                    Item { Layout.fillWidth: true }
-                                    Label {
-                                        text: controller.rosterWeaponsPreviewMeleeCount + " проф."
-                                        color: root.uiTextMuted
-                                        font.family: root.fontDataFamily
-                                        font.pixelSize: Math.round(9 * root.uiScale)
-                                    }
+                                    text: "> БЛИЖНИЙ БОЙ  [ " + controller.rosterWeaponsPreviewMeleeCount + " проф. ]"
+                                    color: "#8a7d6a"
+                                    font.family: root.fontUiFamily
+                                    font.pixelSize: Math.round(11 * root.uiScale)
+                                    font.capitalization: Font.AllUppercase
+                                    font.letterSpacing: 0.7
                                 }
-                                Rectangle {
+                                Item {
                                     Layout.fillWidth: true
-                                    implicitHeight: 1
-                                    color: "#6f5a42"
+                                    Layout.preferredHeight: Math.round(6 * root.uiScale)
                                 }
                                 Repeater {
                                     model: controller.rosterWeaponsPreviewMelee
@@ -1629,58 +1642,88 @@ ApplicationWindow {
                                         readonly property string mwWeaponName: modelData
                                         readonly property bool mwSel: mwWeaponName === controller.rosterWeaponsSelectedMelee
                                         Layout.fillWidth: true
-                                        Layout.fillHeight: false
-                                        implicitHeight: Math.round(76 * root.uiScale)
-                                        color: "#131923"
-                                        border.width: 2
-                                        border.color: mwSel ? "#d97706" : "#2f3848"
+                                        implicitHeight: Math.round(90 * root.uiScale)
+                                        color: "#111820"
+                                        border.width: mwSel ? 2 : 1
+                                        border.color: mwSel ? "#e8c86a" : "#3d4558"
                                         radius: 0
+
                                         RowLayout {
                                             anchors.fill: parent
-                                            anchors.margins: Math.round(5 * root.uiScale)
-                                            spacing: root.spacingXs
-                                            Image {
-                                                source: controller.roster_weapon_icon_source(mwWeaponName)
-                                                sourceSize.width: Math.round(34 * root.uiScale)
-                                                sourceSize.height: Math.round(34 * root.uiScale)
-                                                Layout.preferredWidth: Math.round(34 * root.uiScale)
-                                                Layout.preferredHeight: Math.round(34 * root.uiScale)
-                                                fillMode: Image.PreserveAspectFit
-                                                visible: source !== ""
-                                                smooth: true
+                                            anchors.margins: Math.round(8 * root.uiScale)
+                                            spacing: root.spacingSm
+
+                                            Rectangle {
+                                                Layout.preferredWidth: Math.round(14 * root.uiScale)
+                                                Layout.preferredHeight: Math.round(14 * root.uiScale)
+                                                Layout.alignment: Qt.AlignTop
+                                                Layout.topMargin: Math.round(5 * root.uiScale)
+                                                radius: 0
+                                                color: mwSel ? "#c79a32" : "transparent"
+                                                border.width: 1
+                                                border.color: mwSel ? "#f0d78a" : "#5c6578"
                                             }
+
+                                            Rectangle {
+                                                Layout.preferredWidth: Math.round(44 * root.uiScale)
+                                                Layout.preferredHeight: Math.round(44 * root.uiScale)
+                                                Layout.alignment: Qt.AlignTop
+                                                color: root.rosterSlateInstrumentBg
+                                                border.width: 1
+                                                border.color: "#323c4d"
+                                                Image {
+                                                    anchors.centerIn: parent
+                                                    width: Math.round(36 * root.uiScale)
+                                                    height: Math.round(36 * root.uiScale)
+                                                    source: controller.roster_weapon_icon_source(mwWeaponName)
+                                                    fillMode: Image.PreserveAspectFit
+                                                    smooth: true
+                                                    visible: source !== ""
+                                                }
+                                            }
+
                                             ColumnLayout {
                                                 Layout.fillWidth: true
-                                                spacing: 0
+                                                spacing: Math.round(4 * root.uiScale)
                                                 Text {
+                                                    Layout.fillWidth: true
                                                     text: mwWeaponName
                                                     color: root.uiTextMain
                                                     font.bold: true
                                                     font.family: root.fontUiFamily
+                                                    font.pixelSize: Math.round(12 * root.uiScale)
                                                     elide: Text.ElideRight
                                                 }
                                                 Row {
-                                                    spacing: Math.round(4 * root.uiScale)
+                                                    spacing: 0
                                                     Repeater {
                                                         model: 6
-                                                        delegate: Column {
+                                                        delegate: Item {
                                                             property int colIndex: index
                                                             width: root.rosterWeaponStatColWidths[colIndex]
+                                                            implicitHeight: hdrMw.implicitHeight + valMw.implicitHeight + 2
                                                             Text {
+                                                                id: hdrMw
+                                                                anchors.horizontalCenter: parent.horizontalCenter
                                                                 width: parent.width
                                                                 horizontalAlignment: Text.AlignHCenter
                                                                 text: root.rosterWeaponStatHdrs[colIndex]
-                                                                color: "#7f8a9d"
-                                                                font.family: "JetBrains Mono"
-                                                                font.pixelSize: Math.round(8 * root.uiScale)
+                                                                color: "#5c6678"
+                                                                font.family: root.fontDataFamily
+                                                                font.pixelSize: Math.round(6 * root.uiScale)
+                                                                font.letterSpacing: 0.35
                                                             }
                                                             Text {
+                                                                id: valMw
+                                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                                anchors.top: hdrMw.bottom
+                                                                anchors.topMargin: 2
                                                                 width: parent.width
                                                                 horizontalAlignment: Text.AlignHCenter
                                                                 text: controller.roster_weapon_stat_values_for_selected(mwWeaponName)[colIndex]
-                                                                color: "#eef4ff"
-                                                                font.bold: true
-                                                                font.family: "JetBrains Mono"
+                                                                color: "#f4f7fc"
+                                                                font.weight: Font.DemiBold
+                                                                font.family: root.fontDataFamily
                                                                 font.pixelSize: Math.round(10 * root.uiScale)
                                                             }
                                                         }
@@ -1688,49 +1731,27 @@ ApplicationWindow {
                                                 }
                                                 Flow {
                                                     Layout.fillWidth: true
-                                                    spacing: Math.round(4 * root.uiScale)
+                                                    spacing: root.rosterSlateGridStep
                                                     Repeater {
                                                         model: controller.roster_weapon_ability_badges_for_weapon(mwWeaponName)
                                                         delegate: Rectangle {
-                                                            implicitHeight: badgeMText.implicitHeight + Math.round(3 * root.uiScale)
-                                                            implicitWidth: badgeMText.implicitWidth + Math.round(6 * root.uiScale)
-                                                            color: "#3b3022"
+                                                            color: "#141b26"
                                                             border.width: 1
-                                                            border.color: "#6f5a42"
+                                                            border.color: "#4a5c72"
                                                             radius: 0
+                                                            implicitWidth: badgeMText.implicitWidth + Math.round(12 * root.uiScale)
+                                                            implicitHeight: badgeMText.implicitHeight + Math.round(4 * root.uiScale)
                                                             Text {
                                                                 id: badgeMText
                                                                 anchors.centerIn: parent
                                                                 text: modelData
-                                                                color: "#f5e4cf"
-                                                                font.bold: true
+                                                                color: "#b8c8dc"
                                                                 font.family: root.fontDataFamily
                                                                 font.pixelSize: Math.round(8 * root.uiScale)
                                                             }
                                                         }
                                                     }
                                                 }
-                                            }
-                                        }
-                                        Rectangle {
-                                            visible: mwSel
-                                            anchors.right: parent.right
-                                            anchors.top: parent.top
-                                            anchors.margins: Math.round(5 * root.uiScale)
-                                            color: "transparent"
-                                            border.width: 1
-                                            border.color: "#e8c86a"
-                                            radius: 0
-                                            implicitWidth: selectedMText.implicitWidth + Math.round(8 * root.uiScale)
-                                            implicitHeight: selectedMText.implicitHeight + Math.round(4 * root.uiScale)
-                                            Text {
-                                                id: selectedMText
-                                                anchors.centerIn: parent
-                                                text: "SELECTED"
-                                                color: "#e8c86a"
-                                                font.bold: true
-                                                font.family: root.fontDataFamily
-                                                font.pixelSize: Math.round(8 * root.uiScale)
                                             }
                                         }
                                         MouseArea {
@@ -1742,48 +1763,58 @@ ApplicationWindow {
 
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    Layout.topMargin: Math.round(10 * root.uiScale)
+                                    Layout.topMargin: Math.round(12 * root.uiScale)
                                     spacing: root.spacingSm
                                     Button {
+                                        id: addP1WorkbenchBtn
                                         Layout.fillWidth: true
-                                        implicitHeight: Math.round(42 * root.uiScale)
+                                        implicitHeight: Math.round(46 * root.uiScale)
                                         text: "[ ДОБАВИТЬ В P1 ]"
+                                        flat: true
                                         onClicked: controller.add_unit_to_player(availableUnitsView.currentIndex)
+                                        background: ChamferPanel {
+                                            cutSize: Math.round(10 * root.uiScale)
+                                            contentMargin: 0
+                                            fillColor: addP1WorkbenchBtn.pressed ? "#152540"
+                                                : (addP1WorkbenchBtn.hovered ? "#1a3150" : "#121824")
+                                            borderWidth: 2
+                                            borderColor: addP1WorkbenchBtn.hovered ? "#7eb0f0" : "#2f6ed8"
+                                        }
                                         contentItem: Text {
-                                            text: parent.text
-                                            color: parent.down ? "#dfe9ff" : "#c8d8f5"
+                                            text: addP1WorkbenchBtn.text
+                                            color: addP1WorkbenchBtn.pressed ? "#ffffff"
+                                                : (addP1WorkbenchBtn.hovered ? "#e8f0ff" : "#c8d8f5")
                                             font.family: "JetBrains Mono"
                                             font.pixelSize: Math.round(11 * root.uiScale)
                                             font.bold: true
                                             horizontalAlignment: Text.AlignHCenter
                                             verticalAlignment: Text.AlignVCenter
-                                        }
-                                        background: Rectangle {
-                                            radius: 0
-                                            color: parent.pressed ? "#172032" : "#121824"
-                                            border.width: 2
-                                            border.color: parent.hovered ? "#8fb6e8" : "#2f6ed8"
                                         }
                                     }
                                     Button {
+                                        id: addP2WorkbenchBtn
                                         Layout.fillWidth: true
-                                        implicitHeight: Math.round(42 * root.uiScale)
+                                        implicitHeight: Math.round(46 * root.uiScale)
                                         text: "[ ДОБАВИТЬ В P2 ]"
+                                        flat: true
                                         onClicked: controller.add_unit_to_model(availableUnitsView.currentIndex)
+                                        background: ChamferPanel {
+                                            cutSize: Math.round(10 * root.uiScale)
+                                            contentMargin: 0
+                                            fillColor: addP2WorkbenchBtn.pressed ? "#301818"
+                                                : (addP2WorkbenchBtn.hovered ? "#3a1e1e" : "#1a1214")
+                                            borderWidth: 2
+                                            borderColor: addP2WorkbenchBtn.hovered ? "#e08080" : "#a44848"
+                                        }
                                         contentItem: Text {
-                                            text: parent.text
-                                            color: parent.pressed ? "#ffecec" : "#f0c9c9"
+                                            text: addP2WorkbenchBtn.text
+                                            color: addP2WorkbenchBtn.pressed ? "#ffffff"
+                                                : (addP2WorkbenchBtn.hovered ? "#ffe8e8" : "#f0c9c9")
                                             font.family: "JetBrains Mono"
                                             font.pixelSize: Math.round(11 * root.uiScale)
                                             font.bold: true
                                             horizontalAlignment: Text.AlignHCenter
                                             verticalAlignment: Text.AlignVCenter
-                                        }
-                                        background: Rectangle {
-                                            radius: 0
-                                            color: parent.pressed ? "#261616" : "#1a1214"
-                                            border.width: 2
-                                            border.color: parent.hovered ? "#e07878" : "#a44848"
                                         }
                                     }
                                 }
