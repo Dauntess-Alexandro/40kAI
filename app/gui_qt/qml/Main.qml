@@ -60,6 +60,7 @@ ApplicationWindow {
     property int actionButtonHeight: Math.round(30 * uiScale)
     property int actionButtonMinWidth: Math.round(120 * uiScale)
     property bool mainLogExpanded: true
+    property bool rosterLoadoutFocus: false
     property string fontUiFamily: "Rajdhani"
     property string fontDataFamily: "IBM Plex Mono"
 
@@ -1026,73 +1027,121 @@ ApplicationWindow {
                     anchors.margins: root.spacingLg
                     spacing: root.spacingMd
 
-                    Frame {
+                    ChamferPanel {
                         Layout.fillWidth: true
-                        padding: root.spacingSm
+                        Layout.preferredHeight: Math.round(122 * root.uiScale)
+                        Layout.minimumHeight: Math.round(110 * root.uiScale)
+                        fillColor: root.uiBgCard
+                        borderColor: root.uiBorder
+                        borderWidth: 1
+                        cutSize: Math.round(10 * root.uiScale)
+                        contentMargin: root.spacingSm
 
-                        RowLayout {
+                        ColumnLayout {
                             anchors.fill: parent
-                            spacing: root.spacingMd
+                            spacing: root.spacingXs
 
-                            Label {
-                                text: "Статус ростера:"
-                                font.bold: true
-                            }
-
-                            Label {
-                                text: controller.rosterSummary
+                            RowLayout {
                                 Layout.fillWidth: true
-                                elide: Label.ElideRight
+                                Layout.preferredHeight: Math.round(30 * root.uiScale)
+                                spacing: root.spacingSm
+
+                                Text {
+                                    text: "КОМАНДНАЯ ДОКТРИНА"
+                                    color: "#e8c86a"
+                                    font.bold: true
+                                    font.family: root.fontUiFamily
+                                    font.pixelSize: root.evalSectionTitleSize
+                                    font.capitalization: Font.AllUppercase
+                                    font.letterSpacing: 1.0
+                                }
+
+                                Item { Layout.fillWidth: true }
+
+                                Text {
+                                    text: controller.rosterSummary + " • " + controller.rosterCompositionDelta
+                                    color: root.uiTextMuted
+                                    font.family: root.fontDataFamily
+                                    font.pixelSize: root.evalCaptionSize
+                                    elide: Text.ElideRight
+                                }
+
+                                Button {
+                                    text: root.rosterLoadoutFocus ? "FOCUS: ON" : "FOCUS: OFF"
+                                    flat: true
+                                    onClicked: root.rosterLoadoutFocus = !root.rosterLoadoutFocus
+                                    contentItem: Text {
+                                        text: parent.text
+                                        color: parent.hovered ? "#e8c86a" : "#9aa3b2"
+                                        font.bold: true
+                                        font.family: root.fontDataFamily
+                                        font.pixelSize: root.evalCaptionSize
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                    background: ChamferPanel {
+                                        cutSize: Math.round(6 * root.uiScale)
+                                        contentMargin: 0
+                                        fillColor: parent.hovered ? "#25303d" : "transparent"
+                                        borderWidth: 1
+                                        borderColor: parent.hovered ? "#b88a26" : "#4f5a6b"
+                                    }
+                                }
                             }
 
                             RowLayout {
-                                spacing: root.spacingXs
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: Math.round(62 * root.uiScale)
+                                spacing: root.spacingMd
 
-                                Label {
-                                    text: "P1:"
-                                    color: root.uiTextMuted
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    implicitHeight: Math.round(60 * root.uiScale)
+                                    color: "#141b26"
+                                    border.width: 1
+                                    border.color: "#2f6ed8"
+                                    radius: 0
+                                    Column {
+                                        anchors.fill: parent
+                                        anchors.margins: Math.round(6 * root.uiScale)
+                                        spacing: 2
+                                        Text { text: "P1 ДОКТРИНА"; color: "#9eb6d4"; font.bold: true; font.family: root.fontUiFamily; font.pixelSize: Math.round(10 * root.uiScale) }
+                                        Text { text: controller.rosterDoctrineP1; color: root.uiTextMain; font.family: root.fontDataFamily; font.pixelSize: Math.round(10 * root.uiScale); elide: Text.ElideRight }
+                                        Text { text: controller.rosterKpiP1; color: root.uiTextMuted; font.family: root.fontDataFamily; font.pixelSize: Math.round(9 * root.uiScale); elide: Text.ElideRight }
+                                    }
                                 }
 
-                                Image {
-                                    source: controller.faction_icon_source(root.playerFactionName)
-                                    sourceSize.width: root.factionIconSize
-                                    sourceSize.height: root.factionIconSize
-                                    Layout.preferredWidth: root.factionIconSize
-                                    Layout.preferredHeight: root.factionIconSize
-                                    visible: source !== ""
-                                    fillMode: Image.PreserveAspectFit
-                                    smooth: true
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    implicitHeight: Math.round(60 * root.uiScale)
+                                    color: "#141b26"
+                                    border.width: 1
+                                    border.color: "#7b4a4a"
+                                    radius: 0
+                                    Column {
+                                        anchors.fill: parent
+                                        anchors.margins: Math.round(6 * root.uiScale)
+                                        spacing: 2
+                                        Text { text: "P2 ДОКТРИНА"; color: "#d4a69e"; font.bold: true; font.family: root.fontUiFamily; font.pixelSize: Math.round(10 * root.uiScale) }
+                                        Text { text: controller.rosterDoctrineP2; color: root.uiTextMain; font.family: root.fontDataFamily; font.pixelSize: Math.round(10 * root.uiScale); elide: Text.ElideRight }
+                                        Text { text: controller.rosterKpiP2; color: root.uiTextMuted; font.family: root.fontDataFamily; font.pixelSize: Math.round(9 * root.uiScale); elide: Text.ElideRight }
+                                    }
                                 }
 
-                                Label {
-                                    text: root.playerFactionName
-                                    color: root.uiTextMuted
-                                }
-
-                                Label {
-                                    text: "•"
-                                    color: root.uiTextMuted
-                                }
-
-                                Label {
-                                    text: "P2:"
-                                    color: root.uiTextMuted
-                                }
-
-                                Image {
-                                    source: controller.faction_icon_source(root.modelFactionName)
-                                    sourceSize.width: root.factionIconSize
-                                    sourceSize.height: root.factionIconSize
-                                    Layout.preferredWidth: root.factionIconSize
-                                    Layout.preferredHeight: root.factionIconSize
-                                    visible: source !== ""
-                                    fillMode: Image.PreserveAspectFit
-                                    smooth: true
-                                }
-
-                                Label {
-                                    text: root.modelFactionName
-                                    color: root.uiTextMuted
+                                Rectangle {
+                                    implicitWidth: Math.round(340 * root.uiScale)
+                                    implicitHeight: Math.round(60 * root.uiScale)
+                                    color: "#10151d"
+                                    border.width: 1
+                                    border.color: "#2f3848"
+                                    radius: 0
+                                    Column {
+                                        anchors.fill: parent
+                                        anchors.margins: Math.round(6 * root.uiScale)
+                                        spacing: 2
+                                        Text { text: "АКТИВНЫЙ ПРОФИЛЬ ВООРУЖЕНИЯ"; color: "#e8c86a"; font.bold: true; font.family: root.fontUiFamily; font.pixelSize: Math.round(10 * root.uiScale) }
+                                        Text { text: controller.rosterActiveProfile; color: root.uiTextMain; font.family: root.fontDataFamily; font.pixelSize: Math.round(9 * root.uiScale); elide: Text.ElideRight }
+                                    }
                                 }
                             }
                         }
@@ -1113,6 +1162,8 @@ ApplicationWindow {
                             Layout.minimumWidth: Math.round(220 * root.uiScale)
                             Layout.preferredWidth: Math.round(250 * root.uiScale)
                             Layout.horizontalStretchFactor: 1
+                            opacity: root.rosterLoadoutFocus ? 0.45 : 1.0
+                            Behavior on opacity { NumberAnimation { duration: 130 } }
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -1214,6 +1265,8 @@ ApplicationWindow {
                             Layout.minimumWidth: Math.round(300 * root.uiScale)
                             Layout.preferredWidth: Math.round(360 * root.uiScale)
                             Layout.horizontalStretchFactor: 3
+                            opacity: root.rosterLoadoutFocus ? 0.55 : 1.0
+                            Behavior on opacity { NumberAnimation { duration: 130 } }
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -1315,27 +1368,33 @@ ApplicationWindow {
                                 spacing: root.spacingSm
 
                                 Label {
-                                    text: "Оружие выбранного"
+                                    text: "ВЕРСТАК ВООРУЖЕНИЯ"
                                     font.bold: true
                                     Layout.preferredHeight: Math.round(22 * root.uiScale)
                                     verticalAlignment: Text.AlignVCenter
+                                    color: "#e8c86a"
+                                    font.family: root.fontUiFamily
+                                    font.capitalization: Font.AllUppercase
+                                    font.letterSpacing: 1.0
                                 }
                                 Label {
                                     text: controller.rosterWeaponsPreviewTarget + " · " + controller.rosterWeaponsPreviewUnitName
                                     font.bold: true
-                                    color: root.uiTextMuted
+                                    color: root.uiTextMain
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true
-                                    font.pixelSize: Math.round(11 * root.uiScale)
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    font.family: root.fontUiFamily
                                 }
 
                                 RowLayout {
                                     Layout.fillWidth: true
                                     spacing: root.spacingXs
                                     Label {
-                                        text: "ДБ:"
-                                        color: root.uiTextMuted
+                                        text: "ДАЛЬНИЙ БОЙ:"
+                                        color: "#9eb6d4"
                                         font.bold: true
+                                        font.family: root.fontUiFamily
                                     }
                                     StyledComboBox {
                                         id: rosterRangedCombo
@@ -1356,14 +1415,46 @@ ApplicationWindow {
                                         }
                                     }
                                 }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: controller.rosterActiveRangedStatline
+                                    color: root.uiTextMuted
+                                    font.family: root.fontDataFamily
+                                    font.pixelSize: Math.round(10 * root.uiScale)
+                                }
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: Math.round(4 * root.uiScale)
+                                    Repeater {
+                                        model: controller.rosterActiveRangedBadges
+                                        delegate: Rectangle {
+                                            implicitHeight: badgeRangedText.implicitHeight + Math.round(4 * root.uiScale)
+                                            implicitWidth: badgeRangedText.implicitWidth + Math.round(8 * root.uiScale)
+                                            color: "#243545"
+                                            border.width: 1
+                                            border.color: "#3f5b75"
+                                            radius: 0
+                                            Text {
+                                                id: badgeRangedText
+                                                anchors.centerIn: parent
+                                                text: modelData
+                                                color: "#d6eefc"
+                                                font.bold: true
+                                                font.family: root.fontDataFamily
+                                                font.pixelSize: Math.round(9 * root.uiScale)
+                                            }
+                                        }
+                                    }
+                                }
 
                                 RowLayout {
                                     Layout.fillWidth: true
                                     spacing: root.spacingXs
                                     Label {
-                                        text: "ББ:"
-                                        color: root.uiTextMuted
+                                        text: "БЛИЖНИЙ БОЙ:"
+                                        color: "#c4a882"
                                         font.bold: true
+                                        font.family: root.fontUiFamily
                                     }
                                     StyledComboBox {
                                         id: rosterMeleeCombo
@@ -1381,6 +1472,37 @@ ApplicationWindow {
                                         onActivated: {
                                             if (currentIndex >= 0)
                                                 controller.set_selected_roster_melee_weapon(currentText)
+                                        }
+                                    }
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: controller.rosterActiveMeleeStatline
+                                    color: root.uiTextMuted
+                                    font.family: root.fontDataFamily
+                                    font.pixelSize: Math.round(10 * root.uiScale)
+                                }
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: Math.round(4 * root.uiScale)
+                                    Repeater {
+                                        model: controller.rosterActiveMeleeBadges
+                                        delegate: Rectangle {
+                                            implicitHeight: badgeMeleeText.implicitHeight + Math.round(4 * root.uiScale)
+                                            implicitWidth: badgeMeleeText.implicitWidth + Math.round(8 * root.uiScale)
+                                            color: "#3b3022"
+                                            border.width: 1
+                                            border.color: "#6f5a42"
+                                            radius: 0
+                                            Text {
+                                                id: badgeMeleeText
+                                                anchors.centerIn: parent
+                                                text: modelData
+                                                color: "#f5e4cf"
+                                                font.bold: true
+                                                font.family: root.fontDataFamily
+                                                font.pixelSize: Math.round(9 * root.uiScale)
+                                            }
                                         }
                                     }
                                 }
@@ -1504,8 +1626,13 @@ ApplicationWindow {
                                     clip: true
                                     delegate: Rectangle {
                                         width: ListView.view ? ListView.view.width : 0
-                                        height: Math.max(unitNamePlayer.implicitHeight, unitIconPlayer.height) + root.spacingSm
-                                        color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
+                                        height: Math.round(78 * root.uiScale)
+                                        color: controller.roster_entry_active("P1", index) ? "#1f2f45" : "#141b26"
+                                        border.width: 1
+                                        border.color: controller.roster_entry_active("P1", index) ? "#d5b15a" : "#2f3848"
+                                        radius: 0
+                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                        Behavior on border.color { ColorAnimation { duration: 120 } }
 
                                         Image {
                                             id: unitIconPlayer
@@ -1520,14 +1647,64 @@ ApplicationWindow {
                                             visible: source !== ""
                                         }
 
-                                        Text {
-                                            id: unitNamePlayer
-                                            text: model.display
-                                            color: ListView.isCurrentItem ? "#ffffff" : root.uiTextMain
-                                            elide: Text.ElideRight
-                                            anchors.verticalCenter: parent.verticalCenter
+                                        Column {
                                             anchors.left: unitIconPlayer.visible ? unitIconPlayer.right : parent.left
                                             anchors.leftMargin: root.spacingSm
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: root.spacingSm
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 1
+                                            Text {
+                                                text: model.display
+                                                color: root.uiTextMain
+                                                elide: Text.ElideRight
+                                                font.bold: true
+                                                font.family: root.fontUiFamily
+                                            }
+                                            Text {
+                                                text: controller.roster_entry_role("P1", index) + " • models " + controller.roster_entry_models("P1", index) + " • " + controller.roster_entry_points("P1", index)
+                                                color: "#9eb6d4"
+                                                elide: Text.ElideRight
+                                                font.family: root.fontDataFamily
+                                                font.pixelSize: Math.round(9 * root.uiScale)
+                                            }
+                                            Text {
+                                                text: controller.roster_entry_abilities("P1", index)
+                                                color: "#d5b15a"
+                                                elide: Text.ElideRight
+                                                font.family: root.fontDataFamily
+                                                font.pixelSize: Math.round(9 * root.uiScale)
+                                            }
+                                            Text {
+                                                text: "ДБ " + controller.roster_entry_ranged_weapon("P1", index) + " • ББ " + controller.roster_entry_melee_weapon("P1", index)
+                                                color: root.uiTextMuted
+                                                elide: Text.ElideRight
+                                                font.family: root.fontDataFamily
+                                                font.pixelSize: Math.round(9 * root.uiScale)
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            visible: controller.roster_entry_active("P1", index)
+                                            anchors.right: parent.right
+                                            anchors.top: parent.top
+                                            anchors.topMargin: 2
+                                            anchors.rightMargin: 2
+                                            color: "#c79a32"
+                                            border.width: 1
+                                            border.color: "#e8c86a"
+                                            radius: 0
+                                            implicitWidth: activeP1Text.implicitWidth + 8
+                                            implicitHeight: activeP1Text.implicitHeight + 2
+                                            Text {
+                                                id: activeP1Text
+                                                anchors.centerIn: parent
+                                                text: "ACTIVE"
+                                                color: "#120f05"
+                                                font.bold: true
+                                                font.pixelSize: Math.round(8 * root.uiScale)
+                                                font.family: root.fontDataFamily
+                                            }
                                         }
 
                                         MouseArea {
@@ -1589,8 +1766,13 @@ ApplicationWindow {
                                     clip: true
                                     delegate: Rectangle {
                                         width: ListView.view ? ListView.view.width : 0
-                                        height: Math.max(unitNameModel.implicitHeight, unitIconModel.height) + root.spacingSm
-                                        color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
+                                        height: Math.round(78 * root.uiScale)
+                                        color: controller.roster_entry_active("P2", index) ? "#3a2323" : "#141b26"
+                                        border.width: 1
+                                        border.color: controller.roster_entry_active("P2", index) ? "#d5b15a" : "#2f3848"
+                                        radius: 0
+                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                        Behavior on border.color { ColorAnimation { duration: 120 } }
 
                                         Image {
                                             id: unitIconModel
@@ -1605,14 +1787,64 @@ ApplicationWindow {
                                             visible: source !== ""
                                         }
 
-                                        Text {
-                                            id: unitNameModel
-                                            text: model.display
-                                            color: ListView.isCurrentItem ? "#ffffff" : root.uiTextMain
-                                            elide: Text.ElideRight
-                                            anchors.verticalCenter: parent.verticalCenter
+                                        Column {
                                             anchors.left: unitIconModel.visible ? unitIconModel.right : parent.left
                                             anchors.leftMargin: root.spacingSm
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: root.spacingSm
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 1
+                                            Text {
+                                                text: model.display
+                                                color: root.uiTextMain
+                                                elide: Text.ElideRight
+                                                font.bold: true
+                                                font.family: root.fontUiFamily
+                                            }
+                                            Text {
+                                                text: controller.roster_entry_role("P2", index) + " • models " + controller.roster_entry_models("P2", index) + " • " + controller.roster_entry_points("P2", index)
+                                                color: "#d4a69e"
+                                                elide: Text.ElideRight
+                                                font.family: root.fontDataFamily
+                                                font.pixelSize: Math.round(9 * root.uiScale)
+                                            }
+                                            Text {
+                                                text: controller.roster_entry_abilities("P2", index)
+                                                color: "#d5b15a"
+                                                elide: Text.ElideRight
+                                                font.family: root.fontDataFamily
+                                                font.pixelSize: Math.round(9 * root.uiScale)
+                                            }
+                                            Text {
+                                                text: "ДБ " + controller.roster_entry_ranged_weapon("P2", index) + " • ББ " + controller.roster_entry_melee_weapon("P2", index)
+                                                color: root.uiTextMuted
+                                                elide: Text.ElideRight
+                                                font.family: root.fontDataFamily
+                                                font.pixelSize: Math.round(9 * root.uiScale)
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            visible: controller.roster_entry_active("P2", index)
+                                            anchors.right: parent.right
+                                            anchors.top: parent.top
+                                            anchors.topMargin: 2
+                                            anchors.rightMargin: 2
+                                            color: "#c79a32"
+                                            border.width: 1
+                                            border.color: "#e8c86a"
+                                            radius: 0
+                                            implicitWidth: activeP2Text.implicitWidth + 8
+                                            implicitHeight: activeP2Text.implicitHeight + 2
+                                            Text {
+                                                id: activeP2Text
+                                                anchors.centerIn: parent
+                                                text: "ACTIVE"
+                                                color: "#120f05"
+                                                font.bold: true
+                                                font.pixelSize: Math.round(8 * root.uiScale)
+                                                font.family: root.fontDataFamily
+                                            }
                                         }
 
                                         MouseArea {

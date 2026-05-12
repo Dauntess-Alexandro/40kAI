@@ -99,6 +99,7 @@ class GUIController(QtCore.QObject):
     trainingAlgoChanged = QtCore.Signal(str)
     trainSetupSummaryChanged = QtCore.Signal()
     rosterWeaponsPreviewChanged = QtCore.Signal()
+    rosterOverviewChanged = QtCore.Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -232,7 +233,12 @@ class GUIController(QtCore.QObject):
         self._auto_clear_logs = True
         self._unit_faction_by_name: dict[str, str] = {}
         self._unit_weapons_by_name: dict[str, list[str]] = {}
+        self._unit_keywords_by_name: dict[str, list[str]] = {}
+        self._unit_models_by_name: dict[str, int] = {}
+        self._unit_abilities_by_name: dict[str, list[str]] = {}
+        self._unit_points_by_name: dict[str, int] = {}
         self._weapon_type_by_army_name: dict[tuple[str, str], str] = {}
+        self._weapon_data_by_army_name: dict[tuple[str, str], dict] = {}
         self._roster_available_preview_index = -1
         self._roster_preview_melee: list[str] = []
         self._roster_preview_ranged: list[str] = []
@@ -500,6 +506,64 @@ class GUIController(QtCore.QObject):
         if entry is not None:
             return str(entry.melee_weapon or "").strip()
         return ""
+
+    @QtCore.Property(str, notify=rosterOverviewChanged)
+    def rosterDoctrineP1(self) -> str:
+        return self._build_roster_doctrine("P1")
+
+    @QtCore.Property(str, notify=rosterOverviewChanged)
+    def rosterDoctrineP2(self) -> str:
+        return self._build_roster_doctrine("P2")
+
+    @QtCore.Property(str, notify=rosterOverviewChanged)
+    def rosterKpiP1(self) -> str:
+        return self._build_roster_kpi("P1")
+
+    @QtCore.Property(str, notify=rosterOverviewChanged)
+    def rosterKpiP2(self) -> str:
+        return self._build_roster_kpi("P2")
+
+    @QtCore.Property(str, notify=rosterOverviewChanged)
+    def rosterCompositionDelta(self) -> str:
+        return self._build_roster_composition_delta()
+
+    @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
+    def rosterActiveProfile(self) -> str:
+        entry = self._get_selected_roster_entry()
+        if entry is None:
+            return "Профиль не выбран"
+        side = self.rosterWeaponsPreviewTarget
+        rw = str(entry.ranged_weapon or "—")
+        mw = str(entry.melee_weapon or "—")
+        return f"{side}: {entry.name} | ДБ {rw} | ББ {mw}"
+
+    @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
+    def rosterActiveRangedStatline(self) -> str:
+        entry = self._get_selected_roster_entry()
+        if entry is None:
+            return "—"
+        return self._weapon_statline(entry.name, entry.ranged_weapon)
+
+    @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
+    def rosterActiveMeleeStatline(self) -> str:
+        entry = self._get_selected_roster_entry()
+        if entry is None:
+            return "—"
+        return self._weapon_statline(entry.name, entry.melee_weapon)
+
+    @QtCore.Property("QStringList", notify=rosterWeaponsPreviewChanged)
+    def rosterActiveRangedBadges(self) -> list[str]:
+        entry = self._get_selected_roster_entry()
+        if entry is None:
+            return []
+        return self._weapon_ability_badges(entry.name, entry.ranged_weapon)
+
+    @QtCore.Property("QStringList", notify=rosterWeaponsPreviewChanged)
+    def rosterActiveMeleeBadges(self) -> list[str]:
+        entry = self._get_selected_roster_entry()
+        if entry is None:
+            return []
+        return self._weapon_ability_badges(entry.name, entry.melee_weapon)
 
     @QtCore.Property(str, notify=trainSetupSummaryChanged)
     def trainSetupSummaryLine(self) -> str:
@@ -4946,6 +5010,10 @@ class GUIController(QtCore.QObject):
         return entry
 
     def _refresh_models(self) -> None:
+        for entry in self._player_roster:
+            self._normalize_entry_weapons(entry)
+        for entry in self._model_roster:
+            self._normalize_entry_weapons(entry)
         self._replace_model_items(
             self._available_model,
             [f"{unit.name} (x{unit.default_count})" for unit in self._available_units],
@@ -4977,6 +5045,7 @@ class GUIController(QtCore.QObject):
             f"Юниты P2: {len(self._model_roster)}"
         )
         self.rosterSummaryChanged.emit(self._roster_summary)
+        self.rosterOverviewChanged.emit()
         self._emit_train_setup_summary_changed()
 
     def _weapon_battlefield_kind(self, unit_name: str, weapon_name: str) -> str:
@@ -5015,6 +5084,15 @@ class GUIController(QtCore.QObject):
         mw = melee[0] if melee else ""
         return rw, mw
 
+    def _normalize_entry_weapons(self, entry: RosterEntry) -> None:
+        entry.ranged_weapon = self._normalize_selected_weapon(entry.name, entry.ranged_weapon, "ranged")
+        entry.melee_weapon = self._normalize_selected_weapon(entry.name, entry.melee_weapon, "melee")
+        default_r, default_m = self._default_weapons_for_unit(entry.name)
+        if not entry.ranged_weapon:
+            entry.ranged_weapon = default_r
+        if not entry.melee_weapon:
+            entry.melee_weapon = default_m
+
     def _normalize_selected_weapon(self, unit_name: str, weapon_name: str, expected_kind: str) -> str:
         selected = str(weapon_name or "").strip()
         if not selected:
@@ -5034,6 +5112,189 @@ class GUIController(QtCore.QObject):
         if side == "P2" and idx < len(self._model_roster):
             return self._model_roster[idx]
         return None
+
+    def _roster_for_side(self, side: str) -> list[RosterEntry]:
+        normalized = str(side or "").strip().upper()
+        if normalized == "P1":
+            return self._player_roster
+        if normalized == "P2":
+            return self._model_roster
+        return []
+
+    def _format_keyword_label(self, keyword: str) -> str:
+        raw = str(keyword or "").strip().replace("_", " ")
+        if not raw:
+            return "UNIT"
+        return raw.upper()
+
+    def _unit_role_label(self, unit_name: str) -> str:
+        keys = self._unit_keywords_by_name.get(str(unit_name).strip(), [])
+        upper_keys = [str(k).upper() for k in keys]
+        if "CHARACTER" in upper_keys:
+            return "CHARACTER"
+        if "BATTLELINE" in upper_keys:
+            return "BATTLELINE"
+        if upper_keys:
+            return self._format_keyword_label(upper_keys[0])
+        return "UNIT"
+
+    def _weapon_data(self, unit_name: str, weapon_name: str) -> dict:
+        army = str(self._unit_faction_by_name.get(str(unit_name).strip(), "") or "").strip().lower()
+        wn = str(weapon_name or "").strip().lower()
+        if not wn:
+            return {}
+        return self._weapon_data_by_army_name.get((army, wn), {})
+
+    def _weapon_statline(self, unit_name: str, weapon_name: str) -> str:
+        data = self._weapon_data(unit_name, weapon_name)
+        if not data:
+            return "—"
+        if str(data.get("Type", "")).strip().lower() == "melee":
+            skill = f"WS{data.get('WS', '—')}+"
+        else:
+            skill = f"BS{data.get('BS', '—')}+"
+        rng = f"{data.get('Range', '—')}\""
+        attacks = f"A{data.get('A', '—')}"
+        strength = f"S{data.get('S', '—')}"
+        ap = f"AP{data.get('AP', '—')}"
+        dmg = f"D{data.get('Damage', '—')}"
+        return f"{rng} • {attacks} • {skill} • {strength} • {ap} • {dmg}"
+
+    def _format_ability_badge(self, key: str, value: object) -> str:
+        label = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", str(key or "").strip()).upper()
+        if isinstance(value, bool):
+            return label if value else ""
+        val = str(value).strip()
+        if not val:
+            return label
+        return f"{label} {val}"
+
+    def _weapon_ability_badges(self, unit_name: str, weapon_name: str) -> list[str]:
+        data = self._weapon_data(unit_name, weapon_name)
+        abilities = data.get("Abilities", {})
+        if not isinstance(abilities, dict):
+            return []
+        out: list[str] = []
+        for k, v in abilities.items():
+            badge = self._format_ability_badge(k, v)
+            if badge:
+                out.append(badge)
+        return out
+
+    def _entry_lethal_sources(self, entry: RosterEntry) -> int:
+        total = 0
+        for w in (entry.ranged_weapon, entry.melee_weapon):
+            badges = self._weapon_ability_badges(entry.name, w)
+            if any("LETHAL HITS" in b for b in badges):
+                total += 1
+        return total
+
+    def _build_roster_kpi(self, side: str) -> str:
+        roster = self._roster_for_side(side)
+        if not roster:
+            return "юнитов: 0 • ср.дальнобой: — • melee профили: 0 • lethal: 0"
+        ranges: list[float] = []
+        melee_profiles = 0
+        lethal = 0
+        for e in roster:
+            wd = self._weapon_data(e.name, e.ranged_weapon)
+            if wd and isinstance(wd.get("Range"), (int, float)):
+                ranges.append(float(wd["Range"]))
+            if str(e.melee_weapon or "").strip():
+                melee_profiles += 1
+            lethal += self._entry_lethal_sources(e)
+        avg_range = f"{(sum(ranges) / len(ranges)):.1f}\"" if ranges else "—"
+        return (
+            f"юнитов: {len(roster)} • ср.дальнобой: {avg_range} • "
+            f"melee профили: {melee_profiles} • lethal: {lethal}"
+        )
+
+    def _build_roster_doctrine(self, side: str) -> str:
+        roster = self._roster_for_side(side)
+        if not roster:
+            return "Доктрина не определена"
+        avg_range_val = 0.0
+        ranges: list[float] = []
+        characters = 0
+        for e in roster:
+            if self._unit_role_label(e.name) == "CHARACTER":
+                characters += 1
+            wd = self._weapon_data(e.name, e.ranged_weapon)
+            if wd and isinstance(wd.get("Range"), (int, float)):
+                ranges.append(float(wd["Range"]))
+        if ranges:
+            avg_range_val = sum(ranges) / len(ranges)
+        if avg_range_val <= 12 and characters > 0:
+            return "Ударная группа: ближний рубеж + командное ядро"
+        if avg_range_val <= 12:
+            return "Штурмовой контур: агрессивное сближение"
+        if characters > 0:
+            return "Линейный огонь под командованием"
+        return "Линейная доктрина: удержание дистанции"
+
+    def _build_roster_composition_delta(self) -> str:
+        p1_units = len(self._player_roster)
+        p2_units = len(self._model_roster)
+        p1_models = sum(max(0, int(e.count)) for e in self._player_roster)
+        p2_models = sum(max(0, int(e.count)) for e in self._model_roster)
+        du = p1_units - p2_units
+        dm = p1_models - p2_models
+        return f"Δ состав: юниты {du:+d}, модели {dm:+d}"
+
+    @QtCore.Slot(str, int, result=str)
+    def roster_entry_role(self, side: str, index: int) -> str:
+        roster = self._roster_for_side(side)
+        if 0 <= int(index) < len(roster):
+            return self._unit_role_label(roster[int(index)].name)
+        return "UNIT"
+
+    @QtCore.Slot(str, int, result=str)
+    def roster_entry_models(self, side: str, index: int) -> str:
+        roster = self._roster_for_side(side)
+        if 0 <= int(index) < len(roster):
+            return str(max(0, int(roster[int(index)].count)))
+        return "0"
+
+    @QtCore.Slot(str, int, result=str)
+    def roster_entry_points(self, side: str, index: int) -> str:
+        roster = self._roster_for_side(side)
+        if not (0 <= int(index) < len(roster)):
+            return "—"
+        entry = roster[int(index)]
+        pts = int(self._unit_points_by_name.get(str(entry.name).strip(), 0) or 0)
+        return f"{pts} pts" if pts > 0 else "— pts"
+
+    @QtCore.Slot(str, int, result=str)
+    def roster_entry_abilities(self, side: str, index: int) -> str:
+        roster = self._roster_for_side(side)
+        if not (0 <= int(index) < len(roster)):
+            return "—"
+        entry = roster[int(index)]
+        abilities = self._unit_abilities_by_name.get(str(entry.name).strip(), [])
+        if not abilities:
+            return "—"
+        return " • ".join(abilities)
+
+    @QtCore.Slot(str, int, result=str)
+    def roster_entry_ranged_weapon(self, side: str, index: int) -> str:
+        roster = self._roster_for_side(side)
+        if 0 <= int(index) < len(roster):
+            return str(roster[int(index)].ranged_weapon or "—")
+        return "—"
+
+    @QtCore.Slot(str, int, result=str)
+    def roster_entry_melee_weapon(self, side: str, index: int) -> str:
+        roster = self._roster_for_side(side)
+        if 0 <= int(index) < len(roster):
+            return str(roster[int(index)].melee_weapon or "—")
+        return "—"
+
+    @QtCore.Slot(str, int, result=bool)
+    def roster_entry_active(self, side: str, index: int) -> bool:
+        return (
+            str(self._roster_preview_side or "").strip().upper() == str(side or "").strip().upper()
+            and int(index) == int(self._roster_preview_roster_index)
+        )
 
     def _rebuild_roster_weapons_preview(self) -> None:
         entry = self._get_selected_roster_entry()
@@ -5101,6 +5362,7 @@ class GUIController(QtCore.QObject):
         entry.ranged_weapon = normalized
         self._persist_rosters()
         self._rebuild_roster_weapons_preview()
+        self.rosterOverviewChanged.emit()
         self._emit_log(
             f"[GUI][ROSTER] {self.rosterWeaponsPreviewTarget} {entry.name}: выбран ДБ '{entry.ranged_weapon or '—'}'.",
             level="INFO",
@@ -5117,6 +5379,7 @@ class GUIController(QtCore.QObject):
         entry.melee_weapon = normalized
         self._persist_rosters()
         self._rebuild_roster_weapons_preview()
+        self.rosterOverviewChanged.emit()
         self._emit_log(
             f"[GUI][ROSTER] {self.rosterWeaponsPreviewTarget} {entry.name}: выбран ББ '{entry.melee_weapon or '—'}'.",
             level="INFO",
@@ -5137,7 +5400,12 @@ class GUIController(QtCore.QObject):
         self._available_units.clear()
         self._unit_faction_by_name.clear()
         self._unit_weapons_by_name.clear()
+        self._unit_keywords_by_name.clear()
+        self._unit_models_by_name.clear()
+        self._unit_abilities_by_name.clear()
+        self._unit_points_by_name.clear()
         self._weapon_type_by_army_name.clear()
+        self._weapon_data_by_army_name.clear()
 
         units = payload.get("UnitData", [])
         for unit in units:
@@ -5150,6 +5418,28 @@ class GUIController(QtCore.QObject):
             self._unit_faction_by_name[name_s] = fact_s
             raw_weapons = unit.get("Weapons") or []
             self._unit_weapons_by_name[name_s] = [str(x).strip() for x in raw_weapons if str(x).strip()]
+            self._unit_keywords_by_name[name_s] = [str(x).strip() for x in (unit.get("KEYWORDS") or []) if str(x).strip()]
+            self._unit_abilities_by_name[name_s] = [str(x).strip() for x in (unit.get("Abilities") or []) if str(x).strip()]
+            try:
+                self._unit_models_by_name[name_s] = int(unit.get("#OfModels", 0) or 0)
+            except (TypeError, ValueError):
+                self._unit_models_by_name[name_s] = 0
+            raw_pts = unit.get("Points", unit.get("Pts", 0))
+            try:
+                pts = int(raw_pts or 0)
+            except (TypeError, ValueError):
+                pts = 0
+            self._unit_points_by_name[name_s] = pts
+
+        # Явные цены для текущего ростера Necrons (если в UnitData нет Points/Pts).
+        fallback_pts = {
+            "Necron Warriors": 90,
+            "Royal Warden": 50,
+            "Canoptek Scarab Swarms": 40,
+        }
+        for uname, pts in fallback_pts.items():
+            if int(self._unit_points_by_name.get(uname, 0) or 0) <= 0:
+                self._unit_points_by_name[uname] = int(pts)
 
         for w in payload.get("WeaponData", []):
             army = str(w.get("Army", "") or "").strip().lower()
@@ -5157,6 +5447,7 @@ class GUIController(QtCore.QObject):
             typ = str(w.get("Type", "") or "").strip()
             if nm:
                 self._weapon_type_by_army_name[(army, nm.lower())] = typ
+                self._weapon_data_by_army_name[(army, nm.lower())] = dict(w)
 
         for unit in units:
             name = unit.get("Name")
@@ -5169,6 +5460,7 @@ class GUIController(QtCore.QObject):
             self._available_units.append(UnitInfo(name=name, faction=faction, default_count=default_count))
 
         self.set_roster_available_preview_index(0 if self._available_units else -1)
+        self.rosterOverviewChanged.emit()
 
     def _load_rosters_from_file(self) -> None:
         units_path = str(UNITS_PATH)
