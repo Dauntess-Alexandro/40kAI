@@ -57,6 +57,10 @@ def addingUnits():
     enemy_counts = []
     model_instance_ids = []
     enemy_instance_ids = []
+    model_selected_ranged = []
+    model_selected_melee = []
+    enemy_selected_ranged = []
+    enemy_selected_melee = []
     file = open(str(UNITS_PATH), "r", encoding="utf-8")
     content = file.readlines()
     flip = 0
@@ -65,28 +69,43 @@ def addingUnits():
         if name == "Model Units":
             flip = 1
         elif flip == 0:
-            unit_name, count, instance_id = _parse_unit_entry(name)
+            unit_name, count, instance_id, ranged_weapon, melee_weapon = _parse_unit_entry(name)
             if unit_name:
                 enemy.append(unit_name)
                 enemy_counts.append(count)
                 enemy_instance_ids.append(instance_id)
+                enemy_selected_ranged.append(ranged_weapon)
+                enemy_selected_melee.append(melee_weapon)
         elif flip == 1:
-            unit_name, count, instance_id = _parse_unit_entry(name)
+            unit_name, count, instance_id, ranged_weapon, melee_weapon = _parse_unit_entry(name)
             if unit_name:
                 model.append(unit_name)
                 model_counts.append(count)
                 model_instance_ids.append(instance_id)
+                model_selected_ranged.append(ranged_weapon)
+                model_selected_melee.append(melee_weapon)
 
-    return model, enemy, model_counts, enemy_counts, model_instance_ids, enemy_instance_ids
+    return (
+        model,
+        enemy,
+        model_counts,
+        enemy_counts,
+        model_instance_ids,
+        enemy_instance_ids,
+        model_selected_ranged,
+        model_selected_melee,
+        enemy_selected_ranged,
+        enemy_selected_melee,
+    )
 
 def _parse_unit_entry(value):
     if not value:
-        return "", 0, ""
+        return "", 0, "", "", ""
     if "|" not in value:
-        return value, 0, ""
+        return value, 0, "", "", ""
     parts = value.split("|")
     if len(parts) < 2:
-        return value, 0, ""
+        return value, 0, "", "", ""
     name_part = parts[0]
     count_part = parts[1]
     name = name_part.strip()
@@ -98,9 +117,19 @@ def _parse_unit_entry(value):
     instance_id = ""
     if len(parts) >= 3:
         instance_id = parts[2].strip()
-    return name, count, instance_id
+    ranged_weapon = ""
+    melee_weapon = ""
+    if len(parts) >= 4:
+        ranged_weapon = parts[3].strip()
+    if len(parts) >= 5:
+        melee_weapon = parts[4].strip()
+    return name, count, instance_id, ranged_weapon, melee_weapon
 
-def addingWeapons(m, e):
+def addingWeapons(m, e, selected_model=None, selected_enemy=None):
+    if selected_model is None:
+        selected_model = []
+    if selected_enemy is None:
+        selected_enemy = []
 
     with open(_UNIT_DATA_PATH, encoding="utf-8") as j:
         data = json.loads(j.read())
@@ -109,7 +138,7 @@ def addingWeapons(m, e):
     enemy = []
 
     for i in data["UnitData"]:
-        for j in m:
+        for idx, j in enumerate(m):
             weaps = ["None", "None"]
             if i["Name"] == j:
                 for k in i["Weapons"]:
@@ -119,9 +148,17 @@ def addingWeapons(m, e):
                                 weaps[0] = l["Name"]
                             elif l["Type"] == "Melee":
                                 weaps[1] = l["Name"]
+                chosen = selected_model[idx] if idx < len(selected_model) else ["", ""]
+                if isinstance(chosen, (list, tuple)):
+                    chosen_r = str(chosen[0] if len(chosen) > 0 else "").strip()
+                    chosen_m = str(chosen[1] if len(chosen) > 1 else "").strip()
+                    if chosen_r and chosen_r != "None":
+                        weaps[0] = chosen_r
+                    if chosen_m and chosen_m != "None":
+                        weaps[1] = chosen_m
                 model.append(weaps)
 
-        for j in e:
+        for idx, j in enumerate(e):
             weaps = ["None", "None"]
             if i["Name"] == j:
                 for k in i["Weapons"]:
@@ -136,6 +173,14 @@ def addingWeapons(m, e):
                                 weaps[0] = l["Name"]
                             elif l["Type"] == "Melee":
                                 weaps[1] = l["Name"]
+                chosen = selected_enemy[idx] if idx < len(selected_enemy) else ["", ""]
+                if isinstance(chosen, (list, tuple)):
+                    chosen_r = str(chosen[0] if len(chosen) > 0 else "").strip()
+                    chosen_m = str(chosen[1] if len(chosen) > 1 else "").strip()
+                    if chosen_r and chosen_r != "None":
+                        weaps[0] = chosen_r
+                    if chosen_m and chosen_m != "None":
+                        weaps[1] = chosen_m
                 enemy.append(weaps)
     
     return model, enemy
@@ -223,8 +268,21 @@ def delFile():
         )
 
 if __name__ == "__main__":
-    model, enemy, model_counts, enemy_counts, model_instance_ids, enemy_instance_ids = addingUnits()
-    modelw, enemyw = addingWeapons(model, enemy)
+    (
+        model,
+        enemy,
+        model_counts,
+        enemy_counts,
+        model_instance_ids,
+        enemy_instance_ids,
+        model_selected_ranged,
+        model_selected_melee,
+        enemy_selected_ranged,
+        enemy_selected_melee,
+    ) = addingUnits()
+    selected_model = list(zip(model_selected_ranged, model_selected_melee))
+    selected_enemy = list(zip(enemy_selected_ranged, enemy_selected_melee))
+    modelw, enemyw = addingWeapons(model, enemy, selected_model=selected_model, selected_enemy=selected_enemy)
     mission = sys.argv[6] if len(sys.argv) > 6 else "only_war"
     makeFile(sys.argv[1], sys.argv[2], sys.argv[3],model, enemy, modelw, enemyw,
              model_counts, enemy_counts, model_instance_ids, enemy_instance_ids, sys.argv[4], sys.argv[5], mission)

@@ -21,6 +21,7 @@
       ],
       "Weapons": [
         "Gauss flayer",
+        "Gauss reaper",
         "Necron close combat weapon"
       ]
     },
@@ -87,6 +88,20 @@
       "Abilities": {
         "LethalHits": true,
         "RapidFire": 1
+      }
+    },
+    {
+      "Army": "Necrons",
+      "Name": "Gauss reaper",
+      "Type": "Ranged",
+      "BS": 4,
+      "S": 4,
+      "AP": -1,
+      "Range": 12,
+      "Damage": 1,
+      "A": 2,
+      "Abilities": {
+        "LethalHits": true
       }
     },
     {

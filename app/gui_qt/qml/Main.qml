@@ -1110,6 +1110,8 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             Layout.fillHeight: false
                             Layout.alignment: Qt.AlignTop
+                            Layout.minimumWidth: Math.round(220 * root.uiScale)
+                            Layout.preferredWidth: Math.round(250 * root.uiScale)
                             Layout.horizontalStretchFactor: 1
 
                             ColumnLayout {
@@ -1209,6 +1211,8 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             Layout.alignment: Qt.AlignTop
+                            Layout.minimumWidth: Math.round(300 * root.uiScale)
+                            Layout.preferredWidth: Math.round(360 * root.uiScale)
                             Layout.horizontalStretchFactor: 3
 
                             ColumnLayout {
@@ -1244,8 +1248,6 @@ ApplicationWindow {
                                     Layout.fillHeight: true
                                     model: controller.availableUnitsModel
                                     clip: true
-                                    Component.onCompleted: controller.set_roster_available_preview_index(currentIndex)
-                                    onCurrentIndexChanged: controller.set_roster_available_preview_index(currentIndex)
                                     delegate: Rectangle {
                                         width: ListView.view ? ListView.view.width : 0
                                         height: Math.max(unitNameAvailable.implicitHeight, unitIconAvailable.height) + root.spacingSm
@@ -1302,8 +1304,10 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             Layout.alignment: Qt.AlignTop
-                            Layout.horizontalStretchFactor: 2
-                            Layout.minimumWidth: Math.round(168 * root.uiScale)
+                            Layout.minimumWidth: Math.round(190 * root.uiScale)
+                            Layout.preferredWidth: Math.round(240 * root.uiScale)
+                            Layout.maximumWidth: Math.round(300 * root.uiScale)
+                            Layout.horizontalStretchFactor: 1
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -1317,12 +1321,68 @@ ApplicationWindow {
                                     verticalAlignment: Text.AlignVCenter
                                 }
                                 Label {
-                                    text: controller.rosterWeaponsPreviewUnitName
+                                    text: controller.rosterWeaponsPreviewTarget + " · " + controller.rosterWeaponsPreviewUnitName
                                     font.bold: true
                                     color: root.uiTextMuted
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true
                                     font.pixelSize: Math.round(11 * root.uiScale)
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: root.spacingXs
+                                    Label {
+                                        text: "ДБ:"
+                                        color: root.uiTextMuted
+                                        font.bold: true
+                                    }
+                                    StyledComboBox {
+                                        id: rosterRangedCombo
+                                        Layout.fillWidth: true
+                                        model: controller.rosterWeaponsPreviewRanged
+                                        enabled: controller.rosterWeaponsPreviewTarget !== "—"
+                                                 && controller.rosterWeaponsPreviewRanged.length > 0
+                                        currentIndex: {
+                                            var selected = controller.rosterWeaponsSelectedRanged
+                                            if (!selected)
+                                                return controller.rosterWeaponsPreviewRanged.length > 0 ? 0 : -1
+                                            var idx = controller.rosterWeaponsPreviewRanged.indexOf(selected)
+                                            return idx >= 0 ? idx : (controller.rosterWeaponsPreviewRanged.length > 0 ? 0 : -1)
+                                        }
+                                        onActivated: {
+                                            if (currentIndex >= 0)
+                                                controller.set_selected_roster_ranged_weapon(currentText)
+                                        }
+                                    }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: root.spacingXs
+                                    Label {
+                                        text: "ББ:"
+                                        color: root.uiTextMuted
+                                        font.bold: true
+                                    }
+                                    StyledComboBox {
+                                        id: rosterMeleeCombo
+                                        Layout.fillWidth: true
+                                        model: controller.rosterWeaponsPreviewMelee
+                                        enabled: controller.rosterWeaponsPreviewTarget !== "—"
+                                                 && controller.rosterWeaponsPreviewMelee.length > 0
+                                        currentIndex: {
+                                            var selected = controller.rosterWeaponsSelectedMelee
+                                            if (!selected)
+                                                return controller.rosterWeaponsPreviewMelee.length > 0 ? 0 : -1
+                                            var idx = controller.rosterWeaponsPreviewMelee.indexOf(selected)
+                                            return idx >= 0 ? idx : (controller.rosterWeaponsPreviewMelee.length > 0 ? 0 : -1)
+                                        }
+                                        onActivated: {
+                                            if (currentIndex >= 0)
+                                                controller.set_selected_roster_melee_weapon(currentText)
+                                        }
+                                    }
                                 }
 
                                 ScrollView {
@@ -1355,7 +1415,7 @@ ApplicationWindow {
                                             model: controller.rosterWeaponsPreviewRanged
                                             Label {
                                                 width: parent.width
-                                                text: "· " + modelData
+                                                text: "· " + modelData + (modelData === controller.rosterWeaponsSelectedRanged ? "  [выбрано]" : "")
                                                 wrapMode: Text.Wrap
                                                 font.family: root.fontDataFamily
                                                 font.pixelSize: Math.round(10 * root.uiScale)
@@ -1383,7 +1443,7 @@ ApplicationWindow {
                                             model: controller.rosterWeaponsPreviewMelee
                                             Label {
                                                 width: parent.width
-                                                text: "· " + modelData
+                                                text: "· " + modelData + (modelData === controller.rosterWeaponsSelectedMelee ? "  [выбрано]" : "")
                                                 wrapMode: Text.Wrap
                                                 font.family: root.fontDataFamily
                                                 font.pixelSize: Math.round(10 * root.uiScale)
@@ -1420,6 +1480,8 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             Layout.alignment: Qt.AlignTop
+                            Layout.minimumWidth: Math.round(230 * root.uiScale)
+                            Layout.preferredWidth: Math.round(280 * root.uiScale)
                             Layout.horizontalStretchFactor: 2
 
                             ColumnLayout {
@@ -1470,7 +1532,10 @@ ApplicationWindow {
 
                                         MouseArea {
                                             anchors.fill: parent
-                                            onClicked: playerRosterView.currentIndex = index
+                                            onClicked: {
+                                                playerRosterView.currentIndex = index
+                                                controller.set_roster_weapon_target("P1", index)
+                                            }
                                         }
                                     }
                                 }
@@ -1500,6 +1565,8 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             Layout.alignment: Qt.AlignTop
+                            Layout.minimumWidth: Math.round(230 * root.uiScale)
+                            Layout.preferredWidth: Math.round(280 * root.uiScale)
                             Layout.horizontalStretchFactor: 2
 
                             ColumnLayout {
@@ -1550,7 +1617,10 @@ ApplicationWindow {
 
                                         MouseArea {
                                             anchors.fill: parent
-                                            onClicked: modelRosterView.currentIndex = index
+                                            onClicked: {
+                                                modelRosterView.currentIndex = index
+                                                controller.set_roster_weapon_target("P2", index)
+                                            }
                                         }
                                     }
                                 }

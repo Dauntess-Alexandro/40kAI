@@ -40,6 +40,8 @@ class RosterEntry:
     name: str
     count: int
     instance_id: str
+    ranged_weapon: str = ""
+    melee_weapon: str = ""
 
 
 @dataclass
@@ -235,6 +237,8 @@ class GUIController(QtCore.QObject):
         self._roster_preview_melee: list[str] = []
         self._roster_preview_ranged: list[str] = []
         self._roster_preview_unknown: list[str] = []
+        self._roster_preview_side = ""
+        self._roster_preview_roster_index = -1
         self._deployment_mode_options = ["manual_player", "auto", "rl_phase"]
         self._deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "rl_phase")).strip().lower() or "rl_phase"
         if self._deployment_mode not in self._deployment_mode_options:
@@ -458,9 +462,17 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
     def rosterWeaponsPreviewUnitName(self) -> str:
-        idx = self._roster_available_preview_index
-        if 0 <= idx < len(self._available_units):
-            return str(self._available_units[idx].name)
+        entry = self._get_selected_roster_entry()
+        if entry is not None:
+            return str(entry.name)
+        return "—"
+
+    @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
+    def rosterWeaponsPreviewTarget(self) -> str:
+        side = str(self._roster_preview_side or "").strip().upper()
+        idx = int(self._roster_preview_roster_index)
+        if side in {"P1", "P2"} and idx >= 0:
+            return f"{side} #{idx + 1}"
         return "—"
 
     @QtCore.Property("QStringList", notify=rosterWeaponsPreviewChanged)
@@ -474,6 +486,20 @@ class GUIController(QtCore.QObject):
     @QtCore.Property("QStringList", notify=rosterWeaponsPreviewChanged)
     def rosterWeaponsPreviewUnknown(self) -> list[str]:
         return self._roster_preview_unknown
+
+    @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
+    def rosterWeaponsSelectedRanged(self) -> str:
+        entry = self._get_selected_roster_entry()
+        if entry is not None:
+            return str(entry.ranged_weapon or "").strip()
+        return ""
+
+    @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
+    def rosterWeaponsSelectedMelee(self) -> str:
+        entry = self._get_selected_roster_entry()
+        if entry is not None:
+            return str(entry.melee_weapon or "").strip()
+        return ""
 
     @QtCore.Property(str, notify=trainSetupSummaryChanged)
     def trainSetupSummaryLine(self) -> str:
@@ -1611,6 +1637,8 @@ class GUIController(QtCore.QObject):
         unit = self._available_units[index]
         entry = self._create_roster_entry(unit)
         self._player_roster.append(entry)
+        self._roster_preview_side = "P1"
+        self._roster_preview_roster_index = len(self._player_roster) - 1
         self._persist_rosters()
         self._refresh_models()
         self._update_roster_summary()
@@ -1625,6 +1653,8 @@ class GUIController(QtCore.QObject):
         unit = self._available_units[index]
         entry = self._create_roster_entry(unit)
         self._model_roster.append(entry)
+        self._roster_preview_side = "P2"
+        self._roster_preview_roster_index = len(self._model_roster) - 1
         self._persist_rosters()
         self._refresh_models()
         self._update_roster_summary()
@@ -1637,6 +1667,8 @@ class GUIController(QtCore.QObject):
             self._emit_status("Сначала выберите юнит P1 для удаления.")
             return
         self._player_roster.pop(index)
+        if self._roster_preview_side == "P1" and self._roster_preview_roster_index >= index:
+            self._roster_preview_roster_index -= 1
         self._persist_rosters()
         self._refresh_models()
         self._update_roster_summary()
@@ -1649,6 +1681,8 @@ class GUIController(QtCore.QObject):
             self._emit_status("Сначала выберите юнит P2 для удаления.")
             return
         self._model_roster.pop(index)
+        if self._roster_preview_side == "P2" and self._roster_preview_roster_index >= index:
+            self._roster_preview_roster_index -= 1
         self._persist_rosters()
         self._refresh_models()
         self._update_roster_summary()
@@ -1658,6 +1692,9 @@ class GUIController(QtCore.QObject):
     @QtCore.Slot()
     def clear_player_roster(self) -> None:
         self._player_roster.clear()
+        if self._roster_preview_side == "P1":
+            self._roster_preview_side = ""
+            self._roster_preview_roster_index = -1
         self._persist_rosters()
         self._refresh_models()
         self._update_roster_summary()
@@ -1667,6 +1704,9 @@ class GUIController(QtCore.QObject):
     @QtCore.Slot()
     def clear_model_roster(self) -> None:
         self._model_roster.clear()
+        if self._roster_preview_side == "P2":
+            self._roster_preview_side = ""
+            self._roster_preview_roster_index = -1
         self._persist_rosters()
         self._refresh_models()
         self._update_roster_summary()
@@ -4894,7 +4934,14 @@ class GUIController(QtCore.QObject):
         return latest_path
 
     def _create_roster_entry(self, unit: UnitInfo) -> RosterEntry:
-        entry = RosterEntry(name=unit.name, count=unit.default_count, instance_id=str(self._instance_counter))
+        rw, mw = self._default_weapons_for_unit(unit.name)
+        entry = RosterEntry(
+            name=unit.name,
+            count=unit.default_count,
+            instance_id=str(self._instance_counter),
+            ranged_weapon=rw,
+            melee_weapon=mw,
+        )
         self._instance_counter += 1
         return entry
 
@@ -4911,13 +4958,8 @@ class GUIController(QtCore.QObject):
             self._model_model,
             [f"{entry.name} (x{entry.count})" for entry in self._model_roster],
         )
-        if self._available_units:
-            idx = self._roster_available_preview_index
-            if idx < 0 or idx >= len(self._available_units):
-                idx = 0
-            self.set_roster_available_preview_index(idx)
-        else:
-            self.set_roster_available_preview_index(-1)
+        self._normalize_roster_preview_target()
+        self._rebuild_roster_weapons_preview()
 
     def _replace_model_items(self, model: QtGui.QStandardItemModel, values: list[str]) -> None:
         model.clear()
@@ -4952,30 +4994,137 @@ class GUIController(QtCore.QObject):
             return "ranged"
         return "unknown"
 
-    def _rebuild_roster_weapons_preview(self) -> None:
+    def _weapon_options_for_unit(self, unit_name: str) -> tuple[list[str], list[str], list[str]]:
         melee: list[str] = []
         ranged: list[str] = []
         unknown: list[str] = []
-        idx = self._roster_available_preview_index
-        if 0 <= idx < len(self._available_units):
-            uname = str(self._available_units[idx].name).strip()
-            for w in self._unit_weapons_by_name.get(uname, []):
-                kind = self._weapon_battlefield_kind(uname, w)
-                if kind == "melee":
-                    melee.append(w)
-                elif kind == "ranged":
-                    ranged.append(w)
-                else:
-                    unknown.append(w)
-        self._roster_preview_melee = melee
+        uname = str(unit_name or "").strip()
+        for w in self._unit_weapons_by_name.get(uname, []):
+            kind = self._weapon_battlefield_kind(uname, w)
+            if kind == "melee":
+                melee.append(w)
+            elif kind == "ranged":
+                ranged.append(w)
+            else:
+                unknown.append(w)
+        return ranged, melee, unknown
+
+    def _default_weapons_for_unit(self, unit_name: str) -> tuple[str, str]:
+        ranged, melee, _unknown = self._weapon_options_for_unit(unit_name)
+        rw = ranged[0] if ranged else ""
+        mw = melee[0] if melee else ""
+        return rw, mw
+
+    def _normalize_selected_weapon(self, unit_name: str, weapon_name: str, expected_kind: str) -> str:
+        selected = str(weapon_name or "").strip()
+        if not selected:
+            return ""
+        kind = self._weapon_battlefield_kind(unit_name, selected)
+        if kind == expected_kind:
+            return selected
+        return ""
+
+    def _get_selected_roster_entry(self) -> Optional[RosterEntry]:
+        side = str(self._roster_preview_side or "").strip().upper()
+        idx = int(self._roster_preview_roster_index)
+        if idx < 0:
+            return None
+        if side == "P1" and idx < len(self._player_roster):
+            return self._player_roster[idx]
+        if side == "P2" and idx < len(self._model_roster):
+            return self._model_roster[idx]
+        return None
+
+    def _rebuild_roster_weapons_preview(self) -> None:
+        entry = self._get_selected_roster_entry()
+        if entry is None:
+            self._roster_preview_ranged = []
+            self._roster_preview_melee = []
+            self._roster_preview_unknown = []
+            self.rosterWeaponsPreviewChanged.emit()
+            return
+
+        ranged, melee, unknown = self._weapon_options_for_unit(entry.name)
+        entry.ranged_weapon = self._normalize_selected_weapon(entry.name, entry.ranged_weapon, "ranged")
+        entry.melee_weapon = self._normalize_selected_weapon(entry.name, entry.melee_weapon, "melee")
+        if not entry.ranged_weapon and ranged:
+            entry.ranged_weapon = ranged[0]
+        if not entry.melee_weapon and melee:
+            entry.melee_weapon = melee[0]
+
         self._roster_preview_ranged = ranged
+        self._roster_preview_melee = melee
         self._roster_preview_unknown = unknown
         self.rosterWeaponsPreviewChanged.emit()
+
+    def _normalize_roster_preview_target(self) -> None:
+        side = str(self._roster_preview_side or "").strip().upper()
+        idx = int(self._roster_preview_roster_index)
+        if side == "P1":
+            if not self._player_roster:
+                self._roster_preview_side = ""
+                self._roster_preview_roster_index = -1
+            elif idx < 0 or idx >= len(self._player_roster):
+                self._roster_preview_roster_index = min(max(0, idx), len(self._player_roster) - 1)
+        elif side == "P2":
+            if not self._model_roster:
+                self._roster_preview_side = ""
+                self._roster_preview_roster_index = -1
+            elif idx < 0 or idx >= len(self._model_roster):
+                self._roster_preview_roster_index = min(max(0, idx), len(self._model_roster) - 1)
+        else:
+            self._roster_preview_side = ""
+            self._roster_preview_roster_index = -1
+
+    @QtCore.Slot(str, int)
+    def set_roster_weapon_target(self, side: str, index: int) -> None:
+        normalized_side = str(side or "").strip().upper()
+        idx = int(index)
+        if normalized_side not in {"P1", "P2"}:
+            self._roster_preview_side = ""
+            self._roster_preview_roster_index = -1
+            self._rebuild_roster_weapons_preview()
+            return
+        self._roster_preview_side = normalized_side
+        self._roster_preview_roster_index = idx
+        self._normalize_roster_preview_target()
+        self._rebuild_roster_weapons_preview()
+
+    @QtCore.Slot(str)
+    def set_selected_roster_ranged_weapon(self, weapon_name: str) -> None:
+        entry = self._get_selected_roster_entry()
+        if entry is None:
+            return
+        normalized = self._normalize_selected_weapon(entry.name, weapon_name, "ranged")
+        if normalized == entry.ranged_weapon:
+            return
+        entry.ranged_weapon = normalized
+        self._persist_rosters()
+        self._rebuild_roster_weapons_preview()
+        self._emit_log(
+            f"[GUI][ROSTER] {self.rosterWeaponsPreviewTarget} {entry.name}: выбран ДБ '{entry.ranged_weapon or '—'}'.",
+            level="INFO",
+        )
+
+    @QtCore.Slot(str)
+    def set_selected_roster_melee_weapon(self, weapon_name: str) -> None:
+        entry = self._get_selected_roster_entry()
+        if entry is None:
+            return
+        normalized = self._normalize_selected_weapon(entry.name, weapon_name, "melee")
+        if normalized == entry.melee_weapon:
+            return
+        entry.melee_weapon = normalized
+        self._persist_rosters()
+        self._rebuild_roster_weapons_preview()
+        self._emit_log(
+            f"[GUI][ROSTER] {self.rosterWeaponsPreviewTarget} {entry.name}: выбран ББ '{entry.melee_weapon or '—'}'.",
+            level="INFO",
+        )
 
     @QtCore.Slot(int)
     def set_roster_available_preview_index(self, index: int) -> None:
         self._roster_available_preview_index = int(index)
-        self._rebuild_roster_weapons_preview()
 
     def _load_available_units(self) -> None:
         unit_path = os.path.join(self._repo_root, "core", "engine", "unitData.json")
@@ -5073,9 +5222,17 @@ class GUIController(QtCore.QObject):
             except ValueError:
                 count = 0
         instance_id = parts[2] if len(parts) >= 3 else ""
+        ranged_weapon = parts[3] if len(parts) >= 4 else ""
+        melee_weapon = parts[4] if len(parts) >= 5 else ""
         if instance_id.isdigit():
             self._instance_counter = max(self._instance_counter, int(instance_id) + 1)
-        return RosterEntry(name=name, count=count, instance_id=instance_id)
+        return RosterEntry(
+            name=name,
+            count=count,
+            instance_id=instance_id,
+            ranged_weapon=ranged_weapon,
+            melee_weapon=melee_weapon,
+        )
 
     def _persist_rosters(self) -> None:
         units_path = str(UNITS_PATH)
@@ -5092,10 +5249,16 @@ class GUIController(QtCore.QObject):
 
         lines = ["Player Units"]
         for entry in enemy_roster:
-            lines.append(f"{entry.name}|{entry.count}|{entry.instance_id}")
+            lines.append(
+                f"{entry.name}|{entry.count}|{entry.instance_id}|"
+                f"{entry.ranged_weapon}|{entry.melee_weapon}"
+            )
         lines.append("Model Units")
         for entry in model_roster:
-            lines.append(f"{entry.name}|{entry.count}|{entry.instance_id}")
+            lines.append(
+                f"{entry.name}|{entry.count}|{entry.instance_id}|"
+                f"{entry.ranged_weapon}|{entry.melee_weapon}"
+            )
         os.makedirs(os.path.dirname(units_path), exist_ok=True)
         with open(units_path, "w", encoding="utf-8") as handle:
             handle.write("\n".join(lines))
