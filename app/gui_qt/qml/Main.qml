@@ -61,6 +61,26 @@ ApplicationWindow {
     property int actionButtonMinWidth: Math.round(120 * uiScale)
     property bool mainLogExpanded: true
     property bool rosterLoadoutFocus: false
+    property var rosterWeaponStatHdrs: ["RNG", "A", "BS/WS", "S", "AP", "D"]
+    readonly property var rosterWeaponStatColWidths: [
+        Math.round(44 * uiScale),
+        Math.round(26 * uiScale),
+        Math.round(54 * uiScale),
+        Math.round(26 * uiScale),
+        Math.round(36 * uiScale),
+        Math.round(26 * uiScale)
+    ]
+    readonly property var rosterCoreStatHdrs: ["M", "T", "SV", "W", "LD", "OC"]
+    readonly property var rosterCoreStatColWidths: [
+        Math.round(30 * uiScale),
+        Math.round(24 * uiScale),
+        Math.round(30 * uiScale),
+        Math.round(24 * uiScale),
+        Math.round(30 * uiScale),
+        Math.round(24 * uiScale)
+    ]
+    /** Вертикальный «воздух» между крупными блоками карточки ростера (сетка / теги / протоколы / оружие). */
+    readonly property int rosterSlateBlockGap: Math.round(6 * uiScale)
     property string fontUiFamily: "Rajdhani"
     property string fontDataFamily: "IBM Plex Mono"
 
@@ -1114,10 +1134,10 @@ ApplicationWindow {
                                     Column {
                                         anchors.fill: parent
                                         anchors.margins: Math.round(6 * root.uiScale)
-                                        spacing: 2
+                                        spacing: 1
                                         Text { text: "P1 СВОДКА"; color: "#9eb6d4"; font.bold: true; font.family: root.fontUiFamily; font.pixelSize: Math.round(10 * root.uiScale) }
-                                        Text { text: "Общий бюджет: " + controller.rosterPointsP1; color: root.uiTextMain; font.family: root.fontDataFamily; font.pixelSize: Math.round(10 * root.uiScale); elide: Text.ElideRight }
-                                        Text { text: controller.rosterKpiP1; color: root.uiTextMuted; font.family: root.fontDataFamily; font.pixelSize: Math.round(9 * root.uiScale); elide: Text.ElideRight }
+                                        Text { text: controller.rosterPointsP1; color: "#f2f6ff"; font.bold: true; font.family: "JetBrains Mono"; font.pixelSize: Math.round(18 * root.uiScale); elide: Text.ElideRight }
+                                        Text { text: controller.rosterKpiP1; color: "#8b95a8"; font.family: "JetBrains Mono"; font.pixelSize: Math.round(9 * root.uiScale); elide: Text.ElideRight }
                                     }
                                 }
 
@@ -1131,10 +1151,10 @@ ApplicationWindow {
                                     Column {
                                         anchors.fill: parent
                                         anchors.margins: Math.round(6 * root.uiScale)
-                                        spacing: 2
+                                        spacing: 1
                                         Text { text: "P2 СВОДКА"; color: "#d4a69e"; font.bold: true; font.family: root.fontUiFamily; font.pixelSize: Math.round(10 * root.uiScale) }
-                                        Text { text: "Общий бюджет: " + controller.rosterPointsP2; color: root.uiTextMain; font.family: root.fontDataFamily; font.pixelSize: Math.round(10 * root.uiScale); elide: Text.ElideRight }
-                                        Text { text: controller.rosterKpiP2; color: root.uiTextMuted; font.family: root.fontDataFamily; font.pixelSize: Math.round(9 * root.uiScale); elide: Text.ElideRight }
+                                        Text { text: controller.rosterPointsP2; color: "#f2f6ff"; font.bold: true; font.family: "JetBrains Mono"; font.pixelSize: Math.round(18 * root.uiScale); elide: Text.ElideRight }
+                                        Text { text: controller.rosterKpiP2; color: "#8b95a8"; font.family: "JetBrains Mono"; font.pixelSize: Math.round(9 * root.uiScale); elide: Text.ElideRight }
                                     }
                                 }
 
@@ -1315,7 +1335,16 @@ ApplicationWindow {
                                     delegate: Rectangle {
                                         width: ListView.view ? ListView.view.width : 0
                                         height: Math.max(unitNameAvailable.implicitHeight, unitIconAvailable.height) + root.spacingSm
-                                        color: ListView.isCurrentItem ? "#2d89ef" : "transparent"
+                                        color: ListView.isCurrentItem ? Qt.rgba(1, 1, 1, 0.06) : "transparent"
+
+                                        Rectangle {
+                                            visible: ListView.isCurrentItem
+                                            anchors.left: parent.left
+                                            anchors.top: parent.top
+                                            anchors.bottom: parent.bottom
+                                            width: Math.round(3 * root.uiScale)
+                                            color: "#d97706"
+                                        }
 
                                         Image {
                                             id: unitIconAvailable
@@ -1324,7 +1353,7 @@ ApplicationWindow {
                                             height: root.unitIconSize
                                             anchors.verticalCenter: parent.verticalCenter
                                             anchors.left: parent.left
-                                            anchors.leftMargin: root.spacingSm
+                                            anchors.leftMargin: root.spacingSm + (ListView.isCurrentItem ? Math.round(3 * root.uiScale) : 0)
                                             fillMode: Image.PreserveAspectFit
                                             smooth: true
                                             visible: source !== ""
@@ -1338,6 +1367,7 @@ ApplicationWindow {
                                             anchors.verticalCenter: parent.verticalCenter
                                             anchors.left: unitIconAvailable.visible ? unitIconAvailable.right : parent.left
                                             anchors.leftMargin: root.spacingSm
+                                            font.family: root.fontUiFamily
                                         }
 
                                         MouseArea {
@@ -1347,20 +1377,6 @@ ApplicationWindow {
                                                 controller.set_roster_available_preview_index(index)
                                             }
                                         }
-                                    }
-                                }
-
-                                RowLayout {
-                                    spacing: root.spacingSm
-                                    Button {
-                                        text: "Добавить в P1"
-                                        highlighted: true
-                                        onClicked: controller.add_unit_to_player(availableUnitsView.currentIndex)
-                                    }
-                                    Button {
-                                        text: "Добавить в P2"
-                                        flat: true
-                                        onClicked: controller.add_unit_to_model(availableUnitsView.currentIndex)
                                     }
                                 }
                             }
@@ -1379,7 +1395,7 @@ ApplicationWindow {
                             ColumnLayout {
                                 anchors.fill: parent
                                 anchors.margins: root.spacingXs
-                                spacing: root.spacingSm
+                                spacing: Math.round(6 * root.uiScale)
 
                                 Label {
                                     text: "ВЕРСТАК ВООРУЖЕНИЯ"
@@ -1392,30 +1408,54 @@ ApplicationWindow {
                                     font.letterSpacing: 1.0
                                 }
                                 Label {
-                                    text: controller.rosterWeaponsPreviewTarget + " · " + controller.rosterWeaponsPreviewUnitName
+                                    text: controller.rosterWeaponsPreviewUnitName === "—" ? "Юнит не выбран" : controller.rosterWeaponsPreviewUnitName
                                     font.bold: true
                                     color: root.uiTextMain
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true
-                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    font.pixelSize: Math.round(13 * root.uiScale)
                                     font.family: root.fontUiFamily
+                                }
+                                Label {
+                                    text: "Профили ниже задают оружие для следующего добавления в ростер — нажмите «Добавить в P1» или «Добавить в P2»."
+                                    color: "#8b95a8"
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    font.family: root.fontUiFamily
+                                    font.pixelSize: Math.round(10 * root.uiScale)
                                 }
                                 Rectangle {
                                     Layout.fillWidth: true
-                                    implicitHeight: Math.round(24 * root.uiScale)
+                                    implicitHeight: briefInner.implicitHeight + Math.round(14 * root.uiScale)
                                     color: "#121a26"
                                     border.width: 1
                                     border.color: "#2f3848"
                                     radius: 0
-                                    Text {
-                                        anchors.fill: parent
-                                        anchors.margins: Math.round(6 * root.uiScale)
-                                        text: "ДБ: " + controller.rosterWeaponsSelectedRanged + " | ББ: " + controller.rosterWeaponsSelectedMelee
-                                        color: root.uiTextMuted
-                                        elide: Text.ElideRight
-                                        verticalAlignment: Text.AlignVCenter
-                                        font.family: root.fontDataFamily
-                                        font.pixelSize: Math.round(10 * root.uiScale)
+                                    ColumnLayout {
+                                        id: briefInner
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        anchors.top: parent.top
+                                        anchors.margins: Math.round(7 * root.uiScale)
+                                        spacing: Math.round(4 * root.uiScale)
+                                        Label {
+                                            text: "ИТОГ СБОРКИ"
+                                            color: "#7f8a9d"
+                                            font.bold: true
+                                            font.family: root.fontUiFamily
+                                            font.pixelSize: Math.round(9 * root.uiScale)
+                                            font.capitalization: Font.AllUppercase
+                                            font.letterSpacing: 0.6
+                                        }
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: "ДБ: " + controller.rosterWeaponsSelectedRanged + " | ББ: " + controller.rosterWeaponsSelectedMelee
+                                            color: root.uiTextMuted
+                                            elide: Text.ElideRight
+                                            wrapMode: Text.WordWrap
+                                            font.family: root.fontDataFamily
+                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                        }
                                     }
                                 }
 
@@ -1444,18 +1484,21 @@ ApplicationWindow {
                                 Repeater {
                                     model: controller.rosterWeaponsPreviewRanged
                                     delegate: Rectangle {
+                                        readonly property string rwWeaponName: modelData
+                                        readonly property bool rwSel: rwWeaponName === controller.rosterWeaponsSelectedRanged
                                         Layout.fillWidth: true
-                                        implicitHeight: Math.round(56 * root.uiScale)
-                                        color: modelData === controller.rosterWeaponsSelectedRanged ? "#1f2f45" : "#131923"
-                                        border.width: 1
-                                        border.color: modelData === controller.rosterWeaponsSelectedRanged ? "#6ea0db" : "#2f3848"
+                                        Layout.fillHeight: false
+                                        implicitHeight: Math.round(76 * root.uiScale)
+                                        color: "#131923"
+                                        border.width: 2
+                                        border.color: rwSel ? "#6ea0db" : "#2f3848"
                                         radius: 0
                                         RowLayout {
                                             anchors.fill: parent
                                             anchors.margins: Math.round(5 * root.uiScale)
                                             spacing: root.spacingXs
                                             Image {
-                                                source: controller.roster_weapon_icon_source(modelData)
+                                                source: controller.roster_weapon_icon_source(rwWeaponName)
                                                 sourceSize.width: Math.round(34 * root.uiScale)
                                                 sourceSize.height: Math.round(34 * root.uiScale)
                                                 Layout.preferredWidth: Math.round(34 * root.uiScale)
@@ -1468,25 +1511,44 @@ ApplicationWindow {
                                                 Layout.fillWidth: true
                                                 spacing: 0
                                                 Text {
-                                                    text: modelData
+                                                    text: rwWeaponName
                                                     color: root.uiTextMain
                                                     font.bold: true
                                                     font.family: root.fontUiFamily
                                                     elide: Text.ElideRight
                                                 }
-                                                Text {
-                                                    text: controller.roster_weapon_statline_for_selected(modelData)
-                                                    color: root.uiTextMuted
-                                                    font.family: root.fontDataFamily
-                                                    font.pixelSize: Math.round(9 * root.uiScale)
-                                                    elide: Text.ElideRight
+                                                Row {
+                                                    spacing: Math.round(4 * root.uiScale)
+                                                    Repeater {
+                                                        model: 6
+                                                        delegate: Column {
+                                                            property int colIndex: index
+                                                            width: root.rosterWeaponStatColWidths[colIndex]
+                                                            Text {
+                                                                width: parent.width
+                                                                horizontalAlignment: Text.AlignHCenter
+                                                                text: root.rosterWeaponStatHdrs[colIndex]
+                                                                color: "#7f8a9d"
+                                                                font.family: "JetBrains Mono"
+                                                                font.pixelSize: Math.round(8 * root.uiScale)
+                                                            }
+                                                            Text {
+                                                                width: parent.width
+                                                                horizontalAlignment: Text.AlignHCenter
+                                                                text: controller.roster_weapon_stat_values_for_selected(rwWeaponName)[colIndex]
+                                                                color: "#eef4ff"
+                                                                font.bold: true
+                                                                font.family: "JetBrains Mono"
+                                                                font.pixelSize: Math.round(10 * root.uiScale)
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                                 Flow {
-                                                    visible: modelData === controller.rosterWeaponsSelectedRanged
                                                     Layout.fillWidth: true
                                                     spacing: Math.round(4 * root.uiScale)
                                                     Repeater {
-                                                        model: controller.rosterActiveRangedBadges
+                                                        model: controller.roster_weapon_ability_badges_for_weapon(rwWeaponName)
                                                         delegate: Rectangle {
                                                             implicitHeight: badgeRText.implicitHeight + Math.round(3 * root.uiScale)
                                                             implicitWidth: badgeRText.implicitWidth + Math.round(6 * root.uiScale)
@@ -1507,29 +1569,31 @@ ApplicationWindow {
                                                     }
                                                 }
                                             }
-                                            Rectangle {
-                                                visible: modelData === controller.rosterWeaponsSelectedRanged
-                                                color: "#5e86b8"
-                                                border.width: 1
-                                                border.color: "#8fb6e8"
-                                                radius: 0
-                                                Layout.alignment: Qt.AlignTop
-                                                implicitWidth: selectedRText.implicitWidth + Math.round(8 * root.uiScale)
-                                                implicitHeight: selectedRText.implicitHeight + Math.round(2 * root.uiScale)
-                                                Text {
-                                                    id: selectedRText
-                                                    anchors.centerIn: parent
-                                                    text: "SELECTED"
-                                                    color: "#0d1520"
-                                                    font.bold: true
-                                                    font.family: root.fontDataFamily
-                                                    font.pixelSize: Math.round(8 * root.uiScale)
-                                                }
+                                        }
+                                        Rectangle {
+                                            visible: rwSel
+                                            anchors.right: parent.right
+                                            anchors.top: parent.top
+                                            anchors.margins: Math.round(5 * root.uiScale)
+                                            color: "transparent"
+                                            border.width: 1
+                                            border.color: "#8fb6e8"
+                                            radius: 0
+                                            implicitWidth: selectedRText.implicitWidth + Math.round(8 * root.uiScale)
+                                            implicitHeight: selectedRText.implicitHeight + Math.round(4 * root.uiScale)
+                                            Text {
+                                                id: selectedRText
+                                                anchors.centerIn: parent
+                                                text: "SELECTED"
+                                                color: "#9eb6d4"
+                                                font.bold: true
+                                                font.family: root.fontDataFamily
+                                                font.pixelSize: Math.round(8 * root.uiScale)
                                             }
                                         }
                                         MouseArea {
                                             anchors.fill: parent
-                                            onClicked: controller.set_selected_roster_ranged_weapon(modelData)
+                                            onClicked: controller.set_selected_roster_ranged_weapon(rwWeaponName)
                                         }
                                     }
                                 }
@@ -1559,18 +1623,21 @@ ApplicationWindow {
                                 Repeater {
                                     model: controller.rosterWeaponsPreviewMelee
                                     delegate: Rectangle {
+                                        readonly property string mwWeaponName: modelData
+                                        readonly property bool mwSel: mwWeaponName === controller.rosterWeaponsSelectedMelee
                                         Layout.fillWidth: true
-                                        implicitHeight: Math.round(56 * root.uiScale)
-                                        color: modelData === controller.rosterWeaponsSelectedMelee ? "#3a2a1f" : "#131923"
-                                        border.width: 1
-                                        border.color: modelData === controller.rosterWeaponsSelectedMelee ? "#c79a5a" : "#2f3848"
+                                        Layout.fillHeight: false
+                                        implicitHeight: Math.round(76 * root.uiScale)
+                                        color: "#131923"
+                                        border.width: 2
+                                        border.color: mwSel ? "#d97706" : "#2f3848"
                                         radius: 0
                                         RowLayout {
                                             anchors.fill: parent
                                             anchors.margins: Math.round(5 * root.uiScale)
                                             spacing: root.spacingXs
                                             Image {
-                                                source: controller.roster_weapon_icon_source(modelData)
+                                                source: controller.roster_weapon_icon_source(mwWeaponName)
                                                 sourceSize.width: Math.round(34 * root.uiScale)
                                                 sourceSize.height: Math.round(34 * root.uiScale)
                                                 Layout.preferredWidth: Math.round(34 * root.uiScale)
@@ -1583,25 +1650,44 @@ ApplicationWindow {
                                                 Layout.fillWidth: true
                                                 spacing: 0
                                                 Text {
-                                                    text: modelData
+                                                    text: mwWeaponName
                                                     color: root.uiTextMain
                                                     font.bold: true
                                                     font.family: root.fontUiFamily
                                                     elide: Text.ElideRight
                                                 }
-                                                Text {
-                                                    text: controller.roster_weapon_statline_for_selected(modelData)
-                                                    color: root.uiTextMuted
-                                                    font.family: root.fontDataFamily
-                                                    font.pixelSize: Math.round(9 * root.uiScale)
-                                                    elide: Text.ElideRight
+                                                Row {
+                                                    spacing: Math.round(4 * root.uiScale)
+                                                    Repeater {
+                                                        model: 6
+                                                        delegate: Column {
+                                                            property int colIndex: index
+                                                            width: root.rosterWeaponStatColWidths[colIndex]
+                                                            Text {
+                                                                width: parent.width
+                                                                horizontalAlignment: Text.AlignHCenter
+                                                                text: root.rosterWeaponStatHdrs[colIndex]
+                                                                color: "#7f8a9d"
+                                                                font.family: "JetBrains Mono"
+                                                                font.pixelSize: Math.round(8 * root.uiScale)
+                                                            }
+                                                            Text {
+                                                                width: parent.width
+                                                                horizontalAlignment: Text.AlignHCenter
+                                                                text: controller.roster_weapon_stat_values_for_selected(mwWeaponName)[colIndex]
+                                                                color: "#eef4ff"
+                                                                font.bold: true
+                                                                font.family: "JetBrains Mono"
+                                                                font.pixelSize: Math.round(10 * root.uiScale)
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                                 Flow {
-                                                    visible: modelData === controller.rosterWeaponsSelectedMelee
                                                     Layout.fillWidth: true
                                                     spacing: Math.round(4 * root.uiScale)
                                                     Repeater {
-                                                        model: controller.rosterActiveMeleeBadges
+                                                        model: controller.roster_weapon_ability_badges_for_weapon(mwWeaponName)
                                                         delegate: Rectangle {
                                                             implicitHeight: badgeMText.implicitHeight + Math.round(3 * root.uiScale)
                                                             implicitWidth: badgeMText.implicitWidth + Math.round(6 * root.uiScale)
@@ -1622,29 +1708,79 @@ ApplicationWindow {
                                                     }
                                                 }
                                             }
-                                            Rectangle {
-                                                visible: modelData === controller.rosterWeaponsSelectedMelee
-                                                color: "#8a6238"
-                                                border.width: 1
-                                                border.color: "#c79a5a"
-                                                radius: 0
-                                                Layout.alignment: Qt.AlignTop
-                                                implicitWidth: selectedMText.implicitWidth + Math.round(8 * root.uiScale)
-                                                implicitHeight: selectedMText.implicitHeight + Math.round(2 * root.uiScale)
-                                                Text {
-                                                    id: selectedMText
-                                                    anchors.centerIn: parent
-                                                    text: "SELECTED"
-                                                    color: "#150f07"
-                                                    font.bold: true
-                                                    font.family: root.fontDataFamily
-                                                    font.pixelSize: Math.round(8 * root.uiScale)
-                                                }
+                                        }
+                                        Rectangle {
+                                            visible: mwSel
+                                            anchors.right: parent.right
+                                            anchors.top: parent.top
+                                            anchors.margins: Math.round(5 * root.uiScale)
+                                            color: "transparent"
+                                            border.width: 1
+                                            border.color: "#e8c86a"
+                                            radius: 0
+                                            implicitWidth: selectedMText.implicitWidth + Math.round(8 * root.uiScale)
+                                            implicitHeight: selectedMText.implicitHeight + Math.round(4 * root.uiScale)
+                                            Text {
+                                                id: selectedMText
+                                                anchors.centerIn: parent
+                                                text: "SELECTED"
+                                                color: "#e8c86a"
+                                                font.bold: true
+                                                font.family: root.fontDataFamily
+                                                font.pixelSize: Math.round(8 * root.uiScale)
                                             }
                                         }
                                         MouseArea {
                                             anchors.fill: parent
-                                            onClicked: controller.set_selected_roster_melee_weapon(modelData)
+                                            onClicked: controller.set_selected_roster_melee_weapon(mwWeaponName)
+                                        }
+                                    }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.topMargin: Math.round(10 * root.uiScale)
+                                    spacing: root.spacingSm
+                                    Button {
+                                        Layout.fillWidth: true
+                                        implicitHeight: Math.round(42 * root.uiScale)
+                                        text: "[ ДОБАВИТЬ В P1 ]"
+                                        onClicked: controller.add_unit_to_player(availableUnitsView.currentIndex)
+                                        contentItem: Text {
+                                            text: parent.text
+                                            color: parent.down ? "#dfe9ff" : "#c8d8f5"
+                                            font.family: "JetBrains Mono"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            font.bold: true
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        background: Rectangle {
+                                            radius: 0
+                                            color: parent.pressed ? "#172032" : "#121824"
+                                            border.width: 2
+                                            border.color: parent.hovered ? "#8fb6e8" : "#2f6ed8"
+                                        }
+                                    }
+                                    Button {
+                                        Layout.fillWidth: true
+                                        implicitHeight: Math.round(42 * root.uiScale)
+                                        text: "[ ДОБАВИТЬ В P2 ]"
+                                        onClicked: controller.add_unit_to_model(availableUnitsView.currentIndex)
+                                        contentItem: Text {
+                                            text: parent.text
+                                            color: parent.pressed ? "#ffecec" : "#f0c9c9"
+                                            font.family: "JetBrains Mono"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            font.bold: true
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        background: Rectangle {
+                                            radius: 0
+                                            color: parent.pressed ? "#261616" : "#1a1214"
+                                            border.width: 2
+                                            border.color: parent.hovered ? "#e07878" : "#a44848"
                                         }
                                     }
                                 }
@@ -1657,6 +1793,12 @@ ApplicationWindow {
                                     font.pixelSize: Math.round(9 * root.uiScale)
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
+                                }
+
+                                Item {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    Layout.minimumHeight: 0
                                 }
                             }
                         }
@@ -1688,113 +1830,334 @@ ApplicationWindow {
                                     Layout.fillHeight: true
                                     model: controller.playerRosterModel
                                     clip: true
+                                    // Data Slate P1 — при изменении зеркалить блок P2 ниже (keep in sync)
                                     delegate: Rectangle {
                                         width: ListView.view ? ListView.view.width : 0
-                                        height: Math.round(78 * root.uiScale)
+                                        implicitHeight: Math.max(Math.round(124 * root.uiScale), slateP1.implicitHeight + 2 * root.spacingSm)
+                                        height: implicitHeight
+                                        clip: true
                                         color: controller.roster_entry_active("P1", index) ? "#1f2f45" : "#141b26"
                                         border.width: 1
-                                        border.color: controller.roster_entry_active("P1", index) ? "#d5b15a" : "#2f3848"
+                                        border.color: controller.roster_entry_active("P1", index) ? "#d5b15a" : "#2f6ed8"
                                         radius: 0
                                         Behavior on color { ColorAnimation { duration: 120 } }
                                         Behavior on border.color { ColorAnimation { duration: 120 } }
 
-                                        Image {
-                                            id: unitIconPlayer
-                                            source: controller.unit_icon_source(model.display)
-                                            width: root.unitIconSize
-                                            height: root.unitIconSize
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            anchors.left: parent.left
-                                            anchors.leftMargin: root.spacingSm
-                                            fillMode: Image.PreserveAspectFit
-                                            smooth: true
-                                            visible: source !== ""
-                                        }
-
                                         Column {
-                                            anchors.left: unitIconPlayer.visible ? unitIconPlayer.right : parent.left
-                                            anchors.leftMargin: root.spacingSm
-                                            anchors.right: parent.right
-                                            anchors.rightMargin: root.spacingSm
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            spacing: 1
-                                            Text {
-                                                text: model.display
-                                                color: root.uiTextMain
-                                                elide: Text.ElideRight
-                                                font.bold: true
-                                                font.family: root.fontUiFamily
-                                            }
-                                            Text {
-                                                text: controller.roster_entry_role("P1", index) + " • models " + controller.roster_entry_models("P1", index) + " • " + controller.roster_entry_points("P1", index)
-                                                color: "#9eb6d4"
-                                                elide: Text.ElideRight
-                                                font.family: root.fontDataFamily
-                                                font.pixelSize: Math.round(9 * root.uiScale)
-                                            }
-                                            Text {
-                                                text: controller.roster_entry_abilities("P1", index)
-                                                color: "#d5b15a"
-                                                elide: Text.ElideRight
-                                                font.family: root.fontDataFamily
-                                                font.pixelSize: Math.round(9 * root.uiScale)
-                                            }
-                                            Text {
-                                                text: "ДБ " + controller.roster_entry_ranged_weapon("P1", index) + " • ББ " + controller.roster_entry_melee_weapon("P1", index)
-                                                color: root.uiTextMuted
-                                                elide: Text.ElideRight
-                                                font.family: root.fontDataFamily
-                                                font.pixelSize: Math.round(9 * root.uiScale)
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            visible: controller.roster_entry_active("P1", index)
+                                            id: slateP1
+                                            anchors.left: parent.left
                                             anchors.right: parent.right
                                             anchors.top: parent.top
-                                            anchors.topMargin: 2
-                                            anchors.rightMargin: 2
-                                            color: "#c79a32"
-                                            border.width: 1
-                                            border.color: "#e8c86a"
-                                            radius: 0
-                                            implicitWidth: activeP1Text.implicitWidth + 8
-                                            implicitHeight: activeP1Text.implicitHeight + 2
-                                            Text {
-                                                id: activeP1Text
-                                                anchors.centerIn: parent
-                                                text: "ACTIVE"
-                                                color: "#120f05"
-                                                font.bold: true
-                                                font.pixelSize: Math.round(8 * root.uiScale)
-                                                font.family: root.fontDataFamily
+                                            anchors.margins: root.spacingSm
+                                            spacing: 0
+                                            width: parent.width - 2 * root.spacingSm
+
+                                            RowLayout {
+                                                width: parent.width
+                                                spacing: root.spacingSm
+                                                Image {
+                                                    Layout.alignment: Qt.AlignTop
+                                                    source: controller.unit_icon_source(model.display)
+                                                    width: root.unitIconSize
+                                                    height: root.unitIconSize
+                                                    fillMode: Image.PreserveAspectFit
+                                                    smooth: true
+                                                    visible: source !== ""
+                                                }
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: Math.round(6 * root.uiScale)
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: controller.roster_entry_display_name("P1", index)
+                                                        color: root.uiTextMain
+                                                        elide: Text.ElideRight
+                                                        font.bold: true
+                                                        font.family: root.fontUiFamily
+                                                        font.pixelSize: Math.round(12 * root.uiScale)
+                                                        font.capitalization: Font.AllUppercase
+                                                    }
+                                                    Text {
+                                                        text: controller.roster_entry_count_label("P1", index)
+                                                        color: "#9eb6d4"
+                                                        font.family: root.fontDataFamily
+                                                        font.pixelSize: Math.round(9 * root.uiScale)
+                                                    }
+                                                }
+                                                Item { Layout.fillWidth: true }
+                                                Rectangle {
+                                                    Layout.alignment: Qt.AlignTop
+                                                    color: "#2a2210"
+                                                    border.width: 1
+                                                    border.color: "#c79a32"
+                                                    radius: 0
+                                                    implicitWidth: ptsP1Badge.implicitWidth + root.spacingSm
+                                                    implicitHeight: ptsP1Badge.implicitHeight + Math.round(6 * root.uiScale)
+                                                    Text {
+                                                        id: ptsP1Badge
+                                                        anchors.centerIn: parent
+                                                        text: controller.roster_entry_pts_badge("P1", index)
+                                                        color: "#f0e6c8"
+                                                        font.family: root.fontDataFamily
+                                                        font.pixelSize: Math.round(10 * root.uiScale)
+                                                        font.bold: true
+                                                    }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                width: parent.width
+                                                height: 1
+                                                color: "#19ffffff"
+                                            }
+
+                                            Item {
+                                                width: parent.width
+                                                height: root.rosterSlateBlockGap
+                                            }
+
+                                            Rectangle {
+                                                width: parent.width
+                                                color: "#0d1218"
+                                                implicitHeight: coreColP1.implicitHeight + Math.round(8 * root.uiScale)
+                                                Column {
+                                                    id: coreColP1
+                                                    anchors.left: parent.left
+                                                    anchors.right: parent.right
+                                                    anchors.top: parent.top
+                                                    anchors.margins: Math.round(4 * root.uiScale)
+                                                    spacing: 3
+                                                    Row {
+                                                        spacing: 0
+                                                        Repeater {
+                                                            model: root.rosterCoreStatHdrs.length
+                                                            Item {
+                                                                width: root.rosterCoreStatColWidths[index]
+                                                                implicitHeight: hdrCellP1.implicitHeight
+                                                                Text {
+                                                                    id: hdrCellP1
+                                                                    anchors.horizontalCenter: parent.horizontalCenter
+                                                                    width: parent.width
+                                                                    horizontalAlignment: Text.AlignHCenter
+                                                                    text: root.rosterCoreStatHdrs[index]
+                                                                    color: "#7a8a9e"
+                                                                    font.weight: Font.Normal
+                                                                    font.family: root.fontDataFamily
+                                                                    font.pixelSize: Math.round(8 * root.uiScale)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    Row {
+                                                        spacing: 0
+                                                        Repeater {
+                                                            model: controller.roster_entry_core_stat_values("P1", index)
+                                                            Item {
+                                                                width: root.rosterCoreStatColWidths[index]
+                                                                implicitHeight: valCellP1.implicitHeight
+                                                                Text {
+                                                                    id: valCellP1
+                                                                    anchors.horizontalCenter: parent.horizontalCenter
+                                                                    width: parent.width
+                                                                    horizontalAlignment: Text.AlignHCenter
+                                                                    text: modelData
+                                                                    color: root.uiTextMain
+                                                                    font.weight: Font.DemiBold
+                                                                    font.family: root.fontDataFamily
+                                                                    font.pixelSize: Math.round(10 * root.uiScale)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                width: parent.width
+                                                height: 1
+                                                color: "#19ffffff"
+                                            }
+
+                                            Item {
+                                                width: parent.width
+                                                height: root.rosterSlateBlockGap
+                                            }
+
+                                            Flow {
+                                                width: parent.width
+                                                spacing: Math.round(4 * root.uiScale)
+                                                Repeater {
+                                                    model: controller.roster_entry_keyword_tags("P1", index)
+                                                    delegate: Rectangle {
+                                                        color: "#141b26"
+                                                        border.width: 1
+                                                        border.color: "#4a5c72"
+                                                        radius: 0
+                                                        implicitWidth: kwP1Chip.implicitWidth + Math.round(12 * root.uiScale)
+                                                        implicitHeight: kwP1Chip.implicitHeight + Math.round(4 * root.uiScale)
+                                                        Text {
+                                                            id: kwP1Chip
+                                                            anchors.centerIn: parent
+                                                            text: modelData
+                                                            color: "#b8c8dc"
+                                                            font.family: root.fontDataFamily
+                                                            font.pixelSize: Math.round(8 * root.uiScale)
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Item {
+                                                width: parent.width
+                                                height: root.rosterSlateBlockGap
+                                            }
+
+                                            Repeater {
+                                                model: controller.roster_entry_ability_lines("P1", index)
+                                                delegate: Text {
+                                                    width: slateP1.width
+                                                    wrapMode: Text.WordWrap
+                                                    text: ">_ " + modelData
+                                                    color: "#d5b15a"
+                                                    font.family: root.fontDataFamily
+                                                    font.pixelSize: Math.round(9 * root.uiScale)
+                                                }
+                                            }
+
+                                            Item {
+                                                width: parent.width
+                                                height: root.rosterSlateBlockGap
+                                            }
+
+                                            Column {
+                                                width: parent.width
+                                                spacing: Math.round(4 * root.uiScale)
+                                                RowLayout {
+                                                    width: parent.width
+                                                    spacing: root.spacingXs
+                                                    Item {
+                                                        Layout.preferredWidth: Math.round(16 * root.uiScale)
+                                                        Layout.preferredHeight: wpnRangedP1Label.implicitHeight
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: "⌖"
+                                                            color: root.uiTextMuted
+                                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                                        }
+                                                    }
+                                                    Text {
+                                                        id: wpnRangedP1Label
+                                                        Layout.fillWidth: true
+                                                        Layout.alignment: Qt.AlignVCenter
+                                                        text: controller.roster_entry_ranged_weapon("P1", index)
+                                                        color: root.uiTextMain
+                                                        elide: Text.ElideRight
+                                                        font.family: root.fontDataFamily
+                                                        font.pixelSize: Math.round(9 * root.uiScale)
+                                                    }
+                                                }
+                                                RowLayout {
+                                                    width: parent.width
+                                                    spacing: root.spacingXs
+                                                    Item {
+                                                        Layout.preferredWidth: Math.round(16 * root.uiScale)
+                                                        Layout.preferredHeight: wpnMeleeP1Label.implicitHeight
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: "⚔"
+                                                            color: root.uiTextMuted
+                                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                                        }
+                                                    }
+                                                    Text {
+                                                        id: wpnMeleeP1Label
+                                                        Layout.fillWidth: true
+                                                        Layout.alignment: Qt.AlignVCenter
+                                                        text: controller.roster_entry_melee_weapon("P1", index)
+                                                        color: "#c5d0de"
+                                                        elide: Text.ElideRight
+                                                        font.family: root.fontDataFamily
+                                                        font.pixelSize: Math.round(9 * root.uiScale)
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Canvas {
+                                            z: 2
+                                            anchors.top: parent.top
+                                            anchors.right: parent.right
+                                            width: Math.round(14 * root.uiScale)
+                                            height: Math.round(14 * root.uiScale)
+                                            onPaint: {
+                                                var ctx = getContext("2d")
+                                                ctx.reset()
+                                                ctx.beginPath()
+                                                ctx.moveTo(0, 0)
+                                                ctx.lineTo(width, 0)
+                                                ctx.lineTo(width, height)
+                                                ctx.closePath()
+                                                ctx.fillStyle = root.bgBase
+                                                ctx.fill()
+                                                ctx.strokeStyle = parent.border.color
+                                                ctx.lineWidth = 1
+                                                ctx.beginPath()
+                                                ctx.moveTo(0, 0)
+                                                ctx.lineTo(width, height)
+                                                ctx.stroke()
                                             }
                                         }
 
                                         MouseArea {
+                                            z: 3
                                             anchors.fill: parent
-                                            onClicked: {
-                                                playerRosterView.currentIndex = index
-                                            }
+                                            onClicked: playerRosterView.currentIndex = index
                                         }
                                     }
                                 }
 
                                 RowLayout {
+                                    Layout.fillWidth: true
                                     spacing: root.spacingSm
+                                    Item { Layout.fillWidth: true; Layout.preferredHeight: 1 }
                                     Button {
-                                        text: "Удалить"
+                                        text: "[X] УДАЛИТЬ"
                                         enabled: playerRosterView.currentIndex >= 0
                                         onClicked: controller.remove_player_unit(playerRosterView.currentIndex)
+                                        contentItem: Text {
+                                            text: parent.text
+                                            color: parent.enabled ? "#d2dbea" : "#6f7a8a"
+                                            font.family: "JetBrains Mono"
+                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                            font.bold: true
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        background: Rectangle {
+                                            radius: 0
+                                            color: parent.down ? "#1f2632" : "#141b26"
+                                            border.width: 1
+                                            border.color: parent.hovered ? "#8fb6e8" : "#44536a"
+                                        }
                                     }
                                     Button {
-                                        flat: true
-                                        icon.source: ""
-                                        icon.width: 0
-                                        icon.height: 0
-                                        display: AbstractButton.TextOnly
-                                        text: "⚠ Очистить"
+                                        text: "[!] ОЧИСТИТЬ РОСТЕР"
                                         onClicked: controller.clear_player_roster()
+                                        contentItem: Text {
+                                            text: parent.text
+                                            color: parent.hovered ? "#f0d7d7" : "#d8b0b0"
+                                            font.family: "JetBrains Mono"
+                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                            font.bold: true
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        background: Rectangle {
+                                            radius: 0
+                                            color: parent.down ? "#2b1d1d" : "#1a1518"
+                                            border.width: 1
+                                            border.color: parent.hovered ? "#c56e6e" : "#704848"
+                                        }
                                     }
                                 }
                             }
@@ -1827,113 +2190,334 @@ ApplicationWindow {
                                     Layout.fillHeight: true
                                     model: controller.modelRosterModel
                                     clip: true
+                                    // Data Slate P2 — синхронизировать с блоком P1 выше (keep in sync)
                                     delegate: Rectangle {
                                         width: ListView.view ? ListView.view.width : 0
-                                        height: Math.round(78 * root.uiScale)
+                                        implicitHeight: Math.max(Math.round(124 * root.uiScale), slateP2.implicitHeight + 2 * root.spacingSm)
+                                        height: implicitHeight
+                                        clip: true
                                         color: controller.roster_entry_active("P2", index) ? "#3a2323" : "#141b26"
                                         border.width: 1
-                                        border.color: controller.roster_entry_active("P2", index) ? "#d5b15a" : "#2f3848"
+                                        border.color: controller.roster_entry_active("P2", index) ? "#d5b15a" : "#a44848"
                                         radius: 0
                                         Behavior on color { ColorAnimation { duration: 120 } }
                                         Behavior on border.color { ColorAnimation { duration: 120 } }
 
-                                        Image {
-                                            id: unitIconModel
-                                            source: controller.unit_icon_source(model.display)
-                                            width: root.unitIconSize
-                                            height: root.unitIconSize
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            anchors.left: parent.left
-                                            anchors.leftMargin: root.spacingSm
-                                            fillMode: Image.PreserveAspectFit
-                                            smooth: true
-                                            visible: source !== ""
-                                        }
-
                                         Column {
-                                            anchors.left: unitIconModel.visible ? unitIconModel.right : parent.left
-                                            anchors.leftMargin: root.spacingSm
-                                            anchors.right: parent.right
-                                            anchors.rightMargin: root.spacingSm
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            spacing: 1
-                                            Text {
-                                                text: model.display
-                                                color: root.uiTextMain
-                                                elide: Text.ElideRight
-                                                font.bold: true
-                                                font.family: root.fontUiFamily
-                                            }
-                                            Text {
-                                                text: controller.roster_entry_role("P2", index) + " • models " + controller.roster_entry_models("P2", index) + " • " + controller.roster_entry_points("P2", index)
-                                                color: "#d4a69e"
-                                                elide: Text.ElideRight
-                                                font.family: root.fontDataFamily
-                                                font.pixelSize: Math.round(9 * root.uiScale)
-                                            }
-                                            Text {
-                                                text: controller.roster_entry_abilities("P2", index)
-                                                color: "#d5b15a"
-                                                elide: Text.ElideRight
-                                                font.family: root.fontDataFamily
-                                                font.pixelSize: Math.round(9 * root.uiScale)
-                                            }
-                                            Text {
-                                                text: "ДБ " + controller.roster_entry_ranged_weapon("P2", index) + " • ББ " + controller.roster_entry_melee_weapon("P2", index)
-                                                color: root.uiTextMuted
-                                                elide: Text.ElideRight
-                                                font.family: root.fontDataFamily
-                                                font.pixelSize: Math.round(9 * root.uiScale)
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            visible: controller.roster_entry_active("P2", index)
+                                            id: slateP2
+                                            anchors.left: parent.left
                                             anchors.right: parent.right
                                             anchors.top: parent.top
-                                            anchors.topMargin: 2
-                                            anchors.rightMargin: 2
-                                            color: "#c79a32"
-                                            border.width: 1
-                                            border.color: "#e8c86a"
-                                            radius: 0
-                                            implicitWidth: activeP2Text.implicitWidth + 8
-                                            implicitHeight: activeP2Text.implicitHeight + 2
-                                            Text {
-                                                id: activeP2Text
-                                                anchors.centerIn: parent
-                                                text: "ACTIVE"
-                                                color: "#120f05"
-                                                font.bold: true
-                                                font.pixelSize: Math.round(8 * root.uiScale)
-                                                font.family: root.fontDataFamily
+                                            anchors.margins: root.spacingSm
+                                            spacing: 0
+                                            width: parent.width - 2 * root.spacingSm
+
+                                            RowLayout {
+                                                width: parent.width
+                                                spacing: root.spacingSm
+                                                Image {
+                                                    Layout.alignment: Qt.AlignTop
+                                                    source: controller.unit_icon_source(model.display)
+                                                    width: root.unitIconSize
+                                                    height: root.unitIconSize
+                                                    fillMode: Image.PreserveAspectFit
+                                                    smooth: true
+                                                    visible: source !== ""
+                                                }
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: Math.round(6 * root.uiScale)
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: controller.roster_entry_display_name("P2", index)
+                                                        color: root.uiTextMain
+                                                        elide: Text.ElideRight
+                                                        font.bold: true
+                                                        font.family: root.fontUiFamily
+                                                        font.pixelSize: Math.round(12 * root.uiScale)
+                                                        font.capitalization: Font.AllUppercase
+                                                    }
+                                                    Text {
+                                                        text: controller.roster_entry_count_label("P2", index)
+                                                        color: "#d4a69e"
+                                                        font.family: root.fontDataFamily
+                                                        font.pixelSize: Math.round(9 * root.uiScale)
+                                                    }
+                                                }
+                                                Item { Layout.fillWidth: true }
+                                                Rectangle {
+                                                    Layout.alignment: Qt.AlignTop
+                                                    color: "#2a2210"
+                                                    border.width: 1
+                                                    border.color: "#c79a32"
+                                                    radius: 0
+                                                    implicitWidth: ptsP2Badge.implicitWidth + root.spacingSm
+                                                    implicitHeight: ptsP2Badge.implicitHeight + Math.round(6 * root.uiScale)
+                                                    Text {
+                                                        id: ptsP2Badge
+                                                        anchors.centerIn: parent
+                                                        text: controller.roster_entry_pts_badge("P2", index)
+                                                        color: "#f0e6c8"
+                                                        font.family: root.fontDataFamily
+                                                        font.pixelSize: Math.round(10 * root.uiScale)
+                                                        font.bold: true
+                                                    }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                width: parent.width
+                                                height: 1
+                                                color: "#19ffffff"
+                                            }
+
+                                            Item {
+                                                width: parent.width
+                                                height: root.rosterSlateBlockGap
+                                            }
+
+                                            Rectangle {
+                                                width: parent.width
+                                                color: "#0d1218"
+                                                implicitHeight: coreColP2.implicitHeight + Math.round(8 * root.uiScale)
+                                                Column {
+                                                    id: coreColP2
+                                                    anchors.left: parent.left
+                                                    anchors.right: parent.right
+                                                    anchors.top: parent.top
+                                                    anchors.margins: Math.round(4 * root.uiScale)
+                                                    spacing: 3
+                                                    Row {
+                                                        spacing: 0
+                                                        Repeater {
+                                                            model: root.rosterCoreStatHdrs.length
+                                                            Item {
+                                                                width: root.rosterCoreStatColWidths[index]
+                                                                implicitHeight: hdrCellP2.implicitHeight
+                                                                Text {
+                                                                    id: hdrCellP2
+                                                                    anchors.horizontalCenter: parent.horizontalCenter
+                                                                    width: parent.width
+                                                                    horizontalAlignment: Text.AlignHCenter
+                                                                    text: root.rosterCoreStatHdrs[index]
+                                                                    color: "#7a8a9e"
+                                                                    font.weight: Font.Normal
+                                                                    font.family: root.fontDataFamily
+                                                                    font.pixelSize: Math.round(8 * root.uiScale)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    Row {
+                                                        spacing: 0
+                                                        Repeater {
+                                                            model: controller.roster_entry_core_stat_values("P2", index)
+                                                            Item {
+                                                                width: root.rosterCoreStatColWidths[index]
+                                                                implicitHeight: valCellP2.implicitHeight
+                                                                Text {
+                                                                    id: valCellP2
+                                                                    anchors.horizontalCenter: parent.horizontalCenter
+                                                                    width: parent.width
+                                                                    horizontalAlignment: Text.AlignHCenter
+                                                                    text: modelData
+                                                                    color: root.uiTextMain
+                                                                    font.weight: Font.DemiBold
+                                                                    font.family: root.fontDataFamily
+                                                                    font.pixelSize: Math.round(10 * root.uiScale)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                width: parent.width
+                                                height: 1
+                                                color: "#19ffffff"
+                                            }
+
+                                            Item {
+                                                width: parent.width
+                                                height: root.rosterSlateBlockGap
+                                            }
+
+                                            Flow {
+                                                width: parent.width
+                                                spacing: Math.round(4 * root.uiScale)
+                                                Repeater {
+                                                    model: controller.roster_entry_keyword_tags("P2", index)
+                                                    delegate: Rectangle {
+                                                        color: "#141b26"
+                                                        border.width: 1
+                                                        border.color: "#6a4a52"
+                                                        radius: 0
+                                                        implicitWidth: kwP2Chip.implicitWidth + Math.round(12 * root.uiScale)
+                                                        implicitHeight: kwP2Chip.implicitHeight + Math.round(4 * root.uiScale)
+                                                        Text {
+                                                            id: kwP2Chip
+                                                            anchors.centerIn: parent
+                                                            text: modelData
+                                                            color: "#e8c4c0"
+                                                            font.family: root.fontDataFamily
+                                                            font.pixelSize: Math.round(8 * root.uiScale)
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Item {
+                                                width: parent.width
+                                                height: root.rosterSlateBlockGap
+                                            }
+
+                                            Repeater {
+                                                model: controller.roster_entry_ability_lines("P2", index)
+                                                delegate: Text {
+                                                    width: slateP2.width
+                                                    wrapMode: Text.WordWrap
+                                                    text: ">_ " + modelData
+                                                    color: "#d5b15a"
+                                                    font.family: root.fontDataFamily
+                                                    font.pixelSize: Math.round(9 * root.uiScale)
+                                                }
+                                            }
+
+                                            Item {
+                                                width: parent.width
+                                                height: root.rosterSlateBlockGap
+                                            }
+
+                                            Column {
+                                                width: parent.width
+                                                spacing: Math.round(4 * root.uiScale)
+                                                RowLayout {
+                                                    width: parent.width
+                                                    spacing: root.spacingXs
+                                                    Item {
+                                                        Layout.preferredWidth: Math.round(16 * root.uiScale)
+                                                        Layout.preferredHeight: wpnRangedP2Label.implicitHeight
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: "⌖"
+                                                            color: root.uiTextMuted
+                                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                                        }
+                                                    }
+                                                    Text {
+                                                        id: wpnRangedP2Label
+                                                        Layout.fillWidth: true
+                                                        Layout.alignment: Qt.AlignVCenter
+                                                        text: controller.roster_entry_ranged_weapon("P2", index)
+                                                        color: root.uiTextMain
+                                                        elide: Text.ElideRight
+                                                        font.family: root.fontDataFamily
+                                                        font.pixelSize: Math.round(9 * root.uiScale)
+                                                    }
+                                                }
+                                                RowLayout {
+                                                    width: parent.width
+                                                    spacing: root.spacingXs
+                                                    Item {
+                                                        Layout.preferredWidth: Math.round(16 * root.uiScale)
+                                                        Layout.preferredHeight: wpnMeleeP2Label.implicitHeight
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: "⚔"
+                                                            color: root.uiTextMuted
+                                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                                        }
+                                                    }
+                                                    Text {
+                                                        id: wpnMeleeP2Label
+                                                        Layout.fillWidth: true
+                                                        Layout.alignment: Qt.AlignVCenter
+                                                        text: controller.roster_entry_melee_weapon("P2", index)
+                                                        color: "#c5d0de"
+                                                        elide: Text.ElideRight
+                                                        font.family: root.fontDataFamily
+                                                        font.pixelSize: Math.round(9 * root.uiScale)
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Canvas {
+                                            z: 2
+                                            anchors.top: parent.top
+                                            anchors.right: parent.right
+                                            width: Math.round(14 * root.uiScale)
+                                            height: Math.round(14 * root.uiScale)
+                                            onPaint: {
+                                                var ctx = getContext("2d")
+                                                ctx.reset()
+                                                ctx.beginPath()
+                                                ctx.moveTo(0, 0)
+                                                ctx.lineTo(width, 0)
+                                                ctx.lineTo(width, height)
+                                                ctx.closePath()
+                                                ctx.fillStyle = root.bgBase
+                                                ctx.fill()
+                                                ctx.strokeStyle = parent.border.color
+                                                ctx.lineWidth = 1
+                                                ctx.beginPath()
+                                                ctx.moveTo(0, 0)
+                                                ctx.lineTo(width, height)
+                                                ctx.stroke()
                                             }
                                         }
 
                                         MouseArea {
+                                            z: 3
                                             anchors.fill: parent
-                                            onClicked: {
-                                                modelRosterView.currentIndex = index
-                                            }
+                                            onClicked: modelRosterView.currentIndex = index
                                         }
                                     }
                                 }
 
                                 RowLayout {
+                                    Layout.fillWidth: true
                                     spacing: root.spacingSm
+                                    Item { Layout.fillWidth: true; Layout.preferredHeight: 1 }
                                     Button {
-                                        text: "Удалить"
+                                        text: "[X] УДАЛИТЬ"
                                         enabled: modelRosterView.currentIndex >= 0
                                         onClicked: controller.remove_model_unit(modelRosterView.currentIndex)
+                                        contentItem: Text {
+                                            text: parent.text
+                                            color: parent.enabled ? "#d2dbea" : "#6f7a8a"
+                                            font.family: "JetBrains Mono"
+                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                            font.bold: true
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        background: Rectangle {
+                                            radius: 0
+                                            color: parent.down ? "#1f2632" : "#141b26"
+                                            border.width: 1
+                                            border.color: parent.hovered ? "#8fb6e8" : "#44536a"
+                                        }
                                     }
                                     Button {
-                                        flat: true
-                                        icon.source: ""
-                                        icon.width: 0
-                                        icon.height: 0
-                                        display: AbstractButton.TextOnly
-                                        text: "⚠ Очистить"
+                                        text: "[!] ОЧИСТИТЬ РОСТЕР"
                                         onClicked: controller.clear_model_roster()
+                                        contentItem: Text {
+                                            text: parent.text
+                                            color: parent.hovered ? "#f0d7d7" : "#d8b0b0"
+                                            font.family: "JetBrains Mono"
+                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                            font.bold: true
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        background: Rectangle {
+                                            radius: 0
+                                            color: parent.down ? "#2b1d1d" : "#1a1518"
+                                            border.width: 1
+                                            border.color: parent.hovered ? "#c56e6e" : "#704848"
+                                        }
                                     }
                                 }
                             }

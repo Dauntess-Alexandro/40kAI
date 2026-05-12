@@ -11,7 +11,15 @@ import time
 import ctypes
 from collections import deque
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
+
+# Запуск вида `python app/gui_qt/main.py` добавляет в sys.path только app/gui_qt,
+# из‑за этого не находится project_paths в корне репозитория — QML грузится без controller.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_repo_root_str = str(_REPO_ROOT)
+if _repo_root_str not in sys.path:
+    sys.path.insert(0, _repo_root_str)
 
 from PySide6 import QtCore, QtGui, QtQml
 from PySide6.QtGui import QIcon
@@ -237,6 +245,7 @@ class GUIController(QtCore.QObject):
         self._unit_models_by_name: dict[str, int] = {}
         self._unit_abilities_by_name: dict[str, list[str]] = {}
         self._unit_points_by_name: dict[str, int] = {}
+        self._unit_core_by_name: dict[str, dict[str, object]] = {}
         self._weapon_type_by_army_name: dict[tuple[str, str], str] = {}
         self._weapon_data_by_army_name: dict[tuple[str, str], dict] = {}
         self._roster_available_preview_index = -1
@@ -476,7 +485,7 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
     def rosterWeaponsPreviewTarget(self) -> str:
-        return "Шаблон добавления"
+        return "Сборка перед добавлением"
 
     @QtCore.Property("QStringList", notify=rosterWeaponsPreviewChanged)
     def rosterWeaponsPreviewRanged(self) -> list[str]:
@@ -618,6 +627,21 @@ class GUIController(QtCore.QObject):
         if unit_name == "—":
             return "—"
         return self._weapon_statline(unit_name, weapon_name)
+
+    @QtCore.Slot(str, result="QStringList")
+    def roster_weapon_stat_values_for_selected(self, weapon_name: str) -> list[str]:
+        unit_name = self.rosterWeaponsPreviewUnitName
+        if unit_name == "—":
+            return ["—", "—", "—", "—", "—", "—"]
+        return self._weapon_stat_values(unit_name, weapon_name)
+
+    @QtCore.Slot(str, result="QStringList")
+    def roster_weapon_ability_badges_for_weapon(self, weapon_name: str) -> list[str]:
+        """Бейджи способностей для конкретного профиля оружия (текущий юнит из списка «Доступные»)."""
+        unit_name = self.rosterWeaponsPreviewUnitName
+        if unit_name == "—":
+            return []
+        return self._weapon_ability_badges(unit_name, weapon_name)
 
     @QtCore.Property(str, notify=trainSetupSummaryChanged)
     def trainSetupSummaryLine(self) -> str:
@@ -5203,6 +5227,52 @@ class GUIController(QtCore.QObject):
             return self._format_keyword_label(upper_keys[0])
         return "UNIT"
 
+    def _fmt_core_movement(self, v: object) -> str:
+        if v is None:
+            return "—"
+        try:
+            if isinstance(v, (int, float)):
+                return f'{int(v)}"'
+        except (TypeError, ValueError):
+            pass
+        s = str(v).strip()
+        return s if s else "—"
+
+    def _fmt_core_plus_stat(self, v: object) -> str:
+        if v is None:
+            return "—"
+        try:
+            if isinstance(v, (int, float)):
+                return f"{int(v)}+"
+        except (TypeError, ValueError):
+            pass
+        s = str(v).strip()
+        return s if s else "—"
+
+    def _fmt_core_plain_stat(self, v: object) -> str:
+        if v is None:
+            return "—"
+        try:
+            if isinstance(v, (int, float)):
+                return str(int(v))
+        except (TypeError, ValueError):
+            pass
+        s = str(v).strip()
+        return s if s else "—"
+
+    def _core_stat_display_values(self, unit_name: str) -> list[str]:
+        core = self._unit_core_by_name.get(str(unit_name).strip(), {})
+        if not core:
+            return ["—", "—", "—", "—", "—", "—"]
+        return [
+            self._fmt_core_movement(core.get("Movement")),
+            self._fmt_core_plain_stat(core.get("T")),
+            self._fmt_core_plus_stat(core.get("Sv")),
+            self._fmt_core_plain_stat(core.get("W")),
+            self._fmt_core_plus_stat(core.get("Ld")),
+            self._fmt_core_plain_stat(core.get("OC")),
+        ]
+
     def _weapon_data(self, unit_name: str, weapon_name: str) -> dict:
         army = str(self._unit_faction_by_name.get(str(unit_name).strip(), "") or "").strip().lower()
         wn = str(weapon_name or "").strip().lower()
@@ -5224,6 +5294,23 @@ class GUIController(QtCore.QObject):
         ap = f"AP{data.get('AP', '—')}"
         dmg = f"D{data.get('Damage', '—')}"
         return f"{rng} • {attacks} • {skill} • {strength} • {ap} • {dmg}"
+
+    def _weapon_stat_values(self, unit_name: str, weapon_name: str) -> list[str]:
+        data = self._weapon_data(unit_name, weapon_name)
+        if not data:
+            return ["—", "—", "—", "—", "—", "—"]
+        if str(data.get("Type", "")).strip().lower() == "melee":
+            skill = f"{data.get('WS', '—')}+"
+        else:
+            skill = f"{data.get('BS', '—')}+"
+        return [
+            f"{data.get('Range', '—')}\"",
+            str(data.get("A", "—")),
+            skill,
+            str(data.get("S", "—")),
+            str(data.get("AP", "—")),
+            str(data.get("Damage", "—")),
+        ]
 
     def _format_ability_badge(self, key: str, value: object) -> str:
         label = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", str(key or "").strip()).upper()
@@ -5366,6 +5453,51 @@ class GUIController(QtCore.QObject):
             return str(roster[int(index)].melee_weapon or "—")
         return "—"
 
+    @QtCore.Slot(str, int, result=str)
+    def roster_entry_display_name(self, side: str, index: int) -> str:
+        roster = self._roster_for_side(side)
+        if 0 <= int(index) < len(roster):
+            return str(roster[int(index)].name)
+        return ""
+
+    @QtCore.Slot(str, int, result=str)
+    def roster_entry_count_label(self, side: str, index: int) -> str:
+        roster = self._roster_for_side(side)
+        if 0 <= int(index) < len(roster):
+            return f"[x{max(0, int(roster[int(index)].count))}]"
+        return "[x0]"
+
+    @QtCore.Slot(str, int, result=str)
+    def roster_entry_pts_badge(self, side: str, index: int) -> str:
+        roster = self._roster_for_side(side)
+        if not (0 <= int(index) < len(roster)):
+            return "—"
+        pts = self._entry_points(roster[int(index)])
+        return f"{pts} PTS" if pts > 0 else "—"
+
+    @QtCore.Slot(str, int, result="QStringList")
+    def roster_entry_core_stat_values(self, side: str, index: int) -> list[str]:
+        roster = self._roster_for_side(side)
+        if not (0 <= int(index) < len(roster)):
+            return ["—", "—", "—", "—", "—", "—"]
+        return self._core_stat_display_values(roster[int(index)].name)
+
+    @QtCore.Slot(str, int, result="QStringList")
+    def roster_entry_keyword_tags(self, side: str, index: int) -> list[str]:
+        roster = self._roster_for_side(side)
+        if not (0 <= int(index) < len(roster)):
+            return []
+        name = str(roster[int(index)].name).strip()
+        return list(self._unit_keywords_by_name.get(name, []))
+
+    @QtCore.Slot(str, int, result="QStringList")
+    def roster_entry_ability_lines(self, side: str, index: int) -> list[str]:
+        roster = self._roster_for_side(side)
+        if not (0 <= int(index) < len(roster)):
+            return []
+        name = str(roster[int(index)].name).strip()
+        return list(self._unit_abilities_by_name.get(name, []))
+
     @QtCore.Slot(str, int, result=bool)
     def roster_entry_active(self, side: str, index: int) -> bool:
         return False
@@ -5461,6 +5593,7 @@ class GUIController(QtCore.QObject):
         self._unit_models_by_name.clear()
         self._unit_abilities_by_name.clear()
         self._unit_points_by_name.clear()
+        self._unit_core_by_name.clear()
         self._weapon_type_by_army_name.clear()
         self._weapon_data_by_army_name.clear()
 
@@ -5473,6 +5606,14 @@ class GUIController(QtCore.QObject):
             name_s = str(name).strip()
             fact_s = str(faction).strip()
             self._unit_faction_by_name[name_s] = fact_s
+            self._unit_core_by_name[name_s] = {
+                "Movement": unit.get("Movement"),
+                "T": unit.get("T"),
+                "Sv": unit.get("Sv"),
+                "W": unit.get("W"),
+                "Ld": unit.get("Ld"),
+                "OC": unit.get("OC"),
+            }
             raw_weapons = unit.get("Weapons") or []
             self._unit_weapons_by_name[name_s] = [str(x).strip() for x in raw_weapons if str(x).strip()]
             self._unit_keywords_by_name[name_s] = [str(x).strip() for x in (unit.get("KEYWORDS") or []) if str(x).strip()]
