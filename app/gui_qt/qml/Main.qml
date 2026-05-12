@@ -1281,7 +1281,7 @@ ApplicationWindow {
                             ColumnLayout {
                                 anchors.fill: parent
                                 anchors.margins: root.spacingXs
-                                spacing: root.spacingSm
+                                spacing: Math.round(6 * root.uiScale)
 
                                 RowLayout {
                                     Layout.fillWidth: true
@@ -1311,6 +1311,7 @@ ApplicationWindow {
                                     Layout.fillHeight: true
                                     model: controller.availableUnitsModel
                                     clip: true
+                                    onCurrentIndexChanged: controller.set_roster_available_preview_index(currentIndex)
                                     delegate: Rectangle {
                                         width: ListView.view ? ListView.view.width : 0
                                         height: Math.max(unitNameAvailable.implicitHeight, unitIconAvailable.height) + root.spacingSm
@@ -1341,7 +1342,10 @@ ApplicationWindow {
 
                                         MouseArea {
                                             anchors.fill: parent
-                                            onClicked: availableUnitsView.currentIndex = index
+                                            onClicked: {
+                                                availableUnitsView.currentIndex = index
+                                                controller.set_roster_available_preview_index(index)
+                                            }
                                         }
                                     }
                                 }
@@ -1367,10 +1371,10 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             Layout.alignment: Qt.AlignTop
-                            Layout.minimumWidth: Math.round(190 * root.uiScale)
-                            Layout.preferredWidth: Math.round(240 * root.uiScale)
-                            Layout.maximumWidth: Math.round(300 * root.uiScale)
-                            Layout.horizontalStretchFactor: 1
+                            Layout.minimumWidth: Math.round(230 * root.uiScale)
+                            Layout.preferredWidth: Math.round(300 * root.uiScale)
+                            Layout.maximumWidth: Math.round(360 * root.uiScale)
+                            Layout.horizontalStretchFactor: 2
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -1396,6 +1400,24 @@ ApplicationWindow {
                                     font.pixelSize: Math.round(12 * root.uiScale)
                                     font.family: root.fontUiFamily
                                 }
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    implicitHeight: Math.round(24 * root.uiScale)
+                                    color: "#121a26"
+                                    border.width: 1
+                                    border.color: "#2f3848"
+                                    radius: 0
+                                    Text {
+                                        anchors.fill: parent
+                                        anchors.margins: Math.round(6 * root.uiScale)
+                                        text: "ДБ: " + controller.rosterWeaponsSelectedRanged + " | ББ: " + controller.rosterWeaponsSelectedMelee
+                                        color: root.uiTextMuted
+                                        elide: Text.ElideRight
+                                        verticalAlignment: Text.AlignVCenter
+                                        font.family: root.fontDataFamily
+                                        font.pixelSize: Math.round(10 * root.uiScale)
+                                    }
+                                }
 
                                 RowLayout {
                                     Layout.fillWidth: true
@@ -1406,53 +1428,108 @@ ApplicationWindow {
                                         font.bold: true
                                         font.family: root.fontUiFamily
                                     }
-                                    StyledComboBox {
-                                        id: rosterRangedCombo
-                                        Layout.fillWidth: true
-                                        model: controller.rosterWeaponsPreviewRanged
-                                        enabled: controller.rosterWeaponsPreviewTarget !== "—"
-                                                 && controller.rosterWeaponsPreviewRanged.length > 0
-                                        currentIndex: {
-                                            var selected = controller.rosterWeaponsSelectedRanged
-                                            if (!selected)
-                                                return controller.rosterWeaponsPreviewRanged.length > 0 ? 0 : -1
-                                            var idx = controller.rosterWeaponsPreviewRanged.indexOf(selected)
-                                            return idx >= 0 ? idx : (controller.rosterWeaponsPreviewRanged.length > 0 ? 0 : -1)
-                                        }
-                                        onActivated: {
-                                            if (currentIndex >= 0)
-                                                controller.set_selected_roster_ranged_weapon(currentText)
-                                        }
+                                    Item { Layout.fillWidth: true }
+                                    Label {
+                                        text: controller.rosterWeaponsPreviewRangedCount + " проф."
+                                        color: root.uiTextMuted
+                                        font.family: root.fontDataFamily
+                                        font.pixelSize: Math.round(9 * root.uiScale)
                                     }
                                 }
-                                Text {
+                                Rectangle {
                                     Layout.fillWidth: true
-                                    text: controller.rosterActiveRangedStatline
-                                    color: root.uiTextMuted
-                                    font.family: root.fontDataFamily
-                                    font.pixelSize: Math.round(10 * root.uiScale)
+                                    implicitHeight: 1
+                                    color: "#4b5d76"
                                 }
-                                Flow {
-                                    Layout.fillWidth: true
-                                    spacing: Math.round(4 * root.uiScale)
-                                    Repeater {
-                                        model: controller.rosterActiveRangedBadges
-                                        delegate: Rectangle {
-                                            implicitHeight: badgeRangedText.implicitHeight + Math.round(4 * root.uiScale)
-                                            implicitWidth: badgeRangedText.implicitWidth + Math.round(8 * root.uiScale)
-                                            color: "#243545"
-                                            border.width: 1
-                                            border.color: "#3f5b75"
-                                            radius: 0
-                                            Text {
-                                                id: badgeRangedText
-                                                anchors.centerIn: parent
-                                                text: modelData
-                                                color: "#d6eefc"
-                                                font.bold: true
-                                                font.family: root.fontDataFamily
-                                                font.pixelSize: Math.round(9 * root.uiScale)
+                                Repeater {
+                                    model: controller.rosterWeaponsPreviewRanged
+                                    delegate: Rectangle {
+                                        Layout.fillWidth: true
+                                        implicitHeight: Math.round(56 * root.uiScale)
+                                        color: modelData === controller.rosterWeaponsSelectedRanged ? "#1f2f45" : "#131923"
+                                        border.width: 1
+                                        border.color: modelData === controller.rosterWeaponsSelectedRanged ? "#6ea0db" : "#2f3848"
+                                        radius: 0
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: Math.round(5 * root.uiScale)
+                                            spacing: root.spacingXs
+                                            Image {
+                                                source: controller.roster_weapon_icon_source(modelData)
+                                                sourceSize.width: Math.round(34 * root.uiScale)
+                                                sourceSize.height: Math.round(34 * root.uiScale)
+                                                Layout.preferredWidth: Math.round(34 * root.uiScale)
+                                                Layout.preferredHeight: Math.round(34 * root.uiScale)
+                                                fillMode: Image.PreserveAspectFit
+                                                visible: source !== ""
+                                                smooth: true
                                             }
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 0
+                                                Text {
+                                                    text: modelData
+                                                    color: root.uiTextMain
+                                                    font.bold: true
+                                                    font.family: root.fontUiFamily
+                                                    elide: Text.ElideRight
+                                                }
+                                                Text {
+                                                    text: controller.roster_weapon_statline_for_selected(modelData)
+                                                    color: root.uiTextMuted
+                                                    font.family: root.fontDataFamily
+                                                    font.pixelSize: Math.round(9 * root.uiScale)
+                                                    elide: Text.ElideRight
+                                                }
+                                                Flow {
+                                                    visible: modelData === controller.rosterWeaponsSelectedRanged
+                                                    Layout.fillWidth: true
+                                                    spacing: Math.round(4 * root.uiScale)
+                                                    Repeater {
+                                                        model: controller.rosterActiveRangedBadges
+                                                        delegate: Rectangle {
+                                                            implicitHeight: badgeRText.implicitHeight + Math.round(3 * root.uiScale)
+                                                            implicitWidth: badgeRText.implicitWidth + Math.round(6 * root.uiScale)
+                                                            color: "#243545"
+                                                            border.width: 1
+                                                            border.color: "#3f5b75"
+                                                            radius: 0
+                                                            Text {
+                                                                id: badgeRText
+                                                                anchors.centerIn: parent
+                                                                text: modelData
+                                                                color: "#d6eefc"
+                                                                font.bold: true
+                                                                font.family: root.fontDataFamily
+                                                                font.pixelSize: Math.round(8 * root.uiScale)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Rectangle {
+                                                visible: modelData === controller.rosterWeaponsSelectedRanged
+                                                color: "#5e86b8"
+                                                border.width: 1
+                                                border.color: "#8fb6e8"
+                                                radius: 0
+                                                Layout.alignment: Qt.AlignTop
+                                                implicitWidth: selectedRText.implicitWidth + Math.round(8 * root.uiScale)
+                                                implicitHeight: selectedRText.implicitHeight + Math.round(2 * root.uiScale)
+                                                Text {
+                                                    id: selectedRText
+                                                    anchors.centerIn: parent
+                                                    text: "SELECTED"
+                                                    color: "#0d1520"
+                                                    font.bold: true
+                                                    font.family: root.fontDataFamily
+                                                    font.pixelSize: Math.round(8 * root.uiScale)
+                                                }
+                                            }
+                                        }
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            onClicked: controller.set_selected_roster_ranged_weapon(modelData)
                                         }
                                     }
                                 }
@@ -1466,143 +1543,120 @@ ApplicationWindow {
                                         font.bold: true
                                         font.family: root.fontUiFamily
                                     }
-                                    StyledComboBox {
-                                        id: rosterMeleeCombo
+                                    Item { Layout.fillWidth: true }
+                                    Label {
+                                        text: controller.rosterWeaponsPreviewMeleeCount + " проф."
+                                        color: root.uiTextMuted
+                                        font.family: root.fontDataFamily
+                                        font.pixelSize: Math.round(9 * root.uiScale)
+                                    }
+                                }
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    implicitHeight: 1
+                                    color: "#6f5a42"
+                                }
+                                Repeater {
+                                    model: controller.rosterWeaponsPreviewMelee
+                                    delegate: Rectangle {
                                         Layout.fillWidth: true
-                                        model: controller.rosterWeaponsPreviewMelee
-                                        enabled: controller.rosterWeaponsPreviewTarget !== "—"
-                                                 && controller.rosterWeaponsPreviewMelee.length > 0
-                                        currentIndex: {
-                                            var selected = controller.rosterWeaponsSelectedMelee
-                                            if (!selected)
-                                                return controller.rosterWeaponsPreviewMelee.length > 0 ? 0 : -1
-                                            var idx = controller.rosterWeaponsPreviewMelee.indexOf(selected)
-                                            return idx >= 0 ? idx : (controller.rosterWeaponsPreviewMelee.length > 0 ? 0 : -1)
+                                        implicitHeight: Math.round(56 * root.uiScale)
+                                        color: modelData === controller.rosterWeaponsSelectedMelee ? "#3a2a1f" : "#131923"
+                                        border.width: 1
+                                        border.color: modelData === controller.rosterWeaponsSelectedMelee ? "#c79a5a" : "#2f3848"
+                                        radius: 0
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: Math.round(5 * root.uiScale)
+                                            spacing: root.spacingXs
+                                            Image {
+                                                source: controller.roster_weapon_icon_source(modelData)
+                                                sourceSize.width: Math.round(34 * root.uiScale)
+                                                sourceSize.height: Math.round(34 * root.uiScale)
+                                                Layout.preferredWidth: Math.round(34 * root.uiScale)
+                                                Layout.preferredHeight: Math.round(34 * root.uiScale)
+                                                fillMode: Image.PreserveAspectFit
+                                                visible: source !== ""
+                                                smooth: true
+                                            }
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 0
+                                                Text {
+                                                    text: modelData
+                                                    color: root.uiTextMain
+                                                    font.bold: true
+                                                    font.family: root.fontUiFamily
+                                                    elide: Text.ElideRight
+                                                }
+                                                Text {
+                                                    text: controller.roster_weapon_statline_for_selected(modelData)
+                                                    color: root.uiTextMuted
+                                                    font.family: root.fontDataFamily
+                                                    font.pixelSize: Math.round(9 * root.uiScale)
+                                                    elide: Text.ElideRight
+                                                }
+                                                Flow {
+                                                    visible: modelData === controller.rosterWeaponsSelectedMelee
+                                                    Layout.fillWidth: true
+                                                    spacing: Math.round(4 * root.uiScale)
+                                                    Repeater {
+                                                        model: controller.rosterActiveMeleeBadges
+                                                        delegate: Rectangle {
+                                                            implicitHeight: badgeMText.implicitHeight + Math.round(3 * root.uiScale)
+                                                            implicitWidth: badgeMText.implicitWidth + Math.round(6 * root.uiScale)
+                                                            color: "#3b3022"
+                                                            border.width: 1
+                                                            border.color: "#6f5a42"
+                                                            radius: 0
+                                                            Text {
+                                                                id: badgeMText
+                                                                anchors.centerIn: parent
+                                                                text: modelData
+                                                                color: "#f5e4cf"
+                                                                font.bold: true
+                                                                font.family: root.fontDataFamily
+                                                                font.pixelSize: Math.round(8 * root.uiScale)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Rectangle {
+                                                visible: modelData === controller.rosterWeaponsSelectedMelee
+                                                color: "#8a6238"
+                                                border.width: 1
+                                                border.color: "#c79a5a"
+                                                radius: 0
+                                                Layout.alignment: Qt.AlignTop
+                                                implicitWidth: selectedMText.implicitWidth + Math.round(8 * root.uiScale)
+                                                implicitHeight: selectedMText.implicitHeight + Math.round(2 * root.uiScale)
+                                                Text {
+                                                    id: selectedMText
+                                                    anchors.centerIn: parent
+                                                    text: "SELECTED"
+                                                    color: "#150f07"
+                                                    font.bold: true
+                                                    font.family: root.fontDataFamily
+                                                    font.pixelSize: Math.round(8 * root.uiScale)
+                                                }
+                                            }
                                         }
-                                        onActivated: {
-                                            if (currentIndex >= 0)
-                                                controller.set_selected_roster_melee_weapon(currentText)
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            onClicked: controller.set_selected_roster_melee_weapon(modelData)
                                         }
                                     }
                                 }
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: controller.rosterActiveMeleeStatline
-                                    color: root.uiTextMuted
+
+                                Label {
+                                    visible: controller.rosterWeaponsPreviewUnknown.length > 0
+                                    text: "Не классифицировано: " + controller.rosterWeaponsPreviewUnknown.join(", ")
+                                    color: "#b87a7a"
                                     font.family: root.fontDataFamily
-                                    font.pixelSize: Math.round(10 * root.uiScale)
-                                }
-                                Flow {
+                                    font.pixelSize: Math.round(9 * root.uiScale)
+                                    wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-                                    spacing: Math.round(4 * root.uiScale)
-                                    Repeater {
-                                        model: controller.rosterActiveMeleeBadges
-                                        delegate: Rectangle {
-                                            implicitHeight: badgeMeleeText.implicitHeight + Math.round(4 * root.uiScale)
-                                            implicitWidth: badgeMeleeText.implicitWidth + Math.round(8 * root.uiScale)
-                                            color: "#3b3022"
-                                            border.width: 1
-                                            border.color: "#6f5a42"
-                                            radius: 0
-                                            Text {
-                                                id: badgeMeleeText
-                                                anchors.centerIn: parent
-                                                text: modelData
-                                                color: "#f5e4cf"
-                                                font.bold: true
-                                                font.family: root.fontDataFamily
-                                                font.pixelSize: Math.round(9 * root.uiScale)
-                                            }
-                                        }
-                                    }
-                                }
-
-                                ScrollView {
-                                    id: rosterWeaponsScroll
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: true
-                                    clip: true
-
-                                    Column {
-                                        width: Math.max(
-                                            Math.round(140 * root.uiScale),
-                                            rosterWeaponsScroll.width > 0 ? rosterWeaponsScroll.width - Math.round(8 * root.uiScale) : Math.round(140 * root.uiScale))
-                                        spacing: Math.round(8 * root.uiScale)
-
-                                        Label {
-                                            text: "ДБ (дальний бой)"
-                                            font.bold: true
-                                            font.family: root.fontUiFamily
-                                            font.pixelSize: Math.round(10 * root.uiScale)
-                                            color: "#9eb6d4"
-                                        }
-                                        Label {
-                                            visible: controller.rosterWeaponsPreviewRanged.length === 0
-                                            text: "— нет"
-                                            font.family: root.fontDataFamily
-                                            font.pixelSize: Math.round(10 * root.uiScale)
-                                            color: root.uiTextMuted
-                                        }
-                                        Repeater {
-                                            model: controller.rosterWeaponsPreviewRanged
-                                            Label {
-                                                width: parent.width
-                                                text: "· " + modelData + (modelData === controller.rosterWeaponsSelectedRanged ? "  [выбрано]" : "")
-                                                wrapMode: Text.Wrap
-                                                font.family: root.fontDataFamily
-                                                font.pixelSize: Math.round(10 * root.uiScale)
-                                                color: root.uiTextMain
-                                            }
-                                        }
-
-                                        Item { height: Math.round(4 * root.uiScale); width: 1 }
-
-                                        Label {
-                                            text: "ББ (ближний бой)"
-                                            font.bold: true
-                                            font.family: root.fontUiFamily
-                                            font.pixelSize: Math.round(10 * root.uiScale)
-                                            color: "#c4a882"
-                                        }
-                                        Label {
-                                            visible: controller.rosterWeaponsPreviewMelee.length === 0
-                                            text: "— нет"
-                                            font.family: root.fontDataFamily
-                                            font.pixelSize: Math.round(10 * root.uiScale)
-                                            color: root.uiTextMuted
-                                        }
-                                        Repeater {
-                                            model: controller.rosterWeaponsPreviewMelee
-                                            Label {
-                                                width: parent.width
-                                                text: "· " + modelData + (modelData === controller.rosterWeaponsSelectedMelee ? "  [выбрано]" : "")
-                                                wrapMode: Text.Wrap
-                                                font.family: root.fontDataFamily
-                                                font.pixelSize: Math.round(10 * root.uiScale)
-                                                color: root.uiTextMain
-                                            }
-                                        }
-
-                                        Label {
-                                            visible: controller.rosterWeaponsPreviewUnknown.length > 0
-                                            text: "Тип не сопоставлен:"
-                                            font.bold: true
-                                            font.family: root.fontUiFamily
-                                            font.pixelSize: Math.round(10 * root.uiScale)
-                                            color: "#b87a7a"
-                                        }
-                                        Repeater {
-                                            model: controller.rosterWeaponsPreviewUnknown
-                                            Label {
-                                                width: parent.width
-                                                text: "· " + modelData
-                                                wrapMode: Text.Wrap
-                                                font.family: root.fontDataFamily
-                                                font.pixelSize: Math.round(10 * root.uiScale)
-                                                color: root.uiTextMain
-                                            }
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -1721,7 +1775,6 @@ ApplicationWindow {
                                             anchors.fill: parent
                                             onClicked: {
                                                 playerRosterView.currentIndex = index
-                                                controller.set_roster_weapon_target("P1", index)
                                             }
                                         }
                                     }
@@ -1861,7 +1914,6 @@ ApplicationWindow {
                                             anchors.fill: parent
                                             onClicked: {
                                                 modelRosterView.currentIndex = index
-                                                controller.set_roster_weapon_target("P2", index)
                                             }
                                         }
                                     }
