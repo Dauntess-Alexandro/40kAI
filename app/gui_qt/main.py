@@ -280,6 +280,9 @@ class GUIController(QtCore.QObject):
         self._specific_opponent_algo_by_id: dict[str, str] = {}
         self._selected_specific_opponent_id = ""
         self._opponent_preview_text = "Сейчас будет: —"
+        self._train_context_learner_algo_short = "DQN"
+        self._train_context_opponent_algo_short = "Эвристика"
+        self._train_context_opponent_side = "P2"
 
         self._training_algo_options = ["dqn", "ppo", "alphazero", "gumbel_muzero"]
         self._training_algo = str(os.getenv("TRAIN_ALGO", "dqn")).strip().lower() or "dqn"
@@ -468,13 +471,25 @@ class GUIController(QtCore.QObject):
     def trainRosterP2Faction(self) -> str:
         return self._display_faction_for_side("P2")
 
-    @QtCore.Property("QStringList", notify=trainSetupSummaryChanged)
-    def trainContextP1RosterLines(self) -> list[str]:
-        return self._train_context_roster_lines(self._player_roster)
+    @QtCore.Property("QVariantList", notify=trainSetupSummaryChanged)
+    def trainContextP1RosterCards(self) -> list[dict]:
+        return self._train_context_roster_cards(self._player_roster)
 
-    @QtCore.Property("QStringList", notify=trainSetupSummaryChanged)
-    def trainContextP2RosterLines(self) -> list[str]:
-        return self._train_context_roster_lines(self._model_roster)
+    @QtCore.Property("QVariantList", notify=trainSetupSummaryChanged)
+    def trainContextP2RosterCards(self) -> list[dict]:
+        return self._train_context_roster_cards(self._model_roster)
+
+    @QtCore.Property(str, notify=trainSetupSummaryChanged)
+    def trainContextLearnerAlgoShort(self) -> str:
+        return self._train_context_learner_algo_short
+
+    @QtCore.Property(str, notify=trainSetupSummaryChanged)
+    def trainContextOpponentAlgoShort(self) -> str:
+        return self._train_context_opponent_algo_short
+
+    @QtCore.Property(str, notify=trainSetupSummaryChanged)
+    def trainContextOpponentSide(self) -> str:
+        return self._train_context_opponent_side
 
     @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
     def rosterWeaponsPreviewUnitName(self) -> str:
@@ -604,8 +619,7 @@ class GUIController(QtCore.QObject):
         _rw, mw = self._template_weapons_for_unit(unit_name)
         return self._weapon_ability_badges(unit_name, mw)
 
-    @QtCore.Slot(str, result=str)
-    def roster_weapon_icon_source(self, weapon_name: str) -> str:
+    def _weapon_icon_file_url(self, weapon_name: str) -> str:
         normalized = str(weapon_name or "").strip().lower()
         if not normalized:
             return ""
@@ -614,12 +628,24 @@ class GUIController(QtCore.QObject):
             icon_file = "gauss_reaper_icon.png"
         elif "gauss flayer" in normalized:
             icon_file = "gauss_flayer_icon.png"
+        elif "relic gauss blaster" in normalized:
+            icon_file = "relic_gauss_blaster_icon.png"
+        elif "necron close combat weapon" in normalized:
+            icon_file = "necron_close_combat_weapon_icon.png"
+        elif "royal warden close combat weapon" in normalized:
+            icon_file = "necron_close_combat_weapon_icon.png"
+        elif "close combat weapon" in normalized:
+            icon_file = "necron_close_combat_weapon_icon.png"
         if not icon_file:
             return ""
         icon_path = os.path.join(self._app_gui_dir, "assets", icon_file)
         if not os.path.exists(icon_path):
             return ""
         return self._to_file_url(icon_path)
+
+    @QtCore.Slot(str, result=str)
+    def roster_weapon_icon_source(self, weapon_name: str) -> str:
+        return self._weapon_icon_file_url(weapon_name)
 
     @QtCore.Slot(str, result=str)
     def roster_weapon_statline_for_selected(self, weapon_name: str) -> str:
@@ -1511,35 +1537,39 @@ class GUIController(QtCore.QObject):
         self._unit_icon_cache[cache_key] = icon
         return icon
 
-    def get_unit_icon_source(self, unit_name: str) -> str:
+    def get_unit_icon_source(self, unit_name: str, pixel_size: Optional[int] = None) -> str:
         normalized = self.normalize_unit_name(unit_name)
         if not normalized:
             return ""
+        target_px = int(pixel_size) if pixel_size is not None else int(self._unit_icon_size.width())
+        target_px = max(12, min(128, target_px))
         cache_key = normalized.casefold()
-        if cache_key in self._unit_icon_source_cache:
-            return self._unit_icon_source_cache[cache_key]
+        source_key = f"{cache_key}:{target_px}"
+        if source_key in self._unit_icon_source_cache:
+            return self._unit_icon_source_cache[source_key]
 
         icon = self.get_unit_icon(normalized)
         if icon.isNull():
-            self._unit_icon_source_cache[cache_key] = ""
+            self._unit_icon_source_cache[source_key] = ""
             return ""
 
-        pixmap = icon.pixmap(self._unit_icon_size)
+        target_size = QtCore.QSize(target_px, target_px)
+        pixmap = icon.pixmap(target_size)
         if pixmap.isNull():
-            self._unit_icon_source_cache[cache_key] = ""
+            self._unit_icon_source_cache[source_key] = ""
             return ""
 
         scaled = pixmap.scaled(
-            self._unit_icon_size,
+            target_size,
             QtCore.Qt.KeepAspectRatio,
             QtCore.Qt.SmoothTransformation,
         )
         image_dir = os.path.join(self._app_gui_dir, ".icon_cache")
         os.makedirs(image_dir, exist_ok=True)
-        image_path = os.path.join(image_dir, f"{cache_key.replace(' ', '_')}.png")
+        image_path = os.path.join(image_dir, f"{cache_key.replace(' ', '_')}_{target_px}.png")
         scaled.save(image_path, "PNG")
         source = self._to_file_url(image_path)
-        self._unit_icon_source_cache[cache_key] = source
+        self._unit_icon_source_cache[source_key] = source
         return source
 
     @QtCore.Slot(str, result=str)
@@ -2277,12 +2307,12 @@ class GUIController(QtCore.QObject):
             return self._infer_faction_from_roster(self._model_roster)
         return "Unknown"
 
-    def _train_context_roster_lines(self, roster: list[RosterEntry]) -> list[str]:
-        """Короткие подписи юнитов для блока «Контекст тренировки» (оружие — позже)."""
+    def _train_context_roster_cards(self, roster: list[RosterEntry]) -> list[dict]:
+        """Карточки для «Контекст тренировки»: аватар, название, ДБ/ББ по имени; статы — только для тултипа."""
         if not roster:
             return []
         max_visible = 12
-        lines: list[str] = []
+        cards: list[dict] = []
         for entry in roster[:max_visible]:
             name = str(entry.name or "").strip() or "—"
             try:
@@ -2290,15 +2320,49 @@ class GUIController(QtCore.QObject):
             except (TypeError, ValueError):
                 cnt = 0
             if cnt > 1:
-                lines.append(f"{name} ×{cnt}")
-            elif cnt == 1:
-                lines.append(name)
+                title = f"{name} ×{cnt}"
             else:
-                lines.append(name)
+                title = name
+            rw = str(entry.ranged_weapon or "").strip()
+            mw = str(entry.melee_weapon or "").strip()
+            ranged_name = rw or "—"
+            melee_name = mw or "—"
+            ranged_stat = self._weapon_statline(name, rw) if rw else "—"
+            melee_stat = self._weapon_statline(name, mw) if mw else "—"
+            inst = str(entry.instance_id or "").strip()
+            cards.append(
+                {
+                    "kind": "unit",
+                    "title": title,
+                    "unitName": name,
+                    "instanceId": inst,
+                    "unitIcon": self.get_unit_icon_source(name, pixel_size=72),
+                    "rangedName": ranged_name,
+                    "meleeName": melee_name,
+                    "rangedStatline": ranged_stat,
+                    "meleeStatline": melee_stat,
+                    "rangedIcon": self._weapon_icon_file_url(rw),
+                    "meleeIcon": self._weapon_icon_file_url(mw),
+                }
+            )
         remainder = len(roster) - max_visible
         if remainder > 0:
-            lines.append(f"+ещё {remainder}")
-        return lines
+            cards.append(
+                {
+                    "kind": "more",
+                    "title": f"+ещё {remainder}",
+                    "unitName": "",
+                    "instanceId": "",
+                    "unitIcon": "",
+                    "rangedName": "",
+                    "meleeName": "",
+                    "rangedStatline": "",
+                    "meleeStatline": "",
+                    "rangedIcon": "",
+                    "meleeIcon": "",
+                }
+            )
+        return cards
 
     def _format_train_setup_summary_line(self) -> str:
         mission = (self._selected_mission or "—").strip().upper().replace("_", " ")
@@ -2358,6 +2422,26 @@ class GUIController(QtCore.QObject):
         if text != self._opponent_preview_text:
             self._opponent_preview_text = text
             self.opponentPreviewTextChanged.emit(text)
+
+        learner_short = learner_algo.upper()
+        src = (self._opponent_source or "heuristic").strip().lower()
+        if src == "heuristic":
+            opponent_short = "Эвристика"
+        elif src == "latest_snapshot":
+            if self._selected_specific_opponent_id and str(opponent_algo).strip().lower() not in {"", "unknown"}:
+                opponent_short = str(opponent_algo).upper()
+            else:
+                opponent_short = "Снапшот"
+        else:
+            if self._selected_specific_opponent_id and str(opponent_algo).strip().lower() not in {"", "unknown"}:
+                opponent_short = str(opponent_algo).upper()
+            else:
+                opponent_short = "Агент не выбран"
+
+        self._train_context_learner_algo_short = learner_short
+        self._train_context_opponent_algo_short = opponent_short
+        self._train_context_opponent_side = opponent_side
+
         self._emit_train_setup_summary_changed()
 
     @QtCore.Slot(str, str)
@@ -3046,6 +3130,8 @@ class GUIController(QtCore.QObject):
             self._emit_status("Не найден скрипт запуска терминала. Проверьте репозиторий.")
             return
         self._persist_rosters()
+        if not self._refresh_train_data_json_from_rosters(expected_num_life=None):
+            return
         command = self._build_script_command(script, [model_path])
         env = os.environ.copy()
         env["MISSION_NAME"] = self._selected_mission
@@ -3092,6 +3178,8 @@ class GUIController(QtCore.QObject):
             self._emit_status("Не найден скрипт Viewer. Проверьте репозиторий.")
             return
         self._persist_rosters()
+        if not self._refresh_train_data_json_from_rosters(expected_num_life=None):
+            return
         env = os.environ.copy()
         env["MODEL_PATH"] = model_path
         env["FIGHT_REPORT"] = "1"
@@ -3571,66 +3659,68 @@ class GUIController(QtCore.QObject):
 
         self._set_running(True)
 
+    def _refresh_train_data_json_from_rosters(self, *, expected_num_life: Optional[int] = None) -> bool:
+        """Пересобрать runtime/state/data.json из runtime/state/units.txt (data.bat → initFile.py)."""
+        script = self._script_path("data")
+        # initFile.py: unit-списки и оружие по строкам — из units.txt; фракции — из ростеров learner/model.
+        if self._learner_side == "P1":
+            model_faction = self._infer_faction_from_roster(self._player_roster)
+            enemy_faction = self._infer_faction_from_roster(self._model_roster)
+        else:
+            model_faction = self._infer_faction_from_roster(self._model_roster)
+            enemy_faction = self._infer_faction_from_roster(self._player_roster)
+
+        args = [
+            str(self._num_games),
+            str(model_faction),
+            str(enemy_faction),
+            "60",
+            "40",
+            self._selected_mission,
+        ]
+        command = self._build_script_command(script, args)
+        result = subprocess.run(
+            command,
+            cwd=self._repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            message = (
+                "Ошибка подготовки данных (gui_qt/main.py): "
+                "проверьте data-скрипт и зависимости."
+            )
+            self._emit_status(message)
+            self._emit_log(
+                f"[GUI] {message}\nstdout: {result.stdout}\nstderr: {result.stderr}",
+                level="ERROR",
+            )
+            return False
+        try:
+            with open(str(TRAIN_DATA_PATH), "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            actual_num_life = int(payload.get("numLife", 0) or 0)
+        except Exception as exc:
+            self._emit_status("Не удалось проверить runtime/state/data.json после подготовки данных.")
+            self._emit_log(f"[GUI] Ошибка валидации runtime/state/data.json: {exc}", level="ERROR")
+            return False
+        if expected_num_life is not None and actual_num_life != int(expected_num_life):
+            self._emit_status(
+                f"Подготовка данных вернула numLife={actual_num_life}, ожидалось {int(expected_num_life)}. Запуск остановлен."
+            )
+            self._emit_log(
+                "[GUI] Несоответствие numLife после data-скрипта: "
+                f"expected={int(expected_num_life)} actual={actual_num_life}.",
+                level="ERROR",
+            )
+            return False
+        return True
+
     def _prepare_training_data(self) -> bool:
         try:
             self._persist_rosters()
-            script = self._script_path("data")
-            # initFile.py получает modelFaction/enemyFaction, а unit-списки берутся из runtime/state/units.txt.
-            # Поэтому faction для model/enemy берём из тех ростеров, которые мы записали в эти секции.
-            if self._learner_side == "P1":
-                model_faction = self._infer_faction_from_roster(self._player_roster)
-                enemy_faction = self._infer_faction_from_roster(self._model_roster)
-            else:
-                model_faction = self._infer_faction_from_roster(self._model_roster)
-                enemy_faction = self._infer_faction_from_roster(self._player_roster)
-
-            args = [
-                str(self._num_games),
-                str(model_faction),
-                str(enemy_faction),
-                "60",
-                "40",
-                self._selected_mission,
-            ]
-            command = self._build_script_command(script, args)
-            result = subprocess.run(
-                command,
-                cwd=self._repo_root,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if result.returncode != 0:
-                message = (
-                    "Ошибка подготовки данных (gui_qt/main.py): "
-                    "проверьте data-скрипт и зависимости."
-                )
-                self._emit_status(message)
-                self._emit_log(
-                    f"[GUI] {message}\nstdout: {result.stdout}\nstderr: {result.stderr}",
-                    level="ERROR",
-                )
-                return False
-            # Жёсткая валидация: train должен получить то же число эпизодов, что выбрано в GUI.
-            try:
-                with open(str(TRAIN_DATA_PATH), "r", encoding="utf-8") as handle:
-                    payload = json.load(handle)
-                actual_num_life = int(payload.get("numLife", 0) or 0)
-            except Exception as exc:
-                self._emit_status("Не удалось проверить runtime/state/data.json после подготовки данных.")
-                self._emit_log(f"[GUI] Ошибка валидации runtime/state/data.json: {exc}", level="ERROR")
-                return False
-            if actual_num_life != int(self._num_games):
-                self._emit_status(
-                    f"Подготовка данных вернула numLife={actual_num_life}, ожидалось {int(self._num_games)}. Запуск остановлен."
-                )
-                self._emit_log(
-                    "[GUI] Несоответствие numLife после data-скрипта: "
-                    f"expected={int(self._num_games)} actual={actual_num_life}.",
-                    level="ERROR",
-                )
-                return False
-            return True
+            return self._refresh_train_data_json_from_rosters(expected_num_life=int(self._num_games))
         except OSError as exc:
             message = (
                 "Ошибка подготовки данных (gui_qt/main.py): "

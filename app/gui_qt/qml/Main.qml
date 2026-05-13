@@ -271,8 +271,10 @@ ApplicationWindow {
                                         Layout.alignment: Qt.AlignTop
                                     }
                                     ColumnLayout {
+                                        id: trainCtxMainCol
                                         Layout.fillWidth: true
                                         spacing: root.spacingXs
+                                        readonly property bool trainCtxNarrow: trainCtxRoot.width < Math.round(520 * root.uiScale)
 
                                         Text {
                                             Layout.fillWidth: true
@@ -289,181 +291,552 @@ ApplicationWindow {
 
                                         RowLayout {
                                             Layout.fillWidth: true
-                                            spacing: root.spacingXs
-                                            Label {
-                                                text: "P1:"
-                                                color: root.uiTextMuted
-                                                font.family: root.fontUiFamily
-                                                font.bold: true
-                                            }
-                                            Image {
-                                                source: controller.faction_icon_source(controller.trainRosterP1Faction)
-                                                sourceSize.width: Math.min(root.factionIconSize, Math.round(28 * root.uiScale))
-                                                sourceSize.height: Math.min(root.factionIconSize, Math.round(28 * root.uiScale))
-                                                Layout.preferredWidth: sourceSize.width
-                                                Layout.preferredHeight: sourceSize.height
-                                                visible: source !== ""
-                                                fillMode: Image.PreserveAspectFit
-                                                smooth: true
-                                            }
-                                            Label {
+                                            spacing: root.spacingSm
+                                            Rectangle {
                                                 Layout.fillWidth: true
-                                                text: controller.trainRosterP1Faction
-                                                color: root.uiTextMain
-                                                font.family: root.fontUiFamily
-                                                font.bold: true
-                                                elide: Text.ElideRight
-                                            }
-                                        }
-                                        Label {
-                                            visible: controller.trainContextP1RosterLines.length === 0
-                                            Layout.fillWidth: true
-                                            text: "Состав P1: пусто — задайте на вкладке «Ростер»."
-                                            color: root.uiTextMuted
-                                            font.family: root.fontDataFamily
-                                            font.pixelSize: Math.round(10 * root.uiScale)
-                                            wrapMode: Text.Wrap
-                                        }
-                                        Flow {
-                                            visible: controller.trainContextP1RosterLines.length > 0
-                                            Layout.fillWidth: true
-                                            spacing: Math.round(5 * root.uiScale)
-                                            Repeater {
-                                                model: controller.trainContextP1RosterLines
-                                                delegate: Rectangle {
-                                                    implicitHeight: p1ChipLine.implicitHeight + Math.round(8 * root.uiScale)
-                                                    implicitWidth: p1ChipLine.width + Math.round(10 * root.uiScale)
-                                                    color: "#141b26"
-                                                    border.width: 1
-                                                    border.color: "#35475c"
+                                                implicitHeight: matchP1Col.implicitHeight + Math.round(16 * root.uiScale)
+                                                color: "#141b26"
+                                                border.width: 2
+                                                border.color: controller.learnerSide === "P1" ? root.p1Accent : root.uiBorder
+                                                ColumnLayout {
+                                                    id: matchP1Col
+                                                    anchors.left: parent.left
+                                                    anchors.right: parent.right
+                                                    anchors.top: parent.top
+                                                    anchors.margins: Math.round(8 * root.uiScale)
+                                                    spacing: Math.round(3 * root.uiScale)
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: root.spacingXs
+                                                        Image {
+                                                            source: controller.faction_icon_source(controller.trainRosterP1Faction)
+                                                            sourceSize.width: Math.min(root.factionIconSize, Math.round(22 * root.uiScale))
+                                                            sourceSize.height: Math.min(root.factionIconSize, Math.round(22 * root.uiScale))
+                                                            Layout.preferredWidth: sourceSize.width
+                                                            Layout.preferredHeight: sourceSize.height
+                                                            visible: source !== ""
+                                                            fillMode: Image.PreserveAspectFit
+                                                            smooth: true
+                                                        }
+                                                        Text {
+                                                            Layout.fillWidth: true
+                                                            text: "P1 · " + controller.trainRosterP1Faction
+                                                            color: root.uiTextMain
+                                                            font.family: root.fontUiFamily
+                                                            font.bold: true
+                                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                                            elide: Text.ElideRight
+                                                        }
+                                                        Rectangle {
+                                                            implicitHeight: Math.round(18 * root.uiScale)
+                                                            implicitWidth: learnerBadgeP1.implicitWidth + Math.round(10 * root.uiScale)
+                                                            color: "#1a2332"
+                                                            border.width: 1
+                                                            border.color: controller.learnerSide === "P1" ? root.p1Accent : "#556276"
+                                                            Text {
+                                                                id: learnerBadgeP1
+                                                                anchors.centerIn: parent
+                                                                text: controller.learnerSide === "P1" ? "LEARNER" : "OPPONENT"
+                                                                color: root.uiTextMain
+                                                                font.family: root.fontDataFamily
+                                                                font.pixelSize: Math.round(9 * root.uiScale)
+                                                                font.bold: true
+                                                            }
+                                                        }
+                                                    }
                                                     Text {
-                                                        id: p1ChipLine
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        anchors.left: parent.left
-                                                        anchors.leftMargin: Math.round(5 * root.uiScale)
-                                                        width: Math.round(180 * root.uiScale)
-                                                        text: modelData
-                                                        elide: Text.ElideRight
-                                                        color: "#c9d1dc"
+                                                        Layout.fillWidth: true
+                                                        text: (controller.learnerSide === "P1" ? "ОБУЧЕНИЕ" : "ОППОНЕНТ")
+                                                            + " · " + (controller.learnerSide === "P1"
+                                                                ? controller.trainContextLearnerAlgoShort
+                                                                : controller.trainContextOpponentAlgoShort)
+                                                        color: root.uiTextMuted
                                                         font.family: root.fontDataFamily
                                                         font.pixelSize: Math.round(10 * root.uiScale)
+                                                        wrapMode: Text.Wrap
+                                                    }
+                                                }
+                                            }
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                implicitHeight: matchP2Col.implicitHeight + Math.round(16 * root.uiScale)
+                                                color: "#141b26"
+                                                border.width: 2
+                                                border.color: controller.learnerSide === "P2" ? root.p2Accent : root.uiBorder
+                                                ColumnLayout {
+                                                    id: matchP2Col
+                                                    anchors.left: parent.left
+                                                    anchors.right: parent.right
+                                                    anchors.top: parent.top
+                                                    anchors.margins: Math.round(8 * root.uiScale)
+                                                    spacing: Math.round(3 * root.uiScale)
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: root.spacingXs
+                                                        Image {
+                                                            source: controller.faction_icon_source(controller.trainRosterP2Faction)
+                                                            sourceSize.width: Math.min(root.factionIconSize, Math.round(22 * root.uiScale))
+                                                            sourceSize.height: Math.min(root.factionIconSize, Math.round(22 * root.uiScale))
+                                                            Layout.preferredWidth: sourceSize.width
+                                                            Layout.preferredHeight: sourceSize.height
+                                                            visible: source !== ""
+                                                            fillMode: Image.PreserveAspectFit
+                                                            smooth: true
+                                                        }
+                                                        Text {
+                                                            Layout.fillWidth: true
+                                                            text: "P2 · " + controller.trainRosterP2Faction
+                                                            color: root.uiTextMain
+                                                            font.family: root.fontUiFamily
+                                                            font.bold: true
+                                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                                            elide: Text.ElideRight
+                                                        }
+                                                        Rectangle {
+                                                            implicitHeight: Math.round(18 * root.uiScale)
+                                                            implicitWidth: learnerBadgeP2.implicitWidth + Math.round(10 * root.uiScale)
+                                                            color: "#1a2332"
+                                                            border.width: 1
+                                                            border.color: controller.learnerSide === "P2" ? root.p2Accent : "#556276"
+                                                            Text {
+                                                                id: learnerBadgeP2
+                                                                anchors.centerIn: parent
+                                                                text: controller.learnerSide === "P2" ? "LEARNER" : "OPPONENT"
+                                                                color: root.uiTextMain
+                                                                font.family: root.fontDataFamily
+                                                                font.pixelSize: Math.round(9 * root.uiScale)
+                                                                font.bold: true
+                                                            }
+                                                        }
+                                                    }
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: (controller.learnerSide === "P2" ? "ОБУЧЕНИЕ" : "ОППОНЕНТ")
+                                                            + " · " + (controller.learnerSide === "P2"
+                                                                ? controller.trainContextLearnerAlgoShort
+                                                                : controller.trainContextOpponentAlgoShort)
+                                                        color: root.uiTextMuted
+                                                        font.family: root.fontDataFamily
+                                                        font.pixelSize: Math.round(10 * root.uiScale)
+                                                        wrapMode: Text.Wrap
                                                     }
                                                 }
                                             }
                                         }
-                                        RowLayout {
+
+                                        GridLayout {
                                             Layout.fillWidth: true
-                                            spacing: root.spacingXs
-                                            Label {
-                                                text: "P2:"
-                                                color: root.uiTextMuted
-                                                font.family: root.fontUiFamily
-                                                font.bold: true
-                                            }
-                                            Image {
-                                                source: controller.faction_icon_source(controller.trainRosterP2Faction)
-                                                sourceSize.width: Math.min(root.factionIconSize, Math.round(28 * root.uiScale))
-                                                sourceSize.height: Math.min(root.factionIconSize, Math.round(28 * root.uiScale))
-                                                Layout.preferredWidth: sourceSize.width
-                                                Layout.preferredHeight: sourceSize.height
-                                                visible: source !== ""
-                                                fillMode: Image.PreserveAspectFit
-                                                smooth: true
-                                            }
-                                            Label {
+                                            columns: trainCtxMainCol.trainCtxNarrow ? 1 : 2
+                                            columnSpacing: root.spacingMd + Math.round(6 * root.uiScale)
+                                            rowSpacing: root.spacingSm
+                                            flow: GridLayout.LeftToRight
+
+                                            ColumnLayout {
                                                 Layout.fillWidth: true
-                                                text: controller.trainRosterP2Faction
-                                                color: root.uiTextMain
-                                                font.family: root.fontUiFamily
-                                                font.bold: true
-                                                elide: Text.ElideRight
+                                                Layout.minimumWidth: Math.round(160 * root.uiScale)
+                                                spacing: root.spacingXs
+                                                Label {
+                                                    text: "Состав P1"
+                                                    color: root.uiTextMuted
+                                                    font.family: root.fontUiFamily
+                                                    font.bold: true
+                                                    font.pixelSize: Math.round(10 * root.uiScale)
+                                                    font.capitalization: Font.AllUppercase
+                                                }
+                                                Label {
+                                                    visible: controller.trainContextP1RosterCards.length === 0
+                                                    Layout.fillWidth: true
+                                                    text: "Пусто — задайте на вкладке «Ростер»."
+                                                    color: root.uiTextMuted
+                                                    font.family: root.fontDataFamily
+                                                    font.pixelSize: Math.round(10 * root.uiScale)
+                                                    wrapMode: Text.Wrap
+                                                }
+                                                Repeater {
+                                                    model: controller.trainContextP1RosterCards
+                                                    delegate: Rectangle {
+                                                        property var card: modelData
+                                                        readonly property string _tip: {
+                                                            if (!card || card.kind !== "unit")
+                                                                return ""
+                                                            var header = (card.title || "—")
+                                                            if (card.instanceId && String(card.instanceId).length > 0)
+                                                                header += "  ·  #" + card.instanceId
+                                                            var r = "RANGED\n" + (card.rangedName || "—") + "\n" + (card.rangedStatline || "—")
+                                                            var m = "MELEE\n" + (card.meleeName || "—") + "\n" + (card.meleeStatline || "—")
+                                                            return header + "\n\n" + r + "\n\n" + m + "\n\nИсточник: Ростер"
+                                                        }
+                                                        Layout.fillWidth: true
+                                                        implicitHeight: (card && card.kind === "more")
+                                                            ? Math.round(34 * root.uiScale)
+                                                            : Math.round(76 * root.uiScale)
+                                                        color: "#141b26"
+                                                        border.width: 1
+                                                        border.color: "#35475c"
+
+                                                        RowLayout {
+                                                            id: trainCardRowP1
+                                                            anchors.left: parent.left
+                                                            anchors.right: parent.right
+                                                            anchors.top: parent.top
+                                                            anchors.margins: Math.round(6 * root.uiScale)
+                                                            spacing: Math.round(8 * root.uiScale)
+                                                            visible: card && card.kind !== "more"
+
+                                                            Rectangle {
+                                                                Layout.alignment: Qt.AlignTop
+                                                                implicitWidth: Math.round(52 * root.uiScale)
+                                                                implicitHeight: Math.round(52 * root.uiScale)
+                                                                color: "#0c1018"
+                                                                border.width: 1
+                                                                border.color: "#2a3d52"
+                                                                Image {
+                                                                    id: p1UnitImg
+                                                                    anchors.fill: parent
+                                                                    anchors.margins: Math.round(3 * root.uiScale)
+                                                                    fillMode: Image.PreserveAspectFit
+                                                                    smooth: true
+                                                                    source: (card && card.unitIcon) ? card.unitIcon : ""
+                                                                    visible: source !== ""
+                                                                }
+                                                                Label {
+                                                                    anchors.centerIn: parent
+                                                                    visible: !p1UnitImg.visible && card && card.unitName
+                                                                    text: {
+                                                                        var n = card && card.unitName ? String(card.unitName) : ""
+                                                                        return n.length ? n.charAt(0).toUpperCase() : "?"
+                                                                    }
+                                                                    color: root.uiTextMuted
+                                                                    font.bold: true
+                                                                    font.pixelSize: Math.round(18 * root.uiScale)
+                                                                }
+                                                            }
+
+                                                            ColumnLayout {
+                                                                Layout.fillWidth: true
+                                                                spacing: Math.round(2 * root.uiScale)
+                                                                Text {
+                                                                    Layout.fillWidth: true
+                                                                    text: card && card.title ? String(card.title).toUpperCase() : ""
+                                                                    color: root.uiTextMain
+                                                                    font.family: root.fontUiFamily
+                                                                    font.bold: true
+                                                                    font.pixelSize: Math.round(10 * root.uiScale)
+                                                                    font.letterSpacing: 0.5
+                                                                    wrapMode: Text.Wrap
+                                                                    maximumLineCount: 1
+                                                                    elide: Text.ElideRight
+                                                                }
+                                                                Text {
+                                                                    Layout.fillWidth: true
+                                                                    visible: card && card.instanceId && String(card.instanceId).length > 0
+                                                                    text: "№ " + (card ? card.instanceId : "")
+                                                                    color: root.uiTextMuted
+                                                                    font.family: root.fontDataFamily
+                                                                    font.pixelSize: Math.round(8 * root.uiScale)
+                                                                }
+                                                                RowLayout {
+                                                                    Layout.fillWidth: true
+                                                                    spacing: Math.round(5 * root.uiScale)
+                                                                    Image {
+                                                                        Layout.preferredWidth: Math.round(24 * root.uiScale)
+                                                                        Layout.preferredHeight: Math.round(24 * root.uiScale)
+                                                                        fillMode: Image.PreserveAspectFit
+                                                                        smooth: true
+                                                                        visible: card && card.rangedIcon && String(card.rangedIcon).length > 0
+                                                                        source: (card && card.rangedIcon) ? card.rangedIcon : ""
+                                                                    }
+                                                                    Text {
+                                                                        text: "RANGED:"
+                                                                        color: "#7a90a8"
+                                                                        font.family: root.fontDataFamily
+                                                                        font.pixelSize: Math.round(9 * root.uiScale)
+                                                                    }
+                                                                    Text {
+                                                                        Layout.fillWidth: true
+                                                                        text: card && card.rangedName ? card.rangedName : "—"
+                                                                        color: "#e0e7f3"
+                                                                        font.family: root.fontDataFamily
+                                                                        font.pixelSize: Math.round(10 * root.uiScale)
+                                                                        elide: Text.ElideRight
+                                                                    }
+                                                                }
+                                                                RowLayout {
+                                                                    Layout.fillWidth: true
+                                                                    spacing: Math.round(5 * root.uiScale)
+                                                                    Image {
+                                                                        Layout.preferredWidth: Math.round(24 * root.uiScale)
+                                                                        Layout.preferredHeight: Math.round(24 * root.uiScale)
+                                                                        fillMode: Image.PreserveAspectFit
+                                                                        smooth: true
+                                                                        visible: card && card.meleeIcon && String(card.meleeIcon).length > 0
+                                                                        source: (card && card.meleeIcon) ? card.meleeIcon : ""
+                                                                    }
+                                                                    Text {
+                                                                        text: "MELEE:"
+                                                                        color: "#7a90a8"
+                                                                        font.family: root.fontDataFamily
+                                                                        font.pixelSize: Math.round(9 * root.uiScale)
+                                                                    }
+                                                                    Text {
+                                                                        Layout.fillWidth: true
+                                                                        text: card && card.meleeName ? card.meleeName : "—"
+                                                                        color: "#e0e7f3"
+                                                                        font.family: root.fontDataFamily
+                                                                        font.pixelSize: Math.round(10 * root.uiScale)
+                                                                        elide: Text.ElideRight
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+
+                                                        MouseArea {
+                                                            anchors.fill: parent
+                                                            acceptedButtons: Qt.NoButton
+                                                            hoverEnabled: true
+                                                            z: 1
+                                                            ToolTip.visible: containsMouse && card && card.kind === "unit" && _tip.length > 4
+                                                            ToolTip.text: _tip
+                                                            ToolTip.delay: 350
+                                                        }
+                                                        Rectangle {
+                                                            visible: card && card.kind === "unit"
+                                                            width: Math.round(8 * root.uiScale)
+                                                            height: Math.round(8 * root.uiScale)
+                                                            radius: width / 2
+                                                            anchors.right: parent.right
+                                                            anchors.top: parent.top
+                                                            anchors.margins: Math.round(6 * root.uiScale)
+                                                            color: (card && card.rangedName && card.meleeName && card.rangedName !== "—" && card.meleeName !== "—")
+                                                                ? "#69c36f" : "#d9b352"
+                                                        }
+
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            visible: card && card.kind === "more"
+                                                            text: card ? card.title : ""
+                                                            color: root.uiTextMuted
+                                                            font.family: root.fontDataFamily
+                                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                                        }
+                                                    }
+                                                }
                                             }
-                                        }
-                                        Label {
-                                            visible: controller.trainContextP2RosterLines.length === 0
-                                            Layout.fillWidth: true
-                                            text: "Состав P2: пусто — задайте на вкладке «Ростер»."
-                                            color: root.uiTextMuted
-                                            font.family: root.fontDataFamily
-                                            font.pixelSize: Math.round(10 * root.uiScale)
-                                            wrapMode: Text.Wrap
-                                        }
-                                        Flow {
-                                            visible: controller.trainContextP2RosterLines.length > 0
-                                            Layout.fillWidth: true
-                                            spacing: Math.round(5 * root.uiScale)
-                                            Repeater {
-                                                model: controller.trainContextP2RosterLines
-                                                delegate: Rectangle {
-                                                    implicitHeight: p2ChipLine.implicitHeight + Math.round(8 * root.uiScale)
-                                                    implicitWidth: p2ChipLine.width + Math.round(10 * root.uiScale)
-                                                    color: "#141b26"
-                                                    border.width: 1
-                                                    border.color: "#35475c"
-                                                    Text {
-                                                        id: p2ChipLine
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        anchors.left: parent.left
-                                                        anchors.leftMargin: Math.round(5 * root.uiScale)
-                                                        width: Math.round(180 * root.uiScale)
-                                                        text: modelData
-                                                        elide: Text.ElideRight
-                                                        color: "#c9d1dc"
-                                                        font.family: root.fontDataFamily
-                                                        font.pixelSize: Math.round(10 * root.uiScale)
+
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                Layout.minimumWidth: Math.round(160 * root.uiScale)
+                                                spacing: root.spacingXs
+                                                Label {
+                                                    text: "Состав P2"
+                                                    color: root.uiTextMuted
+                                                    font.family: root.fontUiFamily
+                                                    font.bold: true
+                                                    font.pixelSize: Math.round(10 * root.uiScale)
+                                                    font.capitalization: Font.AllUppercase
+                                                }
+                                                Label {
+                                                    visible: controller.trainContextP2RosterCards.length === 0
+                                                    Layout.fillWidth: true
+                                                    text: "Пусто — задайте на вкладке «Ростер»."
+                                                    color: root.uiTextMuted
+                                                    font.family: root.fontDataFamily
+                                                    font.pixelSize: Math.round(10 * root.uiScale)
+                                                    wrapMode: Text.Wrap
+                                                }
+                                                Repeater {
+                                                    model: controller.trainContextP2RosterCards
+                                                    delegate: Rectangle {
+                                                        property var card: modelData
+                                                        readonly property string _tip: {
+                                                            if (!card || card.kind !== "unit")
+                                                                return ""
+                                                            var header = (card.title || "—")
+                                                            if (card.instanceId && String(card.instanceId).length > 0)
+                                                                header += "  ·  #" + card.instanceId
+                                                            var r = "RANGED\n" + (card.rangedName || "—") + "\n" + (card.rangedStatline || "—")
+                                                            var m = "MELEE\n" + (card.meleeName || "—") + "\n" + (card.meleeStatline || "—")
+                                                            return header + "\n\n" + r + "\n\n" + m + "\n\nИсточник: Ростер"
+                                                        }
+                                                        Layout.fillWidth: true
+                                                        implicitHeight: (card && card.kind === "more")
+                                                            ? Math.round(34 * root.uiScale)
+                                                            : Math.round(76 * root.uiScale)
+                                                        color: "#141b26"
+                                                        border.width: 1
+                                                        border.color: "#35475c"
+
+                                                        RowLayout {
+                                                            id: trainCardRowP2
+                                                            anchors.left: parent.left
+                                                            anchors.right: parent.right
+                                                            anchors.top: parent.top
+                                                            anchors.margins: Math.round(6 * root.uiScale)
+                                                            spacing: Math.round(8 * root.uiScale)
+                                                            visible: card && card.kind !== "more"
+
+                                                            Rectangle {
+                                                                Layout.alignment: Qt.AlignTop
+                                                                implicitWidth: Math.round(52 * root.uiScale)
+                                                                implicitHeight: Math.round(52 * root.uiScale)
+                                                                color: "#0c1018"
+                                                                border.width: 1
+                                                                border.color: "#2a3d52"
+                                                                Image {
+                                                                    id: p2UnitImg
+                                                                    anchors.fill: parent
+                                                                    anchors.margins: Math.round(3 * root.uiScale)
+                                                                    fillMode: Image.PreserveAspectFit
+                                                                    smooth: true
+                                                                    source: (card && card.unitIcon) ? card.unitIcon : ""
+                                                                    visible: source !== ""
+                                                                }
+                                                                Label {
+                                                                    anchors.centerIn: parent
+                                                                    visible: !p2UnitImg.visible && card && card.unitName
+                                                                    text: {
+                                                                        var n = card && card.unitName ? String(card.unitName) : ""
+                                                                        return n.length ? n.charAt(0).toUpperCase() : "?"
+                                                                    }
+                                                                    color: root.uiTextMuted
+                                                                    font.bold: true
+                                                                    font.pixelSize: Math.round(18 * root.uiScale)
+                                                                }
+                                                            }
+
+                                                            ColumnLayout {
+                                                                Layout.fillWidth: true
+                                                                spacing: Math.round(2 * root.uiScale)
+                                                                Text {
+                                                                    Layout.fillWidth: true
+                                                                    text: card && card.title ? String(card.title).toUpperCase() : ""
+                                                                    color: root.uiTextMain
+                                                                    font.family: root.fontUiFamily
+                                                                    font.bold: true
+                                                                    font.pixelSize: Math.round(10 * root.uiScale)
+                                                                    font.letterSpacing: 0.5
+                                                                    wrapMode: Text.Wrap
+                                                                    maximumLineCount: 1
+                                                                    elide: Text.ElideRight
+                                                                }
+                                                                Text {
+                                                                    Layout.fillWidth: true
+                                                                    visible: card && card.instanceId && String(card.instanceId).length > 0
+                                                                    text: "№ " + (card ? card.instanceId : "")
+                                                                    color: root.uiTextMuted
+                                                                    font.family: root.fontDataFamily
+                                                                    font.pixelSize: Math.round(8 * root.uiScale)
+                                                                }
+                                                                RowLayout {
+                                                                    Layout.fillWidth: true
+                                                                    spacing: Math.round(5 * root.uiScale)
+                                                                    Image {
+                                                                        Layout.preferredWidth: Math.round(24 * root.uiScale)
+                                                                        Layout.preferredHeight: Math.round(24 * root.uiScale)
+                                                                        fillMode: Image.PreserveAspectFit
+                                                                        smooth: true
+                                                                        visible: card && card.rangedIcon && String(card.rangedIcon).length > 0
+                                                                        source: (card && card.rangedIcon) ? card.rangedIcon : ""
+                                                                    }
+                                                                    Text {
+                                                                        text: "RANGED:"
+                                                                        color: "#7a90a8"
+                                                                        font.family: root.fontDataFamily
+                                                                        font.pixelSize: Math.round(9 * root.uiScale)
+                                                                    }
+                                                                    Text {
+                                                                        Layout.fillWidth: true
+                                                                        text: card && card.rangedName ? card.rangedName : "—"
+                                                                        color: "#e0e7f3"
+                                                                        font.family: root.fontDataFamily
+                                                                        font.pixelSize: Math.round(10 * root.uiScale)
+                                                                        elide: Text.ElideRight
+                                                                    }
+                                                                }
+                                                                RowLayout {
+                                                                    Layout.fillWidth: true
+                                                                    spacing: Math.round(5 * root.uiScale)
+                                                                    Image {
+                                                                        Layout.preferredWidth: Math.round(24 * root.uiScale)
+                                                                        Layout.preferredHeight: Math.round(24 * root.uiScale)
+                                                                        fillMode: Image.PreserveAspectFit
+                                                                        smooth: true
+                                                                        visible: card && card.meleeIcon && String(card.meleeIcon).length > 0
+                                                                        source: (card && card.meleeIcon) ? card.meleeIcon : ""
+                                                                    }
+                                                                    Text {
+                                                                        text: "MELEE:"
+                                                                        color: "#7a90a8"
+                                                                        font.family: root.fontDataFamily
+                                                                        font.pixelSize: Math.round(9 * root.uiScale)
+                                                                    }
+                                                                    Text {
+                                                                        Layout.fillWidth: true
+                                                                        text: card && card.meleeName ? card.meleeName : "—"
+                                                                        color: "#e0e7f3"
+                                                                        font.family: root.fontDataFamily
+                                                                        font.pixelSize: Math.round(10 * root.uiScale)
+                                                                        elide: Text.ElideRight
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+
+                                                        MouseArea {
+                                                            anchors.fill: parent
+                                                            acceptedButtons: Qt.NoButton
+                                                            hoverEnabled: true
+                                                            z: 1
+                                                            ToolTip.visible: containsMouse && card && card.kind === "unit" && _tip.length > 4
+                                                            ToolTip.text: _tip
+                                                            ToolTip.delay: 350
+                                                        }
+                                                        Rectangle {
+                                                            visible: card && card.kind === "unit"
+                                                            width: Math.round(8 * root.uiScale)
+                                                            height: Math.round(8 * root.uiScale)
+                                                            radius: width / 2
+                                                            anchors.right: parent.right
+                                                            anchors.top: parent.top
+                                                            anchors.margins: Math.round(6 * root.uiScale)
+                                                            color: (card && card.rangedName && card.meleeName && card.rangedName !== "—" && card.meleeName !== "—")
+                                                                ? "#69c36f" : "#d9b352"
+                                                        }
+
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            visible: card && card.kind === "more"
+                                                            text: card ? card.title : ""
+                                                            color: root.uiTextMuted
+                                                            font.family: root.fontDataFamily
+                                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                                        }
                                                     }
                                                 }
                                             }
                                         }
+
                                         Text {
                                             Layout.fillWidth: true
-                                            text: "Оружие, дроны и опции листа — позже; сейчас только имена и количество из «Ростер»."
+                                            text: "Дроны и опции листа здесь не показаны. Цифры оружия — во всплывающей подсказке при наведении на карточку или на вкладке «Ростер»."
                                             color: root.uiTextMuted
                                             font.family: root.fontDataFamily
                                             font.pixelSize: Math.round(9 * root.uiScale)
                                             wrapMode: Text.Wrap
-                                        }
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            Item { Layout.fillWidth: true }
-                                            Rectangle {
-                                                radius: 0
-                                                color: "#141b26"
-                                                border.width: 1
-                                                border.color: controller.learnerSide === "P1" ? root.p1Accent : root.p2Accent
-                                                width: learnerSideBadge.implicitWidth + Math.round(14 * root.uiScale)
-                                                height: learnerSideBadge.implicitHeight + Math.round(8 * root.uiScale)
-                                                Text {
-                                                    id: learnerSideBadge
-                                                    anchors.centerIn: parent
-                                                    text: "УЧИТСЯ: " + controller.learnerSide
-                                                    font.family: root.fontDataFamily
-                                                    font.bold: true
-                                                    font.pixelSize: root.evalCaptionSize
-                                                    color: root.uiTextMain
-                                                }
-                                            }
                                         }
                                     }
                                 }
 
                                 Text {
                                     Layout.fillWidth: true
-                                    text: controller.trainSetupSummaryLine
+                                    text: controller.selectedMission.toUpperCase().replace("_", " ")
+                                        + " · " + controller.numGames + " эп."
+                                        + " · LEARNER " + controller.learnerSide + " (" + controller.trainContextLearnerAlgoShort + ")"
+                                        + " · OPPONENT " + controller.trainContextOpponentSide + " (" + controller.trainContextOpponentAlgoShort + ")"
                                     wrapMode: Text.Wrap
                                     color: "#d0d6e0"
                                     font.family: root.fontDataFamily
                                     font.pixelSize: root.evalCaptionSize
-                                }
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: controller.opponentPreviewText
-                                    wrapMode: Text.WordWrap
-                                    maximumLineCount: 2
-                                    elide: Text.ElideRight
-                                    color: root.uiTextMuted
-                                    font.family: root.fontDataFamily
-                                    font.pixelSize: Math.round(10 * root.uiScale)
                                 }
                             }
                         }
@@ -1420,7 +1793,7 @@ ApplicationWindow {
                                     font.family: root.fontUiFamily
                                 }
                                 Label {
-                                    text: "Профили ниже задают оружие для следующего добавления в ростер — нажмите «Добавить в P1» или «Добавить в P2»."
+                                    text: "Профили ниже — только шаблон для следующего добавления (кнопки «Добавить в P1/P2»). Уже в ростере отряды сохраняют своё оружие; разные отряды одного типа могут отличаться."
                                     color: "#8b95a8"
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
