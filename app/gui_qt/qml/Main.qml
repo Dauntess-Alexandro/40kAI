@@ -60,7 +60,6 @@ ApplicationWindow {
     property int actionButtonHeight: Math.round(30 * uiScale)
     property int actionButtonMinWidth: Math.round(120 * uiScale)
     property bool mainLogExpanded: true
-    property bool rosterLoadoutFocus: false
     property var rosterWeaponStatHdrs: ["RNG", "A", "BS/WS", "S", "AP", "D"]
     readonly property var rosterWeaponStatColWidths: [
         Math.round(44 * uiScale),
@@ -1664,28 +1663,6 @@ ApplicationWindow {
                                         font.bold: true
                                     }
                                 }
-
-                                Button {
-                                    text: root.rosterLoadoutFocus ? "FOCUS: ON" : "FOCUS: OFF"
-                                    flat: true
-                                    onClicked: root.rosterLoadoutFocus = !root.rosterLoadoutFocus
-                                    contentItem: Text {
-                                        text: parent.text
-                                        color: parent.hovered ? "#e8c86a" : "#9aa3b2"
-                                        font.bold: true
-                                        font.family: root.fontDataFamily
-                                        font.pixelSize: root.evalCaptionSize
-                                        horizontalAlignment: Text.AlignHCenter
-                                        verticalAlignment: Text.AlignVCenter
-                                    }
-                                    background: ChamferPanel {
-                                        cutSize: Math.round(6 * root.uiScale)
-                                        contentMargin: 0
-                                        fillColor: parent.hovered ? "#25303d" : "transparent"
-                                        borderWidth: 1
-                                        borderColor: parent.hovered ? "#b88a26" : "#4f5a6b"
-                                    }
-                                }
                             }
 
                             RowLayout {
@@ -1761,8 +1738,6 @@ ApplicationWindow {
                             Layout.minimumWidth: Math.round(220 * root.uiScale)
                             Layout.preferredWidth: Math.round(250 * root.uiScale)
                             Layout.horizontalStretchFactor: 1
-                            opacity: root.rosterLoadoutFocus ? 0.45 : 1.0
-                            Behavior on opacity { NumberAnimation { duration: 130 } }
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -1864,8 +1839,6 @@ ApplicationWindow {
                             Layout.minimumWidth: Math.round(300 * root.uiScale)
                             Layout.preferredWidth: Math.round(360 * root.uiScale)
                             Layout.horizontalStretchFactor: 3
-                            opacity: root.rosterLoadoutFocus ? 0.55 : 1.0
-                            Behavior on opacity { NumberAnimation { duration: 130 } }
 
                             ColumnLayout {
                                 anchors.fill: parent
