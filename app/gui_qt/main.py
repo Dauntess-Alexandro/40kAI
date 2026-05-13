@@ -603,7 +603,54 @@ class GUIController(QtCore.QObject):
         if unit_name == "—":
             return "Профиль не выбран"
         rw, mw = self._template_weapons_for_unit(unit_name)
-        return f"{self.rosterWeaponsPreviewTarget}: {unit_name} | ДБ {rw or '—'} | ББ {mw or '—'}"
+        return f"{self.rosterWeaponsPreviewTarget}: {unit_name} | RANGED: {rw or '—'} | MELEE: {mw or '—'}"
+
+    @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
+    def rosterActiveProfileContextLine(self) -> str:
+        if self.rosterWeaponsPreviewUnitName == "—":
+            return "Выберите юнит в списке слева — данные подтянутся с верстака."
+        return "Следующее добавление в ростер (P1 / P2): шаблон с верстака до нажатия «Добавить»."
+
+    @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
+    def rosterActiveProfileDetailTooltip(self) -> str:
+        unit_name = self.rosterWeaponsPreviewUnitName
+        if unit_name == "—":
+            return (
+                "Выберите юнит в списке «Доступные юниты», затем настройте дальний и ближний бой на верстаке.\n"
+                "Полный текст статов — во всплывающей подсказке профилей оружия ниже."
+            )
+        rw, mw = self._template_weapons_for_unit(unit_name)
+        rs = self._weapon_statline(unit_name, rw)
+        ms = self._weapon_statline(unit_name, mw)
+        return (
+            f"{unit_name}\n\n"
+            f"RANGED: {rw or '—'}\n{rs}\n\n"
+            f"MELEE: {mw or '—'}\n{ms}\n\n"
+            "Источник: шаблон верстака перед добавлением отряда в ростер."
+        )
+
+    @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
+    def rosterActiveProfileUnitIconSource(self) -> str:
+        unit_name = self.rosterWeaponsPreviewUnitName
+        if unit_name == "—":
+            return ""
+        return self.get_unit_icon_source(unit_name, pixel_size=56)
+
+    @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
+    def rosterActiveProfileRangedIconSource(self) -> str:
+        unit_name = self.rosterWeaponsPreviewUnitName
+        if unit_name == "—":
+            return ""
+        rw, _mw = self._template_weapons_for_unit(unit_name)
+        return self._weapon_icon_file_url(rw)
+
+    @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
+    def rosterActiveProfileMeleeIconSource(self) -> str:
+        unit_name = self.rosterWeaponsPreviewUnitName
+        if unit_name == "—":
+            return ""
+        _rw, mw = self._template_weapons_for_unit(unit_name)
+        return self._weapon_icon_file_url(mw)
 
     @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
     def rosterActiveRangedStatline(self) -> str:
