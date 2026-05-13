@@ -362,7 +362,7 @@ ApplicationWindow {
                                                 implicitHeight: matchP2Col.implicitHeight + Math.round(16 * root.uiScale)
                                                 color: "#141b26"
                                                 border.width: 2
-                                                border.color: controller.learnerSide === "P2" ? root.p2Accent : root.uiBorder
+                                                border.color: controller.learnerSide === "P2" ? root.p2Accent : "#6c3844"
                                                 ColumnLayout {
                                                     id: matchP2Col
                                                     anchors.left: parent.left
@@ -461,7 +461,7 @@ ApplicationWindow {
                                                                 return ""
                                                             var header = (card.title || "—")
                                                             if (card.instanceId && String(card.instanceId).length > 0)
-                                                                header += "  ·  SYS.REF:" + card.instanceId
+                                                                header += "  ·  SYS.REF: " + card.instanceId
                                                             var r = "RANGED\n" + (card.rangedName || "—") + "\n" + (card.rangedStatline || "—")
                                                             var m = "MELEE\n" + (card.meleeName || "—") + "\n" + (card.meleeStatline || "—")
                                                             return header + "\n\n" + r + "\n\n" + m + "\n\nИсточник: Ростер"
@@ -530,52 +530,49 @@ ApplicationWindow {
                                                                 Text {
                                                                     Layout.fillWidth: true
                                                                     visible: card && card.instanceId && String(card.instanceId).length > 0
-                                                                    text: "SYS.REF:" + (card ? card.instanceId : "")
+                                                                    text: "SYS.REF: " + (card ? card.instanceId : "")
                                                                     color: "#5c6a7d"
                                                                     font.family: "Consolas"
                                                                     font.pixelSize: Math.round(8 * root.uiScale)
                                                                 }
                                                                 RowLayout {
                                                                     Layout.fillWidth: true
-                                                                    spacing: Math.round(8 * root.uiScale)
+                                                                    spacing: Math.round(6 * root.uiScale)
                                                                     Item {
-                                                                        Layout.preferredWidth: Math.round(100 * root.uiScale)
-                                                                        Layout.maximumWidth: Math.round(100 * root.uiScale)
-                                                                        Layout.minimumWidth: Math.round(100 * root.uiScale)
+                                                                        Layout.preferredWidth: Math.round(32 * root.uiScale)
+                                                                        Layout.maximumWidth: Math.round(32 * root.uiScale)
+                                                                        Layout.minimumWidth: Math.round(32 * root.uiScale)
                                                                         Layout.preferredHeight: Math.round(24 * root.uiScale)
-                                                                        RowLayout {
-                                                                            anchors.fill: parent
-                                                                            spacing: Math.round(6 * root.uiScale)
-                                                                            Item {
-                                                                                Layout.preferredWidth: Math.round(24 * root.uiScale)
-                                                                                Layout.preferredHeight: Math.round(24 * root.uiScale)
-                                                                                Layout.alignment: Qt.AlignVCenter
-                                                                                Image {
-                                                                                    anchors.centerIn: parent
-                                                                                    anchors.verticalCenterOffset: -Math.round(1 * root.uiScale)
-                                                                                    width: Math.round(24 * root.uiScale)
-                                                                                    height: Math.round(24 * root.uiScale)
-                                                                                    fillMode: Image.PreserveAspectFit
-                                                                                    smooth: true
-                                                                                    visible: card && card.rangedIcon && String(card.rangedIcon).length > 0
-                                                                                    source: (card && card.rangedIcon) ? card.rangedIcon : ""
-                                                                                }
-                                                                            }
-                                                                            Text {
-                                                                                text: "RANGED:"
-                                                                                color: "#6d849c"
-                                                                                font.family: "Consolas"
-                                                                                font.pixelSize: Math.round(9 * root.uiScale)
-                                                                                font.bold: true
-                                                                                Layout.alignment: Qt.AlignVCenter
-                                                                            }
+                                                                        Image {
+                                                                            anchors.centerIn: parent
+                                                                            anchors.verticalCenterOffset: -Math.round(1 * root.uiScale)
+                                                                            width: Math.round(24 * root.uiScale)
+                                                                            height: Math.round(24 * root.uiScale)
+                                                                            fillMode: Image.PreserveAspectFit
+                                                                            smooth: true
+                                                                            visible: card && card.rangedIcon && String(card.rangedIcon).length > 0
+                                                                            source: (card && card.rangedIcon) ? card.rangedIcon : ""
                                                                         }
+                                                                    }
+                                                                    Text {
+                                                                        Layout.preferredWidth: Math.round(64 * root.uiScale)
+                                                                        Layout.maximumWidth: Math.round(64 * root.uiScale)
+                                                                        Layout.minimumWidth: Math.round(64 * root.uiScale)
+                                                                        Layout.alignment: Qt.AlignVCenter
+                                                                        text: "RANGED:"
+                                                                        color: "#6d7a8a"
+                                                                        font.family: "Consolas"
+                                                                        font.pixelSize: Math.round(9 * root.uiScale)
+                                                                        font.bold: true
+                                                                        horizontalAlignment: Text.AlignLeft
+                                                                        verticalAlignment: Text.AlignVCenter
+                                                                        elide: Text.ElideRight
                                                                     }
                                                                     Text {
                                                                         Layout.fillWidth: true
                                                                         Layout.alignment: Qt.AlignVCenter
                                                                         text: card && card.rangedName ? card.rangedName : "—"
-                                                                        color: "#e0e7f3"
+                                                                        color: "#f0f4fc"
                                                                         font.family: root.fontDataFamily
                                                                         font.pixelSize: Math.round(10 * root.uiScale)
                                                                         elide: Text.ElideRight
@@ -583,45 +580,42 @@ ApplicationWindow {
                                                                 }
                                                                 RowLayout {
                                                                     Layout.fillWidth: true
-                                                                    spacing: Math.round(8 * root.uiScale)
+                                                                    spacing: Math.round(6 * root.uiScale)
                                                                     Item {
-                                                                        Layout.preferredWidth: Math.round(100 * root.uiScale)
-                                                                        Layout.maximumWidth: Math.round(100 * root.uiScale)
-                                                                        Layout.minimumWidth: Math.round(100 * root.uiScale)
+                                                                        Layout.preferredWidth: Math.round(32 * root.uiScale)
+                                                                        Layout.maximumWidth: Math.round(32 * root.uiScale)
+                                                                        Layout.minimumWidth: Math.round(32 * root.uiScale)
                                                                         Layout.preferredHeight: Math.round(24 * root.uiScale)
-                                                                        RowLayout {
-                                                                            anchors.fill: parent
-                                                                            spacing: Math.round(6 * root.uiScale)
-                                                                            Item {
-                                                                                Layout.preferredWidth: Math.round(24 * root.uiScale)
-                                                                                Layout.preferredHeight: Math.round(24 * root.uiScale)
-                                                                                Layout.alignment: Qt.AlignVCenter
-                                                                                Image {
-                                                                                    anchors.centerIn: parent
-                                                                                    anchors.verticalCenterOffset: -Math.round(1 * root.uiScale)
-                                                                                    width: Math.round(24 * root.uiScale)
-                                                                                    height: Math.round(24 * root.uiScale)
-                                                                                    fillMode: Image.PreserveAspectFit
-                                                                                    smooth: true
-                                                                                    visible: card && card.meleeIcon && String(card.meleeIcon).length > 0
-                                                                                    source: (card && card.meleeIcon) ? card.meleeIcon : ""
-                                                                                }
-                                                                            }
-                                                                            Text {
-                                                                                text: "MELEE:"
-                                                                                color: "#6d849c"
-                                                                                font.family: "Consolas"
-                                                                                font.pixelSize: Math.round(9 * root.uiScale)
-                                                                                font.bold: true
-                                                                                Layout.alignment: Qt.AlignVCenter
-                                                                            }
+                                                                        Image {
+                                                                            anchors.centerIn: parent
+                                                                            anchors.verticalCenterOffset: -Math.round(1 * root.uiScale)
+                                                                            width: Math.round(24 * root.uiScale)
+                                                                            height: Math.round(24 * root.uiScale)
+                                                                            fillMode: Image.PreserveAspectFit
+                                                                            smooth: true
+                                                                            visible: card && card.meleeIcon && String(card.meleeIcon).length > 0
+                                                                            source: (card && card.meleeIcon) ? card.meleeIcon : ""
                                                                         }
+                                                                    }
+                                                                    Text {
+                                                                        Layout.preferredWidth: Math.round(64 * root.uiScale)
+                                                                        Layout.maximumWidth: Math.round(64 * root.uiScale)
+                                                                        Layout.minimumWidth: Math.round(64 * root.uiScale)
+                                                                        Layout.alignment: Qt.AlignVCenter
+                                                                        text: "MELEE:"
+                                                                        color: "#6d7a8a"
+                                                                        font.family: "Consolas"
+                                                                        font.pixelSize: Math.round(9 * root.uiScale)
+                                                                        font.bold: true
+                                                                        horizontalAlignment: Text.AlignLeft
+                                                                        verticalAlignment: Text.AlignVCenter
+                                                                        elide: Text.ElideRight
                                                                     }
                                                                     Text {
                                                                         Layout.fillWidth: true
                                                                         Layout.alignment: Qt.AlignVCenter
                                                                         text: card && card.meleeName ? card.meleeName : "—"
-                                                                        color: "#e0e7f3"
+                                                                        color: "#f0f4fc"
                                                                         font.family: root.fontDataFamily
                                                                         font.pixelSize: Math.round(10 * root.uiScale)
                                                                         elide: Text.ElideRight
@@ -706,7 +700,7 @@ ApplicationWindow {
                                                                 return ""
                                                             var header = (card.title || "—")
                                                             if (card.instanceId && String(card.instanceId).length > 0)
-                                                                header += "  ·  SYS.REF:" + card.instanceId
+                                                                header += "  ·  SYS.REF: " + card.instanceId
                                                             var r = "RANGED\n" + (card.rangedName || "—") + "\n" + (card.rangedStatline || "—")
                                                             var m = "MELEE\n" + (card.meleeName || "—") + "\n" + (card.meleeStatline || "—")
                                                             return header + "\n\n" + r + "\n\n" + m + "\n\nИсточник: Ростер"
@@ -775,52 +769,49 @@ ApplicationWindow {
                                                                 Text {
                                                                     Layout.fillWidth: true
                                                                     visible: card && card.instanceId && String(card.instanceId).length > 0
-                                                                    text: "SYS.REF:" + (card ? card.instanceId : "")
+                                                                    text: "SYS.REF: " + (card ? card.instanceId : "")
                                                                     color: "#5c6a7d"
                                                                     font.family: "Consolas"
                                                                     font.pixelSize: Math.round(8 * root.uiScale)
                                                                 }
                                                                 RowLayout {
                                                                     Layout.fillWidth: true
-                                                                    spacing: Math.round(8 * root.uiScale)
+                                                                    spacing: Math.round(6 * root.uiScale)
                                                                     Item {
-                                                                        Layout.preferredWidth: Math.round(100 * root.uiScale)
-                                                                        Layout.maximumWidth: Math.round(100 * root.uiScale)
-                                                                        Layout.minimumWidth: Math.round(100 * root.uiScale)
+                                                                        Layout.preferredWidth: Math.round(32 * root.uiScale)
+                                                                        Layout.maximumWidth: Math.round(32 * root.uiScale)
+                                                                        Layout.minimumWidth: Math.round(32 * root.uiScale)
                                                                         Layout.preferredHeight: Math.round(24 * root.uiScale)
-                                                                        RowLayout {
-                                                                            anchors.fill: parent
-                                                                            spacing: Math.round(6 * root.uiScale)
-                                                                            Item {
-                                                                                Layout.preferredWidth: Math.round(24 * root.uiScale)
-                                                                                Layout.preferredHeight: Math.round(24 * root.uiScale)
-                                                                                Layout.alignment: Qt.AlignVCenter
-                                                                                Image {
-                                                                                    anchors.centerIn: parent
-                                                                                    anchors.verticalCenterOffset: -Math.round(1 * root.uiScale)
-                                                                                    width: Math.round(24 * root.uiScale)
-                                                                                    height: Math.round(24 * root.uiScale)
-                                                                                    fillMode: Image.PreserveAspectFit
-                                                                                    smooth: true
-                                                                                    visible: card && card.rangedIcon && String(card.rangedIcon).length > 0
-                                                                                    source: (card && card.rangedIcon) ? card.rangedIcon : ""
-                                                                                }
-                                                                            }
-                                                                            Text {
-                                                                                text: "RANGED:"
-                                                                                color: "#6d849c"
-                                                                                font.family: "Consolas"
-                                                                                font.pixelSize: Math.round(9 * root.uiScale)
-                                                                                font.bold: true
-                                                                                Layout.alignment: Qt.AlignVCenter
-                                                                            }
+                                                                        Image {
+                                                                            anchors.centerIn: parent
+                                                                            anchors.verticalCenterOffset: -Math.round(1 * root.uiScale)
+                                                                            width: Math.round(24 * root.uiScale)
+                                                                            height: Math.round(24 * root.uiScale)
+                                                                            fillMode: Image.PreserveAspectFit
+                                                                            smooth: true
+                                                                            visible: card && card.rangedIcon && String(card.rangedIcon).length > 0
+                                                                            source: (card && card.rangedIcon) ? card.rangedIcon : ""
                                                                         }
+                                                                    }
+                                                                    Text {
+                                                                        Layout.preferredWidth: Math.round(64 * root.uiScale)
+                                                                        Layout.maximumWidth: Math.round(64 * root.uiScale)
+                                                                        Layout.minimumWidth: Math.round(64 * root.uiScale)
+                                                                        Layout.alignment: Qt.AlignVCenter
+                                                                        text: "RANGED:"
+                                                                        color: "#6d7a8a"
+                                                                        font.family: "Consolas"
+                                                                        font.pixelSize: Math.round(9 * root.uiScale)
+                                                                        font.bold: true
+                                                                        horizontalAlignment: Text.AlignLeft
+                                                                        verticalAlignment: Text.AlignVCenter
+                                                                        elide: Text.ElideRight
                                                                     }
                                                                     Text {
                                                                         Layout.fillWidth: true
                                                                         Layout.alignment: Qt.AlignVCenter
                                                                         text: card && card.rangedName ? card.rangedName : "—"
-                                                                        color: "#e0e7f3"
+                                                                        color: "#f0f4fc"
                                                                         font.family: root.fontDataFamily
                                                                         font.pixelSize: Math.round(10 * root.uiScale)
                                                                         elide: Text.ElideRight
@@ -828,45 +819,42 @@ ApplicationWindow {
                                                                 }
                                                                 RowLayout {
                                                                     Layout.fillWidth: true
-                                                                    spacing: Math.round(8 * root.uiScale)
+                                                                    spacing: Math.round(6 * root.uiScale)
                                                                     Item {
-                                                                        Layout.preferredWidth: Math.round(100 * root.uiScale)
-                                                                        Layout.maximumWidth: Math.round(100 * root.uiScale)
-                                                                        Layout.minimumWidth: Math.round(100 * root.uiScale)
+                                                                        Layout.preferredWidth: Math.round(32 * root.uiScale)
+                                                                        Layout.maximumWidth: Math.round(32 * root.uiScale)
+                                                                        Layout.minimumWidth: Math.round(32 * root.uiScale)
                                                                         Layout.preferredHeight: Math.round(24 * root.uiScale)
-                                                                        RowLayout {
-                                                                            anchors.fill: parent
-                                                                            spacing: Math.round(6 * root.uiScale)
-                                                                            Item {
-                                                                                Layout.preferredWidth: Math.round(24 * root.uiScale)
-                                                                                Layout.preferredHeight: Math.round(24 * root.uiScale)
-                                                                                Layout.alignment: Qt.AlignVCenter
-                                                                                Image {
-                                                                                    anchors.centerIn: parent
-                                                                                    anchors.verticalCenterOffset: -Math.round(1 * root.uiScale)
-                                                                                    width: Math.round(24 * root.uiScale)
-                                                                                    height: Math.round(24 * root.uiScale)
-                                                                                    fillMode: Image.PreserveAspectFit
-                                                                                    smooth: true
-                                                                                    visible: card && card.meleeIcon && String(card.meleeIcon).length > 0
-                                                                                    source: (card && card.meleeIcon) ? card.meleeIcon : ""
-                                                                                }
-                                                                            }
-                                                                            Text {
-                                                                                text: "MELEE:"
-                                                                                color: "#6d849c"
-                                                                                font.family: "Consolas"
-                                                                                font.pixelSize: Math.round(9 * root.uiScale)
-                                                                                font.bold: true
-                                                                                Layout.alignment: Qt.AlignVCenter
-                                                                            }
+                                                                        Image {
+                                                                            anchors.centerIn: parent
+                                                                            anchors.verticalCenterOffset: -Math.round(1 * root.uiScale)
+                                                                            width: Math.round(24 * root.uiScale)
+                                                                            height: Math.round(24 * root.uiScale)
+                                                                            fillMode: Image.PreserveAspectFit
+                                                                            smooth: true
+                                                                            visible: card && card.meleeIcon && String(card.meleeIcon).length > 0
+                                                                            source: (card && card.meleeIcon) ? card.meleeIcon : ""
                                                                         }
+                                                                    }
+                                                                    Text {
+                                                                        Layout.preferredWidth: Math.round(64 * root.uiScale)
+                                                                        Layout.maximumWidth: Math.round(64 * root.uiScale)
+                                                                        Layout.minimumWidth: Math.round(64 * root.uiScale)
+                                                                        Layout.alignment: Qt.AlignVCenter
+                                                                        text: "MELEE:"
+                                                                        color: "#6d7a8a"
+                                                                        font.family: "Consolas"
+                                                                        font.pixelSize: Math.round(9 * root.uiScale)
+                                                                        font.bold: true
+                                                                        horizontalAlignment: Text.AlignLeft
+                                                                        verticalAlignment: Text.AlignVCenter
+                                                                        elide: Text.ElideRight
                                                                     }
                                                                     Text {
                                                                         Layout.fillWidth: true
                                                                         Layout.alignment: Qt.AlignVCenter
                                                                         text: card && card.meleeName ? card.meleeName : "—"
-                                                                        color: "#e0e7f3"
+                                                                        color: "#f0f4fc"
                                                                         font.family: root.fontDataFamily
                                                                         font.pixelSize: Math.round(10 * root.uiScale)
                                                                         elide: Text.ElideRight
