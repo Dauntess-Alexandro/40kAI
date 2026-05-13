@@ -483,32 +483,44 @@ ApplicationWindow {
                                                             spacing: Math.round(8 * root.uiScale)
                                                             visible: card && card.kind !== "more"
 
-                                                            Rectangle {
+                                                            Item {
                                                                 Layout.alignment: Qt.AlignTop
-                                                                implicitWidth: Math.round(52 * root.uiScale)
-                                                                implicitHeight: Math.round(52 * root.uiScale)
-                                                                color: "#0c1018"
-                                                                border.width: 1
-                                                                border.color: "#2a3d52"
-                                                                Image {
-                                                                    id: p1UnitImg
+                                                                implicitWidth: Math.round(54 * root.uiScale)
+                                                                implicitHeight: Math.round(54 * root.uiScale)
+                                                                Rectangle {
                                                                     anchors.fill: parent
-                                                                    anchors.margins: Math.round(3 * root.uiScale)
-                                                                    fillMode: Image.PreserveAspectFit
-                                                                    smooth: true
-                                                                    source: (card && card.unitIcon) ? card.unitIcon : ""
-                                                                    visible: source !== ""
-                                                                }
-                                                                Label {
-                                                                    anchors.centerIn: parent
-                                                                    visible: !p1UnitImg.visible && card && card.unitName
-                                                                    text: {
-                                                                        var n = card && card.unitName ? String(card.unitName) : ""
-                                                                        return n.length ? n.charAt(0).toUpperCase() : "?"
+                                                                    radius: Math.round(5 * root.uiScale)
+                                                                    color: "#161f2e"
+                                                                    border.width: 1
+                                                                    border.color: "#3a5068"
+                                                                    Rectangle {
+                                                                        anchors.fill: parent
+                                                                        anchors.margins: Math.round(3 * root.uiScale)
+                                                                        radius: Math.round(3 * root.uiScale)
+                                                                        color: "#0a0e14"
+                                                                        border.width: 1
+                                                                        border.color: "#1e2a38"
+                                                                        Image {
+                                                                            id: p1UnitImg
+                                                                            anchors.fill: parent
+                                                                            anchors.margins: Math.round(2 * root.uiScale)
+                                                                            fillMode: Image.PreserveAspectFit
+                                                                            smooth: true
+                                                                            source: (card && card.unitIcon) ? card.unitIcon : ""
+                                                                            visible: source !== ""
+                                                                        }
+                                                                        Label {
+                                                                            anchors.centerIn: parent
+                                                                            visible: !p1UnitImg.visible && card && card.unitName
+                                                                            text: {
+                                                                                var n = card && card.unitName ? String(card.unitName) : ""
+                                                                                return n.length ? n.charAt(0).toUpperCase() : "?"
+                                                                            }
+                                                                            color: root.uiTextMuted
+                                                                            font.bold: true
+                                                                            font.pixelSize: Math.round(18 * root.uiScale)
+                                                                        }
                                                                     }
-                                                                    color: root.uiTextMuted
-                                                                    font.bold: true
-                                                                    font.pixelSize: Math.round(18 * root.uiScale)
                                                                 }
                                                             }
 
@@ -537,7 +549,7 @@ ApplicationWindow {
                                                                 }
                                                                 RowLayout {
                                                                     Layout.fillWidth: true
-                                                                    spacing: Math.round(6 * root.uiScale)
+                                                                    spacing: Math.round(2 * root.uiScale)
                                                                     Item {
                                                                         Layout.preferredWidth: Math.round(32 * root.uiScale)
                                                                         Layout.maximumWidth: Math.round(32 * root.uiScale)
@@ -555,9 +567,9 @@ ApplicationWindow {
                                                                         }
                                                                     }
                                                                     Text {
-                                                                        Layout.preferredWidth: Math.round(64 * root.uiScale)
-                                                                        Layout.maximumWidth: Math.round(64 * root.uiScale)
-                                                                        Layout.minimumWidth: Math.round(64 * root.uiScale)
+                                                                        Layout.preferredWidth: Math.round(56 * root.uiScale)
+                                                                        Layout.maximumWidth: Math.round(56 * root.uiScale)
+                                                                        Layout.minimumWidth: Math.round(56 * root.uiScale)
                                                                         Layout.alignment: Qt.AlignVCenter
                                                                         text: "RANGED:"
                                                                         color: "#6d7a8a"
@@ -580,7 +592,7 @@ ApplicationWindow {
                                                                 }
                                                                 RowLayout {
                                                                     Layout.fillWidth: true
-                                                                    spacing: Math.round(6 * root.uiScale)
+                                                                    spacing: Math.round(2 * root.uiScale)
                                                                     Item {
                                                                         Layout.preferredWidth: Math.round(32 * root.uiScale)
                                                                         Layout.maximumWidth: Math.round(32 * root.uiScale)
@@ -598,9 +610,9 @@ ApplicationWindow {
                                                                         }
                                                                     }
                                                                     Text {
-                                                                        Layout.preferredWidth: Math.round(64 * root.uiScale)
-                                                                        Layout.maximumWidth: Math.round(64 * root.uiScale)
-                                                                        Layout.minimumWidth: Math.round(64 * root.uiScale)
+                                                                        Layout.preferredWidth: Math.round(56 * root.uiScale)
+                                                                        Layout.maximumWidth: Math.round(56 * root.uiScale)
+                                                                        Layout.minimumWidth: Math.round(56 * root.uiScale)
                                                                         Layout.alignment: Qt.AlignVCenter
                                                                         text: "MELEE:"
                                                                         color: "#6d7a8a"
@@ -722,32 +734,44 @@ ApplicationWindow {
                                                             spacing: Math.round(8 * root.uiScale)
                                                             visible: card && card.kind !== "more"
 
-                                                            Rectangle {
+                                                            Item {
                                                                 Layout.alignment: Qt.AlignTop
-                                                                implicitWidth: Math.round(52 * root.uiScale)
-                                                                implicitHeight: Math.round(52 * root.uiScale)
-                                                                color: "#0c1018"
-                                                                border.width: 1
-                                                                border.color: "#2a3d52"
-                                                                Image {
-                                                                    id: p2UnitImg
+                                                                implicitWidth: Math.round(54 * root.uiScale)
+                                                                implicitHeight: Math.round(54 * root.uiScale)
+                                                                Rectangle {
                                                                     anchors.fill: parent
-                                                                    anchors.margins: Math.round(3 * root.uiScale)
-                                                                    fillMode: Image.PreserveAspectFit
-                                                                    smooth: true
-                                                                    source: (card && card.unitIcon) ? card.unitIcon : ""
-                                                                    visible: source !== ""
-                                                                }
-                                                                Label {
-                                                                    anchors.centerIn: parent
-                                                                    visible: !p2UnitImg.visible && card && card.unitName
-                                                                    text: {
-                                                                        var n = card && card.unitName ? String(card.unitName) : ""
-                                                                        return n.length ? n.charAt(0).toUpperCase() : "?"
+                                                                    radius: Math.round(5 * root.uiScale)
+                                                                    color: "#161f2e"
+                                                                    border.width: 1
+                                                                    border.color: "#3a5068"
+                                                                    Rectangle {
+                                                                        anchors.fill: parent
+                                                                        anchors.margins: Math.round(3 * root.uiScale)
+                                                                        radius: Math.round(3 * root.uiScale)
+                                                                        color: "#0a0e14"
+                                                                        border.width: 1
+                                                                        border.color: "#1e2a38"
+                                                                        Image {
+                                                                            id: p2UnitImg
+                                                                            anchors.fill: parent
+                                                                            anchors.margins: Math.round(2 * root.uiScale)
+                                                                            fillMode: Image.PreserveAspectFit
+                                                                            smooth: true
+                                                                            source: (card && card.unitIcon) ? card.unitIcon : ""
+                                                                            visible: source !== ""
+                                                                        }
+                                                                        Label {
+                                                                            anchors.centerIn: parent
+                                                                            visible: !p2UnitImg.visible && card && card.unitName
+                                                                            text: {
+                                                                                var n = card && card.unitName ? String(card.unitName) : ""
+                                                                                return n.length ? n.charAt(0).toUpperCase() : "?"
+                                                                            }
+                                                                            color: root.uiTextMuted
+                                                                            font.bold: true
+                                                                            font.pixelSize: Math.round(18 * root.uiScale)
+                                                                        }
                                                                     }
-                                                                    color: root.uiTextMuted
-                                                                    font.bold: true
-                                                                    font.pixelSize: Math.round(18 * root.uiScale)
                                                                 }
                                                             }
 
@@ -776,7 +800,7 @@ ApplicationWindow {
                                                                 }
                                                                 RowLayout {
                                                                     Layout.fillWidth: true
-                                                                    spacing: Math.round(6 * root.uiScale)
+                                                                    spacing: Math.round(2 * root.uiScale)
                                                                     Item {
                                                                         Layout.preferredWidth: Math.round(32 * root.uiScale)
                                                                         Layout.maximumWidth: Math.round(32 * root.uiScale)
@@ -794,9 +818,9 @@ ApplicationWindow {
                                                                         }
                                                                     }
                                                                     Text {
-                                                                        Layout.preferredWidth: Math.round(64 * root.uiScale)
-                                                                        Layout.maximumWidth: Math.round(64 * root.uiScale)
-                                                                        Layout.minimumWidth: Math.round(64 * root.uiScale)
+                                                                        Layout.preferredWidth: Math.round(56 * root.uiScale)
+                                                                        Layout.maximumWidth: Math.round(56 * root.uiScale)
+                                                                        Layout.minimumWidth: Math.round(56 * root.uiScale)
                                                                         Layout.alignment: Qt.AlignVCenter
                                                                         text: "RANGED:"
                                                                         color: "#6d7a8a"
@@ -819,7 +843,7 @@ ApplicationWindow {
                                                                 }
                                                                 RowLayout {
                                                                     Layout.fillWidth: true
-                                                                    spacing: Math.round(6 * root.uiScale)
+                                                                    spacing: Math.round(2 * root.uiScale)
                                                                     Item {
                                                                         Layout.preferredWidth: Math.round(32 * root.uiScale)
                                                                         Layout.maximumWidth: Math.round(32 * root.uiScale)
@@ -837,9 +861,9 @@ ApplicationWindow {
                                                                         }
                                                                     }
                                                                     Text {
-                                                                        Layout.preferredWidth: Math.round(64 * root.uiScale)
-                                                                        Layout.maximumWidth: Math.round(64 * root.uiScale)
-                                                                        Layout.minimumWidth: Math.round(64 * root.uiScale)
+                                                                        Layout.preferredWidth: Math.round(56 * root.uiScale)
+                                                                        Layout.maximumWidth: Math.round(56 * root.uiScale)
+                                                                        Layout.minimumWidth: Math.round(56 * root.uiScale)
                                                                         Layout.alignment: Qt.AlignVCenter
                                                                         text: "MELEE:"
                                                                         color: "#6d7a8a"
@@ -912,10 +936,10 @@ ApplicationWindow {
 
                                         Text {
                                             Layout.fillWidth: true
-                                            text: "Дроны и опции листа здесь не показаны. Цифры оружия — во всплывающей подсказке при наведении на карточку или на вкладке «Ростер»."
-                                            color: root.uiTextMuted
-                                            font.family: root.fontDataFamily
-                                            font.pixelSize: Math.round(9 * root.uiScale)
+                                            text: "> INFO: Дроны и опции листа здесь не показаны. Цифры оружия — во всплывающей подсказке при наведении на карточку или на вкладке «Ростер»."
+                                            color: "#4d5666"
+                                            font.family: "Consolas"
+                                            font.pixelSize: Math.round(8 * root.uiScale)
                                             wrapMode: Text.Wrap
                                         }
                                     }
@@ -978,7 +1002,7 @@ ApplicationWindow {
                                         Text {
                                             id: trainTermP1Txt
                                             anchors.centerIn: parent
-                                            text: "[ P1: " + (controller.learnerSide === "P1" ? controller.trainContextLearnerAlgoShort : controller.trainContextOpponentAlgoShort) + " ]"
+                                            text: "[ P1: " + (controller.learnerSide === "P1" ? controller.trainContextLearnerAlgoTerminal : controller.trainContextOpponentAlgoTerminal) + " ]"
                                             font.family: "Consolas"
                                             font.pixelSize: Math.round(9 * root.uiScale)
                                             color: "#9db0c8"
@@ -1000,7 +1024,7 @@ ApplicationWindow {
                                         Text {
                                             id: trainTermP2Txt
                                             anchors.centerIn: parent
-                                            text: "[ P2: " + (controller.learnerSide === "P2" ? controller.trainContextLearnerAlgoShort : controller.trainContextOpponentAlgoShort) + " ]"
+                                            text: "[ P2: " + (controller.learnerSide === "P2" ? controller.trainContextLearnerAlgoTerminal : controller.trainContextOpponentAlgoTerminal) + " ]"
                                             font.family: "Consolas"
                                             font.pixelSize: Math.round(9 * root.uiScale)
                                             color: "#9db0c8"

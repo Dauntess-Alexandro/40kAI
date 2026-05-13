@@ -487,6 +487,24 @@ class GUIController(QtCore.QObject):
     def trainContextOpponentAlgoShort(self) -> str:
         return self._train_context_opponent_algo_short
 
+    @staticmethod
+    def _train_algo_short_terminal_en(short: str) -> str:
+        """Короткое имя алгоритма для «терминальной» строки UI (латиница)."""
+        s = (short or "").strip()
+        return {
+            "Эвристика": "HEURISTIC",
+            "Снапшот": "SNAPSHOT",
+            "Агент не выбран": "NO_AGENT",
+        }.get(s, s)
+
+    @QtCore.Property(str, notify=trainSetupSummaryChanged)
+    def trainContextLearnerAlgoTerminal(self) -> str:
+        return self._train_algo_short_terminal_en(self._train_context_learner_algo_short)
+
+    @QtCore.Property(str, notify=trainSetupSummaryChanged)
+    def trainContextOpponentAlgoTerminal(self) -> str:
+        return self._train_algo_short_terminal_en(self._train_context_opponent_algo_short)
+
     @QtCore.Property(str, notify=trainSetupSummaryChanged)
     def trainContextOpponentSide(self) -> str:
         return self._train_context_opponent_side
