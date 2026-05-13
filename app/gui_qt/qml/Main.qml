@@ -1617,8 +1617,8 @@ ApplicationWindow {
 
                     ChamferPanel {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: Math.round(210 * root.uiScale)
-                        Layout.minimumHeight: Math.round(188 * root.uiScale)
+                        Layout.preferredHeight: Math.round(278 * root.uiScale)
+                        Layout.minimumHeight: Math.round(248 * root.uiScale)
                         fillColor: root.uiBgCard
                         borderColor: root.uiBorder
                         borderWidth: 1
@@ -1667,12 +1667,12 @@ ApplicationWindow {
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: Math.round(120 * root.uiScale)
+                                Layout.preferredHeight: Math.round(208 * root.uiScale)
                                 spacing: root.spacingMd
 
                                 Rectangle {
                                     Layout.fillWidth: true
-                                    implicitHeight: Math.round(118 * root.uiScale)
+                                    implicitHeight: Math.round(206 * root.uiScale)
                                     color: "#141b26"
                                     border.width: 1
                                     border.color: "#2f6ed8"
@@ -1689,7 +1689,7 @@ ApplicationWindow {
 
                                 Rectangle {
                                     Layout.fillWidth: true
-                                    implicitHeight: Math.round(118 * root.uiScale)
+                                    implicitHeight: Math.round(206 * root.uiScale)
                                     color: "#141b26"
                                     border.width: 1
                                     border.color: "#7b4a4a"
@@ -1707,12 +1707,12 @@ ApplicationWindow {
                                 Rectangle {
                                     Layout.fillWidth: true
                                     Layout.minimumWidth: Math.round(300 * root.uiScale)
-                                    implicitHeight: Math.round(118 * root.uiScale)
+                                    implicitHeight: Math.round(206 * root.uiScale)
                                     color: "#10151d"
                                     border.width: 1
                                     border.color: "#4a3d28"
                                     radius: 0
-                                    clip: true
+                                    clip: false
 
                                     Rectangle {
                                         width: Math.round(3 * root.uiScale)
@@ -1728,10 +1728,8 @@ ApplicationWindow {
                                         anchors.right: parent.right
                                         anchors.rightMargin: Math.round(6 * root.uiScale)
                                         anchors.top: parent.top
-                                        anchors.topMargin: Math.round(6 * root.uiScale)
-                                        anchors.bottom: parent.bottom
-                                        anchors.bottomMargin: Math.round(6 * root.uiScale)
-                                        spacing: Math.round(4 * root.uiScale)
+                                        anchors.topMargin: Math.round(8 * root.uiScale)
+                                        spacing: Math.round(8 * root.uiScale)
 
                                         Text {
                                             text: "АКТИВНЫЙ ПРОФИЛЬ ВООРУЖЕНИЯ"
@@ -1755,12 +1753,13 @@ ApplicationWindow {
 
                                         RowLayout {
                                             Layout.fillWidth: true
-                                            spacing: Math.round(8 * root.uiScale)
+                                            Layout.preferredHeight: Math.round(82 * root.uiScale)
+                                            spacing: Math.round(10 * root.uiScale)
 
                                             Item {
                                                 Layout.alignment: Qt.AlignTop
-                                                implicitWidth: Math.round(48 * root.uiScale)
-                                                implicitHeight: Math.round(48 * root.uiScale)
+                                                implicitWidth: Math.round(56 * root.uiScale)
+                                                implicitHeight: Math.round(56 * root.uiScale)
                                                 Rectangle {
                                                     anchors.fill: parent
                                                     radius: Math.round(4 * root.uiScale)
@@ -1886,7 +1885,8 @@ ApplicationWindow {
 
                                         Flow {
                                             Layout.fillWidth: true
-                                            spacing: Math.round(5 * root.uiScale)
+                                            Layout.topMargin: Math.round(4 * root.uiScale)
+                                            spacing: Math.round(6 * root.uiScale)
 
                                             Rectangle {
                                                 implicitHeight: Math.round(18 * root.uiScale)
