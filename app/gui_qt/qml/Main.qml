@@ -1945,15 +1945,16 @@ ApplicationWindow {
                                             }
                                         }
 
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            acceptedButtons: Qt.NoButton
-                                            hoverEnabled: true
-                                            z: 10
-                                            ToolTip.visible: containsMouse && controller.rosterActiveProfileDetailTooltip.length > 4
-                                            ToolTip.text: controller.rosterActiveProfileDetailTooltip
-                                            ToolTip.delay: 400
-                                        }
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        acceptedButtons: Qt.NoButton
+                                        hoverEnabled: true
+                                        z: 20
+                                        ToolTip.visible: containsMouse && controller.rosterActiveProfileDetailTooltip.length > 4
+                                        ToolTip.text: controller.rosterActiveProfileDetailTooltip
+                                        ToolTip.delay: 400
                                     }
                                 }
                             }
