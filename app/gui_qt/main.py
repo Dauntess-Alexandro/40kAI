@@ -634,7 +634,7 @@ class GUIController(QtCore.QObject):
         unit_name = self.rosterWeaponsPreviewUnitName
         if unit_name == "—":
             return ""
-        return self.get_unit_icon_source(unit_name, pixel_size=56)
+        return self.get_unit_icon_source(unit_name, pixel_size=72)
 
     @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
     def rosterActiveProfileRangedIconSource(self) -> str:

@@ -1722,229 +1722,176 @@ ApplicationWindow {
                                         color: "#e8c86a"
                                     }
 
-                                    ColumnLayout {
+                                    Item {
+                                        id: rosterActiveProfileBody
                                         anchors.left: parent.left
                                         anchors.leftMargin: Math.round(10 * root.uiScale)
                                         anchors.right: parent.right
                                         anchors.rightMargin: Math.round(6 * root.uiScale)
                                         anchors.top: parent.top
-                                        anchors.topMargin: Math.round(8 * root.uiScale)
-                                        spacing: Math.round(8 * root.uiScale)
+                                        anchors.topMargin: Math.round(10 * root.uiScale)
+                                        anchors.bottom: parent.bottom
+                                        anchors.bottomMargin: Math.round(10 * root.uiScale)
 
-                                        Text {
-                                            text: "АКТИВНЫЙ ПРОФИЛЬ ВООРУЖЕНИЯ"
-                                            color: "#e8c86a"
-                                            font.bold: true
-                                            font.family: root.fontUiFamily
-                                            font.pixelSize: Math.round(10 * root.uiScale)
-                                            font.capitalization: Font.AllUppercase
-                                            font.letterSpacing: 0.6
-                                        }
-                                        Text {
-                                            Layout.fillWidth: true
-                                            text: controller.rosterActiveProfileContextLine
-                                            color: "#6a7382"
-                                            font.family: root.fontDataFamily
-                                            font.pixelSize: Math.round(8 * root.uiScale)
-                                            wrapMode: Text.WordWrap
-                                            maximumLineCount: 2
-                                            elide: Text.ElideRight
-                                        }
-
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: Math.round(82 * root.uiScale)
+                                        Column {
+                                            id: rosterActiveProfileCol
+                                            width: parent.width
                                             spacing: Math.round(10 * root.uiScale)
 
-                                            Item {
-                                                Layout.alignment: Qt.AlignTop
-                                                implicitWidth: Math.round(56 * root.uiScale)
-                                                implicitHeight: Math.round(56 * root.uiScale)
-                                                Rectangle {
-                                                    anchors.fill: parent
-                                                    radius: Math.round(4 * root.uiScale)
-                                                    color: "#161f2e"
-                                                    border.width: 1
-                                                    border.color: "#3a5068"
+                                            Text {
+                                                width: parent.width
+                                                text: "АКТИВНЫЙ ПРОФИЛЬ ВООРУЖЕНИЯ"
+                                                color: "#e8c86a"
+                                                font.bold: true
+                                                font.family: root.fontUiFamily
+                                                font.pixelSize: Math.round(12 * root.uiScale)
+                                                font.capitalization: Font.AllUppercase
+                                                font.letterSpacing: 0.6
+                                                wrapMode: Text.WordWrap
+                                            }
+                                            Text {
+                                                width: parent.width
+                                                text: controller.rosterActiveProfileContextLine
+                                                color: "#7a8798"
+                                                font.family: root.fontDataFamily
+                                                font.pixelSize: Math.round(9 * root.uiScale)
+                                                wrapMode: Text.WordWrap
+                                            }
+
+                                            Row {
+                                                width: parent.width
+                                                spacing: Math.round(12 * root.uiScale)
+                                                topPadding: Math.round(2 * root.uiScale)
+
+                                                Item {
+                                                    id: rosterActiveAvatarSlot
+                                                    width: Math.round(64 * root.uiScale)
+                                                    height: Math.round(64 * root.uiScale)
                                                     Rectangle {
                                                         anchors.fill: parent
-                                                        anchors.margins: Math.round(2 * root.uiScale)
-                                                        radius: Math.round(3 * root.uiScale)
-                                                        color: "#0a0e14"
+                                                        radius: Math.round(6 * root.uiScale)
+                                                        color: "#161f2e"
                                                         border.width: 1
-                                                        border.color: "#1e2a38"
-                                                        Image {
-                                                            id: rosterActiveUnitImg
+                                                        border.color: "#4a6a8c"
+                                                        Rectangle {
                                                             anchors.fill: parent
-                                                            anchors.margins: Math.round(2 * root.uiScale)
+                                                            anchors.margins: Math.round(3 * root.uiScale)
+                                                            radius: Math.round(4 * root.uiScale)
+                                                            color: "#0a0e14"
+                                                            border.width: 1
+                                                            border.color: "#1e2a38"
+                                                            Image {
+                                                                id: rosterActiveUnitImg
+                                                                anchors.fill: parent
+                                                                anchors.margins: Math.round(3 * root.uiScale)
+                                                                fillMode: Image.PreserveAspectFit
+                                                                smooth: true
+                                                                source: controller.rosterActiveProfileUnitIconSource
+                                                                visible: source !== ""
+                                                            }
+                                                            Label {
+                                                                anchors.centerIn: parent
+                                                                visible: !rosterActiveUnitImg.visible && controller.rosterWeaponsPreviewUnitName !== "—"
+                                                                text: {
+                                                                    var n = controller.rosterWeaponsPreviewUnitName
+                                                                    return n.length ? n.charAt(0).toUpperCase() : "?"
+                                                                }
+                                                                color: root.uiTextMuted
+                                                                font.bold: true
+                                                                font.pixelSize: Math.round(20 * root.uiScale)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                Column {
+                                                    width: rosterActiveProfileCol.width - rosterActiveAvatarSlot.width - Math.round(12 * root.uiScale)
+                                                    spacing: Math.round(8 * root.uiScale)
+
+                                                    Text {
+                                                        width: parent.width
+                                                        text: controller.rosterWeaponsPreviewUnitName === "—" ? "—" : String(controller.rosterWeaponsPreviewUnitName).toUpperCase()
+                                                        color: root.uiTextMain
+                                                        font.bold: true
+                                                        font.family: root.fontUiFamily
+                                                        font.pixelSize: Math.round(15 * root.uiScale)
+                                                        wrapMode: Text.WordWrap
+                                                        maximumLineCount: 2
+                                                        elide: Text.ElideRight
+                                                    }
+
+                                                    Row {
+                                                        width: parent.width
+                                                        spacing: Math.round(8 * root.uiScale)
+                                                        Image {
+                                                            id: rosterActiveRangedIcon
+                                                            width: Math.round(22 * root.uiScale)
+                                                            height: Math.round(22 * root.uiScale)
+                                                            anchors.verticalCenter: parent.verticalCenter
                                                             fillMode: Image.PreserveAspectFit
                                                             smooth: true
-                                                            source: controller.rosterActiveProfileUnitIconSource
-                                                            visible: source !== ""
+                                                            visible: controller.rosterActiveProfileRangedIconSource !== ""
+                                                            source: controller.rosterActiveProfileRangedIconSource
                                                         }
-                                                        Label {
-                                                            anchors.centerIn: parent
-                                                            visible: !rosterActiveUnitImg.visible && controller.rosterWeaponsPreviewUnitName !== "—"
-                                                            text: {
-                                                                var n = controller.rosterWeaponsPreviewUnitName
-                                                                return n.length ? n.charAt(0).toUpperCase() : "?"
-                                                            }
-                                                            color: root.uiTextMuted
+                                                        Text {
+                                                            id: rosterActiveRangedLbl
+                                                            text: "RANGED:"
+                                                            color: "#7d92a8"
+                                                            font.family: "Consolas"
+                                                            font.pixelSize: Math.round(9 * root.uiScale)
                                                             font.bold: true
-                                                            font.pixelSize: Math.round(16 * root.uiScale)
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        }
+                                                        Text {
+                                                            width: Math.max(Math.round(80 * root.uiScale), parent.width - rosterActiveRangedIcon.width - rosterActiveRangedLbl.width - Math.round(16 * root.uiScale))
+                                                            text: controller.rosterWeaponsPreviewUnitName === "—" ? "—" : (controller.rosterWeaponsSelectedRanged || "—")
+                                                            color: "#f2f6ff"
+                                                            font.family: root.fontDataFamily
+                                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                                            wrapMode: Text.WordWrap
+                                                            maximumLineCount: 2
+                                                            elide: Text.ElideRight
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        }
+                                                    }
+
+                                                    Row {
+                                                        width: parent.width
+                                                        spacing: Math.round(8 * root.uiScale)
+                                                        Image {
+                                                            id: rosterActiveMeleeIcon
+                                                            width: Math.round(22 * root.uiScale)
+                                                            height: Math.round(22 * root.uiScale)
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                            fillMode: Image.PreserveAspectFit
+                                                            smooth: true
+                                                            visible: controller.rosterActiveProfileMeleeIconSource !== ""
+                                                            source: controller.rosterActiveProfileMeleeIconSource
+                                                        }
+                                                        Text {
+                                                            id: rosterActiveMeleeLbl
+                                                            text: "MELEE:"
+                                                            color: "#7d92a8"
+                                                            font.family: "Consolas"
+                                                            font.pixelSize: Math.round(9 * root.uiScale)
+                                                            font.bold: true
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        }
+                                                        Text {
+                                                            width: Math.max(Math.round(80 * root.uiScale), parent.width - rosterActiveMeleeIcon.width - rosterActiveMeleeLbl.width - Math.round(16 * root.uiScale))
+                                                            text: controller.rosterWeaponsPreviewUnitName === "—" ? "—" : (controller.rosterWeaponsSelectedMelee || "—")
+                                                            color: "#f2f6ff"
+                                                            font.family: root.fontDataFamily
+                                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                                            wrapMode: Text.WordWrap
+                                                            maximumLineCount: 2
+                                                            elide: Text.ElideRight
+                                                            anchors.verticalCenter: parent.verticalCenter
                                                         }
                                                     }
                                                 }
                                             }
-
-                                            ColumnLayout {
-                                                Layout.fillWidth: true
-                                                spacing: Math.round(3 * root.uiScale)
-
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: controller.rosterWeaponsPreviewUnitName === "—" ? "—" : String(controller.rosterWeaponsPreviewUnitName).toUpperCase()
-                                                    color: root.uiTextMain
-                                                    font.bold: true
-                                                    font.family: root.fontUiFamily
-                                                    font.pixelSize: Math.round(12 * root.uiScale)
-                                                    wrapMode: Text.WordWrap
-                                                    maximumLineCount: 2
-                                                    elide: Text.ElideRight
-                                                }
-
-                                                RowLayout {
-                                                    Layout.fillWidth: true
-                                                    spacing: Math.round(4 * root.uiScale)
-                                                    Image {
-                                                        Layout.preferredWidth: Math.round(20 * root.uiScale)
-                                                        Layout.preferredHeight: Math.round(20 * root.uiScale)
-                                                        Layout.alignment: Qt.AlignTop
-                                                        fillMode: Image.PreserveAspectFit
-                                                        smooth: true
-                                                        visible: controller.rosterActiveProfileRangedIconSource !== ""
-                                                        source: controller.rosterActiveProfileRangedIconSource
-                                                    }
-                                                    Text {
-                                                        text: "RANGED:"
-                                                        color: "#6d7a8a"
-                                                        font.family: "Consolas"
-                                                        font.pixelSize: Math.round(8 * root.uiScale)
-                                                        font.bold: true
-                                                        Layout.alignment: Qt.AlignTop
-                                                        Layout.topMargin: Math.round(2 * root.uiScale)
-                                                    }
-                                                    Text {
-                                                        Layout.fillWidth: true
-                                                        Layout.alignment: Qt.AlignTop
-                                                        text: controller.rosterWeaponsPreviewUnitName === "—" ? "—" : (controller.rosterWeaponsSelectedRanged || "—")
-                                                        color: "#f0f4fc"
-                                                        font.family: root.fontDataFamily
-                                                        font.pixelSize: Math.round(9 * root.uiScale)
-                                                        wrapMode: Text.WordWrap
-                                                        maximumLineCount: 2
-                                                        elide: Text.ElideRight
-                                                    }
-                                                }
-
-                                                RowLayout {
-                                                    Layout.fillWidth: true
-                                                    spacing: Math.round(4 * root.uiScale)
-                                                    Image {
-                                                        Layout.preferredWidth: Math.round(20 * root.uiScale)
-                                                        Layout.preferredHeight: Math.round(20 * root.uiScale)
-                                                        Layout.alignment: Qt.AlignTop
-                                                        fillMode: Image.PreserveAspectFit
-                                                        smooth: true
-                                                        visible: controller.rosterActiveProfileMeleeIconSource !== ""
-                                                        source: controller.rosterActiveProfileMeleeIconSource
-                                                    }
-                                                    Text {
-                                                        text: "MELEE:"
-                                                        color: "#6d7a8a"
-                                                        font.family: "Consolas"
-                                                        font.pixelSize: Math.round(8 * root.uiScale)
-                                                        font.bold: true
-                                                        Layout.alignment: Qt.AlignTop
-                                                        Layout.topMargin: Math.round(2 * root.uiScale)
-                                                    }
-                                                    Text {
-                                                        Layout.fillWidth: true
-                                                        Layout.alignment: Qt.AlignTop
-                                                        text: controller.rosterWeaponsPreviewUnitName === "—" ? "—" : (controller.rosterWeaponsSelectedMelee || "—")
-                                                        color: "#f0f4fc"
-                                                        font.family: root.fontDataFamily
-                                                        font.pixelSize: Math.round(9 * root.uiScale)
-                                                        wrapMode: Text.WordWrap
-                                                        maximumLineCount: 2
-                                                        elide: Text.ElideRight
-                                                    }
-                                                }
-                                            }
                                         }
-
-                                        Flow {
-                                            Layout.fillWidth: true
-                                            Layout.topMargin: Math.round(4 * root.uiScale)
-                                            spacing: Math.round(6 * root.uiScale)
-
-                                            Rectangle {
-                                                implicitHeight: Math.round(18 * root.uiScale)
-                                                implicitWidth: rosterChipUnitTxt.implicitWidth + Math.round(12 * root.uiScale)
-                                                Layout.maximumWidth: Math.round(220 * root.uiScale)
-                                                radius: Math.round(2 * root.uiScale)
-                                                color: "#0e141c"
-                                                border.width: 1
-                                                border.color: "#3a4d62"
-                                                Text {
-                                                    id: rosterChipUnitTxt
-                                                    anchors.centerIn: parent
-                                                    text: {
-                                                        var u = controller.rosterWeaponsPreviewUnitName
-                                                        if (u === "—")
-                                                            return "[ UNIT: — ]"
-                                                        return "[ UNIT: " + String(u).toUpperCase() + " ]"
-                                                    }
-                                                    font.family: "Consolas"
-                                                    font.pixelSize: Math.round(7 * root.uiScale)
-                                                    color: "#8fa0b8"
-                                                    elide: Text.ElideRight
-                                                }
-                                            }
-                                            Rectangle {
-                                                implicitHeight: Math.round(18 * root.uiScale)
-                                                implicitWidth: rosterChipRngTxt.contentWidth + Math.round(12 * root.uiScale)
-                                                radius: Math.round(2 * root.uiScale)
-                                                color: "#0e141c"
-                                                border.width: 1
-                                                border.color: "#3a4d62"
-                                                Text {
-                                                    id: rosterChipRngTxt
-                                                    anchors.centerIn: parent
-                                                    text: "[ RANGED: " + (controller.rosterWeaponsPreviewUnitName === "—" ? "—" : (controller.rosterWeaponsSelectedRanged || "—")) + " ]"
-                                                    font.family: "Consolas"
-                                                    font.pixelSize: Math.round(7 * root.uiScale)
-                                                    color: "#8fa0b8"
-                                                }
-                                            }
-                                            Rectangle {
-                                                implicitHeight: Math.round(18 * root.uiScale)
-                                                implicitWidth: rosterChipMelTxt.contentWidth + Math.round(12 * root.uiScale)
-                                                radius: Math.round(2 * root.uiScale)
-                                                color: "#0e141c"
-                                                border.width: 1
-                                                border.color: "#3a4d62"
-                                                Text {
-                                                    id: rosterChipMelTxt
-                                                    anchors.centerIn: parent
-                                                    text: "[ MELEE: " + (controller.rosterWeaponsPreviewUnitName === "—" ? "—" : (controller.rosterWeaponsSelectedMelee || "—")) + " ]"
-                                                    font.family: "Consolas"
-                                                    font.pixelSize: Math.round(7 * root.uiScale)
-                                                    color: "#8fa0b8"
-                                                }
-                                            }
-                                        }
-
                                     }
 
                                     MouseArea {
