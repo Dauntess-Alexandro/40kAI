@@ -516,6 +516,11 @@ class GUIController(QtCore.QObject):
             return str(self._available_units[idx].name)
         return "—"
 
+    @QtCore.Property(int, notify=rosterWeaponsPreviewChanged)
+    def rosterAvailableUnitListIndex(self) -> int:
+        """Индекс выбранной строки в списке «Доступные юниты» (синхрон с верстаком)."""
+        return int(self._roster_available_preview_index)
+
     @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
     def rosterWeaponsPreviewTarget(self) -> str:
         return "Сборка перед добавлением"
@@ -568,6 +573,14 @@ class GUIController(QtCore.QObject):
     def rosterKpiP2(self) -> str:
         return self._build_roster_kpi("P2")
 
+    @QtCore.Property("QVariantList", notify=rosterOverviewChanged)
+    def rosterKpiP1Columns(self) -> list[dict]:
+        return self._roster_kpi_columns("P1")
+
+    @QtCore.Property("QVariantList", notify=rosterOverviewChanged)
+    def rosterKpiP2Columns(self) -> list[dict]:
+        return self._roster_kpi_columns("P2")
+
     @QtCore.Property(str, notify=rosterOverviewChanged)
     def rosterCompositionDelta(self) -> str:
         return self._build_roster_composition_delta()
@@ -596,61 +609,6 @@ class GUIController(QtCore.QObject):
         if diff < 0:
             return "#d58f8f"
         return "#9aa3b2"
-
-    @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
-    def rosterActiveProfile(self) -> str:
-        unit_name = self.rosterWeaponsPreviewUnitName
-        if unit_name == "—":
-            return "Профиль не выбран"
-        rw, mw = self._template_weapons_for_unit(unit_name)
-        return f"{self.rosterWeaponsPreviewTarget}: {unit_name} | RANGED: {rw or '—'} | MELEE: {mw or '—'}"
-
-    @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
-    def rosterActiveProfileContextLine(self) -> str:
-        if self.rosterWeaponsPreviewUnitName == "—":
-            return "Выберите юнит в списке слева — данные подтянутся с верстака."
-        return "Следующее добавление в ростер (P1 / P2): шаблон с верстака до нажатия «Добавить»."
-
-    @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
-    def rosterActiveProfileDetailTooltip(self) -> str:
-        unit_name = self.rosterWeaponsPreviewUnitName
-        if unit_name == "—":
-            return (
-                "Выберите юнит в списке «Доступные юниты», затем настройте дальний и ближний бой на верстаке.\n"
-                "Полный текст статов — во всплывающей подсказке профилей оружия ниже."
-            )
-        rw, mw = self._template_weapons_for_unit(unit_name)
-        rs = self._weapon_statline(unit_name, rw)
-        ms = self._weapon_statline(unit_name, mw)
-        return (
-            f"{unit_name}\n\n"
-            f"RANGED: {rw or '—'}\n{rs}\n\n"
-            f"MELEE: {mw or '—'}\n{ms}\n\n"
-            "Источник: шаблон верстака перед добавлением отряда в ростер."
-        )
-
-    @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
-    def rosterActiveProfileUnitIconSource(self) -> str:
-        unit_name = self.rosterWeaponsPreviewUnitName
-        if unit_name == "—":
-            return ""
-        return self.get_unit_icon_source(unit_name, pixel_size=72)
-
-    @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
-    def rosterActiveProfileRangedIconSource(self) -> str:
-        unit_name = self.rosterWeaponsPreviewUnitName
-        if unit_name == "—":
-            return ""
-        rw, _mw = self._template_weapons_for_unit(unit_name)
-        return self._weapon_icon_file_url(rw)
-
-    @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
-    def rosterActiveProfileMeleeIconSource(self) -> str:
-        unit_name = self.rosterWeaponsPreviewUnitName
-        if unit_name == "—":
-            return ""
-        _rw, mw = self._template_weapons_for_unit(unit_name)
-        return self._weapon_icon_file_url(mw)
 
     @QtCore.Property(str, notify=rosterWeaponsPreviewChanged)
     def rosterActiveRangedStatline(self) -> str:
@@ -2395,6 +2353,9 @@ class GUIController(QtCore.QObject):
             ranged_stat = self._weapon_statline(name, rw) if rw else "—"
             melee_stat = self._weapon_statline(name, mw) if mw else "—"
             inst = str(entry.instance_id or "").strip()
+            core_stats = self._core_stat_display_values(name)
+            keywords = [self._format_keyword_label(k) for k in self._unit_keywords_by_name.get(name, [])]
+            abilities = list(self._unit_abilities_by_name.get(name, []))
             cards.append(
                 {
                     "kind": "unit",
@@ -2408,6 +2369,9 @@ class GUIController(QtCore.QObject):
                     "meleeStatline": melee_stat,
                     "rangedIcon": self._weapon_icon_file_url(rw),
                     "meleeIcon": self._weapon_icon_file_url(mw),
+                    "coreStats": core_stats,
+                    "keywords": keywords,
+                    "abilities": abilities,
                 }
             )
         remainder = len(roster) - max_visible
@@ -2425,6 +2389,9 @@ class GUIController(QtCore.QObject):
                     "meleeStatline": "",
                     "rangedIcon": "",
                     "meleeIcon": "",
+                    "coreStats": [],
+                    "keywords": [],
+                    "abilities": [],
                 }
             )
         return cards
@@ -5488,14 +5455,6 @@ class GUIController(QtCore.QObject):
                 out.append(badge)
         return out
 
-    def _entry_lethal_sources(self, entry: RosterEntry) -> int:
-        total = 0
-        for w in (entry.ranged_weapon, entry.melee_weapon):
-            badges = self._weapon_ability_badges(entry.name, w)
-            if any("LETHAL HITS" in b for b in badges):
-                total += 1
-        return total
-
     def _entry_points(self, entry: RosterEntry) -> int:
         return int(self._unit_points_by_name.get(str(entry.name).strip(), 0) or 0)
 
@@ -5506,24 +5465,59 @@ class GUIController(QtCore.QObject):
             total += self._entry_points(entry)
         return total
 
-    def _build_roster_kpi(self, side: str) -> str:
+    def _unit_wounds_per_model(self, unit_name: str) -> int:
+        """Раны на одну модель с даташита (поле W в UnitData)."""
+        core = self._unit_core_by_name.get(str(unit_name).strip(), {})
+        w = core.get("W")
+        if w is None:
+            return 0
+        try:
+            if isinstance(w, (int, float)) and not isinstance(w, bool):
+                return max(0, int(w))
+        except (TypeError, ValueError):
+            pass
+        try:
+            s = str(w).strip().replace(",", ".")
+            if not s:
+                return 0
+            return max(0, int(float(s)))
+        except (TypeError, ValueError):
+            return 0
+
+    def _roster_kpi_metrics(self, side: str) -> tuple[int, str, int, int]:
+        """(unit_count, avg_ranged_range_display, total_hp_pool, total_models)."""
         roster = self._roster_for_side(side)
         if not roster:
-            return "юнитов: 0 • ср.дальнобой: — • melee профили: 0 • lethal: 0"
+            return 0, "—", 0, 0
         ranges: list[float] = []
-        melee_profiles = 0
-        lethal = 0
+        total_hp = 0
+        total_models = 0
         for e in roster:
             wd = self._weapon_data(e.name, e.ranged_weapon)
             if wd and isinstance(wd.get("Range"), (int, float)):
                 ranges.append(float(wd["Range"]))
-            if str(e.melee_weapon or "").strip():
-                melee_profiles += 1
-            lethal += self._entry_lethal_sources(e)
+            cnt = max(0, int(e.count))
+            total_models += cnt
+            total_hp += self._unit_wounds_per_model(e.name) * cnt
         avg_range = f"{(sum(ranges) / len(ranges)):.1f}\"" if ranges else "—"
+        return len(roster), avg_range, total_hp, total_models
+
+    def _roster_kpi_columns(self, side: str) -> list[dict]:
+        n, avg_range, total_hp, total_models = self._roster_kpi_metrics(side)
+        return [
+            {"h": "UNITS", "v": str(n)},
+            {"h": "MODELS", "v": str(total_models)},
+            {"h": "HP", "v": str(total_hp)},
+            {"h": "AVG.RNG", "v": avg_range},
+        ]
+
+    def _build_roster_kpi(self, side: str) -> str:
+        n, avg_range, total_hp, total_models = self._roster_kpi_metrics(side)
+        if n == 0:
+            return "юнитов: 0 • модели: 0 • раны (всего): 0 • ср.дальнобой: —"
         return (
-            f"юнитов: {len(roster)} • ср.дальнобой: {avg_range} • "
-            f"melee профили: {melee_profiles} • lethal: {lethal}"
+            f"юнитов: {n} • модели: {total_models} • раны (всего): {total_hp} • "
+            f"ср.дальнобой: {avg_range}"
         )
 
     def _build_roster_doctrine(self, side: str) -> str:

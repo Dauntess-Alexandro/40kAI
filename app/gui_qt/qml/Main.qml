@@ -36,10 +36,10 @@ ApplicationWindow {
     property int evalDetailTab: 0
     property int radiusSm: Math.round(8 * uiScale)
     property int radiusMd: Math.round(12 * uiScale)
-    property color bgBase: "#0f1319"
-    property color bgSurface: "#171d26"
-    property color bgElevated: "#1d2632"
-    property color borderMuted: "#2a3342"
+    property color bgBase: "#0F172A"
+    property color bgSurface: "#131b2d"
+    property color bgElevated: "#1E293B"
+    property color borderMuted: "#334155"
     property color textPrimary: "#d7dde7"
     property color textSecondary: "#98a4b8"
     property color accentP1: "#2f6ed8"
@@ -81,6 +81,8 @@ ApplicationWindow {
     /** Модульный шаг 4 px × uiScale — отступы между блоками карточки ростера кратны ему. */
     readonly property int rosterSlateGridStep: Math.round(4 * uiScale)
     readonly property int rosterSlateBlockGap: 2 * rosterSlateGridStep
+    /** «Воздух» между крупными блоками карточки ростера (статы → теги → способности → оружие). */
+    readonly property int rosterSlateSectionGap: Math.round(10 * uiScale)
     readonly property color rosterSlateInstrumentBg: "#0e131c"
     readonly property color rosterTitleUnderline: "#26ffffff"
     property string fontUiFamily: "Rajdhani"
@@ -103,6 +105,414 @@ ApplicationWindow {
     palette.highlight: accentP1
     palette.highlightedText: "#ffffff"
     palette.placeholderText: "#7f8ba0"
+
+    component TacticalRosterTip : Popup {
+        id: tacticalRosterTip
+        property var card: null
+        property Item anchorItem: null
+        property color accentColor: "#2f6ed8"
+        property color secondaryAccentColor: "#d97706"
+        property real scaleUnit: root.uiScale
+
+        parent: Overlay.overlay
+        modal: false
+        focus: false
+        closePolicy: Popup.NoAutoClose
+        padding: 0
+        implicitWidth: Math.round(520 * scaleUnit)
+        implicitHeight: tipPanel.implicitHeight
+        visible: card && card.kind === "unit" && anchorItem && anchorItem.containsMouse
+        opacity: visible ? 1.0 : 0.0
+        x: {
+            if (!anchorItem || !parent)
+                return 0
+            var p = anchorItem.mapToItem(parent, anchorItem.width + Math.round(12 * scaleUnit), -Math.round(8 * scaleUnit))
+            return Math.min(Math.max(Math.round(8 * scaleUnit), p.x), parent.width - width - Math.round(8 * scaleUnit))
+        }
+        y: {
+            if (!anchorItem || !parent)
+                return 0
+            var p = anchorItem.mapToItem(parent, anchorItem.width + Math.round(12 * scaleUnit), -Math.round(8 * scaleUnit))
+            return Math.min(Math.max(Math.round(8 * scaleUnit), p.y), parent.height - height - Math.round(8 * scaleUnit))
+        }
+
+        Behavior on opacity { NumberAnimation { duration: 100; easing.type: Easing.OutQuad } }
+
+        background: Item {}
+
+        contentItem: ChamferPanel {
+            id: tipPanel
+            width: tacticalRosterTip.implicitWidth
+            fillColor: "#0b1220"
+            borderColor: Qt.rgba(tacticalRosterTip.accentColor.r, tacticalRosterTip.accentColor.g, tacticalRosterTip.accentColor.b, 0.85)
+            borderWidth: 1
+            cutSize: Math.round(10 * tacticalRosterTip.scaleUnit)
+            contentMargin: Math.round(10 * tacticalRosterTip.scaleUnit)
+            implicitHeight: tipContent.implicitHeight + Math.round(20 * tacticalRosterTip.scaleUnit)
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: Math.round(3 * tacticalRosterTip.scaleUnit)
+                color: tacticalRosterTip.accentColor
+            }
+
+            ColumnLayout {
+                id: tipContent
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: Math.round(10 * tacticalRosterTip.scaleUnit)
+                anchors.leftMargin: Math.round(14 * tacticalRosterTip.scaleUnit)
+                spacing: Math.round(8 * tacticalRosterTip.scaleUnit)
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Math.round(8 * tacticalRosterTip.scaleUnit)
+                    Text {
+                        Layout.fillWidth: true
+                        text: tacticalRosterTip.card && tacticalRosterTip.card.title
+                            ? String(tacticalRosterTip.card.title).toUpperCase()
+                            : "UNIT"
+                        color: "#f8fafc"
+                        font.family: root.fontUiFamily
+                        font.bold: true
+                        font.pixelSize: Math.round(14 * tacticalRosterTip.scaleUnit)
+                        font.letterSpacing: 0.8
+                        elide: Text.ElideRight
+                    }
+                    Rectangle {
+                        visible: tacticalRosterTip.card && tacticalRosterTip.card.instanceId && String(tacticalRosterTip.card.instanceId).length > 0
+                        color: Qt.rgba(1, 1, 1, 0.05)
+                        border.width: 1
+                        border.color: "#475569"
+                        radius: 0
+                        implicitWidth: sysRefTxt.implicitWidth + Math.round(12 * tacticalRosterTip.scaleUnit)
+                        implicitHeight: sysRefTxt.implicitHeight + Math.round(6 * tacticalRosterTip.scaleUnit)
+                        Text {
+                            id: sysRefTxt
+                            anchors.centerIn: parent
+                            text: "SYS.REF: " + (tacticalRosterTip.card ? tacticalRosterTip.card.instanceId : "—")
+                            color: "#94a3b8"
+                            font.family: root.fontDataFamily
+                            font.pixelSize: Math.round(8 * tacticalRosterTip.scaleUnit)
+                            font.bold: true
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: Qt.rgba(1, 1, 1, 0.10)
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Math.round(10 * tacticalRosterTip.scaleUnit)
+
+                    ColumnLayout {
+                        Layout.preferredWidth: Math.round(190 * tacticalRosterTip.scaleUnit)
+                        Layout.maximumWidth: Math.round(190 * tacticalRosterTip.scaleUnit)
+                        spacing: Math.round(8 * tacticalRosterTip.scaleUnit)
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Math.round(8 * tacticalRosterTip.scaleUnit)
+                            Rectangle {
+                                Layout.preferredWidth: Math.round(54 * tacticalRosterTip.scaleUnit)
+                                Layout.preferredHeight: Math.round(54 * tacticalRosterTip.scaleUnit)
+                                color: "#0a0e14"
+                                border.width: 1
+                                border.color: "#334155"
+                                radius: 0
+                                Image {
+                                    anchors.fill: parent
+                                    anchors.margins: Math.round(4 * tacticalRosterTip.scaleUnit)
+                                    fillMode: Image.PreserveAspectFit
+                                    smooth: true
+                                    source: tacticalRosterTip.card && tacticalRosterTip.card.unitIcon ? tacticalRosterTip.card.unitIcon : ""
+                                    visible: source !== ""
+                                }
+                            }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: Math.round(3 * tacticalRosterTip.scaleUnit)
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "UNIT PROFILE"
+                                    color: tacticalRosterTip.accentColor
+                                    font.family: root.fontDataFamily
+                                    font.pixelSize: Math.round(8 * tacticalRosterTip.scaleUnit)
+                                    font.bold: true
+                                    font.letterSpacing: 0.8
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: tacticalRosterTip.card && tacticalRosterTip.card.unitName ? tacticalRosterTip.card.unitName : "—"
+                                    color: "#cbd5e1"
+                                    font.family: root.fontUiFamily
+                                    font.pixelSize: Math.round(11 * tacticalRosterTip.scaleUnit)
+                                    font.bold: true
+                                    wrapMode: Text.WordWrap
+                                    maximumLineCount: 2
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            color: "#0f172a"
+                            border.width: 1
+                            border.color: "#334155"
+                            radius: 0
+                            implicitHeight: coreStatsCol.implicitHeight + Math.round(12 * tacticalRosterTip.scaleUnit)
+                            ColumnLayout {
+                                id: coreStatsCol
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.margins: Math.round(6 * tacticalRosterTip.scaleUnit)
+                                spacing: Math.round(4 * tacticalRosterTip.scaleUnit)
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "CORE STATS"
+                                    color: "#94a3b8"
+                                    font.family: root.fontDataFamily
+                                    font.pixelSize: Math.round(8 * tacticalRosterTip.scaleUnit)
+                                    font.bold: true
+                                    font.letterSpacing: 0.7
+                                }
+                                Row {
+                                    spacing: 0
+                                    Repeater {
+                                        model: root.rosterCoreStatHdrs.length
+                                        delegate: Column {
+                                            width: Math.round(29 * tacticalRosterTip.scaleUnit)
+                                            spacing: Math.round(2 * tacticalRosterTip.scaleUnit)
+                                            Text {
+                                                width: parent.width
+                                                horizontalAlignment: Text.AlignHCenter
+                                                text: root.rosterCoreStatHdrs[index]
+                                                color: "#64748b"
+                                                font.family: root.fontDataFamily
+                                                font.pixelSize: Math.round(7 * tacticalRosterTip.scaleUnit)
+                                                font.bold: true
+                                            }
+                                            Text {
+                                                width: parent.width
+                                                horizontalAlignment: Text.AlignHCenter
+                                                text: tacticalRosterTip.card && tacticalRosterTip.card.coreStats && tacticalRosterTip.card.coreStats.length > index
+                                                    ? tacticalRosterTip.card.coreStats[index]
+                                                    : "—"
+                                                color: "#f8fafc"
+                                                font.family: root.fontDataFamily
+                                                font.pixelSize: Math.round(10 * tacticalRosterTip.scaleUnit)
+                                                font.bold: true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: Math.round(5 * tacticalRosterTip.scaleUnit)
+                            Text {
+                                Layout.fillWidth: true
+                                text: "KEYWORDS"
+                                color: "#94a3b8"
+                                font.family: root.fontDataFamily
+                                font.pixelSize: Math.round(8 * tacticalRosterTip.scaleUnit)
+                                font.bold: true
+                                font.letterSpacing: 0.7
+                            }
+                            Flow {
+                                Layout.fillWidth: true
+                                spacing: Math.round(4 * tacticalRosterTip.scaleUnit)
+                                Repeater {
+                                    model: tacticalRosterTip.card && tacticalRosterTip.card.keywords ? tacticalRosterTip.card.keywords : []
+                                    delegate: Rectangle {
+                                        color: Qt.rgba(1, 1, 1, 0.05)
+                                        border.width: 1
+                                        border.color: "#475569"
+                                        radius: 0
+                                        implicitWidth: keywordTipTxt.implicitWidth + Math.round(10 * tacticalRosterTip.scaleUnit)
+                                        implicitHeight: keywordTipTxt.implicitHeight + Math.round(4 * tacticalRosterTip.scaleUnit)
+                                        Text {
+                                            id: keywordTipTxt
+                                            anchors.centerIn: parent
+                                            text: modelData
+                                            color: "#cbd5e1"
+                                            font.family: root.fontDataFamily
+                                            font.pixelSize: Math.round(7 * tacticalRosterTip.scaleUnit)
+                                            font.bold: true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: Math.round(7 * tacticalRosterTip.scaleUnit)
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            color: Qt.rgba(1, 1, 1, 0.035)
+                            border.width: 1
+                            border.color: "#334155"
+                            radius: 0
+                            implicitHeight: abilityTipCol.implicitHeight + Math.round(12 * tacticalRosterTip.scaleUnit)
+                            ColumnLayout {
+                                id: abilityTipCol
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.margins: Math.round(6 * tacticalRosterTip.scaleUnit)
+                                spacing: Math.round(4 * tacticalRosterTip.scaleUnit)
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "ABILITIES"
+                                    color: "#e8c86a"
+                                    font.family: root.fontDataFamily
+                                    font.pixelSize: Math.round(8 * tacticalRosterTip.scaleUnit)
+                                    font.bold: true
+                                    font.letterSpacing: 0.7
+                                }
+                                Repeater {
+                                    model: tacticalRosterTip.card && tacticalRosterTip.card.abilities && tacticalRosterTip.card.abilities.length > 0
+                                        ? tacticalRosterTip.card.abilities
+                                        : ["NO ACTIVE ABILITIES"]
+                                    delegate: Text {
+                                        Layout.fillWidth: true
+                                        text: ">_ " + modelData
+                                        color: modelData === "NO ACTIVE ABILITIES" ? "#64748b" : "#cbd5e1"
+                                        font.family: root.fontDataFamily
+                                        font.pixelSize: Math.round(8 * tacticalRosterTip.scaleUnit)
+                                        wrapMode: Text.WordWrap
+                                        maximumLineCount: 2
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            color: Qt.rgba(tacticalRosterTip.accentColor.r, tacticalRosterTip.accentColor.g, tacticalRosterTip.accentColor.b, 0.08)
+                            border.width: 1
+                            border.color: Qt.rgba(tacticalRosterTip.accentColor.r, tacticalRosterTip.accentColor.g, tacticalRosterTip.accentColor.b, 0.45)
+                            radius: 0
+                            implicitHeight: rangedTipCol.implicitHeight + Math.round(12 * tacticalRosterTip.scaleUnit)
+                            ColumnLayout {
+                                id: rangedTipCol
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.margins: Math.round(6 * tacticalRosterTip.scaleUnit)
+                                spacing: Math.round(3 * tacticalRosterTip.scaleUnit)
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "RANGED"
+                                    color: "#8fb6e8"
+                                    font.family: root.fontDataFamily
+                                    font.pixelSize: Math.round(9 * tacticalRosterTip.scaleUnit)
+                                    font.bold: true
+                                    font.letterSpacing: 0.8
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: tacticalRosterTip.card && tacticalRosterTip.card.rangedName ? tacticalRosterTip.card.rangedName : "—"
+                                    color: "#f8fafc"
+                                    font.family: root.fontUiFamily
+                                    font.pixelSize: Math.round(12 * tacticalRosterTip.scaleUnit)
+                                    font.bold: true
+                                    wrapMode: Text.WordWrap
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: tacticalRosterTip.card && tacticalRosterTip.card.rangedStatline ? tacticalRosterTip.card.rangedStatline : "—"
+                                    color: "#cbd5e1"
+                                    font.family: root.fontDataFamily
+                                    font.pixelSize: Math.round(10 * tacticalRosterTip.scaleUnit)
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            color: Qt.rgba(tacticalRosterTip.secondaryAccentColor.r, tacticalRosterTip.secondaryAccentColor.g, tacticalRosterTip.secondaryAccentColor.b, 0.08)
+                            border.width: 1
+                            border.color: Qt.rgba(tacticalRosterTip.secondaryAccentColor.r, tacticalRosterTip.secondaryAccentColor.g, tacticalRosterTip.secondaryAccentColor.b, 0.45)
+                            radius: 0
+                            implicitHeight: meleeTipCol.implicitHeight + Math.round(12 * tacticalRosterTip.scaleUnit)
+                            ColumnLayout {
+                                id: meleeTipCol
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.margins: Math.round(6 * tacticalRosterTip.scaleUnit)
+                                spacing: Math.round(3 * tacticalRosterTip.scaleUnit)
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "MELEE"
+                                    color: "#e8c86a"
+                                    font.family: root.fontDataFamily
+                                    font.pixelSize: Math.round(9 * tacticalRosterTip.scaleUnit)
+                                    font.bold: true
+                                    font.letterSpacing: 0.8
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: tacticalRosterTip.card && tacticalRosterTip.card.meleeName ? tacticalRosterTip.card.meleeName : "—"
+                                    color: "#f8fafc"
+                                    font.family: root.fontUiFamily
+                                    font.pixelSize: Math.round(12 * tacticalRosterTip.scaleUnit)
+                                    font.bold: true
+                                    wrapMode: Text.WordWrap
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: tacticalRosterTip.card && tacticalRosterTip.card.meleeStatline ? tacticalRosterTip.card.meleeStatline : "—"
+                                    color: "#cbd5e1"
+                                    font.family: root.fontDataFamily
+                                    font.pixelSize: Math.round(10 * tacticalRosterTip.scaleUnit)
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text {
+                        text: "SOURCE: ROSTER"
+                        color: "#64748b"
+                        font.family: root.fontDataFamily
+                        font.pixelSize: Math.round(8 * tacticalRosterTip.scaleUnit)
+                        font.bold: true
+                        font.letterSpacing: 0.5
+                    }
+                    Item { Layout.fillWidth: true }
+                    Text {
+                        text: "DATA-SLATE"
+                        color: tacticalRosterTip.accentColor
+                        font.family: root.fontDataFamily
+                        font.pixelSize: Math.round(8 * tacticalRosterTip.scaleUnit)
+                        font.bold: true
+                        font.letterSpacing: 0.5
+                    }
+                }
+            }
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -455,16 +865,6 @@ ApplicationWindow {
                                                     model: controller.trainContextP1RosterCards
                                                     delegate: Rectangle {
                                                         property var card: modelData
-                                                        readonly property string _tip: {
-                                                            if (!card || card.kind !== "unit")
-                                                                return ""
-                                                            var header = (card.title || "—")
-                                                            if (card.instanceId && String(card.instanceId).length > 0)
-                                                                header += "  ·  SYS.REF: " + card.instanceId
-                                                            var r = "RANGED\n" + (card.rangedName || "—") + "\n" + (card.rangedStatline || "—")
-                                                            var m = "MELEE\n" + (card.meleeName || "—") + "\n" + (card.meleeStatline || "—")
-                                                            return header + "\n\n" + r + "\n\n" + m + "\n\nИсточник: Ростер"
-                                                        }
                                                         Layout.fillWidth: true
                                                         implicitHeight: (card && card.kind === "more")
                                                             ? Math.round(34 * root.uiScale)
@@ -636,13 +1036,17 @@ ApplicationWindow {
                                                         }
 
                                                         MouseArea {
+                                                            id: trainP1TipArea
                                                             anchors.fill: parent
                                                             acceptedButtons: Qt.NoButton
                                                             hoverEnabled: true
                                                             z: 1
-                                                            ToolTip.visible: containsMouse && card && card.kind === "unit" && _tip.length > 4
-                                                            ToolTip.text: _tip
-                                                            ToolTip.delay: 350
+                                                        }
+                                                        TacticalRosterTip {
+                                                            card: modelData
+                                                            anchorItem: trainP1TipArea
+                                                            accentColor: "#2f6ed8"
+                                                            secondaryAccentColor: "#d97706"
                                                         }
                                                         Rectangle {
                                                             visible: card && card.kind === "unit"
@@ -706,16 +1110,6 @@ ApplicationWindow {
                                                     model: controller.trainContextP2RosterCards
                                                     delegate: Rectangle {
                                                         property var card: modelData
-                                                        readonly property string _tip: {
-                                                            if (!card || card.kind !== "unit")
-                                                                return ""
-                                                            var header = (card.title || "—")
-                                                            if (card.instanceId && String(card.instanceId).length > 0)
-                                                                header += "  ·  SYS.REF: " + card.instanceId
-                                                            var r = "RANGED\n" + (card.rangedName || "—") + "\n" + (card.rangedStatline || "—")
-                                                            var m = "MELEE\n" + (card.meleeName || "—") + "\n" + (card.meleeStatline || "—")
-                                                            return header + "\n\n" + r + "\n\n" + m + "\n\nИсточник: Ростер"
-                                                        }
                                                         Layout.fillWidth: true
                                                         implicitHeight: (card && card.kind === "more")
                                                             ? Math.round(34 * root.uiScale)
@@ -887,13 +1281,17 @@ ApplicationWindow {
                                                         }
 
                                                         MouseArea {
+                                                            id: trainP2TipArea
                                                             anchors.fill: parent
                                                             acceptedButtons: Qt.NoButton
                                                             hoverEnabled: true
                                                             z: 1
-                                                            ToolTip.visible: containsMouse && card && card.kind === "unit" && _tip.length > 4
-                                                            ToolTip.text: _tip
-                                                            ToolTip.delay: 350
+                                                        }
+                                                        TacticalRosterTip {
+                                                            card: modelData
+                                                            anchorItem: trainP2TipArea
+                                                            accentColor: "#a44848"
+                                                            secondaryAccentColor: "#d97706"
                                                         }
                                                         Rectangle {
                                                             visible: card && card.kind === "unit"
@@ -1617,8 +2015,8 @@ ApplicationWindow {
 
                     ChamferPanel {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: Math.round(278 * root.uiScale)
-                        Layout.minimumHeight: Math.round(248 * root.uiScale)
+                        Layout.preferredHeight: Math.round(188 * root.uiScale)
+                        Layout.minimumHeight: Math.round(168 * root.uiScale)
                         fillColor: root.uiBgCard
                         borderColor: root.uiBorder
                         borderWidth: 1
@@ -1667,241 +2065,104 @@ ApplicationWindow {
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: Math.round(208 * root.uiScale)
+                                Layout.preferredHeight: Math.round(138 * root.uiScale)
                                 spacing: root.spacingMd
 
                                 Rectangle {
                                     Layout.fillWidth: true
-                                    implicitHeight: Math.round(206 * root.uiScale)
-                                    color: "#141b26"
+                                    Layout.minimumWidth: Math.round(160 * root.uiScale)
+                                    implicitHeight: Math.round(136 * root.uiScale)
+                                    color: "#151f33"
                                     border.width: 1
                                     border.color: "#2f6ed8"
                                     radius: 0
+                                    clip: true
                                     Column {
                                         anchors.fill: parent
-                                        anchors.margins: Math.round(6 * root.uiScale)
-                                        spacing: 1
-                                        Text { text: "P1 СВОДКА"; color: "#9eb6d4"; font.bold: true; font.family: root.fontUiFamily; font.pixelSize: Math.round(10 * root.uiScale) }
-                                        Text { text: controller.rosterPointsP1; color: "#f2f6ff"; font.bold: true; font.family: "JetBrains Mono"; font.pixelSize: Math.round(18 * root.uiScale); elide: Text.ElideRight }
-                                        Text { text: controller.rosterKpiP1; color: "#8b95a8"; font.family: "JetBrains Mono"; font.pixelSize: Math.round(9 * root.uiScale); elide: Text.ElideRight }
-                                    }
-                                }
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    implicitHeight: Math.round(206 * root.uiScale)
-                                    color: "#141b26"
-                                    border.width: 1
-                                    border.color: "#7b4a4a"
-                                    radius: 0
-                                    Column {
-                                        anchors.fill: parent
-                                        anchors.margins: Math.round(6 * root.uiScale)
-                                        spacing: 1
-                                        Text { text: "P2 СВОДКА"; color: "#d4a69e"; font.bold: true; font.family: root.fontUiFamily; font.pixelSize: Math.round(10 * root.uiScale) }
-                                        Text { text: controller.rosterPointsP2; color: "#f2f6ff"; font.bold: true; font.family: "JetBrains Mono"; font.pixelSize: Math.round(18 * root.uiScale); elide: Text.ElideRight }
-                                        Text { text: controller.rosterKpiP2; color: "#8b95a8"; font.family: "JetBrains Mono"; font.pixelSize: Math.round(9 * root.uiScale); elide: Text.ElideRight }
-                                    }
-                                }
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.minimumWidth: Math.round(300 * root.uiScale)
-                                    implicitHeight: Math.round(206 * root.uiScale)
-                                    color: "#10151d"
-                                    border.width: 1
-                                    border.color: "#4a3d28"
-                                    radius: 0
-                                    clip: false
-
-                                    Rectangle {
-                                        width: Math.round(3 * root.uiScale)
-                                        anchors.left: parent.left
-                                        anchors.top: parent.top
-                                        anchors.bottom: parent.bottom
-                                        color: "#e8c86a"
-                                    }
-
-                                    Item {
-                                        id: rosterActiveProfileBody
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: Math.round(10 * root.uiScale)
-                                        anchors.right: parent.right
-                                        anchors.rightMargin: Math.round(6 * root.uiScale)
-                                        anchors.top: parent.top
-                                        anchors.topMargin: Math.round(10 * root.uiScale)
-                                        anchors.bottom: parent.bottom
-                                        anchors.bottomMargin: Math.round(10 * root.uiScale)
-
-                                        Column {
-                                            id: rosterActiveProfileCol
+                                        anchors.margins: Math.round(8 * root.uiScale)
+                                        spacing: Math.round(6 * root.uiScale)
+                                        Text { width: parent.width; text: "P1 СВОДКА"; color: "#9eb6d4"; font.bold: true; font.family: root.fontUiFamily; font.pixelSize: Math.round(10 * root.uiScale); elide: Text.ElideRight }
+                                        Text { width: parent.width; text: controller.rosterPointsP1; color: "#f2f6ff"; font.bold: true; font.family: "JetBrains Mono"; font.pixelSize: Math.round(18 * root.uiScale); elide: Text.ElideRight }
+                                        Item {
                                             width: parent.width
-                                            spacing: Math.round(10 * root.uiScale)
-
-                                            Text {
-                                                width: parent.width
-                                                text: "АКТИВНЫЙ ПРОФИЛЬ ВООРУЖЕНИЯ"
-                                                color: "#e8c86a"
-                                                font.bold: true
-                                                font.family: root.fontUiFamily
-                                                font.pixelSize: Math.round(12 * root.uiScale)
-                                                font.capitalization: Font.AllUppercase
-                                                font.letterSpacing: 0.6
-                                                wrapMode: Text.WordWrap
-                                            }
-                                            Text {
-                                                width: parent.width
-                                                text: controller.rosterActiveProfileContextLine
-                                                color: "#7a8798"
-                                                font.family: root.fontDataFamily
-                                                font.pixelSize: Math.round(9 * root.uiScale)
-                                                wrapMode: Text.WordWrap
-                                            }
-
+                                            implicitHeight: kpiClusterP1.implicitHeight
                                             Row {
-                                                width: parent.width
-                                                spacing: Math.round(12 * root.uiScale)
-                                                topPadding: Math.round(2 * root.uiScale)
-
-                                                Item {
-                                                    id: rosterActiveAvatarSlot
-                                                    width: Math.round(64 * root.uiScale)
-                                                    height: Math.round(64 * root.uiScale)
-                                                    Rectangle {
-                                                        anchors.fill: parent
-                                                        radius: Math.round(6 * root.uiScale)
-                                                        color: "#161f2e"
-                                                        border.width: 1
-                                                        border.color: "#4a6a8c"
-                                                        Rectangle {
-                                                            anchors.fill: parent
-                                                            anchors.margins: Math.round(3 * root.uiScale)
-                                                            radius: Math.round(4 * root.uiScale)
-                                                            color: "#0a0e14"
-                                                            border.width: 1
-                                                            border.color: "#1e2a38"
-                                                            Image {
-                                                                id: rosterActiveUnitImg
-                                                                anchors.fill: parent
-                                                                anchors.margins: Math.round(3 * root.uiScale)
-                                                                fillMode: Image.PreserveAspectFit
-                                                                smooth: true
-                                                                source: controller.rosterActiveProfileUnitIconSource
-                                                                visible: source !== ""
-                                                            }
-                                                            Label {
-                                                                anchors.centerIn: parent
-                                                                visible: !rosterActiveUnitImg.visible && controller.rosterWeaponsPreviewUnitName !== "—"
-                                                                text: {
-                                                                    var n = controller.rosterWeaponsPreviewUnitName
-                                                                    return n.length ? n.charAt(0).toUpperCase() : "?"
-                                                                }
-                                                                color: root.uiTextMuted
-                                                                font.bold: true
-                                                                font.pixelSize: Math.round(20 * root.uiScale)
-                                                            }
-                                                        }
-                                                    }
-                                                }
-
-                                                Column {
-                                                    width: rosterActiveProfileCol.width - rosterActiveAvatarSlot.width - Math.round(12 * root.uiScale)
-                                                    spacing: Math.round(8 * root.uiScale)
-
-                                                    Text {
-                                                        width: parent.width
-                                                        text: controller.rosterWeaponsPreviewUnitName === "—" ? "—" : String(controller.rosterWeaponsPreviewUnitName).toUpperCase()
-                                                        color: root.uiTextMain
-                                                        font.bold: true
-                                                        font.family: root.fontUiFamily
-                                                        font.pixelSize: Math.round(15 * root.uiScale)
-                                                        wrapMode: Text.WordWrap
-                                                        maximumLineCount: 2
-                                                        elide: Text.ElideRight
-                                                    }
-
-                                                    Row {
-                                                        width: parent.width
+                                                id: kpiClusterP1
+                                                anchors.left: parent.left
+                                                spacing: Math.round(8 * root.uiScale)
+                                                Repeater {
+                                                    model: controller.rosterKpiP1Columns
+                                                    delegate: Row {
+                                                        property var col: modelData
                                                         spacing: Math.round(8 * root.uiScale)
-                                                        Image {
-                                                            id: rosterActiveRangedIcon
-                                                            width: Math.round(22 * root.uiScale)
-                                                            height: Math.round(22 * root.uiScale)
-                                                            anchors.verticalCenter: parent.verticalCenter
-                                                            fillMode: Image.PreserveAspectFit
-                                                            smooth: true
-                                                            visible: controller.rosterActiveProfileRangedIconSource !== ""
-                                                            source: controller.rosterActiveProfileRangedIconSource
-                                                        }
                                                         Text {
-                                                            id: rosterActiveRangedLbl
-                                                            text: "RANGED:"
-                                                            color: "#7d92a8"
-                                                            font.family: "Consolas"
-                                                            font.pixelSize: Math.round(9 * root.uiScale)
+                                                            text: "[ " + (col && col.h ? col.h : "—") + ": " + (col && col.v !== undefined ? col.v : "—") + " ]"
+                                                            color: "#a8bdd4"
+                                                            font.family: "JetBrains Mono"
+                                                            font.pixelSize: Math.round(10 * root.uiScale)
                                                             font.bold: true
-                                                            anchors.verticalCenter: parent.verticalCenter
                                                         }
                                                         Text {
-                                                            width: Math.max(Math.round(80 * root.uiScale), parent.width - rosterActiveRangedIcon.width - rosterActiveRangedLbl.width - Math.round(16 * root.uiScale))
-                                                            text: controller.rosterWeaponsPreviewUnitName === "—" ? "—" : (controller.rosterWeaponsSelectedRanged || "—")
-                                                            color: "#f2f6ff"
-                                                            font.family: root.fontDataFamily
-                                                            font.pixelSize: Math.round(11 * root.uiScale)
-                                                            wrapMode: Text.WordWrap
-                                                            maximumLineCount: 2
-                                                            elide: Text.ElideRight
-                                                            anchors.verticalCenter: parent.verticalCenter
-                                                        }
-                                                    }
-
-                                                    Row {
-                                                        width: parent.width
-                                                        spacing: Math.round(8 * root.uiScale)
-                                                        Image {
-                                                            id: rosterActiveMeleeIcon
-                                                            width: Math.round(22 * root.uiScale)
-                                                            height: Math.round(22 * root.uiScale)
-                                                            anchors.verticalCenter: parent.verticalCenter
-                                                            fillMode: Image.PreserveAspectFit
-                                                            smooth: true
-                                                            visible: controller.rosterActiveProfileMeleeIconSource !== ""
-                                                            source: controller.rosterActiveProfileMeleeIconSource
-                                                        }
-                                                        Text {
-                                                            id: rosterActiveMeleeLbl
-                                                            text: "MELEE:"
-                                                            color: "#7d92a8"
-                                                            font.family: "Consolas"
-                                                            font.pixelSize: Math.round(9 * root.uiScale)
+                                                            visible: index < 3
+                                                            text: "//"
+                                                            color: "#52657f"
+                                                            font.family: "JetBrains Mono"
+                                                            font.pixelSize: Math.round(10 * root.uiScale)
                                                             font.bold: true
-                                                            anchors.verticalCenter: parent.verticalCenter
-                                                        }
-                                                        Text {
-                                                            width: Math.max(Math.round(80 * root.uiScale), parent.width - rosterActiveMeleeIcon.width - rosterActiveMeleeLbl.width - Math.round(16 * root.uiScale))
-                                                            text: controller.rosterWeaponsPreviewUnitName === "—" ? "—" : (controller.rosterWeaponsSelectedMelee || "—")
-                                                            color: "#f2f6ff"
-                                                            font.family: root.fontDataFamily
-                                                            font.pixelSize: Math.round(11 * root.uiScale)
-                                                            wrapMode: Text.WordWrap
-                                                            maximumLineCount: 2
-                                                            elide: Text.ElideRight
-                                                            anchors.verticalCenter: parent.verticalCenter
                                                         }
                                                     }
                                                 }
                                             }
                                         }
                                     }
+                                }
 
-                                    MouseArea {
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: Math.round(160 * root.uiScale)
+                                    implicitHeight: Math.round(136 * root.uiScale)
+                                    color: "#151f33"
+                                    border.width: 1
+                                    border.color: "#7b4a4a"
+                                    radius: 0
+                                    clip: true
+                                    Column {
                                         anchors.fill: parent
-                                        acceptedButtons: Qt.NoButton
-                                        hoverEnabled: true
-                                        z: 20
-                                        ToolTip.visible: containsMouse && controller.rosterActiveProfileDetailTooltip.length > 4
-                                        ToolTip.text: controller.rosterActiveProfileDetailTooltip
-                                        ToolTip.delay: 400
+                                        anchors.margins: Math.round(8 * root.uiScale)
+                                        spacing: Math.round(6 * root.uiScale)
+                                        Text { width: parent.width; text: "P2 СВОДКА"; color: "#d4a69e"; font.bold: true; font.family: root.fontUiFamily; font.pixelSize: Math.round(10 * root.uiScale); elide: Text.ElideRight }
+                                        Text { width: parent.width; text: controller.rosterPointsP2; color: "#f2f6ff"; font.bold: true; font.family: "JetBrains Mono"; font.pixelSize: Math.round(18 * root.uiScale); elide: Text.ElideRight }
+                                        Item {
+                                            width: parent.width
+                                            implicitHeight: kpiClusterP2.implicitHeight
+                                            Row {
+                                                id: kpiClusterP2
+                                                anchors.left: parent.left
+                                                spacing: Math.round(8 * root.uiScale)
+                                                Repeater {
+                                                    model: controller.rosterKpiP2Columns
+                                                    delegate: Row {
+                                                        property var col: modelData
+                                                        spacing: Math.round(8 * root.uiScale)
+                                                        Text {
+                                                            text: "[ " + (col && col.h ? col.h : "—") + ": " + (col && col.v !== undefined ? col.v : "—") + " ]"
+                                                            color: "#d4c4c0"
+                                                            font.family: "JetBrains Mono"
+                                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                                            font.bold: true
+                                                        }
+                                                        Text {
+                                                            visible: index < 3
+                                                            text: "//"
+                                                            color: "#6a5154"
+                                                            font.family: "JetBrains Mono"
+                                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                                            font.bold: true
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -2059,17 +2320,46 @@ ApplicationWindow {
                                     model: controller.availableUnitsModel
                                     clip: true
                                     onCurrentIndexChanged: controller.set_roster_available_preview_index(currentIndex)
+
+                                    Connections {
+                                        target: controller
+                                        function onRosterWeaponsPreviewChanged() {
+                                            var i = controller.rosterAvailableUnitListIndex
+                                            if (i >= 0 && i < availableUnitsView.count)
+                                                availableUnitsView.currentIndex = i
+                                            else if (availableUnitsView.count > 0 && i < 0)
+                                                availableUnitsView.currentIndex = 0
+                                        }
+                                    }
+                                    Component.onCompleted: {
+                                        var i = controller.rosterAvailableUnitListIndex
+                                        if (i >= 0 && i < availableUnitsView.count)
+                                            availableUnitsView.currentIndex = i
+                                        else if (count > 0)
+                                            availableUnitsView.currentIndex = 0
+                                    }
+
                                     delegate: Rectangle {
+                                        readonly property bool rowSel: ListView.view
+                                            ? (ListView.view.currentIndex === index)
+                                            : false
                                         width: ListView.view ? ListView.view.width : 0
                                         height: Math.max(unitNameAvailable.implicitHeight, unitIconAvailable.height) + root.spacingSm
-                                        color: ListView.isCurrentItem ? Qt.rgba(1, 1, 1, 0.06) : "transparent"
+                                        color: rowSel
+                                            ? Qt.rgba(0.85, 0.47, 0.04, 0.14)
+                                            : (unitRowMa.containsMouse ? Qt.rgba(1, 1, 1, 0.05) : "transparent")
+                                        border.width: rowSel ? 1 : 0
+                                        border.color: rowSel ? Qt.rgba(0.85, 0.47, 0.04, 0.45) : "transparent"
+                                        Behavior on color { ColorAnimation { duration: 100 } }
+                                        Behavior on border.color { ColorAnimation { duration: 100 } }
+                                        Behavior on border.width { NumberAnimation { duration: 100 } }
 
                                         Rectangle {
-                                            visible: ListView.isCurrentItem
+                                            visible: rowSel
                                             anchors.left: parent.left
                                             anchors.top: parent.top
                                             anchors.bottom: parent.bottom
-                                            width: Math.round(3 * root.uiScale)
+                                            width: Math.round(4 * root.uiScale)
                                             color: "#d97706"
                                         }
 
@@ -2080,7 +2370,7 @@ ApplicationWindow {
                                             height: root.unitIconSize
                                             anchors.verticalCenter: parent.verticalCenter
                                             anchors.left: parent.left
-                                            anchors.leftMargin: root.spacingSm + (ListView.isCurrentItem ? Math.round(3 * root.uiScale) : 0)
+                                            anchors.leftMargin: root.spacingSm + (rowSel ? Math.round(4 * root.uiScale) : 0)
                                             fillMode: Image.PreserveAspectFit
                                             smooth: true
                                             visible: source !== ""
@@ -2089,20 +2379,22 @@ ApplicationWindow {
                                         Text {
                                             id: unitNameAvailable
                                             text: model.display
-                                            color: ListView.isCurrentItem ? "#ffffff" : root.uiTextMain
+                                            color: rowSel ? "#f8fafc" : "#94a3b8"
+                                            font.bold: rowSel
                                             elide: Text.ElideRight
                                             anchors.verticalCenter: parent.verticalCenter
                                             anchors.left: unitIconAvailable.visible ? unitIconAvailable.right : parent.left
-                                            anchors.leftMargin: root.spacingSm
+                                            anchors.leftMargin: unitIconAvailable.visible
+                                                ? root.spacingSm
+                                                : (root.spacingSm + (rowSel ? Math.round(4 * root.uiScale) : 0))
                                             font.family: root.fontUiFamily
                                         }
 
                                         MouseArea {
+                                            id: unitRowMa
                                             anchors.fill: parent
-                                            onClicked: {
-                                                availableUnitsView.currentIndex = index
-                                                controller.set_roster_available_preview_index(index)
-                                            }
+                                            hoverEnabled: true
+                                            onClicked: controller.set_roster_available_preview_index(index)
                                         }
                                     }
                                 }
@@ -2118,6 +2410,12 @@ ApplicationWindow {
                             Layout.preferredWidth: Math.round(300 * root.uiScale)
                             Layout.maximumWidth: Math.round(360 * root.uiScale)
                             Layout.horizontalStretchFactor: 2
+
+                            background: Rectangle {
+                                color: root.bgElevated
+                                border.width: 1
+                                border.color: root.uiBorder
+                            }
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -2229,25 +2527,52 @@ ApplicationWindow {
                                         readonly property bool rwSel: rwWeaponName === controller.rosterWeaponsSelectedRanged
                                         Layout.fillWidth: true
                                         implicitHeight: Math.round(90 * root.uiScale)
-                                        color: "#111820"
+                                        color: "#0b1628"
                                         border.width: rwSel ? 2 : 1
-                                        border.color: rwSel ? "#e8c86a" : "#3d4558"
+                                        border.color: rwSel ? "#e8c86a" : "#334155"
                                         radius: 0
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            anchors.margins: 2
+                                            color: "transparent"
+                                            border.width: 1
+                                            border.color: Qt.rgba(0, 0, 0, 0.35)
+                                        }
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            gradient: Gradient {
+                                                GradientStop { position: 0.0; color: Qt.rgba(0, 0, 0, 0.12) }
+                                                GradientStop { position: 0.18; color: Qt.rgba(0, 0, 0, 0.02) }
+                                                GradientStop { position: 0.82; color: "transparent" }
+                                                GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.2) }
+                                            }
+                                        }
 
                                         RowLayout {
                                             anchors.fill: parent
                                             anchors.margins: Math.round(8 * root.uiScale)
                                             spacing: root.spacingSm
 
-                                            Rectangle {
-                                                Layout.preferredWidth: Math.round(14 * root.uiScale)
-                                                Layout.preferredHeight: Math.round(14 * root.uiScale)
+                                            Item {
+                                                Layout.preferredWidth: Math.round(16 * root.uiScale)
+                                                Layout.preferredHeight: Math.round(16 * root.uiScale)
                                                 Layout.alignment: Qt.AlignTop
-                                                Layout.topMargin: Math.round(5 * root.uiScale)
-                                                radius: 0
-                                                color: rwSel ? "#c79a32" : "transparent"
-                                                border.width: 1
-                                                border.color: rwSel ? "#f0d78a" : "#5c6578"
+                                                Layout.topMargin: Math.round(4 * root.uiScale)
+                                                Rectangle {
+                                                    anchors.fill: parent
+                                                    radius: 0
+                                                    color: "transparent"
+                                                    border.width: rwSel ? 2 : 1
+                                                    border.color: rwSel ? "#e8c86a" : "#4a5568"
+                                                }
+                                                Rectangle {
+                                                    anchors.centerIn: parent
+                                                    width: Math.round(6 * root.uiScale)
+                                                    height: Math.round(6 * root.uiScale)
+                                                    visible: rwSel
+                                                    color: "#c79a32"
+                                                    radius: 0
+                                                }
                                             }
 
                                             Rectangle {
@@ -2284,26 +2609,20 @@ ApplicationWindow {
                                                     spacing: 0
                                                     Repeater {
                                                         model: 6
-                                                        delegate: Item {
+                                                        delegate: Column {
                                                             property int colIndex: index
                                                             width: root.rosterWeaponStatColWidths[colIndex]
-                                                            implicitHeight: hdrRw.implicitHeight + valRw.implicitHeight + 2
+                                                            spacing: Math.round(3 * root.uiScale)
                                                             Text {
-                                                                id: hdrRw
-                                                                anchors.horizontalCenter: parent.horizontalCenter
                                                                 width: parent.width
                                                                 horizontalAlignment: Text.AlignHCenter
                                                                 text: root.rosterWeaponStatHdrs[colIndex]
                                                                 color: "#5c6678"
                                                                 font.family: root.fontDataFamily
-                                                                font.pixelSize: Math.round(6 * root.uiScale)
+                                                                font.pixelSize: Math.round(7 * root.uiScale)
                                                                 font.letterSpacing: 0.35
                                                             }
                                                             Text {
-                                                                id: valRw
-                                                                anchors.horizontalCenter: parent.horizontalCenter
-                                                                anchors.top: hdrRw.bottom
-                                                                anchors.topMargin: 2
                                                                 width: parent.width
                                                                 horizontalAlignment: Text.AlignHCenter
                                                                 text: controller.roster_weapon_stat_values_for_selected(rwWeaponName)[colIndex]
@@ -2367,25 +2686,52 @@ ApplicationWindow {
                                         readonly property bool mwSel: mwWeaponName === controller.rosterWeaponsSelectedMelee
                                         Layout.fillWidth: true
                                         implicitHeight: Math.round(90 * root.uiScale)
-                                        color: "#111820"
+                                        color: "#0b1628"
                                         border.width: mwSel ? 2 : 1
-                                        border.color: mwSel ? "#e8c86a" : "#3d4558"
+                                        border.color: mwSel ? "#e8c86a" : "#334155"
                                         radius: 0
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            anchors.margins: 2
+                                            color: "transparent"
+                                            border.width: 1
+                                            border.color: Qt.rgba(0, 0, 0, 0.35)
+                                        }
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            gradient: Gradient {
+                                                GradientStop { position: 0.0; color: Qt.rgba(0, 0, 0, 0.12) }
+                                                GradientStop { position: 0.18; color: Qt.rgba(0, 0, 0, 0.02) }
+                                                GradientStop { position: 0.82; color: "transparent" }
+                                                GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.2) }
+                                            }
+                                        }
 
                                         RowLayout {
                                             anchors.fill: parent
                                             anchors.margins: Math.round(8 * root.uiScale)
                                             spacing: root.spacingSm
 
-                                            Rectangle {
-                                                Layout.preferredWidth: Math.round(14 * root.uiScale)
-                                                Layout.preferredHeight: Math.round(14 * root.uiScale)
+                                            Item {
+                                                Layout.preferredWidth: Math.round(16 * root.uiScale)
+                                                Layout.preferredHeight: Math.round(16 * root.uiScale)
                                                 Layout.alignment: Qt.AlignTop
-                                                Layout.topMargin: Math.round(5 * root.uiScale)
-                                                radius: 0
-                                                color: mwSel ? "#c79a32" : "transparent"
-                                                border.width: 1
-                                                border.color: mwSel ? "#f0d78a" : "#5c6578"
+                                                Layout.topMargin: Math.round(4 * root.uiScale)
+                                                Rectangle {
+                                                    anchors.fill: parent
+                                                    radius: 0
+                                                    color: "transparent"
+                                                    border.width: mwSel ? 2 : 1
+                                                    border.color: mwSel ? "#e8c86a" : "#4a5568"
+                                                }
+                                                Rectangle {
+                                                    anchors.centerIn: parent
+                                                    width: Math.round(6 * root.uiScale)
+                                                    height: Math.round(6 * root.uiScale)
+                                                    visible: mwSel
+                                                    color: "#c79a32"
+                                                    radius: 0
+                                                }
                                             }
 
                                             Rectangle {
@@ -2422,26 +2768,20 @@ ApplicationWindow {
                                                     spacing: 0
                                                     Repeater {
                                                         model: 6
-                                                        delegate: Item {
+                                                        delegate: Column {
                                                             property int colIndex: index
                                                             width: root.rosterWeaponStatColWidths[colIndex]
-                                                            implicitHeight: hdrMw.implicitHeight + valMw.implicitHeight + 2
+                                                            spacing: Math.round(3 * root.uiScale)
                                                             Text {
-                                                                id: hdrMw
-                                                                anchors.horizontalCenter: parent.horizontalCenter
                                                                 width: parent.width
                                                                 horizontalAlignment: Text.AlignHCenter
                                                                 text: root.rosterWeaponStatHdrs[colIndex]
                                                                 color: "#5c6678"
                                                                 font.family: root.fontDataFamily
-                                                                font.pixelSize: Math.round(6 * root.uiScale)
+                                                                font.pixelSize: Math.round(7 * root.uiScale)
                                                                 font.letterSpacing: 0.35
                                                             }
                                                             Text {
-                                                                id: valMw
-                                                                anchors.horizontalCenter: parent.horizontalCenter
-                                                                anchors.top: hdrMw.bottom
-                                                                anchors.topMargin: 2
                                                                 width: parent.width
                                                                 horizontalAlignment: Text.AlignHCenter
                                                                 text: controller.roster_weapon_stat_values_for_selected(mwWeaponName)[colIndex]
@@ -2585,7 +2925,9 @@ ApplicationWindow {
                                 ListView {
                                     id: playerRosterView
                                     Layout.fillWidth: true
-                                    Layout.fillHeight: true
+                                    Layout.fillHeight: false
+                                    Layout.preferredHeight: Math.min(contentHeight, Math.round(430 * root.uiScale))
+                                    Layout.minimumHeight: 0
                                     model: controller.playerRosterModel
                                     clip: true
                                     add: Transition {
@@ -2704,7 +3046,7 @@ ApplicationWindow {
 
                                                 Item {
                                                     width: parent.width
-                                                    height: root.rosterSlateBlockGap
+                                                    height: root.rosterSlateSectionGap
                                                 }
 
                                                 Rectangle {
@@ -2766,7 +3108,7 @@ ApplicationWindow {
 
                                                 Item {
                                                     width: parent.width
-                                                    height: root.rosterSlateBlockGap
+                                                    height: root.rosterSlateSectionGap
                                                 }
 
                                                 Flow {
@@ -2775,12 +3117,14 @@ ApplicationWindow {
                                                     Repeater {
                                                         model: controller.roster_entry_keyword_tags("P1", index)
                                                         delegate: Rectangle {
-                                                            color: "#141b26"
+                                                            color: kwP1Hover.hovered ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(1, 1, 1, 0.05)
                                                             border.width: 1
                                                             border.color: kwP1Hover.hovered ? "#5e7494" : "#4a5c72"
                                                             radius: 0
                                                             implicitWidth: kwP1Chip.implicitWidth + Math.round(12 * root.uiScale)
                                                             implicitHeight: kwP1Chip.implicitHeight + Math.round(4 * root.uiScale)
+                                                            Behavior on color { ColorAnimation { duration: 100 } }
+                                                            Behavior on border.color { ColorAnimation { duration: 100 } }
                                                             HoverHandler {
                                                                 id: kwP1Hover
                                                             }
@@ -2801,29 +3145,33 @@ ApplicationWindow {
 
                                                 Item {
                                                     width: parent.width
-                                                    height: root.rosterSlateBlockGap
+                                                    height: root.rosterSlateSectionGap
                                                 }
 
-                                                Repeater {
-                                                    model: controller.roster_entry_ability_lines("P1", index)
-                                                    delegate: Text {
-                                                        width: slateP1.width
-                                                        wrapMode: Text.WordWrap
-                                                        text: ">_ " + modelData
-                                                        color: "#d5b15a"
-                                                        font.family: root.fontDataFamily
-                                                        font.pixelSize: Math.round(9 * root.uiScale)
+                                                Column {
+                                                    width: slateP1.width
+                                                    spacing: Math.round(6 * root.uiScale)
+                                                    Repeater {
+                                                        model: controller.roster_entry_ability_lines("P1", index)
+                                                        delegate: Text {
+                                                            width: slateP1.width
+                                                            wrapMode: Text.WordWrap
+                                                            text: ">_ " + modelData
+                                                            color: "#d5b15a"
+                                                            font.family: root.fontDataFamily
+                                                            font.pixelSize: Math.round(9 * root.uiScale)
+                                                        }
                                                     }
                                                 }
 
                                                 Item {
                                                     width: parent.width
-                                                    height: root.rosterSlateBlockGap
+                                                    height: root.rosterSlateSectionGap
                                                 }
 
                                                 Column {
                                                     width: parent.width
-                                                    spacing: root.rosterSlateGridStep
+                                                    spacing: Math.round(8 * root.uiScale)
                                                     RowLayout {
                                                         width: parent.width
                                                         spacing: root.spacingXs
@@ -2927,8 +3275,8 @@ ApplicationWindow {
 
                                 RowLayout {
                                     Layout.fillWidth: true
+                                    Layout.topMargin: Math.round(12 * root.uiScale)
                                     spacing: root.spacingSm
-                                    Item { Layout.fillWidth: true; Layout.preferredHeight: 1 }
                                     Button {
                                         text: "[X] УДАЛИТЬ"
                                         enabled: playerRosterView.currentIndex >= 0
@@ -2969,6 +3317,12 @@ ApplicationWindow {
                                         }
                                     }
                                 }
+
+                                Item {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    Layout.minimumHeight: 0
+                                }
                             }
                         }
 
@@ -2996,7 +3350,9 @@ ApplicationWindow {
                                 ListView {
                                     id: modelRosterView
                                     Layout.fillWidth: true
-                                    Layout.fillHeight: true
+                                    Layout.fillHeight: false
+                                    Layout.preferredHeight: Math.min(contentHeight, Math.round(430 * root.uiScale))
+                                    Layout.minimumHeight: 0
                                     model: controller.modelRosterModel
                                     clip: true
                                     add: Transition {
@@ -3115,7 +3471,7 @@ ApplicationWindow {
 
                                                 Item {
                                                     width: parent.width
-                                                    height: root.rosterSlateBlockGap
+                                                    height: root.rosterSlateSectionGap
                                                 }
 
                                                 Rectangle {
@@ -3177,7 +3533,7 @@ ApplicationWindow {
 
                                                 Item {
                                                     width: parent.width
-                                                    height: root.rosterSlateBlockGap
+                                                    height: root.rosterSlateSectionGap
                                                 }
 
                                                 Flow {
@@ -3186,12 +3542,14 @@ ApplicationWindow {
                                                     Repeater {
                                                         model: controller.roster_entry_keyword_tags("P2", index)
                                                         delegate: Rectangle {
-                                                            color: "#141b26"
+                                                            color: kwP2Hover.hovered ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(1, 1, 1, 0.05)
                                                             border.width: 1
                                                             border.color: kwP2Hover.hovered ? "#937070" : "#6a4a52"
                                                             radius: 0
                                                             implicitWidth: kwP2Chip.implicitWidth + Math.round(12 * root.uiScale)
                                                             implicitHeight: kwP2Chip.implicitHeight + Math.round(4 * root.uiScale)
+                                                            Behavior on color { ColorAnimation { duration: 100 } }
+                                                            Behavior on border.color { ColorAnimation { duration: 100 } }
                                                             HoverHandler {
                                                                 id: kwP2Hover
                                                             }
@@ -3212,29 +3570,33 @@ ApplicationWindow {
 
                                                 Item {
                                                     width: parent.width
-                                                    height: root.rosterSlateBlockGap
+                                                    height: root.rosterSlateSectionGap
                                                 }
 
-                                                Repeater {
-                                                    model: controller.roster_entry_ability_lines("P2", index)
-                                                    delegate: Text {
-                                                        width: slateP2.width
-                                                        wrapMode: Text.WordWrap
-                                                        text: ">_ " + modelData
-                                                        color: "#d5b15a"
-                                                        font.family: root.fontDataFamily
-                                                        font.pixelSize: Math.round(9 * root.uiScale)
+                                                Column {
+                                                    width: slateP2.width
+                                                    spacing: Math.round(6 * root.uiScale)
+                                                    Repeater {
+                                                        model: controller.roster_entry_ability_lines("P2", index)
+                                                        delegate: Text {
+                                                            width: slateP2.width
+                                                            wrapMode: Text.WordWrap
+                                                            text: ">_ " + modelData
+                                                            color: "#d5b15a"
+                                                            font.family: root.fontDataFamily
+                                                            font.pixelSize: Math.round(9 * root.uiScale)
+                                                        }
                                                     }
                                                 }
 
                                                 Item {
                                                     width: parent.width
-                                                    height: root.rosterSlateBlockGap
+                                                    height: root.rosterSlateSectionGap
                                                 }
 
                                                 Column {
                                                     width: parent.width
-                                                    spacing: root.rosterSlateGridStep
+                                                    spacing: Math.round(8 * root.uiScale)
                                                     RowLayout {
                                                         width: parent.width
                                                         spacing: root.spacingXs
@@ -3338,8 +3700,8 @@ ApplicationWindow {
 
                                 RowLayout {
                                     Layout.fillWidth: true
+                                    Layout.topMargin: Math.round(12 * root.uiScale)
                                     spacing: root.spacingSm
-                                    Item { Layout.fillWidth: true; Layout.preferredHeight: 1 }
                                     Button {
                                         text: "[X] УДАЛИТЬ"
                                         enabled: modelRosterView.currentIndex >= 0
@@ -3379,6 +3741,12 @@ ApplicationWindow {
                                             border.color: parent.hovered ? "#c56e6e" : "#704848"
                                         }
                                     }
+                                }
+
+                                Item {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    Layout.minimumHeight: 0
                                 }
                             }
                         }
