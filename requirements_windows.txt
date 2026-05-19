@@ -1,19 +1,30 @@
-# 40kAI dependencies (Windows, Python 3.12)
-# How to use:
+# 40kAI dependencies (Windows, Python 3.12+)
+# Версии не зафиксированы — при установке берутся последние релизы с PyPI.
+#
+# Ручная установка / обновление:
 #   1) python -m venv .venv
 #   2) .\.venv\Scripts\activate
-#   3) pip install -r requirements_windows.txt
+#   3) python -m pip install -U pip
+#   4) python -m pip install -U -r requirements_windows.txt
 #
-# This is the single source of truth for Python dependencies in this repository.
+# Установщик Windows: scripts\build_installer.bat -> installer\output\Install.exe
+# Установка: Install.exe (корень репо) или installer\install_deps.bat
+#   — без аргументов: авто GPU/CUDA + меню выбора (Enter = авто)
+#   — install_deps.bat -y     — авто без меню
+#   — install_deps.bat cpu    — только CPU
+#   — install_deps.bat cu128  — принудительно CUDA 12.8
+#
+# Это единственный источник правды по Python-зависимостям в репозитории.
 
-gym==0.26.0
-gymnasium==0.29.1
-matplotlib==3.8.4
-numpy==1.26.4
-imageio==2.34.1
-tqdm==4.66.4
-pandas==2.2.2
-scipy==1.14.0
-torch==2.10.0
-PySide6==6.7.2
-numba==0.59.1
+gym
+gymnasium
+matplotlib
+numpy
+imageio
+tqdm
+pandas
+scipy
+torch
+PySide6
+# torch ставится через install_deps.bat (CPU или CUDA); вручную: pip install torch
+numba

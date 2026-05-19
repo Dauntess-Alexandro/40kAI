@@ -38,6 +38,7 @@ from project_paths import (
     TRAIN_DATA_PATH,
     UNITS_PATH,
     ensure_runtime_dirs,
+    get_runtime_python,
 )
 
 _GUI_CONTROLLER_REF = None
@@ -114,6 +115,7 @@ class GUIController(QtCore.QObject):
         self._process: Optional[QtCore.QProcess] = None
         self._running = False
         self._repo_root = str(PROJECT_ROOT)
+        self._runtime_python = get_runtime_python(PROJECT_ROOT)
         self._app_gui_dir = str(APP_DIR / "gui_qt")
         ensure_runtime_dirs()
         self._is_windows = sys.platform.startswith("win")
@@ -3139,7 +3141,7 @@ class GUIController(QtCore.QObject):
         self._emit_log(f"[EVAL] {eval_start_msg}", level="INFO")
         self._append_eval_log_line(eval_start_msg)
         self._emit_status("Оценка запущена...")
-        self._process.start(sys.executable, args)
+        self._process.start(self._runtime_python, args)
         if not self._process.waitForStarted(3000):
             self._emit_log(
                 "[GUI] Не удалось запустить eval.py. Проверьте, что файл доступен и окружение корректно.",
@@ -3304,7 +3306,7 @@ class GUIController(QtCore.QObject):
 
     def _check_torch_import(self) -> bool:
         command = [
-            sys.executable,
+            self._runtime_python,
             "-c",
             "import torch; print(torch.__version__)",
         ]
@@ -5993,7 +5995,8 @@ def main() -> int:
     app_palette.setColor(QtGui.QPalette.PlaceholderText, QtGui.QColor("#98a4b8"))
     app.setPalette(app_palette)
 
-    icon_path = os.path.join(os.path.dirname(__file__), "assets", "40kai_icon.ico")
+    gui_dir = Path(getattr(sys, "_MEIPASS", os.path.dirname(__file__)))
+    icon_path = os.path.join(gui_dir, "assets", "40kai_icon.ico")
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
 
@@ -6011,7 +6014,7 @@ def main() -> int:
     engine._controller_ref = _GUI_CONTROLLER_REF
     engine.rootContext().setContextProperty("controller", _GUI_CONTROLLER_REF)
 
-    qml_path = os.path.join(os.path.dirname(__file__), "qml", "Main.qml")
+    qml_path = os.path.join(gui_dir, "qml", "Main.qml")
     engine.load(QtCore.QUrl.fromLocalFile(qml_path))
 
     if not engine.rootObjects():

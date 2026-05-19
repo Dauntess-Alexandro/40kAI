@@ -1,9 +1,33 @@
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+def _resolve_project_root() -> Path:
+    """Корень установки: env 40KAI_INSTALL_ROOT, родитель 40kAI_GUI.exe, или каталог репозитория."""
+    env_root = os.environ.get("40KAI_INSTALL_ROOT", "").strip()
+    if env_root:
+        return Path(env_root).resolve()
+    if getattr(sys, "frozen", False):
+        exe = Path(sys.executable).resolve()
+        if exe.parent.name.lower() == "40kai_gui":
+            return exe.parent.parent
+        return exe.parent
+    return Path(__file__).resolve().parent
+
+
+def get_runtime_python(root: Path | None = None) -> str:
+    """Python для train/eval/viewer: .venv в корне установки, иначе текущий интерпретатор."""
+    base = root or PROJECT_ROOT
+    venv_py = base / ".venv" / "Scripts" / "python.exe"
+    if venv_py.is_file():
+        return str(venv_py)
+    return sys.executable
+
+
+PROJECT_ROOT = _resolve_project_root()
 
 # New canonical directories (clean-break layout)
 APP_DIR = PROJECT_ROOT / "app"
