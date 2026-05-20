@@ -1,7 +1,17 @@
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
 from PySide6 import QtGui
+
+from app.viewer.theme.tokens import ViewerPalette, resolve_palette
+
+_active_palette: Optional[ViewerPalette] = None
 
 
 class Theme:
+    """Viewer colours and stylesheet; v2 palette from ``theme/tokens.json`` when flagged."""
+
     background = QtGui.QColor("#1c1a17")
     panel = QtGui.QColor("#2b2824")
     panel_alt = QtGui.QColor("#332f2a")
@@ -11,15 +21,53 @@ class Theme:
     accent = QtGui.QColor("#b08d57")
     accent_dark = QtGui.QColor("#6f4b2a")
     outline = QtGui.QColor("#140f0b")
-
     player = QtGui.QColor("#6a8f3a")
     model = QtGui.QColor("#4a7aa8")
     objective = QtGui.QColor("#d1a21b")
     selection = QtGui.QColor("#d7b66f")
+    highlight = QtGui.QColor("#4a7aa8")
+    _ui_font_family = "Inter"
+    _ui_font_size = 10
+
+    @classmethod
+    def apply_from_config(cls, cfg: Optional[Dict[str, Any]] = None) -> ViewerPalette:
+        global _active_palette
+        palette = resolve_palette(cfg)
+        _active_palette = palette
+        cls.background = palette.background
+        cls.panel = palette.panel
+        cls.panel_alt = palette.panel_alt
+        cls.grid = palette.grid
+        cls.text = palette.text
+        cls.muted = palette.muted
+        cls.accent = palette.accent
+        cls.accent_dark = palette.accent_dark
+        cls.outline = palette.outline
+        cls.player = palette.player
+        cls.model = palette.model
+        cls.objective = palette.objective
+        cls.selection = palette.selection
+        cls.highlight = palette.highlight
+        cls._ui_font_family = palette.ui_font_family
+        cls._ui_font_size = palette.ui_font_size
+        return palette
+
+    @classmethod
+    def active_palette(cls) -> ViewerPalette:
+        if _active_palette is None:
+            return cls.apply_from_config()
+        return _active_palette
+
+    @classmethod
+    def is_v2(cls, cfg: Optional[Dict[str, Any]] = None) -> bool:
+        from app.viewer.theme.tokens import viewer_palette_v2_enabled
+
+        return viewer_palette_v2_enabled(cfg)
 
     @staticmethod
-    def font(size=10, bold=False):
-        font = QtGui.QFont("Inter", pointSize=size)
+    def font(size: Optional[int] = None, bold: bool = False):
+        point = size if size is not None else Theme._ui_font_size
+        font = QtGui.QFont(Theme._ui_font_family, pointSize=point)
         font.setBold(bold)
         return font
 
@@ -35,13 +83,15 @@ class Theme:
 
     @staticmethod
     def stylesheet():
+        radius_gb = 6
+        radius_btn = 4
         return f"""
         QMainWindow {{
             background-color: {Theme.background.name()};
         }}
         QGroupBox {{
             border: 1px solid {Theme.accent_dark.name()};
-            border-radius: 6px;
+            border-radius: {radius_gb}px;
             margin-top: 16px;
             padding: 8px;
             font-weight: 600;
@@ -53,7 +103,7 @@ class Theme:
             color: {Theme.accent.name()};
             background-color: {Theme.panel_alt.name()};
             border: 1px solid {Theme.accent_dark.name()};
-            border-radius: 4px;
+            border-radius: {radius_btn}px;
         }}
         QLabel {{
             color: {Theme.text.name()};
@@ -66,7 +116,7 @@ class Theme:
             selection-color: {Theme.text.name()};
             color: {Theme.text.name()};
             border: 1px solid {Theme.accent_dark.name()};
-            border-radius: 4px;
+            border-radius: {radius_btn}px;
         }}
         QTableWidget::item {{
             color: {Theme.text.name()};
@@ -84,7 +134,7 @@ class Theme:
         QPlainTextEdit, QTextEdit {{
             background-color: {Theme.panel.name()};
             border: 1px solid {Theme.accent_dark.name()};
-            border-radius: 4px;
+            border-radius: {radius_btn}px;
             color: {Theme.text.name()};
         }}
         QToolButton {{
@@ -105,10 +155,13 @@ class Theme:
             border: 1px solid {Theme.accent_dark.name()};
             color: {Theme.text.name()};
             padding: 4px 10px;
-            border-radius: 4px;
+            border-radius: {radius_btn}px;
         }}
         QPushButton:hover {{
             background-color: {Theme.accent_dark.name()};
+        }}
+        QPushButton:focus {{
+            border: 1px solid {Theme.accent.name()};
         }}
         QPushButton:pressed {{
             background-color: {Theme.accent.name()};

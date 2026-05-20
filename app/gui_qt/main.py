@@ -24,6 +24,7 @@ if _repo_root_str not in sys.path:
 from PySide6 import QtCore, QtGui, QtQml
 from PySide6.QtGui import QIcon
 from PySide6.QtQuickControls2 import QQuickStyle
+from theme.loader import ThemeTokenError, load_tokens_flat_for_qml
 from project_paths import (
     AGENT_EVAL_LOG_PATH,
     AGENT_PLAY_LOG_PATH,
@@ -5982,17 +5983,28 @@ def main() -> int:
     QQuickStyle.setStyle(os.environ["QT_QUICK_CONTROLS_STYLE"])
 
     app = QtGui.QGuiApplication(sys.argv)
+    theme_flat = None
+    try:
+        theme_flat = load_tokens_flat_for_qml()
+    except (ThemeTokenError, OSError, ValueError) as exc:
+        print(f"[40kAI] theme/tokens.json not applied to launcher: {exc}", flush=True)
+
+    def _qc(key: str, fallback: str) -> QtGui.QColor:
+        if theme_flat and key in theme_flat:
+            return QtGui.QColor(theme_flat[key])
+        return QtGui.QColor(fallback)
+
     app_palette = QtGui.QPalette()
-    app_palette.setColor(QtGui.QPalette.Window, QtGui.QColor("#0f1319"))
-    app_palette.setColor(QtGui.QPalette.Base, QtGui.QColor("#171d26"))
-    app_palette.setColor(QtGui.QPalette.AlternateBase, QtGui.QColor("#1d2632"))
-    app_palette.setColor(QtGui.QPalette.Button, QtGui.QColor("#1d2632"))
-    app_palette.setColor(QtGui.QPalette.ButtonText, QtGui.QColor("#d7dde7"))
-    app_palette.setColor(QtGui.QPalette.Text, QtGui.QColor("#d7dde7"))
-    app_palette.setColor(QtGui.QPalette.WindowText, QtGui.QColor("#d7dde7"))
-    app_palette.setColor(QtGui.QPalette.Highlight, QtGui.QColor("#2f6ed8"))
+    app_palette.setColor(QtGui.QPalette.Window, _qc("bgBase", "#0F172A"))
+    app_palette.setColor(QtGui.QPalette.Base, _qc("bgSurface", "#131b2d"))
+    app_palette.setColor(QtGui.QPalette.AlternateBase, _qc("bgElevated", "#1E293B"))
+    app_palette.setColor(QtGui.QPalette.Button, _qc("bgElevated", "#1E293B"))
+    app_palette.setColor(QtGui.QPalette.ButtonText, _qc("textPrimary", "#d7dde7"))
+    app_palette.setColor(QtGui.QPalette.Text, _qc("textPrimary", "#d7dde7"))
+    app_palette.setColor(QtGui.QPalette.WindowText, _qc("textPrimary", "#d7dde7"))
+    app_palette.setColor(QtGui.QPalette.Highlight, _qc("accentP1", "#2f6ed8"))
     app_palette.setColor(QtGui.QPalette.HighlightedText, QtGui.QColor("#ffffff"))
-    app_palette.setColor(QtGui.QPalette.PlaceholderText, QtGui.QColor("#98a4b8"))
+    app_palette.setColor(QtGui.QPalette.PlaceholderText, _qc("textSecondary", "#98a4b8"))
     app.setPalette(app_palette)
 
     gui_dir = Path(getattr(sys, "_MEIPASS", os.path.dirname(__file__)))
@@ -6013,6 +6025,8 @@ def main() -> int:
     app._controller_ref = _GUI_CONTROLLER_REF
     engine._controller_ref = _GUI_CONTROLLER_REF
     engine.rootContext().setContextProperty("controller", _GUI_CONTROLLER_REF)
+    if theme_flat is not None:
+        engine.rootContext().setContextProperty("themeTokens", theme_flat)
 
     qml_path = os.path.join(gui_dir, "qml", "Main.qml")
     engine.load(QtCore.QUrl.fromLocalFile(qml_path))

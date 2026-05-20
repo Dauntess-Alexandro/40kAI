@@ -1,0 +1,10 @@
+{
+  "movement_overlay": {
+    "side": "player",
+    "unit_id": 11,
+    "move_cells": [[10, 10], [11, 10]],
+    "advance_cells": []
+  },
+  "phase": "movement",
+  "active": "player"
+}

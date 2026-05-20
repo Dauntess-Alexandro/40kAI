@@ -1,24 +1,37 @@
-import matplotlib.pyplot as plt
-import numpy as np
 import json
 import os
-from scipy.optimize import curve_fit
 from project_paths import ARTIFACTS_METRICS_DIR, ARTIFACTS_MODELS_DIR, RUNTIME_STATE_DIR
 
-plt.rcParams.update(
-    {
-        "figure.facecolor": "#171d26",
-        "axes.facecolor": "#1d2632",
-        "axes.edgecolor": "#3a4658",
-        "axes.labelcolor": "#d7dde7",
-        "xtick.color": "#b8c2d1",
-        "ytick.color": "#b8c2d1",
-        "grid.color": "#3a4658",
-        "text.color": "#d7dde7",
-        "savefig.facecolor": "#171d26",
-        "savefig.edgecolor": "#171d26",
-    }
-)
+# Matplotlib/scipy are imported lazily so training-only deps are not loaded when
+# importing core.engine (e.g. viewer). That avoids fragile interactions between
+# matplotlib → dateutil → six, PySide/shiboken import hooks, and torch's inspect patch.
+
+_MPL_INITIALIZED = False
+
+
+def _pyplot():
+    """Return matplotlib.pyplot; configure rcParams once on first use."""
+    global _MPL_INITIALIZED
+    import matplotlib.pyplot as plt
+
+    if not _MPL_INITIALIZED:
+        plt.rcParams.update(
+            {
+                "figure.facecolor": "#171d26",
+                "axes.facecolor": "#1d2632",
+                "axes.edgecolor": "#3a4658",
+                "axes.labelcolor": "#d7dde7",
+                "xtick.color": "#b8c2d1",
+                "ytick.color": "#b8c2d1",
+                "grid.color": "#3a4658",
+                "text.color": "#d7dde7",
+                "savefig.facecolor": "#171d26",
+                "savefig.edgecolor": "#171d26",
+            }
+        )
+        _MPL_INITIALIZED = True
+    return plt
+
 
 class metrics(object):
     def __init__(self, folder, randNum, modelName):
@@ -46,6 +59,7 @@ class metrics(object):
         self.episodeLen["labels"].append(str(add))
 
     def lossCurve(self):
+        plt = _pyplot()
         plt.title("Loss Curve")
         plt.xlabel("Counts")
         plt.ylabel("Loss")
@@ -57,7 +71,11 @@ class metrics(object):
         plt.close()
 
     def showRew(self):
-        y = lambda x,a,b: a * x + b
+        import numpy as np
+        from scipy.optimize import curve_fit
+
+        plt = _pyplot()
+        y = lambda x, a, b: a * x + b
         x = np.arange(len(self.avgRew))
         popt, _ = curve_fit(y, x, self.avgRew)
         a, b = popt
@@ -74,6 +92,7 @@ class metrics(object):
         plt.close()
 
     def showEpLen(self):
+        plt = _pyplot()
         plt.title("Episode Length")
         plt.xlabel("Episodes")
         plt.ylabel("Episode Len")
@@ -85,12 +104,14 @@ class metrics(object):
         plt.close()
 
     def createJson(self):
-        data = {"loss":"img/loss_{}.png".format(self.randNum), 
-        "reward":"img/reward_{}.png".format(self.randNum), 
-        "epLen":"img/epLen_{}.png".format(self.randNum), 
-        "winrate": "img/winrate_{}.png".format(self.randNum),
-        "vpdiff": "img/vpdiff_{}.png".format(self.randNum),
-        "endreasons": "img/endreasons_{}.png".format(self.randNum),}
+        data = {
+            "loss": "img/loss_{}.png".format(self.randNum),
+            "reward": "img/reward_{}.png".format(self.randNum),
+            "epLen": "img/epLen_{}.png".format(self.randNum),
+            "winrate": "img/winrate_{}.png".format(self.randNum),
+            "vpdiff": "img/vpdiff_{}.png".format(self.randNum),
+            "endreasons": "img/endreasons_{}.png".format(self.randNum),
+        }
 
         with open(os.path.join(self.models_dir, "data_{}.json".format(self.modelName)), "w") as f:
             json.dump(data, f)

@@ -10,41 +10,42 @@ from collections import OrderedDict, deque
 from dataclasses import dataclass
 from typing import Callable, Deque, Optional, Tuple, Dict
 from datetime import datetime
+
+# Qt Quick выбирает RHI до создания QApplication. На Windows по умолчанию это D3D11 и он несовместим
+# с композицией QOpenGLWidget → чёрное поле доски и спам в консоли. OpenGL‑бэкенд RHI совпадает с GL‑виджетом.
+_qsg_override = os.environ.get("VIEWER_QSG_RHI_BACKEND", "").strip()
+if _qsg_override:
+    os.environ["QSG_RHI_BACKEND"] = _qsg_override
+elif sys.platform == "win32":
+    os.environ.setdefault("QSG_RHI_BACKEND", "opengl")
+
 from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6.QtCore import QFileSystemWatcher, QStringListModel, QUrl
+from PySide6.QtQuick import QQuickWindow, QSGRendererInterface
+from PySide6.QtQuickWidgets import QQuickWidget
 from project_paths import AGENT_PLAY_LOG_PATH, APP_DIR, CORE_DIR, PROJECT_ROOT, ensure_runtime_dirs
 
+# Qt 6 renamed this; PySide6 6.5+ exposes ResizeMode.SizeRootObjectToView.
+try:
+    _QQUICK_RESIZE_ROOT_TO_VIEW = QQuickWidget.ResizeMode.SizeRootObjectToView
+except AttributeError:
+    _QQUICK_RESIZE_ROOT_TO_VIEW = QQuickWidget.SizeRootObjectToViewSize
+
 ROOT_DIR = str(PROJECT_ROOT)
-VIEWER_CONFIG_PATH = str(APP_DIR / "viewer" / "viewer_config.json")
 GYM_PATH = str(CORE_DIR)
 if GYM_PATH not in sys.path:
     sys.path.insert(0, GYM_PATH)
 
+from app.viewer.config import load_viewer_config, viewer_flag
 
-def load_viewer_config() -> dict:
-    defaults = {
-        "cell_size": 24,
-        "unit_icon_scale": 2.75,
-        "model_icon_scale": 0.75,
-        "terrain_barrel_cell_scale": 0.92,
-        "move_base_ms": 155,
-        "move_per_cell_ms": 88,
-        "move_cap_ms": 920,
-        "move_seq_floor_new_step_ms": 260,
-        "move_seq_floor_default_ms": 180,
-        "move_ease": "smoothstep",
-    }
-    try:
-        with open(VIEWER_CONFIG_PATH, "r", encoding="utf-8") as handle:
-            loaded = json.load(handle)
-    except (OSError, json.JSONDecodeError):
-        return defaults
-    if not isinstance(loaded, dict):
-        return defaults
-    cfg = dict(defaults)
-    cfg.update(loaded)
-    return cfg
-
+from app.viewer.controller.viewer_controller import (
+    ViewerController,
+    ViewerPresentationContext,
+    compute_status_labels,
+)
 from app.viewer.opengl_view import OpenGLBoardWidget
+from app.viewer.ui.dialog_bridge import ViewerDialogBridge
+from app.viewer.ui.log_model import ViewerLogListModel
 from app.viewer.gun_fx import get_gun_fx_config
 from app.viewer.state import StateWatcher
 from app.viewer.styles import Theme
@@ -329,6 +330,21 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._hide_stale_units_on_bootstrap = True
 
         self._viewer_config = load_viewer_config()
+        Theme.apply_from_config(self._viewer_config)
+        self._controller_v1 = viewer_flag("viewer.controller.v1", self._viewer_config)
+        self._qml_panels = viewer_flag("viewer.ui.qml_panels", self._viewer_config)
+        self._qml_quick_widget = None
+        self._qml_command_payloads = []
+        self._qml_command_label_model = None
+        self._qml_fs_watcher = None
+        self._qml_reload_timer = None
+        self._qml_log_model = None
+        self._qt_status_points_mirror: Optional[QtWidgets.QWidget] = None
+        self.viewer_controller = ViewerController(parent=self)
+        self.viewer_controller.attach_window(self)
+        self.viewer_dialogs = ViewerDialogBridge(self)
+        if self._controller_v1:
+            self.viewer_controller.stateUpdated.connect(self._apply_controller_status_labels_to_widgets)
         cell_size = int(self._viewer_config.get("cell_size", 24))
         unit_icon_scale = float(self._viewer_config.get("unit_icon_scale", 2.75))
         model_icon_scale = float(self._viewer_config.get("model_icon_scale", 0.75))
@@ -342,6 +358,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             terrain_barrel_cell_scale=max(0.1, min(1.0, terrain_barrel_cell_scale)),
         )
         self.map_scene.set_move_animation_config(self._viewer_config)
+        self.viewer_controller.setFxQuality(str(self._viewer_config.get("fx_quality", "medium")))
         self.map_scene.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding,
             QtWidgets.QSizePolicy.Expanding,
@@ -409,6 +426,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._init_log_viewer()
         self.add_log_line("[VIEWER] Рендер: OpenGL (QOpenGLWidget).")
         self.add_log_line("[VIEWER] Фоллбэк-рендер не активирован.")
+        if self._controller_v1:
+            self.add_log_line("[VIEWER] Режим controller.v1: статус через ViewerController.")
+        if viewer_flag("viewer.fx.v2", self._viewer_config):
+            self.add_log_line("[VIEWER] FX v2 включён (viewer.fx.v2): см. fx_quality и theme motion.fxV2.")
+        if self._qml_panels:
+            self.add_log_line("[VIEWER] UI: QML-панели (viewer.ui.qml_panels); отряды — таблица Qt ниже.")
         try:
             get_event_bus().subscribe(self._on_event_bus_event)
         except Exception:
@@ -431,7 +454,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         log_group = QtWidgets.QGroupBox("ЖУРНАЛ")
         log_layout = QtWidgets.QVBoxLayout(log_group)
         log_layout.addLayout(self._log_controls_layout)
-        log_layout.addWidget(self.log_view)
+        log_layout.addWidget(self._log_panel_widget)
         log_group.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
@@ -451,15 +474,42 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._build_shoot_popover()
         command_layout.addWidget(self.command_stack)
 
-        right_top_widget = QtWidgets.QWidget()
-        right_top_layout = QtWidgets.QVBoxLayout(right_top_widget)
-        right_top_layout.setSpacing(8)
-        right_top_layout.addWidget(self._group_status())
-        right_top_layout.addWidget(self._group_points())
-        right_top_layout.addWidget(self._group_units())
-        right_top_layout.addWidget(self._group_legend())
-        right_top_layout.addWidget(command_group)
-        right_top_layout.addStretch()
+        legacy_right_top = QtWidgets.QWidget()
+        legacy_right_top_layout = QtWidgets.QVBoxLayout(legacy_right_top)
+        legacy_right_top_layout.setSpacing(8)
+
+        right_top_widget = legacy_right_top
+        if self._qml_panels:
+            try:
+                right_top_widget = self._compose_qml_right_top()
+                # Статус/очки остаются QLabel и синхронизируются из ViewerController; в QML-колонке
+                # они не вмонтированы. Раньше они жили только во временном legacy_right_top, который
+                # выкидывался — без родителя C++ объект удалялся → crash при .text() в журнале.
+                mirror = QtWidgets.QWidget(self)
+                mirror.hide()
+                ml = QtWidgets.QVBoxLayout(mirror)
+                ml.setContentsMargins(0, 0, 0, 0)
+                ml.addWidget(self._group_status())
+                ml.addWidget(self._group_points())
+                self._qt_status_points_mirror = mirror
+            except Exception as exc:
+                self._qml_panels = False
+                self._qt_status_points_mirror = None
+                legacy_right_top_layout.addWidget(self._group_status())
+                legacy_right_top_layout.addWidget(self._group_points())
+                legacy_right_top_layout.addWidget(self._group_units())
+                legacy_right_top_layout.addWidget(self._group_legend())
+                legacy_right_top_layout.addWidget(command_group)
+                legacy_right_top_layout.addStretch()
+                right_top_widget = legacy_right_top
+                self.add_log_line(f"[VIEWER] QML панели недоступны ({exc}); классический UI.")
+        else:
+            legacy_right_top_layout.addWidget(self._group_status())
+            legacy_right_top_layout.addWidget(self._group_points())
+            legacy_right_top_layout.addWidget(self._group_units())
+            legacy_right_top_layout.addWidget(self._group_legend())
+            legacy_right_top_layout.addWidget(command_group)
+            legacy_right_top_layout.addStretch()
 
         self._right_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         self._right_splitter.addWidget(right_top_widget)
@@ -514,17 +564,54 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.map_scene.refresh_overlays()
 
     def _apply_dark_theme(self):
+        Theme.apply_from_config(self._viewer_config)
         palette = self.palette()
         palette.setColor(QtGui.QPalette.Window, Theme.background)
         palette.setColor(QtGui.QPalette.Base, Theme.panel)
+        palette.setColor(QtGui.QPalette.AlternateBase, Theme.panel_alt)
         palette.setColor(QtGui.QPalette.Text, Theme.text)
-        palette.setColor(QtGui.QPalette.Button, Theme.panel)
+        palette.setColor(QtGui.QPalette.WindowText, Theme.text)
+        palette.setColor(QtGui.QPalette.Button, Theme.panel_alt)
         palette.setColor(QtGui.QPalette.ButtonText, Theme.text)
-        palette.setColor(QtGui.QPalette.Highlight, Theme.model)
+        palette.setColor(QtGui.QPalette.Highlight, Theme.highlight)
         palette.setColor(QtGui.QPalette.HighlightedText, Theme.text)
         palette.setColor(QtGui.QPalette.PlaceholderText, Theme.muted)
         self.setPalette(palette)
         self.setStyleSheet(Theme.stylesheet())
+        if Theme.is_v2(self._viewer_config):
+            self.add_log_line("[VIEWER] Тема: tokens v2 (theme/tokens.json).")
+
+    def _apply_controller_status_labels_to_widgets(self) -> None:
+        vc = self.viewer_controller
+
+        def _set(lbl: QtWidgets.QLabel, text: str) -> None:
+            try:
+                lbl.setText(text)
+            except RuntimeError:
+                # Виджет уже уничтожен (например, смена компоновки) — игнорируем.
+                pass
+
+        _set(self.status_round, vc.roundText)
+        _set(self.status_turn, vc.turnText)
+        _set(self.status_phase, vc.phaseText)
+        _set(self.status_active, vc.activeLabelText)
+        _set(self.status_deployment, vc.deploymentText)
+        _set(self.points_vp_player, vc.vpPlayerText)
+        _set(self.points_vp_model, vc.vpModelText)
+        _set(self.points_cp_player, vc.cpPlayerText)
+        _set(self.points_cp_model, vc.cpModelText)
+
+    def _controller_resolve_select_unit(self, unit_id: int) -> None:
+        for (side, uid), _unit in list(self._units_by_key.items()):
+            if uid == unit_id:
+                self._select_row_for_unit(side, unit_id)
+                return
+
+    def _controller_submit_choice(self, token: str) -> None:
+        self._submit_answer(str(token))
+
+    def _controller_cancel_pending(self) -> None:
+        pass
 
     def _apply_units_table_font(self):
         body_font = Theme.font(size=11)
@@ -576,6 +663,167 @@ class ViewerWindow(QtWidgets.QMainWindow):
         row.addWidget(QtWidgets.QLabel(label))
         row.addStretch()
         return row
+
+    def _compose_qml_right_top(self) -> QtWidgets.QWidget:
+        host = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(host)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(8)
+        qw = self._create_qml_side_panel_widget()
+        qw.setMinimumHeight(380)
+        lay.addWidget(qw, 5)
+        lay.addWidget(self._group_units(), 3)
+        lay.addWidget(self.command_group)
+        lay.addStretch()
+        self._qml_quick_widget = qw
+        self._maybe_install_qml_hot_reload(qw)
+        return host
+
+    def _create_qml_side_panel_widget(self) -> QQuickWidget:
+        self._qml_command_label_model = QStringListModel(self)
+        self._qml_command_payloads = []
+        self._qml_command_label_model.setStringList([])
+        qml_dir = (APP_DIR / "viewer" / "ui" / "qml").resolve()
+        qw = QQuickWidget(self)
+        qw.setResizeMode(_QQUICK_RESIZE_ROOT_TO_VIEW)
+        qw.setClearColor(QtGui.QColor(Theme.panel.name()))
+        eng = qw.engine()
+        eng.addImportPath(str(qml_dir))
+        ctx = qw.rootContext()
+        ctx.setContextProperty("viewerController", self.viewer_controller)
+        ctx.setContextProperty("viewerDialogs", self.viewer_dialogs)
+        ctx.setContextProperty("commandLabelModel", self._qml_command_label_model)
+        ctx.setContextProperty("bgSurfaceColor", Theme.panel.name())
+        ctx.setContextProperty("textPrimaryColor", Theme.text.name())
+        ctx.setContextProperty("textSecondaryColor", Theme.muted.name())
+        ctx.setContextProperty("accentColor", Theme.accent.name())
+        ctx.setContextProperty("playerColor", Theme.player.name())
+        ctx.setContextProperty("modelColor", Theme.model.name())
+        ctx.setContextProperty("objectiveColor", Theme.objective.name())
+        ctx.setContextProperty("legendPlayer", self._viewer_player_role_label)
+        ctx.setContextProperty("legendModel", self._viewer_model_role_label)
+        qw.setSource(QUrl.fromLocalFile(str(qml_dir / "ViewerMain.qml")))
+        if qw.status() == QQuickWidget.Status.Error:
+            errs = qw.errors()
+            raise RuntimeError("; ".join(str(e) for e in errs) if errs else "QML Error")
+        self._sync_qml_side_state()
+        return qw
+
+    def _create_qml_log_panel_widget(self) -> QQuickWidget:
+        qml_dir = (APP_DIR / "viewer" / "ui" / "qml").resolve()
+        qw = QQuickWidget(self)
+        qw.setResizeMode(_QQUICK_RESIZE_ROOT_TO_VIEW)
+        qw.setClearColor(QtGui.QColor(Theme.panel.name()))
+        eng = qw.engine()
+        eng.addImportPath(str(qml_dir))
+        ctx = qw.rootContext()
+        ctx.setContextProperty("viewerController", self.viewer_controller)
+        ctx.setContextProperty("viewerLogModel", self._qml_log_model)
+        ctx.setContextProperty("bgSurfaceColor", Theme.panel.name())
+        ctx.setContextProperty("textPrimaryColor", Theme.text.name())
+        ctx.setContextProperty("textSecondaryColor", Theme.muted.name())
+        qw.setSource(QUrl.fromLocalFile(str(qml_dir / "LogPanel.qml")))
+        if qw.status() == QQuickWidget.Status.Error:
+            errs = qw.errors()
+            raise RuntimeError("; ".join(str(e) for e in errs) if errs else "LogPanel QML error")
+        return qw
+
+    def _maybe_install_qml_hot_reload(self, qw: QQuickWidget) -> None:
+        if str(os.getenv("VIEWER_QML_RELOAD", "")).strip() != "1":
+            return
+        qml_dir = (APP_DIR / "viewer" / "ui" / "qml").resolve()
+        self._qml_fs_watcher = QFileSystemWatcher(self)
+        self._qml_fs_watcher.addPath(str(qml_dir))
+        timer = QtCore.QTimer(self)
+        timer.setSingleShot(True)
+        timer.setInterval(220)
+        self._qml_reload_timer = timer
+
+        def _do_reload():
+            eng = qw.engine()
+            if eng is not None:
+                eng.clearComponentCache()
+            qw.setSource(qw.source())
+
+        timer.timeout.connect(_do_reload)
+
+        def _debounce():
+            timer.stop()
+            timer.start()
+
+        self._qml_fs_watcher.directoryChanged.connect(lambda _path: _debounce())
+
+    def _sync_qml_side_state(self) -> None:
+        if not self._qml_panels:
+            return
+        self.viewer_controller.set_command_prompt_text(self.command_prompt.text())
+        self.viewer_controller.set_command_hint_text(self.command_hint.text())
+        self._sync_qml_command_models()
+
+    def _sync_qml_units_summary(self) -> None:
+        if not self._qml_panels:
+            return
+        lines: list[str] = []
+        max_rows = 28
+        for row in range(min(self.units_table.rowCount(), max_rows)):
+            cells: list[str] = []
+            for col in range(5):
+                it = self.units_table.item(row, col)
+                cells.append(it.text() if it is not None else "")
+            lines.append(" · ".join(cells))
+        extra = self.units_table.rowCount() - max_rows
+        if extra > 0:
+            lines.append(f"… ещё строк: {extra}")
+        self.viewer_controller.set_units_summary_text("\n".join(lines))
+
+    def _sync_qml_command_models(self) -> None:
+        if not self._qml_panels or self._qml_command_label_model is None:
+            return
+        labels: list[str] = []
+        payloads: list = []
+        req = self._pending_request
+        if req is None:
+            self._qml_command_payloads = []
+            self._qml_command_label_model.setStringList([])
+            return
+        if self._is_movement_move_request(req) or self._is_shooting_target_request(req) or self._is_shooting_dice_request(req):
+            self._qml_command_payloads = []
+            self._qml_command_label_model.setStringList([])
+            return
+
+        kind = getattr(req, "kind", "text")
+        if kind == "direction":
+            mapping = [
+                ("↑", "up"),
+                ("↓", "down"),
+                ("←", "left"),
+                ("→", "right"),
+                ("Нет", "none"),
+            ]
+            labels = [m[0] for m in mapping]
+            payloads = [m[1] for m in mapping]
+        elif kind == "bool":
+            labels = ["Да", "Нет"]
+            payloads = [True, False]
+        elif kind == "pace":
+            labels = ["Далее"]
+            payloads = [True]
+        elif kind == "int":
+            labels = [f"ОК ({self.int_spin.value()})"]
+            payloads = [self.int_spin.value()]
+        elif kind == "choice":
+            raw_opts = list(getattr(req, "options", None) or [])
+            labels = [str(o) for o in raw_opts]
+            payloads = list(labels)
+        else:
+            labels = []
+            payloads = []
+
+        self._qml_command_payloads = payloads
+        self._qml_command_label_model.setStringList(labels)
+
+    def _controller_submit_answer_object(self, value: object) -> None:
+        self._submit_answer(value)
 
     def _build_command_pages(self):
         self._command_pages = {}
@@ -640,6 +888,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         int_layout = QtWidgets.QHBoxLayout(int_page)
         self.int_spin = QtWidgets.QSpinBox()
         self.int_spin.setRange(0, 999)
+        self.int_spin.valueChanged.connect(lambda _v: self._sync_qml_command_models())
         self.int_ok = QtWidgets.QPushButton("ОК")
         self.int_ok.clicked.connect(lambda: self._submit_answer(self.int_spin.value()))
         int_layout.addWidget(self.int_spin)
@@ -1175,6 +1424,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                     f"REQ: queued request for Unit {next_label} (waiting for Unit {current_label})"
                 )
             self._pending_requests.append(request)
+            self._sync_qml_side_state()
             return
 
         self._pending_request = request
@@ -1201,6 +1451,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._shoot_request_flow_active = False
             self._close_shoot_popover(reset_lock=True, keep_request_target=False)
             self._refresh_active_context()
+            self._sync_qml_side_state()
             return
 
         if self._is_deploy_request(request):
@@ -1318,6 +1569,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 self._deploy_context = dict(meta)
                 self._refresh_deploy_preview()
                 self._refresh_active_context()
+                self._sync_qml_side_state()
                 return
             x_min = meta.get("x_min", "?")
             x_max = meta.get("x_max", "?")
@@ -1339,6 +1591,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._refresh_active_context()
         if self._shoot_resolver_active and (self._is_shooting_target_request(request) or self._is_shooting_dice_request(request)):
             self._update_shoot_popover_ui()
+        self._sync_qml_side_state()
 
     def _move_instruction_text(self) -> str:
         unit_id, side = self._resolve_active_unit()
@@ -1695,18 +1948,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self.command_hint.setText("Горячие клавиши: Enter — отправить")
 
     def _init_log_viewer(self):
-        fixed_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
-        fixed_font.setPointSize(10)
-
-        self.log_view = HoverLogListWidget()
-        self.log_view.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self.log_view.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.log_view.setMouseTracking(True)
-        self.log_view.setFont(fixed_font)
-        self.log_view.itemClicked.connect(self._on_log_item_clicked)
-        self.log_view.itemHovered.connect(self._on_log_item_hovered)
-        self.log_view.hoverLeft.connect(self._on_log_item_hover_left)
-
         self._log_status_label = QtWidgets.QLabel("Режим: Игровой")
         self._log_status_label.setStyleSheet(f"color: {Theme.muted.name()};")
 
@@ -1738,6 +1979,27 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._log_controls_layout.addWidget(self._log_filter_buttons[key])
         self._log_controls_layout.addWidget(self.log_clear_all_button)
         self._log_controls_layout.addStretch()
+
+        fixed_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
+        fixed_font.setPointSize(10)
+
+        if self._qml_panels:
+            self.log_view = None
+            self._qml_log_model = ViewerLogListModel(self)
+            self._qml_log_widget = self._create_qml_log_panel_widget()
+            self._log_panel_widget = self._qml_log_widget
+        else:
+            self._qml_log_model = None
+            self._qml_log_widget = None
+            self.log_view = HoverLogListWidget()
+            self.log_view.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+            self.log_view.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+            self.log_view.setMouseTracking(True)
+            self.log_view.setFont(fixed_font)
+            self.log_view.itemClicked.connect(self._on_log_item_clicked)
+            self.log_view.itemHovered.connect(self._on_log_item_hovered)
+            self.log_view.hoverLeft.connect(self._on_log_item_hover_left)
+            self._log_panel_widget = self.log_view
 
     def _append_log(self, messages):
         if not messages:
@@ -2075,76 +2337,44 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._units_by_key[(unit.get("side"), unit.get("id"))] = unit
         self._refresh_hp_snapshot()
 
-        self.status_round.setText(f"Раунд: {state.get('round', '—')}")
-        self.status_turn.setText(f"Ход: {state.get('turn', '—')}")
-        phase_text = f"Фаза: {state.get('phase', '—')}"
-        vinfo = state.get("viewer") if isinstance(state.get("viewer"), dict) else {}
-        if vinfo.get("step_seq") is not None and vinfo.get("step_seq", 0) > 0:
-            phase_text += f" | ИИ seq={vinfo.get('step_seq')}"
-        if vinfo.get("awaiting_ack"):
-            phase_text += " | ожидание «Далее»"
-        self.status_phase.setText(phase_text)
-        active = state.get("active") or state.get("active_side")
-        active_label = (
-            self._viewer_player_role_label
-            if active == "player"
-            else self._viewer_model_role_label
-            if active == "model"
-            else "—"
+        hdr_ctx = ViewerPresentationContext(
+            player_role_label=self._viewer_player_role_label,
+            model_role_label=self._viewer_model_role_label,
+            rolloff_attacker_side=self._rolloff_attacker_side,
+            rolloff_defender_side=self._rolloff_defender_side,
+            deploy_status_suffix=self._deploy_status_text or "",
         )
-        self.status_active.setText(f"Активен: {active_label}")
+        labels = compute_status_labels(state, hdr_ctx)
+        active_raw = str(state.get("active") or state.get("active_side") or "").strip().lower()
+        phase_raw_val = str(state.get("phase") or "").strip().lower()
 
-        deployment = state.get("deployment", {}) if isinstance(state.get("deployment", {}), dict) else {}
-        attacker = deployment.get("attacker") or state.get("attacker_side")
-        defender = deployment.get("defender") or state.get("defender_side")
-
-        def _side_label(raw):
-            side = str(raw or "").strip().lower()
-            if side == "model":
-                return self._viewer_model_role_label
-            if side in {"enemy", "player"}:
-                return self._viewer_player_role_label
-            return None
-
-        attacker_label = _side_label(attacker)
-        defender_label = _side_label(defender)
-        deploy_phase_text = str(state.get("phase") or "").strip().lower()
-        deploy_active = ("deploy" in deploy_phase_text) or ("расст" in deploy_phase_text)
-        rolloff_done = bool(attacker_label and defender_label)
-        if not rolloff_done and not deploy_active:
-            # Fallback: используем последнее корректное значение roll-off из логов Viewer.
-            attacker_fallback = _side_label(self._rolloff_attacker_side)
-            defender_fallback = _side_label(self._rolloff_defender_side)
-            if attacker_fallback and defender_fallback:
-                attacker_label = attacker_fallback
-                defender_label = defender_fallback
-                rolloff_done = True
-        if deploy_active:
-            if not rolloff_done:
-                deploy_text = "Деплой: ожидание roll-off"
-            else:
-                deploy_text = f"Деплой: расстановка (Attacker={attacker_label} • Defender={defender_label})"
+        if self._controller_v1:
+            self.viewer_controller.apply_labels(
+                labels,
+                phase_raw=phase_raw_val,
+                active_side_raw=active_raw,
+            )
         else:
-            if not rolloff_done:
-                deploy_text = "Деплой: ожидание roll-off"
-            else:
-                deploy_text = f"Деплой завершён: Attacker = {attacker_label} • Defender = {defender_label}"
-        self.status_deployment.setText(deploy_text)
-        if self._deploy_status_text:
-            self.status_deployment.setText(f"{self.status_deployment.text()} • {self._deploy_status_text}")
+            self.status_round.setText(labels.round_text)
+            self.status_turn.setText(labels.turn_text)
+            self.status_phase.setText(labels.phase_text)
+            self.status_active.setText(labels.active_label_text)
+            self.status_deployment.setText(labels.deployment_text)
+            self.points_vp_player.setText(labels.vp_player_text)
+            self.points_vp_model.setText(labels.vp_model_text)
+            self.points_cp_player.setText(labels.cp_player_text)
+            self.points_cp_model.setText(labels.cp_model_text)
+
         if os.getenv("VIEWER_DEBUG", "0") == "1":
+            deployment = state.get("deployment", {}) if isinstance(state.get("deployment", {}), dict) else {}
+            attacker = deployment.get("attacker") or state.get("attacker_side")
+            defender = deployment.get("defender") or state.get("defender_side")
+            deploy_phase_text = str(state.get("phase") or "").strip().lower()
+            deploy_active = ("deploy" in deploy_phase_text) or ("расст" in deploy_phase_text)
             self.add_log_line(
                 f"[STATUS] phase={state.get('phase')} deploy_state={'active' if deploy_active else 'completed'} "
                 f"attacker={attacker} defender={defender} text=\"{self.status_deployment.text()}\""
             )
-
-
-        vp = state.get("vp", {})
-        cp = state.get("cp", {})
-        self.points_vp_player.setText(f"Player VP: {vp.get('player', '—')}")
-        self.points_vp_model.setText(f"Model VP: {vp.get('model', '—')}")
-        self.points_cp_player.setText(f"Player CP: {cp.get('player', '—')}")
-        self.points_cp_model.setText(f"Model CP: {cp.get('model', '—')}")
 
         self._populate_units_table(state_for_view.get("units", []))
         self._update_log(state.get("log_tail", []))
@@ -2186,6 +2416,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._unit_row_by_key[unit_key] = row
         self.units_table.setSortingEnabled(True)
         self._rebuild_unit_row_mapping()
+        self._sync_qml_units_summary()
 
     def _update_log(self, lines):
         if isinstance(lines, list):
@@ -2246,6 +2477,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _set_selected_unit(self, side, unit_id, *, source: str, select_row: bool = False):
         self._selected_unit_side = side
         self._selected_unit_id = unit_id
+        if self._controller_v1:
+            self.viewer_controller.push_selection(side, unit_id)
         self.map_scene.set_selected_unit(side, unit_id)
         if select_row:
             self._select_row_for_unit_id(unit_id, side=side)
@@ -2714,7 +2947,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return card
 
     def _timeline_label_text(self) -> str:
-        return f"{self.status_round.text()} • {self.status_active.text()} • {self.status_phase.text()}"
+        try:
+            return f"{self.status_round.text()} • {self.status_active.text()} • {self.status_phase.text()}"
+        except RuntimeError:
+            if self._controller_v1:
+                vc = self.viewer_controller
+                return f"{vc.roundText} • {vc.activeLabelText} • {vc.phaseText}"
+            return "Раунд: — • Активен: — • Фаза: —"
 
     def _collect_visible_entries(self):
         visible = []
@@ -2775,14 +3014,35 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._visible_log_entries.append({"text": "🏁 === КАРТОЧКА РАУНДА ===", "color": "#7aa2f7", "entry_idx": -1, "is_aux": True})
             for line in round_card[1:]:
                 self._visible_log_entries.append({"text": line, "color": "#7aa2f7", "entry_idx": -1, "is_aux": True})
-        self.log_view.clear()
-        for item_data in self._visible_log_entries:
-            item = QtWidgets.QListWidgetItem(str(item_data.get("text") or ""))
-            item.setForeground(QtGui.QBrush(QtGui.QColor(str(item_data.get("color") or Theme.text.name()))))
-            item.setData(QtCore.Qt.UserRole, item_data)
-            self.log_view.addItem(item)
-        if self.log_view.count() > 0:
-            self.log_view.scrollToBottom()
+
+        if not self._visible_log_entries:
+            self._visible_log_entries.append(
+                {"text": "Пока нет логов.", "color": Theme.muted.name(), "entry_idx": -1, "is_aux": True}
+            )
+
+        if self._qml_log_model is not None:
+            qml_rows = []
+            for item_data in self._visible_log_entries:
+                qml_rows.append(
+                    {
+                        "text": str(item_data.get("text") or ""),
+                        "color": str(item_data.get("color") or Theme.text.name()),
+                        "entry_idx": int(item_data.get("entry_idx", -1)),
+                        "is_aux": bool(item_data.get("is_aux", False)),
+                    }
+                )
+            self._qml_log_model.set_rows(qml_rows)
+            self.viewer_controller.bump_log_refresh()
+
+        if self.log_view is not None:
+            self.log_view.clear()
+            for item_data in self._visible_log_entries:
+                item = QtWidgets.QListWidgetItem(str(item_data.get("text") or ""))
+                item.setForeground(QtGui.QBrush(QtGui.QColor(str(item_data.get("color") or Theme.text.name()))))
+                item.setData(QtCore.Qt.UserRole, item_data)
+                self.log_view.addItem(item)
+            if self.log_view.count() > 0:
+                self.log_view.scrollToBottom()
 
     def _reset_log_lines(self, lines, write_to_file: bool):
         self._log_entries = []
@@ -2830,19 +3090,17 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._model_events_current = []
         self._fx_shot_queue.clear()
         self._fx_parser.reset(preserve_seen=False)
-        self.log_view.clear()
+        if self.log_view is not None:
+            self.log_view.clear()
+        if self._qml_log_model is not None:
+            self._qml_log_model.set_rows([])
+            self.viewer_controller.bump_log_refresh()
         self._visible_log_entries = []
         self.map_scene.set_log_movement_overlay(None, persistent=True)
         self.map_scene.clear_log_movement_hover_overlay()
 
     def _collect_current_turn_logs(self):
-        lines = []
-        for i in range(self.log_view.count()):
-            item = self.log_view.item(i)
-            if item is None:
-                continue
-            lines.append(item.text())
-        return "\n".join(lines)
+        return "\n".join(str(v.get("text") or "") for v in self._visible_log_entries)
 
     def _on_log_item_clicked(self, item: QtWidgets.QListWidgetItem) -> None:
         payload = self._movement_payload_from_log_item(item)
@@ -2874,10 +3132,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 "[VIEWER] Не удалось центрировать камеру: координаты вне карты. Где: viewer/app.py (_focus_camera_for_movement_payload). Что дальше: проверьте событие движения."
             )
 
-    def _movement_payload_from_log_item(self, item: Optional[QtWidgets.QListWidgetItem]) -> Optional[dict]:
-        if item is None:
-            return None
-        data = item.data(QtCore.Qt.UserRole)
+    def _movement_payload_from_entry_data(self, data: Optional[dict]) -> Optional[dict]:
         if not isinstance(data, dict) or data.get("is_aux"):
             return None
         entry_idx = data.get("entry_idx")
@@ -2886,13 +3141,39 @@ class ViewerWindow(QtWidgets.QMainWindow):
         entry = self._log_entries[entry_idx] if 0 <= entry_idx < len(self._log_entries) else {}
         categories = entry.get("categories") if isinstance(entry, dict) else set()
         raw_text = str(entry.get("raw") or "") if isinstance(entry, dict) else ""
-        # Ограничение: overlay только для явных movement-строк "Позиция до/после".
         if "movement" not in (categories or set()):
             return None
         lowered = raw_text.lower()
         if "позиция до:" not in lowered and "позиция после:" not in lowered:
             return None
         return self._extract_movement_payload(entry_idx)
+
+    def _movement_payload_from_log_item(self, item: Optional[QtWidgets.QListWidgetItem]) -> Optional[dict]:
+        if item is None:
+            return None
+        data = item.data(QtCore.Qt.UserRole)
+        return self._movement_payload_from_entry_data(data if isinstance(data, dict) else None)
+
+    def _on_qml_log_row_clicked(self, row: int) -> None:
+        if row < 0 or row >= len(self._visible_log_entries):
+            return
+        payload = self._movement_payload_from_entry_data(self._visible_log_entries[row])
+        if payload is None:
+            return
+        self.map_scene.clear_log_movement_hover_overlay()
+        self._focus_camera_for_movement_payload(payload)
+
+    def _on_qml_log_row_hovered(self, row: int) -> None:
+        if row < 0 or row >= len(self._visible_log_entries):
+            return
+        payload = self._movement_payload_from_entry_data(self._visible_log_entries[row])
+        if payload is None:
+            self.map_scene.clear_log_movement_hover_overlay()
+            return
+        self.map_scene.set_log_movement_overlay(payload, persistent=False)
+
+    def _on_qml_log_hover_exited(self) -> None:
+        self._on_log_item_hover_left()
 
     def _extract_movement_payload(self, entry_idx: int) -> Optional[dict]:
         move_before_re = re.compile(
@@ -3527,7 +3808,35 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
 
 def launch(state_path, model_path=None):
+    # QQuickWidget + QOpenGLWidget: общий контекст OpenGL и десктопный GL на Windows.
+    try:
+        QtCore.QCoreApplication.setAttribute(
+            QtCore.Qt.ApplicationAttribute.AA_ShareOpenGLContexts,
+            True,
+        )
+        QtCore.QCoreApplication.setAttribute(
+            QtCore.Qt.ApplicationAttribute.AA_UseDesktopOpenGL,
+            True,
+        )
+    except Exception:
+        pass
+
+    def _viewer_qt_message_handler(mode, context, message):
+        # Иначе Qt спамит это на каждый кадр при неверном композитинге.
+        if "not compatible with QOpenGLWidget" in message:
+            return
+        print(message, file=sys.stderr, flush=True)
+
+    try:
+        QtCore.qInstallMessageHandler(_viewer_qt_message_handler)
+    except Exception:
+        pass
+
     app = QtWidgets.QApplication([])
+    try:
+        QQuickWindow.setGraphicsApi(QSGRendererInterface.GraphicsApi.OpenGL)
+    except Exception:
+        pass
     window = ViewerWindow(state_path, model_path=model_path)
     window.setGeometry(0, 0, 2560, 1440)
     window.showMaximized()

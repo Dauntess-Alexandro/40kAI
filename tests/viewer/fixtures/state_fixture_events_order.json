@@ -1,0 +1,8 @@
+{
+  "model_events": [
+    {"kind": "tick", "seq": 1},
+    {"kind": "tick", "seq": 2},
+    {"kind": "shoot", "seq": 3}
+  ],
+  "log_tail": ["alpha", "beta", "gamma"]
+}

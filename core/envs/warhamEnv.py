@@ -6,9 +6,6 @@ try:
     from core.engine.hotloops import scan_targets_in_range
 except Exception:  # pragma: no cover
     scan_targets_in_range = None
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import datetime
 import inspect
 import math
@@ -41,6 +38,21 @@ from core.engine.logging_utils import format_unit
 from core.engine.state_export import write_state_json
 from core.engine.game_io import DICE_CANCEL_TOKEN, get_active_io
 from core.engine.event_bus import get_event_bus, get_event_recorder
+
+
+def _matplotlib_pyplot_agg():
+    """Load matplotlib only when rendering PNGs (not at env import time).
+
+    Eager imports here break under PySide + torch's patched ``inspect.getfile``
+    (matplotlib → dateutil → six).
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    return plt
+
 
 ENV_RULESET_VERSION = os.getenv("ENV_RULESET_VERSION", "only_war_v1")
 
@@ -7267,7 +7279,9 @@ class Warhammer40kEnv(gym.Env):
         return self.game_over, info
 
     def updateBoard(self):
-        if not self._in_simulation_mode():
+        # GUI / viewer (`playType=True`): доска уже на OpenGL + state.json — PNG через matplotlib не нужен.
+        # Импорт matplotlib в этом процессе ломается в связке PySide/shiboken + torch (inspect с six/dateutil).
+        if not self._in_simulation_mode() and not bool(getattr(self, "playType", False)):
             self.render(mode="test")
         self.board = np.zeros((self.b_len, self.b_hei))
 
@@ -7297,6 +7311,7 @@ class Warhammer40kEnv(gym.Env):
     def render(self, mode='train'):
         if self._in_simulation_mode():
             return self.board
+        plt = _matplotlib_pyplot_agg()
         fig = plt.figure()
         ax = fig.add_subplot()
         fig.subplots_adjust(top=0.85)
@@ -7370,7 +7385,8 @@ class Warhammer40kEnv(gym.Env):
     def showBoard(self):
         board = self.returnBoard()
         np.savetxt(str(BOARD_PATH), board.astype(int), fmt="%i", delimiter=",")
-        self.render(mode="play")
+        if not bool(getattr(self, "playType", False)):
+            self.render(mode="play")
 
     def close(self):
         pass

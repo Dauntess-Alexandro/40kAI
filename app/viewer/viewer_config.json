@@ -1,4 +1,13 @@
 {
+  "flags": {
+    "viewer.theme.v2": true,
+    "viewer.controller.v1": true,
+    "viewer.render.layers_v2": true,
+    "viewer.fx.v2": true,
+    "viewer.ui.qml_panels": true,
+    "viewer.debug.overlay": false,
+    "viewer.shaders.highlights": false
+  },
   "cell_size": 24,
   "unit_icon_scale": 2.75,
   "model_icon_scale": 1.20,
@@ -8,5 +17,6 @@
   "move_cap_ms": 920,
   "move_seq_floor_new_step_ms": 260,
   "move_seq_floor_default_ms": 180,
-  "move_ease": "smoothstep"
+  "move_ease": "smoothstep",
+  "fx_quality": "medium"
 }

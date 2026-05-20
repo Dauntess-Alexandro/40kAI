@@ -1,0 +1,22 @@
+{
+  "board": {"width": 30, "height": 20},
+  "round": 2,
+  "turn": 3,
+  "phase": "movement",
+  "active": "player",
+  "vp": {"player": 5, "model": 3},
+  "cp": {"player": 2, "model": 1},
+  "units": [
+    {
+      "side": "player",
+      "id": 101,
+      "name": "Test Squad",
+      "x": 10,
+      "y": 12,
+      "hp": 8.5,
+      "alive_models": 5
+    }
+  ],
+  "objectives": [{"id": 1, "x": 15, "y": 10}],
+  "viewer": {"state_protocol_version": "0.9-preview"}
+}

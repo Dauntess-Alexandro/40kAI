@@ -24,13 +24,10 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from app.viewer.styles import Theme
+from app.viewer.config import load_viewer_config, viewer_flag
 from app.viewer.cells_fx import (
-    SHOOTING_FULL_ZONE_STYLE,
     SHOOTING_RAPID_HATCH_STYLE,
-    SHOOTING_RAPID_ZONE_STYLE,
     rapid_hatch_pen,
-    zone_border_pen,
-    zone_fill_color,
 )
 from app.viewer.tooltip import TerrainTooltipWidget, UnitTooltipWidget
 
@@ -239,6 +236,20 @@ class OpenGLBoardWidget(QOpenGLWidget):
     ):
         super().__init__(parent)
         self.cell_size = cell_size
+        _vw_cfg = load_viewer_config()
+        self._layers_v2 = viewer_flag("viewer.render.layers_v2", _vw_cfg)
+        self._viewer_debug_overlay_flag = viewer_flag("viewer.debug.overlay", _vw_cfg)
+        self._fx_v2 = viewer_flag("viewer.fx.v2", _vw_cfg)
+        self._viewer_cfg_snapshot: Dict[str, Any] = dict(_vw_cfg)
+        self._fx_tune_base: Optional[Dict[str, float]] = None
+        q0 = str(os.environ.get("VIEWER_FX_QUALITY", "") or _vw_cfg.get("fx_quality") or "medium").strip().lower()
+        self._fx_quality_resolved = q0 if q0 in {"low", "medium", "high"} else "medium"
+        self._fx_gauss_alpha_scale = 1.0
+        self._paint_serial = 0
+        self._last_click_screen: Optional[QtCore.QPointF] = None
+        self._perf_last_mono: Optional[float] = None
+        self._perf_frame_ms: List[float] = []
+        self._perf_frames_since_report = 0
         self._state: Dict = {}
         self._board_width = 0
         self._board_height = 0
@@ -1998,58 +2009,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         painter.restore()
 
     def _draw_grid(self, painter: QtGui.QPainter) -> None:
-        if self._board_rect.isEmpty() or self._scale <= 0:
-            return
-        painter.save()
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
-        pen = Theme.pen(Theme.grid, 1.0)
-        pen.setCosmetic(True)
-        painter.setPen(pen)
+        from app.viewer.rendering.layers.grid import paint_grid_layer
 
-        pan_x, pan_y = self._snap_pan_to_pixels(self._pan)
-        scale = self._scale
-        cell = float(self.cell_size)
-        width = self.width()
-        height = self.height()
-        board_screen_rect = QtCore.QRectF(
-            pan_x,
-            pan_y,
-            self._board_width * cell * scale,
-            self._board_height * cell * scale,
-        )
-        painter.setClipRect(board_screen_rect)
-        left_world = (-pan_x) / scale
-        right_world = (width - pan_x) / scale
-        top_world = (-pan_y) / scale
-        bottom_world = (height - pan_y) / scale
-
-        min_col = max(0, int(left_world // cell))
-        max_col = min(self._board_width, int(right_world // cell) + 1)
-        min_row = max(0, int(top_world // cell))
-        max_row = min(self._board_height, int(bottom_world // cell) + 1)
-
-        ratio = self.devicePixelRatioF() or 1.0
-        pixel = 1.0 / ratio
-
-        for col in range(min_col, max_col + 1):
-            world_x = col * cell
-            screen_x = pan_x + world_x * scale
-            screen_x = round(screen_x / pixel) * pixel
-            painter.drawLine(
-                QtCore.QPointF(screen_x, board_screen_rect.top()),
-                QtCore.QPointF(screen_x, board_screen_rect.bottom()),
-            )
-
-        for row in range(min_row, max_row + 1):
-            world_y = row * cell
-            screen_y = pan_y + world_y * scale
-            screen_y = round(screen_y / pixel) * pixel
-            painter.drawLine(
-                QtCore.QPointF(board_screen_rect.left(), screen_y),
-                QtCore.QPointF(board_screen_rect.right(), screen_y),
-            )
-
-        painter.restore()
+        self._paint_board_layer(painter, paint_grid_layer, layer_name="grid")
 
     def _add_decal(self, kind: str, center: QtCore.QPointF) -> None:
         if not self.render_decals:
@@ -2143,6 +2105,130 @@ class OpenGLBoardWidget(QOpenGLWidget):
             if e in {"linear", "smoothstep", "cubic_out"}:
                 self._move_ease = e
 
+        self._viewer_cfg_snapshot = dict(cfg)
+        self._fx_v2 = viewer_flag("viewer.fx.v2", cfg)
+        self._maybe_apply_motion_tokens_for_fx_v2(cfg)
+        self._fx_tune_base = {
+            "move_cap_ms": float(self._move_cap_ms),
+            "popup_ttl_s": float(self._damage_popup_ttl_s),
+            "hit_stop_s": float(self._damage_popup_hit_stop_s),
+            "outline_px": float(self._damage_popup_outline_px),
+            "status_anim_duration_s": float(self._status_anim_duration_s),
+            "rise_min_px": float(self._damage_popup_rise_min_px),
+            "rise_max_px": float(self._damage_popup_rise_max_px),
+        }
+        self._apply_fx_quality_tuning()
+
+    def set_fx_quality(self, level: Optional[str]) -> None:
+        """Runtime FX tier (``low`` / ``medium`` / ``high``); used with ``viewer.fx.v2``."""
+        lvl = str(level or "").strip().lower()
+        if lvl not in {"low", "medium", "high"}:
+            lvl = "medium"
+        if lvl != self._fx_quality_resolved:
+            self._fx_quality_resolved = lvl
+            self._apply_fx_quality_tuning()
+
+    def _maybe_apply_motion_tokens_for_fx_v2(self, cfg: Dict[str, Any]) -> None:
+        if not self._fx_v2 or not viewer_flag("viewer.theme.v2", cfg):
+            return
+        try:
+            from theme.loader import load_tokens
+
+            data = load_tokens()
+            motion = data.get("motion") if isinstance(data.get("motion"), dict) else {}
+        except Exception:
+            return
+        ease = motion.get("moveEaseFxV2") or motion.get("moveEase")
+        if isinstance(ease, str):
+            e = ease.strip().lower()
+            if e in {"linear", "smoothstep", "cubic_out"}:
+                self._move_ease = e
+
+    def _default_fx_v2_scales(self, level: str) -> Dict[str, float]:
+        if level == "low":
+            return {"moveCapScale": 0.82, "popupTtlScale": 0.72, "hitStopMs": 0.0, "gaussAlphaScale": 0.55}
+        if level == "high":
+            return {"moveCapScale": 1.08, "popupTtlScale": 1.18, "hitStopMs": 48.0, "gaussAlphaScale": 1.12}
+        return {"moveCapScale": 1.0, "popupTtlScale": 1.0, "hitStopMs": 32.0, "gaussAlphaScale": 1.0}
+
+    def _merge_token_fx_v2_scales(self, scales: Dict[str, Dict[str, float]]) -> None:
+        cfg = getattr(self, "_viewer_cfg_snapshot", None) or {}
+        if not self._fx_v2 or not viewer_flag("viewer.theme.v2", cfg):
+            return
+        try:
+            from theme.loader import load_tokens
+
+            motion = load_tokens().get("motion") if isinstance(load_tokens().get("motion"), dict) else {}
+            fxv2 = motion.get("fxV2") if isinstance(motion.get("fxV2"), dict) else {}
+        except Exception:
+            return
+        for tier in ("low", "medium", "high"):
+            raw = fxv2.get(tier)
+            if not isinstance(raw, dict):
+                continue
+            tgt = scales.setdefault(tier, {})
+            for key in ("moveCapScale", "popupTtlScale", "hitStopMs", "gaussAlphaScale"):
+                if key not in raw:
+                    continue
+                try:
+                    tgt[key] = float(raw[key])
+                except (TypeError, ValueError):
+                    continue
+
+    def _apply_fx_quality_tuning(self) -> None:
+        base = self._fx_tune_base
+        if base is None:
+            return
+        cfg = getattr(self, "_viewer_cfg_snapshot", None) or {}
+        env_q = str(os.environ.get("VIEWER_FX_QUALITY", "") or "").strip().lower()
+        lvl = env_q if env_q in {"low", "medium", "high"} else str(cfg.get("fx_quality", "medium")).strip().lower()
+        if lvl not in {"low", "medium", "high"}:
+            lvl = "medium"
+        self._fx_quality_resolved = lvl
+
+        scales = {
+            "low": dict(self._default_fx_v2_scales("low")),
+            "medium": dict(self._default_fx_v2_scales("medium")),
+            "high": dict(self._default_fx_v2_scales("high")),
+        }
+        self._merge_token_fx_v2_scales(scales)
+        s = scales.get(lvl, scales["medium"])
+
+        # Restore baseline from last set_move_animation_config, then optionally apply FX v2 tiering.
+        self._move_cap_ms = base["move_cap_ms"]
+        self._damage_popup_ttl_s = base["popup_ttl_s"]
+        self._damage_popup_hit_stop_s = base["hit_stop_s"]
+        self._damage_popup_outline_px = base["outline_px"]
+        self._status_anim_duration_s = base["status_anim_duration_s"]
+        self._damage_popup_rise_min_px = base["rise_min_px"]
+        self._damage_popup_rise_max_px = base["rise_max_px"]
+        self._fx_gauss_alpha_scale = 1.0
+
+        if not self._fx_v2:
+            return
+
+        cap_scale = float(s.get("moveCapScale", 1.0))
+        ttl_scale = float(s.get("popupTtlScale", 1.0))
+        gauss_scale = float(s.get("gaussAlphaScale", 1.0))
+        hit_stop_ms = float(s.get("hitStopMs", 32.0))
+
+        self._move_cap_ms = max(1.0, float(base["move_cap_ms"]) * max(0.25, cap_scale))
+        self._damage_popup_ttl_s = max(0.25, float(base["popup_ttl_s"]) * max(0.35, ttl_scale))
+        self._damage_popup_hit_stop_s = max(0.0, hit_stop_ms / 1000.0)
+        self._damage_popup_outline_px = max(1.0, float(base["outline_px"]) * (1.05 if lvl == "high" else 1.0))
+        self._status_anim_duration_s = max(
+            0.08,
+            float(base["status_anim_duration_s"]) * (0.88 if lvl == "low" else 1.12 if lvl == "high" else 1.0),
+        )
+        self._damage_popup_rise_min_px = max(
+            8.0, float(base["rise_min_px"]) * (0.85 if lvl == "low" else 1.15 if lvl == "high" else 1.0)
+        )
+        self._damage_popup_rise_max_px = max(
+            self._damage_popup_rise_min_px + 2.0,
+            float(base["rise_max_px"]) * (0.85 if lvl == "low" else 1.15 if lvl == "high" else 1.0),
+        )
+        self._fx_gauss_alpha_scale = max(0.15, min(1.6, gauss_scale))
+
     def _apply_move_ease(self, t: float) -> float:
         t = max(0.0, min(1.0, float(t)))
         kind = str(self._move_ease or "smoothstep").strip().lower()
@@ -2179,7 +2265,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._unit_anim_timer.stop()
 
     def _rebuild_units(self, factor: float) -> None:
-        f = self._apply_move_ease(factor)
+        raw_f = max(0.0, min(1.0, float(factor)))
+        f = self._apply_move_ease(raw_f)
         self._units = []
         self._unit_by_key = {}
         self._unit_labels = []
@@ -2219,9 +2306,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
             curr_m = self._curr_model_cells_by_key.get(key)
             model_centers: List[QtCore.QPointF] = []
             if prev_m and curr_m and len(prev_m) == len(curr_m):
-                for (px, py), (cx, cy) in zip(prev_m, curr_m):
-                    mx = px + (cx - px) * f
-                    my = py + (cy - py) * f
+                n = len(prev_m)
+                use_stagger = bool(getattr(self, "_fx_v2", False)) and n > 1
+                stagger_span = 0.34
+                for i, ((px, py), (cx, cy)) in enumerate(zip(prev_m, curr_m)):
+                    if use_stagger:
+                        start = stagger_span * (i / max(1, n - 1))
+                        denom = max(1e-4, 1.0 - stagger_span)
+                        sub = max(0.0, min(1.0, (raw_f - start) / denom))
+                        lf = self._apply_move_ease(sub)
+                    else:
+                        lf = f
+                    mx = px + (cx - px) * lf
+                    my = py + (cy - py) * lf
                     model_centers.append(
                         QtCore.QPointF(
                             mx * self.cell_size + self.cell_size / 2,
@@ -2703,6 +2800,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.LeftButton:
             if self._drag_distance < 4:
+                self._last_click_screen = QtCore.QPointF(event.position())
                 self._select_unit_at(event.position())
                 world = self._map_to_world(QtCore.QPointF(event.position()))
                 state_pos = self._world_to_state_pos(world)
@@ -2741,16 +2839,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
     def _select_unit_at(self, pos: QtCore.QPointF) -> None:
         world = self._map_to_world(pos)
-        closest_key = None
-        closest_dist = None
-        for render in self._units:
-            dx = world.x() - render.center.x()
-            dy = world.y() - render.center.y()
-            distance = (dx * dx + dy * dy) ** 0.5
-            if distance <= render.radius:
-                if closest_dist is None or distance < closest_dist:
-                    closest_dist = distance
-                    closest_key = render.key
+        from app.viewer.rendering.hit_test import pick_unit_world
+
+        closest_key = pick_unit_world(world, self._units)
         if closest_key:
             was_key = self._selected_unit_key
             self.set_selected_unit(closest_key[0], closest_key[1])
@@ -2775,118 +2866,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._tooltip_follow_timer.stop()
 
     def _draw_ground_layer(self, painter: QtGui.QPainter) -> None:
-        if not self._ground_textures or self._board_rect.isEmpty():
-            return
-        view_rect = self._view_world_rect()
-        tile_size = 256.0
-        start_x = int(math.floor(view_rect.left() / tile_size))
-        end_x = int(math.ceil(view_rect.right() / tile_size))
-        start_y = int(math.floor(view_rect.top() / tile_size))
-        end_y = int(math.ceil(view_rect.bottom() / tile_size))
-        painter.save()
-        painter.setClipRect(self._board_rect)
-        for ty in range(start_y, end_y + 1):
-            for tx in range(start_x, end_x + 1):
-                pixmap = self._ground_textures[(tx + ty) % len(self._ground_textures)]
-                world_x = tx * tile_size
-                world_y = ty * tile_size
-                painter.drawPixmap(
-                    QtCore.QRectF(world_x, world_y, tile_size, tile_size),
-                    pixmap,
-                    QtCore.QRectF(0, 0, pixmap.width(), pixmap.height()),
-                )
-        painter.restore()
+        from app.viewer.rendering.layers.ground import paint_ground_layer
+
+        self._paint_board_layer(painter, paint_ground_layer, layer_name="ground")
 
     def _draw_decals_layer(self, painter: QtGui.QPainter) -> None:
-        if not self._decals or not self._decal_textures:
-            return
-        painter.save()
-        painter.setClipRect(self._board_rect)
-        for decal in self._decals:
-            pixmap = self._decal_textures.get(decal.texture_key)
-            if pixmap is None:
-                continue
-            self._draw_sprite(
-                painter,
-                pixmap,
-                decal.center,
-                rotation_deg=decal.rotation_deg,
-                scale=decal.scale,
-                alpha=0.9,
-            )
-        painter.restore()
+        from app.viewer.rendering.layers.decals import paint_decals_layer
+
+        self._paint_board_layer(painter, paint_decals_layer, layer_name="decals")
 
     def _draw_props_layer(self, painter: QtGui.QPainter) -> None:
-        if not self._props:
-            return
-        painter.save()
-        painter.setClipRect(self._board_rect)
-        for prop in self._props:
-            prop_pixmap = self._terrain_texture_by_name(prop.sprite_name) if prop.sprite_name else None
-            if prop_pixmap is None:
-                prop_pixmap = self._prop_textures.get(prop.kind) if prop.kind else None
-            if prop_pixmap is None:
-                if prop.debug_rect is not None:
-                    painter.save()
-                    pen = QtGui.QPen(QtGui.QColor(220, 80, 80, 220), 1.5)
-                    pen.setCosmetic(True)
-                    painter.setPen(pen)
-                    painter.setBrush(QtGui.QColor(220, 80, 80, 90))
-                    painter.drawRect(prop.debug_rect)
-                    painter.setPen(QtGui.QColor(240, 235, 235, 235))
-                    painter.setFont(Theme.font(size=8, bold=True))
-                    painter.drawText(
-                        prop.debug_rect.adjusted(2.0, 2.0, -2.0, -2.0),
-                        QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop,
-                        str(prop.kind or "terrain"),
-                    )
-                    painter.restore()
-                continue
-            if self.render_prop_shadows:
-                shadow_pixmap = self._shadow_textures.get(prop.kind)
-                if shadow_pixmap is not None:
-                    shadow_center = prop.center + QtCore.QPointF(8.0, 12.0)
-                    self._draw_sprite(
-                        painter,
-                        shadow_pixmap,
-                        shadow_center,
-                        rotation_deg=prop.rotation_deg,
-                        scale=prop.scale,
-                        alpha=0.7,
-                    )
-            if prop.draw_rect is not None:
-                source_rect = self._terrain_content_rect(prop.sprite_name, prop_pixmap)
-                draw_rect = self._fit_pixmap_in_rect(
-                    prop_pixmap,
-                    prop.draw_rect,
-                    inset_ratio=self._terrain_barrel_cell_scale,
-                    source_rect=source_rect,
-                )
-                if prop.rotation_deg:
-                    painter.save()
-                    painter.translate(draw_rect.center())
-                    painter.rotate(prop.rotation_deg)
-                    rotated_rect = QtCore.QRectF(
-                        -draw_rect.width() * 0.5,
-                        -draw_rect.height() * 0.5,
-                        draw_rect.width(),
-                        draw_rect.height(),
-                    )
-                    painter.drawPixmap(rotated_rect, prop_pixmap, source_rect)
-                    painter.restore()
-                else:
-                    painter.drawPixmap(draw_rect, prop_pixmap, source_rect)
-                continue
+        from app.viewer.rendering.layers.terrain_props import paint_terrain_props_layer
 
-            self._draw_sprite(
-                painter,
-                prop_pixmap,
-                prop.center,
-                rotation_deg=prop.rotation_deg,
-                scale=prop.scale,
-                alpha=1.0,
-            )
-        painter.restore()
+        self._paint_board_layer(painter, paint_terrain_props_layer, layer_name="terrain_props")
 
     def _terrain_texture_by_name(self, sprite_name: str) -> Optional[QtGui.QPixmap]:
         key = str(sprite_name or "").strip()
@@ -2990,6 +2982,57 @@ class OpenGLBoardWidget(QOpenGLWidget):
             )
         painter.restore()
 
+    def _viewer_perf_tick(self) -> None:
+        if not os.environ.get("VIEWER_PERF_INSTRUMENT"):
+            return
+        now = perf_counter()
+        if self._perf_last_mono is not None:
+            self._perf_frame_ms.append((now - self._perf_last_mono) * 1000.0)
+        self._perf_last_mono = now
+        self._perf_frames_since_report += 1
+        try:
+            interval = max(30, int(os.environ.get("VIEWER_PERF_REPORT_FRAMES", "300")))
+        except ValueError:
+            interval = 300
+        max_samples = 12000
+        extra = len(self._perf_frame_ms) - max_samples
+        if extra > 0:
+            del self._perf_frame_ms[:extra]
+        if self._perf_frames_since_report >= interval:
+            self._perf_frames_since_report = 0
+            self._viewer_perf_emit_report()
+
+    def _viewer_perf_emit_report(self) -> None:
+        arr = self._perf_frame_ms
+        if len(arr) < 5:
+            return
+        sorted_ms = sorted(arr)
+
+        def pct(p: float) -> float:
+            idx = min(len(sorted_ms) - 1, max(0, int(round(p * (len(sorted_ms) - 1)))))
+            return sorted_ms[idx]
+
+        p50 = pct(0.50)
+        p95 = pct(0.95)
+        print(
+            f"[VIEWER_PERF] samples={len(arr)} p50_ms={p50:.3f} p95_ms={p95:.3f}",
+            flush=True,
+        )
+
+    def _paint_board_layer(self, painter: QtGui.QPainter, paint_fn, *, layer_name: str = "") -> None:
+        """Dispatch modular paint passes (Sprint 4)."""
+        from app.viewer.rendering.layer_context import LayerContext
+
+        ctx = LayerContext(self, painter)
+        if self._layers_v2 and os.environ.get("VIEWER_LAYER_MS"):
+            t0 = perf_counter()
+            paint_fn(ctx)
+            dt_ms = (perf_counter() - t0) * 1000.0
+            label = layer_name or getattr(paint_fn, "__name__", "layer")
+            print(f"[VIEWER_LAYER] {label} {dt_ms:.3f} ms", flush=True)
+            return
+        paint_fn(ctx)
+
     def paintGL(self) -> None:
         painter = QtGui.QPainter(self)
         painter.setRenderHints(
@@ -3006,8 +3049,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 QtCore.Qt.AlignCenter | QtCore.Qt.TextWordWrap,
                 self._error_message,
             )
+            self._viewer_perf_tick()
             painter.end()
             return
+
+        self._paint_serial += 1
 
         painter.setTransform(self._view_transform())
         self._draw_ground_layer(painter)
@@ -3021,6 +3067,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._draw_platform_fx_layer(painter)
         if self.render_terrain:
             self.draw_terrain_features(painter)
+        if self.render_decals:
+            self._draw_decals_layer(painter)
         self._draw_hovered_terrain_cells_layer(painter)
         self._draw_unit_tooltip_overlays_layer(painter)
         self._draw_shooting_layer(painter, target_pass="under")
@@ -3037,147 +3085,27 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._draw_labels_layer(painter)
 
         painter.setTransform(QtGui.QTransform())
-        if self._viewer_debug_enabled:
-            self._rebuild_unit_hitboxes_screen()
-        if self._viewer_debug_enabled and self._unit_hitboxes_screen:
-            painter.save()
-            pen = QtGui.QPen(QtGui.QColor(120, 220, 120, 180), 1.0)
-            pen.setCosmetic(True)
-            painter.setPen(pen)
-            painter.setBrush(QtCore.Qt.NoBrush)
-            for rect in self._unit_hitboxes_screen.values():
-                painter.drawRect(rect)
-            painter.restore()
+        from app.viewer.rendering.layers.debug_overlay import paint_debug_overlay_layer
 
-        if self._debug_overlay:
-            debug_lines = [
-                "DEBUG: (0,0) вверху слева",
-                f"Слои: terrain={'on' if self.render_terrain else 'off'}, "
-                f"decals={'on' if self.render_decals else 'off'}, "
-                f"fx={'on' if self.render_fx else 'off'}",
-            ]
-            if self._cursor_world is not None:
-                state_pos = self._world_to_state_pos(self._cursor_world)
-                if state_pos is not None:
-                    debug_lines.append(f"Курсор: x={state_pos[1]}, y={state_pos[0]}")
-            painter.setPen(Theme.text)
-            painter.setFont(Theme.font(size=9, bold=False))
-            painter.drawText(
-                QtCore.QRectF(8, 8, self.width() - 16, 60),
-                QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop,
-                "\n".join(debug_lines),
-            )
+        self._paint_board_layer(painter, paint_debug_overlay_layer, layer_name="debug_overlay")
 
+        self._viewer_perf_tick()
         painter.end()
 
     def _draw_movement_layer(self, painter: QtGui.QPainter) -> None:
-        if not self._should_show_movement():
-            return
-        if not self._move_reachable_highlights and not self._advance_reachable_highlights:
-            return
-        move_fill = QtGui.QColor(72, 130, 255, 54)
-        move_border = QtGui.QPen(QtGui.QColor(72, 130, 255, 170), 1.0)
-        move_border.setCosmetic(True)
-        painter.setPen(move_border)
-        painter.setBrush(QtGui.QBrush(move_fill))
-        for rect in self._move_reachable_highlights:
-            painter.drawRect(rect)
+        from app.viewer.rendering.layers.movement import paint_movement_layer
 
-        advance_fill = QtGui.QColor(236, 194, 64, 60)
-        advance_border = QtGui.QPen(QtGui.QColor(236, 194, 64, 180), 1.0)
-        advance_border.setCosmetic(True)
-        painter.setPen(advance_border)
-        painter.setBrush(QtGui.QBrush(advance_fill))
-        for rect in self._advance_reachable_highlights:
-            painter.drawRect(rect)
+        self._paint_board_layer(painter, paint_movement_layer, layer_name="movement")
 
     def _draw_damage_popups_layer(self, painter: QtGui.QPainter) -> None:
-        if not self._damage_popups_active:
-            return
-        now_ts = monotonic()
-        painter.save()
-        painter.setClipping(False)
-        lod_big_font = self._scale >= self._damage_popup_lod_font_shrink_scale
-        font_px = self._damage_popup_font_size if lod_big_font else max(7, self._damage_popup_font_size - 2)
-        for popup in self._damage_popups_active:
-            render = self._unit_by_key.get(popup.target_key)
-            if render is None:
-                continue
-            life_t = max(0.0, min(1.0, (now_ts - popup.created_t) / max(0.001, popup.ttl_s)))
-            if life_t >= 1.0:
-                continue
-            rise_text, rise_badge, _anticip = self._popup_motion_rise(life_t, popup.rise_px)
-            fade = 1.0
-            if life_t > 0.62:
-                fade = max(0.0, 1.0 - (life_t - 0.62) / 0.38)
-            sx, sy = self._popup_spiral_offset(popup.stack_index)
-            anchor = self._popup_world_anchor_for_key(popup.target_key) or render.center
-            lift = float(self.cell_size) * float(getattr(self, "_damage_popup_anchor_lift_cells", 0.34))
-            base = QtCore.QPointF(
-                anchor.x() + sx,
-                anchor.y() - lift + sy,
-            )
-            badge_center = QtCore.QPointF(base.x(), base.y() - rise_badge)
-            parallax_y = (rise_text - rise_badge) * 0.28
+        from app.viewer.rendering.layers.damage_popups import paint_damage_popups_layer
 
-            main_font = Theme.font(size=font_px, bold=True)
-            fm = QtGui.QFontMetricsF(main_font)
-            tw = fm.horizontalAdvance(popup.text_main)
-            th = fm.height()
-            pad_x = 12.0
-            pad_y = 7.0
-            inner_w = max(tw + pad_x * 2, 52.0)
-            inner_h = th + pad_y * 2
-            rect = QtCore.QRectF(-inner_w * 0.5, -inner_h * 0.5, inner_w, inner_h)
+        self._paint_board_layer(painter, paint_damage_popups_layer, layer_name="damage_popups")
 
-            grad_a, grad_b = self._popup_gradient_for_kind(popup.kind)
-            glow_base, rim_c = self._popup_text_outline_for_kind(popup.kind)
-            badge_path = self._build_damage_popup_badge_path(popup.kind, rect)
-
-            painter.save()
-            painter.translate(badge_center)
-            pop_boost = 1.0 + 0.14 * (1.0 - min(1.0, life_t / 0.18))
-            painter.scale(pop_boost, pop_boost)
-            bg = QtGui.QColor(10, 12, 15, int(168 * fade))
-            painter.setPen(QtCore.Qt.NoPen)
-            painter.setBrush(bg)
-            painter.drawPath(badge_path)
-            border = QtGui.QColor(self._damage_popup_badge_border)
-            border.setAlpha(int(border.alpha() * fade))
-            painter.setPen(QtGui.QPen(border, 1.0))
-            painter.setBrush(QtCore.Qt.NoBrush)
-            painter.drawPath(badge_path)
-
-            text_local = QtCore.QPointF(0.0, -parallax_y)
-            self._draw_popup_gradient_label(
-                painter,
-                text_local,
-                popup.text_main,
-                main_font,
-                grad_a,
-                grad_b,
-                fade,
-                glow_base,
-                rim_c,
-            )
-            painter.restore()
-        painter.restore()
     def _draw_objective_layer(self, painter: QtGui.QPainter) -> None:
-        for objective in self._objectives:
-            painter.setBrush(Theme.brush(objective.color))
-            painter.setPen(Theme.pen(Theme.outline, 0.8))
-            painter.drawEllipse(objective.center, objective.radius, objective.radius)
-            if self._show_objective_radius:
-                control_pen = QtGui.QPen(objective.owner_color)
-                control_pen.setWidthF(1.2)
-                control_pen.setStyle(QtCore.Qt.DashLine)
-                painter.setPen(control_pen)
-                painter.setBrush(QtCore.Qt.NoBrush)
-                painter.drawEllipse(
-                    objective.center,
-                    objective.control_radius,
-                    objective.control_radius,
-                )
+        from app.viewer.rendering.layers.objectives import paint_objectives_layer
+
+        self._paint_board_layer(painter, paint_objectives_layer, layer_name="objectives")
 
     def _resolve_render_facing(self, unit: Optional[dict]) -> str:
         if not isinstance(unit, dict):
@@ -3221,170 +3149,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return 1.0
 
     def _draw_units_layer(self, painter: QtGui.QPainter) -> None:
-        renders = list(self._units)
-        if self._deploy_preview_units:
-            existing_keys = {render.key for render in self._units}
-            renders.extend(render for render in self._deploy_preview_units if render.key not in existing_keys)
-        for render in renders:
-            op = self._opacity_for_unit_render(render)
-            painter.save()
-            painter.setOpacity(max(0.0, min(1.0, op)))
-            marker_radius = render.radius
-            model_centers = render.model_centers or []
-            icon = render.icon
-            if icon is not None and not icon.isNull():
-                # Без кругов: рисуем только иконки (по одной на каждую модель).
-                if model_centers:
-                    icon_size = max(6.0, self.cell_size * self._model_icon_scale)
-                    for model_center in model_centers:
-                        rect = QtCore.QRectF(
-                            model_center.x() - icon_size / 2,
-                            model_center.y() - icon_size / 2,
-                            icon_size,
-                            icon_size,
-                        )
-                        # painter.drawPixmap(rect, icon, QtCore.QRectF(icon.rect()))
-                        self._draw_pixmap_with_facing(painter, rect, icon, render.facing)
-                else:
-                    icon_size = marker_radius * self._unit_icon_scale
-                    rect = QtCore.QRectF(
-                        render.center.x() - icon_size / 2,
-                        render.center.y() - icon_size / 2,
-                        icon_size,
-                        icon_size,
-                    )
-                    self._draw_pixmap_with_facing(painter, rect, icon, render.facing)
-                painter.restore()
-                continue
+        from app.viewer.rendering.layers.units import paint_units_layer
 
-            # Fallback без кругов: небольшой квадрат, если иконки нет.
-            size = max(6.0, marker_radius * 0.6)
-            painter.setBrush(Theme.brush(render.color))
-            painter.setPen(Theme.pen(Theme.outline, 0.8))
-            centers = model_centers or [render.center]
-            for center in centers:
-                rect = QtCore.QRectF(center.x() - size / 2, center.y() - size / 2, size, size)
-                painter.drawRect(rect)
-            painter.restore()
+        self._paint_board_layer(painter, paint_units_layer, layer_name="units")
 
     def _draw_deploy_ghost_layer(self, painter: QtGui.QPainter) -> None:
-        if not self._deploy_ghost_cells:
-            return
+        from app.viewer.rendering.layers.deploy_ghost import paint_deploy_ghost_layer
 
-        ghost_icon = self._icon_for_unit_name(self._deploy_ghost_unit_name) if self._deploy_ghost_unit_name else None
-        alpha = self._deploy_ghost_alpha_valid if self._deploy_ghost_valid else self._deploy_ghost_alpha_invalid
-
-        painter.save()
-        painter.setOpacity(max(0.0, min(1.0, alpha)))
-
-        if ghost_icon is not None and not ghost_icon.isNull():
-            icon_size = max(6.0, self.cell_size * self._model_icon_scale)
-            for state_x, state_y in self._deploy_ghost_cells:
-                view_cell = self._state_xy_to_view_xy(state_x, state_y)
-                if view_cell is None:
-                    continue
-                center = self._cell_center(view_cell[0], view_cell[1])
-                rect = QtCore.QRectF(
-                    center.x() - icon_size / 2,
-                    center.y() - icon_size / 2,
-                    icon_size,
-                    icon_size,
-                )
-                painter.drawPixmap(rect, ghost_icon, QtCore.QRectF(ghost_icon.rect()))
-        else:
-            # Fallback: если иконка не найдена, оставляем простой ghost-маркер.
-            color = QtGui.QColor(70, 220, 120, 110) if self._deploy_ghost_valid else QtGui.QColor(220, 70, 70, 120)
-            border = QtGui.QColor(70, 220, 120, 190) if self._deploy_ghost_valid else QtGui.QColor(220, 70, 70, 210)
-            painter.setBrush(QtGui.QBrush(color))
-            painter.setPen(QtGui.QPen(border, 1.3))
-            size = self.cell_size * 0.62
-            for state_x, state_y in self._deploy_ghost_cells:
-                view_cell = self._state_xy_to_view_xy(state_x, state_y)
-                if view_cell is None:
-                    continue
-                center = self._cell_center(view_cell[0], view_cell[1])
-                rect = QtCore.QRectF(center.x() - size / 2, center.y() - size / 2, size, size)
-                painter.drawEllipse(rect)
-
-        painter.setOpacity(1.0)
-        if self._deploy_ghost_valid is False:
-            # Для невалидного preview добавляем мягкий красный контур, но не заменяем спрайт.
-            painter.setBrush(QtCore.Qt.NoBrush)
-            painter.setPen(QtGui.QPen(QtGui.QColor(220, 70, 70, 180), 1.4))
-            ring_size = self.cell_size * 0.68
-            for state_x, state_y in self._deploy_ghost_cells:
-                view_cell = self._state_xy_to_view_xy(state_x, state_y)
-                if view_cell is None:
-                    continue
-                center = self._cell_center(view_cell[0], view_cell[1])
-                rect = QtCore.QRectF(center.x() - ring_size / 2, center.y() - ring_size / 2, ring_size, ring_size)
-                painter.drawEllipse(rect)
-        painter.restore()
+        self._paint_board_layer(painter, paint_deploy_ghost_layer, layer_name="deploy_ghost")
 
     def _draw_selection_layer(self, painter: QtGui.QPainter) -> None:
-        """Ореол хода ИИ в духе «некронского» свечения: мягкий синий эллипс под отрядом (до спрайтов)."""
-        key = self._ai_activation_key
-        render = self._unit_by_key.get(key) if key else None
-        if render is None:
-            return
+        from app.viewer.rendering.layers.selection import paint_selection_layer
 
-        centers = list(render.model_centers or [render.center])
-        cell = float(self.cell_size)
-        min_x = min(c.x() for c in centers)
-        max_x = max(c.x() for c in centers)
-        min_y = min(c.y() for c in centers)
-        max_y = max(c.y() for c in centers)
-        cx = 0.5 * (min_x + max_x)
-        # Чуть ниже центра формации — ореол ближе к полу, не к головам
-        cy = 0.5 * (min_y + max_y) + cell * 0.26
-
-        span_x = max(max_x - min_x, cell * 0.48)
-        span_y = max(max_y - min_y, cell * 0.42)
-        t = monotonic()
-        breath = 0.5 + 0.5 * math.sin(t * 1.65)
-        pulse = 1.0 + 0.032 * math.sin(t * 1.9)
-        rx = (span_x * 0.58 + cell * 0.62) * pulse
-        ry = (span_y * 0.52 + cell * 0.48) * pulse
-
-        unit_disc = QtCore.QRectF(-1.0, -1.0, 2.0, 2.0)
-        painter.save()
-        # Запас за пределы доски, чтобы градиент успевал уйти в ноль, а не «ломался» о clip.
-        clip_pad = max(rx * 1.45, ry * 1.45, cell * 3.0)
-        painter.setClipRect(self._board_rect.adjusted(-clip_pad, -clip_pad, clip_pad, clip_pad))
-        painter.setPen(QtCore.Qt.NoPen)
-
-        # Широкий мягкий сине-голубой ореол (типичный «плазменный» rim, но тише скрина с зелёным)
-        painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
-        painter.save()
-        painter.translate(cx, cy)
-        painter.scale(rx * 1.32, ry * 1.18)
-        outer = QtGui.QRadialGradient(0.0, 0.0, 1.0)
-        outer.setColorAt(0.0, QtGui.QColor(130, 205, 255, int(16 + 7 * breath)))
-        outer.setColorAt(0.45, QtGui.QColor(85, 165, 235, int(9 + 4 * breath)))
-        outer.setColorAt(0.72, QtGui.QColor(55, 120, 205, int(5 + 2 * breath)))
-        outer.setColorAt(0.88, QtGui.QColor(40, 95, 175, int(2 + breath)))
-        outer.setColorAt(1.0, QtGui.QColor(30, 85, 160, 0))
-        painter.setBrush(QtGui.QBrush(outer))
-        painter.drawEllipse(unit_disc)
-        painter.restore()
-
-        # Аддитивное ядро — лёгкий «emissive», без кислотности
-        painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
-        painter.save()
-        painter.translate(cx, cy)
-        painter.scale(rx * 0.92, ry * 0.84)
-        core = QtGui.QRadialGradient(0.0, 0.0, 1.0)
-        core.setColorAt(0.0, QtGui.QColor(200, 235, 255, int(14 + 9 * breath)))
-        core.setColorAt(0.42, QtGui.QColor(120, 195, 255, int(8 + 5 * breath)))
-        core.setColorAt(0.68, QtGui.QColor(90, 170, 240, int(4 + 2 * breath)))
-        core.setColorAt(0.86, QtGui.QColor(60, 130, 210, int(2 + breath)))
-        core.setColorAt(1.0, QtGui.QColor(0, 0, 0, 0))
-        painter.setBrush(QtGui.QBrush(core))
-        painter.drawEllipse(unit_disc)
-        painter.restore()
-
-        painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
-        painter.restore()
+        self._paint_board_layer(painter, paint_selection_layer, layer_name="selection")
 
     def _ai_phase_badge_anchor_world(self, render: UnitRender) -> Tuple[float, float]:
         """Центр X и нижняя грань плашки (мир): сразу над блоком HP отряда."""
@@ -3407,225 +3184,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return float(cx), float(min_y - zoom_safe - self.cell_size * 0.55)
 
     def _draw_ai_phase_badge_layer(self, painter: QtGui.QPainter) -> None:
-        meta = self._ai_activation_meta
-        key = self._ai_activation_key
-        if not meta or not (meta.get("phase") is not None or meta.get("step_kind") is not None):
-            return
-        badge_text = self._format_ai_phase_badge_text(meta)
-        if not badge_text:
-            return
+        from app.viewer.rendering.layers.ai_phase_badge import paint_ai_phase_badge_layer
 
-        render = self._unit_by_key.get(key) if key else None
-        if render is not None:
-            cx, badge_bottom = self._ai_phase_badge_anchor_world(render)
-        else:
-            cx = (self._board_width * self.cell_size) * 0.5
-            badge_bottom = 24.0
-
-        font = Theme.font(10, bold=True)
-        painter.setFont(font)
-        fm = QtGui.QFontMetrics(font)
-        pad_x, pad_y = 11.0, 6.0
-        text_w = fm.horizontalAdvance(badge_text)
-        text_h = fm.height()
-        bg_w = text_w + pad_x * 2
-        bg_h = text_h + pad_y * 2
-        radius = min(bg_h * 0.5, 14.0)
-        bg_rect = QtCore.QRectF(cx - bg_w * 0.5, badge_bottom - bg_h, bg_w, bg_h)
-        margin = 4.0
-        bg_rect.moveLeft(
-            max(self._board_rect.left() + margin, min(bg_rect.left(), self._board_rect.right() - bg_w - margin))
-        )
-
-        path = QtGui.QPainterPath()
-        path.addRoundedRect(bg_rect, radius, radius)
-
-        painter.save()
-        sh = QtGui.QPainterPath()
-        sh.addRoundedRect(bg_rect.translated(1.5, 2.0), radius, radius)
-        painter.fillPath(sh, QtGui.QColor(0, 0, 0, 76))
-
-        grad = QtGui.QLinearGradient(bg_rect.topLeft(), bg_rect.bottomLeft())
-        grad.setColorAt(0.0, QtGui.QColor(48, 58, 78, 246))
-        grad.setColorAt(1.0, QtGui.QColor(24, 28, 38, 238))
-        painter.fillPath(path, grad)
-
-        bcol = QtGui.QColor(Theme.accent)
-        bcol.setAlpha(210)
-        pen = QtGui.QPen(bcol)
-        pen.setWidthF(1.25)
-        pen.setCosmetic(True)
-        painter.setPen(pen)
-        painter.setBrush(QtCore.Qt.NoBrush)
-        painter.drawPath(path)
-
-        align = int(QtCore.Qt.AlignCenter)
-        shadow = QtGui.QPen(QtGui.QColor(0, 0, 0, 165))
-        painter.setPen(shadow)
-        painter.drawText(bg_rect.translated(0.6, 1.0), align, badge_text)
-        painter.setPen(QtGui.QPen(QtGui.QColor(244, 240, 232, 252)))
-        painter.drawText(bg_rect, align, badge_text)
-        painter.restore()
+        self._paint_board_layer(painter, paint_ai_phase_badge_layer, layer_name="ai_phase_badge")
 
     def _draw_log_movement_overlay_layer(self, painter: QtGui.QPainter) -> None:
-        payload = self._log_move_overlay_hover or self._log_move_overlay_persistent
-        if not isinstance(payload, dict):
-            return
+        from app.viewer.rendering.layers.log_movement_overlay import paint_log_movement_overlay_layer
 
-        from_pos = payload.get("from")
-        to_pos = payload.get("to")
-        if not isinstance(from_pos, (tuple, list)) or len(from_pos) < 2:
-            return
-        if not isinstance(to_pos, (tuple, list)) or len(to_pos) < 2:
-            return
-
-        from_cell = self._state_xy_to_view_xy(int(from_pos[0]), int(from_pos[1]))
-        to_cell = self._state_xy_to_view_xy(int(to_pos[0]), int(to_pos[1]))
-        if from_cell is None or to_cell is None:
-            return
-
-        from_center = self._cell_center(from_cell[0], from_cell[1])
-        to_center = self._cell_center(to_cell[0], to_cell[1])
-        no_move = bool(payload.get("no_move")) or (from_cell == to_cell)
-
-        painter.save()
-        if payload is self._log_move_overlay_hover:
-            line_alpha = 150
-            marker_alpha = 170
-        else:
-            line_alpha = 220
-            marker_alpha = 235
-
-        if not no_move:
-            # Показываем alpha-ghost всего отряда только в стартовой точке (без следа по траектории).
-            trail_icon = self._icon_for_unit_name(str(payload.get("unit_name") or ""))
-            if trail_icon is not None and not trail_icon.isNull():
-                ghost_alpha = 0.30 if payload is self._log_move_overlay_hover else 0.38
-                painter.setOpacity(ghost_alpha)
-                unit_id = self._safe_int(payload.get("unit_id"))
-                matched_render = None
-                if unit_id is not None:
-                    for render in self._units:
-                        if int(render.key[1]) == int(unit_id):
-                            matched_render = render
-                            break
-
-                if matched_render is not None and matched_render.model_centers:
-                    icon_size = max(6.0, self.cell_size * self._model_icon_scale)
-                    for model_center in matched_render.model_centers:
-                        offset = model_center - matched_render.center
-                        ghost_center = from_center + offset
-                        ghost_rect = QtCore.QRectF(
-                            ghost_center.x() - icon_size / 2,
-                            ghost_center.y() - icon_size / 2,
-                            icon_size,
-                            icon_size,
-                        )
-                        painter.drawPixmap(ghost_rect, trail_icon, QtCore.QRectF(trail_icon.rect()))
-                else:
-                    icon_size = max(6.0, self.cell_size * self._unit_icon_scale)
-                    ghost_rect = QtCore.QRectF(
-                        from_center.x() - icon_size / 2,
-                        from_center.y() - icon_size / 2,
-                        icon_size,
-                        icon_size,
-                    )
-                    painter.drawPixmap(ghost_rect, trail_icon, QtCore.QRectF(trail_icon.rect()))
-            painter.setOpacity(1.0)
-            path_pen = QtGui.QPen(QtGui.QColor(95, 192, 255, line_alpha), 2.6)
-            path_pen.setCosmetic(True)
-            path_pen.setCapStyle(QtCore.Qt.RoundCap)
-            painter.setPen(path_pen)
-            painter.setBrush(QtCore.Qt.NoBrush)
-            painter.drawLine(from_center, to_center)
-
-            angle = math.atan2(to_center.y() - from_center.y(), to_center.x() - from_center.x())
-            head_len = max(8.0, self.cell_size * 0.35)
-            left = QtCore.QPointF(
-                to_center.x() - head_len * math.cos(angle - math.pi / 6.0),
-                to_center.y() - head_len * math.sin(angle - math.pi / 6.0),
-            )
-            right = QtCore.QPointF(
-                to_center.x() - head_len * math.cos(angle + math.pi / 6.0),
-                to_center.y() - head_len * math.sin(angle + math.pi / 6.0),
-            )
-            painter.setBrush(QtGui.QColor(95, 192, 255, line_alpha))
-            painter.drawPolygon(QtGui.QPolygonF([to_center, left, right]))
-
-            # Бейдж дистанции по центру траектории: "N кл."
-            move_cells = payload.get("distance")
-            try:
-                move_cells = int(move_cells)
-            except (TypeError, ValueError):
-                move_cells = 0
-            if move_cells > 0:
-                badge_center = QtCore.QPointF(
-                    (from_center.x() + to_center.x()) * 0.5,
-                    (from_center.y() + to_center.y()) * 0.5,
-                )
-                badge_text = f"{move_cells} кл."
-                font = QtGui.QFont(painter.font())
-                font.setPointSizeF(max(8.0, float(font.pointSizeF() if font.pointSizeF() > 0 else 10.0)))
-                font.setBold(True)
-                painter.setFont(font)
-                fm = QtGui.QFontMetricsF(font)
-                text_rect = fm.boundingRect(badge_text)
-                pad_x = 8.0
-                pad_y = 4.0
-                badge_rect = QtCore.QRectF(
-                    badge_center.x() - text_rect.width() * 0.5 - pad_x,
-                    badge_center.y() - text_rect.height() * 0.5 - pad_y,
-                    text_rect.width() + pad_x * 2.0,
-                    text_rect.height() + pad_y * 2.0,
-                )
-                badge_bg = QtGui.QColor(95, 192, 255, max(120, line_alpha - 25))
-                badge_border = QtGui.QPen(QtGui.QColor(135, 214, 255, max(170, line_alpha)), 1.2)
-                badge_border.setCosmetic(True)
-                painter.setPen(badge_border)
-                painter.setBrush(QtGui.QBrush(badge_bg))
-                painter.drawRoundedRect(badge_rect, 6.0, 6.0)
-                painter.setPen(QtGui.QPen(QtGui.QColor(12, 20, 32, 245)))
-                painter.drawText(badge_rect, QtCore.Qt.AlignCenter, badge_text)
-        else:
-            # No-move: явно показываем, что юнит остался на месте.
-            radius = max(6.0, self.cell_size * 0.34)
-            pulse = 0.5 + 0.5 * math.sin(monotonic() * 6.0)
-            ring_color = QtGui.QColor(255, 210, 92, int(130 + 80 * pulse))
-            ring_pen = QtGui.QPen(ring_color, 2.2)
-            ring_pen.setCosmetic(True)
-            painter.setPen(ring_pen)
-            painter.setBrush(QtCore.Qt.NoBrush)
-            painter.drawEllipse(from_center, radius, radius)
-            painter.drawEllipse(from_center, radius * 1.35, radius * 1.35)
-
-        start_pen = QtGui.QPen(QtGui.QColor(68, 214, 118, marker_alpha), 2.0)
-        start_pen.setCosmetic(True)
-        painter.setPen(start_pen)
-        painter.setBrush(QtGui.QBrush(QtGui.QColor(68, 214, 118, 85)))
-        painter.drawEllipse(from_center, max(4.0, self.cell_size * 0.22), max(4.0, self.cell_size * 0.22))
-
-        end_pen = QtGui.QPen(QtGui.QColor(255, 109, 109, marker_alpha), 2.0)
-        end_pen.setCosmetic(True)
-        painter.setPen(end_pen)
-        painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 109, 109, 95)))
-        painter.drawEllipse(to_center, max(4.0, self.cell_size * 0.24), max(4.0, self.cell_size * 0.24))
-        painter.restore()
+        self._paint_board_layer(painter, paint_log_movement_overlay_layer, layer_name="log_movement")
 
     def _target_hitbox_for_info(self, info: Dict[str, object]) -> Optional[QtCore.QRectF]:
-        key = info.get("unit_key")
-        if isinstance(key, tuple) and len(key) >= 2:
-            rect = self._unit_hitboxes_screen.get((str(key[0]), int(key[1])))
-            if rect is not None and not rect.isEmpty():
-                return rect
-        unit_id = self._safe_int(info.get("unit_id"))
-        if unit_id is None:
-            return None
-        for (side, uid), rect in self._unit_hitboxes_screen.items():
-            if int(uid) != int(unit_id):
-                continue
-            if rect is not None and not rect.isEmpty():
-                return rect
-        return None
+        from app.viewer.rendering.hit_test import target_hitbox_for_shoot_info
+
+        return target_hitbox_for_shoot_info(info, self._unit_hitboxes_screen)
 
     def _draw_shooting_targets_overlay(
         self,
@@ -3635,137 +3206,15 @@ class OpenGLBoardWidget(QOpenGLWidget):
         *,
         render_under_units: bool,
     ) -> None:
-        if not target_infos:
-            return
+        from app.viewer.rendering.layer_context import LayerContext
+        from app.viewer.rendering.layers.shooting_targets_overlay import paint_shooting_targets_overlay
 
-        self._rebuild_unit_hitboxes_screen()
-
-        style_map = {
-            "VALID": {
-                "outline": QtGui.QColor(96, 214, 118, 235),
-                "glow": QtGui.QColor(96, 214, 118, 78),
-                "width": 1.8,
-                "expand": 7.0,
-                "base": "target_valid_base",
-                "marker": "target_marker_valid",
-            },
-            "OBSCURED": {
-                "outline": QtGui.QColor(232, 190, 85, 220),
-                "glow": QtGui.QColor(232, 190, 85, 62),
-                "width": 1.7,
-                "expand": 6.0,
-                "base": "target_obscured_base",
-                "marker": "target_marker_obscured",
-            },
-            "NO_LOS": {
-                "outline": QtGui.QColor(145, 150, 160, 185),
-                "glow": QtGui.QColor(145, 150, 160, 0),
-                "width": 1.3,
-                "expand": 4.0,
-                "base": "target_nolos_base",
-                "marker": "target_marker_nolos",
-            },
-        }
-        fx_assets = self._target_overlay_assets()
-        hover_ring = fx_assets.get("target_hover_ring")
-
-        def _sprite(key: str) -> Optional[QtGui.QPixmap]:
-            pix = fx_assets.get(key)
-            if pix is None or pix.isNull():
-                return None
-            return pix
-
-        painter.save()
-        painter.setTransform(QtGui.QTransform())
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-
-        for info in target_infos:
-            key = info.get("unit_key")
-            rect = self._target_hitbox_for_info(info)
-            if rect is None:
-                continue
-
-            classification = str(info.get("classification") or "NO_LOS")
-            style = style_map.get(classification, style_map["NO_LOS"])
-            hovered = hovered_target_key is not None and isinstance(key, tuple) and len(key) >= 2 and (str(key[0]), int(key[1])) == hovered_target_key
-            base_pixmap = _sprite(str(style.get("base") or ""))
-            marker_pixmap = _sprite(str(style.get("marker") or ""))
-            use_sprite_overlay = base_pixmap is not None and marker_pixmap is not None
-
-            if use_sprite_overlay:
-                if render_under_units:
-                    base_rect = rect.adjusted(-rect.width() * 0.12, -rect.height() * 0.12, rect.width() * 0.12, rect.height() * 0.12)
-                    base_draw_rect = self._fit_pixmap_in_rect(base_pixmap, base_rect, inset_ratio=1.0)
-                    painter.save()
-                    painter.setOpacity(0.48)
-                    painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
-                    painter.drawPixmap(base_draw_rect, base_pixmap, QtCore.QRectF(base_pixmap.rect()))
-                    painter.restore()
-
-                    if hovered and hover_ring is not None:
-                        ring_rect = rect.adjusted(-rect.width() * 0.20, -rect.height() * 0.20, rect.width() * 0.20, rect.height() * 0.20)
-                        ring_draw_rect = self._fit_pixmap_in_rect(hover_ring, ring_rect, inset_ratio=1.0)
-                        painter.save()
-                        painter.setOpacity(0.42)
-                        painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
-                        painter.drawPixmap(ring_draw_rect, hover_ring, QtCore.QRectF(hover_ring.rect()))
-                        painter.restore()
-                else:
-                    marker_side = max(16.0, min(rect.width(), rect.height()) * 0.62)
-                    marker_target_rect = QtCore.QRectF(
-                        rect.right() + 5.0,
-                        rect.top() - marker_side * 0.40,
-                        marker_side,
-                        marker_side,
-                    )
-                    marker_draw_rect = self._fit_pixmap_in_rect(marker_pixmap, marker_target_rect, inset_ratio=1.0)
-                    painter.save()
-                    painter.setOpacity(0.86)
-                    painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
-                    painter.drawPixmap(marker_draw_rect, marker_pixmap, QtCore.QRectF(marker_pixmap.rect()))
-                    painter.restore()
-                continue
-
-            if render_under_units:
-                continue
-
-            expand = float(style["expand"]) + (2.0 if hovered else 0.0)
-            glow_rect = rect.adjusted(-expand, -expand, expand, expand)
-            outline_rect = rect.adjusted(-0.5, -0.5, 0.5, 0.5)
-
-            glow = QtGui.QColor(style["glow"])
-            if hovered:
-                glow.setAlpha(min(255, int(glow.alpha() * 1.35) + 18))
-            if glow.alpha() > 0:
-                painter.setPen(QtCore.Qt.NoPen)
-                painter.setBrush(glow)
-                painter.drawRoundedRect(glow_rect, 6.0, 6.0)
-
-            pen = QtGui.QPen(QtGui.QColor(style["outline"]), float(style["width"]) + (0.7 if hovered else 0.0))
-            pen.setCosmetic(True)
-            painter.setPen(pen)
-            painter.setBrush(QtCore.Qt.NoBrush)
-            painter.drawRoundedRect(outline_rect, 4.0, 4.0)
-
-            if self._viewer_debug_enabled:
-                dbg_pen = QtGui.QPen(QtGui.QColor(120, 220, 120, 135), 0.9)
-                dbg_pen.setCosmetic(True)
-                painter.setPen(dbg_pen)
-                painter.setBrush(QtCore.Qt.NoBrush)
-                painter.drawRect(rect)
-
-            if hovered:
-                marker_pos = QtCore.QPointF(rect.right() + 6.0, rect.top() - 4.0)
-                marker_bg = QtCore.QRectF(marker_pos.x() - 2.0, marker_pos.y() - 1.0, 18.0, 18.0)
-                painter.setPen(QtCore.Qt.NoPen)
-                painter.setBrush(QtGui.QColor(24, 24, 24, 155))
-                painter.drawRoundedRect(marker_bg, 6.0, 6.0)
-                painter.setPen(QtGui.QPen(QtGui.QColor(255, 245, 190, 245), 1.0))
-                font = QtGui.QFont(Theme.font(size=9, bold=True))
-                painter.setFont(font)
-                painter.drawText(marker_bg, QtCore.Qt.AlignCenter, "🎯")
-
-        painter.restore()
+        paint_shooting_targets_overlay(
+            LayerContext(self, painter),
+            target_infos,
+            hovered_target_key,
+            render_under_units=render_under_units,
+        )
 
     def _target_overlay_assets(self) -> Dict[str, Optional[QtGui.QPixmap]]:
         if self._target_overlay_pixmaps:
@@ -3784,58 +3233,23 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return self._target_overlay_pixmaps
 
     def _draw_shooting_layer(self, painter: QtGui.QPainter, *, target_pass: str = "over") -> None:
-        if not self._should_show_shooting():
-            return
-        if not (self._shoot_target_infos or (self._show_shoot_range_cells and self._shoot_range_highlights)):
-            return
+        from app.viewer.rendering.layers.shooting import paint_shooting_layer
 
-        draw_under_units = str(target_pass).lower() == "under"
+        def _paint(ctx):
+            paint_shooting_layer(ctx, target_pass=target_pass)
 
-        if (not draw_under_units) and self._show_shoot_range_cells and self._shoot_range_highlights:
-            painter.save()
-            painter.setBrush(QtGui.QBrush(zone_fill_color(SHOOTING_FULL_ZONE_STYLE)))
-            painter.setPen(zone_border_pen(SHOOTING_FULL_ZONE_STYLE))
-            for rect in self._shoot_range_highlights:
-                painter.drawRect(rect)
-
-            if self._shoot_rapid_range_highlights:
-                painter.setPen(zone_border_pen(SHOOTING_RAPID_ZONE_STYLE))
-                painter.setBrush(self._rapid_fire_hatch_brush())
-                for rect in self._shoot_rapid_range_highlights:
-                    painter.drawRect(rect)
-            painter.restore()
-
-        self._draw_shooting_targets_overlay(
-            painter,
-            self._shoot_target_infos,
-            self._shoot_hovered_target_key,
-            render_under_units=draw_under_units,
-        )
+        label = "shooting_under" if str(target_pass).lower() == "under" else "shooting_over"
+        self._paint_board_layer(painter, _paint, layer_name=label)
 
     def _draw_labels_layer(self, painter: QtGui.QPainter) -> None:
-        text_font = Theme.font(size=8, bold=True)
-        painter.setFont(text_font)
-        painter.setPen(Theme.text)
-        for label, pos in self._objective_labels:
-            painter.drawText(pos, label)
+        from app.viewer.rendering.layers.labels import paint_labels_layer
+
+        self._paint_board_layer(painter, paint_labels_layer, layer_name="labels")
 
     def _draw_squad_status_layer(self, painter: QtGui.QPainter) -> None:
-        if not self._units:
-            return
-        compact_mode = self._scale < 0.55
-        hp_text_font = Theme.font(size=7 if compact_mode else 8, bold=True)
-        for render in self._units:
-            unit = self._unit_state_by_key.get(render.key)
-            if not isinstance(unit, dict):
-                continue
-            status = self._interpolate_status(render.key)
-            if status is None:
-                continue
-            layout = self._build_status_layout(render, status, compact_mode)
-            self._draw_squad_hp_bar(painter, render.key, layout, status, compact_mode)
-            if not compact_mode:
-                self._draw_squad_model_pips(painter, render.key, layout, status)
-                self._draw_squad_hp_text(painter, layout.center_x, layout.top_y - 2.0, status, hp_text_font)
+        from app.viewer.rendering.layers.squad_status import paint_squad_status_layer
+
+        self._paint_board_layer(painter, paint_squad_status_layer, layer_name="squad_status")
 
     def _build_status_layout(self, render: UnitRender, status: SquadStatusSnapshot, compact_mode: bool) -> "_StatusLayout":
         bar_w = max(24.0, self.cell_size * (1.55 if compact_mode else 1.9))
@@ -4414,148 +3828,19 @@ class OpenGLBoardWidget(QOpenGLWidget):
         return tinted
 
     def _draw_deploy_snap_fx_layer(self, painter: QtGui.QPainter) -> None:
-        if not self._deploy_placement_fx:
-            return
-        now = monotonic()
-        painter.save()
-        painter.setBrush(QtCore.Qt.NoBrush)
-        for fx in self._deploy_placement_fx:
-            elapsed = now - fx.t0
-            if elapsed < 0.0 or elapsed > fx.duration:
-                continue
-            progress = max(0.0, min(1.0, elapsed / fx.duration))
-            alpha = int(180 * (1.0 - progress))
-            radius = self.cell_size * (0.30 + 0.28 * progress)
-            pen = QtGui.QPen(QtGui.QColor(120, 230, 255, alpha), 1.8)
-            painter.setPen(pen)
-            for state_x, state_y in fx.cells:
-                view_cell = self._state_xy_to_view_xy(state_x, state_y)
-                if view_cell is None:
-                    continue
-                center = self._cell_center(view_cell[0], view_cell[1])
-                painter.drawEllipse(center, radius, radius)
-        painter.restore()
+        from app.viewer.rendering.layers.deploy_snap_fx import paint_deploy_snap_fx_layer
+
+        self._paint_board_layer(painter, paint_deploy_snap_fx_layer, layer_name="deploy_snap_fx")
 
     def _draw_fx_layer(self, painter: QtGui.QPainter) -> None:
-        self._draw_particles_layer(painter)
-        self._draw_gauss_effects(painter)
-        if not self._fx_pixmaps:
-            return
-        t = (perf_counter() - self._t0) if self._t0 is not None else 0.0
-        pulse = 0.5 + 0.5 * math.sin(2 * math.pi * t * 1.2)
+        from app.viewer.rendering.layers.fx import paint_fx_layer
 
-        target_unit = self._find_unit_by_id(self._target_unit_id)
-        target_render = self._unit_render_for_unit(target_unit)
-        target_center = None
-        target_radius = None
-        if target_render:
-            target_center = target_render.center
-            target_radius = target_render.radius
-        elif self._target_cell is not None:
-            target_center = self._cell_center(*self._target_cell)
-            target_radius = self.cell_size * 0.4
-        if target_center is not None and target_radius is not None:
-            if target_render is not None and target_render.key == self._selected_unit_key:
-                target_center = None
-            else:
-                # Цвет «цели» из легенды, не фракции: иначе отряд некронов игрока подсвечивается
-                # тем же зелёным, что и «Ты», во время хода ИИ (стрельба/заряд и т.д.).
-                color = QtGui.QColor(Theme.objective)
-                strength = 1.0
-                ring_pixmap = self._tinted_pixmap("ring_soft", color)
-                seg_pixmap = self._tinted_pixmap("tesseract_segments", color)
-                ring_alpha = 0.5 * (0.7 + 0.3 * pulse) * strength
-                seg_alpha = 0.55 * (0.8 + 0.2 * pulse) * strength
-                ring_size = target_radius * 4.4 * (0.95 + 0.08 * pulse)
-                seg_size = target_radius * 5.0 * (0.98 + 0.05 * pulse)
-                tr_base = max(target_radius * 2.75, self.cell_size * 1.05)
-                self._draw_soft_radial_glow_ellipse(
-                    painter,
-                    float(target_center.x()),
-                    float(target_center.y()),
-                    tr_base * 1.12,
-                    tr_base * 0.92,
-                    color,
-                    strength,
-                    composition=QtGui.QPainter.CompositionMode_SourceOver,
-                    peak_alpha=40,
-                )
-                painter.save()
-                painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
-                self._draw_fx_sprite(painter, ring_pixmap, target_center, ring_size, ring_alpha)
-                angle = math.degrees(t * 0.6)
-                self._draw_fx_sprite(
-                    painter,
-                    seg_pixmap,
-                    target_center,
-                    seg_size,
-                    seg_alpha,
-                    rotation_deg=angle,
-                )
-                painter.restore()
-
-        if self._hover_cell is not None:
-            hover_center = self._cell_center(*self._hover_cell)
-            hover_color = QtGui.QColor(200, 230, 255)
-            hover_pixmap = self._tinted_pixmap("glow_soft", hover_color)
-            hover_alpha = 0.25 * (0.8 + 0.2 * pulse)
-            hover_size = self.cell_size * 2.2
-            painter.save()
-            painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
-            self._draw_fx_sprite(painter, hover_pixmap, hover_center, hover_size, hover_alpha)
-            painter.restore()
+        self._paint_board_layer(painter, paint_fx_layer, layer_name="fx")
 
     def _draw_platform_fx_layer(self, painter: QtGui.QPainter) -> None:
-        if not self._fx_pixmaps:
-            return
-        t = (perf_counter() - self._t0) if self._t0 is not None else 0.0
-        pulse = 0.5 + 0.5 * math.sin(2 * math.pi * t * 1.2)
+        from app.viewer.rendering.layers.platform_fx import paint_platform_fx_layer
 
-        active_unit, active_render = self._resolve_unit_by_key_or_id(
-            self._active_unit_side,
-            self._active_unit_id,
-        )
-        if active_render:
-            color, strength = self._fx_color_for_unit(active_unit)
-            self._draw_platform_highlight(
-                painter,
-                active_render,
-                color,
-                strength,
-                pulse,
-                t,
-            )
-
-        selected_matches_active = (
-            self._selected_unit_id == self._active_unit_id
-            and self._selected_unit_side == self._active_unit_side
-        )
-        if self._selected_unit_id is None or selected_matches_active:
-            return
-        # Во время хода ИИ не дублируем «выбранный» отряд игрока второй платформой.
-        if not self._viewer_human_turn_active():
-            return
-        selected_unit, selected_render = self._resolve_unit_by_key_or_id(
-            self._selected_unit_side,
-            self._selected_unit_id,
-        )
-        if selected_render:
-            selected_color = QtGui.QColor(120, 200, 255)
-            _, base_strength = self._fx_color_for_unit(selected_unit)
-            selected_strength = max(0.26, base_strength * 0.62)
-            self._draw_platform_highlight(
-                painter,
-                selected_render,
-                selected_color,
-                selected_strength,
-                pulse,
-                t,
-                pulse_strength=0.16,
-                glow_scale=0.42,
-                noise_scale=0.30,
-                scan_scale=0.36,
-                sparkle_scale=0.0,
-            )
+        self._paint_board_layer(painter, paint_platform_fx_layer, layer_name="platform_fx")
 
     def _resolve_unit_by_key_or_id(
         self,
@@ -5048,10 +4333,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
             def ease_out(value: float) -> float:
                 return (1.0 - value) ** 2
 
-            glow_alpha = 0.55 * ease_out(glow_p)
-            core_alpha = 0.85 * ease_out(core_p)
-            flash_alpha = 0.9 * ease_out(flash_p)
-            ring_alpha = 0.7 * ease_out(ring_p)
+            glow_alpha = 0.55 * ease_out(glow_p) * float(getattr(self, "_fx_gauss_alpha_scale", 1.0) or 1.0)
+            core_alpha = 0.85 * ease_out(core_p) * float(getattr(self, "_fx_gauss_alpha_scale", 1.0) or 1.0)
+            flash_alpha = 0.9 * ease_out(flash_p) * float(getattr(self, "_fx_gauss_alpha_scale", 1.0) or 1.0)
+            ring_alpha = 0.7 * ease_out(ring_p) * float(getattr(self, "_fx_gauss_alpha_scale", 1.0) or 1.0)
 
             glow_color = QtGui.QColor(*config.get("glow_color", (90, 255, 140)))
             core_color = QtGui.QColor(*config.get("core_color", (140, 255, 190)))
@@ -5401,15 +4686,20 @@ class OpenGLBoardWidget(QOpenGLWidget):
             hitboxes[key] = QtCore.QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
         self._unit_hitboxes_screen = hitboxes
 
+    def hit_test_screen(self, screen_pos: QtCore.QPointF):
+        """Screen-space pick using icon hitboxes (for QML / ``ViewerController.hitTestBoard``)."""
+        from app.viewer.rendering.hit_test import HitResult, pick_unit_screen
+
+        self._rebuild_unit_hitboxes_screen()
+        key = pick_unit_screen(screen_pos, self._unit_hitboxes_screen, self._units)
+        if key is None:
+            return HitResult.none()
+        return HitResult(kind="unit", side=str(key[0]), unit_id=int(key[1]))
+
     def _unit_key_at_screen_pos(self, screen_pos: QtCore.QPointF) -> Optional[Tuple[str, int]]:
-        if not self._unit_hitboxes_screen:
-            return None
-        for render in reversed(self._units):
-            key = render.key
-            rect = self._unit_hitboxes_screen.get(key)
-            if rect is not None and rect.contains(screen_pos):
-                return key
-        return None
+        from app.viewer.rendering.hit_test import pick_unit_screen
+
+        return pick_unit_screen(screen_pos, self._unit_hitboxes_screen, self._units)
 
     def _update_shooting_hover_target(self, screen_pos: QtCore.QPointF) -> None:
         if not self._should_show_shooting() or not self._shoot_target_infos:
@@ -6317,88 +5607,14 @@ class OpenGLBoardWidget(QOpenGLWidget):
         }
 
     def _draw_hovered_terrain_cells_layer(self, painter: QtGui.QPainter) -> None:
-        feature = self._hover_terrain_feature
-        if not isinstance(feature, dict):
-            return
-        cells = list(feature.get("cells") or [])
-        if not cells:
-            return
-        painter.save()
-        pen = QtGui.QPen(QtGui.QColor(247, 186, 78, 215), 1.8)
-        pen.setCosmetic(True)
-        painter.setPen(pen)
-        painter.setBrush(QtGui.QColor(247, 186, 78, 45))
-        for cell in cells:
-            if not isinstance(cell, (list, tuple)) or len(cell) < 2:
-                continue
-            row = int(cell[0])
-            col = int(cell[1])
-            rect = QtCore.QRectF(
-                col * self.cell_size,
-                row * self.cell_size,
-                self.cell_size,
-                self.cell_size,
-            )
-            painter.drawRect(rect)
-        painter.restore()
+        from app.viewer.rendering.layers.hovered_terrain_cells import paint_hovered_terrain_cells_layer
+
+        self._paint_board_layer(painter, paint_hovered_terrain_cells_layer, layer_name="hovered_terrain_cells")
 
     def _draw_unit_tooltip_overlays_layer(self, painter: QtGui.QPainter) -> None:
-        if self._hover_unit_key is None:
-            return
-        unit = self._state_unit(self._hover_unit_key)
-        if not unit:
-            return
-        painter.save()
-        base_pen = QtGui.QPen(QtGui.QColor(112, 192, 131, 210), 1.8)
-        base_pen.setCosmetic(True)
-        painter.setPen(base_pen)
-        painter.setBrush(QtGui.QColor(112, 192, 131, 38))
-        unit_cells = self._unit_model_view_cells(unit) or ([self._unit_anchor_view_cell(unit)] if self._unit_anchor_view_cell(unit) else [])
-        for cell in unit_cells:
-            if cell is None:
-                continue
-            rect = QtCore.QRectF(cell[0] * self.cell_size, cell[1] * self.cell_size, self.cell_size, self.cell_size)
-            painter.drawRect(rect)
+        from app.viewer.rendering.layers.unit_tooltip_overlays import paint_unit_tooltip_overlays_layer
 
-        # враги в LoS/дистанции
-        threat = self._hover_tooltip_text.get("threat") if isinstance(self._hover_tooltip_text, dict) else {}
-        los_keys = (threat or {}).get("enemies_in_los_keys") or []
-        los_pen = QtGui.QPen(QtGui.QColor(242, 188, 76, 190), 1.5)
-        los_pen.setCosmetic(True)
-        painter.setPen(los_pen)
-        painter.setBrush(QtGui.QColor(242, 188, 76, 20))
-        for key in los_keys:
-            target = self._unit_by_key.get(key)
-            if target is None:
-                continue
-            painter.drawEllipse(target.center, target.radius + 3, target.radius + 3)
-
-        if self._hover_weapon_range is not None:
-            weapon_keys = self._enemy_keys_in_range_of(unit, forced_range=self._hover_weapon_range)
-            w_pen = QtGui.QPen(QtGui.QColor(169, 123, 245, 210), 1.8)
-            w_pen.setCosmetic(True)
-            painter.setPen(w_pen)
-            painter.setBrush(QtGui.QColor(169, 123, 245, 28))
-            for key in weapon_keys:
-                target = self._unit_by_key.get(key)
-                if target is None:
-                    continue
-                painter.drawEllipse(target.center, target.radius + 5, target.radius + 5)
-
-        if self._hover_status_enemy_ids:
-            s_pen = QtGui.QPen(QtGui.QColor(255, 245, 120, 230), 1.6)
-            s_pen.setCosmetic(True)
-            painter.setPen(s_pen)
-            painter.setBrush(QtGui.QColor(255, 245, 120, 24))
-            for key, target in self._unit_by_key.items():
-                if target is None:
-                    continue
-                if key[0] == unit.get("side"):
-                    continue
-                if int(key[1]) not in self._hover_status_enemy_ids:
-                    continue
-                painter.drawEllipse(target.center, target.radius + 7, target.radius + 7)
-        painter.restore()
+        self._paint_board_layer(painter, paint_unit_tooltip_overlays_layer, layer_name="unit_tooltip_overlays")
 
     def _unit_display_name(self, unit: dict) -> str:
         name = str(unit.get("name") or "").strip()

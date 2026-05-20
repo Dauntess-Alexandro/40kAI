@@ -22,6 +22,7 @@
 - Train через bat: `train.bat`
 - Eval через GUI вкладку `Оценка`
 - Viewer через bat: `scripts/viewer.bat`
+- **Windows + QML-панели:** если доска чёрная или консоль спамит `D3D11` / `QOpenGLWidget`, по умолчанию viewer выставляет `QSG_RHI_BACKEND=opengl` до загрузки Qt; переопределение: env `VIEWER_QSG_RHI_BACKEND` (например `d3d11`, `vulkan`, `opengl`).
 
 ## Где что лежит
 - Код GUI/Viewer: `app/`
@@ -30,6 +31,11 @@
 - Модели и метрики: `artifacts/models`, `artifacts/metrics`
 - Runtime состояние и логи: `runtime/state`, `runtime/logs`
 - Результаты eval: `artifacts/results/results.txt`
+- План модернизации viewer (QML-hybrid): `docs/viewer_migration_plan.md`, контракт состояния: `docs/viewer_state_contract.md`
+- Общие цвета UI: `theme/tokens.json` (лаунчер всегда; viewer — флаг `viewer.theme.v2` в `app/viewer/viewer_config.json` или env `VIEWER_FLAG_VIEWER_THEME_V2=1`)
+- ViewerController (миграция Sprint 3): флаг `viewer.controller.v1` в том же JSON или env `VIEWER_FLAG_VIEWER_CONTROLLER_V1=1`
+- Модульные слои доски Sprint 4 (`ground` / `grid` / `objectives` / `labels`): код в `app/viewer/rendering/`; флаг `viewer.render.layers_v2`; для замера времени слоя в консоли задайте env `VIEWER_LAYER_MS=1`
+- Sprint 5 — почти полный стек слоёв доски в `app/viewer/rendering/layers/` (в т.ч. terrain props, decals при `render_decals`, hover/tooltip оверлеи, platform FX, squad HUD, damage popups, AI badge); координатный hit-test: `ViewerController.hitTestBoard(x,y)` → `{kind, side, unitId}`; зелёные hitbox при `viewer.debug.overlay` или `VIEWER_DEBUG=1`; счётчик отрисовок и маркер последнего клика — при `viewer.debug.overlay`
 
 ## Отладка
 - train/eval лог: `runtime/logs/LOGS_FOR_AGENTS_TRAIN.md`

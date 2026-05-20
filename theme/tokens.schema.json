@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "40kAI theme tokens",
+  "type": "object",
+  "required": ["schema_version", "color"],
+  "properties": {
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "color": {
+      "type": "object",
+      "required": ["bg", "text", "accent"],
+      "properties": {
+        "bg": {
+          "type": "object",
+          "required": ["bgBase", "bgSurface", "bgElevated"]
+        },
+        "border": { "type": "object" },
+        "text": {
+          "type": "object",
+          "required": ["textPrimary", "textSecondary"]
+        },
+        "accent": { "type": "object" },
+        "game": { "type": "object" }
+      }
+    },
+    "radius": { "type": "object" },
+    "spacing": { "type": "object" },
+    "font": { "type": "object" },
+    "motion": { "type": "object" }
+  },
+  "additionalProperties": true
+}

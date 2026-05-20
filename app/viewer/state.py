@@ -45,6 +45,17 @@ def load_state(path: str) -> Dict[str, Any]:
     return state
 
 
+def merge_with_defaults(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge engine/export payload into viewer defaults (same rules as load_state).
+
+    Used by ``state_adapter`` for typed snapshots without reading a file.
+    """
+    merged = _default_state()
+    if isinstance(data, dict):
+        merged.update(data)
+    return merged
+
+
 @dataclass
 class StateWatcher:
     path: str

@@ -36,17 +36,27 @@ ApplicationWindow {
     property int evalDetailTab: 0
     property int radiusSm: Math.round(8 * uiScale)
     property int radiusMd: Math.round(12 * uiScale)
-    property color bgBase: "#0F172A"
-    property color bgSurface: "#131b2d"
-    property color bgElevated: "#1E293B"
-    property color borderMuted: "#334155"
-    property color textPrimary: "#d7dde7"
-    property color textSecondary: "#98a4b8"
-    property color accentP1: "#2f6ed8"
-    property color accentP2: "#cf3f3f"
-    property color accentPrimaryAction: "#b88a26"
-    property color accentDanger: "#a35345"
-    property color accentGhost: "#6f7d92"
+
+    function themeColor(key, fallback) {
+        if (typeof themeTokens !== "undefined" && themeTokens !== null) {
+            var v = themeTokens[key]
+            if (v !== undefined && v !== "")
+                return v
+        }
+        return fallback
+    }
+
+    property color bgBase: themeColor("bgBase", "#0F172A")
+    property color bgSurface: themeColor("bgSurface", "#131b2d")
+    property color bgElevated: themeColor("bgElevated", "#1E293B")
+    property color borderMuted: themeColor("borderMuted", "#334155")
+    property color textPrimary: themeColor("textPrimary", "#d7dde7")
+    property color textSecondary: themeColor("textSecondary", "#98a4b8")
+    property color accentP1: themeColor("accentP1", "#2f6ed8")
+    property color accentP2: themeColor("accentP2", "#cf3f3f")
+    property color accentPrimaryAction: themeColor("accentPrimaryAction", "#b88a26")
+    property color accentDanger: themeColor("accentDanger", "#a35345")
+    property color accentGhost: themeColor("accentGhost", "#6f7d92")
     property color uiBgBase: bgSurface
     property color uiBgCard: bgElevated
     property color uiBorder: borderMuted

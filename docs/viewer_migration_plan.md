@@ -1,6 +1,6 @@
 # 40kAI Viewer Migration Plan — QML-hybrid (executable)
 
-> **Status:** Draft, pending review.
+> **Status:** Sprint 1–8 on `main`: layered `paintGL`; migration flags default **ON** in `viewer_config.json` / `config._DEFAULTS` (debug overlay & shader pilot still off); `viewer.fx.v2` drives motion/popup/Gauss tuning from `theme/tokens.json`; `viewer.ui.qml_panels` embeds `ViewerMain.qml` + **QML `LogPanel.qml`** (ListView/log model) and **toast/confirm** popups via `ViewerDialogBridge`. Per-model move **stagger** when `fx.v2`; cell hover & platform selection tints align with **`Theme.highlight` / `Theme.selection`**. OpenGLBoardWidget still owns particles/Gauss core.
 > **Companion document:** [viewer_modernization_roadmap.md](viewer_modernization_roadmap.md) (strategy / phases / KPI).
 > **This document:** sprint-level tasks, contracts, DoD, verifiable artefacts, governance, CI, packaging.
 
@@ -78,8 +78,10 @@ app/viewer/
         UnitInfoPanel.qml
       dialogs/                    # QML-side input dialogs (later phase)
   theme/
-    tokens.py                     # Python view of shared tokens
+    tokens.py                     # Python reader for shared tokens (path: repo `theme/tokens.json`, see §3.3)
 ```
+
+**Shared tokens file (outside `app/viewer/`):** `theme/tokens.json` at repo root (or `app/theme/` — same choice as in §3.3). The tree above is viewer-centric; launcher loads the same JSON.
 
 `ViewerController` is the **only** object QML and the legacy window both talk to. No QML file may import from `core.engine.*`.
 
@@ -197,26 +199,26 @@ Each sprint = ~1 week. Adjust to actual cadence; gates are DoD, not calendar.
 1. Introduce `LayerContext` (painter, transform, snapshot, config, debug-flags).
 2. Extract `ground_layer`, `grid_layer`, `labels_layer`, `objectives_layer` out of `OpenGLBoardWidget`.
 3. `OpenGLBoardWidget.paintGL` becomes: prepare context → iterate layer stack → debug overlay.
-4. Add snapshot tests: render each layer to offscreen `QImage`, compare to fixture (per-pixel allowed delta documented).
+4. Add automated coverage for layers (smoke: offscreen `QImage`; snapshot-per-fixture optional later).
 5. Behind `viewer.render.layers_v2` flag.
 
 **DoD**
-- 4 layers extracted, each independently testable.
+- 4 layers extracted, each independently testable (`tests/viewer/test_render_layers.py`).
 - Frametime within ±5 % of baseline.
 - Visual diff under tolerance.
 
 ### Sprint 5 — Render skeleton (hard layers)
 
 **Tasks**
-1. Extract `movement_layer`, `shooting_layer`, `units_layer`, `fx_layer`.
-2. Move `hit_test` into its own module; expose as `controller.hitTest(point) -> HitResult`.
-3. Add `debug_overlay_layer` (hit-rects, last click, frame counter) behind `viewer.debug.overlay`.
-4. Reduce `opengl_view.py` to ≤ 1 500 LOC orchestrator.
+1. Extract `movement_layer`, `shooting_layer`, `units_layer`, `fx_layer` (`app/viewer/rendering/layers/`).
+2. Move picking helpers into `rendering/hit_test.py`; expose `ViewerController.hitTestBoard(x,y)` → `{kind, side, unitId}`.
+3. Route debug HUD (`hitboxes`, paint counter, last-click marker, legacy Key **D** overlay text) through `layers/debug_overlay.py`; enable overlay extras via `viewer.debug.overlay` (hitboxes also when `VIEWER_DEBUG=1`).
+4. **Stretch:** shrink `opengl_view.py` toward a thin orchestrator; shooting target overlay paint + target hitbox resolver now live in `rendering/layers/shooting_targets_overlay.py` and `rendering/hit_test.py` (widget keeps thin stubs for API / regression greps).
 
 **DoD**
-- All gameplay layers extracted.
-- Interaction regression tests green.
-- Soak test: 10-min match, no layer leak / FPS drift > 5 %.
+- Hard layers live under `rendering/layers/` and are wired through `_paint_board_layer` like Sprint 4.
+- `hit_test` unit tests + controller delegation test green.
+- Soak test: 10-min match, no layer leak / FPS drift > 5 % (manual / perf harness).
 
 ### Sprint 6 — FX polish (no QML yet)
 
@@ -485,6 +487,6 @@ Keeping these updated is part of DoD for the sprint that introduces them.
 
 This plan is the **executable slice** of [viewer_modernization_roadmap.md](viewer_modernization_roadmap.md):
 
-- Roadmap §6–11 ↔ Sprints 2–9 here.
+- Roadmap §6–11 ↔ Sprints 2–10 в [viewer_migration_plan.md](viewer_migration_plan.md).
 - Roadmap KPI ↔ §14 reference machine + verification matrix.
 - Long-term backlog (roadmap §17) stays out of scope unless explicitly pulled into a sprint.

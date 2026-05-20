@@ -1,0 +1,12 @@
+{
+  "phase": "deployment",
+  "active": "model",
+  "deployment": {
+    "attacker": "model",
+    "defender": "player",
+    "mode": "manual",
+    "rl_stats": null
+  },
+  "units": [],
+  "viewer": {}
+}
