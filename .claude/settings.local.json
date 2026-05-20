@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm 'C:\\\\Users\\\\Professional\\\\.claude\\\\projects\\\\c--40kAI\\\\memory\\\\project_godot_migration.md')"
+    ]
+  }
+}

@@ -5,16 +5,25 @@ import sys
 from pathlib import Path
 
 
+def _find_app_root(start: Path) -> Path:
+    """Ищем каталог с train.py и project_paths.py (репо или Program Files\\40kAI)."""
+    start = start.resolve()
+    for candidate in (start, *start.parents):
+        if (candidate / "train.py").is_file() and (candidate / "project_paths.py").is_file():
+            return candidate
+    # запасной вариант: родитель папки 40kAI_GUI (старая логика Install.exe)
+    if start.name.lower() == "40kai_gui":
+        return start.parent
+    return start
+
+
 def _resolve_project_root() -> Path:
-    """Корень установки: env 40KAI_INSTALL_ROOT, родитель 40kAI_GUI.exe, или каталог репозитория."""
+    """Корень установки: env 40KAI_INSTALL_ROOT, поиск от exe вверх, или каталог репозитория."""
     env_root = os.environ.get("40KAI_INSTALL_ROOT", "").strip()
     if env_root:
         return Path(env_root).resolve()
     if getattr(sys, "frozen", False):
-        exe = Path(sys.executable).resolve()
-        if exe.parent.name.lower() == "40kai_gui":
-            return exe.parent.parent
-        return exe.parent
+        return _find_app_root(Path(sys.executable).resolve().parent)
     return Path(__file__).resolve().parent
 
 
