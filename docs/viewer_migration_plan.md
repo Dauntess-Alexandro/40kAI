@@ -1,7 +1,7 @@
 # 40kAI Viewer Migration Plan — QML-hybrid (executable)
 
 > **Status:** Sprint 1–8 on `main`: layered `paintGL`; migration flags default **ON** in `viewer_config.json` / `config._DEFAULTS` (debug overlay & shader pilot still off); `viewer.fx.v2` drives motion/popup/Gauss tuning from `theme/tokens.json`; `viewer.ui.qml_panels` embeds `ViewerMain.qml` + **QML `LogPanel.qml`** (ListView/log model) and **toast/confirm** popups via `ViewerDialogBridge`. Per-model move **stagger** when `fx.v2`; cell hover & platform selection tints align with **`Theme.highlight` / `Theme.selection`**. OpenGLBoardWidget still owns particles/Gauss core.
-> **Companion document:** [viewer_modernization_roadmap.md](viewer_modernization_roadmap.md) (strategy / phases / KPI).
+> **Companion documents:** [viewer_modernization_roadmap.md](viewer_modernization_roadmap.md) (strategy / phases / KPI); [viewer_gauss_fx.md](viewer_gauss_fx.md) (Gauss FX pipeline, assets, tuning changelog).
 > **This document:** sprint-level tasks, contracts, DoD, verifiable artefacts, governance, CI, packaging.
 
 ---

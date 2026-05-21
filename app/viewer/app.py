@@ -21,6 +21,7 @@ elif sys.platform == "win32":
 
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import QFileSystemWatcher, QStringListModel, QUrl
+from PySide6.QtQml import QQmlEngine
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface
 from PySide6.QtQuickWidgets import QQuickWidget
 from project_paths import AGENT_PLAY_LOG_PATH, APP_DIR, CORE_DIR, PROJECT_ROOT, ensure_runtime_dirs
@@ -46,7 +47,7 @@ from app.viewer.controller.viewer_controller import (
 from app.viewer.opengl_view import OpenGLBoardWidget
 from app.viewer.ui.dialog_bridge import ViewerDialogBridge
 from app.viewer.ui.log_model import ViewerLogListModel
-from app.viewer.gun_fx import get_gun_fx_config
+from app.viewer.gun_fx import get_gun_fx_config, resolve_fx_profile
 from app.viewer.state import StateWatcher
 from app.viewer.styles import Theme
 
@@ -343,6 +344,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.viewer_controller = ViewerController(parent=self)
         self.viewer_controller.attach_window(self)
         self.viewer_dialogs = ViewerDialogBridge(self)
+        self._retain_qml_context_objects()
         if self._controller_v1:
             self.viewer_controller.stateUpdated.connect(self._apply_controller_status_labels_to_widgets)
         cell_size = int(self._viewer_config.get("cell_size", 24))
@@ -679,16 +681,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._maybe_install_qml_hot_reload(qw)
         return host
 
-    def _create_qml_side_panel_widget(self) -> QQuickWidget:
-        self._qml_command_label_model = QStringListModel(self)
-        self._qml_command_payloads = []
-        self._qml_command_label_model.setStringList([])
-        qml_dir = (APP_DIR / "viewer" / "ui" / "qml").resolve()
-        qw = QQuickWidget(self)
-        qw.setResizeMode(_QQUICK_RESIZE_ROOT_TO_VIEW)
-        qw.setClearColor(QtGui.QColor(Theme.panel.name()))
-        eng = qw.engine()
-        eng.addImportPath(str(qml_dir))
+    def _retain_qml_context_objects(self) -> None:
+        """Keep bridge QObjects owned by C++ so QML never sees null context props."""
+        QQmlEngine.setObjectOwnership(self.viewer_controller, QQmlEngine.CppOwnership)
+        QQmlEngine.setObjectOwnership(self.viewer_dialogs, QQmlEngine.CppOwnership)
+
+    def _bind_viewer_main_qml_context(self, qw: QQuickWidget) -> None:
+        self._retain_qml_context_objects()
         ctx = qw.rootContext()
         ctx.setContextProperty("viewerController", self.viewer_controller)
         ctx.setContextProperty("viewerDialogs", self.viewer_dialogs)
@@ -702,10 +701,31 @@ class ViewerWindow(QtWidgets.QMainWindow):
         ctx.setContextProperty("objectiveColor", Theme.objective.name())
         ctx.setContextProperty("legendPlayer", self._viewer_player_role_label)
         ctx.setContextProperty("legendModel", self._viewer_model_role_label)
+
+    def _bind_viewer_log_qml_context(self, qw: QQuickWidget) -> None:
+        self._retain_qml_context_objects()
+        ctx = qw.rootContext()
+        ctx.setContextProperty("viewerController", self.viewer_controller)
+        ctx.setContextProperty("bgSurfaceColor", Theme.panel.name())
+        ctx.setContextProperty("textPrimaryColor", Theme.text.name())
+        ctx.setContextProperty("textSecondaryColor", Theme.muted.name())
+
+    def _create_qml_side_panel_widget(self) -> QQuickWidget:
+        self._qml_command_label_model = QStringListModel(self)
+        self._qml_command_payloads = []
+        self._qml_command_label_model.setStringList([])
+        qml_dir = (APP_DIR / "viewer" / "ui" / "qml").resolve()
+        qw = QQuickWidget(self)
+        qw.setResizeMode(_QQUICK_RESIZE_ROOT_TO_VIEW)
+        qw.setClearColor(QtGui.QColor(Theme.panel.name()))
+        eng = qw.engine()
+        eng.addImportPath(str(qml_dir))
+        self._bind_viewer_main_qml_context(qw)
         qw.setSource(QUrl.fromLocalFile(str(qml_dir / "ViewerMain.qml")))
         if qw.status() == QQuickWidget.Status.Error:
             errs = qw.errors()
             raise RuntimeError("; ".join(str(e) for e in errs) if errs else "QML Error")
+        self._bind_viewer_main_qml_context(qw)
         self._sync_qml_side_state()
         return qw
 
@@ -716,16 +736,14 @@ class ViewerWindow(QtWidgets.QMainWindow):
         qw.setClearColor(QtGui.QColor(Theme.panel.name()))
         eng = qw.engine()
         eng.addImportPath(str(qml_dir))
+        self._bind_viewer_log_qml_context(qw)
         ctx = qw.rootContext()
-        ctx.setContextProperty("viewerController", self.viewer_controller)
         ctx.setContextProperty("viewerLogModel", self._qml_log_model)
-        ctx.setContextProperty("bgSurfaceColor", Theme.panel.name())
-        ctx.setContextProperty("textPrimaryColor", Theme.text.name())
-        ctx.setContextProperty("textSecondaryColor", Theme.muted.name())
         qw.setSource(QUrl.fromLocalFile(str(qml_dir / "LogPanel.qml")))
         if qw.status() == QQuickWidget.Status.Error:
             errs = qw.errors()
             raise RuntimeError("; ".join(str(e) for e in errs) if errs else "LogPanel QML error")
+        self._bind_viewer_log_qml_context(qw)
         return qw
 
     def _maybe_install_qml_hot_reload(self, qw: QQuickWidget) -> None:
@@ -740,10 +758,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._qml_reload_timer = timer
 
         def _do_reload():
+            self._bind_viewer_main_qml_context(qw)
             eng = qw.engine()
             if eng is not None:
                 eng.clearComponentCache()
             qw.setSource(qw.source())
+            self._bind_viewer_main_qml_context(qw)
+            self._sync_qml_side_state()
 
         timer.timeout.connect(_do_reload)
 
@@ -3554,25 +3575,40 @@ class ViewerWindow(QtWidgets.QMainWindow):
         target_side = self._side_from_unit_id(event.target_id)
         if attacker_side == "model" and target_side == "player":
             self._flash_model_shot_target_overlay(int(event.target_id))
-        if "gauss flayer" not in event.weapon_name.lower():
-            self._fx_debug("FX: оружие не gauss, эффект пропущен.")
+        profile = resolve_fx_profile(event.weapon_name)
+        if profile is None:
+            self._fx_debug(
+                f"FX: для оружия '{event.weapon_name}' нет профиля, эффект пропущен."
+            )
             return
-        start = self._unit_world_center_by_key(attacker_side, event.attacker_id)
-        end = self._unit_world_center_by_key(target_side, event.target_id)
+        fx_key, config = profile
+        start = self.map_scene.unit_shoot_anchor_world(attacker_side, event.attacker_id)
+        if start is None:
+            start = self._unit_world_center_by_key(attacker_side, event.attacker_id)
+        end = self.map_scene.unit_shoot_anchor_world(target_side, event.target_id)
+        if end is None:
+            end = self._unit_world_center_by_key(target_side, event.target_id)
         if start is None or end is None:
             self._fx_debug(
                 "FX: не удалось получить координаты для эффекта "
                 f"(attacker={event.attacker_id}, target={event.target_id})."
             )
             return
-        self._spawn_gauss_effect(start, end, event)
+        self._spawn_gauss_effect(start, end, event, config=config, fx_key=fx_key)
 
     def _spawn_gauss_effect(
-        self, start: QtCore.QPointF, end: QtCore.QPointF, event: FxShotEvent
+        self,
+        start: QtCore.QPointF,
+        end: QtCore.QPointF,
+        event: FxShotEvent,
+        *,
+        config: Optional[Dict] = None,
+        fx_key: Optional[str] = None,
     ) -> None:
         t0 = time.monotonic()
         seed = hash((event.attacker_id, event.target_id, int(t0 * 1000))) & 0xFFFFFFFF
-        config = get_gun_fx_config("Gauss flayer")
+        if config is None:
+            config = get_gun_fx_config(fx_key or "Gauss flayer")
         duration = float(config.get("duration", 6.5))
         effect = self.map_scene.build_gauss_effect(
             start,

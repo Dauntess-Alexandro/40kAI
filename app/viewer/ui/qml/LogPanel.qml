@@ -6,6 +6,8 @@ Rectangle {
     color: bgSurfaceColor
     clip: true
 
+    readonly property bool hasCtrl: viewerController !== null && viewerController !== undefined
+
     ListView {
         id: logList
         anchors.fill: parent
@@ -40,14 +42,15 @@ Rectangle {
                 anchors.fill: parent
                 hoverEnabled: true
                 acceptedButtons: Qt.LeftButton
-                onClicked: viewerController.onLogRowClicked(index)
-                onEntered: viewerController.onLogRowHovered(index)
-                onExited: viewerController.onLogHoverExited()
+                onClicked: { if (logRoot.hasCtrl) viewerController.onLogRowClicked(index) }
+                onEntered: { if (logRoot.hasCtrl) viewerController.onLogRowHovered(index) }
+                onExited: { if (logRoot.hasCtrl) viewerController.onLogHoverExited() }
             }
         }
 
         Connections {
-            target: viewerController
+            target: logRoot.hasCtrl ? viewerController : null
+            enabled: logRoot.hasCtrl
             function onLogRevisionChanged() {
                 Qt.callLater(function () {
                     logList.positionViewAtEnd()

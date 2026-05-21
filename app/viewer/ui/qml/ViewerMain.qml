@@ -7,6 +7,9 @@ Rectangle {
     color: bgSurfaceColor
     clip: true
 
+    readonly property bool hasCtrl: viewerController !== null && viewerController !== undefined
+    readonly property bool hasDialogs: viewerDialogs !== null && viewerDialogs !== undefined
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 10
@@ -20,31 +23,31 @@ Rectangle {
             Layout.fillWidth: true
         }
         Label {
-            text: viewerController.roundText
+            text: hasCtrl ? viewerController.roundText : qsTr("Раунд: —")
             wrapMode: Text.Wrap
             color: textPrimaryColor
             Layout.fillWidth: true
         }
         Label {
-            text: viewerController.turnText
+            text: hasCtrl ? viewerController.turnText : qsTr("Ход: —")
             wrapMode: Text.Wrap
             color: textPrimaryColor
             Layout.fillWidth: true
         }
         Label {
-            text: viewerController.phaseText
+            text: hasCtrl ? viewerController.phaseText : qsTr("Фаза: —")
             wrapMode: Text.Wrap
             color: textPrimaryColor
             Layout.fillWidth: true
         }
         Label {
-            text: viewerController.activeLabelText
+            text: hasCtrl ? viewerController.activeLabelText : qsTr("Активен: —")
             wrapMode: Text.Wrap
             color: accentColor
             Layout.fillWidth: true
         }
         Label {
-            text: viewerController.deploymentText
+            text: hasCtrl ? viewerController.deploymentText : ""
             wrapMode: Text.Wrap
             color: textSecondaryColor
             Layout.fillWidth: true
@@ -58,22 +61,22 @@ Rectangle {
             Layout.fillWidth: true
         }
         Label {
-            text: viewerController.vpPlayerText
+            text: hasCtrl ? viewerController.vpPlayerText : qsTr("Player VP: —")
             color: playerColor
             Layout.fillWidth: true
         }
         Label {
-            text: viewerController.vpModelText
+            text: hasCtrl ? viewerController.vpModelText : qsTr("Model VP: —")
             color: modelColor
             Layout.fillWidth: true
         }
         Label {
-            text: viewerController.cpPlayerText
+            text: hasCtrl ? viewerController.cpPlayerText : qsTr("Player CP: —")
             color: textPrimaryColor
             Layout.fillWidth: true
         }
         Label {
-            text: viewerController.cpModelText
+            text: hasCtrl ? viewerController.cpModelText : qsTr("Model CP: —")
             color: textPrimaryColor
             Layout.fillWidth: true
         }
@@ -102,8 +105,8 @@ Rectangle {
         }
 
         Label {
-            text: viewerController.unitsSummaryText
-            visible: viewerController.unitsSummaryText.length > 0
+            text: hasCtrl ? viewerController.unitsSummaryText : ""
+            visible: hasCtrl && viewerController.unitsSummaryText.length > 0
             wrapMode: Text.Wrap
             color: textSecondaryColor
             Layout.fillWidth: true
@@ -120,16 +123,23 @@ Rectangle {
             ComboBox {
                 id: fxBox
                 Layout.fillWidth: true
+                enabled: hasCtrl
                 model: ["low", "medium", "high"]
-                onActivated: (i) => viewerController.setFxQuality(model[i])
+                onActivated: (i) => {
+                    if (hasCtrl)
+                        viewerController.setFxQuality(model[i])
+                }
                 Component.onCompleted: {
+                    if (!hasCtrl)
+                        return
                     var q = viewerController.fxQuality
                     var j = model.indexOf(q)
                     if (j >= 0)
                         currentIndex = j
                 }
                 Connections {
-                    target: viewerController
+                    target: hasCtrl ? viewerController : null
+                    enabled: hasCtrl
                     function onFxQualityChanged() {
                         var j = fxBox.model.indexOf(viewerController.fxQuality)
                         if (j >= 0)
@@ -147,14 +157,14 @@ Rectangle {
             Layout.fillWidth: true
         }
         Label {
-            text: viewerController.commandPromptText
+            text: hasCtrl ? viewerController.commandPromptText : qsTr("Ожидаю команду...")
             wrapMode: Text.Wrap
             color: textPrimaryColor
             Layout.fillWidth: true
         }
         Label {
-            text: viewerController.commandHintText
-            visible: viewerController.commandHintText.length > 0
+            text: hasCtrl ? viewerController.commandHintText : ""
+            visible: hasCtrl && viewerController.commandHintText.length > 0
             wrapMode: Text.Wrap
             color: textSecondaryColor
             Layout.fillWidth: true
@@ -169,8 +179,12 @@ Rectangle {
                 delegate: Button {
                     required property int index
                     required property string modelData
+                    enabled: hasCtrl
                     text: modelData
-                    onClicked: viewerController.submitChoiceAtIndex(index)
+                    onClicked: {
+                        if (hasCtrl)
+                            viewerController.submitChoiceAtIndex(index)
+                    }
                 }
             }
         }
@@ -183,7 +197,7 @@ Rectangle {
         focus: false
         padding: 12
         closePolicy: Popup.NoAutoClose
-        visible: viewerDialogs.toastVisible
+        visible: hasDialogs && viewerDialogs.toastVisible
         width: Math.min(520, root.width - 24)
         x: Math.max(8, (root.width - width) / 2)
         y: Math.max(8, root.height - height - 14)
@@ -193,7 +207,7 @@ Rectangle {
             border.color: "#334155"
         }
         contentItem: Label {
-            text: viewerDialogs.toastText
+            text: hasDialogs ? viewerDialogs.toastText : ""
             color: textPrimaryColor
             wrapMode: Text.Wrap
             width: toastPopup.availableWidth
@@ -205,7 +219,7 @@ Rectangle {
         parent: root
         modal: true
         focus: true
-        visible: viewerDialogs.confirmOpen
+        visible: hasDialogs && viewerDialogs.confirmOpen
         anchors.centerIn: parent
         width: Math.min(440, root.width - 32)
         padding: 16
@@ -219,13 +233,13 @@ Rectangle {
             width: confirmPopup.availableWidth
             Label {
                 width: parent.width
-                text: viewerDialogs.confirmTitle
+                text: hasDialogs ? viewerDialogs.confirmTitle : ""
                 font.bold: true
                 color: textPrimaryColor
             }
             Label {
                 width: parent.width
-                text: viewerDialogs.confirmBody
+                text: hasDialogs ? viewerDialogs.confirmBody : ""
                 wrapMode: Text.Wrap
                 color: textSecondaryColor
             }
@@ -234,10 +248,12 @@ Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
                 Button {
                     text: qsTr("OK")
+                    enabled: hasDialogs
                     onClicked: viewerDialogs.acceptConfirm()
                 }
                 Button {
                     text: qsTr("Отмена")
+                    enabled: hasDialogs
                     onClicked: viewerDialogs.rejectConfirm()
                 }
             }

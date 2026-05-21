@@ -22,11 +22,12 @@ TabButton {
         elide: Text.ElideRight
     }
 
-    background: ChamferPanel {
-        cutSize: 8
-        contentMargin: 0
-        fillColor: control.checked ? "#c79a32" : (control.hovered ? "#222c39" : "#171d26")
-        borderColor: control.checked ? "#d3b061" : (control.hovered ? "#8a97ad" : "#4f5a6b")
-        borderWidth: 1
+    // Rectangle вместо ChamferPanel (Canvas): при Qt 6 / RHI Canvas на первом кадре часто «догружает»
+    // фон вкладок → пустые слоты в TabBar; прямоугольник сразу попадает в scene graph.
+    background: Rectangle {
+        color: control.checked ? "#c79a32" : (control.hovered ? "#222c39" : "#171d26")
+        border.color: control.checked ? "#d3b061" : (control.hovered ? "#8a97ad" : "#4f5a6b")
+        border.width: 1
+        radius: 6
     }
 }

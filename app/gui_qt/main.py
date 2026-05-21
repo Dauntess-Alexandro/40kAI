@@ -6034,8 +6034,18 @@ def main() -> int:
     if not engine.rootObjects():
         return 1
 
+    root = engine.rootObjects()[0]
+
+    # Один проход после входа в event loop — подтягивает отложенную компоновку/редрав Quick на Qt 6 + RHI.
+    def _kick_first_frame_paint() -> None:
+        try:
+            root.update()
+        except Exception:
+            pass
+
+    QtCore.QTimer.singleShot(0, _kick_first_frame_paint)
+
     if os.path.exists(icon_path):
-        root = engine.rootObjects()[0]
         if hasattr(root, "setIcon"):
             root.setIcon(QIcon(icon_path))
 

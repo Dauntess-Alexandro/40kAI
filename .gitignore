@@ -22,3 +22,5 @@ runtime/state/units.txt
 trainRes.txt
 *.log
 *.core
+# Full-res Gauss FX sources (baked PNGs live in fx/; run tools/viewer/bake_gauss_fx_assets.py)
+app/viewer/assets/fx/_source/

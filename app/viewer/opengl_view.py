@@ -128,6 +128,16 @@ class GaussTracerEffect:
 
 
 @dataclass
+class ScorchDecalFx:
+    center: QtCore.QPointF
+    created_t: float
+    ttl_s: float
+    size_cells: float
+    rotation_deg: float
+    alpha: float
+
+
+@dataclass
 class DecalInstance:
     texture_key: str
     center: QtCore.QPointF
@@ -369,6 +379,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._ai_ring_anim_timer.setInterval(33)
         self._ai_ring_anim_timer.timeout.connect(self.update)
         self._fx_active: List[GaussTracerEffect] = []
+        self._fx_scorch_decals: List[ScorchDecalFx] = []
+        self._fx_scorch_max_active = 96
         self._damage_popups_active: List[DamagePopup] = []
         self._damage_popup_dedup_seen: Dict[str, float] = {}
         self._damage_popup_ttl_s = 0.95
@@ -1050,6 +1062,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if effect is None:
             return
         self._fx_active.append(effect)
+        self._spawn_scorch_for_fx(effect)
         self.update()
 
     def add_damage_popup(
@@ -2031,6 +2044,81 @@ class OpenGLBoardWidget(QOpenGLWidget):
         )
         if len(self._decals) > 500:
             self._decals = self._decals[-500:]
+
+    def _spawn_scorch_for_fx(self, effect: GaussTracerEffect) -> None:
+        if effect is None:
+            return
+        scorch_sprite = self._fx_pixmaps.get("gauss_scorch_decal")
+        if scorch_sprite is None or scorch_sprite.isNull():
+            return
+        cfg = effect.config or {}
+        ttl_s = max(0.4, float(cfg.get("scorch_ttl_s", 1.8)))
+        size_cells = max(
+            0.12,
+            float(cfg.get("scorch_base", 0.42)) * float(cfg.get("scorch_scale", 1.2)),
+        )
+        alpha = max(0.25, min(1.0, float(cfg.get("scorch_alpha", 0.95))))
+        direction = effect.end - effect.start
+        length = math.hypot(direction.x(), direction.y())
+        center = QtCore.QPointF(effect.end)
+        if length > 1e-3:
+            dir_unit = QtCore.QPointF(direction.x() / length, direction.y() / length)
+            normal = QtCore.QPointF(-dir_unit.y(), dir_unit.x())
+            rng = random.Random((effect.seed + 101) & 0xFFFFFFFF)
+            off_min = float(cfg.get("scorch_offset_px_min", 2.0))
+            off_max = float(cfg.get("scorch_offset_px_max", 4.0))
+            off_px = rng.uniform(off_min, off_max) * rng.choice((-1.0, 1.0))
+            center = QtCore.QPointF(
+                effect.end.x() + normal.x() * self._px_to_world(off_px),
+                effect.end.y() + normal.y() * self._px_to_world(off_px),
+            )
+        self._fx_scorch_decals.append(
+            ScorchDecalFx(
+                center=center,
+                created_t=monotonic(),
+                ttl_s=ttl_s,
+                size_cells=size_cells,
+                rotation_deg=random.uniform(0.0, 360.0),
+                alpha=alpha,
+            )
+        )
+        if len(self._fx_scorch_decals) > self._fx_scorch_max_active:
+            self._fx_scorch_decals = self._fx_scorch_decals[-self._fx_scorch_max_active :]
+
+    def _draw_scorch_decals(self, painter: QtGui.QPainter) -> None:
+        if not self._fx_scorch_decals:
+            return
+        scorch_sprite = self._fx_pixmaps.get("gauss_scorch_decal")
+        if scorch_sprite is None or scorch_sprite.isNull():
+            return
+        now = monotonic()
+        kept: List[ScorchDecalFx] = []
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        painter.setClipRect(self._board_rect)
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+        for decal in self._fx_scorch_decals:
+            age = now - decal.created_t
+            if age >= decal.ttl_s:
+                continue
+            kept.append(decal)
+            fade = 1.0
+            fade_tail = min(0.35, decal.ttl_s * 0.4)
+            if age > (decal.ttl_s - fade_tail):
+                fade = max(0.0, (decal.ttl_s - age) / max(1e-4, fade_tail))
+            # Keep original texture colors (charred ring + green core). Size in board cells
+            # like impact rings, not raw pixmap pixels.
+            size = max(0.001, self.cell_size * decal.size_cells)
+            painter.save()
+            painter.setOpacity(max(0.0, min(1.0, decal.alpha * fade)))
+            painter.translate(decal.center)
+            if decal.rotation_deg:
+                painter.rotate(decal.rotation_deg)
+            rect = QtCore.QRectF(-size / 2.0, -size / 2.0, size, size)
+            painter.drawPixmap(rect, scorch_sprite, QtCore.QRectF(scorch_sprite.rect()))
+            painter.restore()
+        painter.restore()
+        self._fx_scorch_decals = kept
 
     def _resolve_decal_key(self, kind: str) -> Optional[str]:
         if not self._decal_textures:
@@ -3067,7 +3155,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._draw_platform_fx_layer(painter)
         if self.render_terrain:
             self.draw_terrain_features(painter)
-        if self.render_decals:
+        if self.render_decals or self._fx_scorch_decals:
             self._draw_decals_layer(painter)
         self._draw_hovered_terrain_cells_layer(painter)
         self._draw_unit_tooltip_overlays_layer(painter)
@@ -3691,6 +3779,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
                 key: ts for key, ts in self._damage_popup_dedup_seen.items()
                 if (now - ts) <= max(self._damage_popup_ttl_s * 2.0, 2.0)
             }
+        if self._fx_scorch_decals:
+            self._fx_scorch_decals = [
+                decal for decal in self._fx_scorch_decals
+                if (now - decal.created_t) < decal.ttl_s
+            ]
         if self.isVisible():
             self.update()
 
@@ -3698,7 +3791,17 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if self._fx_initialized:
             return
         assets_dir = resolve_asset_path("fx")
-        for name in ("glow_soft", "ring_soft", "tesseract_segments"):
+        for name in (
+            "glow_soft",
+            "ring_soft",
+            "tesseract_segments",
+            "gauss_muzzle_atlas",
+            "gauss_glow_radial",
+            "gauss_noise_stripe",
+            "gauss_scorch_decal",
+            "necron_glyphs_atlas",
+            "gauss_impact_ring",
+        ):
             path = assets_dir / f"{name}.png"
             if not path.exists():
                 continue
@@ -3739,6 +3842,25 @@ class OpenGLBoardWidget(QOpenGLWidget):
         if key is None:
             return None
         return self._unit_by_key.get(key)
+
+    def unit_shoot_anchor_world(
+        self, side: Optional[str], unit_id: int
+    ) -> Optional[QtCore.QPointF]:
+        """Screen-space anchor for weapon FX: centroid of model icons, else squad center."""
+        key = self._norm_unit_key(side, unit_id)
+        if key is None:
+            return None
+        render = self._unit_by_key.get(key)
+        if render is None:
+            return None
+        centers = render.model_centers
+        if centers:
+            n = len(centers)
+            return QtCore.QPointF(
+                sum(p.x() for p in centers) / n,
+                sum(p.y() for p in centers) / n,
+            )
+        return QtCore.QPointF(render.center)
 
     def _is_necron(self, unit: Optional[dict]) -> bool:
         if not unit:
@@ -4170,9 +4292,15 @@ class OpenGLBoardWidget(QOpenGLWidget):
         life_max = float(glyph_config.get("life_max", 0.45))
         period_min = float(glyph_config.get("period_min", 0.7))
         period_max = float(glyph_config.get("period_max", 1.4))
-        glyph_count = rng.randint(count_min, count_max)
+        glyph_count_scale = float(config.get("glyph_count_scale", 1.0))
+        raw_count = rng.randint(count_min, count_max)
+        glyph_count = max(1, int(round(raw_count * glyph_count_scale)))
         glyphs: List[GlyphBlueprint] = []
-        shape_count = len(self._gauss_glyph_shapes())
+        glyph_atlas = self._fx_pixmaps.get("necron_glyphs_atlas")
+        if glyph_atlas is not None and not glyph_atlas.isNull():
+            shape_count = 16
+        else:
+            shape_count = len(self._gauss_glyph_shapes())
         for _ in range(glyph_count):
             glyphs.append(
                 GlyphBlueprint(
@@ -4357,19 +4485,102 @@ class OpenGLBoardWidget(QOpenGLWidget):
             dir_unit = QtCore.QPointF(direction.x() / length, direction.y() / length)
             normal_unit = QtCore.QPointF(-dir_unit.y(), dir_unit.x())
 
-            # Порядок слоёв: glow tube -> core beam -> pulse -> edge specks/branches/glyphs
-            # -> impact flash/ring -> disintegration pixels.
+            # Порядок: tube line -> noise stripe -> radial stamps -> core -> pulse -> ...
+            tube_alpha = glow_alpha * float(config.get("beam_tube_alpha_scale", 0.72))
             painter.save()
             painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
             painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
             glow_pen = QtGui.QPen(glow_color)
-            glow_pen.setWidthF(glow_width)
+            glow_pen.setWidthF(glow_width * 1.15)
             glow_pen.setCapStyle(QtCore.Qt.RoundCap)
             glow_pen.setJoinStyle(QtCore.Qt.RoundJoin)
-            glow_pen.setColor(self._with_alpha(glow_color, glow_alpha))
+            glow_pen.setColor(self._with_alpha(glow_color, tube_alpha))
             painter.setPen(glow_pen)
             painter.drawLine(fx.start, fx.end)
             painter.restore()
+
+            noise_sprite = self._fx_pixmaps.get("gauss_noise_stripe")
+            if noise_sprite is not None and not noise_sprite.isNull():
+                noise_alpha = glow_alpha * float(config.get("beam_noise_alpha_scale", 0.5))
+                tinted_noise = self._tinted_pixmap(
+                    "gauss_noise_stripe",
+                    self._with_alpha(glow_color, noise_alpha),
+                )
+                beam_h = self._px_to_world(glow_width_px * 1.35)
+                angle_deg = math.degrees(math.atan2(direction.y(), direction.x()))
+                painter.save()
+                painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+                painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+                painter.translate(fx.start)
+                painter.rotate(angle_deg)
+                painter.setOpacity(min(1.0, noise_alpha * 1.1))
+                dst = QtCore.QRectF(0.0, -beam_h / 2.0, length, beam_h)
+                scroll_px_s = float(config.get("beam_noise_scroll_px_s", 110.0))
+                scroll_px = -((age * scroll_px_s) % max(1.0, float(tinted_noise.width())))
+                painter.drawTiledPixmap(dst, tinted_noise, QtCore.QPointF(scroll_px, 0.0))
+                painter.setOpacity(1.0)
+                painter.restore()
+
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+            glow_sprite = self._fx_pixmaps.get("gauss_glow_radial")
+            if glow_sprite is not None and not glow_sprite.isNull():
+                glow_sprite_color = self._with_alpha(glow_color, glow_alpha)
+                tinted = self._tinted_pixmap("gauss_glow_radial", glow_sprite_color)
+                step_px = float(config.get("beam_glow_step_px", 6.5))
+                step_world = self._px_to_world(max(5.0, step_px))
+                steps = max(2, int(length / max(step_world, 0.001)) + 1)
+                beam_scale = float(config.get("beam_glow_sprite_scale", 1.48))
+                sprite_size = max(
+                    glow_width * beam_scale,
+                    self._px_to_world(glow_width_px * 1.05),
+                )
+                painter.setOpacity(min(1.0, glow_alpha * 1.0))
+                for idx in range(steps):
+                    t = idx / max(1, steps - 1)
+                    cx = fx.start.x() + direction.x() * t
+                    cy = fx.start.y() + direction.y() * t
+                    rect = QtCore.QRectF(
+                        cx - sprite_size / 2,
+                        cy - sprite_size / 2,
+                        sprite_size,
+                        sprite_size,
+                    )
+                    painter.drawPixmap(rect, tinted, QtCore.QRectF(tinted.rect()))
+                painter.setOpacity(1.0)
+            painter.restore()
+
+            muzzle_sprite = self._fx_pixmaps.get("gauss_muzzle_atlas")
+            muzzle_life_s = max(0.06, float(config.get("muzzle_life_s", 0.14)))
+            if muzzle_sprite is not None and not muzzle_sprite.isNull() and age < muzzle_life_s:
+                frame = min(3, int((age / muzzle_life_s) * 4.0))
+                src_w = muzzle_sprite.width() // 4
+                src_h = muzzle_sprite.height()
+                src = QtCore.QRect(frame * src_w, 0, src_w, src_h)
+                muzzle_scale = float(config.get("muzzle_scale", 1.0))
+                muzzle_stretch_x = float(config.get("muzzle_stretch_x", 1.0))
+                muzzle_size = self.cell_size * 0.52 * max(0.7, muzzle_scale)
+                barrel_offset = self.cell_size * 0.17 * max(0.7, muzzle_scale)
+                muzzle_center = QtCore.QPointF(
+                    fx.start.x() + dir_unit.x() * barrel_offset,
+                    fx.start.y() + dir_unit.y() * barrel_offset,
+                )
+                rect = QtCore.QRectF(
+                    muzzle_center.x() - (muzzle_size * muzzle_stretch_x) / 2,
+                    muzzle_center.y() - muzzle_size / 2,
+                    muzzle_size * muzzle_stretch_x,
+                    muzzle_size,
+                )
+                muzzle_fade = max(0.0, 1.0 - age / muzzle_life_s)
+                tinted_muzzle = self._tinted_pixmap(
+                    "gauss_muzzle_atlas",
+                    self._with_alpha(glow_color, min(1.0, 0.95 * muzzle_fade)),
+                )
+                painter.save()
+                painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+                painter.drawPixmap(rect, tinted_muzzle, src)
+                painter.restore()
 
             painter.save()
             painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
@@ -4485,49 +4696,53 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter.save()
             painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
             painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
-            glyph_shapes = self._gauss_glyph_shapes()
-            glyph_pen = QtGui.QPen()
-            glyph_pen.setWidthF(self._px_to_world(1.0))
-            glyph_pen.setCapStyle(QtCore.Qt.RoundCap)
-            for glyph in fx.glyphs:
-                fade = self._window_fade(age + glyph.phase, glyph.period, glyph.life)
-                if fade <= 0.0:
-                    continue
-                u = (glyph.u + age * glyph.drift_speed) % 1.0
-                base = QtCore.QPointF(
-                    fx.start.x() + direction.x() * u,
-                    fx.start.y() + direction.y() * u,
-                )
-                offset = QtCore.QPointF(
-                    normal_unit.x() * self._px_to_world(glyph.offset_n_px),
-                    normal_unit.y() * self._px_to_world(glyph.offset_n_px),
-                )
-                scale = self._px_to_world(glyph.scale_px)
-                alpha = glyph.alpha * fade * (0.85 + 0.15 * math.sin((age + glyph.phase) * math.tau))
-                glyph_pen.setColor(self._with_alpha(glyph_dim, alpha))
-                painter.setPen(glyph_pen)
-                for start_pt, end_pt in glyph_shapes[glyph.glyph_id]:
-                    start_world = QtCore.QPointF(
-                        base.x()
-                        + offset.x()
-                        + dir_unit.x() * start_pt.x() * scale
-                        + normal_unit.x() * start_pt.y() * scale,
-                        base.y()
-                        + offset.y()
-                        + dir_unit.y() * start_pt.x() * scale
-                        + normal_unit.y() * start_pt.y() * scale,
+            glyph_atlas = self._fx_pixmaps.get("necron_glyphs_atlas")
+            if glyph_atlas is not None and not glyph_atlas.isNull():
+                glyph_sprite_scale = float(config.get("glyph_sprite_scale", 1.0))
+                glyph_pulse_speed = float(config.get("glyph_pulse_speed", 1.0))
+                cols = 4
+                rows = 4
+                cell_w = glyph_atlas.width() // cols
+                cell_h = glyph_atlas.height() // rows
+                for glyph in fx.glyphs:
+                    fade = self._window_fade(age + glyph.phase, glyph.period, glyph.life)
+                    if fade <= 0.0:
+                        continue
+                    u = (glyph.u + age * glyph.drift_speed) % 1.0
+                    base = QtCore.QPointF(
+                        fx.start.x() + direction.x() * u,
+                        fx.start.y() + direction.y() * u,
                     )
-                    end_world = QtCore.QPointF(
-                        base.x()
-                        + offset.x()
-                        + dir_unit.x() * end_pt.x() * scale
-                        + normal_unit.x() * end_pt.y() * scale,
-                        base.y()
-                        + offset.y()
-                        + dir_unit.y() * end_pt.x() * scale
-                        + normal_unit.y() * end_pt.y() * scale,
+                    offset = QtCore.QPointF(
+                        normal_unit.x() * self._px_to_world(glyph.offset_n_px),
+                        normal_unit.y() * self._px_to_world(glyph.offset_n_px),
                     )
-                    painter.drawLine(start_world, end_world)
+                    scale = self._px_to_world(glyph.scale_px * glyph_sprite_scale)
+                    alpha = glyph.alpha * fade * (
+                        0.85
+                        + 0.15
+                        * math.sin((age + glyph.phase) * math.tau * glyph_pulse_speed)
+                    )
+                    tinted_glyph = self._tinted_pixmap(
+                        "necron_glyphs_atlas", self._with_alpha(glyph_dim, alpha)
+                    )
+                    gid = int(glyph.glyph_id) % (cols * rows)
+                    src_col = gid % cols
+                    src_row = gid // cols
+                    src = QtCore.QRect(
+                        src_col * cell_w,
+                        src_row * cell_h,
+                        cell_w,
+                        cell_h,
+                    )
+                    center = QtCore.QPointF(base.x() + offset.x(), base.y() + offset.y())
+                    rect = QtCore.QRectF(
+                        center.x() - scale * 0.5,
+                        center.y() - scale * 0.5,
+                        scale,
+                        scale,
+                    )
+                    painter.drawPixmap(rect, tinted_glyph, src)
             painter.restore()
 
             flash_radius = self.cell_size * (
@@ -4543,19 +4758,47 @@ class OpenGLBoardWidget(QOpenGLWidget):
             painter.save()
             painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
             painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
-            painter.setPen(QtCore.Qt.NoPen)
-            painter.setBrush(QtGui.QBrush(self._with_alpha(impact_color, flash_alpha)))
-            painter.drawEllipse(fx.end, flash_radius, flash_radius)
+            flash_sprite = self._fx_pixmaps.get("gauss_glow_radial")
+            if flash_sprite is None or flash_sprite.isNull():
+                pass
+            else:
+                tinted_flash = self._tinted_pixmap("gauss_glow_radial", self._with_alpha(impact_color, flash_alpha))
+                flash_scale = float(config.get("impact_flash_sprite_scale", 1.28))
+                size = flash_radius * flash_scale
+                rect = QtCore.QRectF(
+                    fx.end.x() - size / 2,
+                    fx.end.y() - size / 2,
+                    size,
+                    size,
+                )
+                painter.save()
+                painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+                painter.setOpacity(min(1.0, flash_alpha * 1.2))
+                painter.drawPixmap(rect, tinted_flash, QtCore.QRectF(tinted_flash.rect()))
+                painter.restore()
             painter.restore()
 
             painter.save()
             painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
             painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
-            ring_pen = QtGui.QPen(self._with_alpha(impact_color, ring_alpha))
-            ring_pen.setWidthF(ring_width)
-            painter.setPen(ring_pen)
-            painter.setBrush(QtCore.Qt.NoBrush)
-            painter.drawEllipse(fx.end, ring_radius, ring_radius)
+            ring_sprite = self._fx_pixmaps.get("gauss_impact_ring")
+            if ring_sprite is None or ring_sprite.isNull():
+                pass
+            else:
+                tinted_ring = self._tinted_pixmap("gauss_impact_ring", self._with_alpha(impact_color, ring_alpha))
+                ring_scale = float(config.get("impact_ring_sprite_scale", 1.45))
+                size = ring_radius * ring_scale
+                rect = QtCore.QRectF(
+                    fx.end.x() - size / 2,
+                    fx.end.y() - size / 2,
+                    size,
+                    size,
+                )
+                painter.save()
+                painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+                painter.setOpacity(min(1.0, ring_alpha * 1.1))
+                painter.drawPixmap(rect, tinted_ring, QtCore.QRectF(tinted_ring.rect()))
+                painter.restore()
             painter.restore()
 
             painter.save()
@@ -4594,6 +4837,38 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def _px_to_world(self, px: float) -> float:
         scale = self._scale if self._scale > 0 else 1.0
         return px / scale
+
+    def _tinted_pixmap(self, name: str, color: QtGui.QColor) -> QtGui.QPixmap:
+        """Return a colorized + alpha-applied copy of an FX sprite, cached.
+
+        Uses CompositionMode_SourceIn to multiply RGB by `color` while keeping
+        the source alpha shape. The cache key quantizes color to 5-bit per
+        channel + alpha, so dynamic alpha across frames stays bounded.
+        """
+        base = self._fx_pixmaps.get(name)
+        if base is None or base.isNull():
+            return base if base is not None else QtGui.QPixmap()
+        key = (
+            name,
+            (color.red() >> 3) << 19
+            | (color.green() >> 3) << 14
+            | (color.blue() >> 3) << 9
+            | (color.alpha() >> 3) << 4,
+        )
+        cached = self._fx_tinted_cache.get(key)
+        if cached is not None:
+            return cached
+        tinted = QtGui.QPixmap(base.size())
+        tinted.fill(QtCore.Qt.transparent)
+        p = QtGui.QPainter(tinted)
+        p.drawPixmap(0, 0, base)
+        p.setCompositionMode(QtGui.QPainter.CompositionMode_SourceIn)
+        p.fillRect(tinted.rect(), color)
+        p.end()
+        if len(self._fx_tinted_cache) > 256:
+            self._fx_tinted_cache.pop(next(iter(self._fx_tinted_cache)))
+        self._fx_tinted_cache[key] = tinted
+        return tinted
 
     def _draw_fx_sprite(
         self,

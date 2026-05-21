@@ -17,6 +17,11 @@ Item {
         id: frameCanvas
         anchors.fill: parent
         antialiasing: false
+        // Qt 6 / RHI: первый кадр иногда не вызывает onPaint, пока не сработает resize;
+        // TabBar тогда показывает «пустые» слоты вкладок, затем дорисовывается.
+        onAvailableChanged: if (available) requestPaint()
+        onVisibleChanged: if (visible) requestPaint()
+        Component.onCompleted: Qt.callLater(function () { requestPaint() })
         onPaint: {
             var ctx = getContext("2d")
             ctx.reset()
