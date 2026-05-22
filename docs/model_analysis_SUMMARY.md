@@ -272,7 +272,21 @@ Root Node
 }
 ```
 
-### 4.5 Когда использовать
+### 4.5 Статус внедрения (код)
+
+**Выполнено** — полный roadmap AlphaZero (архитектура + PUCT MCTS + adaptive search). Детали: [model_analysis_AlphaZero.md](model_analysis_AlphaZero.md) §10–11.
+
+- [x] Split algo id: `alphazero_tree` / `alphazero_proxy` (отдельные hyperparams, meta `mcts_mode`, чекпоинты)
+- [x] `make_alphazero_net` / `alphazero_kwargs_from_env`, configurable `hidden_size`, `num_layers`
+- [x] LayerNorm + ResidualBlock в trunk
+- [x] Value ensemble (`AZ_VALUE_ENSEMBLE`)
+- [x] LR scheduler в checkpoint (`AZ_LR_SCHEDULER`)
+- [x] Proper PUCT MCTS + `MCTSNode` + eval cache
+- [x] Adaptive c_puct, progressive widening, move-averaging
+- [x] Grid search tools, unit-тесты
+- [ ] Миграция ключей старых чекпоинтов `layer1/layer2` → новый trunk (нужно переобучение)
+
+### 4.6 Когда использовать
 
 | ✓ Хорошо | ✗ Плохо |
 |---------|---------|
@@ -680,11 +694,12 @@ class IntegrationTests:
 - [x] Add LayerNorm to all models — **DQN ✓** (`e29c4df0`), **PPO ✓**
 - [x] Add residual connections — **DQN ✓**, **PPO ✓**
 - [x] Fix configurable hidden size — **DQN ✓**, **PPO ✓**
-- [x] Add adaptive learning rate — **DQN ✓**, **PPO ✓** (LR scheduler + adaptive entropy)
-- [ ] AlphaZero / GumbelMuZero — в работе
+- [x] Add adaptive learning rate — **DQN ✓**, **PPO ✓**, **AlphaZero ✓** (LR scheduler)
+- [x] AlphaZero architecture + MCTS upgrades — **AlphaZero ✓**
+- [ ] GumbelMuZero — в работе
 
 ### Phase 2: Major improvements (2-4 weeks)
-- [ ] Implement proper PUCT for AlphaZero MCTS
+- [x] Implement proper PUCT for AlphaZero MCTS
 - [ ] Implement Gumbel-UCB search for GMZ
 - [ ] Add model ensemble for uncertainty
 - [ ] Improve checkpoint management

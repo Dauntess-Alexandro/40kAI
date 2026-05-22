@@ -11,7 +11,8 @@ import torch
 from core.engine.agent_registry import compatible_contracts, load_agent_by_id
 from core.models.DQN import DQN
 from core.models.PPO import make_actor_critic, load_actor_critic_state_dict, ppo_kwargs_from_env
-from core.models.alphazero_model import AlphaZeroPolicyValueNet
+from core.models.alphazero_ids import az_mcts_mode_for, is_az_algo
+from core.models.alphazero_model import load_alphazero_state_dict, make_alphazero_net
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
@@ -22,7 +23,7 @@ from core.models.utils import build_action_masks_by_head, build_shoot_action_mas
 @dataclass(frozen=True)
 class OpponentSpec:
     agent_id: str
-    algo: str  # "dqn" | "ppo" | "alphazero" | "gumbel_muzero"
+    algo: str  # "dqn" | "ppo" | "alphazero_tree" | "alphazero_proxy" | "gumbel_muzero"
     contract: dict[str, Any]
     policy_state: dict[str, Any]
 
@@ -60,7 +61,7 @@ def load_agent_opponent(*, agent_id: str, expected_contract: Optional[dict[str, 
     payload = load_agent_by_id(str(agent_id))
     meta = payload.get("meta") if isinstance(payload, dict) else {}
     algo = str((meta or {}).get("algo", "")).strip().lower()
-    if algo not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
+    if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
         # Backward-compatible inference for older artifacts:
         # - DQN artifacts usually have target_state saved
         # - PPO artifacts usually don't
@@ -70,17 +71,31 @@ def load_agent_opponent(*, agent_id: str, expected_contract: Optional[dict[str, 
         else:
             # last-resort heuristic by key prefixes
             policy_state_guess = payload.get("policy_state") if isinstance(payload, dict) else None
-            if isinstance(policy_state_guess, dict) and any(str(k).startswith("policy_heads.") for k in policy_state_guess.keys()):
-                algo = "ppo"
-            else:
-                # AlphaZero artifacts usually store policy-value key.
-                if isinstance(policy_state_guess, dict) and any(str(k).startswith("policy_heads.") for k in policy_state_guess.keys()):
-                    algo = "alphazero"
+            if isinstance(policy_state_guess, dict):
+                keys = [str(k) for k in policy_state_guess.keys()]
+                if any(k.startswith("actor.") for k in keys):
+                    algo = "ppo"
+                elif any(k.startswith("policy_heads.") for k in keys):
+                    mm = str((meta or {}).get("mcts_mode", "") or "").strip().lower()
+                    if mm == "proxy":
+                        algo = "alphazero_proxy"
+                    elif mm == "tree":
+                        algo = "alphazero_tree"
+                    else:
+                        raise ValueError(
+                            f"agent '{agent_id}' has legacy/unknown AlphaZero meta (algo={algo!r}, mcts_mode={mm!r}). "
+                            "Переобучите агента как alphazero_tree или alphazero_proxy."
+                        )
                 else:
                     raise ValueError(
                         f"agent '{agent_id}' has unsupported algo='{algo}' "
-                        "(expected dqn/ppo/alphazero/gumbel_muzero)."
+                        "(expected dqn/ppo/alphazero_tree/alphazero_proxy/gumbel_muzero)."
                     )
+            else:
+                raise ValueError(
+                    f"agent '{agent_id}' has unsupported algo='{algo}' "
+                    "(expected dqn/ppo/alphazero_tree/alphazero_proxy/gumbel_muzero)."
+                )
 
     contract = payload.get("contract") if isinstance(payload, dict) else None
     if expected_contract is not None:
@@ -168,18 +183,16 @@ def build_policy_fn(
 
         return _policy_fn
 
-    if opponent.algo == "alphazero":
-        net = AlphaZeroPolicyValueNet(n_obs, n_actions).to(torch.device("cpu"))
-        net.load_state_dict(normalize_state_dict(opponent.policy_state))
+    if is_az_algo(opponent.algo):
+        net = make_alphazero_net(n_obs, n_actions).to(torch.device("cpu"))
+        load_alphazero_state_dict(net, normalize_state_dict(opponent.policy_state))
         net.eval()
         az_eval_mode = str(os.getenv("AZ_EVAL_OPPONENT_MODE", "greedy")).strip().lower() or "greedy"
         if az_eval_mode not in {"greedy", "mcts"}:
             az_eval_mode = "greedy"
         mcts = None
         if az_eval_mode == "mcts":
-            mcts_mode = str(os.getenv("AZ_EVAL_MCTS_MODE", "tree")).strip().lower() or "tree"
-            if mcts_mode not in {"proxy", "tree"}:
-                mcts_mode = "tree"
+            mcts_mode = az_mcts_mode_for(opponent.algo)
             mcts_cfg = MCTSConfig(
                 simulations=max(1, int(os.getenv("AZ_EVAL_MCTS_SIMS", "96"))),
                 c_puct=float(os.getenv("AZ_EVAL_MCTS_C_PUCT", "1.5")),

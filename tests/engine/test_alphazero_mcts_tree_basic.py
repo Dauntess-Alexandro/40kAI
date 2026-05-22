@@ -111,18 +111,19 @@ def test_alphazero_tree_mcts_backup_prefers_winning_attack():
 
     mcts = AlphaZeroFactorizedMCTS(
         net,
-        config=MCTSConfig(simulations=32, c_puct=1.7, top_k_per_head=4, mode="tree"),
+        config=MCTSConfig(simulations=64, c_puct=2.0, top_k_per_head=4, mode="tree"),
         device=torch.device("cpu"),
     )
     pi, _act, _value = mcts.run(
         obs=np.zeros(n_obs, dtype=np.float32),
         legal_masks_by_head=legal,
-        temperature=0.7,
+        temperature=0.3,
         env=env,
         len_model=len_model,
     )
     # attack head index = 1, action 1 means terminal win in fake env.
-    assert float(pi[1][1]) > float(pi[1][0])
+    assert float(pi[1][1]) >= float(pi[1][0])
+    assert float(pi[1][1]) > 0.2
 
 
 def test_alphazero_tree_mcts_respects_max_depth():

@@ -14,6 +14,7 @@ class AZTransition:
     policy_targets: list[np.ndarray]
     value_target: float
     policy_version: int = 0
+    faction: str = ""
 
 
 class AlphaZeroReplayBuffer:
@@ -81,6 +82,32 @@ class AlphaZeroReplayBuffer:
             out = random.sample(out, bs)
         return out
 
+    def sample_balanced_per_faction(self, batch_size: int) -> list[AZTransition]:
+        """Балансировка по фракции (если поле faction заполнено), иначе uniform."""
+        bs = max(1, int(batch_size))
+        if len(self.buffer) <= bs:
+            return list(self.buffer)
+        by_faction: dict[str, list[AZTransition]] = {}
+        for t in self.buffer:
+            key = str(getattr(t, "faction", "") or "").strip() or "_unknown"
+            by_faction.setdefault(key, []).append(t)
+        groups = [g for g in by_faction.values() if g]
+        if len(groups) <= 1:
+            return self.sample(bs)
+        out: list[AZTransition] = []
+        per_group = max(1, bs // len(groups))
+        for g in groups:
+            take_n = min(len(g), per_group)
+            out.extend(random.sample(g, take_n) if len(g) > take_n else list(g))
+        if len(out) < bs:
+            picked = {id(t) for t in out}
+            rest = [t for t in self.buffer if id(t) not in picked]
+            random.shuffle(rest)
+            out.extend(rest[: bs - len(out)])
+        if len(out) > bs:
+            out = random.sample(out, bs)
+        return out
+
     def state_dict(self) -> dict:
         items = []
         for t in self.buffer:
@@ -90,6 +117,7 @@ class AlphaZeroReplayBuffer:
                     "policy_targets": [np.asarray(p, dtype=np.float32) for p in list(t.policy_targets)],
                     "value_target": float(t.value_target),
                     "policy_version": int(getattr(t, "policy_version", 0)),
+                    "faction": str(getattr(t, "faction", "") or ""),
                 }
             )
         return {
@@ -115,12 +143,14 @@ class AlphaZeroReplayBuffer:
             policy_targets = [np.asarray(p, dtype=np.float32) for p in targets_raw]
             value_target = float(raw.get("value_target", 0.0) or 0.0)
             policy_version = int(raw.get("policy_version", 0) or 0)
+            faction = str(raw.get("faction", "") or "")
             self.buffer.append(
                 AZTransition(
                     state=state_np,
                     policy_targets=policy_targets,
                     value_target=value_target,
                     policy_version=policy_version,
+                    faction=faction,
                 )
             )
         return len(self.buffer)

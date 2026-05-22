@@ -77,11 +77,27 @@ from core.models.PPO import (
 )
 from core.models.ppo_buffer import PPORolloutBuffer
 from core.models.opponent_adapter import OpponentSpec, build_policy_fn, load_agent_opponent
-from core.models.alphazero_model import AlphaZeroPolicyValueNet
+from core.models.alphazero_ids import (
+    VALID_TRAIN_ALGOS,
+    az_mcts_mode_for,
+    az_section_for,
+    is_az_algo,
+)
+from core.models.alphazero_model import (
+    alphazero_arch_from_payload,
+    alphazero_kwargs_from_env,
+    load_alphazero_state_dict,
+    make_alphazero_net,
+)
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.alphazero_replay import AlphaZeroReplayBuffer, AZTransition
 from core.models.alphazero_selfplay import play_episode_with_mcts, SelfPlayConfig
-from core.models.alphazero_trainer import AlphaZeroTrainConfig, train_alphazero_step
+from core.models.alphazero_trainer import (
+    AlphaZeroTrainConfig,
+    alphazero_train_config_from_env,
+    build_alphazero_lr_scheduler,
+    train_alphazero_step,
+)
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.gumbel_muzero_replay import GumbelMuZeroReplayBuffer, GMZTransition
@@ -168,24 +184,41 @@ if INDUCTOR_SKIP_DYNAMIC_CUDAGRAPHS:
 with open(os.path.abspath("hyperparams.json")) as j:
     data = json.loads(j.read())
 
+_DQN_CFG = data.get("dqn", {}) if isinstance(data, dict) and isinstance(data.get("dqn"), dict) else {}
+
+
+def _cfg_raw(env_name: str, cfg_key: str, default):
+    if os.getenv(env_name) is not None:
+        return os.getenv(env_name)
+    if cfg_key in _DQN_CFG:
+        return _DQN_CFG[cfg_key]
+    if isinstance(data, dict) and cfg_key in data:
+        return data[cfg_key]
+    return default
+
+
+def _cfg_bool(env_name: str, cfg_key: str, default: str = "1") -> bool:
+    return str(_cfg_raw(env_name, cfg_key, default)).strip().lower() in ("1", "true", "yes")
+
+
 # ===== algo flags =====
-DOUBLE_DQN_ENABLED = os.getenv("DOUBLE_DQN_ENABLED", "1") == "1"
-DUELING_ENABLED = os.getenv("DUELING_ENABLED", "1") == "1"
-DIST_TYPE = str(os.getenv("DIST_TYPE", "iqn")).strip().lower() or "iqn"
-IQN_N_QUANTILES = int(os.getenv("IQN_N_QUANTILES", "32"))
-IQN_N_TARGET_QUANTILES = int(os.getenv("IQN_N_TARGET_QUANTILES", "32"))
-IQN_N_TAU_SAMPLES = int(os.getenv("IQN_N_TAU_SAMPLES", "32"))
-IQN_EMBED_DIM = int(os.getenv("IQN_EMBED_DIM", "64"))
-IQN_KAPPA = float(os.getenv("IQN_KAPPA", "1.0"))
-NOISY_SIGMA0 = float(os.getenv("NOISY_SIGMA0", "0.5"))
-NOISY_DISABLE_EPS = os.getenv("NOISY_DISABLE_EPS", "1") == "1"
-NOISY_SIGMA_ANNEAL = os.getenv("NOISY_SIGMA_ANNEAL", "0") == "1"
-DQN_HIDDEN_SIZE = int(os.getenv("DQN_HIDDEN_SIZE", "256"))
-DQN_NUM_LAYERS = int(os.getenv("DQN_NUM_LAYERS", "2"))
-DQN_ENSEMBLE_SIZE = int(os.getenv("DQN_ENSEMBLE_SIZE", "1"))
-DQN_LR_SCHEDULER = str(os.getenv("DQN_LR_SCHEDULER", "none")).strip().lower() or "none"
-PER_ENSEMBLE_PRIORITY_LAMBDA = float(os.getenv("PER_ENSEMBLE_PRIORITY_LAMBDA", "0.1"))
-EPS_SCHEDULE = str(os.getenv("EPS_SCHEDULE", "exp")).strip().lower() or "exp"
+DOUBLE_DQN_ENABLED = _cfg_bool("DOUBLE_DQN_ENABLED", "double_dqn", "1")
+DUELING_ENABLED = _cfg_bool("DUELING_ENABLED", "dueling", "1")
+DIST_TYPE = str(_cfg_raw("DIST_TYPE", "dist_type", "iqn")).strip().lower() or "iqn"
+IQN_N_QUANTILES = int(_cfg_raw("IQN_N_QUANTILES", "iqn_n_quantiles", "32"))
+IQN_N_TARGET_QUANTILES = int(_cfg_raw("IQN_N_TARGET_QUANTILES", "iqn_n_target_quantiles", "32"))
+IQN_N_TAU_SAMPLES = int(_cfg_raw("IQN_N_TAU_SAMPLES", "iqn_n_tau_samples", "32"))
+IQN_EMBED_DIM = int(_cfg_raw("IQN_EMBED_DIM", "iqn_embed_dim", "64"))
+IQN_KAPPA = float(_cfg_raw("IQN_KAPPA", "iqn_kappa", "1.0"))
+NOISY_SIGMA0 = float(_cfg_raw("NOISY_SIGMA0", "noisy_sigma0", "0.5"))
+NOISY_DISABLE_EPS = _cfg_bool("NOISY_DISABLE_EPS", "noisy_disable_eps", "1")
+NOISY_SIGMA_ANNEAL = _cfg_bool("NOISY_SIGMA_ANNEAL", "noisy_sigma_anneal", "0")
+DQN_HIDDEN_SIZE = int(_cfg_raw("DQN_HIDDEN_SIZE", "hidden_size", "256"))
+DQN_NUM_LAYERS = int(_cfg_raw("DQN_NUM_LAYERS", "num_layers", "2"))
+DQN_ENSEMBLE_SIZE = int(_cfg_raw("DQN_ENSEMBLE_SIZE", "ensemble_size", "1"))
+DQN_LR_SCHEDULER = str(_cfg_raw("DQN_LR_SCHEDULER", "lr_scheduler", "none")).strip().lower() or "none"
+PER_ENSEMBLE_PRIORITY_LAMBDA = float(_cfg_raw("PER_ENSEMBLE_PRIORITY_LAMBDA", "per_ensemble_priority_lambda", "0.1"))
+EPS_SCHEDULE = str(_cfg_raw("EPS_SCHEDULE", "eps_schedule", "exp")).strip().lower() or "exp"
 if DQN_HIDDEN_SIZE < 32:
     DQN_HIDDEN_SIZE = 32
 if DQN_NUM_LAYERS < 1:
@@ -195,7 +228,7 @@ if DQN_ENSEMBLE_SIZE < 1:
 REWARD_DEBUG = os.getenv("REWARD_DEBUG", "0") == "1"
 REWARD_DEBUG_EVERY = int(os.getenv("REWARD_DEBUG_EVERY", "200"))
 TRAIN_ALGO = str(os.getenv("TRAIN_ALGO", "dqn")).strip().lower() or "dqn"
-if TRAIN_ALGO not in {"dqn", "ppo", "alphazero", "gumbel_muzero", "distill"}:
+if TRAIN_ALGO not in VALID_TRAIN_ALGOS:
     TRAIN_ALGO = "dqn"
 # ===== train logging =====
 TRAIN_LOG_ENABLED = os.getenv("TRAIN_LOG_ENABLED", "1") == "1"
@@ -2373,16 +2406,29 @@ PPO_UPDATE_EPOCHS = int(PPO_CFG.get("update_epochs", 4))
 PPO_MINIBATCH_SIZE = int(PPO_CFG.get("minibatch_size", 256))
 PPO_MAX_GRAD_NORM = float(PPO_CFG.get("max_grad_norm", 0.5))
 PPO_TARGET_KL = float(PPO_CFG.get("target_kl", 0.03))
-PPO_LR_SCHEDULER = str(os.getenv("PPO_LR_SCHEDULER", "none")).strip().lower() or "none"
-PPO_ADAPTIVE_ENTROPY = os.getenv("PPO_ADAPTIVE_ENTROPY", "0") == "1"
-PPO_ENTROPY_TARGET = float(os.getenv("PPO_ENTROPY_TARGET", "0.5"))
-PPO_ENTROPY_ADAPT_LR = float(os.getenv("PPO_ENTROPY_ADAPT_LR", "0.05"))
-AZ_CFG = data.get("alphazero", {}) if isinstance(data, dict) else {}
+def _ppo_cfg_raw(env_name: str, cfg_key: str, default):
+    if os.getenv(env_name) is not None:
+        return os.getenv(env_name)
+    if cfg_key in PPO_CFG:
+        return PPO_CFG[cfg_key]
+    return default
+
+
+PPO_LR_SCHEDULER = str(_ppo_cfg_raw("PPO_LR_SCHEDULER", "lr_scheduler", "none")).strip().lower() or "none"
+PPO_ADAPTIVE_ENTROPY = str(_ppo_cfg_raw("PPO_ADAPTIVE_ENTROPY", "adaptive_entropy", "0")).strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+PPO_ENTROPY_TARGET = float(_ppo_cfg_raw("PPO_ENTROPY_TARGET", "entropy_target", "0.5"))
+PPO_ENTROPY_ADAPT_LR = float(_ppo_cfg_raw("PPO_ENTROPY_ADAPT_LR", "entropy_adapt_lr", "0.05"))
+_AZ_HP_SECTION = az_section_for(TRAIN_ALGO) if is_az_algo(TRAIN_ALGO) else "alphazero_tree"
+AZ_CFG = data.get(_AZ_HP_SECTION, {}) if isinstance(data, dict) else {}
 AZ_LR = float(AZ_CFG.get("learning_rate", LR))
 AZ_BATCH_SIZE = int(AZ_CFG.get("batch_size", 128))
 AZ_VALUE_LOSS_WEIGHT = float(AZ_CFG.get("value_loss_weight", 1.0))
 AZ_L2_WEIGHT = float(AZ_CFG.get("l2_weight", 1e-6))
-AZ_MCTS_SIMS = int(AZ_CFG.get("mcts_simulations", 96))
+AZ_MCTS_SIMS = int(os.getenv("AZ_MCTS_SIMULATIONS", str(AZ_CFG.get("mcts_simulations", 96))))
 AZ_C_PUCT = float(AZ_CFG.get("c_puct", 1.5))
 AZ_DIR_ALPHA = float(AZ_CFG.get("dirichlet_alpha", 0.3))
 AZ_DIR_EPS = float(AZ_CFG.get("dirichlet_eps", 0.25))
@@ -2390,9 +2436,12 @@ AZ_TEMP_OPENING_MOVES = int(AZ_CFG.get("temperature_opening_moves", 12))
 AZ_TEMP_OPENING = float(AZ_CFG.get("temperature_opening_value", 1.0))
 AZ_TEMP_LATE = float(AZ_CFG.get("temperature_late_value", 0.3))
 AZ_REPLAY_CAPACITY = int(AZ_CFG.get("replay_capacity", 200000))
-AZ_MCTS_MODE = str(os.getenv("AZ_MCTS_MODE", str(AZ_CFG.get("mcts_mode", "proxy")))).strip().lower() or "proxy"
+if is_az_algo(TRAIN_ALGO):
+    AZ_MCTS_MODE = az_mcts_mode_for(TRAIN_ALGO)
+else:
+    AZ_MCTS_MODE = str(AZ_CFG.get("mcts_mode", "tree")).strip().lower() or "tree"
 if AZ_MCTS_MODE not in {"proxy", "tree"}:
-    AZ_MCTS_MODE = "proxy"
+    AZ_MCTS_MODE = "tree"
 AZ_MCTS_TOP_K_PER_HEAD = int(os.getenv("AZ_MCTS_TOP_K_PER_HEAD", str(AZ_CFG.get("mcts_top_k_per_head", 8))))
 AZ_MCTS_MAX_DEPTH = int(os.getenv("AZ_MCTS_MAX_DEPTH", str(AZ_CFG.get("mcts_max_depth", 1))))
 AZ_MCTS_ROOT_DIRICHLET_ONLY = str(
@@ -2412,9 +2461,33 @@ AZ_OUTCOME_VALUE_DRAW = float(os.getenv("AZ_OUTCOME_VALUE_DRAW", str(AZ_CFG.get(
 AZ_OUTCOME_VALUE_WIN = max(-1.0, min(1.0, AZ_OUTCOME_VALUE_WIN))
 AZ_OUTCOME_VALUE_LOSS = max(-1.0, min(1.0, AZ_OUTCOME_VALUE_LOSS))
 AZ_OUTCOME_VALUE_DRAW = max(-1.0, min(1.0, AZ_OUTCOME_VALUE_DRAW))
-AZ_NUM_ACTORS = max(1, int(os.getenv("AZ_NUM_ACTORS", str(AZ_CFG.get("num_actors", 2)))))
-AZ_ACTOR_BATCH_SEND = max(8, int(os.getenv("AZ_ACTOR_BATCH_SEND", str(AZ_CFG.get("actor_batch_send", 64)))))
-AZ_ACTOR_QUEUE_MAX = max(64, int(os.getenv("AZ_ACTOR_QUEUE_MAX", str(AZ_CFG.get("actor_queue_max", 256)))))
+AZ_NUM_ACTORS = max(
+    1,
+    int(
+        os.getenv(
+            "AZ_NUM_ACTORS",
+            os.getenv("NUM_ACTORS", str(AZ_CFG.get("num_actors", 2))),
+        )
+    ),
+)
+AZ_ACTOR_BATCH_SEND = max(
+    8,
+    int(
+        os.getenv(
+            "AZ_ACTOR_BATCH_SEND",
+            os.getenv("ACTOR_BATCH_SEND", str(AZ_CFG.get("actor_batch_send", 64))),
+        )
+    ),
+)
+AZ_ACTOR_QUEUE_MAX = max(
+    64,
+    int(
+        os.getenv(
+            "AZ_ACTOR_QUEUE_MAX",
+            os.getenv("ACTOR_QUEUE_MAX", str(AZ_CFG.get("actor_queue_max", 256))),
+        )
+    ),
+)
 AZ_SYNC_EVERY_UPDATES = max(1, int(os.getenv("AZ_SYNC_EVERY_UPDATES", str(AZ_CFG.get("sync_every_updates", 2)))))
 AZ_UPDATES_PER_ROLLOUT = max(1, int(os.getenv("AZ_UPDATES_PER_ROLLOUT", str(AZ_CFG.get("updates_per_rollout", 2)))))
 AZ_REPLAY_MIN_SIZE = max(1, int(os.getenv("AZ_REPLAY_MIN_SIZE", str(AZ_CFG.get("replay_min_size", 512)))))
@@ -2431,6 +2504,59 @@ AZ_DET_EVAL_GATE_TURN_LIMIT_MAX = float(
 AZ_DET_EVAL_GATE_DRAW_MAX = float(
     os.getenv("AZ_DET_EVAL_GATE_DRAW_MAX", str(AZ_CFG.get("det_eval_gate_draw_max", 0.70)))
 )
+AZ_HIDDEN_SIZE = int(os.getenv("AZ_HIDDEN_SIZE", str(AZ_CFG.get("hidden_size", 256))))
+AZ_NUM_LAYERS = int(os.getenv("AZ_NUM_LAYERS", str(AZ_CFG.get("num_layers", 2))))
+AZ_VALUE_ENSEMBLE = int(os.getenv("AZ_VALUE_ENSEMBLE", str(AZ_CFG.get("value_ensemble", 1))))
+AZ_LR_SCHEDULER = str(os.getenv("AZ_LR_SCHEDULER", str(AZ_CFG.get("lr_scheduler", "none")))).strip().lower() or "none"
+AZ_LR_WARMUP_STEPS = int(os.getenv("AZ_LR_WARMUP_STEPS", str(AZ_CFG.get("lr_warmup_steps", 0))))
+AZ_LR_TOTAL_STEPS = int(os.getenv("AZ_LR_TOTAL_STEPS", str(AZ_CFG.get("lr_total_steps", 0))))
+AZ_MCTS_EVAL_CACHE_SIZE = int(os.getenv("AZ_MCTS_EVAL_CACHE_SIZE", str(AZ_CFG.get("mcts_eval_cache_size", 10000))))
+AZ_C_PUCT_MIN = float(os.getenv("AZ_C_PUCT_MIN", str(AZ_CFG.get("c_puct_min", 1.0))))
+AZ_C_PUCT_MAX = float(os.getenv("AZ_C_PUCT_MAX", str(AZ_CFG.get("c_puct_max", 2.0))))
+AZ_C_PUCT_SCHEDULE = str(os.getenv("AZ_C_PUCT_SCHEDULE", str(AZ_CFG.get("c_puct_schedule", "none")))).strip().lower() or "none"
+AZ_PW_ALPHA = float(os.getenv("AZ_PW_ALPHA", str(AZ_CFG.get("pw_alpha", 1.0))))
+AZ_PW_BETA = float(os.getenv("AZ_PW_BETA", str(AZ_CFG.get("pw_beta", 0.5))))
+AZ_PRIOR_WEIGHT_EARLY = float(os.getenv("AZ_PRIOR_WEIGHT_EARLY", str(AZ_CFG.get("prior_weight_early", 0.25))))
+AZ_BALANCED_FACTION_SAMPLING = str(os.getenv("AZ_BALANCED_FACTION_SAMPLING", "0")).strip() == "1"
+
+
+def _make_alphazero(n_observations, n_actions, **overrides):
+    return make_alphazero_net(n_observations, n_actions, **overrides)
+
+
+def _build_az_lr_scheduler(optimizer, total_steps_hint=None):
+    cfg = AlphaZeroTrainConfig(
+        lr=AZ_LR,
+        lr_scheduler_type=AZ_LR_SCHEDULER,
+        lr_warmup_steps=AZ_LR_WARMUP_STEPS,
+        lr_total_steps=AZ_LR_TOTAL_STEPS or int(total_steps_hint or 0),
+    )
+    return build_alphazero_lr_scheduler(optimizer, cfg, total_steps_hint=total_steps_hint)
+
+
+def _az_mcts_config(*, progress: float = 0.0, move_count: int = 0) -> MCTSConfig:
+    return MCTSConfig(
+        simulations=int(AZ_MCTS_SIMS),
+        c_puct=float(AZ_C_PUCT),
+        c_puct_min=float(AZ_C_PUCT_MIN),
+        c_puct_max=float(AZ_C_PUCT_MAX),
+        c_puct_schedule=str(AZ_C_PUCT_SCHEDULE),
+        dirichlet_alpha=float(AZ_DIR_ALPHA),
+        dirichlet_eps=float(AZ_DIR_EPS),
+        top_k_per_head=int(AZ_MCTS_TOP_K_PER_HEAD),
+        max_depth=int(AZ_MCTS_MAX_DEPTH),
+        mode=str(AZ_MCTS_MODE),
+        root_dirichlet_only=bool(AZ_MCTS_ROOT_DIRICHLET_ONLY),
+        eval_cache_size=int(AZ_MCTS_EVAL_CACHE_SIZE),
+        pw_alpha=float(AZ_PW_ALPHA),
+        pw_beta=float(AZ_PW_BETA),
+        prior_weight_early=float(AZ_PRIOR_WEIGHT_EARLY),
+        progress=float(progress),
+        move_count=int(move_count),
+        temperature_opening_moves=int(AZ_TEMP_OPENING_MOVES),
+    )
+
+
 GMZ_CFG = data.get("gumbel_muzero", {}) if isinstance(data, dict) else {}
 GMZ_LR = float(GMZ_CFG.get("learning_rate", AZ_LR))
 GMZ_BATCH_SIZE = int(GMZ_CFG.get("batch_size", 128))
@@ -3249,9 +3375,9 @@ def main():
     # PRO actor-learner по умолчанию (для DQN и PPO).
     # Для отката на старый pipeline: PRO_ACTOR_LEARNER=0.
     if use_pro_actor_learner:
-        if TRAIN_ALGO == "alphazero":
+        if is_az_algo(TRAIN_ALGO):
             if TRAIN_LOG_TO_CONSOLE:
-                print("[TRAIN][MODE] PRO_ACTOR_LEARNER=1 (AlphaZero factorized MCTS + learner)")
+                print(f"[TRAIN][MODE] PRO_ACTOR_LEARNER=1 (AlphaZero {TRAIN_ALGO} MCTS={AZ_MCTS_MODE} + learner)")
             _main_actor_learner_alphazero(
                 roster_config=roster_config,
                 totLifeT=totLifeT,
@@ -3565,8 +3691,8 @@ def main():
         )
         return
 
-    if TRAIN_ALGO == "alphazero":
-        append_agent_log(f"[AZ] Запуск AlphaZero ветки. episodes={totLifeT}")
+    if is_az_algo(TRAIN_ALGO):
+        append_agent_log(f"[AZ] Запуск AlphaZero ветки algo={TRAIN_ALGO} mcts_mode={AZ_MCTS_MODE}. episodes={totLifeT}")
         _main_actor_learner_alphazero(
             roster_config=roster_config,
             totLifeT=totLifeT,
@@ -4063,7 +4189,7 @@ def main():
     side_tag = f"{learner_identity.side}_{learner_identity.faction}"
     safe_name = _sanitize_fs_name(f"{name}__learner_{side_tag}")
     algo_tag = str(TRAIN_ALGO or "dqn").strip().lower()
-    if algo_tag not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
+    if algo_tag not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
         algo_tag = "dqn"
     models_root = os.path.join(MODELS_DIR, algo_tag)
     fold = os.path.join(models_root, safe_name)
@@ -5522,7 +5648,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             if SELF_PLAY_OPPONENT_MODE == "fixed_checkpoint" and SELF_PLAY_FIXED_PATH:
                 checkpoint = torch.load(SELF_PLAY_FIXED_PATH, map_location="cpu", weights_only=False)
                 checkpoint_algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
-                if checkpoint_algo not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
+                if checkpoint_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
                     checkpoint_algo = "dqn"
                 if isinstance(checkpoint, dict) and "policy_net" in checkpoint:
                     policy_state = normalize_state_dict(checkpoint["policy_net"])
@@ -5981,7 +6107,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                     "learner_faction": str(learner_identity.faction or "Unknown"),
                     "opponent_side": opponent_side,
                     "opponent_faction": opponent_faction,
-                    "opponent_algo": "dqn" if (SELF_PLAY_ENABLED and opponent_policy_net is not None) else "heuristic",
+                    "opponent_algo": "dqn" if (SELF_PLAY_ENABLED and opponent_spec is not None) else "heuristic",
                     "opponent_source": opponent_source,
                     "opponent_id": str(opponent_id or ""),
                 },
@@ -6000,7 +6126,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                     "learner_faction": str(getattr(learner_identity, "faction", "Unknown") or "Unknown"),
                     "opponent_side": "P2" if str(getattr(learner_identity, "side", "P1") or "P1").strip().upper() == "P1" else "P1",
                     "opponent_faction": str(roster_config.get("enemy_faction", "Unknown")).strip(),
-                    "opponent_algo": "dqn" if (SELF_PLAY_ENABLED and opponent_policy_net is not None) else "heuristic",
+                    "opponent_algo": "dqn" if (SELF_PLAY_ENABLED and opponent_spec is not None) else "heuristic",
                     "opponent_source": str(opponent_source_actor),
                     "opponent_id": str(opponent_id_actor or ""),
                 },
@@ -6175,13 +6301,17 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                 opponent_source_label = "fixed_checkpoint"
                 if isinstance(checkpoint, dict):
                     checkpoint_meta_algo = str(checkpoint.get("algo", "") or "").strip().lower()
-                    if checkpoint_meta_algo not in ("dqn", "ppo", "alphazero", "gumbel_muzero"):
+                    if checkpoint_meta_algo not in ("dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"):
                         if "actor_critic" in checkpoint:
                             checkpoint_meta_algo = "ppo"
                         elif "gumbel_muzero_net" in checkpoint:
                             checkpoint_meta_algo = "gumbel_muzero"
                         elif "policy_value_net" in checkpoint:
-                            checkpoint_meta_algo = "alphazero"
+                            mm = str(checkpoint.get("mcts_mode", "") or "").strip().lower()
+                            if mm == "proxy":
+                                checkpoint_meta_algo = "alphazero_proxy"
+                            elif mm == "tree":
+                                checkpoint_meta_algo = "alphazero_tree"
                         elif "policy_net" in checkpoint:
                             checkpoint_meta_algo = "dqn"
                 if opponent_state_dict_cpu is not None:
@@ -6215,7 +6345,8 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
     if SELF_PLAY_ENABLED and opponent_state_dict_cpu is not None and checkpoint_meta_algo in (
         "dqn",
         "ppo",
-        "alphazero",
+        "alphazero_tree",
+        "alphazero_proxy",
         "gumbel_muzero",
     ):
         opponent_snapshot_sync_enabled = checkpoint_meta_algo == "ppo"
@@ -7309,20 +7440,29 @@ def _actor_learner_actor_entry_alphazero(
     """Top-level entrypoint for Windows spawn pickling (AlphaZero actor)."""
     try:
         cpu_device = torch.device("cpu")
-        az_net = AlphaZeroPolicyValueNet(n_observations=n_observations, n_actions=n_actions).to(cpu_device)
-        az_net.load_state_dict(normalize_state_dict(init_weights))
+        az_kw = alphazero_kwargs_from_env()
+        az_net = make_alphazero_net(n_observations=n_observations, n_actions=n_actions, **az_kw).to(cpu_device)
+        load_alphazero_state_dict(az_net, normalize_state_dict(init_weights))
         az_net.eval()
         mcts = AlphaZeroFactorizedMCTS(
             az_net,
             config=MCTSConfig(
                 simulations=int(mcts_cfg_payload.get("simulations", AZ_MCTS_SIMS)),
                 c_puct=float(mcts_cfg_payload.get("c_puct", AZ_C_PUCT)),
+                c_puct_min=float(mcts_cfg_payload.get("c_puct_min", AZ_C_PUCT_MIN)),
+                c_puct_max=float(mcts_cfg_payload.get("c_puct_max", AZ_C_PUCT_MAX)),
+                c_puct_schedule=str(mcts_cfg_payload.get("c_puct_schedule", AZ_C_PUCT_SCHEDULE)),
                 dirichlet_alpha=float(mcts_cfg_payload.get("dirichlet_alpha", AZ_DIR_ALPHA)),
                 dirichlet_eps=float(mcts_cfg_payload.get("dirichlet_eps", AZ_DIR_EPS)),
                 top_k_per_head=int(mcts_cfg_payload.get("top_k_per_head", AZ_MCTS_TOP_K_PER_HEAD)),
                 max_depth=int(mcts_cfg_payload.get("max_depth", AZ_MCTS_MAX_DEPTH)),
                 mode=str(mcts_cfg_payload.get("mode", AZ_MCTS_MODE)),
                 root_dirichlet_only=bool(mcts_cfg_payload.get("root_dirichlet_only", AZ_MCTS_ROOT_DIRICHLET_ONLY)),
+                eval_cache_size=int(mcts_cfg_payload.get("eval_cache_size", AZ_MCTS_EVAL_CACHE_SIZE)),
+                pw_alpha=float(mcts_cfg_payload.get("pw_alpha", AZ_PW_ALPHA)),
+                pw_beta=float(mcts_cfg_payload.get("pw_beta", AZ_PW_BETA)),
+                prior_weight_early=float(mcts_cfg_payload.get("prior_weight_early", AZ_PRIOR_WEIGHT_EARLY)),
+                temperature_opening_moves=int(sp_cfg_payload.get("temperature_opening_moves", AZ_TEMP_OPENING_MOVES)),
             ),
             device=cpu_device,
         )
@@ -7356,8 +7496,14 @@ def _actor_learner_actor_entry_alphazero(
                 opponent_policy_fn = None
 
         rollout_batch: list[dict] = []
+        heartbeat_moves = max(1, int(os.getenv("AZ_ACTOR_HEARTBEAT_MOVES", "5") or 5))
         for _ep in range(int(episodes)):
             ep_idx_1based = int(_ep) + 1
+            print(
+                f"[AZ][ACTOR] actor={int(actor_idx)} local_ep={ep_idx_1based}/{int(episodes)} starting "
+                f"mcts_mode={getattr(mcts.cfg, 'mode', 'proxy')} sims={getattr(mcts.cfg, 'simulations', 0)}",
+                flush=True,
+            )
             if sync_enabled and (_ep % sync_check_every_ep == 0):
                 try:
                     if os.path.isfile(sync_path):
@@ -7366,7 +7512,7 @@ def _actor_learner_actor_entry_alphazero(
                             payload = torch.load(sync_path, map_location="cpu", weights_only=False)
                             sd = payload.get("state_dict") if isinstance(payload, dict) else None
                             if isinstance(sd, dict):
-                                az_net.load_state_dict(normalize_state_dict(sd))
+                                load_alphazero_state_dict(az_net, normalize_state_dict(sd))
                                 az_net.eval()
                                 mcts.net = az_net
                                 last_sync_mtime = float(mtime)
@@ -7402,6 +7548,8 @@ def _actor_learner_actor_entry_alphazero(
                 outcome_value_loss=float(outcome_payload.get("outcome_value_loss", AZ_OUTCOME_VALUE_LOSS)),
                 outcome_value_draw=float(outcome_payload.get("outcome_value_draw", AZ_OUTCOME_VALUE_DRAW)),
                 policy_version=int(current_policy_version),
+                actor_idx=int(actor_idx),
+                heartbeat_moves=heartbeat_moves,
             )
             for t in transitions:
                 rollout_batch.append(
@@ -7536,21 +7684,29 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         n_actions=n_actions,
         mission_name=mission_name,
         ruleset_version=learner_identity.ruleset_version,
-        extras={"actor_learner": 1, "train_algo": "alphazero", "num_actors": int(AZ_NUM_ACTORS)},
+        extras={"actor_learner": 1, "train_algo": TRAIN_ALGO, "mcts_mode": AZ_MCTS_MODE, "num_actors": int(AZ_NUM_ACTORS)},
     )
 
-    az_net = AlphaZeroPolicyValueNet(n_observations=n_observations, n_actions=n_actions).to(device)
+    az_kw = alphazero_kwargs_from_env()
+    az_net = make_alphazero_net(n_observations=n_observations, n_actions=n_actions, **az_kw).to(device)
     optimizer = optim.AdamW(az_net.parameters(), lr=AZ_LR, amsgrad=True)
     _patch_optimizer_methods_no_compile(optimizer)
     replay = AlphaZeroReplayBuffer(capacity=AZ_REPLAY_CAPACITY)
-    trainer_cfg = AlphaZeroTrainConfig(
-        lr=AZ_LR,
-        batch_size=AZ_BATCH_SIZE,
-        value_loss_weight=AZ_VALUE_LOSS_WEIGHT,
-        l2_weight=AZ_L2_WEIGHT,
-        balanced_outcome_sampling=bool(AZ_BALANCED_OUTCOME_SAMPLING),
-        max_policy_staleness_updates=int(AZ_MAX_POLICY_STALENESS_UPDATES),
+    trainer_cfg = alphazero_train_config_from_env(
+        AlphaZeroTrainConfig(
+            lr=AZ_LR,
+            batch_size=AZ_BATCH_SIZE,
+            value_loss_weight=AZ_VALUE_LOSS_WEIGHT,
+            l2_weight=AZ_L2_WEIGHT,
+            balanced_outcome_sampling=bool(AZ_BALANCED_OUTCOME_SAMPLING),
+            balanced_faction_sampling=bool(AZ_BALANCED_FACTION_SAMPLING),
+            max_policy_staleness_updates=int(AZ_MAX_POLICY_STALENESS_UPDATES),
+            lr_scheduler_type=AZ_LR_SCHEDULER,
+            lr_warmup_steps=AZ_LR_WARMUP_STEPS,
+            lr_total_steps=AZ_LR_TOTAL_STEPS,
+        )
     )
+    az_lr_scheduler = _build_az_lr_scheduler(optimizer, total_steps_hint=int(totLifeT) * max(1, AZ_UPDATES_PER_ROLLOUT) * 20)
 
     policy_version = 0
     optimize_steps = 0
@@ -7565,10 +7721,28 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 if not isinstance(policy_state, dict):
                     policy_state = _extract_policy_state_dict(checkpoint)
                 if isinstance(policy_state, dict):
-                    az_net.load_state_dict(normalize_state_dict(policy_state))
+                    arch = alphazero_arch_from_payload(checkpoint)
+                    if arch != az_kw:
+                        append_agent_log(
+                            f"[AZ][RESUME][WARN] arch mismatch checkpoint={arch} current={az_kw}; strict=False load"
+                        )
+                    load_alphazero_state_dict(
+                        az_net,
+                        normalize_state_dict(policy_state),
+                        log_fn=append_agent_log,
+                    )
                 opt_state = checkpoint.get("optimizer")
                 if isinstance(opt_state, dict):
                     optimizer.load_state_dict(opt_state)
+                sched_state = checkpoint.get("lr_scheduler")
+                if az_lr_scheduler is not None and isinstance(sched_state, dict):
+                    try:
+                        az_lr_scheduler.load_state_dict(sched_state)
+                    except Exception as exc:
+                        append_agent_log(
+                            f"[AZ][RESUME][WARN] lr_scheduler load failed: {exc}. "
+                            "Где: train.py (_main_actor_learner_alphazero). Что делать: продолжить без scheduler state."
+                        )
                 replay_state = checkpoint.get("replay_memory")
                 if replay_state is not None:
                     replay.load_state_dict(replay_state)
@@ -7612,6 +7786,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         f"max_staleness={AZ_MAX_POLICY_STALENESS_UPDATES} replay_min={AZ_REPLAY_MIN_SIZE} "
         f"outcome_only={int(AZ_OUTCOME_ONLY)} mcts_mode={AZ_MCTS_MODE} mcts={AZ_MCTS_SIMS} "
         f"top_k={AZ_MCTS_TOP_K_PER_HEAD} depth={AZ_MCTS_MAX_DEPTH} "
+        f"hidden={az_kw['hidden_size']} layers={az_kw['num_layers']} value_ensemble={az_kw['n_value_ensemble']} "
+        f"lr_scheduler={AZ_LR_SCHEDULER} c_puct_schedule={AZ_C_PUCT_SCHEDULE} "
         f"opponent_mode={opponent_source_label} opponent_algo={opponent_algo_label}"
     )
 
@@ -7621,12 +7797,13 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     last_actor_det_eval_ep = 0
     last_guard_turn_limit_rate = 0.0
 
-    checkpoint_dir = os.path.join(MODELS_DIR, "alphazero")
+    checkpoint_dir = os.path.join(MODELS_DIR, TRAIN_ALGO)
     os.makedirs(checkpoint_dir, exist_ok=True)
     sync_dir = os.path.join(MODELS_DIR, "actor_sync")
     os.makedirs(sync_dir, exist_ok=True)
-    sync_path = os.path.join(sync_dir, "latest_az_policy.pth")
-    opp_sync_path = os.path.join(sync_dir, "latest_az_opponent.pth")
+    _az_sync_tag = "tree" if TRAIN_ALGO == "alphazero_tree" else "proxy"
+    sync_path = os.path.join(sync_dir, f"latest_az_{_az_sync_tag}_policy.pth")
+    opp_sync_path = os.path.join(sync_dir, f"latest_az_{_az_sync_tag}_opponent.pth")
 
     def _save_az_sync() -> None:
         cpu_sd = {k: v.detach().cpu() for k, v in normalize_state_dict(az_net.state_dict()).items()}
@@ -7641,22 +7818,24 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
 
     def _save_checkpoint(episode_idx: int) -> str:
         ckpt_path = os.path.join(checkpoint_dir, f"checkpoint_ep{int(episode_idx)}.pth")
-        torch.save(
-            {
-                "algo": "alphazero",
-                "policy_value_net": az_net.state_dict(),
-                "optimizer": optimizer.state_dict(),
-                "episode": int(episode_idx),
-                "episodes_finished": int(episodes_finished),
-                "global_step": int(global_step),
-                "optimize_steps": int(optimize_steps),
-                "policy_version": int(policy_version),
-                "replay_memory": replay.state_dict(),
-                "env_contract": env_contract,
-                "num_actors": int(AZ_NUM_ACTORS),
-            },
-            ckpt_path,
-        )
+        payload = {
+            "algo": TRAIN_ALGO,
+            "mcts_mode": AZ_MCTS_MODE,
+            "policy_value_net": az_net.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "episode": int(episode_idx),
+            "episodes_finished": int(episodes_finished),
+            "global_step": int(global_step),
+            "optimize_steps": int(optimize_steps),
+            "policy_version": int(policy_version),
+            "replay_memory": replay.state_dict(),
+            "env_contract": env_contract,
+            "num_actors": int(AZ_NUM_ACTORS),
+            "arch": dict(az_kw),
+        }
+        if az_lr_scheduler is not None:
+            payload["lr_scheduler"] = az_lr_scheduler.state_dict()
+        torch.save(payload, ckpt_path)
         return ckpt_path
 
     def _az_det_payload_from_rows(rows_slice: list[dict], episode_idx: int, train_loss: float) -> dict:
@@ -7687,7 +7866,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             "ep_len_mean": ep_len_mean,
             "opponent_epsilon": 0.0,
             "episode": int(episode_idx),
-            "algo": "alphazero",
+            "algo": TRAIN_ALGO,
+            "mcts_mode": AZ_MCTS_MODE,
             "eval_tag": "actor_learner_policy_fn" if opponent_spec is not None else "actor_learner_heuristic",
             "training_loss": float(train_loss),
         }
@@ -7735,6 +7915,13 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                         "max_depth": AZ_MCTS_MAX_DEPTH,
                         "mode": AZ_MCTS_MODE,
                         "root_dirichlet_only": AZ_MCTS_ROOT_DIRICHLET_ONLY,
+                        "eval_cache_size": AZ_MCTS_EVAL_CACHE_SIZE,
+                        "c_puct_min": AZ_C_PUCT_MIN,
+                        "c_puct_max": AZ_C_PUCT_MAX,
+                        "c_puct_schedule": AZ_C_PUCT_SCHEDULE,
+                        "pw_alpha": AZ_PW_ALPHA,
+                        "pw_beta": AZ_PW_BETA,
+                        "prior_weight_early": AZ_PRIOR_WEIGHT_EARLY,
                     },
                     {
                         "outcome_only": AZ_OUTCOME_ONLY,
@@ -7754,11 +7941,27 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     last_sync_opt_steps = optimize_steps
     pbar = tqdm(total=int(totLifeT), initial=int(episodes_finished), mininterval=ACTOR_PBAR_MININTERVAL, miniters=ACTOR_PBAR_MINITERS)
     last_loss = 0.0
+    wait_started = time.time()
+    last_heartbeat = wait_started
+    az_heartbeat_sec = max(5.0, float(os.getenv("AZ_HEARTBEAT_SEC", "20") or 20))
 
     while done_actors < active_actors:
         try:
             kind, payload = data_q.get(timeout=1.0)
         except mp_queue.Empty:
+            now = time.time()
+            if now - last_heartbeat >= az_heartbeat_sec:
+                alive = sum(1 for p in procs if p.is_alive())
+                elapsed = int(now - wait_started)
+                wait_line = (
+                    f"[AZ][WAIT] elapsed={elapsed}s replay={len(replay)} "
+                    f"actors_alive={alive}/{active_actors} mode={AZ_MCTS_MODE} "
+                    f"sims={AZ_MCTS_SIMS} depth={AZ_MCTS_MAX_DEPTH} "
+                    f"(tree-MCTS: первый ep может занять 5–20 мин, прогресс по ep=...)"
+                )
+                print(wait_line, flush=True)
+                append_agent_log(wait_line)
+                last_heartbeat = now
             continue
 
         if kind == "error":
@@ -7778,8 +7981,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             target_n = min(int(totLifeT), int(episodes_finished))
             if target_n > int(pbar.n):
                 pbar.update(target_n - int(pbar.n))
-            if (episodes_finished % ACTOR_PROGRESS_STDOUT_EVERY == 0) or (episodes_finished >= int(totLifeT)):
-                print(f"ep={episodes_finished}/{totLifeT}", flush=True)
+            # Всегда в stdout: GUI парсит ep= для прогресс-бара.
+            print(f"ep={episodes_finished}/{totLifeT}", flush=True)
 
             ep_line = (
                 f"[AZ] ep={episodes_finished}/{totLifeT} actor={int(payload.get('actor_idx', -1))} "
@@ -7843,7 +8046,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                             model_path=str(last_checkpoint or ""),
                             metrics_mode="det_eval",
                             extra={
-                                "algo": "alphazero",
+                                "algo": TRAIN_ALGO,
+                                "mcts_mode": AZ_MCTS_MODE,
                                 "mode": "actor_learner",
                                 "learner_side": learner_side,
                                 "learner_faction": str(learner_identity.faction or "Unknown"),
@@ -7912,6 +8116,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 config=trainer_cfg,
                 device=device,
                 current_policy_version=int(policy_version),
+                scheduler=az_lr_scheduler,
             )
             if update_info is None:
                 continue
@@ -7963,7 +8168,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                     model_path=str(last_checkpoint or ""),
                     metrics_mode="det_eval",
                     extra={
-                        "algo": "alphazero",
+                        "algo": TRAIN_ALGO,
+                        "mcts_mode": AZ_MCTS_MODE,
                         "mode": "actor_learner",
                         "learner_side": learner_side,
                         "learner_faction": str(learner_identity.faction or "Unknown"),
@@ -7987,7 +8193,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         target_state_dict={},
         optimizer_state_dict=optimizer.state_dict(),
         extra_meta={
-            "algo": "alphazero",
+            "algo": TRAIN_ALGO,
+            "mcts_mode": AZ_MCTS_MODE,
             "episode": int(final_episode),
             "source_model_path": str(last_checkpoint or ""),
             "mode": "actor_learner",

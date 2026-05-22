@@ -21,7 +21,8 @@ from core.engine.state_export import DEFAULT_STATE_PATH
 from core.engine.mission import board_dims_for_mission
 from core.models.DQN import DQN
 from core.models.PPO import make_actor_critic, load_actor_critic_state_dict, ppo_arch_from_payload
-from core.models.alphazero_model import AlphaZeroPolicyValueNet
+from core.models.alphazero_ids import az_mcts_mode_from_payload, is_az_algo
+from core.models.alphazero_model import alphazero_arch_from_payload, load_alphazero_state_dict, make_alphazero_net
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
@@ -283,15 +284,27 @@ class GameController:
                 optimizer_state = payload.get("optimizer_state") or {}
                 meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
                 agent_algo = str(meta.get("algo", "")).strip().lower()
-                if agent_algo not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
-                    if any(str(k).startswith("policy_heads.") for k in policy_state.keys()):
+                if agent_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
+                    if any(str(k).startswith("actor.") for k in policy_state.keys()):
                         agent_algo = "ppo"
+                    elif any(str(k).startswith("policy_heads.") for k in policy_state.keys()):
+                        mm = str(meta.get("mcts_mode", "") or "").strip().lower()
+                        agent_algo = "alphazero_proxy" if mm == "proxy" else ("alphazero_tree" if mm == "tree" else "")
                     else:
                         agent_algo = "dqn"
+                if not agent_algo:
+                    raise ValueError(
+                        f"Невалидный legacy AlphaZero agent (algo={meta.get('algo')!r}). "
+                        "Переобучите как alphazero_tree или alphazero_proxy."
+                    )
                 if agent_algo == "ppo":
                     checkpoint = {"actor_critic": policy_state, "algo": "ppo"}
-                elif agent_algo == "alphazero":
-                    checkpoint = {"policy_value_net": policy_state, "algo": "alphazero"}
+                elif is_az_algo(agent_algo):
+                    checkpoint = {
+                        "policy_value_net": policy_state,
+                        "algo": agent_algo,
+                        "mcts_mode": str(meta.get("mcts_mode", "") or "").strip().lower() or None,
+                    }
                 elif agent_algo == "gumbel_muzero":
                     checkpoint = {"gumbel_muzero_net": policy_state, "algo": "gumbel_muzero"}
                 else:
@@ -392,12 +405,19 @@ class GameController:
             optimizer_state = payload.get("optimizer_state") or {}
             meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
             agent_algo = str(meta.get("algo", "")).strip().lower()
-            if agent_algo not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
-                # Backward-compat: для старых снапшотов infer по структуре state_dict.
-                if any(str(k).startswith("policy_heads.") for k in policy_state.keys()):
+            if agent_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
+                if any(str(k).startswith("actor.") for k in policy_state.keys()):
                     agent_algo = "ppo"
+                elif any(str(k).startswith("policy_heads.") for k in policy_state.keys()):
+                    mm = str(meta.get("mcts_mode", "") or "").strip().lower()
+                    agent_algo = "alphazero_proxy" if mm == "proxy" else ("alphazero_tree" if mm == "tree" else "")
                 else:
                     agent_algo = "dqn"
+            if not agent_algo:
+                raise ValueError(
+                    f"Невалидный legacy AlphaZero agent (algo={meta.get('algo')!r}). "
+                    "Переобучите как alphazero_tree или alphazero_proxy."
+                )
 
             if agent_algo == "ppo":
                 checkpoint = {
@@ -408,10 +428,11 @@ class GameController:
                     "_viewer_bootstrap_pickle": model_path,
                     "_viewer_bootstrap_checkpoint": checkpoint_path,
                 }
-            elif agent_algo == "alphazero":
+            elif is_az_algo(agent_algo):
                 checkpoint = {
                     "policy_value_net": policy_state,
-                    "algo": "alphazero",
+                    "algo": agent_algo,
+                    "mcts_mode": str(meta.get("mcts_mode", "") or "").strip().lower() or None,
                     "_viewer_agent_id": agent_id_override,
                     "_viewer_model_source": "registry",
                     "_viewer_bootstrap_pickle": model_path,
@@ -537,10 +558,13 @@ class GameController:
             self._io.log(f"[MODEL] n_actions (из env): {n_actions}")
 
             algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
-            if algo == "alphazero":
+            if is_az_algo(algo):
                 az_temp = float(os.getenv("AZ_PLAY_MCTS_TEMPERATURE", "0.06"))
                 az_tail = f", temperature={az_temp:.3f}" if az_play_mode == "mcts" else ""
-                self._io.log(f"[VIEWER][INFERENCE_MODE] algo=alphazero mode={az_play_mode}{az_tail}")
+                self._io.log(
+                    f"[VIEWER][INFERENCE_MODE] algo={algo} mcts={az_mcts_mode_from_payload(algo, checkpoint if isinstance(checkpoint, dict) else None)} "
+                    f"play_mode={az_play_mode}{az_tail}"
+                )
             elif algo == "gumbel_muzero":
                 gmz_temp = float(os.getenv("GMZ_PLAY_TEMPERATURE", "0.10"))
                 gmz_tail = f", temperature={gmz_temp:.3f}" if gmz_play_mode == "search" else ""
@@ -555,11 +579,12 @@ class GameController:
                 load_actor_critic_state_dict(policy_net, normalize_state_dict(ppo_state))
                 policy_net.eval()
                 target_net = None
-            elif algo == "alphazero":
-                self._io.log("[MODEL] Архитектура сети: alphazero_policy_value")
+            elif is_az_algo(algo):
+                self._io.log(f"[MODEL] Архитектура сети: alphazero_policy_value ({algo})")
                 az_state = checkpoint.get("policy_value_net", checkpoint.get("policy_net", {}))
-                policy_net = AlphaZeroPolicyValueNet(n_observations, n_actions).to(device)
-                policy_net.load_state_dict(normalize_state_dict(az_state))
+                arch = alphazero_arch_from_payload(checkpoint if isinstance(checkpoint, dict) else None)
+                policy_net = make_alphazero_net(n_observations, n_actions, **arch).to(device)
+                load_alphazero_state_dict(policy_net, normalize_state_dict(az_state))
                 policy_net.eval()
                 target_net = None
             elif algo == "gumbel_muzero":
@@ -646,10 +671,11 @@ class GameController:
                     with torch.no_grad():
                         action, _, _ = policy_net.act(state_tensor, masks_by_head=masks_b, deterministic=True)
                     action = action.to("cpu")
-                elif algo == "alphazero":
+                elif is_az_algo(algo):
                     masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
                     if az_play_mode == "mcts":
                         legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
+                        az_mcts_mode = az_mcts_mode_from_payload(algo, checkpoint if isinstance(checkpoint, dict) else None)
                         mcts = AlphaZeroFactorizedMCTS(
                             policy_net,
                             config=MCTSConfig(
@@ -659,7 +685,7 @@ class GameController:
                                 dirichlet_eps=float(os.getenv("AZ_PLAY_MCTS_DIR_EPS", "0.0")),
                                 top_k_per_head=max(1, int(os.getenv("AZ_PLAY_MCTS_TOP_K_PER_HEAD", "8"))),
                                 max_depth=max(1, int(os.getenv("AZ_PLAY_MCTS_MAX_DEPTH", "1"))),
-                                mode=str(os.getenv("AZ_PLAY_MCTS_MODE", "tree")).strip().lower() or "tree",
+                                mode=az_mcts_mode,
                             ),
                             device=state_tensor.device,
                         )

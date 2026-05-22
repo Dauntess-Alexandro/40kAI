@@ -25,6 +25,23 @@ from PySide6 import QtCore, QtGui, QtQml
 from PySide6.QtGui import QIcon
 from PySide6.QtQuickControls2 import QQuickStyle
 from theme.loader import ThemeTokenError, load_tokens_flat_for_qml
+from core.models.alphazero_ids import is_az_algo
+from app.gui_qt.algo_hyperparams_defaults import (
+    DEFAULT_DQN_HYPERPARAMS,
+    DEFAULT_PPO_HYPERPARAMS,
+    DQN_HYPERPARAM_KEYS,
+    DQN_PROFILE_PRESETS,
+    DQN_ROOT_SYNC_KEYS,
+    PPO_HYPERPARAM_KEYS,
+    PPO_PROFILE_PRESETS,
+)
+from app.gui_qt.az_hyperparams_defaults import (
+    AZ_HYPERPARAM_KEYS,
+    AZ_PROXY_PROFILE_PRESETS,
+    AZ_TREE_PROFILE_PRESETS,
+    DEFAULT_AZ_PROXY_HYPERPARAMS,
+    DEFAULT_AZ_TREE_HYPERPARAMS,
+)
 from project_paths import (
     AGENT_EVAL_LOG_PATH,
     AGENT_PLAY_LOG_PATH,
@@ -287,37 +304,16 @@ class GUIController(QtCore.QObject):
         self._train_context_opponent_algo_short = "Эвристика"
         self._train_context_opponent_side = "P2"
 
-        self._training_algo_options = ["dqn", "ppo", "alphazero", "gumbel_muzero"]
+        self._training_algo_options = ["dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"]
         self._training_algo = str(os.getenv("TRAIN_ALGO", "dqn")).strip().lower() or "dqn"
         if self._training_algo not in self._training_algo_options:
             self._training_algo = "dqn"
 
         self._hyperparams_path = os.path.join(self._repo_root, "hyperparams.json")
-        self._default_hyperparams = {
-            "lr": 0.0001,
-            "tau": 0.01,
-            "eps_start": 0.9,
-            "eps_end": 0.05,
-            "eps_decay": 30000,
-            "batch_size": 384,
-            "gamma": 0.99,
-            "updates_per_step": 6,
-            "warmup_steps": 5000,
-        }
-        # Секция hyperparams.json["ppo"] — читает train.py (PPO_LR, PPO_GAMMA, …).
-        self._default_ppo_hyperparams: dict[str, int | float] = {
-            "learning_rate": 0.0003,
-            "gamma": 0.99,
-            "gae_lambda": 0.95,
-            "clip_ratio": 0.2,
-            "value_coef": 0.5,
-            "entropy_coef": 0.01,
-            "rollout_steps": 1024,
-            "update_epochs": 4,
-            "minibatch_size": 256,
-            "max_grad_norm": 0.5,
-            "target_kl": 0.03,
-        }
+        self._default_dqn_hyperparams: dict[str, int | float | str] = dict(DEFAULT_DQN_HYPERPARAMS)
+        self._default_ppo_hyperparams: dict[str, int | float | str] = dict(DEFAULT_PPO_HYPERPARAMS)
+        self._dqn_profile_presets = dict(DQN_PROFILE_PRESETS)
+        self._ppo_profile_presets = dict(PPO_PROFILE_PRESETS)
         # Секция hyperparams.json["gumbel_muzero"] — читает train.py (GMZ_*).
         self._default_gmz_hyperparams: dict[str, int | float] = {
             "learning_rate": 0.0003,
@@ -375,9 +371,19 @@ class GUIController(QtCore.QObject):
             },
         }
         self._gmz_selected_profile = "custom"
-        self._hyperparams = dict(self._default_hyperparams)
+        self._dqn_selected_profile = "custom"
+        self._ppo_selected_profile = "custom"
+        self._dqn_hyperparams = dict(self._default_dqn_hyperparams)
         self._ppo_hyperparams = dict(self._default_ppo_hyperparams)
         self._gmz_hyperparams = dict(self._default_gmz_hyperparams)
+        self._default_az_tree_hyperparams: dict[str, int | float | str] = dict(DEFAULT_AZ_TREE_HYPERPARAMS)
+        self._default_az_proxy_hyperparams: dict[str, int | float | str] = dict(DEFAULT_AZ_PROXY_HYPERPARAMS)
+        self._az_tree_hyperparams = dict(self._default_az_tree_hyperparams)
+        self._az_proxy_hyperparams = dict(self._default_az_proxy_hyperparams)
+        self._az_tree_profile_presets = dict(AZ_TREE_PROFILE_PRESETS)
+        self._az_proxy_profile_presets = dict(AZ_PROXY_PROFILE_PRESETS)
+        self._az_tree_selected_profile = "custom"
+        self._az_proxy_selected_profile = "custom"
         self._settings_dirty = False
         self._settings_save_state = "✓ Сохранено"
         self._load_hyperparams_from_disk(log_errors=True)
@@ -902,11 +908,11 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Property(bool, notify=playModelMetaChanged)
     def playInferenceModeVisible(self) -> bool:
-        return self._play_model_algo_key in {"alphazero", "gumbel_muzero"}
+        return is_az_algo(self._play_model_algo_key) or self._play_model_algo_key == "gumbel_muzero"
 
     @QtCore.Property(str, notify=playModelMetaChanged)
     def playInferenceModeLabel(self) -> str:
-        if self._play_model_algo_key == "alphazero":
+        if is_az_algo(self._play_model_algo_key):
             return "Режим AZ:"
         if self._play_model_algo_key == "gumbel_muzero":
             return "Режим GMZ:"
@@ -914,7 +920,7 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Property("QVariantList", notify=playModelMetaChanged)
     def playInferenceModeOptions(self):
-        if self._play_model_algo_key == "alphazero":
+        if is_az_algo(self._play_model_algo_key):
             return [
                 {"value": "greedy", "label": "Greedy"},
                 {"value": "mcts", "label": "MCTS"},
@@ -928,7 +934,7 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Property(str, notify=playModelMetaChanged)
     def playInferenceMode(self) -> str:
-        if self._play_model_algo_key == "alphazero":
+        if is_az_algo(self._play_model_algo_key):
             return self._play_az_mode
         if self._play_model_algo_key == "gumbel_muzero":
             return self._play_gmz_mode
@@ -936,7 +942,7 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Property(bool, notify=playModelMetaChanged)
     def playInferenceTemperatureVisible(self) -> bool:
-        if self._play_model_algo_key == "alphazero":
+        if is_az_algo(self._play_model_algo_key):
             return self._play_az_mode == "mcts"
         if self._play_model_algo_key == "gumbel_muzero":
             return self._play_gmz_mode == "search"
@@ -944,7 +950,7 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Property(str, notify=playModelMetaChanged)
     def playInferenceTemperature(self) -> str:
-        if self._play_model_algo_key == "alphazero":
+        if is_az_algo(self._play_model_algo_key):
             return f"{float(self._play_az_temperature):.2f}"
         if self._play_model_algo_key == "gumbel_muzero":
             return f"{float(self._play_gmz_temperature):.2f}"
@@ -1017,7 +1023,7 @@ class GUIController(QtCore.QObject):
 
     def _eval_inference_options_for_algo(self, algo: str) -> list[dict[str, str]]:
         algo_key = str(algo or "").strip().lower()
-        if algo_key == "alphazero":
+        if is_az_algo(algo_key):
             return [
                 {"value": "greedy", "label": "Greedy"},
                 {"value": "mcts", "label": "MCTS"},
@@ -1056,7 +1062,7 @@ class GUIController(QtCore.QObject):
     def _eval_side_temp_visible(self, side: str) -> bool:
         algo = self._eval_side_algo_key(side)
         mode = self._eval_p1_inference_mode if str(side).upper() == "P1" else self._eval_p2_inference_mode
-        if algo == "alphazero":
+        if is_az_algo(algo):
             return mode == "mcts"
         if algo == "gumbel_muzero":
             return mode == "search"
@@ -1075,12 +1081,12 @@ class GUIController(QtCore.QObject):
         side_key = str(side).upper()
         algo = self._eval_side_algo_key(side_key)
         if side_key == "P1":
-            if algo == "alphazero":
+            if is_az_algo(algo):
                 return float(self._eval_p1_az_temperature)
             if algo == "gumbel_muzero":
                 return float(self._eval_p1_gmz_temperature)
             return 0.10
-        if algo == "alphazero":
+        if is_az_algo(algo):
             return float(self._eval_p2_az_temperature)
         if algo == "gumbel_muzero":
             return float(self._eval_p2_gmz_temperature)
@@ -1370,39 +1376,39 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Property(float, notify=trainingHyperparamsChanged)
     def hpLr(self) -> float:
-        return float(self._hyperparams.get("lr", self._default_hyperparams["lr"]))
+        return float(self._dqn_hyperparams.get("lr", self._default_dqn_hyperparams["lr"]))
 
     @QtCore.Property(float, notify=trainingHyperparamsChanged)
     def hpTau(self) -> float:
-        return float(self._hyperparams.get("tau", self._default_hyperparams["tau"]))
+        return float(self._dqn_hyperparams.get("tau", self._default_dqn_hyperparams["tau"]))
 
     @QtCore.Property(float, notify=trainingHyperparamsChanged)
     def hpEpsStart(self) -> float:
-        return float(self._hyperparams.get("eps_start", self._default_hyperparams["eps_start"]))
+        return float(self._dqn_hyperparams.get("eps_start", self._default_dqn_hyperparams["eps_start"]))
 
     @QtCore.Property(float, notify=trainingHyperparamsChanged)
     def hpEpsEnd(self) -> float:
-        return float(self._hyperparams.get("eps_end", self._default_hyperparams["eps_end"]))
+        return float(self._dqn_hyperparams.get("eps_end", self._default_dqn_hyperparams["eps_end"]))
 
     @QtCore.Property(int, notify=trainingHyperparamsChanged)
     def hpEpsDecay(self) -> int:
-        return int(self._hyperparams.get("eps_decay", self._default_hyperparams["eps_decay"]))
+        return int(self._dqn_hyperparams.get("eps_decay", self._default_dqn_hyperparams["eps_decay"]))
 
     @QtCore.Property(int, notify=trainingHyperparamsChanged)
     def hpBatchSize(self) -> int:
-        return int(self._hyperparams.get("batch_size", self._default_hyperparams["batch_size"]))
+        return int(self._dqn_hyperparams.get("batch_size", self._default_dqn_hyperparams["batch_size"]))
 
     @QtCore.Property(float, notify=trainingHyperparamsChanged)
     def hpGamma(self) -> float:
-        return float(self._hyperparams.get("gamma", self._default_hyperparams["gamma"]))
+        return float(self._dqn_hyperparams.get("gamma", self._default_dqn_hyperparams["gamma"]))
 
     @QtCore.Property(int, notify=trainingHyperparamsChanged)
     def hpUpdatesPerStep(self) -> int:
-        return int(self._hyperparams.get("updates_per_step", self._default_hyperparams["updates_per_step"]))
+        return int(self._dqn_hyperparams.get("updates_per_step", self._default_dqn_hyperparams["updates_per_step"]))
 
     @QtCore.Property(int, notify=trainingHyperparamsChanged)
     def hpWarmupSteps(self) -> int:
-        return int(self._hyperparams.get("warmup_steps", self._default_hyperparams["warmup_steps"]))
+        return int(self._dqn_hyperparams.get("warmup_steps", self._default_dqn_hyperparams["warmup_steps"]))
 
     @QtCore.Property(float, notify=trainingHyperparamsChanged)
     def hpPpoLearningRate(self) -> float:
@@ -1472,16 +1478,36 @@ class GUIController(QtCore.QObject):
     def hpGmzNumActors(self) -> int:
         return int(self._gmz_hyperparams.get("num_actors", self._default_gmz_hyperparams["num_actors"]))
 
-    @QtCore.Property(str, notify=trainingHyperparamsChanged)
-    def hpGmzPresetLabel(self) -> str:
+    @staticmethod
+    def _profile_display_label(profile_key: str) -> str:
         labels = {
             "fast": "Fast",
             "balanced": "Balanced",
             "heavy": "Heavy",
             "custom": "Custom",
         }
-        key = str(self._gmz_selected_profile or "custom").strip().lower()
+        key = str(profile_key or "custom").strip().lower()
         return labels.get(key, "Custom")
+
+    @QtCore.Property(str, notify=trainingHyperparamsChanged)
+    def hpDqnPresetLabel(self) -> str:
+        return self._profile_display_label(self._dqn_selected_profile)
+
+    @QtCore.Property(str, notify=trainingHyperparamsChanged)
+    def hpPpoPresetLabel(self) -> str:
+        return self._profile_display_label(self._ppo_selected_profile)
+
+    @QtCore.Property(str, notify=trainingHyperparamsChanged)
+    def hpAzTreePresetLabel(self) -> str:
+        return self._profile_display_label(self._az_tree_selected_profile)
+
+    @QtCore.Property(str, notify=trainingHyperparamsChanged)
+    def hpAzProxyPresetLabel(self) -> str:
+        return self._profile_display_label(self._az_proxy_selected_profile)
+
+    @QtCore.Property(str, notify=trainingHyperparamsChanged)
+    def hpGmzPresetLabel(self) -> str:
+        return self._profile_display_label(self._gmz_selected_profile)
 
     @QtCore.Property(bool, notify=settingsDirtyChanged)
     def settingsDirty(self) -> bool:
@@ -1747,7 +1773,7 @@ class GUIController(QtCore.QObject):
         algo = self._eval_side_algo_key("P1")
         parsed = self._sanitize_temperature(value, self._eval_side_temperature("P1"))
         changed = False
-        if algo == "alphazero":
+        if is_az_algo(algo):
             changed = abs(parsed - float(self._eval_p1_az_temperature)) > 1e-9
             self._eval_p1_az_temperature = parsed
         elif algo == "gumbel_muzero":
@@ -1761,7 +1787,7 @@ class GUIController(QtCore.QObject):
         algo = self._eval_side_algo_key("P2")
         parsed = self._sanitize_temperature(value, self._eval_side_temperature("P2"))
         changed = False
-        if algo == "alphazero":
+        if is_az_algo(algo):
             changed = abs(parsed - float(self._eval_p2_az_temperature)) > 1e-9
             self._eval_p2_az_temperature = parsed
         elif algo == "gumbel_muzero":
@@ -1773,7 +1799,7 @@ class GUIController(QtCore.QObject):
     @QtCore.Slot(str)
     def set_play_inference_mode(self, value: str) -> None:
         mode = str(value or "").strip().lower()
-        if self._play_model_algo_key == "alphazero":
+        if is_az_algo(self._play_model_algo_key):
             if mode not in {"greedy", "mcts"}:
                 mode = "greedy"
             if mode == self._play_az_mode:
@@ -1794,7 +1820,7 @@ class GUIController(QtCore.QObject):
     @QtCore.Slot(str)
     def set_play_inference_temperature(self, value: str) -> None:
         parsed = self._sanitize_temperature(value, 0.10)
-        if self._play_model_algo_key == "alphazero":
+        if is_az_algo(self._play_model_algo_key):
             if abs(parsed - float(self._play_az_temperature)) <= 1e-9:
                 return
             self._play_az_temperature = parsed
@@ -2115,10 +2141,11 @@ class GUIController(QtCore.QObject):
             faction = str(payload.get("faction", "")).strip()
             created_at = str(payload.get("created_at", "")).strip()
             algo = str(payload.get("algo", "")).strip().lower()
-            if algo not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
+            if algo == "alphazero":
+                continue
+            if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
                 # Backward-compat: старые снапшоты могли не писать "algo" в meta.json.
                 # Инферим по наличию target.pth: у DQN он есть, у PPO обычно отсутствует.
-                # Если явно указан alphazero в meta — не переопределяем.
                 paths = payload.get("paths") if isinstance(payload, dict) else None
                 if isinstance(paths, dict):
                     target_path = paths.get("target")
@@ -2427,7 +2454,7 @@ class GUIController(QtCore.QObject):
         learner_faction = self._display_faction_for_side(learner_side)
         opponent_faction = self._display_faction_for_side(opponent_side)
         learner_algo = (self._training_algo or "dqn").strip().lower()
-        if learner_algo not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
+        if learner_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
             learner_algo = "dqn"
 
         opponent_algo = "unknown"
@@ -2481,26 +2508,38 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Slot(str, str)
     def set_training_hyperparam(self, key: str, value: str) -> None:
-        normalized_key = str(key or "").strip()
-        if normalized_key not in self._default_hyperparams:
-            return
+        """Legacy: корневые DQN-ключи (lr, tau, …) — делегирует в set_dqn_hyperparam."""
+        self.set_dqn_hyperparam(key, value)
 
-        current = self._hyperparams.get(normalized_key, self._default_hyperparams[normalized_key])
+    def _coerce_algo_hyperparam(self, key: str, value: str, default: int | float | str) -> int | float | str:
+        if key in {"lr_scheduler", "eps_schedule", "dist_type"}:
+            parsed = str(value or "").strip().lower()
+            return parsed or str(default)
+        if isinstance(default, int):
+            return int(float(str(value).strip()))
+        if isinstance(default, str):
+            return str(value or "").strip().lower() or str(default)
+        return float(str(value).strip())
+
+    @QtCore.Slot(str, str)
+    def set_dqn_hyperparam(self, key: str, value: str) -> None:
+        normalized_key = str(key or "").strip()
+        if normalized_key not in self._default_dqn_hyperparams:
+            return
+        default = self._default_dqn_hyperparams[normalized_key]
+        current = self._dqn_hyperparams.get(normalized_key, default)
         try:
-            if isinstance(self._default_hyperparams[normalized_key], int):
-                parsed = int(float(str(value).strip()))
-            else:
-                parsed = float(str(value).strip())
+            parsed = self._coerce_algo_hyperparam(normalized_key, value, default)
         except (TypeError, ValueError):
             self._emit_status(
-                f"Некорректное значение параметра '{normalized_key}' в Настройках. "
+                f"Некорректное значение DQN-параметра '{normalized_key}' в Настройках. "
                 "Проверьте формат и попробуйте снова."
             )
             return
-
         if current == parsed:
             return
-        self._hyperparams[normalized_key] = parsed
+        self._dqn_hyperparams[normalized_key] = parsed
+        self._refresh_dqn_profile_label()
         self.trainingHyperparamsChanged.emit()
         self.mark_settings_dirty()
 
@@ -2509,25 +2548,48 @@ class GUIController(QtCore.QObject):
         normalized_key = str(key or "").strip()
         if normalized_key not in self._default_ppo_hyperparams:
             return
-
-        current = self._ppo_hyperparams.get(normalized_key, self._default_ppo_hyperparams[normalized_key])
+        default = self._default_ppo_hyperparams[normalized_key]
+        current = self._ppo_hyperparams.get(normalized_key, default)
         try:
-            if isinstance(self._default_ppo_hyperparams[normalized_key], int):
-                parsed: int | float = int(float(str(value).strip()))
-            else:
-                parsed = float(str(value).strip())
+            parsed = self._coerce_algo_hyperparam(normalized_key, value, default)
         except (TypeError, ValueError):
             self._emit_status(
                 f"Некорректное значение PPO-параметра '{normalized_key}' в Настройках. "
                 "Проверьте формат и попробуйте снова."
             )
             return
-
         if current == parsed:
             return
         self._ppo_hyperparams[normalized_key] = parsed
+        self._refresh_ppo_profile_label()
         self.trainingHyperparamsChanged.emit()
         self.mark_settings_dirty()
+
+    @QtCore.Slot(str)
+    def apply_dqn_profile(self, profile: str) -> None:
+        mode = str(profile or "").strip().lower()
+        if mode not in {"fast", "balanced", "heavy"}:
+            return
+        base = dict(self._default_dqn_hyperparams)
+        base.update(self._dqn_profile_presets.get(mode, {}))
+        self._dqn_hyperparams.update(base)
+        self._dqn_selected_profile = mode
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+        self._emit_status(f"Применен профиль DQN: {mode}. Сохраните настройки.")
+
+    @QtCore.Slot(str)
+    def apply_ppo_profile(self, profile: str) -> None:
+        mode = str(profile or "").strip().lower()
+        if mode not in {"fast", "balanced", "heavy"}:
+            return
+        base = dict(self._default_ppo_hyperparams)
+        base.update(self._ppo_profile_presets.get(mode, {}))
+        self._ppo_hyperparams.update(base)
+        self._ppo_selected_profile = mode
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+        self._emit_status(f"Применен профиль PPO: {mode}. Сохраните настройки.")
 
     @QtCore.Slot(str, str)
     def set_gmz_hyperparam(self, key: str, value: str) -> None:
@@ -2555,14 +2617,45 @@ class GUIController(QtCore.QObject):
         self.trainingHyperparamsChanged.emit()
         self.mark_settings_dirty()
 
-    def _detect_gmz_profile(self) -> str:
-        for profile_name, expected in self._gmz_profile_presets.items():
-            if all(self._gmz_hyperparams.get(k) == v for k, v in expected.items()):
+    def _detect_profile(
+        self,
+        hyperparams: dict[str, int | float | str],
+        presets: dict[str, dict[str, int | float]],
+    ) -> str:
+        for profile_name in ("fast", "balanced", "heavy"):
+            expected = presets.get(profile_name, {})
+            if expected and all(hyperparams.get(k) == v for k, v in expected.items()):
                 return profile_name
         return "custom"
 
+    def _detect_gmz_profile(self) -> str:
+        return self._detect_profile(self._gmz_hyperparams, self._gmz_profile_presets)
+
+    def _refresh_dqn_profile_label(self) -> None:
+        self._dqn_selected_profile = self._detect_profile(self._dqn_hyperparams, self._dqn_profile_presets)
+
+    def _refresh_ppo_profile_label(self) -> None:
+        self._ppo_selected_profile = self._detect_profile(self._ppo_hyperparams, self._ppo_profile_presets)
+
+    def _refresh_az_tree_profile_label(self) -> None:
+        self._az_tree_selected_profile = self._detect_profile(
+            self._az_tree_hyperparams, self._az_tree_profile_presets
+        )
+
+    def _refresh_az_proxy_profile_label(self) -> None:
+        self._az_proxy_selected_profile = self._detect_profile(
+            self._az_proxy_hyperparams, self._az_proxy_profile_presets
+        )
+
     def _refresh_gmz_profile_label(self) -> None:
         self._gmz_selected_profile = self._detect_gmz_profile()
+
+    def _refresh_training_profile_labels(self) -> None:
+        self._refresh_dqn_profile_label()
+        self._refresh_ppo_profile_label()
+        self._refresh_az_tree_profile_label()
+        self._refresh_az_proxy_profile_label()
+        self._refresh_gmz_profile_label()
 
     @QtCore.Slot(str)
     def apply_gmz_profile(self, profile: str) -> None:
@@ -2577,6 +2670,260 @@ class GUIController(QtCore.QObject):
         self.mark_settings_dirty()
         self._emit_status(f"Применен профиль Gumbel MuZero: {mode}. Сохраните настройки.")
 
+    def _coerce_az_hyperparam(self, key: str, value: str, default: int | float | str) -> int | float | str:
+        if key in {"lr_scheduler", "c_puct_schedule", "mcts_mode"}:
+            parsed = str(value or "").strip().lower()
+            return parsed or str(default)
+        if isinstance(default, int):
+            return int(float(str(value).strip()))
+        return float(str(value).strip())
+
+    @QtCore.Slot(str, str)
+    def set_az_tree_hyperparam(self, key: str, value: str) -> None:
+        normalized_key = str(key or "").strip()
+        if normalized_key not in self._default_az_tree_hyperparams:
+            return
+        default = self._default_az_tree_hyperparams[normalized_key]
+        current = self._az_tree_hyperparams.get(normalized_key, default)
+        try:
+            parsed = self._coerce_az_hyperparam(normalized_key, value, default)
+        except (TypeError, ValueError):
+            self._emit_status(
+                f"Некорректное значение AlphaZero Tree '{normalized_key}' в Настройках. "
+                "Проверьте формат и попробуйте снова."
+            )
+            return
+        if normalized_key == "mcts_mode" and parsed != "tree":
+            parsed = "tree"
+        if current == parsed:
+            return
+        self._az_tree_hyperparams[normalized_key] = parsed
+        self._refresh_az_tree_profile_label()
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+
+    @QtCore.Slot(str, str)
+    def set_az_proxy_hyperparam(self, key: str, value: str) -> None:
+        normalized_key = str(key or "").strip()
+        if normalized_key not in self._default_az_proxy_hyperparams:
+            return
+        default = self._default_az_proxy_hyperparams[normalized_key]
+        current = self._az_proxy_hyperparams.get(normalized_key, default)
+        try:
+            parsed = self._coerce_az_hyperparam(normalized_key, value, default)
+        except (TypeError, ValueError):
+            self._emit_status(
+                f"Некорректное значение AlphaZero Proxy '{normalized_key}' в Настройках. "
+                "Проверьте формат и попробуйте снова."
+            )
+            return
+        if normalized_key == "mcts_mode" and parsed != "proxy":
+            parsed = "proxy"
+        if current == parsed:
+            return
+        self._az_proxy_hyperparams[normalized_key] = parsed
+        self._refresh_az_proxy_profile_label()
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+
+    @QtCore.Slot(str)
+    def apply_az_tree_profile(self, profile: str) -> None:
+        mode = str(profile or "").strip().lower()
+        if mode not in {"fast", "balanced", "heavy"}:
+            return
+        base = dict(self._default_az_tree_hyperparams)
+        base.update(self._az_tree_profile_presets.get(mode, {}))
+        base["mcts_mode"] = "tree"
+        self._az_tree_hyperparams.update(base)
+        self._az_tree_selected_profile = mode
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+        self._emit_status(f"Применен профиль AlphaZero Tree: {mode}. Сохраните настройки.")
+
+    @QtCore.Slot(str)
+    def apply_az_proxy_profile(self, profile: str) -> None:
+        mode = str(profile or "").strip().lower()
+        if mode not in {"fast", "balanced", "heavy"}:
+            return
+        base = dict(self._default_az_proxy_hyperparams)
+        base.update(self._az_proxy_profile_presets.get(mode, {}))
+        base["mcts_mode"] = "proxy"
+        self._az_proxy_hyperparams.update(base)
+        self._az_proxy_selected_profile = mode
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+        self._emit_status(f"Применен профиль AlphaZero Proxy: {mode}. Сохраните настройки.")
+
+    def _az_hyperparams_map_for_qml(self, payload: dict[str, int | float | str]) -> dict:
+        """QML-friendly map: only str/int/float (no nested types)."""
+        out: dict[str, object] = {}
+        for key, raw in payload.items():
+            if isinstance(raw, str):
+                out[str(key)] = raw
+            elif isinstance(raw, bool):
+                out[str(key)] = int(raw)
+            elif isinstance(raw, int) and not isinstance(raw, bool):
+                out[str(key)] = int(raw)
+            else:
+                try:
+                    out[str(key)] = float(raw)
+                except (TypeError, ValueError):
+                    out[str(key)] = str(raw)
+        return out
+
+    @QtCore.Property("QVariantMap", notify=trainingHyperparamsChanged)
+    def hpAzTreeHyperparamsMap(self) -> dict:
+        return self._az_hyperparams_map_for_qml(self._az_tree_hyperparams)
+
+    @QtCore.Property("QVariantMap", notify=trainingHyperparamsChanged)
+    def hpAzProxyHyperparamsMap(self) -> dict:
+        return self._az_hyperparams_map_for_qml(self._az_proxy_hyperparams)
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpAzHyperparamKeys(self) -> list:
+        return [str(k) for k in AZ_HYPERPARAM_KEYS]
+
+    @QtCore.Property("QVariantMap", notify=trainingHyperparamsChanged)
+    def hpDqnHyperparamsMap(self) -> dict:
+        return self._az_hyperparams_map_for_qml(self._dqn_hyperparams)
+
+    @QtCore.Property("QVariantMap", notify=trainingHyperparamsChanged)
+    def hpPpoHyperparamsMap(self) -> dict:
+        return self._az_hyperparams_map_for_qml(self._ppo_hyperparams)
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpDqnHyperparamKeys(self) -> list:
+        return [str(k) for k in DQN_HYPERPARAM_KEYS]
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpPpoHyperparamKeys(self) -> list:
+        return [str(k) for k in PPO_HYPERPARAM_KEYS]
+
+    def _load_algo_hyperparams_section(
+        self,
+        payload: dict,
+        section_key: str,
+        defaults: dict[str, int | float | str],
+        keys: tuple[str, ...],
+        *,
+        root_fallback: bool = False,
+    ) -> dict:
+        raw = payload.get(section_key, {})
+        if not isinstance(raw, dict):
+            raw = {}
+        updated = dict(defaults)
+        for key in keys:
+            default_value = defaults.get(key)
+            if default_value is None:
+                continue
+            if key in raw:
+                raw_val = raw[key]
+            elif root_fallback and key in payload:
+                raw_val = payload[key]
+            else:
+                continue
+            try:
+                if key in {"lr_scheduler", "eps_schedule", "dist_type"}:
+                    updated[key] = str(raw_val).strip().lower() or str(default_value)
+                elif isinstance(default_value, int):
+                    updated[key] = int(raw_val)
+                elif isinstance(default_value, str):
+                    updated[key] = str(raw_val).strip().lower() or str(default_value)
+                else:
+                    updated[key] = float(raw_val)
+            except (TypeError, ValueError):
+                updated[key] = default_value
+        return updated
+
+    def _validate_dqn_hyperparams(self, payload: dict[str, int | float | str]) -> str | None:
+        root = {k: payload[k] for k in DQN_ROOT_SYNC_KEYS if k in payload}
+        error = self._validate_hyperparams(root)
+        if error:
+            return error
+        hidden_size = int(payload.get("hidden_size", 256))
+        if hidden_size < 32:
+            return "dqn.hidden_size должен быть >= 32"
+        if int(payload.get("num_layers", 2)) < 1:
+            return "dqn.num_layers должен быть >= 1"
+        if int(payload.get("ensemble_size", 1)) < 1:
+            return "dqn.ensemble_size должен быть >= 1"
+        dist_type = str(payload.get("dist_type", "iqn")).strip().lower()
+        if dist_type != "iqn":
+            return "dqn.dist_type сейчас поддерживается только iqn (как в train.py)"
+        eps_schedule = str(payload.get("eps_schedule", "exp")).strip().lower()
+        if eps_schedule not in {"exp", "linear", "poly", "sigmoid"}:
+            return "dqn.eps_schedule должен быть exp, linear, poly или sigmoid"
+        lr_scheduler = str(payload.get("lr_scheduler", "none")).strip().lower()
+        if lr_scheduler not in {"none", "cosine", "plateau"}:
+            return "dqn.lr_scheduler должен быть none, cosine или plateau"
+        return None
+
+    def _validate_az_hyperparams(self, payload: dict[str, int | float | str], *, section: str) -> str | None:
+        lr = float(payload["learning_rate"])
+        batch_size = int(payload["batch_size"])
+        mcts_simulations = int(payload["mcts_simulations"])
+        num_actors = int(payload["num_actors"])
+        replay_min_size = int(payload["replay_min_size"])
+        if not (0.0 < lr <= 1.0):
+            return f"{section}.learning_rate должен быть в диапазоне (0, 1]"
+        if batch_size < 1:
+            return f"{section}.batch_size должен быть >= 1"
+        if mcts_simulations < 1:
+            return f"{section}.mcts_simulations должен быть >= 1"
+        if num_actors < 1:
+            return f"{section}.num_actors должен быть >= 1"
+        if replay_min_size < 1:
+            return f"{section}.replay_min_size должен быть >= 1"
+        return None
+
+    def _apply_dqn_hyperparams_to_env(self, env: QtCore.QProcessEnvironment) -> None:
+        hp = self._dqn_hyperparams
+        env.insert("DOUBLE_DQN_ENABLED", str(int(hp.get("double_dqn", 1))))
+        env.insert("DUELING_ENABLED", str(int(hp.get("dueling", 1))))
+        env.insert("DIST_TYPE", str(hp.get("dist_type", "iqn")))
+        env.insert("IQN_N_QUANTILES", str(int(hp.get("iqn_n_quantiles", 32))))
+        env.insert("IQN_N_TARGET_QUANTILES", str(int(hp.get("iqn_n_target_quantiles", 32))))
+        env.insert("IQN_N_TAU_SAMPLES", str(int(hp.get("iqn_n_tau_samples", 32))))
+        env.insert("IQN_EMBED_DIM", str(int(hp.get("iqn_embed_dim", 64))))
+        env.insert("IQN_KAPPA", str(float(hp.get("iqn_kappa", 1.0))))
+        env.insert("NOISY_SIGMA0", str(float(hp.get("noisy_sigma0", 0.5))))
+        env.insert("NOISY_DISABLE_EPS", str(int(hp.get("noisy_disable_eps", 1))))
+        env.insert("NOISY_SIGMA_ANNEAL", str(int(hp.get("noisy_sigma_anneal", 0))))
+        env.insert("DQN_HIDDEN_SIZE", str(max(32, int(hp.get("hidden_size", 256)))))
+        env.insert("DQN_NUM_LAYERS", str(max(1, int(hp.get("num_layers", 2)))))
+        env.insert("DQN_ENSEMBLE_SIZE", str(max(1, int(hp.get("ensemble_size", 1)))))
+        env.insert("DQN_LR_SCHEDULER", str(hp.get("lr_scheduler", "none")))
+        env.insert("PER_ENSEMBLE_PRIORITY_LAMBDA", str(float(hp.get("per_ensemble_priority_lambda", 0.1))))
+        env.insert("EPS_SCHEDULE", str(hp.get("eps_schedule", "exp")))
+
+    def _apply_ppo_hyperparams_to_env(self, env: QtCore.QProcessEnvironment) -> None:
+        hp = self._ppo_hyperparams
+        env.insert("PPO_LR_SCHEDULER", str(hp.get("lr_scheduler", "none")))
+        env.insert("PPO_ADAPTIVE_ENTROPY", str(int(hp.get("adaptive_entropy", 0))))
+        env.insert("PPO_ENTROPY_TARGET", str(float(hp.get("entropy_target", 0.5))))
+        env.insert("PPO_ENTROPY_ADAPT_LR", str(float(hp.get("entropy_adapt_lr", 0.05))))
+
+    def _load_az_hyperparams_section(self, payload: dict, section_key: str, defaults: dict) -> dict:
+        raw = payload.get(section_key, {})
+        if not isinstance(raw, dict):
+            raw = {}
+        updated = dict(defaults)
+        for key in AZ_HYPERPARAM_KEYS:
+            default_value = defaults.get(key)
+            if default_value is None:
+                continue
+            raw_val = raw.get(key, default_value)
+            try:
+                if key in {"lr_scheduler", "c_puct_schedule", "mcts_mode"}:
+                    updated[key] = str(raw_val).strip().lower() or str(default_value)
+                elif isinstance(default_value, int):
+                    updated[key] = int(raw_val)
+                else:
+                    updated[key] = float(raw_val)
+            except (TypeError, ValueError):
+                updated[key] = default_value
+        return updated
+
     @QtCore.Slot()
     def reload_training_hyperparams(self) -> None:
         if self._load_hyperparams_from_disk(log_errors=True):
@@ -2585,21 +2932,23 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Slot()
     def reset_training_hyperparams(self) -> None:
-        self._hyperparams = dict(self._default_hyperparams)
+        self._dqn_hyperparams = dict(self._default_dqn_hyperparams)
         self._ppo_hyperparams = dict(self._default_ppo_hyperparams)
         self._gmz_hyperparams = dict(self._default_gmz_hyperparams)
-        self._refresh_gmz_profile_label()
+        self._az_tree_hyperparams = dict(self._default_az_tree_hyperparams)
+        self._az_proxy_hyperparams = dict(self._default_az_proxy_hyperparams)
+        self._refresh_training_profile_labels()
         self.trainingHyperparamsChanged.emit()
         self.mark_settings_dirty()
         self._emit_status("Параметры тренировки сброшены к значениям по умолчанию.")
 
     @QtCore.Slot()
     def save_training_hyperparams(self) -> None:
-        error = self._validate_hyperparams(self._hyperparams)
-        if error:
+        dqn_error = self._validate_dqn_hyperparams(self._dqn_hyperparams)
+        if dqn_error:
             self._emit_status(
-                f"Не удалось сохранить hyperparams.json в Настройках: {error}. "
-                "Исправьте значения и повторите сохранение."
+                f"Не удалось сохранить hyperparams.json в Настройках: {dqn_error}. "
+                "Исправьте значения DQN и повторите сохранение."
             )
             return
         ppo_error = self._validate_ppo_hyperparams(self._ppo_hyperparams)
@@ -2616,6 +2965,20 @@ class GUIController(QtCore.QObject):
                 "Исправьте значения Gumbel MuZero и повторите сохранение."
             )
             return
+        az_tree_error = self._validate_az_hyperparams(self._az_tree_hyperparams, section="alphazero_tree")
+        if az_tree_error:
+            self._emit_status(
+                f"Не удалось сохранить hyperparams.json в Настройках: {az_tree_error}. "
+                "Исправьте значения AlphaZero Tree и повторите сохранение."
+            )
+            return
+        az_proxy_error = self._validate_az_hyperparams(self._az_proxy_hyperparams, section="alphazero_proxy")
+        if az_proxy_error:
+            self._emit_status(
+                f"Не удалось сохранить hyperparams.json в Настройках: {az_proxy_error}. "
+                "Исправьте значения AlphaZero Proxy и повторите сохранение."
+            )
+            return
         try:
             # Сохраняем прочие ключи из файла; DQN-поля — merge сверху, секция ppo — целиком из формы.
             existing_payload: dict[str, object] = {}
@@ -2628,9 +2991,14 @@ class GUIController(QtCore.QObject):
                 except (OSError, json.JSONDecodeError):
                     existing_payload = {}
             merged_payload = dict(existing_payload)
-            merged_payload.update(self._hyperparams)
+            for key in DQN_ROOT_SYNC_KEYS:
+                merged_payload[key] = self._dqn_hyperparams[key]
+            merged_payload["dqn"] = dict(self._dqn_hyperparams)
             merged_payload["ppo"] = dict(self._ppo_hyperparams)
             merged_payload["gumbel_muzero"] = dict(self._gmz_hyperparams)
+            merged_payload["alphazero_tree"] = dict(self._az_tree_hyperparams)
+            merged_payload["alphazero_proxy"] = dict(self._az_proxy_hyperparams)
+            merged_payload.pop("alphazero", None)
             with open(self._hyperparams_path, "w", encoding="utf-8") as handle:
                 json.dump(merged_payload, handle, indent=4, ensure_ascii=False)
                 handle.write("\n")
@@ -2725,6 +3093,17 @@ class GUIController(QtCore.QObject):
             return "ppo.max_grad_norm должен быть > 0"
         if target_kl <= 0.0:
             return "ppo.target_kl должен быть > 0"
+        lr_scheduler = str(payload.get("lr_scheduler", "none")).strip().lower()
+        if lr_scheduler not in {"none", "cosine", "plateau"}:
+            return "ppo.lr_scheduler должен быть none, cosine или plateau"
+        if int(payload.get("adaptive_entropy", 0)) not in {0, 1}:
+            return "ppo.adaptive_entropy должен быть 0 или 1"
+        entropy_target = float(payload.get("entropy_target", 0.5))
+        if not (0.0 <= entropy_target <= 2.0):
+            return "ppo.entropy_target должен быть в диапазоне [0, 2]"
+        entropy_adapt_lr = float(payload.get("entropy_adapt_lr", 0.05))
+        if not (0.0 < entropy_adapt_lr <= 1.0):
+            return "ppo.entropy_adapt_lr должен быть в диапазоне (0, 1]"
         return None
 
     def _validate_gmz_hyperparams(self, payload: dict[str, int | float]) -> str | None:
@@ -2759,10 +3138,12 @@ class GUIController(QtCore.QObject):
             with open(self._hyperparams_path, "r", encoding="utf-8") as handle:
                 payload = json.load(handle)
         except (OSError, json.JSONDecodeError) as exc:
-            self._hyperparams = dict(self._default_hyperparams)
+            self._dqn_hyperparams = dict(self._default_dqn_hyperparams)
             self._ppo_hyperparams = dict(self._default_ppo_hyperparams)
             self._gmz_hyperparams = dict(self._default_gmz_hyperparams)
-            self._refresh_gmz_profile_label()
+            self._az_tree_hyperparams = dict(self._default_az_tree_hyperparams)
+            self._az_proxy_hyperparams = dict(self._default_az_proxy_hyperparams)
+            self._refresh_training_profile_labels()
             self.trainingHyperparamsChanged.emit()
             if log_errors:
                 self._emit_status(
@@ -2772,34 +3153,20 @@ class GUIController(QtCore.QObject):
                 self._emit_log(f"[GUI] Ошибка чтения {self._hyperparams_path}: {exc}", level="WARN")
             return False
 
-        updated = dict(self._default_hyperparams)
-        for key, default_value in self._default_hyperparams.items():
-            raw = payload.get(key, default_value)
-            try:
-                if isinstance(default_value, int):
-                    updated[key] = int(raw)
-                else:
-                    updated[key] = float(raw)
-            except (TypeError, ValueError):
-                updated[key] = default_value
-
-        self._hyperparams = updated
-
-        ppo_raw = payload.get("ppo", {})
-        if not isinstance(ppo_raw, dict):
-            ppo_raw = {}
-        ppo_updated = dict(self._default_ppo_hyperparams)
-        for key, default_value in self._default_ppo_hyperparams.items():
-            raw = ppo_raw.get(key, default_value)
-            try:
-                if isinstance(default_value, int):
-                    ppo_updated[key] = int(raw)
-                else:
-                    ppo_updated[key] = float(raw)
-            except (TypeError, ValueError):
-                ppo_updated[key] = default_value
-
-        self._ppo_hyperparams = ppo_updated
+        self._dqn_hyperparams = self._load_algo_hyperparams_section(
+            payload,
+            "dqn",
+            self._default_dqn_hyperparams,
+            DQN_HYPERPARAM_KEYS,
+            root_fallback=True,
+        )
+        self._ppo_hyperparams = self._load_algo_hyperparams_section(
+            payload,
+            "ppo",
+            self._default_ppo_hyperparams,
+            PPO_HYPERPARAM_KEYS,
+            root_fallback=False,
+        )
 
         gmz_raw = payload.get("gumbel_muzero", {})
         if not isinstance(gmz_raw, dict):
@@ -2815,7 +3182,15 @@ class GUIController(QtCore.QObject):
             except (TypeError, ValueError):
                 gmz_updated[key] = default_value
         self._gmz_hyperparams = gmz_updated
-        self._refresh_gmz_profile_label()
+        self._az_tree_hyperparams = self._load_az_hyperparams_section(
+            payload, "alphazero_tree", self._default_az_tree_hyperparams
+        )
+        self._az_proxy_hyperparams = self._load_az_hyperparams_section(
+            payload, "alphazero_proxy", self._default_az_proxy_hyperparams
+        )
+        self._az_tree_hyperparams["mcts_mode"] = "tree"
+        self._az_proxy_hyperparams["mcts_mode"] = "proxy"
+        self._refresh_training_profile_labels()
         self.trainingHyperparamsChanged.emit()
         return True
 
@@ -3068,16 +3443,16 @@ class GUIController(QtCore.QObject):
         env.insert("LEARNER_SIDE", learner_side)
         env.insert("LEARNER_FACTION", self._display_faction_for_side(learner_side))
         env.insert("LEAGUE_ENABLE", "1")
-        az_eval_mode = learner_mode if learner_algo == "alphazero" and learner_mode in {"greedy", "mcts"} else "greedy"
+        az_eval_mode = learner_mode if is_az_algo(learner_algo) and learner_mode in {"greedy", "mcts"} else "greedy"
         az_opponent_mode = "greedy"
-        if opponent_algo == "alphazero" and opponent_mode in {"greedy", "mcts"}:
+        if is_az_algo(opponent_algo) and opponent_mode in {"greedy", "mcts"}:
             az_opponent_mode = opponent_mode
         env.insert("AZ_EVAL_MODE", az_eval_mode)
         env.insert("AZ_EVAL_OPPONENT_MODE", az_opponent_mode)
         if az_eval_mode == "mcts" or az_opponent_mode == "mcts":
-            if learner_algo == "alphazero" and az_eval_mode == "mcts":
+            if is_az_algo(learner_algo) and az_eval_mode == "mcts":
                 env.insert("AZ_EVAL_MCTS_TEMPERATURE", f"{self._eval_side_temperature(learner_side):.3f}")
-            if opponent_algo == "alphazero" and az_opponent_mode == "mcts":
+            if is_az_algo(opponent_algo) and az_opponent_mode == "mcts":
                 env.insert("AZ_EVAL_OPPONENT_MCTS_TEMPERATURE", f"{self._eval_side_temperature(opponent_side):.3f}")
             env.insert("AZ_EVAL_MCTS_DIR_EPS", "0.0")
         # Fast GMZ eval preset: lower search budget + selectable mode for learner/opponent.
@@ -3114,12 +3489,12 @@ class GUIController(QtCore.QObject):
         if opponent_agent_id:
             args.extend(["--opponent-agent-id", opponent_agent_id])
         mode_parts: list[str] = []
-        if learner_algo == "alphazero" or opponent_algo == "alphazero":
+        if is_az_algo(learner_algo) or is_az_algo(opponent_algo):
             az_eval_tail = f"AZ-eval={az_eval_mode}"
             az_opp_tail = f"AZ-opponent-mode={az_opponent_mode}"
-            if learner_algo == "alphazero" and az_eval_mode == "mcts":
+            if is_az_algo(learner_algo) and az_eval_mode == "mcts":
                 az_eval_tail += f"(temp={self._eval_side_temperature(learner_side):.2f})"
-            if opponent_algo == "alphazero" and az_opponent_mode == "mcts":
+            if is_az_algo(opponent_algo) and az_opponent_mode == "mcts":
                 az_opp_tail += f"(temp={self._eval_side_temperature(opponent_side):.2f})"
             mode_parts.append(az_eval_tail)
             mode_parts.append(az_opp_tail)
@@ -3172,7 +3547,7 @@ class GUIController(QtCore.QObject):
         env["MISSION_NAME"] = self._selected_mission
         env["DEPLOYMENT_MODE"] = self._deployment_mode
         env["AGENT_LOG_FILE"] = str(AGENT_PLAY_LOG_PATH.relative_to(PROJECT_ROOT))
-        if self._play_model_algo_key == "alphazero":
+        if is_az_algo(self._play_model_algo_key):
             env["AZ_PLAY_MODE"] = self._play_az_mode
             if self._play_az_mode == "mcts":
                 env["AZ_PLAY_MCTS_TEMPERATURE"] = f"{float(self._play_az_temperature):.3f}"
@@ -3222,7 +3597,7 @@ class GUIController(QtCore.QObject):
         env["MISSION_NAME"] = self._selected_mission
         env["DEPLOYMENT_MODE"] = self._deployment_mode
         env["AGENT_LOG_FILE"] = str(AGENT_PLAY_LOG_PATH.relative_to(PROJECT_ROOT))
-        if self._play_model_algo_key == "alphazero":
+        if is_az_algo(self._play_model_algo_key):
             env["AZ_PLAY_MODE"] = self._play_az_mode
             if self._play_az_mode == "mcts":
                 env["AZ_PLAY_MCTS_TEMPERATURE"] = f"{float(self._play_az_temperature):.3f}"
@@ -3248,7 +3623,7 @@ class GUIController(QtCore.QObject):
             start_new_session=True,
         )
         mode_hint = "greedy"
-        if self._play_model_algo_key == "alphazero":
+        if is_az_algo(self._play_model_algo_key):
             mode_hint = self._play_az_mode
         elif self._play_model_algo_key == "gumbel_muzero":
             mode_hint = self._play_gmz_mode
@@ -3552,22 +3927,9 @@ class GUIController(QtCore.QObject):
         env.insert("TRAIN_ALGO", self._training_algo)
         env.insert("PER_ENABLED", "1")
         env.insert("N_STEP", "3")
-        env.insert("NOISY_DISABLE_EPS", "1")
-        env.insert("NOISY_SIGMA0", "0.5")
-        env.insert("DIST_TYPE", "iqn")
-        env.insert("IQN_N_QUANTILES", "32")
-        env.insert("IQN_N_TARGET_QUANTILES", "32")
-        env.insert("IQN_N_TAU_SAMPLES", "32")
-        env.insert("IQN_EMBED_DIM", "64")
-        env.insert("IQN_KAPPA", "1.0")
-        dqn_hidden = max(32, int(os.getenv("DQN_HIDDEN_SIZE", "256")))
-        dqn_layers = max(1, int(os.getenv("DQN_NUM_LAYERS", "2")))
-        dqn_ensemble = max(1, int(os.getenv("DQN_ENSEMBLE_SIZE", "1")))
-        dqn_lr_sched = (os.getenv("DQN_LR_SCHEDULER", "none") or "none").strip().lower()
-        env.insert("DQN_HIDDEN_SIZE", str(dqn_hidden))
-        env.insert("DQN_NUM_LAYERS", str(dqn_layers))
-        env.insert("DQN_ENSEMBLE_SIZE", str(dqn_ensemble))
-        env.insert("DQN_LR_SCHEDULER", dqn_lr_sched)
+        self._apply_dqn_hyperparams_to_env(env)
+        if self._training_algo == "ppo":
+            self._apply_ppo_hyperparams_to_env(env)
         # Для GUI критично, чтобы снапшоты появлялись и на коротких прогонах (300-1000 эпизодов),
         # иначе список "Конкретный агент" пустой, и в превью будет UNKNOWN.
         # train.py по умолчанию поднимает SAVE_EVERY до SAVE_EVERY_MIN=50, если не разрешить low.
@@ -3635,6 +3997,28 @@ class GUIController(QtCore.QObject):
         if self._deployment_mode == "rl_phase":
             env.insert("DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE", "0")
         env.insert("AGENT_LOG_FILE", str(AGENT_TRAIN_LOG_PATH.relative_to(PROJECT_ROOT)))
+        if is_az_algo(self._training_algo):
+            az_hp = (
+                self._az_tree_hyperparams
+                if self._training_algo == "alphazero_tree"
+                else self._az_proxy_hyperparams
+            )
+            az_mode = "tree" if self._training_algo == "alphazero_tree" else "proxy"
+            env.insert("AZ_MCTS_SIMULATIONS", os.getenv("AZ_MCTS_SIMULATIONS", str(int(az_hp.get("mcts_simulations", 32)))))
+            env.insert("AZ_NUM_ACTORS", os.getenv("AZ_NUM_ACTORS", env_overrides.get("NUM_ACTORS", str(int(az_hp.get("num_actors", 8))))))
+            env.insert("AZ_MCTS_MAX_DEPTH", os.getenv("AZ_MCTS_MAX_DEPTH", str(int(az_hp.get("mcts_max_depth", 2 if az_mode == "tree" else 1)))))
+            env.insert("AZ_MCTS_TOP_K_PER_HEAD", os.getenv("AZ_MCTS_TOP_K_PER_HEAD", str(int(az_hp.get("mcts_top_k_per_head", 8)))))
+            env.insert("AZ_HEARTBEAT_SEC", os.getenv("AZ_HEARTBEAT_SEC", "15"))
+            env.insert("AZ_ACTOR_HEARTBEAT_MOVES", os.getenv("AZ_ACTOR_HEARTBEAT_MOVES", "5"))
+            env.insert("ACTOR_PROGRESS_STDOUT_EVERY", "1")
+            az_sims = env.value("AZ_MCTS_SIMULATIONS", "32")
+            az_actors = env.value("AZ_NUM_ACTORS", "8")
+            az_depth = env.value("AZ_MCTS_MAX_DEPTH", "2")
+            self._emit_log(
+                f"[GUI] [AZ][CONFIG] train8: algo={self._training_algo} mcts_mode={az_mode} "
+                f"sims={az_sims} depth={az_depth} actors={az_actors}",
+                level="INFO",
+            )
         for key, value in env_overrides.items():
             env.insert(key, value)
         self._process.setProcessEnvironment(env)
@@ -3657,10 +4041,19 @@ class GUIController(QtCore.QObject):
                 f"Старт {status_prefix.lower()}: PPO="
                 "on(lr=3e-4,gamma=0.99,gae=0.95,clip=0.2,rollout=1024,epochs=4,minibatch=256)."
             )
-        elif self._training_algo == "alphazero":
+        elif self._training_algo == "alphazero_tree":
+            az_hp = self._az_tree_hyperparams
             start_message = (
-                f"Старт {status_prefix.lower()}: AlphaZero="
-                "on(mcts=96,c_puct=1.5,dir_alpha=0.3,dir_eps=0.25,temp_open=1.0,temp_late=0.2,batch=128)."
+                f"Старт {status_prefix.lower()}: AlphaZero TREE="
+                f"on(mcts={int(az_hp.get('mcts_simulations', 128))},depth={int(az_hp.get('mcts_max_depth', 4))},"
+                "c_puct=1.1,batch=128)."
+            )
+        elif self._training_algo == "alphazero_proxy":
+            az_hp = self._az_proxy_hyperparams
+            start_message = (
+                f"Старт {status_prefix.lower()}: AlphaZero PROXY="
+                f"on(mcts={int(az_hp.get('mcts_simulations', 32))},depth={int(az_hp.get('mcts_max_depth', 1))},"
+                "c_puct=1.1,batch=128)."
             )
         elif self._training_algo == "gumbel_muzero":
             gmz_sims = int(self._gmz_hyperparams.get("num_simulations", self._default_gmz_hyperparams["num_simulations"]))
@@ -3675,11 +4068,20 @@ class GUIController(QtCore.QObject):
                 f"replay={gmz_replay},batch={gmz_batch},actors={gmz_actors})."
             )
         else:
+            dqn_hp = self._dqn_hyperparams
             start_message = (
                 f"Старт {status_prefix.lower()}: trunk=residual+LN "
-                f"hidden={dqn_hidden} layers={dqn_layers} ensemble={dqn_ensemble} lr_sched={dqn_lr_sched}, "
-                "PER=1, N_STEP=3, NoisyNet=on(sigma0=0.5), "
-                "IQN=on(nq=32,nt=32,tau=32,embed=64,kappa=1.0)."
+                f"hidden={int(dqn_hp.get('hidden_size', 256))} "
+                f"layers={int(dqn_hp.get('num_layers', 2))} "
+                f"ensemble={int(dqn_hp.get('ensemble_size', 1))} "
+                f"lr_sched={dqn_hp.get('lr_scheduler', 'none')}, "
+                "PER=1, N_STEP=3, "
+                f"NoisyNet=on(sigma0={float(dqn_hp.get('noisy_sigma0', 0.5))}), "
+                f"IQN=on(nq={int(dqn_hp.get('iqn_n_quantiles', 32))},"
+                f"nt={int(dqn_hp.get('iqn_n_target_quantiles', 32))},"
+                f"tau={int(dqn_hp.get('iqn_n_tau_samples', 32))},"
+                f"embed={int(dqn_hp.get('iqn_embed_dim', 64))},"
+                f"kappa={float(dqn_hp.get('iqn_kappa', 1.0))})."
             )
         self._emit_log(f"[{train_label}] {start_message}")
         if self._disable_train_logging:
@@ -3852,12 +4254,15 @@ class GUIController(QtCore.QObject):
             "[metrics] saved:",
             "[SELFPLAY] loading",
             "[SELFPLAY] fixed checkpoint payload",
+            "[AZ]",
         )
         allowed_contains = (
             "Training...",
             "Generated metrics",
             "Forging model_train.gif",
             "genDisplay.makeGif:",
+            "ep=",
+            "mcts_mode=",
         )
         if normalized.startswith(allowed_prefixes):
             return True
@@ -4276,8 +4681,10 @@ class GUIController(QtCore.QObject):
                 payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
                 if isinstance(payload, dict):
                     algo = str(payload.get("algo", "") or "").strip().lower()
-                    if algo in {"ppo", "dqn", "alphazero", "gumbel_muzero"}:
+                    if algo in {"ppo", "dqn", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
                         return algo
+                    if algo == "alphazero":
+                        return ""
                     net_type = str(payload.get("net_type", "") or "").strip().lower()
                     if "ppo" in net_type:
                         return "ppo"
@@ -4290,8 +4697,12 @@ class GUIController(QtCore.QObject):
         joined = (str(pickle_path or "") + " " + str(checkpoint_path or "")).lower()
         if "gumbel_muzero" in joined or "gmz" in joined:
             return "gumbel_muzero"
+        if "alphazero_tree" in joined:
+            return "alphazero_tree"
+        if "alphazero_proxy" in joined:
+            return "alphazero_proxy"
         if "alphazero" in joined:
-            return "alphazero"
+            return ""
         if "ppo-run-" in joined or "checkpoint_ep" in joined:
             return "ppo"
         if "actor_learner" in joined or re.search(r"model-\d+-\d+.*\.pth", joined):
@@ -4302,8 +4713,10 @@ class GUIController(QtCore.QObject):
         key = str(algo_key or "").strip().lower()
         if key == "gumbel_muzero":
             return "GUMBEL_MUZERO"
-        if key == "alphazero":
-            return "ALPHAZERO"
+        if key == "alphazero_tree":
+            return "ALPHAZERO TREE"
+        if key == "alphazero_proxy":
+            return "ALPHAZERO PROXY"
         if key == "ppo":
             return "PPO"
         if key == "dqn":
@@ -5028,7 +5441,7 @@ class GUIController(QtCore.QObject):
                 self.playModelLabelChanged.emit(self._play_model_label)
             self._play_model_algo_label = (
                 f"Алгоритм: {self._format_algo_label(self._play_model_algo_key)}"
-                if agent_algo in {"dqn", "ppo", "alphazero", "gumbel_muzero"}
+                if agent_algo in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}
                 else "Алгоритм: —"
             )
             self._play_model_checkpoint_label = f"Agent: {latest_agent_id}"

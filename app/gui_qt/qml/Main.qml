@@ -3,6 +3,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Window 2.15
 import Qt.labs.platform 1.1 as Platform
+import "components"
 
 ApplicationWindow {
     id: root
@@ -1653,7 +1654,8 @@ ApplicationWindow {
                                             model: [
                                                 { value: "dqn", label: "DQN" },
                                                 { value: "ppo", label: "PPO" },
-                                                { value: "alphazero", label: "ALPHAZERO" },
+                                                { value: "alphazero_tree", label: "ALPHAZERO TREE" },
+                                                { value: "alphazero_proxy", label: "ALPHAZERO PROXY" },
                                                 { value: "gumbel_muzero", label: "GUMBEL MUZERO" }
                                             ]
                                             textRole: "label"
@@ -4490,350 +4492,49 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                 }
 
-                                RowLayout {
-                                    spacing: root.spacingLg
+                                Label {
+                                    text: "Колонки DQN / PPO / AlphaZero Tree / AlphaZero Proxy / Gumbel MuZero — при нехватке ширины прокрутите вправо."
+                                    color: root.uiTextMuted
+                                    wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
-
-                                    ColumnLayout {
-                                        spacing: root.spacingXs
-                                        Layout.fillWidth: true
-                                        Layout.minimumWidth: Math.round(280 * root.uiScale)
-
-                                        Label {
-                                            text: "DQN"
-                                            font.bold: true
-                                            Layout.fillWidth: true
-                                        }
-
-                                GridLayout {
-                                    columns: 2
-                                    columnSpacing: root.spacingMd
-                                    rowSpacing: root.spacingSm
-                                    Layout.fillWidth: true
-
-                                    Label { text: "lr" }
-                                    SpinBox {
-                                        from: 0
-                                        to: 1000000
-                                        stepSize: 1
-                                        editable: true
-                                        property real factor: 1000000
-                                        value: Math.round(controller.hpLr * factor)
-                                        Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                        textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 6) }
-                                        valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
-                                        onValueModified: controller.set_training_hyperparam("lr", (value / factor).toString())
-                                        ToolTip.visible: hovered
-                                        ToolTip.text: "Скорость обучения модели."
-                                    }
-
-                                    Label { text: "tau" }
-                                    SpinBox {
-                                        from: 0
-                                        to: 1000000
-                                        stepSize: 1
-                                        editable: true
-                                        property real factor: 1000000
-                                        value: Math.round(controller.hpTau * factor)
-                                        Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                        textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 6) }
-                                        valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
-                                        onValueModified: controller.set_training_hyperparam("tau", (value / factor).toString())
-                                        ToolTip.visible: hovered
-                                        ToolTip.text: "Скорость обновления target-сети."
-                                    }
-
-                                    Label { text: "eps_start" }
-                                    SpinBox {
-                                        from: 0
-                                        to: 1000
-                                        stepSize: 1
-                                        editable: true
-                                        property real factor: 1000
-                                        value: Math.round(controller.hpEpsStart * factor)
-                                        Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                        textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
-                                        valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
-                                        onValueModified: controller.set_training_hyperparam("eps_start", (value / factor).toString())
-                                        ToolTip.visible: hovered
-                                        ToolTip.text: "Начальное значение epsilon для exploration."
-                                    }
-
-                                    Label { text: "eps_end" }
-                                    SpinBox {
-                                        from: 0
-                                        to: 1000
-                                        stepSize: 1
-                                        editable: true
-                                        property real factor: 1000
-                                        value: Math.round(controller.hpEpsEnd * factor)
-                                        Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                        textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
-                                        valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
-                                        onValueModified: controller.set_training_hyperparam("eps_end", (value / factor).toString())
-                                        ToolTip.visible: hovered
-                                        ToolTip.text: "Минимальное epsilon к концу decay."
-                                    }
-
-                                    Label { text: "gamma" }
-                                    SpinBox {
-                                        from: 0
-                                        to: 1000
-                                        stepSize: 1
-                                        editable: true
-                                        property real factor: 1000
-                                        value: Math.round(controller.hpGamma * factor)
-                                        Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                        textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
-                                        valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
-                                        onValueModified: controller.set_training_hyperparam("gamma", (value / factor).toString())
-                                        ToolTip.visible: hovered
-                                        ToolTip.text: "Коэффициент дисконтирования будущей награды."
-                                    }
-
-                                    Label { text: "eps_decay" }
-                                    SpinBox {
-                                        from: 1
-                                        to: 10000000
-                                        stepSize: 100
-                                        editable: true
-                                        value: controller.hpEpsDecay
-                                        Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                        onValueModified: controller.set_training_hyperparam("eps_decay", value.toString())
-                                        ToolTip.visible: hovered
-                                        ToolTip.text: "Длина затухания epsilon."
-                                    }
-
-                                    Label { text: "batch_size" }
-                                    SpinBox {
-                                        from: 1
-                                        to: 8192
-                                        stepSize: 32
-                                        editable: true
-                                        value: controller.hpBatchSize
-                                        Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                        onValueModified: controller.set_training_hyperparam("batch_size", value.toString())
-                                        ToolTip.visible: hovered
-                                        ToolTip.text: "Размер батча при обучении."
-                                    }
-
-                                    Label { text: "updates_per_step" }
-                                    SpinBox {
-                                        from: 1
-                                        to: 256
-                                        stepSize: 1
-                                        editable: true
-                                        value: controller.hpUpdatesPerStep
-                                        Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                        onValueModified: controller.set_training_hyperparam("updates_per_step", value.toString())
-                                        ToolTip.visible: hovered
-                                        ToolTip.text: "Сколько градиентных обновлений делать за шаг."
-                                    }
-
-                                    Label { text: "warmup_steps" }
-                                    SpinBox {
-                                        from: 0
-                                        to: 10000000
-                                        stepSize: 100
-                                        editable: true
-                                        value: controller.hpWarmupSteps
-                                        Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                        onValueModified: controller.set_training_hyperparam("warmup_steps", value.toString())
-                                        ToolTip.visible: hovered
-                                        ToolTip.text: "Шаги прогрева буфера до полноценного обучения."
-                                    }
                                 }
+
+                                Flickable {
+                                    id: hyperparamsFlick
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: hyperparamsRow.implicitHeight
+                                    contentWidth: hyperparamsRow.implicitWidth
+                                    contentHeight: hyperparamsRow.implicitHeight
+                                    clip: true
+                                    boundsBehavior: Flickable.StopAtBounds
+
+                                    RowLayout {
+                                        id: hyperparamsRow
+                                        spacing: root.spacingLg
+
+                                    SectionHyperparamsEditor {
+                                        algoSection: "dqn"
+                                        rootUi: root
+                                    }
+
+                                    SectionHyperparamsEditor {
+                                        algoSection: "ppo"
+                                        rootUi: root
+                                    }
+
+                                    SectionHyperparamsEditor {
+                                        algoSection: "tree"
+                                        rootUi: root
+                                    }
+
+                                    SectionHyperparamsEditor {
+                                        algoSection: "proxy"
+                                        rootUi: root
                                     }
 
                                     ColumnLayout {
                                         spacing: root.spacingXs
-                                        Layout.fillWidth: true
-                                        Layout.minimumWidth: Math.round(280 * root.uiScale)
-
-                                        Label {
-                                            text: "PPO"
-                                            font.bold: true
-                                            Layout.fillWidth: true
-                                        }
-
-                                        GridLayout {
-                                            columns: 2
-                                            columnSpacing: root.spacingMd
-                                            rowSpacing: root.spacingSm
-                                            Layout.fillWidth: true
-
-                                            Label { text: "learning_rate" }
-                                            SpinBox {
-                                                from: 0
-                                                to: 1000000
-                                                stepSize: 1
-                                                editable: true
-                                                property real factor: 1000000
-                                                value: Math.round(controller.hpPpoLearningRate * factor)
-                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 6) }
-                                                valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
-                                                onValueModified: controller.set_ppo_hyperparam("learning_rate", (value / factor).toString())
-                                                ToolTip.visible: hovered
-                                                ToolTip.text: "Скорость обучения PPO (как в train.py: PPO_LR)."
-                                            }
-
-                                            Label { text: "gamma" }
-                                            SpinBox {
-                                                from: 0
-                                                to: 1000
-                                                stepSize: 1
-                                                editable: true
-                                                property real factor: 1000
-                                                value: Math.round(controller.hpPpoGamma * factor)
-                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
-                                                valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
-                                                onValueModified: controller.set_ppo_hyperparam("gamma", (value / factor).toString())
-                                                ToolTip.visible: hovered
-                                                ToolTip.text: "Дисконтирование для PPO (отдельно от DQN gamma в секции ppo)."
-                                            }
-
-                                            Label { text: "gae_lambda" }
-                                            SpinBox {
-                                                from: 0
-                                                to: 1000
-                                                stepSize: 1
-                                                editable: true
-                                                property real factor: 1000
-                                                value: Math.round(controller.hpPpoGaeLambda * factor)
-                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
-                                                valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
-                                                onValueModified: controller.set_ppo_hyperparam("gae_lambda", (value / factor).toString())
-                                                ToolTip.visible: hovered
-                                                ToolTip.text: "GAE λ для advantage."
-                                            }
-
-                                            Label { text: "clip_ratio" }
-                                            SpinBox {
-                                                from: 0
-                                                to: 1000
-                                                stepSize: 1
-                                                editable: true
-                                                property real factor: 1000
-                                                value: Math.round(controller.hpPpoClipRatio * factor)
-                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
-                                                valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
-                                                onValueModified: controller.set_ppo_hyperparam("clip_ratio", (value / factor).toString())
-                                                ToolTip.visible: hovered
-                                                ToolTip.text: "PPO clip (ε)."
-                                            }
-
-                                            Label { text: "value_coef" }
-                                            SpinBox {
-                                                from: 0
-                                                to: 100000
-                                                stepSize: 1
-                                                editable: true
-                                                property real factor: 1000
-                                                value: Math.round(controller.hpPpoValueCoef * factor)
-                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
-                                                valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
-                                                onValueModified: controller.set_ppo_hyperparam("value_coef", (value / factor).toString())
-                                                ToolTip.visible: hovered
-                                                ToolTip.text: "Вес value loss."
-                                            }
-
-                                            Label { text: "entropy_coef" }
-                                            SpinBox {
-                                                from: 0
-                                                to: 100000
-                                                stepSize: 1
-                                                editable: true
-                                                property real factor: 1000
-                                                value: Math.round(controller.hpPpoEntropyCoef * factor)
-                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
-                                                valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
-                                                onValueModified: controller.set_ppo_hyperparam("entropy_coef", (value / factor).toString())
-                                                ToolTip.visible: hovered
-                                                ToolTip.text: "Вес энтропийного бонуса."
-                                            }
-
-                                            Label { text: "rollout_steps" }
-                                            SpinBox {
-                                                from: 1
-                                                to: 1000000
-                                                stepSize: 64
-                                                editable: true
-                                                value: controller.hpPpoRolloutSteps
-                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                onValueModified: controller.set_ppo_hyperparam("rollout_steps", value.toString())
-                                                ToolTip.visible: hovered
-                                                ToolTip.text: "Длина rollout перед обновлением."
-                                            }
-
-                                            Label { text: "update_epochs" }
-                                            SpinBox {
-                                                from: 1
-                                                to: 256
-                                                stepSize: 1
-                                                editable: true
-                                                value: controller.hpPpoUpdateEpochs
-                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                onValueModified: controller.set_ppo_hyperparam("update_epochs", value.toString())
-                                                ToolTip.visible: hovered
-                                                ToolTip.text: "Эпохи обновления на одном батче rollout."
-                                            }
-
-                                            Label { text: "minibatch_size" }
-                                            SpinBox {
-                                                from: 1
-                                                to: 8192
-                                                stepSize: 32
-                                                editable: true
-                                                value: controller.hpPpoMinibatchSize
-                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                onValueModified: controller.set_ppo_hyperparam("minibatch_size", value.toString())
-                                                ToolTip.visible: hovered
-                                                ToolTip.text: "Размер минибатча внутри эпохи."
-                                            }
-
-                                            Label { text: "max_grad_norm" }
-                                            SpinBox {
-                                                from: 0
-                                                to: 100000
-                                                stepSize: 1
-                                                editable: true
-                                                property real factor: 1000
-                                                value: Math.round(controller.hpPpoMaxGradNorm * factor)
-                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
-                                                valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
-                                                onValueModified: controller.set_ppo_hyperparam("max_grad_norm", (value / factor).toString())
-                                                ToolTip.visible: hovered
-                                                ToolTip.text: "Клип градиента (norm)."
-                                            }
-
-                                            Label { text: "target_kl" }
-                                            SpinBox {
-                                                from: 0
-                                                to: 100000
-                                                stepSize: 1
-                                                editable: true
-                                                property real factor: 1000
-                                                value: Math.round(controller.hpPpoTargetKl * factor)
-                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 3) }
-                                                valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
-                                                onValueModified: controller.set_ppo_hyperparam("target_kl", (value / factor).toString())
-                                                ToolTip.visible: hovered
-                                                ToolTip.text: "Порог ранней остановки по приближённому KL."
-                                            }
-                                        }
-                                    }
-
-                                    ColumnLayout {
-                                        spacing: root.spacingXs
-                                        Layout.fillWidth: true
+                                        Layout.fillWidth: false
                                         Layout.minimumWidth: Math.round(280 * root.uiScale)
 
                                         Label {
@@ -4931,6 +4632,7 @@ ApplicationWindow {
                                                 onValueModified: controller.set_gmz_hyperparam("num_actors", value.toString())
                                             }
                                         }
+                                    }
                                     }
                                 }
                             }

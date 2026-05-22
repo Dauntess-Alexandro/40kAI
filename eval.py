@@ -25,7 +25,8 @@ from core.engine.mission import (
 from core.envs.warhamEnv import roll_off_attacker_defender
 from core.models.DQN import DQN
 from core.models.PPO import make_actor_critic, load_actor_critic_state_dict, ppo_arch_from_payload
-from core.models.alphazero_model import AlphaZeroPolicyValueNet
+from core.models.alphazero_ids import is_az_algo
+from core.models.alphazero_model import alphazero_arch_from_payload, load_alphazero_state_dict, make_alphazero_net
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
@@ -637,7 +638,7 @@ def run_episode(
                 epsilon,
                 len(model_units),
             )
-        elif algo == "alphazero":
+        elif is_az_algo(algo):
             action = select_action_with_epsilon_alphazero(
                 env,
                 state_tensor,
@@ -972,7 +973,7 @@ def main():
         policy_state = payload.get("policy_state")
         meta = payload.get("meta") if isinstance(payload, dict) else {}
         learner_algo_override = str((meta or {}).get("algo", "")).strip().lower()
-        if learner_algo_override not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
+        if learner_algo_override not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
             target_state_guess = payload.get("target_state") if isinstance(payload, dict) else None
             learner_algo_override = "dqn" if isinstance(target_state_guess, dict) else "ppo"
         log(f"Используется learner-agent-id={selected_agent_id} (policy из registry).")
@@ -1016,12 +1017,13 @@ def main():
         policy_net = make_actor_critic(n_observations, n_actions, **arch).to(device)
         load_actor_critic_state_dict(policy_net, normalize_state_dict(ppo_state))
         policy_net.eval()
-    elif algo == "alphazero":
+    elif is_az_algo(algo):
         az_state = checkpoint.get("policy_value_net") if isinstance(checkpoint, dict) else None
         if not isinstance(az_state, dict):
             az_state = policy_state
-        policy_net = AlphaZeroPolicyValueNet(n_observations, n_actions).to(device)
-        policy_net.load_state_dict(normalize_state_dict(az_state))
+        arch = alphazero_arch_from_payload(checkpoint if isinstance(checkpoint, dict) else None)
+        policy_net = make_alphazero_net(n_observations, n_actions, **arch).to(device)
+        load_alphazero_state_dict(policy_net, normalize_state_dict(az_state))
         policy_net.eval()
     elif algo == "gumbel_muzero":
         gmz_state = checkpoint.get("gumbel_muzero_net") if isinstance(checkpoint, dict) else None
@@ -1062,12 +1064,12 @@ def main():
     gmz_eval_mode = str(os.getenv("GMZ_EVAL_MODE", "search")).strip().lower() or "search"
     gmz_opp_mode = str(os.getenv("GMZ_OPPONENT_MODE", "search")).strip().lower() or "search"
     mode_parts: list[str] = []
-    if algo == "alphazero" or opponent_algo_label == "alphazero":
+    if is_az_algo(algo) or is_az_algo(opponent_algo_label):
         az_eval_tail = f"az_eval_mode={az_eval_mode}"
         az_opp_tail = f"az_opponent_mode={az_opp_mode}"
-        if algo == "alphazero" and az_eval_mode == "mcts":
+        if is_az_algo(algo) and az_eval_mode == "mcts":
             az_eval_tail += f"(temp={float(os.getenv('AZ_EVAL_MCTS_TEMPERATURE', '0.06')):.3f})"
-        if opponent_algo_label == "alphazero" and az_opp_mode == "mcts":
+        if is_az_algo(opponent_algo_label) and az_opp_mode == "mcts":
             az_opp_tail += (
                 f"(temp={float(os.getenv('AZ_EVAL_OPPONENT_MCTS_TEMPERATURE', os.getenv('AZ_EVAL_MCTS_TEMPERATURE', '0.06'))):.3f})"
             )

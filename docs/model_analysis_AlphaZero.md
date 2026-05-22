@@ -928,5 +928,59 @@ def test_alphazero_training_loop():
 
 ---
 
+## 10. Статус внедрения (коммит-чеклист)
+
+> Обновлено после полного roadmap AlphaZero (зеркало DQN/PPO + MCTS Phase 2–3).
+
+### Phase 1 — Архитектура
+- [x] `make_alphazero_net` / `alphazero_kwargs_from_env` (`AZ_HIDDEN_SIZE`, `AZ_NUM_LAYERS`, `AZ_VALUE_ENSEMBLE`)
+- [x] LayerNorm + ResidualBlock в trunk ([core/models/alphazero_model.py](core/models/alphazero_model.py))
+- [x] Value ensemble (`n_value_ensemble`)
+- [x] `load_alphazero_state_dict` + WARN на legacy `layer1/layer2`
+- [x] `alphazero_arch_from_payload` для resume
+- [x] LR scheduler в checkpoint (`AZ_LR_SCHEDULER`, `build_alphazero_lr_scheduler`)
+- [x] Расширение [hyperparams.json](hyperparams.json) секции `alphazero`
+- [x] Unit-тесты: [tests/engine/test_alphazero_arch.py](tests/engine/test_alphazero_arch.py)
+
+### Phase 2 — PUCT MCTS
+- [x] Класс `MCTSNode` + PUCT `sqrt(parent_visits) / (1 + child_visits)`
+- [x] LRU `EvalCache` (`AZ_MCTS_EVAL_CACHE_SIZE`)
+- [x] Tree search с backprop по path ([core/models/alphazero_mcts.py](core/models/alphazero_mcts.py))
+- [x] Robust snapshot/restore + fallback reset
+- [x] Unit-тесты: [tests/engine/test_alphazero_mcts_advanced.py](tests/engine/test_alphazero_mcts_advanced.py)
+
+### Phase 3 — Adaptive search & sampling
+- [x] Adaptive `c_puct` (`AZ_C_PUCT_SCHEDULE`: none/linear/cosine)
+- [x] Progressive widening (`AZ_PW_ALPHA`, `AZ_PW_BETA`)
+- [x] Move-averaging (`prior_weight_early`, `move_count`)
+- [x] Per-faction balanced sampling (`AZ_BALANCED_FACTION_SAMPLING`)
+- [x] Grid search: [tools/grid_search_alphazero.py](tools/grid_search_alphazero.py)
+
+### Phase 4–5 — Integration
+- [x] E2E: [tests/engine/test_alphazero_integration.py](tests/engine/test_alphazero_integration.py)
+- [x] Интеграция train/play/eval/opponent_adapter через `make_alphazero_net`
+- [ ] Миграция весов legacy `layer1/layer2` → trunk (нужно переобучение)
+
+---
+
+## 11. Split на `alphazero_tree` / `alphazero_proxy`
+
+> Обновлено: 2026-05-22 — два независимых algo id для лиги, eval и GUI.
+
+| Поле | `alphazero_tree` | `alphazero_proxy` |
+|------|------------------|-------------------|
+| `meta.algo` / `checkpoint.algo` | `alphazero_tree` | `alphazero_proxy` |
+| `meta.mcts_mode` | `tree` | `proxy` |
+| Hyperparams JSON | `hyperparams.json["alphazero_tree"]` | `hyperparams.json["alphazero_proxy"]` |
+| Чекпоинты train | `artifacts/models/alphazero_tree/` | `artifacts/models/alphazero_proxy/` |
+| Actor sync | `latest_az_tree_policy.pth` | `latest_az_proxy_policy.pth` |
+
+- Helpers: [core/models/alphazero_ids.py](core/models/alphazero_ids.py) (`is_az_algo`, `az_mcts_mode_for`, …).
+- Legacy `algo: "alphazero"` в meta/checkpoint **не поддерживается** (игнорируется в GUI-списках агентов).
+- GUI: два пункта в «АЛГОРИТМ», два редактора гиперпараметров в Настройках ([app/gui_qt/qml/components/AzHyperparamsEditor.qml](app/gui_qt/qml/components/AzHyperparamsEditor.qml)).
+- `TRAIN_ALGO` задаёт режим MCTS; env `AZ_MCTS_MODE` для train больше не используется.
+
+---
+
 *Дата: 2026-05-22*
 *Файл: `docs/model_analysis_AlphaZero.md`*

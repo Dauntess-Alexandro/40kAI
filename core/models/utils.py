@@ -18,11 +18,20 @@ from core.engine.utils import distance
 with open(os.path.abspath("hyperparams.json")) as j:
     data = json.loads(j.read())
 
-EPS_START = data["eps_start"]
-EPS_END = data["eps_end"]
-EPS_DECAY = data["eps_decay"]
-BATCH_SIZE = data["batch_size"]
-GAMMA = data["gamma"]
+_DQN_HP = data.get("dqn", {}) if isinstance(data.get("dqn"), dict) else {}
+
+
+def _hp(key: str):
+    if key in _DQN_HP:
+        return _DQN_HP[key]
+    return data[key]
+
+
+EPS_START = _hp("eps_start")
+EPS_END = _hp("eps_end")
+EPS_DECAY = _hp("eps_decay")
+BATCH_SIZE = _hp("batch_size")
+GAMMA = _hp("gamma")
 
 
 def compute_epsilon(steps_done, schedule=None):
@@ -47,7 +56,25 @@ def compute_epsilon(steps_done, schedule=None):
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def unwrap_env(env):
-    return getattr(env, "unwrapped", env)
+    """Снять все gym-обёртки (OrderEnforcing и т.п.) до Warhammer40kEnv."""
+    base = env
+    seen: set[int] = set()
+    while id(base) not in seen:
+        seen.add(id(base))
+        if hasattr(base, "unwrapped"):
+            try:
+                inner = base.unwrapped
+                if inner is None or inner is base:
+                    break
+                base = inner
+                continue
+            except Exception:
+                pass
+        inner = getattr(base, "env", None)
+        if inner is None or inner is base:
+            break
+        base = inner
+    return base
 
 
 def c51_project_distribution(reward_vec, gamma_pow_vec, next_dist, support):

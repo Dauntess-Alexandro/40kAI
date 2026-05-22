@@ -9,6 +9,7 @@ import torch
 
 from core.models.action_contract import action_tensor_to_dict, ordered_action_keys
 from core.models.gumbel_muzero_replay import GMZTransition
+from core.models.utils import unwrap_env
 
 
 @dataclass
@@ -38,7 +39,7 @@ def play_episode_with_gumbel_muzero(
     policy_version: int = 0,
 ) -> tuple[list[GMZTransition], dict]:
     cfg = config or GumbelSelfPlayConfig()
-    env_u = getattr(env, "unwrapped", env)
+    env_u = unwrap_env(env)
     full_trace_enabled = (
         str(os.getenv("ACTION_TRACE_ENABLED", "0")).strip() == "1"
         or str(os.getenv("VERBOSE_LOGS", "0")).strip() == "1"

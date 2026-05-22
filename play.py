@@ -15,7 +15,8 @@ warnings.filterwarnings("ignore")
 
 from core.models.DQN import *
 from core.models.PPO import make_actor_critic, load_actor_critic_state_dict, ppo_arch_from_payload
-from core.models.alphazero_model import AlphaZeroPolicyValueNet
+from core.models.alphazero_ids import az_mcts_mode_from_payload, is_az_algo
+from core.models.alphazero_model import alphazero_arch_from_payload, load_alphazero_state_dict, make_alphazero_net
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
@@ -181,12 +182,12 @@ if args.agent_id:
     _log(f"[LEAGUE] Используется agent-id={args.agent_id} из registry.")
 
 algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
-if algo not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
+if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
     algo = "dqn"
-if algo == "alphazero":
+if is_az_algo(algo):
     az_temp = float(os.getenv("AZ_PLAY_MCTS_TEMPERATURE", "0.06"))
     az_tail = f", temperature={az_temp:.3f}" if AZ_PLAY_MODE == "mcts" else ""
-    _log(f"[PLAY][INFERENCE_MODE] algo=alphazero mode={AZ_PLAY_MODE}{az_tail}")
+    _log(f"[PLAY][INFERENCE_MODE] algo={algo} mcts={az_mcts_mode_from_payload(algo, checkpoint if isinstance(checkpoint, dict) else None)} play_mode={AZ_PLAY_MODE}{az_tail}")
 elif algo == "gumbel_muzero":
     gmz_temp = float(os.getenv("GMZ_PLAY_TEMPERATURE", "0.10"))
     gmz_tail = f", temperature={gmz_temp:.3f}" if GMZ_PLAY_MODE == "search" else ""
@@ -200,10 +201,11 @@ if algo == "ppo":
     load_actor_critic_state_dict(policy_net, normalize_state_dict(ppo_state))
     policy_net.eval()
     target_net = None
-elif algo == "alphazero":
+elif is_az_algo(algo):
     az_state = checkpoint.get("policy_value_net", checkpoint.get("policy_net", {}))
-    policy_net = AlphaZeroPolicyValueNet(n_observations, n_actions).to(device)
-    policy_net.load_state_dict(normalize_state_dict(az_state))
+    arch = alphazero_arch_from_payload(checkpoint if isinstance(checkpoint, dict) else None)
+    policy_net = make_alphazero_net(n_observations, n_actions, **arch).to(device)
+    load_alphazero_state_dict(policy_net, normalize_state_dict(az_state))
     policy_net.eval()
     target_net = None
 elif algo == "gumbel_muzero":
@@ -315,10 +317,11 @@ while isdone == False:
             deterministic = (PLAY_EPS is None) or float(PLAY_EPS) <= 0.0
             action, _, _ = policy_net.act(state, masks_by_head=masks_b, deterministic=deterministic)
         action = action.to("cpu")
-    elif algo == "alphazero":
+    elif is_az_algo(algo):
         masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
         if AZ_PLAY_MODE == "mcts":
             legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
+            az_mcts_mode = az_mcts_mode_from_payload(algo, checkpoint if isinstance(checkpoint, dict) else None)
             mcts = AlphaZeroFactorizedMCTS(
                 policy_net,
                 config=MCTSConfig(
@@ -328,7 +331,7 @@ while isdone == False:
                     dirichlet_eps=float(os.getenv("AZ_PLAY_MCTS_DIR_EPS", "0.0")),
                     top_k_per_head=max(1, int(os.getenv("AZ_PLAY_MCTS_TOP_K_PER_HEAD", "8"))),
                     max_depth=max(1, int(os.getenv("AZ_PLAY_MCTS_MAX_DEPTH", "1"))),
-                    mode=str(os.getenv("AZ_PLAY_MCTS_MODE", "tree")).strip().lower() or "tree",
+                    mode=az_mcts_mode,
                 ),
                 device=state.device,
             )

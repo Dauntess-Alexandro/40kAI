@@ -1,6 +1,6 @@
 # 40kAI
 
-Симулятор и RL-песочница для настольной тактики в духе Warhammer 40k: обучение агентов (DQN, PPO, AlphaZero, Gumbel MuZero), оценка, просмотр партий в Viewer и управление всем через **Qt GUI (PySide6)**.
+Симулятор и RL-песочница для настольной тактики в духе Warhammer 40k: обучение агентов (DQN, PPO, **AlphaZero Tree**, **AlphaZero Proxy**, Gumbel MuZero), оценка, просмотр партий в Viewer и управление всем через **Qt GUI (PySide6)**.
 
 ---
 

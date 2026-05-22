@@ -9,7 +9,7 @@ import torch
 
 from core.models.action_contract import ordered_action_keys
 from core.models.alphazero_replay import AZTransition
-from core.models.utils import convertToDict
+from core.models.utils import convertToDict, unwrap_env
 
 
 @dataclass
@@ -37,9 +37,11 @@ def play_episode_with_mcts(
     outcome_value_loss: float = -1.0,
     outcome_value_draw: float = -0.25,
     policy_version: int = 0,
+    actor_idx: int = -1,
+    heartbeat_moves: int = 5,
 ) -> tuple[list[AZTransition], dict]:
     cfg = config or SelfPlayConfig()
-    env_u = getattr(env, "unwrapped", env)
+    env_u = unwrap_env(env)
     full_trace_enabled = (
         str(os.getenv("ACTION_TRACE_ENABLED", "0")).strip() == "1"
         or str(os.getenv("VERBOSE_LOGS", "0")).strip() == "1"
@@ -58,6 +60,11 @@ def play_episode_with_mcts(
         ordered_keys = ordered_action_keys(int(len_model))
         legal_masks = [legal_dict[k] for k in ordered_keys]
         temp = cfg.temperature_opening_value if steps < int(cfg.temperature_opening_moves) else cfg.temperature_late_value
+        if heartbeat_moves > 0 and steps > 0 and (steps % int(heartbeat_moves) == 0):
+            print(
+                f"[AZ][ACTOR] actor={int(actor_idx)} move={int(steps)} mcts_mode={getattr(mcts.cfg, 'mode', 'proxy')}",
+                flush=True,
+            )
         pi_targets, action_list, _v = mcts.run(
             obs=obs_np,
             legal_masks_by_head=legal_masks,
@@ -65,6 +72,8 @@ def play_episode_with_mcts(
             env=env,
             len_model=int(len_model),
             enemy_policy_fn=enemy_policy_fn,
+            move_count=int(steps),
+            reset_options={"m": env_u.model, "e": env_u.enemy, "trunc": trunc_mode},
         )
 
         action_dict = convertToDict(torch.tensor([action_list], dtype=torch.long))
@@ -103,6 +112,9 @@ def play_episode_with_mcts(
         else:
             final_value = outcome_value_draw
 
+    faction = str(getattr(env_u, "model_faction", "") or getattr(env_u, "model", "") or "")
+    if hasattr(faction, "__class__") and not isinstance(faction, str):
+        faction = str(getattr(env_u, "model_faction", "") or "")
     out: list[AZTransition] = []
     for s, pi in records:
         out.append(
@@ -111,6 +123,7 @@ def play_episode_with_mcts(
                 policy_targets=pi,
                 value_target=final_value,
                 policy_version=int(policy_version),
+                faction=str(faction),
             )
         )
     if not last_info:

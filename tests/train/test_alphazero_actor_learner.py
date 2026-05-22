@@ -1,7 +1,8 @@
 import numpy as np
 import torch
 
-from core.models.alphazero_model import AlphaZeroPolicyValueNet
+from core.models.alphazero_model import load_alphazero_state_dict, make_alphazero_net
+from core.models.alphazero_replay import AlphaZeroReplayBuffer
 from core.models.alphazero_replay import AZTransition, AlphaZeroReplayBuffer
 from core.models.alphazero_trainer import AlphaZeroTrainConfig, train_alphazero_step
 
@@ -51,8 +52,13 @@ def test_az_replay_balanced_outcome_sampling_smoke():
 def test_az_train_step_staleness_filter_skips_old_samples():
     n_obs = 12
     n_actions = [5, 3, 7]
-    net = AlphaZeroPolicyValueNet(n_obs, n_actions)
-    optimizer = torch.optim.Adam(net.parameters(), lr=1e-3)
+    net = make_alphazero_net(n_obs, n_actions)
+    try:
+        optimizer = torch.optim.SGD(net.parameters(), lr=1e-2)
+    except Exception as exc:
+        import pytest
+
+        pytest.skip(f"torch.optim недоступен: {exc}")
     replay = AlphaZeroReplayBuffer(capacity=64)
     for _ in range(32):
         replay.push(_make_transition(n_obs, n_actions, value=1.0, policy_version=0))
@@ -76,8 +82,13 @@ def test_az_train_step_staleness_filter_skips_old_samples():
 def test_az_train_step_balanced_sampling_runs():
     n_obs = 12
     n_actions = [5, 3, 7]
-    net = AlphaZeroPolicyValueNet(n_obs, n_actions)
-    optimizer = torch.optim.Adam(net.parameters(), lr=1e-3)
+    net = make_alphazero_net(n_obs, n_actions)
+    try:
+        optimizer = torch.optim.SGD(net.parameters(), lr=1e-2)
+    except Exception as exc:
+        import pytest
+
+        pytest.skip(f"torch.optim недоступен: {exc}")
     replay = AlphaZeroReplayBuffer(capacity=64)
     for _ in range(20):
         replay.push(_make_transition(n_obs, n_actions, value=1.0, policy_version=9))
@@ -101,3 +112,21 @@ def test_az_train_step_balanced_sampling_runs():
     )
     assert out is not None
     assert float(out["loss"]) >= 0.0
+
+
+def test_az_replay_balanced_per_faction_sampling_smoke():
+    n_obs = 10
+    n_actions = [4, 2, 6]
+    replay = AlphaZeroReplayBuffer(capacity=128)
+    for _ in range(15):
+        tr = _make_transition(n_obs, n_actions, value=1.0, policy_version=1)
+        tr.faction = "A"
+        replay.push(tr)
+    for _ in range(15):
+        tr = _make_transition(n_obs, n_actions, value=-1.0, policy_version=1)
+        tr.faction = "B"
+        replay.push(tr)
+    batch = replay.sample_balanced_per_faction(20)
+    assert len(batch) == 20
+    factions = {str(getattr(b, "faction", "") or "") for b in batch}
+    assert len(factions) >= 2
