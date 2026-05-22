@@ -24,6 +24,26 @@ EPS_DECAY = data["eps_decay"]
 BATCH_SIZE = data["batch_size"]
 GAMMA = data["gamma"]
 
+
+def compute_epsilon(steps_done, schedule=None):
+    """Epsilon for exploration; schedule from EPS_SCHEDULE env if not passed."""
+    schedule = (schedule or os.getenv("EPS_SCHEDULE", "exp")).strip().lower()
+    decay_steps = max(1.0, float(EPS_DECAY))
+    progress = min(float(steps_done) / decay_steps, 1.0)
+    if schedule == "linear":
+        return max(float(EPS_END), float(EPS_START) - progress * (float(EPS_START) - float(EPS_END)))
+    if schedule == "poly":
+        power = float(os.getenv("EPS_POLY_POWER", "2.0"))
+        return float(EPS_END) + (float(EPS_START) - float(EPS_END)) * ((1.0 - progress) ** power)
+    if schedule == "sigmoid":
+        mid = decay_steps * 0.5
+        scale = max(1.0, decay_steps * 0.1)
+        import math
+        sig = 1.0 / (1.0 + math.exp((float(steps_done) - mid) / scale))
+        return float(EPS_END) + (float(EPS_START) - float(EPS_END)) * sig
+    # default: exp (linear progress, same as legacy)
+    return float(EPS_START) + (float(EPS_END) - float(EPS_START)) * progress
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def unwrap_env(env):
@@ -91,9 +111,7 @@ def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None
     force_greedy = os.getenv("FORCE_GREEDY", "0") == "1" or os.getenv("PLAY_NO_EXPLORATION", "0") == "1"
     noisy_disable_eps = os.getenv("NOISY_DISABLE_EPS", "1") == "1"
     sample = random.random()
-    decay_steps = max(1.0, float(EPS_DECAY))
-    progress = min(float(steps_done) / decay_steps, 1.0)
-    eps_threshold = 0.0 if (force_greedy or noisy_disable_eps) else EPS_START + (EPS_END - EPS_START) * progress
+    eps_threshold = 0.0 if (force_greedy or noisy_disable_eps) else compute_epsilon(steps_done)
     steps_done += 1
     dev = next(policy_net.parameters()).device
 
@@ -395,58 +413,95 @@ def optimize_model(
         iqn_n = int(getattr(policy_net, "iqn_num_quantiles", 32))
         iqn_n_tgt = int(getattr(policy_net, "iqn_num_target_quantiles", 32))
         iqn_kappa = float(os.getenv("IQN_KAPPA", "1.0"))
-        with torch.autocast(device_type=dev.type, dtype=torch.float16, enabled=amp_enabled):
-            online_quantiles, taus = policy_net.iqn(state_batch, num_quantiles=iqn_n, return_taus=True)
-        selected_quantiles = []
-        for head_idx, head_q in enumerate(online_quantiles):
-            idx = action_batch[:, head_idx].view(-1, 1, 1).expand(-1, 1, head_q.shape[2])
-            selected_quantiles.append(head_q.gather(1, idx).squeeze(1))
+        n_ensemble = int(getattr(policy_net, "n_ensemble", 1))
+        ensemble_priority_lambda = float(os.getenv("PER_ENSEMBLE_PRIORITY_LAMBDA", "0.1"))
 
-        num_heads = len(selected_quantiles)
-        target_quantiles = torch.zeros((BATCH_SIZE, num_heads, iqn_n_tgt), device=dev, dtype=torch.float32)
-        next_state_values = torch.zeros((BATCH_SIZE, num_heads), device=dev, dtype=torch.float32)
-        with torch.no_grad():
-            if non_final_next_states is not None:
-                if double_dqn_enabled:
-                    policy_next_q = policy_net(non_final_next_states)
-                    next_actions = _select_next_actions_from_q(policy_next_q, non_final_next_shoot_masks)
-                else:
-                    target_next_q = target_net(non_final_next_states)
-                    next_actions = _select_next_actions_from_q(target_next_q, non_final_next_shoot_masks)
-                target_next_quantiles = target_net.iqn(non_final_next_states, num_quantiles=iqn_n_tgt, return_taus=False)
-                gamma_n_nf = (GAMMA ** n_step_batch[non_final_mask]).float()
-                reward_nf = reward_batch[non_final_mask]
-                for head_idx, head_q in enumerate(target_next_quantiles):
-                    act = next_actions[head_idx].view(-1, 1, 1).expand(-1, 1, head_q.shape[2])
-                    chosen = head_q.gather(1, act).squeeze(1).float()
-                    target_quantiles[non_final_mask, head_idx, :] = (
-                        reward_nf.unsqueeze(1) + gamma_n_nf.unsqueeze(1) * chosen
+        def _iqn_member_loss(online_quantiles, taus_local):
+            selected_quantiles = []
+            for head_idx, head_q in enumerate(online_quantiles):
+                idx = action_batch[:, head_idx].view(-1, 1, 1).expand(-1, 1, head_q.shape[2])
+                selected_quantiles.append(head_q.gather(1, idx).squeeze(1))
+
+            num_heads = len(selected_quantiles)
+            target_quantiles = torch.zeros((BATCH_SIZE, num_heads, iqn_n_tgt), device=dev, dtype=torch.float32)
+            next_state_values = torch.zeros((BATCH_SIZE, num_heads), device=dev, dtype=torch.float32)
+            with torch.no_grad():
+                if non_final_next_states is not None:
+                    if double_dqn_enabled:
+                        policy_next_q = policy_net(non_final_next_states)
+                        next_actions = _select_next_actions_from_q(policy_next_q, non_final_next_shoot_masks)
+                    else:
+                        target_next_q = target_net(non_final_next_states)
+                        next_actions = _select_next_actions_from_q(target_next_q, non_final_next_shoot_masks)
+                    target_next_quantiles = target_net.iqn(
+                        non_final_next_states, num_quantiles=iqn_n_tgt, return_taus=False
                     )
-                    next_state_values[non_final_mask, head_idx] = chosen.mean(dim=1)
-        if (~non_final_mask).any():
-            terminal_idx = torch.where(~non_final_mask)[0]
-            terminal_reward = reward_batch[terminal_idx].float()
-            target_quantiles[terminal_idx, :, :] = terminal_reward.view(-1, 1, 1)
+                    gamma_n_nf = (GAMMA ** n_step_batch[non_final_mask]).float()
+                    reward_nf = reward_batch[non_final_mask]
+                    for head_idx, head_q in enumerate(target_next_quantiles):
+                        act = next_actions[head_idx].view(-1, 1, 1).expand(-1, 1, head_q.shape[2])
+                        chosen = head_q.gather(1, act).squeeze(1).float()
+                        target_quantiles[non_final_mask, head_idx, :] = (
+                            reward_nf.unsqueeze(1) + gamma_n_nf.unsqueeze(1) * chosen
+                        )
+                        next_state_values[non_final_mask, head_idx] = chosen.mean(dim=1)
+            if (~non_final_mask).any():
+                terminal_idx = torch.where(~non_final_mask)[0]
+                terminal_reward = reward_batch[terminal_idx].float()
+                target_quantiles[terminal_idx, :, :] = terminal_reward.view(-1, 1, 1)
 
-        per_head_losses = []
-        per_head_td = []
-        for head_idx in range(num_heads):
-            loss_i, td_i = quantile_huber_loss(
-                selected_quantiles[head_idx].float(),
-                target_quantiles[:, head_idx, :],
-                taus.float(),
-                kappa=iqn_kappa,
+            per_head_losses = []
+            per_head_td = []
+            for head_idx in range(num_heads):
+                loss_i, td_i = quantile_huber_loss(
+                    selected_quantiles[head_idx].float(),
+                    target_quantiles[:, head_idx, :],
+                    taus_local.float(),
+                    kappa=iqn_kappa,
+                )
+                per_head_losses.append(loss_i)
+                per_head_td.append(td_i.abs().mean(dim=(1, 2)))
+            stacked_loss = torch.stack(per_head_losses, dim=1)
+            per_sample_loss = stacked_loss.mean(dim=1)
+            td_errors = torch.stack(per_head_td, dim=1).mean(dim=1)
+            return per_sample_loss, td_errors, next_state_values
+
+        if n_ensemble > 1:
+            members_online, taus = policy_net.iqn_ensemble_members(
+                state_batch, num_quantiles=iqn_n, return_taus=True
             )
-            per_head_losses.append(loss_i)
-            per_head_td.append(td_i.abs().mean(dim=(1, 2)))
-        stacked_loss = torch.stack(per_head_losses, dim=1)
-        per_sample_loss = stacked_loss.mean(dim=1)
-        td_errors = torch.stack(per_head_td, dim=1).mean(dim=1)
+            member_sample_losses = []
+            member_td_errors = []
+            next_state_values = None
+            for online_quantiles in members_online:
+                ps, td_e, nsv = _iqn_member_loss(online_quantiles, taus)
+                member_sample_losses.append(ps)
+                member_td_errors.append(td_e)
+                next_state_values = nsv
+            per_sample_loss = torch.stack(member_sample_losses, dim=0).mean(dim=0)
+            td_errors = torch.stack(member_td_errors, dim=0).mean(dim=0)
+        else:
+            with torch.autocast(device_type=dev.type, dtype=torch.float16, enabled=amp_enabled):
+                online_quantiles, taus = policy_net.iqn(state_batch, num_quantiles=iqn_n, return_taus=True)
+            per_sample_loss, td_errors, next_state_values = _iqn_member_loss(online_quantiles, taus)
+
+        ensemble_std_mean = 0.0
+        if n_ensemble > 1:
+            with torch.no_grad():
+                _, stds = policy_net.q_ensemble_stats(state_batch)
+                if stds:
+                    ensemble_std_mean = float(torch.stack(stds, dim=1).mean(dim=1).mean(dim=1).mean().item())
 
         if per_enabled:
             weight_t = torch.tensor(weights, device=dev, dtype=torch.float32)
             loss = (per_sample_loss * weight_t).mean()
             new_priorities = td_errors.detach().cpu().numpy() + per_eps
+            if n_ensemble > 1 and ensemble_priority_lambda > 0.0:
+                with torch.no_grad():
+                    _, stds = policy_net.q_ensemble_stats(state_batch)
+                    if stds:
+                        std_per_sample = torch.stack(stds, dim=1).mean(dim=1).mean(dim=1).detach().cpu().numpy()
+                        new_priorities = new_priorities + ensemble_priority_lambda * std_per_sample
             memory.update_priorities(indices, new_priorities)
             per_stats = {
                 "priority_mean": float(new_priorities.mean()),
@@ -455,6 +510,7 @@ def optimize_model(
                 "is_weight_max": float(weight_t.max().item()),
                 "td_error_mean": float(td_errors.mean().item()),
                 "td_error_max": float(td_errors.max().item()),
+                "ensemble_std_mean": ensemble_std_mean,
             }
         else:
             loss = per_sample_loss.mean()
@@ -467,6 +523,8 @@ def optimize_model(
             "td_quantile_max": float(td_errors.max().item()),
             "n_quantiles": int(iqn_n),
             "n_target_quantiles": int(iqn_n_tgt),
+            "n_ensemble": int(n_ensemble),
+            "ensemble_std_mean": ensemble_std_mean,
         }
     elif use_c51:
         with torch.autocast(device_type=dev.type, dtype=torch.float16, enabled=amp_enabled):

@@ -584,27 +584,17 @@ class GameController:
                 net_label = "dueling" if dueling else "basic"
                 net_source = "net_type" if net_type else "state_dict"
                 self._io.log(f"[MODEL] Архитектура сети: {net_label} (источник: {net_source})")
-                dist_type = str(os.getenv("DIST_TYPE", "iqn")).strip().lower() or "iqn"
-                iqn_n_quant = int(os.getenv("IQN_N_QUANTILES", "32"))
-                iqn_n_target = int(os.getenv("IQN_N_TARGET_QUANTILES", "32"))
-                iqn_n_tau = int(os.getenv("IQN_N_TAU_SAMPLES", "32"))
-                iqn_embed = int(os.getenv("IQN_EMBED_DIM", "64"))
-                noisy_sigma0 = float(os.getenv("NOISY_SIGMA0", "0.5"))
-                policy_net = DQN(
-                    n_observations, n_actions, dueling=dueling, noisy=True,
-                    noisy_sigma0=noisy_sigma0, distributional=dist_type,
-                    iqn_num_quantiles=iqn_n_quant, iqn_num_target_quantiles=iqn_n_target,
-                    iqn_num_tau_samples=iqn_n_tau, iqn_embed_dim=iqn_embed
-                ).to(device)
-                target_net = DQN(
-                    n_observations, n_actions, dueling=dueling, noisy=True,
-                    noisy_sigma0=noisy_sigma0, distributional=dist_type,
-                    iqn_num_quantiles=iqn_n_quant, iqn_num_target_quantiles=iqn_n_target,
-                    iqn_num_tau_samples=iqn_n_tau, iqn_embed_dim=iqn_embed
-                ).to(device)
+                from core.models.DQN import make_dqn
+
+                policy_net = make_dqn(n_observations, n_actions, dueling=dueling).to(device)
+                target_net = make_dqn(n_observations, n_actions, dueling=dueling).to(device)
                 optimizer = torch.optim.Adam(policy_net.parameters())
                 policy_net.load_state_dict(normalize_state_dict(checkpoint["policy_net"]))
-                target_net.load_state_dict(normalize_state_dict(checkpoint["target_net"]))
+                target_state = checkpoint.get("target_net") or checkpoint.get("target_model_state_dict")
+                if isinstance(target_state, dict):
+                    target_net.load_state_dict(normalize_state_dict(target_state))
+                else:
+                    target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
                 optimizer.load_state_dict(checkpoint["optimizer"])
                 policy_net.eval()
                 target_net.eval()

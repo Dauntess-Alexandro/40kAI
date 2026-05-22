@@ -118,18 +118,9 @@ def build_policy_fn(
     if opponent.algo == "dqn":
         policy_state = normalize_state_dict(opponent.policy_state)
         dueling = any(str(k).startswith("value_heads.") for k in policy_state.keys())
-        dist_type = str(os.getenv("DIST_TYPE", "iqn")).strip().lower() or "iqn"
-        iqn_n_quant = int(os.getenv("IQN_N_QUANTILES", "32"))
-        iqn_n_target = int(os.getenv("IQN_N_TARGET_QUANTILES", "32"))
-        iqn_n_tau = int(os.getenv("IQN_N_TAU_SAMPLES", "32"))
-        iqn_embed = int(os.getenv("IQN_EMBED_DIM", "64"))
-        noisy_sigma0 = float(os.getenv("NOISY_SIGMA0", "0.5"))
-        net = DQN(
-            n_obs, n_actions, dueling=dueling, noisy=True,
-            noisy_sigma0=noisy_sigma0, distributional=dist_type,
-            iqn_num_quantiles=iqn_n_quant, iqn_num_target_quantiles=iqn_n_target,
-            iqn_num_tau_samples=iqn_n_tau, iqn_embed_dim=iqn_embed
-        ).to(torch.device("cpu"))
+        from core.models.DQN import make_dqn
+
+        net = make_dqn(n_obs, n_actions, dueling=dueling).to(torch.device("cpu"))
         net.load_state_dict(policy_state)
         net.eval()
 

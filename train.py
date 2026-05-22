@@ -174,10 +174,23 @@ IQN_EMBED_DIM = int(os.getenv("IQN_EMBED_DIM", "64"))
 IQN_KAPPA = float(os.getenv("IQN_KAPPA", "1.0"))
 NOISY_SIGMA0 = float(os.getenv("NOISY_SIGMA0", "0.5"))
 NOISY_DISABLE_EPS = os.getenv("NOISY_DISABLE_EPS", "1") == "1"
+NOISY_SIGMA_ANNEAL = os.getenv("NOISY_SIGMA_ANNEAL", "0") == "1"
+DQN_HIDDEN_SIZE = int(os.getenv("DQN_HIDDEN_SIZE", "256"))
+DQN_NUM_LAYERS = int(os.getenv("DQN_NUM_LAYERS", "2"))
+DQN_ENSEMBLE_SIZE = int(os.getenv("DQN_ENSEMBLE_SIZE", "1"))
+DQN_LR_SCHEDULER = str(os.getenv("DQN_LR_SCHEDULER", "none")).strip().lower() or "none"
+PER_ENSEMBLE_PRIORITY_LAMBDA = float(os.getenv("PER_ENSEMBLE_PRIORITY_LAMBDA", "0.1"))
+EPS_SCHEDULE = str(os.getenv("EPS_SCHEDULE", "exp")).strip().lower() or "exp"
+if DQN_HIDDEN_SIZE < 32:
+    DQN_HIDDEN_SIZE = 32
+if DQN_NUM_LAYERS < 1:
+    DQN_NUM_LAYERS = 1
+if DQN_ENSEMBLE_SIZE < 1:
+    DQN_ENSEMBLE_SIZE = 1
 REWARD_DEBUG = os.getenv("REWARD_DEBUG", "0") == "1"
 REWARD_DEBUG_EVERY = int(os.getenv("REWARD_DEBUG_EVERY", "200"))
 TRAIN_ALGO = str(os.getenv("TRAIN_ALGO", "dqn")).strip().lower() or "dqn"
-if TRAIN_ALGO not in {"dqn", "ppo", "alphazero", "gumbel_muzero"}:
+if TRAIN_ALGO not in {"dqn", "ppo", "alphazero", "gumbel_muzero", "distill"}:
     TRAIN_ALGO = "dqn"
 # ===== train logging =====
 TRAIN_LOG_ENABLED = os.getenv("TRAIN_LOG_ENABLED", "1") == "1"
@@ -558,6 +571,87 @@ def maybe_clip_reward(value: float, enabled: bool, lo=None, hi=None):
     return clipped, clipped != float(value)
 
 
+def _dqn_ctor_kwargs():
+    return {
+        "dueling": DUELING_ENABLED,
+        "noisy": True,
+        "noisy_sigma0": NOISY_SIGMA0,
+        "distributional": DIST_TYPE,
+        "hidden_size": DQN_HIDDEN_SIZE,
+        "num_layers": DQN_NUM_LAYERS,
+        "n_ensemble": DQN_ENSEMBLE_SIZE,
+        "iqn_num_quantiles": IQN_N_QUANTILES,
+        "iqn_num_target_quantiles": IQN_N_TARGET_QUANTILES,
+        "iqn_num_tau_samples": IQN_N_TAU_SAMPLES,
+        "iqn_embed_dim": IQN_EMBED_DIM,
+    }
+
+
+def _make_dqn(n_observations, n_actions):
+    return DQN(n_observations, n_actions, **_dqn_ctor_kwargs())
+
+
+def _build_dqn_lr_scheduler(optimizer, total_steps_hint=None):
+    if DQN_LR_SCHEDULER == "cosine":
+        t_max = max(1, int(total_steps_hint or int(os.getenv("TOT_LIFE_T", "1000")) * 500))
+        return torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max)
+    if DQN_LR_SCHEDULER == "plateau":
+        return torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode="min", factor=0.5, patience=50, min_lr=1e-6
+        )
+    return None
+
+
+def _dqn_checkpoint_extra(policy_net, target_net, optimizer, lr_scheduler=None):
+    extra = {
+        "target_net": target_net.state_dict(),
+        "target_model_state_dict": target_net.state_dict(),
+    }
+    if lr_scheduler is not None:
+        extra["lr_scheduler"] = lr_scheduler.state_dict()
+    return extra
+
+
+def _run_dqn_distill_mode(n_observations, n_actions, steps: int = 100):
+    """Отдельный режим TRAIN_ALGO=distill: KL-дистилляция teacher→student DQN."""
+    from core.models.distill import distill_step
+
+    teacher_ckpt = os.getenv("DISTILL_TEACHER_CKPT", "").strip()
+    if not teacher_ckpt or not os.path.isfile(teacher_ckpt):
+        raise ValueError(
+            "[DISTILL][ERROR] Не задан DISTILL_TEACHER_CKPT. "
+            "Где: train.py (_run_dqn_distill_mode). Что делать: укажите путь к чекпойнту teacher (AZ/PPO/DQN)."
+        )
+    student = _make_dqn(n_observations, n_actions).to(device)
+    teacher = _make_dqn(n_observations, n_actions).to(device)
+    ckpt = _load_checkpoint_payload(teacher_ckpt)
+    teacher_state = _extract_policy_state_dict(ckpt)
+    teacher.load_state_dict(normalize_state_dict(teacher_state))
+    teacher.eval()
+    if isinstance(ckpt, dict) and ckpt.get("policy_net"):
+        try:
+            student.load_state_dict(normalize_state_dict(ckpt["policy_net"]))
+        except Exception:
+            pass
+    opt = optim.AdamW(student.parameters(), lr=float(os.getenv("DISTILL_LR", "1e-4")))
+    batch = max(1, int(os.getenv("DISTILL_BATCH", "32")))
+    for step_i in range(max(1, int(steps))):
+        obs = torch.randn(batch, n_observations, device=device)
+        out = distill_step(teacher, student, obs, alpha_kl=float(os.getenv("DISTILL_ALPHA_KL", "1.0")))
+        opt.zero_grad()
+        out["loss"].backward()
+        opt.step()
+        if step_i % 20 == 0:
+            line = f"[DISTILL] step={step_i} kl={out['stats']['kl_loss']:.6f}"
+            print(line)
+            append_agent_log(line)
+    save_path = os.getenv("DISTILL_OUT_CKPT", os.path.join(MODELS_DIR, "distill_student.pth"))
+    os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+    torch.save({"policy_net": student.state_dict(), "algo": "dqn"}, save_path)
+    print(f"[DISTILL] saved student={save_path}")
+    append_agent_log(f"[DISTILL] saved student={save_path}")
+
+
 def _load_checkpoint_payload(checkpoint_path: str):
     try:
         return torch.load(checkpoint_path, map_location=device, weights_only=False)
@@ -637,7 +731,9 @@ def _resume_from_checkpoint(policy_net, target_net, optimizer, memory, checkpoin
     policy_loaded = 1
 
     target_loaded = 0
-    target_state = checkpoint.get("target_net") if isinstance(checkpoint, dict) else None
+    target_state = None
+    if isinstance(checkpoint, dict):
+        target_state = checkpoint.get("target_net") or checkpoint.get("target_model_state_dict")
     if isinstance(target_state, dict):
         try:
             target_net.load_state_dict(normalize_state_dict(target_state))
@@ -680,6 +776,9 @@ def _resume_from_checkpoint(policy_net, target_net, optimizer, memory, checkpoin
         )
         print(warn_msg)
         append_agent_log(warn_msg)
+
+    scheduler_loaded = 0
+    scheduler_state = checkpoint.get("lr_scheduler") if isinstance(checkpoint, dict) else None
 
     restored_global_step = 0
     restored_optimize_steps = 0
@@ -735,6 +834,8 @@ def _resume_from_checkpoint(policy_net, target_net, optimizer, memory, checkpoin
         "episode": restored_episode,
         "replay_size": replay_loaded,
         "epsilon": float(eps_at_resume),
+        "lr_scheduler_state": scheduler_state,
+        "scheduler_loaded": scheduler_loaded,
     }
 
 def save_extra_metrics(
@@ -3399,6 +3500,15 @@ def main():
         },
     )
 
+    if TRAIN_ALGO == "distill":
+        append_agent_log("[DISTILL] Запуск режима дистилляции teacher→DQN student")
+        _run_dqn_distill_mode(
+            n_observations,
+            n_actions,
+            steps=int(os.getenv("DISTILL_STEPS", "200")),
+        )
+        return
+
     if TRAIN_ALGO == "alphazero":
         append_agent_log(f"[AZ] Запуск AlphaZero ветки. episodes={totLifeT}")
         _main_actor_learner_alphazero(
@@ -3467,21 +3577,12 @@ def main():
             pass
     
     
-    policy_net = DQN(
-        n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
-        noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE,
-        iqn_num_quantiles=IQN_N_QUANTILES, iqn_num_target_quantiles=IQN_N_TARGET_QUANTILES,
-        iqn_num_tau_samples=IQN_N_TAU_SAMPLES, iqn_embed_dim=IQN_EMBED_DIM
-    ).to(device)
-    target_net = DQN(
-        n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
-        noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE,
-        iqn_num_quantiles=IQN_N_QUANTILES, iqn_num_target_quantiles=IQN_N_TARGET_QUANTILES,
-        iqn_num_tau_samples=IQN_N_TAU_SAMPLES, iqn_embed_dim=IQN_EMBED_DIM
-    ).to(device)
+    policy_net = _make_dqn(n_observations, n_actions).to(device)
+    target_net = _make_dqn(n_observations, n_actions).to(device)
     optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
     if os.getenv("TORCH_OPTIMIZER_NO_DYNAMO", "1") == "1":
         _patch_optimizer_methods_no_compile(optimizer)
+    lr_scheduler = _build_dqn_lr_scheduler(optimizer, total_steps_hint=int(totLifeT) * 500)
 
     replay_capacity = int(os.getenv("REPLAY_CAPACITY", "100000"))
     if PER_ENABLED:
@@ -3500,6 +3601,17 @@ def main():
         resume_meta = _resume_from_checkpoint(policy_net, target_net, optimizer, memory, RESUME_CHECKPOINT)
     else:
         target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
+
+    if lr_scheduler is not None and isinstance(resume_meta.get("lr_scheduler_state"), dict):
+        try:
+            lr_scheduler.load_state_dict(resume_meta["lr_scheduler_state"])
+        except Exception as exc:
+            warn_msg = (
+                "[RESUME][WARN] Не удалось загрузить lr_scheduler state. "
+                f"Где: train.py (lr_scheduler.load_state_dict). Детали: {exc}"
+            )
+            print(warn_msg)
+            append_agent_log(warn_msg)
 
     target_net.eval()
     
@@ -3658,12 +3770,7 @@ def main():
         # PPO vs PPO / DQN vs DQN: периодические snapshot-обновления оппонента с learner.
         # PPO vs DQN / DQN vs PPO: веса оппонента фиксированы (без подмены state_dict другого algo).
         opponent_snapshot_sync_enabled = True
-        opponent_policy_net = DQN(
-            n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
-            noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE,
-            iqn_num_quantiles=IQN_N_QUANTILES, iqn_num_target_quantiles=IQN_N_TARGET_QUANTILES,
-            iqn_num_tau_samples=IQN_N_TAU_SAMPLES, iqn_embed_dim=IQN_EMBED_DIM
-        ).to(device)
+        opponent_policy_net = _make_dqn(n_observations, n_actions).to(device)
         opponent_policy_net.eval()
         league_pick = None
         if LEAGUE_ENABLE:
@@ -4637,32 +4744,30 @@ def main():
                         best_path = os.path.join(models_root, safe_name, "best_eval_checkpoint.pth")
                         os.makedirs(os.path.join(models_root, safe_name), exist_ok=True)
                         with IO_PROFILER.timed("checkpoint save"):
-                            torch.save(
-                                {
-                                    "policy_net": policy_net.state_dict(),
-                                    "target_net": target_net.state_dict(),
-                                    "net_type": NET_TYPE,
-                                    "algo": "dqn",
-                                    "optimizer": optimizer.state_dict(),
-                                    "global_step": int(global_step),
-                                    "optimize_steps": int(optimize_steps),
-                                    "episode": int(resume_episode_base + numLifeT + 1),
-                                    "replay_memory": memory.state_dict(),
-                                    "best_eval_score": float(best_eval_score),
-                                    "best_eval_episode": int(best_eval_episode),
-                                    "eval_window_metrics": {
-                                        "win_rate": float(win_rate_w),
-                                        "draw_rate": float(draw_rate_w),
-                                        "turn_limit_rate": float(turn_limit_rate_w),
-                                        "wipeout_enemy_rate": float(wipeout_enemy_rate_w),
-                                        "wipeout_model_rate": float(wipeout_model_rate_w),
-                                        "vp_diff_mean": float(vp_diff_mean_w),
-                                        "vp_diff_norm": float(vp_diff_norm),
-                                        "eval_score": float(eval_score),
-                                    },
+                            best_ckpt = {
+                                "policy_net": policy_net.state_dict(),
+                                "net_type": NET_TYPE,
+                                "algo": "dqn",
+                                "optimizer": optimizer.state_dict(),
+                                "global_step": int(global_step),
+                                "optimize_steps": int(optimize_steps),
+                                "episode": int(resume_episode_base + numLifeT + 1),
+                                "replay_memory": memory.state_dict(),
+                                "best_eval_score": float(best_eval_score),
+                                "best_eval_episode": int(best_eval_episode),
+                                "eval_window_metrics": {
+                                    "win_rate": float(win_rate_w),
+                                    "draw_rate": float(draw_rate_w),
+                                    "turn_limit_rate": float(turn_limit_rate_w),
+                                    "wipeout_enemy_rate": float(wipeout_enemy_rate_w),
+                                    "wipeout_model_rate": float(wipeout_model_rate_w),
+                                    "vp_diff_mean": float(vp_diff_mean_w),
+                                    "vp_diff_norm": float(vp_diff_norm),
+                                    "eval_score": float(eval_score),
                                 },
-                                best_path,
-                            )
+                            }
+                            best_ckpt.update(_dqn_checkpoint_extra(policy_net, target_net, optimizer, lr_scheduler))
+                            torch.save(best_ckpt, best_path)
                         best_line = (
                             "[TRAIN][BEST] "
                             f"ep={numLifeT + 1} "
@@ -4805,20 +4910,18 @@ def main():
                     checkpoint_path = os.path.join(models_root, safe_name, f"checkpoint_ep{total_episode}.pth")
                     os.makedirs(os.path.join(models_root, safe_name), exist_ok=True)
                     with IO_PROFILER.timed("checkpoint save"):
-                        torch.save(
-                            {
-                                "policy_net": policy_net.state_dict(),
-                                "target_net": target_net.state_dict(),
-                                "net_type": NET_TYPE,
-                                "algo": "dqn",
-                                "optimizer": optimizer.state_dict(),
-                                "global_step": int(global_step),
-                                "optimize_steps": int(optimize_steps),
-                                "episode": int(total_episode),
-                                "replay_memory": memory.state_dict(),
-                            },
-                            checkpoint_path,
-                        )
+                        ckpt_payload = {
+                            "policy_net": policy_net.state_dict(),
+                            "net_type": NET_TYPE,
+                            "algo": "dqn",
+                            "optimizer": optimizer.state_dict(),
+                            "global_step": int(global_step),
+                            "optimize_steps": int(optimize_steps),
+                            "episode": int(total_episode),
+                            "replay_memory": memory.state_dict(),
+                        }
+                        ckpt_payload.update(_dqn_checkpoint_extra(policy_net, target_net, optimizer, lr_scheduler))
+                        torch.save(ckpt_payload, checkpoint_path)
                     periodic_agent_id = build_agent_id(learner_identity, f"ep{total_episode}")
                     save_agent_artifact(
                         identity=learner_identity,
@@ -4979,12 +5082,19 @@ def main():
                     last_loss_value = result["loss"]
                     last_known_training_loss = float(last_loss_value)
                     optimize_steps += 1
+                    if lr_scheduler is not None:
+                        if DQN_LR_SCHEDULER == "plateau":
+                            lr_scheduler.step(float(result["loss"]))
+                        else:
+                            lr_scheduler.step()
                     perf_counts["updates"] += 1
                     timing = result.get("timing", {})
                     perf_stats["replay_sample_s"] += float(timing.get("sample_s", 0.0))
                     perf_stats["train_forward_s"] += float(timing.get("forward_s", 0.0))
                     perf_stats["train_backward_s"] += float(timing.get("backward_s", 0.0))
                     if TRAIN_LOG_ENABLED and optimize_steps % TRAIN_LOG_EVERY_UPDATES == 0:
+                        current_lr = float(optimizer.param_groups[0]["lr"])
+                        noisy_sigma_mean = float(policy_net.mean_noisy_sigma()) if hasattr(policy_net, "mean_noisy_sigma") else 0.0
                         train_line = (
                             "[TRAIN] "
                             f"ep={numLifeT + 1} "
@@ -4992,15 +5102,18 @@ def main():
                             f"step={global_step} "
                             f"loss={last_loss_value:.6f} "
                             f"eps={eps_threshold:.4f} "
-                            f"lr={LR:.6g} "
+                            f"lr={current_lr:.6g} "
                             f"gamma={GAMMA:.6g} "
                             f"PER={int(PER_ENABLED)} "
                             f"alpha={PER_ALPHA:.4g} "
                             f"beta={last_per_beta:.4g} "
                             f"N_STEP={N_STEP} "
-                            f"Noisy=1 sigma0={NOISY_SIGMA0:.3f} "
+                            f"Noisy=1 sigma0={NOISY_SIGMA0:.3f} sigma_mean={noisy_sigma_mean:.4f} "
+                            f"hidden={DQN_HIDDEN_SIZE} layers={DQN_NUM_LAYERS} ensemble={DQN_ENSEMBLE_SIZE} "
                             f"IQN=1 n_quant={IQN_N_QUANTILES} n_tgt={IQN_N_TARGET_QUANTILES} n_tau={IQN_N_TAU_SAMPLES} embed={IQN_EMBED_DIM} kappa={IQN_KAPPA:.3f}"
                         )
+                        if last_td_stats.get("dist_stats") and "ensemble_std_mean" in last_td_stats["dist_stats"]:
+                            train_line += f" q_std={last_td_stats['dist_stats']['ensemble_std_mean']:.6f}"
                         if N_STEP > 1:
                             effective_gamma = GAMMA ** N_STEP
                             train_line += f" effective_gamma={effective_gamma:.6g}"
@@ -5038,6 +5151,9 @@ def main():
                     for p_tgt, p in zip(target_net.parameters(), policy_net.parameters()):
                         p_tgt.data.mul_(1.0 - TAU)
                         p_tgt.data.add_(p.data, alpha=TAU)
+                if NOISY_SIGMA_ANNEAL and hasattr(policy_net, "anneal_noisy_sigma"):
+                    decay_steps = max(1.0, float(EPS_DECAY))
+                    policy_net.anneal_noisy_sigma(min(float(global_step) / decay_steps, 1.0))
     
         # чтобы график loss не раздувался в 100 раз — пишем среднее за env-step
         if len(losses) > 0:
@@ -5115,20 +5231,18 @@ def main():
 
     model_rel_path = os.path.join(models_root, safe_name, f"model-{date}.pth")
     with IO_PROFILER.timed("checkpoint save"):
-        torch.save(
-            {
-                "policy_net": policy_net.state_dict(),
-                "target_net": target_net.state_dict(),
-                "net_type": NET_TYPE,
-                "algo": "dqn",
-                "optimizer": optimizer.state_dict(),
-                "global_step": int(global_step),
-                "optimize_steps": int(optimize_steps),
-                "episode": int(resume_episode_base + numLifeT),
-                "replay_memory": memory.state_dict(),
-            },
-            model_rel_path,
-        )
+        final_ckpt = {
+            "policy_net": policy_net.state_dict(),
+            "net_type": NET_TYPE,
+            "algo": "dqn",
+            "optimizer": optimizer.state_dict(),
+            "global_step": int(global_step),
+            "optimize_steps": int(optimize_steps),
+            "episode": int(resume_episode_base + numLifeT),
+            "replay_memory": memory.state_dict(),
+        }
+        final_ckpt.update(_dqn_checkpoint_extra(policy_net, target_net, optimizer, lr_scheduler))
+        torch.save(final_ckpt, model_rel_path)
     with IO_PROFILER.timed("metrics save"):
         det_gui = save_actor_det_eval_plot(run_id=str(randNum), metrics_dir=METRICS_DIR)
         opponent_source = str(opponent_source_state.get("source", "unknown"))
@@ -5391,21 +5505,12 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     except Exception:
         opponent_id_actor = str(OPPONENT_AGENT_ID or "")
 
-    policy_net = DQN(
-        n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
-        noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE,
-        iqn_num_quantiles=IQN_N_QUANTILES, iqn_num_target_quantiles=IQN_N_TARGET_QUANTILES,
-        iqn_num_tau_samples=IQN_N_TAU_SAMPLES, iqn_embed_dim=IQN_EMBED_DIM
-    ).to(device)
-    target_net = DQN(
-        n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
-        noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE,
-        iqn_num_quantiles=IQN_N_QUANTILES, iqn_num_target_quantiles=IQN_N_TARGET_QUANTILES,
-        iqn_num_tau_samples=IQN_N_TAU_SAMPLES, iqn_embed_dim=IQN_EMBED_DIM
-    ).to(device)
+    policy_net = _make_dqn(n_observations, n_actions).to(device)
+    target_net = _make_dqn(n_observations, n_actions).to(device)
     optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
     if os.getenv("TORCH_OPTIMIZER_NO_DYNAMO", "1") == "1":
         _patch_optimizer_methods_no_compile(optimizer)
+    lr_scheduler = _build_dqn_lr_scheduler(optimizer, total_steps_hint=int(totLifeT) * 500)
 
     replay_capacity = int(os.getenv("REPLAY_CAPACITY", "200000"))
     if PER_ENABLED:
@@ -5727,6 +5832,11 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                 last_loss = float(result["loss"])
                 optimize_steps += 1
                 loss_trace.append(float(last_loss))
+                if lr_scheduler is not None:
+                    if DQN_LR_SCHEDULER == "plateau":
+                        lr_scheduler.step(float(last_loss))
+                    else:
+                        lr_scheduler.step()
 
             # периодически публикуем свежие веса для акторов
             if sync_enabled and (optimize_steps - last_sync_opt_steps) >= sync_every_updates:
@@ -5780,20 +5890,18 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
         os.makedirs(os.path.join(MODELS_DIR, safe_name), exist_ok=True)
         model_path = os.path.join(MODELS_DIR, safe_name, f"model-{date}-{run_id}.pth")
         with IO_PROFILER.timed("checkpoint save"):
-            torch.save(
-                {
-                    "policy_net": policy_net.state_dict(),
-                    "target_net": target_net.state_dict(),
-                    "net_type": NET_TYPE,
-                    "algo": "dqn",
-                    "optimizer": optimizer.state_dict(),
-                    "global_step": int(global_step),
-                    "optimize_steps": int(optimize_steps),
-                    "episode": int(len(ep_rows)),
-                    "replay_memory": memory.state_dict(),
-                },
-                model_path,
-            )
+            actor_ckpt = {
+                "policy_net": policy_net.state_dict(),
+                "net_type": NET_TYPE,
+                "algo": "dqn",
+                "optimizer": optimizer.state_dict(),
+                "global_step": int(global_step),
+                "optimize_steps": int(optimize_steps),
+                "episode": int(len(ep_rows)),
+                "replay_memory": memory.state_dict(),
+            }
+            actor_ckpt.update(_dqn_checkpoint_extra(policy_net, target_net, optimizer, lr_scheduler))
+            torch.save(actor_ckpt, model_path)
 
         det_gui = save_actor_det_eval_plot(run_id=run_id, metrics_dir=METRICS_DIR)
         if det_gui:
@@ -6551,12 +6659,7 @@ def _actor_learner_actor_entry(
 ):
     """Top-level entrypoint for Windows spawn pickling."""
     try:
-        cpu_net = DQN(
-            n_observations, n_actions, dueling=DUELING_ENABLED, noisy=True,
-            noisy_sigma0=NOISY_SIGMA0, distributional=DIST_TYPE,
-            iqn_num_quantiles=IQN_N_QUANTILES, iqn_num_target_quantiles=IQN_N_TARGET_QUANTILES,
-            iqn_num_tau_samples=IQN_N_TAU_SAMPLES, iqn_embed_dim=IQN_EMBED_DIM
-        ).to(torch.device("cpu"))
+        cpu_net = _make_dqn(n_observations, n_actions).to(torch.device("cpu"))
         cpu_net.load_state_dict(init_weights)
         cpu_net.eval()
 

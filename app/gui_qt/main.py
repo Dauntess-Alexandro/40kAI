@@ -3560,6 +3560,14 @@ class GUIController(QtCore.QObject):
         env.insert("IQN_N_TAU_SAMPLES", "32")
         env.insert("IQN_EMBED_DIM", "64")
         env.insert("IQN_KAPPA", "1.0")
+        dqn_hidden = max(32, int(os.getenv("DQN_HIDDEN_SIZE", "256")))
+        dqn_layers = max(1, int(os.getenv("DQN_NUM_LAYERS", "2")))
+        dqn_ensemble = max(1, int(os.getenv("DQN_ENSEMBLE_SIZE", "1")))
+        dqn_lr_sched = (os.getenv("DQN_LR_SCHEDULER", "none") or "none").strip().lower()
+        env.insert("DQN_HIDDEN_SIZE", str(dqn_hidden))
+        env.insert("DQN_NUM_LAYERS", str(dqn_layers))
+        env.insert("DQN_ENSEMBLE_SIZE", str(dqn_ensemble))
+        env.insert("DQN_LR_SCHEDULER", dqn_lr_sched)
         # Для GUI критично, чтобы снапшоты появлялись и на коротких прогонах (300-1000 эпизодов),
         # иначе список "Конкретный агент" пустой, и в превью будет UNKNOWN.
         # train.py по умолчанию поднимает SAVE_EVERY до SAVE_EVERY_MIN=50, если не разрешить low.
@@ -3668,8 +3676,10 @@ class GUIController(QtCore.QObject):
             )
         else:
             start_message = (
-                f"Старт {status_prefix.lower()}: PER=1, N_STEP=3, "
-                "NoisyNet=on(sigma0=0.5), IQN=on(nq=32,nt=32,tau=32,embed=64,kappa=1.0)."
+                f"Старт {status_prefix.lower()}: trunk=residual+LN "
+                f"hidden={dqn_hidden} layers={dqn_layers} ensemble={dqn_ensemble} lr_sched={dqn_lr_sched}, "
+                "PER=1, N_STEP=3, NoisyNet=on(sigma0=0.5), "
+                "IQN=on(nq=32,nt=32,tau=32,embed=64,kappa=1.0)."
             )
         self._emit_log(f"[{train_label}] {start_message}")
         if self._disable_train_logging:

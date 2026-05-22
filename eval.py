@@ -1041,26 +1041,14 @@ def main():
         if not dueling:
             if any(key.startswith("value_heads.") for key in policy_state):
                 dueling = True
-        dist_type = str(os.getenv("DIST_TYPE", "iqn")).strip().lower() or "iqn"
-        iqn_n_quant = int(os.getenv("IQN_N_QUANTILES", "32"))
-        iqn_n_target = int(os.getenv("IQN_N_TARGET_QUANTILES", "32"))
-        iqn_n_tau = int(os.getenv("IQN_N_TAU_SAMPLES", "32"))
-        iqn_embed = int(os.getenv("IQN_EMBED_DIM", "64"))
-        noisy_sigma0 = float(os.getenv("NOISY_SIGMA0", "0.5"))
-        policy_net = DQN(
-            n_observations, n_actions, dueling=dueling, noisy=True,
-            noisy_sigma0=noisy_sigma0, distributional=dist_type,
-            iqn_num_quantiles=iqn_n_quant, iqn_num_target_quantiles=iqn_n_target,
-            iqn_num_tau_samples=iqn_n_tau, iqn_embed_dim=iqn_embed
-        ).to(device)
-        target_net = DQN(
-            n_observations, n_actions, dueling=dueling, noisy=True,
-            noisy_sigma0=noisy_sigma0, distributional=dist_type,
-            iqn_num_quantiles=iqn_n_quant, iqn_num_target_quantiles=iqn_n_target,
-            iqn_num_tau_samples=iqn_n_tau, iqn_embed_dim=iqn_embed
-        ).to(device)
+        from core.models.DQN import make_dqn
+
+        policy_net = make_dqn(n_observations, n_actions, dueling=dueling).to(device)
+        target_net = make_dqn(n_observations, n_actions, dueling=dueling).to(device)
         policy_net.load_state_dict(normalize_state_dict(policy_state))
-        target_state = checkpoint.get("target_net") if isinstance(checkpoint, dict) else None
+        target_state = None
+        if isinstance(checkpoint, dict):
+            target_state = checkpoint.get("target_net") or checkpoint.get("target_model_state_dict")
         if isinstance(target_state, dict):
             target_net.load_state_dict(normalize_state_dict(target_state))
         else:
