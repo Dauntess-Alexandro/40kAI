@@ -29,18 +29,36 @@ from core.models.alphazero_ids import is_az_algo
 from app.gui_qt.algo_hyperparams_defaults import (
     DEFAULT_DQN_HYPERPARAMS,
     DEFAULT_PPO_HYPERPARAMS,
+    DQN_BASIC_KEYS,
+    DQN_FIELD_TOOLTIPS,
+    DQN_GROUPS,
     DQN_HYPERPARAM_KEYS,
     DQN_PROFILE_PRESETS,
     DQN_ROOT_SYNC_KEYS,
+    PPO_BASIC_KEYS,
+    PPO_FIELD_TOOLTIPS,
+    PPO_GROUPS,
     PPO_HYPERPARAM_KEYS,
     PPO_PROFILE_PRESETS,
 )
 from app.gui_qt.az_hyperparams_defaults import (
+    AZ_FIELD_TOOLTIPS,
+    AZ_GROUPS,
     AZ_HYPERPARAM_KEYS,
+    AZ_PROXY_BASIC_KEYS,
     AZ_PROXY_PROFILE_PRESETS,
+    AZ_TREE_BASIC_KEYS,
     AZ_TREE_PROFILE_PRESETS,
     DEFAULT_AZ_PROXY_HYPERPARAMS,
     DEFAULT_AZ_TREE_HYPERPARAMS,
+)
+from app.gui_qt.gmz_hyperparams_defaults import (
+    DEFAULT_GMZ_HYPERPARAMS,
+    GMZ_BASIC_KEYS,
+    GMZ_FIELD_TOOLTIPS,
+    GMZ_GROUPS,
+    GMZ_HYPERPARAM_KEYS,
+    GMZ_PROFILE_PRESETS,
 )
 from project_paths import (
     AGENT_EVAL_LOG_PATH,
@@ -121,6 +139,7 @@ class GUIController(QtCore.QObject):
     selectedSpecificOpponentIdChanged = QtCore.Signal(str)
     opponentPreviewTextChanged = QtCore.Signal(str)
     trainingHyperparamsChanged = QtCore.Signal()
+    hyperparamsBasicModeChanged = QtCore.Signal()
     settingsDirtyChanged = QtCore.Signal(bool)
     settingsSaveStateChanged = QtCore.Signal(str)
     trainingAlgoChanged = QtCore.Signal(str)
@@ -314,62 +333,9 @@ class GUIController(QtCore.QObject):
         self._default_ppo_hyperparams: dict[str, int | float | str] = dict(DEFAULT_PPO_HYPERPARAMS)
         self._dqn_profile_presets = dict(DQN_PROFILE_PRESETS)
         self._ppo_profile_presets = dict(PPO_PROFILE_PRESETS)
-        # Секция hyperparams.json["gumbel_muzero"] — читает train.py (GMZ_*).
-        self._default_gmz_hyperparams: dict[str, int | float] = {
-            "learning_rate": 0.0003,
-            "batch_size": 128,
-            "unroll_steps": 5,
-            "value_loss_weight": 1.0,
-            "reward_loss_weight": 1.0,
-            "l2_weight": 1e-6,
-            "discount": 0.997,
-            "replay_capacity": 250000,
-            "num_actors": 8,
-            "actor_batch_send": 64,
-            "actor_queue_max": 256,
-            "sync_every_updates": 2,
-            "updates_per_rollout": 2,
-            "replay_min_size": 512,
-            "max_policy_staleness_updates": 600,
-            "latent_dim": 256,
-            "hidden_dim": 256,
-            "action_embed_dim": 64,
-            "num_simulations": 32,
-            "root_top_k": 8,
-            "gumbel_scale": 1.0,
-            "search_temperature": 0.15,
-            "temperature_opening_moves": 12,
-            "temperature_opening_value": 1.0,
-            "temperature_late_value": 0.25,
-            "outcome_only": 1,
-            "outcome_value_win": 1.0,
-            "outcome_value_loss": -1.0,
-            "outcome_value_draw": -0.25,
-        }
-        self._gmz_profile_presets: dict[str, dict[str, int]] = {
-            "fast": {
-                "num_actors": 8,
-                "num_simulations": 16,
-                "root_top_k": 4,
-                "batch_size": 96,
-                "replay_capacity": 120000,
-            },
-            "balanced": {
-                "num_actors": 8,
-                "num_simulations": 32,
-                "root_top_k": 8,
-                "batch_size": 128,
-                "replay_capacity": 250000,
-            },
-            "heavy": {
-                "num_actors": 8,
-                "num_simulations": 128,
-                "root_top_k": 20,
-                "batch_size": 160,
-                "replay_capacity": 400000,
-                "actor_queue_max": 512,
-            },
-        }
+        self._default_gmz_hyperparams: dict[str, int | float | str] = dict(DEFAULT_GMZ_HYPERPARAMS)
+        self._gmz_profile_presets = dict(GMZ_PROFILE_PRESETS)
+        self._hyperparams_basic_mode = False
         self._gmz_selected_profile = "custom"
         self._dqn_selected_profile = "custom"
         self._ppo_selected_profile = "custom"
@@ -2597,12 +2563,10 @@ class GUIController(QtCore.QObject):
         if normalized_key not in self._default_gmz_hyperparams:
             return
 
-        current = self._gmz_hyperparams.get(normalized_key, self._default_gmz_hyperparams[normalized_key])
+        default = self._default_gmz_hyperparams[normalized_key]
+        current = self._gmz_hyperparams.get(normalized_key, default)
         try:
-            if isinstance(self._default_gmz_hyperparams[normalized_key], int):
-                parsed: int | float = int(float(str(value).strip()))
-            else:
-                parsed = float(str(value).strip())
+            parsed = self._coerce_algo_hyperparam(normalized_key, value, default)
         except (TypeError, ValueError):
             self._emit_status(
                 f"Некорректное значение GMZ-параметра '{normalized_key}' в Настройках. "
@@ -2771,6 +2735,162 @@ class GUIController(QtCore.QObject):
                     out[str(key)] = str(raw)
         return out
 
+    @staticmethod
+    def _groups_for_qml(groups: tuple[dict[str, object], ...]) -> list[dict[str, object]]:
+        out: list[dict[str, object]] = []
+        for group in groups:
+            keys_raw = group.get("keys", ())
+            out.append(
+                {
+                    "id": str(group.get("id", "")),
+                    "title": str(group.get("title", "")),
+                    "keys": [str(k) for k in keys_raw],
+                    "default_collapsed": bool(group.get("default_collapsed", False)),
+                }
+            )
+        return out
+
+    @staticmethod
+    def _tooltips_for_qml(tooltips: dict[str, str]) -> dict[str, str]:
+        return {str(k): str(v) for k, v in tooltips.items()}
+
+    @QtCore.Property(bool, notify=hyperparamsBasicModeChanged)
+    def hyperparamsBasicMode(self) -> bool:
+        return bool(self._hyperparams_basic_mode)
+
+    @QtCore.Slot(bool)
+    def set_hyperparams_basic_mode(self, enabled: bool) -> None:
+        value = bool(enabled)
+        if self._hyperparams_basic_mode == value:
+            return
+        self._hyperparams_basic_mode = value
+        self.hyperparamsBasicModeChanged.emit()
+
+    def _profile_algo_context(
+        self, algo: str
+    ) -> tuple[dict[str, int | float | str], dict[str, int | float | str], dict[str, dict]] | None:
+        section = str(algo or "").strip().lower()
+        mapping: dict[str, tuple[dict, dict, dict]] = {
+            "dqn": (self._default_dqn_hyperparams, self._dqn_hyperparams, self._dqn_profile_presets),
+            "ppo": (self._default_ppo_hyperparams, self._ppo_hyperparams, self._ppo_profile_presets),
+            "tree": (self._default_az_tree_hyperparams, self._az_tree_hyperparams, self._az_tree_profile_presets),
+            "proxy": (self._default_az_proxy_hyperparams, self._az_proxy_hyperparams, self._az_proxy_profile_presets),
+            "gmz": (self._default_gmz_hyperparams, self._gmz_hyperparams, self._gmz_profile_presets),
+        }
+        return mapping.get(section)
+
+    @staticmethod
+    def _format_hyperparam_value(val: object) -> str:
+        if isinstance(val, bool):
+            return "1" if val else "0"
+        if isinstance(val, int) and not isinstance(val, bool):
+            return f"{val:,}".replace(",", " ")
+        if isinstance(val, float):
+            if abs(val) < 1e-12:
+                return "0"
+            if abs(val - round(val)) < 1e-9:
+                return str(int(round(val)))
+            text = f"{val:.6f}".rstrip("0").rstrip(".")
+            return text or "0"
+        return str(val)
+
+    @QtCore.Slot(str, str, result=str)
+    def get_profile_preview_tooltip(self, algo: str, profile: str) -> str:
+        """Текст для ToolTip при наведении на Fast/Balanced/Heavy: что изменится после клика."""
+        ctx = self._profile_algo_context(algo)
+        mode = str(profile or "").strip().lower()
+        if not ctx or mode not in {"fast", "balanced", "heavy"}:
+            return ""
+        defaults, current, presets = ctx
+        preset_patch = presets.get(mode, {})
+        if not preset_patch:
+            return ""
+
+        merged = dict(defaults)
+        merged.update(preset_patch)
+        if str(algo).strip().lower() == "tree":
+            merged["mcts_mode"] = "tree"
+        elif str(algo).strip().lower() == "proxy":
+            merged["mcts_mode"] = "proxy"
+
+        profile_title = self._profile_display_label(mode)
+        lines: list[str] = []
+        for key in sorted(merged.keys()):
+            cur = current.get(key, defaults.get(key))
+            nxt = merged[key]
+            if cur == nxt:
+                continue
+            lines.append(f"• {key}: {self._format_hyperparam_value(cur)} → {self._format_hyperparam_value(nxt)}")
+
+        if not lines:
+            return f"Профиль «{profile_title}»: значения уже совпадают.\nКлик — применить и пометить несохранённым."
+
+        max_lines = 14
+        shown = lines[:max_lines]
+        if len(lines) > max_lines:
+            shown.append(f"… и ещё {len(lines) - max_lines} параметров")
+        header = f"Профиль «{profile_title}» — изменится при клике:\n"
+        return header + "\n".join(shown)
+
+    @QtCore.Slot(str, str)
+    def reset_algo_group(self, algo: str, group_id: str) -> None:
+        section = str(algo or "").strip().lower()
+        gid = str(group_id or "").strip()
+        if not gid:
+            return
+
+        group_keys: tuple[str, ...] | None = None
+        if section == "dqn":
+            defaults = self._default_dqn_hyperparams
+            current = self._dqn_hyperparams
+            groups = DQN_GROUPS
+            refresh = self._refresh_dqn_profile_label
+        elif section == "ppo":
+            defaults = self._default_ppo_hyperparams
+            current = self._ppo_hyperparams
+            groups = PPO_GROUPS
+            refresh = self._refresh_ppo_profile_label
+        elif section == "tree":
+            defaults = self._default_az_tree_hyperparams
+            current = self._az_tree_hyperparams
+            groups = AZ_GROUPS
+            refresh = self._refresh_az_tree_profile_label
+        elif section == "proxy":
+            defaults = self._default_az_proxy_hyperparams
+            current = self._az_proxy_hyperparams
+            groups = AZ_GROUPS
+            refresh = self._refresh_az_proxy_profile_label
+        elif section == "gmz":
+            defaults = self._default_gmz_hyperparams
+            current = self._gmz_hyperparams
+            groups = GMZ_GROUPS
+            refresh = self._refresh_gmz_profile_label
+        else:
+            return
+
+        for group in groups:
+            if str(group.get("id", "")) != gid:
+                continue
+            group_keys = tuple(str(k) for k in group.get("keys", ()))
+            break
+        if not group_keys:
+            return
+
+        changed = False
+        for key in group_keys:
+            if key not in defaults:
+                continue
+            new_val = defaults[key]
+            if current.get(key) != new_val:
+                current[key] = new_val
+                changed = True
+        if not changed:
+            return
+        refresh()
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+        self._emit_status(f"Группа «{gid}» сброшена к значениям по умолчанию ({section}).")
+
     @QtCore.Property("QVariantMap", notify=trainingHyperparamsChanged)
     def hpAzTreeHyperparamsMap(self) -> dict:
         return self._az_hyperparams_map_for_qml(self._az_tree_hyperparams)
@@ -2798,6 +2918,86 @@ class GUIController(QtCore.QObject):
     @QtCore.Property("QVariantList", constant=True)
     def hpPpoHyperparamKeys(self) -> list:
         return [str(k) for k in PPO_HYPERPARAM_KEYS]
+
+    @QtCore.Property("QVariantMap", notify=trainingHyperparamsChanged)
+    def hpGmzHyperparamsMap(self) -> dict:
+        return self._az_hyperparams_map_for_qml(self._gmz_hyperparams)
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpGmzHyperparamKeys(self) -> list:
+        return [str(k) for k in GMZ_HYPERPARAM_KEYS]
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpDqnGroups(self) -> list:
+        return self._groups_for_qml(DQN_GROUPS)
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpPpoGroups(self) -> list:
+        return self._groups_for_qml(PPO_GROUPS)
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpAzGroups(self) -> list:
+        return self._groups_for_qml(AZ_GROUPS)
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpGmzGroups(self) -> list:
+        return self._groups_for_qml(GMZ_GROUPS)
+
+    @QtCore.Property("QVariantMap", constant=True)
+    def hpDqnDefaultsMap(self) -> dict:
+        return self._az_hyperparams_map_for_qml(self._default_dqn_hyperparams)
+
+    @QtCore.Property("QVariantMap", constant=True)
+    def hpPpoDefaultsMap(self) -> dict:
+        return self._az_hyperparams_map_for_qml(self._default_ppo_hyperparams)
+
+    @QtCore.Property("QVariantMap", constant=True)
+    def hpAzTreeDefaultsMap(self) -> dict:
+        return self._az_hyperparams_map_for_qml(self._default_az_tree_hyperparams)
+
+    @QtCore.Property("QVariantMap", constant=True)
+    def hpAzProxyDefaultsMap(self) -> dict:
+        return self._az_hyperparams_map_for_qml(self._default_az_proxy_hyperparams)
+
+    @QtCore.Property("QVariantMap", constant=True)
+    def hpGmzDefaultsMap(self) -> dict:
+        return self._az_hyperparams_map_for_qml(self._default_gmz_hyperparams)
+
+    @QtCore.Property("QVariantMap", constant=True)
+    def hpDqnFieldTooltips(self) -> dict:
+        return self._tooltips_for_qml(DQN_FIELD_TOOLTIPS)
+
+    @QtCore.Property("QVariantMap", constant=True)
+    def hpPpoFieldTooltips(self) -> dict:
+        return self._tooltips_for_qml(PPO_FIELD_TOOLTIPS)
+
+    @QtCore.Property("QVariantMap", constant=True)
+    def hpAzFieldTooltips(self) -> dict:
+        return self._tooltips_for_qml(AZ_FIELD_TOOLTIPS)
+
+    @QtCore.Property("QVariantMap", constant=True)
+    def hpGmzFieldTooltips(self) -> dict:
+        return self._tooltips_for_qml(GMZ_FIELD_TOOLTIPS)
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpDqnBasicKeys(self) -> list:
+        return [str(k) for k in DQN_BASIC_KEYS]
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpPpoBasicKeys(self) -> list:
+        return [str(k) for k in PPO_BASIC_KEYS]
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpAzTreeBasicKeys(self) -> list:
+        return [str(k) for k in AZ_TREE_BASIC_KEYS]
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpAzProxyBasicKeys(self) -> list:
+        return [str(k) for k in AZ_PROXY_BASIC_KEYS]
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpGmzBasicKeys(self) -> list:
+        return [str(k) for k in GMZ_BASIC_KEYS]
 
     def _load_algo_hyperparams_section(
         self,
@@ -3168,20 +3368,13 @@ class GUIController(QtCore.QObject):
             root_fallback=False,
         )
 
-        gmz_raw = payload.get("gumbel_muzero", {})
-        if not isinstance(gmz_raw, dict):
-            gmz_raw = {}
-        gmz_updated = dict(self._default_gmz_hyperparams)
-        for key, default_value in self._default_gmz_hyperparams.items():
-            raw = gmz_raw.get(key, default_value)
-            try:
-                if isinstance(default_value, int):
-                    gmz_updated[key] = int(raw)
-                else:
-                    gmz_updated[key] = float(raw)
-            except (TypeError, ValueError):
-                gmz_updated[key] = default_value
-        self._gmz_hyperparams = gmz_updated
+        self._gmz_hyperparams = self._load_algo_hyperparams_section(
+            payload,
+            "gumbel_muzero",
+            self._default_gmz_hyperparams,
+            GMZ_HYPERPARAM_KEYS,
+            root_fallback=False,
+        )
         self._az_tree_hyperparams = self._load_az_hyperparams_section(
             payload, "alphazero_tree", self._default_az_tree_hyperparams
         )

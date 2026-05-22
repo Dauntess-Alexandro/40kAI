@@ -4492,147 +4492,75 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                 }
 
-                                Label {
-                                    text: "Колонки DQN / PPO / AlphaZero Tree / AlphaZero Proxy / Gumbel MuZero — при нехватке ширины прокрутите вправо."
-                                    color: root.uiTextMuted
-                                    wrapMode: Text.WordWrap
+                                RowLayout {
                                     Layout.fillWidth: true
+                                    spacing: root.spacingSm
+                                    Switch {
+                                        checked: controller.hyperparamsBasicMode
+                                        onToggled: controller.set_hyperparams_basic_mode(checked)
+                                    }
+                                    Label {
+                                        text: "Базовый режим (только ключевые поля)"
+                                        color: root.uiTextMuted
+                                        Layout.fillWidth: true
+                                    }
                                 }
 
-                                Flickable {
-                                    id: hyperparamsFlick
+                                TabBar {
+                                    id: algoHyperparamsTabs
                                     Layout.fillWidth: true
-                                    Layout.preferredHeight: hyperparamsRow.implicitHeight
-                                    contentWidth: hyperparamsRow.implicitWidth
-                                    contentHeight: hyperparamsRow.implicitHeight
-                                    clip: true
-                                    boundsBehavior: Flickable.StopAtBounds
+                                    TabButton { text: "DQN" }
+                                    TabButton { text: "PPO" }
+                                    TabButton { text: "AlphaZero Tree" }
+                                    TabButton { text: "AlphaZero Proxy" }
+                                    TabButton { text: "Gumbel MuZero" }
+                                }
 
-                                    RowLayout {
-                                        id: hyperparamsRow
-                                        spacing: root.spacingLg
+                                StackLayout {
+                                    id: algoHyperparamsStack
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: Math.round(560 * root.uiScale)
+                                    currentIndex: algoHyperparamsTabs.currentIndex
 
-                                    SectionHyperparamsEditor {
-                                        algoSection: "dqn"
-                                        rootUi: root
-                                    }
-
-                                    SectionHyperparamsEditor {
-                                        algoSection: "ppo"
-                                        rootUi: root
-                                    }
-
-                                    SectionHyperparamsEditor {
-                                        algoSection: "tree"
-                                        rootUi: root
-                                    }
-
-                                    SectionHyperparamsEditor {
-                                        algoSection: "proxy"
-                                        rootUi: root
-                                    }
-
-                                    ColumnLayout {
-                                        spacing: root.spacingXs
-                                        Layout.fillWidth: false
-                                        Layout.minimumWidth: Math.round(280 * root.uiScale)
-
-                                        Label {
-                                            text: "Gumbel MuZero"
-                                            font.bold: true
-                                            Layout.fillWidth: true
-                                        }
-
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: root.spacingSm
-                                            Button { text: "Fast"; onClicked: controller.apply_gmz_profile("fast") }
-                                            Button { text: "Balanced"; onClicked: controller.apply_gmz_profile("balanced") }
-                                            Button { text: "Heavy"; onClicked: controller.apply_gmz_profile("heavy") }
-                                        }
-
-                                        Label {
-                                            text: "Текущий пресет: " + controller.hpGmzPresetLabel
-                                            color: palette.mid
-                                            Layout.fillWidth: true
-                                        }
-
-                                        GridLayout {
-                                            columns: 2
-                                            columnSpacing: root.spacingMd
-                                            rowSpacing: root.spacingSm
-                                            Layout.fillWidth: true
-
-                                            Label { text: "learning_rate" }
-                                            SpinBox {
-                                                from: 0
-                                                to: 1000000
-                                                stepSize: 1
-                                                editable: true
-                                                property real factor: 1000000
-                                                value: Math.round(controller.hpGmzLearningRate * factor)
-                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                textFromValue: function(v, locale) { return Number(v / factor).toLocaleString(locale, 'f', 6) }
-                                                valueFromText: function(t, locale) { return Math.round(Number.fromLocaleString(locale, t) * factor) }
-                                                onValueModified: controller.set_gmz_hyperparam("learning_rate", (value / factor).toString())
-                                            }
-
-                                            Label { text: "batch_size" }
-                                            SpinBox {
-                                                from: 1
-                                                to: 8192
-                                                stepSize: 32
-                                                editable: true
-                                                value: controller.hpGmzBatchSize
-                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                onValueModified: controller.set_gmz_hyperparam("batch_size", value.toString())
-                                            }
-
-                                            Label { text: "num_simulations" }
-                                            SpinBox {
-                                                from: 1
-                                                to: 512
-                                                stepSize: 1
-                                                editable: true
-                                                value: controller.hpGmzNumSimulations
-                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                onValueModified: controller.set_gmz_hyperparam("num_simulations", value.toString())
-                                            }
-
-                                            Label { text: "root_top_k" }
-                                            SpinBox {
-                                                from: 1
-                                                to: 256
-                                                stepSize: 1
-                                                editable: true
-                                                value: controller.hpGmzRootTopK
-                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                onValueModified: controller.set_gmz_hyperparam("root_top_k", value.toString())
-                                            }
-
-                                            Label { text: "unroll_steps" }
-                                            SpinBox {
-                                                from: 1
-                                                to: 64
-                                                stepSize: 1
-                                                editable: true
-                                                value: controller.hpGmzUnrollSteps
-                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                onValueModified: controller.set_gmz_hyperparam("unroll_steps", value.toString())
-                                            }
-
-                                            Label { text: "num_actors" }
-                                            SpinBox {
-                                                from: 1
-                                                to: 64
-                                                stepSize: 1
-                                                editable: true
-                                                value: controller.hpGmzNumActors
-                                                Layout.preferredWidth: Math.round(180 * root.uiScale)
-                                                onValueModified: controller.set_gmz_hyperparam("num_actors", value.toString())
-                                            }
+                                    ScrollView {
+                                        clip: true
+                                        SectionHyperparamsEditor {
+                                            width: algoHyperparamsStack.width
+                                            algoSection: "dqn"
+                                            rootUi: root
                                         }
                                     }
+                                    ScrollView {
+                                        clip: true
+                                        SectionHyperparamsEditor {
+                                            width: algoHyperparamsStack.width
+                                            algoSection: "ppo"
+                                            rootUi: root
+                                        }
+                                    }
+                                    ScrollView {
+                                        clip: true
+                                        SectionHyperparamsEditor {
+                                            width: algoHyperparamsStack.width
+                                            algoSection: "tree"
+                                            rootUi: root
+                                        }
+                                    }
+                                    ScrollView {
+                                        clip: true
+                                        SectionHyperparamsEditor {
+                                            width: algoHyperparamsStack.width
+                                            algoSection: "proxy"
+                                            rootUi: root
+                                        }
+                                    }
+                                    ScrollView {
+                                        clip: true
+                                        SectionHyperparamsEditor {
+                                            width: algoHyperparamsStack.width
+                                            algoSection: "gmz"
+                                            rootUi: root
+                                        }
                                     }
                                 }
                             }

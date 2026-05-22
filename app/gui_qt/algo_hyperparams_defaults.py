@@ -111,3 +111,139 @@ DQN_PROFILE_PRESETS: dict[str, dict[str, int | float]] = {
     "balanced": {"batch_size": 384, "updates_per_step": 6, "hidden_size": 256},
     "heavy": {"batch_size": 512, "updates_per_step": 8, "hidden_size": 384, "ensemble_size": 2},
 }
+
+DQN_BASIC_KEYS: tuple[str, ...] = (
+    "lr",
+    "gamma",
+    "batch_size",
+    "eps_start",
+    "eps_end",
+    "eps_decay",
+    "hidden_size",
+    "num_layers",
+    "updates_per_step",
+)
+
+PPO_BASIC_KEYS: tuple[str, ...] = (
+    "learning_rate",
+    "gamma",
+    "clip_ratio",
+    "entropy_coef",
+    "rollout_steps",
+    "minibatch_size",
+    "update_epochs",
+)
+
+DQN_GROUPS: tuple[dict[str, object], ...] = (
+    {
+        "id": "training",
+        "title": "Обучение",
+        "keys": ("lr", "gamma", "batch_size", "updates_per_step", "warmup_steps", "lr_scheduler", "tau"),
+        "default_collapsed": False,
+    },
+    {
+        "id": "exploration",
+        "title": "Exploration (epsilon)",
+        "keys": ("eps_start", "eps_end", "eps_decay", "eps_schedule"),
+        "default_collapsed": False,
+    },
+    {
+        "id": "arch",
+        "title": "Архитектура",
+        "keys": ("hidden_size", "num_layers", "ensemble_size", "dueling", "double_dqn"),
+        "default_collapsed": True,
+    },
+    {
+        "id": "iqn",
+        "title": "Distributional (IQN)",
+        "keys": (
+            "dist_type",
+            "iqn_n_quantiles",
+            "iqn_n_target_quantiles",
+            "iqn_n_tau_samples",
+            "iqn_embed_dim",
+            "iqn_kappa",
+        ),
+        "default_collapsed": True,
+    },
+    {
+        "id": "noisy_per",
+        "title": "Noisy / PER",
+        "keys": ("noisy_sigma0", "noisy_disable_eps", "noisy_sigma_anneal", "per_ensemble_priority_lambda"),
+        "default_collapsed": True,
+    },
+)
+
+PPO_GROUPS: tuple[dict[str, object], ...] = (
+    {
+        "id": "training",
+        "title": "Обучение",
+        "keys": ("learning_rate", "gamma", "gae_lambda", "lr_scheduler"),
+        "default_collapsed": False,
+    },
+    {
+        "id": "loss",
+        "title": "PPO loss",
+        "keys": ("clip_ratio", "value_coef", "entropy_coef", "target_kl", "max_grad_norm"),
+        "default_collapsed": False,
+    },
+    {
+        "id": "rollout",
+        "title": "Rollout",
+        "keys": ("rollout_steps", "update_epochs", "minibatch_size"),
+        "default_collapsed": False,
+    },
+    {
+        "id": "adaptive",
+        "title": "Adaptive entropy",
+        "keys": ("adaptive_entropy", "entropy_target", "entropy_adapt_lr"),
+        "default_collapsed": True,
+    },
+)
+
+DQN_FIELD_TOOLTIPS: dict[str, str] = {
+    "lr": "Скорость обучения.",
+    "tau": "Скорость soft-update target-сети.",
+    "eps_start": "Начальный epsilon exploration.",
+    "eps_end": "Минимальный epsilon.",
+    "eps_decay": "Шагов затухания epsilon.",
+    "batch_size": "Размер батча при обучении.",
+    "gamma": "Дисконтирование награды.",
+    "updates_per_step": "Градиентных updates за шаг среды.",
+    "warmup_steps": "Прогрев replay до полного обучения.",
+    "hidden_size": "Размер скрытого слоя.",
+    "num_layers": "Число слоёв trunk.",
+    "ensemble_size": "Число голов-ансамблей.",
+    "lr_scheduler": "none / cosine / plateau.",
+    "eps_schedule": "Расписание epsilon: exp, linear, poly, sigmoid.",
+    "double_dqn": "1 = Double DQN.",
+    "dueling": "1 = Dueling architecture.",
+    "dist_type": "Тип distributional head (iqn).",
+    "iqn_n_quantiles": "Число квантилей IQN.",
+    "iqn_n_target_quantiles": "Квантили в target-сети.",
+    "iqn_n_tau_samples": "Сэмплы tau при обучении.",
+    "iqn_embed_dim": "Размер embedding квантилей.",
+    "iqn_kappa": "Huber kappa для IQN.",
+    "noisy_sigma0": "Начальный sigma NoisyNet.",
+    "noisy_disable_eps": "1 = отключить epsilon при NoisyNet.",
+    "noisy_sigma_anneal": "1 = anneal sigma NoisyNet.",
+    "per_ensemble_priority_lambda": "Вес приоритета PER для ансамбля.",
+}
+
+PPO_FIELD_TOOLTIPS: dict[str, str] = {
+    "learning_rate": "Скорость обучения PPO.",
+    "gamma": "Дисконт для GAE.",
+    "gae_lambda": "GAE lambda.",
+    "clip_ratio": "PPO clip epsilon.",
+    "value_coef": "Вес value loss.",
+    "entropy_coef": "Вес энтропийного бонуса.",
+    "rollout_steps": "Длина rollout перед update.",
+    "update_epochs": "Эпох PPO на одном rollout.",
+    "minibatch_size": "Размер минибатча.",
+    "max_grad_norm": "Клип нормы градиента.",
+    "target_kl": "Порог ранней остановки по KL.",
+    "lr_scheduler": "none / cosine / plateau.",
+    "adaptive_entropy": "1 = адаптивная энтропия.",
+    "entropy_target": "Целевая энтропия.",
+    "entropy_adapt_lr": "Скорость адаптации энтропии.",
+}
