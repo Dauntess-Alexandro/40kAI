@@ -151,6 +151,16 @@ Input → layer1 → ReLU → layer2 → ReLU → Features
 | Быстрая тренировка | Долгие эпизоды |
 | Стабильные reward signals | Sparse rewards |
 
+### 2.5 Статус внедрения (код)
+
+**Выполнено** — коммит `e29c4df0` (2026-05-22). Детали: [model_analysis_DQN.md](model_analysis_DQN.md).
+
+- [x] `make_dqn` / `dqn_kwargs_from_env`, configurable `hidden_size`, `num_layers`
+- [x] LayerNorm + ResidualBlock в trunk
+- [x] Q-ensemble (`DQN_ENSEMBLE_SIZE`)
+- [x] LR scheduler в checkpoint (`DQN_LR_SCHEDULER`)
+- [x] Distill teacher→student, grid search tools, unit-тесты
+
 ---
 
 ## 3. PPO (Proximal Policy Optimization)
@@ -194,6 +204,19 @@ Input → layer1 → ReLU → layer2 → ReLU → Features
 | Stable training | Very sparse rewards |
 | Moderate action spaces | Extremely large action spaces |
 | Discrete actions | Continuous actions |
+
+### 3.5 Статус внедрения (код)
+
+**Выполнено** — PPO-апгрейд по плану (зеркало DQN). Детали: [model_analysis_PPO.md](model_analysis_PPO.md).
+
+- [x] `make_actor_critic` / `ppo_kwargs_from_env`, configurable `hidden_size`, `num_layers`
+- [x] LayerNorm + ResidualBlock в trunk
+- [x] Value ensemble (`PPO_VALUE_ENSEMBLE`)
+- [x] Vectorized GAE (`PPO_VECTORIZED_GAE`)
+- [x] LR scheduler в checkpoint (`PPO_LR_SCHEDULER`)
+- [x] Adaptive entropy (`PPO_ADAPTIVE_ENTROPY`)
+- [x] Grid search tools, unit-тесты
+- [ ] Миграция ключей старых чекпоинтов `layer1/layer2` → новый trunk (нужно переобучение)
 
 ---
 
@@ -654,10 +677,11 @@ class IntegrationTests:
 ## 13. Roadmap
 
 ### Phase 1: Quick wins (1 week)
-- [ ] Add LayerNorm to all models
-- [ ] Add residual connections
-- [ ] Fix configurable hidden size
-- [ ] Add adaptive learning rate
+- [x] Add LayerNorm to all models — **DQN ✓** (`e29c4df0`), **PPO ✓**
+- [x] Add residual connections — **DQN ✓**, **PPO ✓**
+- [x] Fix configurable hidden size — **DQN ✓**, **PPO ✓**
+- [x] Add adaptive learning rate — **DQN ✓**, **PPO ✓** (LR scheduler + adaptive entropy)
+- [ ] AlphaZero / GumbelMuZero — в работе
 
 ### Phase 2: Major improvements (2-4 weeks)
 - [ ] Implement proper PUCT for AlphaZero MCTS

@@ -10,7 +10,7 @@ import torch
 
 from core.engine.agent_registry import compatible_contracts, load_agent_by_id
 from core.models.DQN import DQN
-from core.models.PPO import ActorCriticMultiHead
+from core.models.PPO import make_actor_critic, load_actor_critic_state_dict, ppo_kwargs_from_env
 from core.models.alphazero_model import AlphaZeroPolicyValueNet
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
@@ -149,8 +149,8 @@ def build_policy_fn(
         return _policy_fn
 
     if opponent.algo == "ppo":
-        net = ActorCriticMultiHead(n_obs, n_actions).to(torch.device("cpu"))
-        net.load_state_dict(normalize_state_dict(opponent.policy_state))
+        net = make_actor_critic(n_obs, n_actions, **ppo_kwargs_from_env()).to(torch.device("cpu"))
+        load_actor_critic_state_dict(net, normalize_state_dict(opponent.policy_state))
         net.eval()
 
         def _policy_fn(obs_any) -> dict:

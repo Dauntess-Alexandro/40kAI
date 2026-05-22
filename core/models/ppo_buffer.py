@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+import os
+
 import numpy as np
 import torch
 
@@ -12,6 +14,10 @@ class PPOBatch:
     advantages: torch.Tensor
     values: torch.Tensor
     masks_by_head: list[torch.Tensor]
+
+
+def _use_vectorized_gae() -> bool:
+    return str(os.getenv("PPO_VECTORIZED_GAE", "0")).strip() in ("1", "true", "yes")
 
 
 class PPORolloutBuffer:
@@ -91,8 +97,50 @@ class PPORolloutBuffer:
         returns = advantages + values
         return returns, advantages
 
+    def compute_returns_and_advantages_torch(
+        self,
+        gamma: float,
+        gae_lambda: float,
+        device: torch.device | None = None,
+    ):
+        """Same GAE logic as numpy path, on torch tensors (numerically equivalent)."""
+        dev = device or torch.device("cpu")
+        rewards = torch.tensor(self.rewards, dtype=torch.float32, device=dev)
+        dones = torch.tensor(self.dones, dtype=torch.float32, device=dev)
+        values = torch.tensor(self.values, dtype=torch.float32, device=dev)
+        if self.env_ids:
+            env_ids = torch.tensor(self.env_ids, dtype=torch.int64, device=dev)
+        else:
+            env_ids = torch.zeros(len(rewards), dtype=torch.int64, device=dev)
+
+        advantages = torch.zeros_like(rewards)
+        last_gae_by_env: dict[int, float] = {}
+        next_value_by_env: dict[int, float] = {}
+        for t in reversed(range(len(rewards))):
+            env_id = int(env_ids[t].item())
+            if float(dones[t].item()) >= 1.0:
+                next_value = 0.0
+                last_gae = 0.0
+            else:
+                next_value = float(next_value_by_env.get(env_id, 0.0))
+                last_gae = float(last_gae_by_env.get(env_id, 0.0))
+            non_terminal = 1.0 - float(dones[t].item())
+            delta = float(rewards[t].item()) + gamma * next_value * non_terminal - float(values[t].item())
+            last_gae = delta + gamma * gae_lambda * non_terminal * last_gae
+            advantages[t] = float(last_gae)
+            last_gae_by_env[env_id] = float(last_gae)
+            next_value_by_env[env_id] = float(values[t].item())
+
+        returns = advantages + values
+        return returns.detach().cpu().numpy(), advantages.detach().cpu().numpy()
+
     def to_tensors(self, device: torch.device, gamma: float, gae_lambda: float, normalize_adv: bool = True):
-        returns, advantages = self.compute_returns_and_advantages(gamma=gamma, gae_lambda=gae_lambda)
+        if _use_vectorized_gae():
+            returns, advantages = self.compute_returns_and_advantages_torch(
+                gamma=gamma, gae_lambda=gae_lambda, device=device
+            )
+        else:
+            returns, advantages = self.compute_returns_and_advantages(gamma=gamma, gae_lambda=gae_lambda)
         if normalize_adv and len(advantages) > 1:
             adv_mean = advantages.mean()
             adv_std = advantages.std() + 1e-8
@@ -126,4 +174,3 @@ class PPORolloutBuffer:
             values=values_t,
             masks_by_head=mask_heads,
         )
-

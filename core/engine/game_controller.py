@@ -20,7 +20,7 @@ from core.engine.game_io import GuiIO, set_active_io
 from core.engine.state_export import DEFAULT_STATE_PATH
 from core.engine.mission import board_dims_for_mission
 from core.models.DQN import DQN
-from core.models.PPO import ActorCriticMultiHead
+from core.models.PPO import make_actor_critic, load_actor_critic_state_dict, ppo_arch_from_payload
 from core.models.alphazero_model import AlphaZeroPolicyValueNet
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
@@ -550,8 +550,9 @@ class GameController:
             if algo == "ppo":
                 self._io.log("[MODEL] Архитектура сети: ppo_actor_critic")
                 ppo_state = checkpoint.get("actor_critic", checkpoint.get("policy_net", {}))
-                policy_net = ActorCriticMultiHead(n_observations, n_actions).to(device)
-                policy_net.load_state_dict(normalize_state_dict(ppo_state))
+                arch = ppo_arch_from_payload(checkpoint if isinstance(checkpoint, dict) else None)
+                policy_net = make_actor_critic(n_observations, n_actions, **arch).to(device)
+                load_actor_critic_state_dict(policy_net, normalize_state_dict(ppo_state))
                 policy_net.eval()
                 target_net = None
             elif algo == "alphazero":

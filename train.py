@@ -69,7 +69,12 @@ os.environ.setdefault("AGENT_LOG_FILE", AGENT_TRAIN_LOG_FILE)
 from core.models.DQN import *
 from core.models.memory import *
 from core.models.utils import *
-from core.models.PPO import ActorCriticMultiHead
+from core.models.PPO import (
+    ActorCriticMultiHead,
+    make_actor_critic,
+    ppo_kwargs_from_env,
+    update_ppo_entropy_coef,
+)
 from core.models.ppo_buffer import PPORolloutBuffer
 from core.models.opponent_adapter import OpponentSpec, build_policy_fn, load_agent_opponent
 from core.models.alphazero_model import AlphaZeroPolicyValueNet
@@ -2368,6 +2373,10 @@ PPO_UPDATE_EPOCHS = int(PPO_CFG.get("update_epochs", 4))
 PPO_MINIBATCH_SIZE = int(PPO_CFG.get("minibatch_size", 256))
 PPO_MAX_GRAD_NORM = float(PPO_CFG.get("max_grad_norm", 0.5))
 PPO_TARGET_KL = float(PPO_CFG.get("target_kl", 0.03))
+PPO_LR_SCHEDULER = str(os.getenv("PPO_LR_SCHEDULER", "none")).strip().lower() or "none"
+PPO_ADAPTIVE_ENTROPY = os.getenv("PPO_ADAPTIVE_ENTROPY", "0") == "1"
+PPO_ENTROPY_TARGET = float(os.getenv("PPO_ENTROPY_TARGET", "0.5"))
+PPO_ENTROPY_ADAPT_LR = float(os.getenv("PPO_ENTROPY_ADAPT_LR", "0.05"))
 AZ_CFG = data.get("alphazero", {}) if isinstance(data, dict) else {}
 AZ_LR = float(AZ_CFG.get("learning_rate", LR))
 AZ_BATCH_SIZE = int(AZ_CFG.get("batch_size", 128))
@@ -2483,6 +2492,116 @@ def _cleanup_train_envs(env_contexts, subproc_envs, use_subproc: bool) -> None:
                 pass
 
 
+def _ppo_arch_dict(actor_critic) -> dict:
+    return {
+        "hidden_size": int(getattr(actor_critic, "hidden_size", 256)),
+        "num_layers": int(getattr(actor_critic, "num_layers", 2)),
+        "n_value_ensemble": int(getattr(actor_critic, "n_value_ensemble", 1)),
+    }
+
+
+def _ppo_checkpoint_extra(actor_critic, optimizer, lr_scheduler=None) -> dict:
+    extra = {"arch": _ppo_arch_dict(actor_critic)}
+    if lr_scheduler is not None:
+        extra["lr_scheduler"] = lr_scheduler.state_dict()
+    return extra
+
+
+def _build_ppo_lr_scheduler(optimizer, total_steps_hint=None):
+    if PPO_LR_SCHEDULER == "cosine":
+        t_max = max(1, int(total_steps_hint or int(os.getenv("TOT_LIFE_T", "1000")) * 50))
+        return torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max)
+    if PPO_LR_SCHEDULER == "plateau":
+        return torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode="min", factor=0.5, patience=50, min_lr=1e-6
+        )
+    return None
+
+
+def _step_ppo_lr_scheduler(lr_scheduler, loss_value: float | None = None) -> None:
+    if lr_scheduler is None:
+        return
+    if isinstance(lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+        if loss_value is not None:
+            lr_scheduler.step(float(loss_value))
+    else:
+        lr_scheduler.step()
+
+
+def _run_ppo_update_loop(
+    actor_critic,
+    optimizer,
+    batch,
+    *,
+    entropy_coef: float,
+    lr_scheduler=None,
+) -> tuple[dict, float, int]:
+    """PPO clipped objective over batch; returns metrics, updated entropy_coef, update count."""
+    num_samples = int(batch.obs.shape[0])
+    if num_samples <= 0:
+        return {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clip_fraction": 0.0}, entropy_coef, 0
+
+    idx_all = np.arange(num_samples)
+    ppo_metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clip_fraction": 0.0}
+    updates = 0
+    for _ in range(max(1, PPO_UPDATE_EPOCHS)):
+        np.random.shuffle(idx_all)
+        epoch_kl = 0.0
+        epoch_kl_steps = 0
+        for start in range(0, num_samples, max(1, PPO_MINIBATCH_SIZE)):
+            mb_idx = idx_all[start : start + max(1, PPO_MINIBATCH_SIZE)]
+            mb_obs = batch.obs[mb_idx]
+            mb_actions = batch.actions[mb_idx]
+            mb_old_logp = batch.logprobs[mb_idx]
+            mb_adv = batch.advantages[mb_idx]
+            mb_returns = batch.returns[mb_idx]
+            mb_masks = [m[mb_idx] for m in batch.masks_by_head]
+            new_logp, entropy, values = actor_critic.evaluate_actions(mb_obs, mb_actions, masks_by_head=mb_masks)
+            ratio = torch.exp(new_logp - mb_old_logp)
+            clipped_ratio = torch.clamp(ratio, 1.0 - PPO_CLIP_RATIO, 1.0 + PPO_CLIP_RATIO)
+            policy_loss = -torch.min(ratio * mb_adv, clipped_ratio * mb_adv).mean()
+            value_loss = F.mse_loss(values, mb_returns)
+            entropy_loss = entropy.mean()
+            loss = policy_loss + PPO_VALUE_COEF * value_loss - float(entropy_coef) * entropy_loss
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(actor_critic.parameters(), PPO_MAX_GRAD_NORM)
+            optimizer.step()
+            approx_kl = (mb_old_logp - new_logp).mean().detach()
+            clip_frac = ((ratio - 1.0).abs() > PPO_CLIP_RATIO).float().mean().detach()
+            ppo_metrics["policy_loss"] += float(policy_loss.detach().item())
+            ppo_metrics["value_loss"] += float(value_loss.detach().item())
+            ppo_metrics["entropy"] += float(entropy_loss.detach().item())
+            ppo_metrics["approx_kl"] += float(approx_kl.item())
+            ppo_metrics["clip_fraction"] += float(clip_frac.item())
+            updates += 1
+            epoch_kl += float(approx_kl.item())
+            epoch_kl_steps += 1
+        mean_epoch_kl = epoch_kl / max(1, epoch_kl_steps)
+        if mean_epoch_kl > PPO_TARGET_KL:
+            append_agent_log(
+                f"[PPO] Ранний stop эпохи по KL: epoch_kl={mean_epoch_kl:.6f} > target_kl={PPO_TARGET_KL:.6f}."
+            )
+            break
+    if updates > 0:
+        for key in ppo_metrics:
+            ppo_metrics[key] /= updates
+    total_loss = ppo_metrics["policy_loss"] + PPO_VALUE_COEF * ppo_metrics["value_loss"]
+    _step_ppo_lr_scheduler(lr_scheduler, loss_value=total_loss)
+    if PPO_ADAPTIVE_ENTROPY and updates > 0:
+        entropy_coef = update_ppo_entropy_coef(
+            entropy_coef,
+            ppo_metrics["entropy"],
+            PPO_ENTROPY_TARGET,
+            adapt_lr=PPO_ENTROPY_ADAPT_LR,
+        )
+        append_agent_log(
+            f"[PPO][ENT] coef={entropy_coef:.6f} entropy={ppo_metrics['entropy']:.6f} "
+            f"target={PPO_ENTROPY_TARGET:.6f}"
+        )
+    return ppo_metrics, entropy_coef, updates
+
+
 def _save_ppo_checkpoint(
     actor_critic,
     optimizer,
@@ -2496,6 +2615,7 @@ def _save_ppo_checkpoint(
     roster_config: dict | None = None,
     b_len: int | None = None,
     b_hei: int | None = None,
+    lr_scheduler=None,
 ):
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     run_dir = os.path.join(MODELS_DIR, "ppo", f"ppo-run-{timestamp}")
@@ -2512,6 +2632,7 @@ def _save_ppo_checkpoint(
         "n_observations": int(n_observations),
         "env_contract": env_contract,
     }
+    payload.update(_ppo_checkpoint_extra(actor_critic, optimizer, lr_scheduler))
     torch.save(payload, checkpoint_path)
     pickle_path = os.path.join(run_dir, f"model-{timestamp}.pickle")
     if model is None or enemy is None:
@@ -2555,18 +2676,26 @@ def run_ppo_training(
     len_model = int(ctx["len_model"])
     b_len = int(roster_config.get("b_len", 0))
     b_hei = int(roster_config.get("b_hei", 0))
-    actor_critic = ActorCriticMultiHead(n_observations, n_actions).to(device)
+    actor_critic = make_actor_critic(n_observations, n_actions).to(device)
     optimizer = optim.AdamW(actor_critic.parameters(), lr=PPO_LR, amsgrad=True)
     _patch_optimizer_methods_no_compile(optimizer)
+    ppo_lr_scheduler = _build_ppo_lr_scheduler(optimizer, total_steps_hint=int(totLifeT) * 20)
     buffer = PPORolloutBuffer()
     global_step = 0
     ppo_update_step = 0
+    entropy_coef = float(PPO_ENTROPY_COEF)
     last_checkpoint = ""
     run_id = str(random.randint(1000000, 9999999))
     model_name = datetime.datetime.now().strftime("%d-%H%M%S")
     metrics_obj = metrics(os.path.join(MODELS_DIR, "ppo"), run_id, model_name)
     ep_rows = []
     last_det_eval_ep = 0
+    ppo_kw = ppo_kwargs_from_env()
+    append_agent_log(
+        f"[PPO][CONFIG] hidden_size={ppo_kw['hidden_size']} num_layers={ppo_kw['num_layers']} "
+        f"n_value_ensemble={ppo_kw['n_value_ensemble']} lr_scheduler={PPO_LR_SCHEDULER} "
+        f"adaptive_entropy={int(PPO_ADAPTIVE_ENTROPY)} vectorized_gae={os.getenv('PPO_VECTORIZED_GAE', '0')}"
+    )
 
     for episode in range(1, int(totLifeT) + 1):
         state, info0 = env.reset(options={"m": model, "e": enemy, "trunc": True})
@@ -2609,55 +2738,16 @@ def run_ppo_training(
             global_step += 1
 
         batch = buffer.to_tensors(device=device, gamma=PPO_GAMMA, gae_lambda=PPO_GAE_LAMBDA, normalize_adv=True)
-        num_samples = batch.obs.shape[0]
-        if num_samples == 0:
+        if int(batch.obs.shape[0]) == 0:
             continue
-        idx_all = np.arange(num_samples)
-        ppo_metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clip_fraction": 0.0}
-        updates = 0
-        for _ in range(max(1, PPO_UPDATE_EPOCHS)):
-            np.random.shuffle(idx_all)
-            epoch_kl = 0.0
-            epoch_kl_steps = 0
-            for start in range(0, num_samples, max(1, PPO_MINIBATCH_SIZE)):
-                mb_idx = idx_all[start:start + max(1, PPO_MINIBATCH_SIZE)]
-                mb_obs = batch.obs[mb_idx]
-                mb_actions = batch.actions[mb_idx]
-                mb_old_logp = batch.logprobs[mb_idx]
-                mb_adv = batch.advantages[mb_idx]
-                mb_returns = batch.returns[mb_idx]
-                mb_masks = [m[mb_idx] for m in batch.masks_by_head]
-                new_logp, entropy, values = actor_critic.evaluate_actions(mb_obs, mb_actions, masks_by_head=mb_masks)
-                ratio = torch.exp(new_logp - mb_old_logp)
-                clipped_ratio = torch.clamp(ratio, 1.0 - PPO_CLIP_RATIO, 1.0 + PPO_CLIP_RATIO)
-                policy_loss = -torch.min(ratio * mb_adv, clipped_ratio * mb_adv).mean()
-                value_loss = F.mse_loss(values, mb_returns)
-                entropy_loss = entropy.mean()
-                loss = policy_loss + PPO_VALUE_COEF * value_loss - PPO_ENTROPY_COEF * entropy_loss
-                optimizer.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(actor_critic.parameters(), PPO_MAX_GRAD_NORM)
-                optimizer.step()
-                approx_kl = (mb_old_logp - new_logp).mean().detach()
-                clip_frac = ((ratio - 1.0).abs() > PPO_CLIP_RATIO).float().mean().detach()
-                ppo_metrics["policy_loss"] += float(policy_loss.detach().item())
-                ppo_metrics["value_loss"] += float(value_loss.detach().item())
-                ppo_metrics["entropy"] += float(entropy_loss.detach().item())
-                ppo_metrics["approx_kl"] += float(approx_kl.item())
-                ppo_metrics["clip_fraction"] += float(clip_frac.item())
-                updates += 1
-                ppo_update_step += 1
-                epoch_kl += float(approx_kl.item())
-                epoch_kl_steps += 1
-            mean_epoch_kl = epoch_kl / max(1, epoch_kl_steps)
-            if mean_epoch_kl > PPO_TARGET_KL:
-                append_agent_log(
-                    f"[PPO] Ранний stop эпохи по KL: epoch_kl={mean_epoch_kl:.6f} > target_kl={PPO_TARGET_KL:.6f}."
-                )
-                break
-        if updates > 0:
-            for key in ppo_metrics:
-                ppo_metrics[key] /= updates
+        ppo_metrics, entropy_coef, updates = _run_ppo_update_loop(
+            actor_critic,
+            optimizer,
+            batch,
+            entropy_coef=entropy_coef,
+            lr_scheduler=ppo_lr_scheduler,
+        )
+        ppo_update_step += int(updates)
         metrics_obj.updateRew(ep_reward)
         metrics_obj.updateEpLen(ep_len)
         metrics_obj.updateLoss(ppo_metrics["policy_loss"] + PPO_VALUE_COEF * ppo_metrics["value_loss"])
@@ -2760,6 +2850,7 @@ def run_ppo_training(
                 model=model,
                 enemy=enemy,
                 env_contract=env_contract,
+                lr_scheduler=ppo_lr_scheduler,
             )
             # Снапшот в registry для GUI ("Конкретный агент" / "Последний снапшот").
             try:
@@ -2792,6 +2883,7 @@ def run_ppo_training(
             model=model,
             enemy=enemy,
             env_contract=env_contract,
+            lr_scheduler=ppo_lr_scheduler,
         )
     # Финальный снапшот в registry (чтобы GUI мог взять latest_snapshot)
     try:
@@ -2854,13 +2946,15 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
     if len_model <= 0:
         raise RuntimeError("PPO(subproc): len_model <= 0 (не удалось определить количество юнитов).")
 
-    actor_critic = ActorCriticMultiHead(n_observations, n_actions).to(device)
+    actor_critic = make_actor_critic(n_observations, n_actions).to(device)
     optimizer = optim.AdamW(actor_critic.parameters(), lr=PPO_LR, amsgrad=True)
     _patch_optimizer_methods_no_compile(optimizer)
+    ppo_lr_scheduler = _build_ppo_lr_scheduler(optimizer, total_steps_hint=int(totLifeT) * 20)
     buffer = PPORolloutBuffer()
 
     global_step = 0
     ppo_update_step = 0
+    entropy_coef = float(PPO_ENTROPY_COEF)
     last_checkpoint = ""
     run_id = str(random.randint(1000000, 9999999))
     model_name = datetime.datetime.now().strftime("%d-%H%M%S")
@@ -2872,7 +2966,12 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
     env_ep_reward = [0.0 for _ in range(vec_env_count)]
     env_ep_len = [0 for _ in range(vec_env_count)]
 
-    append_agent_log(f"[PPO][CONFIG] vec_env_count={vec_env_count} use_subproc=1 rollout_steps={PPO_ROLLOUT_STEPS}")
+    ppo_kw = ppo_kwargs_from_env()
+    append_agent_log(
+        f"[PPO][CONFIG] vec_env_count={vec_env_count} use_subproc=1 rollout_steps={PPO_ROLLOUT_STEPS} "
+        f"hidden_size={ppo_kw['hidden_size']} num_layers={ppo_kw['num_layers']} "
+        f"n_value_ensemble={ppo_kw['n_value_ensemble']} lr_scheduler={PPO_LR_SCHEDULER}"
+    )
     print(f"[PPO][CONFIG] vec_env_count={vec_env_count} use_subproc=1", flush=True)
 
     # В subproc у нас нет доступа к env.action_space, поэтому делаем "быстрый" контракт масок:
@@ -3036,62 +3135,21 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
                         model=None,
                         enemy=None,
                         env_contract=env_contract,
-                        roster_config=roster_config,
-                        b_len=b_len,
-                        b_hei=b_hei,
+                        lr_scheduler=ppo_lr_scheduler,
                     )
 
         # Обновляем PPO по порогу шагов роллаута.
         if len(buffer) >= max(1, int(PPO_ROLLOUT_STEPS)):
             batch = buffer.to_tensors(device=device, gamma=PPO_GAMMA, gae_lambda=PPO_GAE_LAMBDA, normalize_adv=True)
-            num_samples = int(batch.obs.shape[0])
-            if num_samples > 0:
-                idx_all = np.arange(num_samples)
-                ppo_metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clip_fraction": 0.0}
-                updates = 0
-                for _ in range(max(1, PPO_UPDATE_EPOCHS)):
-                    np.random.shuffle(idx_all)
-                    epoch_kl = 0.0
-                    epoch_kl_steps = 0
-                    for start in range(0, num_samples, max(1, PPO_MINIBATCH_SIZE)):
-                        mb_idx = idx_all[start:start + max(1, PPO_MINIBATCH_SIZE)]
-                        mb_obs = batch.obs[mb_idx]
-                        mb_actions = batch.actions[mb_idx]
-                        mb_old_logp = batch.logprobs[mb_idx]
-                        mb_adv = batch.advantages[mb_idx]
-                        mb_returns = batch.returns[mb_idx]
-                        mb_masks = [m[mb_idx] for m in batch.masks_by_head]
-                        new_logp, entropy, values = actor_critic.evaluate_actions(mb_obs, mb_actions, masks_by_head=mb_masks)
-                        ratio = torch.exp(new_logp - mb_old_logp)
-                        clipped_ratio = torch.clamp(ratio, 1.0 - PPO_CLIP_RATIO, 1.0 + PPO_CLIP_RATIO)
-                        policy_loss = -torch.min(ratio * mb_adv, clipped_ratio * mb_adv).mean()
-                        value_loss = F.mse_loss(values, mb_returns)
-                        entropy_loss = entropy.mean()
-                        loss = policy_loss + PPO_VALUE_COEF * value_loss - PPO_ENTROPY_COEF * entropy_loss
-                        optimizer.zero_grad()
-                        loss.backward()
-                        torch.nn.utils.clip_grad_norm_(actor_critic.parameters(), PPO_MAX_GRAD_NORM)
-                        optimizer.step()
-                        approx_kl = (mb_old_logp - new_logp).mean().detach()
-                        clip_frac = ((ratio - 1.0).abs() > PPO_CLIP_RATIO).float().mean().detach()
-                        ppo_metrics["policy_loss"] += float(policy_loss.detach().item())
-                        ppo_metrics["value_loss"] += float(value_loss.detach().item())
-                        ppo_metrics["entropy"] += float(entropy_loss.detach().item())
-                        ppo_metrics["approx_kl"] += float(approx_kl.item())
-                        ppo_metrics["clip_fraction"] += float(clip_frac.item())
-                        updates += 1
-                        ppo_update_step += 1
-                        epoch_kl += float(approx_kl.item())
-                        epoch_kl_steps += 1
-                    mean_epoch_kl = epoch_kl / max(1, epoch_kl_steps)
-                    if mean_epoch_kl > PPO_TARGET_KL:
-                        append_agent_log(
-                            f"[PPO] Ранний stop эпохи по KL: epoch_kl={mean_epoch_kl:.6f} > target_kl={PPO_TARGET_KL:.6f}."
-                        )
-                        break
-                if updates > 0:
-                    for key in ppo_metrics:
-                        ppo_metrics[key] /= updates
+            if int(batch.obs.shape[0]) > 0:
+                ppo_metrics, entropy_coef, updates = _run_ppo_update_loop(
+                    actor_critic,
+                    optimizer,
+                    batch,
+                    entropy_coef=entropy_coef,
+                    lr_scheduler=ppo_lr_scheduler,
+                )
+                ppo_update_step += int(updates)
                 last_update_metrics = dict(ppo_metrics)
                 append_agent_log(
                     f"[PPO][UPDATE] policy_loss={ppo_metrics['policy_loss']:.6f} value_loss={ppo_metrics['value_loss']:.6f} "
@@ -3112,9 +3170,7 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
             model=None,
             enemy=None,
             env_contract=env_contract,
-            roster_config=roster_config,
-            b_len=b_len,
-            b_hei=b_hei,
+            lr_scheduler=ppo_lr_scheduler,
         )
 
     if ep_rows:
@@ -6084,10 +6140,18 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
         },
     )
 
-    actor_critic = ActorCriticMultiHead(n_observations, n_actions).to(device)
+    actor_critic = make_actor_critic(n_observations, n_actions).to(device)
     optimizer = optim.AdamW(actor_critic.parameters(), lr=PPO_LR, amsgrad=True)
     _patch_optimizer_methods_no_compile(optimizer)
+    ppo_lr_scheduler = _build_ppo_lr_scheduler(optimizer, total_steps_hint=int(totLifeT) * 20)
     buffer = PPORolloutBuffer()
+    entropy_coef = float(PPO_ENTROPY_COEF)
+    ppo_kw = ppo_kwargs_from_env()
+    append_agent_log(
+        f"[PPO][CONFIG] actor_learner num_actors={num_actors} hidden_size={ppo_kw['hidden_size']} "
+        f"num_layers={ppo_kw['num_layers']} n_value_ensemble={ppo_kw['n_value_ensemble']} "
+        f"lr_scheduler={PPO_LR_SCHEDULER} adaptive_entropy={int(PPO_ADAPTIVE_ENTROPY)}"
+    )
 
     # Self-play opponent snapshot (optional): загружаем один раз в learner и раздаём акторам.
     opponent_state_dict_cpu = None
@@ -6446,6 +6510,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                         roster_config=roster_config,
                         b_len=b_len,
                         b_hei=b_hei,
+                        lr_scheduler=ppo_lr_scheduler,
                     )
             continue
 
@@ -6478,54 +6543,15 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
         # Update PPO по порогу шагов
         if len(buffer) >= max(1, int(PPO_ROLLOUT_STEPS)):
             batch = buffer.to_tensors(device=device, gamma=PPO_GAMMA, gae_lambda=PPO_GAE_LAMBDA, normalize_adv=True)
-            num_samples = int(batch.obs.shape[0])
-            if num_samples > 0:
-                idx_all = np.arange(num_samples)
-                ppo_metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clip_fraction": 0.0}
-                updates = 0
-                for _ in range(max(1, PPO_UPDATE_EPOCHS)):
-                    np.random.shuffle(idx_all)
-                    epoch_kl = 0.0
-                    epoch_kl_steps = 0
-                    for start in range(0, num_samples, max(1, PPO_MINIBATCH_SIZE)):
-                        mb_idx = idx_all[start:start + max(1, PPO_MINIBATCH_SIZE)]
-                        mb_obs = batch.obs[mb_idx]
-                        mb_actions = batch.actions[mb_idx]
-                        mb_old_logp = batch.logprobs[mb_idx]
-                        mb_adv = batch.advantages[mb_idx]
-                        mb_returns = batch.returns[mb_idx]
-                        mb_masks = [m[mb_idx] for m in batch.masks_by_head]
-                        new_logp, entropy, values = actor_critic.evaluate_actions(mb_obs, mb_actions, masks_by_head=mb_masks)
-                        ratio = torch.exp(new_logp - mb_old_logp)
-                        clipped_ratio = torch.clamp(ratio, 1.0 - PPO_CLIP_RATIO, 1.0 + PPO_CLIP_RATIO)
-                        policy_loss = -torch.min(ratio * mb_adv, clipped_ratio * mb_adv).mean()
-                        value_loss = F.mse_loss(values, mb_returns)
-                        entropy_loss = entropy.mean()
-                        loss = policy_loss + PPO_VALUE_COEF * value_loss - PPO_ENTROPY_COEF * entropy_loss
-                        optimizer.zero_grad()
-                        loss.backward()
-                        torch.nn.utils.clip_grad_norm_(actor_critic.parameters(), PPO_MAX_GRAD_NORM)
-                        optimizer.step()
-                        approx_kl = (mb_old_logp - new_logp).mean().detach()
-                        clip_frac = ((ratio - 1.0).abs() > PPO_CLIP_RATIO).float().mean().detach()
-                        ppo_metrics["policy_loss"] += float(policy_loss.detach().item())
-                        ppo_metrics["value_loss"] += float(value_loss.detach().item())
-                        ppo_metrics["entropy"] += float(entropy_loss.detach().item())
-                        ppo_metrics["approx_kl"] += float(approx_kl.item())
-                        ppo_metrics["clip_fraction"] += float(clip_frac.item())
-                        updates += 1
-                        ppo_update_step += 1
-                        epoch_kl += float(approx_kl.item())
-                        epoch_kl_steps += 1
-                    mean_epoch_kl = epoch_kl / max(1, epoch_kl_steps)
-                    if mean_epoch_kl > PPO_TARGET_KL:
-                        append_agent_log(
-                            f"[PPO] Ранний stop эпохи по KL: epoch_kl={mean_epoch_kl:.6f} > target_kl={PPO_TARGET_KL:.6f}."
-                        )
-                        break
-                if updates > 0:
-                    for key in ppo_metrics:
-                        ppo_metrics[key] /= updates
+            if int(batch.obs.shape[0]) > 0:
+                ppo_metrics, entropy_coef, updates = _run_ppo_update_loop(
+                    actor_critic,
+                    optimizer,
+                    batch,
+                    entropy_coef=entropy_coef,
+                    lr_scheduler=ppo_lr_scheduler,
+                )
+                ppo_update_step += int(updates)
                 last_update_metrics = dict(ppo_metrics)
                 metrics_obj.updateLoss(ppo_metrics["policy_loss"] + PPO_VALUE_COEF * ppo_metrics["value_loss"])
                 append_agent_log(
@@ -6559,6 +6585,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
             roster_config=roster_config,
             b_len=b_len,
             b_hei=b_hei,
+            lr_scheduler=ppo_lr_scheduler,
         )
 
     if ep_rows:
@@ -7023,8 +7050,8 @@ def _actor_learner_actor_entry_ppo(
 ):
     """Top-level entrypoint for Windows spawn pickling (PPO actor)."""
     try:
-        cpu_net = ActorCriticMultiHead(n_observations, n_actions).to(torch.device("cpu"))
-        cpu_net.load_state_dict(init_weights)
+        cpu_net = make_actor_critic(n_observations, n_actions).to(torch.device("cpu"))
+        cpu_net.load_state_dict(init_weights, strict=False)
         cpu_net.eval()
 
         trunc = True
@@ -7048,7 +7075,7 @@ def _actor_learner_actor_entry_ppo(
         # 2) Fallback: PPO snapshot sync file (PPO vs PPO), if explicit not set
         opp_sync_path = os.path.join(MODELS_DIR, "actor_sync", "latest_ppo_opp.pth")
         last_opp_sync_mtime = -1.0
-        opponent_net = ActorCriticMultiHead(n_observations, n_actions).to(torch.device("cpu"))
+        opponent_net = make_actor_critic(n_observations, n_actions).to(torch.device("cpu"))
         opponent_net.eval()
         opponent_loaded = False
 

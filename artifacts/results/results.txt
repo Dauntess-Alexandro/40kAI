@@ -1,1 +1,4 @@
 время=2026-05-22 13:02:45 длительность_с=394.03 модель=C:/40kAI/artifacts/models/ACTOR_LEARNER/model-22-130240-4959312.pth run_id=4959312 эпизоды=2000 winrate_mean=0.7065 vp_diff_mean=-0.3440 reward_mean=1.744625 ep_len_mean=10.88 turn_mean=11.88
+[PPO_GRID] start 2026-05-22 14:52:45 combos=1
+[PPO_GRID] ok cfg={'PPO_HIDDEN_SIZE': 128, 'PPO_NUM_LAYERS': 2, 'PPO_VALUE_ENSEMBLE': 1, 'PPO_CLIP_RATIO': '0.1', 'PPO_ENTROPY_COEF': '0.01'} rc=0
+[PPO_GRID] done 2026-05-22 14:52:45

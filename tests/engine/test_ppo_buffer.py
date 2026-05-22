@@ -28,3 +28,25 @@ def test_ppo_buffer_returns_and_shapes():
     assert batch.masks_by_head[1].shape == (8, 3)
 
 
+def test_ppo_buffer_gae_torch_matches_legacy():
+    buf_a = PPORolloutBuffer()
+    buf_b = PPORolloutBuffer()
+    for i in range(6):
+        masks = [np.array([True, True]), np.array([True, False, True])]
+        for buf in (buf_a, buf_b):
+            buf.add(
+                obs=np.array([i, i + 1], dtype=np.float32),
+                action=np.array([0, 2], dtype=np.int64),
+                logprob=-0.2,
+                reward=0.5,
+                done=(i == 5),
+                value=0.1,
+                masks_by_head=masks,
+                env_id=i % 2,
+            )
+    ret_n, adv_n = buf_a.compute_returns_and_advantages(gamma=0.99, gae_lambda=0.95)
+    ret_t, adv_t = buf_b.compute_returns_and_advantages_torch(gamma=0.99, gae_lambda=0.95)
+    np.testing.assert_allclose(ret_n, ret_t, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(adv_n, adv_t, rtol=1e-5, atol=1e-5)
+
+
